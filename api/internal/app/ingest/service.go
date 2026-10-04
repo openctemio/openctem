@@ -67,6 +67,14 @@ type Service struct {
 	// not projected (prior behavior).
 	assetExposureProjector AssetExposureProjector
 
+	// scanAttribution stamps tenant_scanned attribution evidence on the
+	// assets of command-bound reports (RFC-036 O8). Nil-safe.
+	scanAttribution ScanAttributionStamper
+
+	// takeoverConfirmer raises subdomain_takeover from nuclei takeover
+	// findings of command-bound reports (RFC-036 P1). Nil-safe.
+	takeoverConfirmer TakeoverConfirmer
+
 	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
 	// non-repository findings (coverage_autoresolve.go). The zero mode is
 	// dry_run.
@@ -410,6 +418,16 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		"asset_map_size", len(assetMap),
 	)
 
+	// Step 1a: "the tenant scanned it" attribution evidence (RFC-036 O8),
+	// for command-bound reports only. Best-effort.
+	if binding.Kind == BindingCommand {
+		toolName := ""
+		if report.Tool != nil {
+			toolName = report.Tool.Name
+		}
+		s.stampScanAttribution(ctx, agt, tenantID, binding, scope, toolName, report.Metadata.ID, assetMap)
+	}
+
 	// Step 1b: Project recon-discovered assets (open ports, exposed services,
 	// TLS certificates) into the Exposure Register. Best-effort — a failure here
 	// must never abort ingest. Only the relevant CTIS asset types are re-loaded
@@ -457,6 +475,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 			// Continue with partial results
 		}
 	}
+
+	// Step 2d: takeover-template findings confirm open dangling CNAMEs
+	// (RFC-036 P1); command-bound reports only. Best-effort.
+	s.confirmTakeovers(ctx, agt, tenantID, binding, scope, report, assetMap)
 
 	// Step 3: Auto-resolve stale findings (only for full coverage scans on default branch)
 	// This marks findings as 'resolved' if they were not seen in this scan.

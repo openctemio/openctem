@@ -937,6 +937,11 @@ results an out-of-scope id is reported exactly like an unknown id.
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
 | `GET /notification-outbox` (+ `/stats`, `/{id}`, retry, delete), `GET /integrations/{id}/notification-events` | **bypass (every finding/asset event, owner emails) to members and viewers via `notifications:read` / `integrations:read`** | channel managers only: `integrations:manage` in addition (owner/admin by default); not scoped, because a channel manager already routes the whole stream (L-03) |
 | `POST /assets/import/nessus-findings` | **bypass (write)**: ran as a trusted server-side sensor, so a member added findings to any host and auto-resolved any tool's findings on it (`?tool=`) | runs with the uploader's rights (`ingest.Options.Actor`): a restricted uploader only adds findings to existing in-scope assets, creates no asset, never auto-resolves; hidden and unknown hosts both count as `assets_skipped_out_of_scope`. An unrestricted uploader auto-resolves only with the default `tenable` tool (any other `?tool=` = partial coverage). Audited `asset.imported` (L-05) |
+| `GET /components/{id}/assets` (reverse lookup), `GET /components` (incl. `?asset_id=`, export), `POST/PUT/DELETE /components[/{id}]`, `POST /components/import?asset_id=`, `GET /vulnerabilities/...` dependency detail | **bypass**: names, criticality and risk of every asset using a package; writes on any asset of the tenant | the reverse lookup and list only show in-scope assets (`dataScopeCond` in SQL); an out-of-scope asset id or dependency id answers 404 (`ComponentService`, `SBOMImportService`; L-10) |
+| `/repositories/{id}/branches/**` (list, get, default, compare, create, update, delete) | **bypass** (tenant only) | the repository must be in scope (`AssetService.GetAssetInCallerScope`): 404 otherwise (L-10) |
+| `GET /threat-models` (+ `/{id}`, `/{id}/coverage`), `POST /threat-models/generate` | **bypass** (crown-jewel model names, threat paths through any asset) | crown-jewel models of out-of-scope assets are hidden (404 by id, also on generate, which names the asset); a threat is listed and counted in coverage only when its entry point, target, hop and evidence finding are all in scope. Model rollup counters stay graph-wide (L-10) |
+| `GET/POST/DELETE /business-services/{id}/assets`, `POST/DELETE /business-units/{id}/assets` | **bypass** (names; links change an asset's effective criticality) | the list shows in-scope (and not deleted) assets; linking or unlinking an out-of-scope asset answers 404 (L-10) |
+| `GET /ctem-cycles/{id}/scope` | bypass (asset names of the snapshot) | in-scope assets of the snapshot only (L-10) |
 
 ### Deliberately tenant-wide (counts only, no row data)
 
@@ -956,7 +961,7 @@ query; none exposes a row, name, title or id of an out-of-scope object.
 | `GET /approvals` `total` | the page is filtered; the total is the tenant's pending count |
 
 **Not covered by data scope** (separate access models): pentest findings and
-attachments (campaign membership), threat models and remediation campaigns,
+attachments (campaign membership), remediation campaigns,
 scans, audit logs, report schedules, and access-control administration
 (`/groups/{id}/assets/{assetId}`, which defines scope and needs `groups:write`).
 The reachability oracle used by priority classification and threat models reads
@@ -1319,12 +1324,13 @@ Tenable.sc's RBAC.
 
 ## CI invariants that keep this from drifting
 
-Three tests fail the build if the model erodes. Treat them as executable spec:
+These tests fail the build if the model erodes. Treat them as executable spec:
 
 | Invariant | Test | What it guarantees |
 |-----------|------|--------------------|
 | **Every route is gated or explicitly allowlisted** | `tests/unit/route_authz_coverage_test.go` (AUTHZ-02) | A go/ast walk of `routes/*.go` resolves chi `.Group` nesting + inherited gates; any route with no `Require*`/`RequireTeam*`/`RequireRole` and not in `allowlistPrefixes` fails the build, naming the route. Removing one `Require(...)` → red. |
 | **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
+| **No tenantless by-id statement on a tenant-scoped table** | `tools/lint/tenantsql` (D-11) | Folds the SQL each `internal/infra/postgres` function sends and fails on `WHERE id = $n` against a table with a `tenant_id` column when the statement has no tenant predicate, unless the method is named `...ForPlatform`/`...Unscoped` (never callable from an HTTP handler) or the shrink-only `allowlist.txt` records why. See `tools/lint/tenantsql/README.md`. |
 | **Every referenced permission exists** | `tests/unit/permission_references_exist_test.go` | Every value in `module.ModulePermissionMapping` (sidebar/bootstrap), every `permission.X` constant used in api Go code, and every value of the web `Permission` object (`web/src/lib/permissions/constants.ts`) is in `permission.AllPermissions()`. A reference to a permission no role can hold (which silently hides a module from every non-admin) → red. |
 
 Each module in `ModulePermissionMapping` names the permission its routes gate

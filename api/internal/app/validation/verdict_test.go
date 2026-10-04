@@ -84,9 +84,10 @@ func TestVerdict_NotReproducible_OpenDowngrades(t *testing.T) {
 	}
 }
 
-// not_reproducible on a fix_applied finding → resolved (verified proof-of-fix),
-// NOT a downgrade (downgraded_at stays nil so it is not counted in the metric).
-func TestVerdict_NotReproducible_FixAppliedResolves(t *testing.T) {
+// not_reproducible on a fix_applied finding: the verdict is stamped but the
+// finding is NOT resolved (research 18 F6: raw_meta.reachable is the sensor's
+// own claim), and it is not a downgrade either.
+func TestVerdict_NotReproducible_FixAppliedHolds(t *testing.T) {
 	svc, repo, rec := ingestFor(atStatus(t, vulnerability.FindingStatusFixApplied))
 	res, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
 		ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, RawMeta: reachableMeta(),
@@ -94,17 +95,17 @@ func TestVerdict_NotReproducible_FixAppliedResolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
-	if !res.StatusChanged {
-		t.Fatal("fix_applied + not_reproducible should resolve (StatusChanged=true)")
+	if res.StatusChanged {
+		t.Fatal("fix_applied + sensor-asserted not_reproducible must not resolve")
 	}
 	if res.Downgraded {
-		t.Fatal("a verified proof-of-fix is not a downgrade")
+		t.Fatal("a held fix_applied finding is not a downgrade")
 	}
-	if repo.current.Status() != vulnerability.FindingStatusResolved {
-		t.Fatalf("status = %s, want resolved", repo.current.Status())
+	if repo.current.Status() != vulnerability.FindingStatusFixApplied {
+		t.Fatalf("status = %s, want fix_applied (unchanged)", repo.current.Status())
 	}
 	if rec.downgradedAt != nil {
-		t.Fatal("downgraded_at must NOT be set for a verified proof-of-fix")
+		t.Fatal("downgraded_at must NOT be set")
 	}
 	if rec.lastVerdict != VerdictNotReproducible {
 		t.Fatalf("verdict = %s, want not_reproducible", rec.lastVerdict)

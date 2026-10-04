@@ -144,10 +144,11 @@ func TestValidationEvidence_Ingest_TenantGuard(t *testing.T) {
 	}
 }
 
-// TestValidationEvidence_Ingest_TransitionsFinding verifies the full ingest path
+// TestValidationEvidence_Ingest_NotDetectedHolds verifies the full ingest path
 // against real SQL: a not_detected outcome on a fix_applied finding records
-// evidence and transitions the finding to resolved.
-func TestValidationEvidence_Ingest_TransitionsFinding(t *testing.T) {
+// evidence but leaves the finding fix_applied (its reachability is asserted by
+// the sensor, research 18 F6).
+func TestValidationEvidence_Ingest_NotDetectedHolds(t *testing.T) {
 	sqlDB := setupTestDB(t)
 	db := &postgres.DB{DB: sqlDB}
 	log := logger.NewNop()
@@ -190,15 +191,15 @@ func TestValidationEvidence_Ingest_TransitionsFinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
-	if !res.StatusChanged {
-		t.Error("expected the finding status to change")
+	if res.StatusChanged {
+		t.Error("a sensor-asserted not_detected must not change the status (research 18 F6)")
 	}
 
 	reloaded, err := findingRepo.GetByID(ctx, tenantID, findingID)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if reloaded.Status() != vulnerability.FindingStatusResolved {
-		t.Errorf("finding status = %s, want resolved", reloaded.Status())
+	if reloaded.Status() != vulnerability.FindingStatusFixApplied {
+		t.Errorf("finding status = %s, want fix_applied (unchanged)", reloaded.Status())
 	}
 }

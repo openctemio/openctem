@@ -185,7 +185,7 @@ finding:
 | Verdict (outcome) | Finding before | Transition |
 |-------------------|----------------|------------|
 | `not_reproducible` (`not_detected`) | new / confirmed / in_progress | → `validated_fixed` (**downgrade**, `downgraded_at` stamped) |
-| `not_reproducible` | `fix_applied` | → `resolved` (verified proof-of-fix, *not* a downgrade) |
+| `not_reproducible` | `fix_applied` | hold, verdict stamped. Not a close: `raw_meta.reachable` is the sensor's own claim (research 18 F6). A retest (RFC-039) or a `findings:verify` holder closes it. |
 | `reproducible` (`detected`) | `fix_applied` | → `in_progress` (fix did not hold) + notify |
 | `reproducible` | `validated_fixed` | → `confirmed` (prior downgrade refuted) |
 | `reproducible` | other open | hold, stamp "still exploitable" |

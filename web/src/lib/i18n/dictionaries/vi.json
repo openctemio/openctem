@@ -179,7 +179,7 @@
   "settings.item.source-control": "Quản lý mã nguồn",
   "settings.desc.source-control": "GitHub, GitLab, Bitbucket và Azure DevOps.",
   "settings.item.vulnerability-scanners": "Trình quét lỗ hổng",
-  "settings.desc.vulnerability-scanners": "Kết nối Tenable Nessus Pro và Tenable.sc.",
+  "settings.desc.vulnerability-scanners": "Nhập kết quả quét Nessus và Tenable.",
   "settings.item.ticketing": "Hệ thống ticket",
   "settings.desc.ticketing": "Jira và các hệ thống ticket khác.",
   "settings.item.notification-channels": "Kênh thông báo",

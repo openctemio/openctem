@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -280,6 +281,11 @@ type Filter struct {
 	// Exposures filter it answers "newly exposed since t".
 	ExposureChangedOrCreatedAfter *time.Time
 
+	// Attribution filters by the asset's attribution (RFC-036 §6.4): the
+	// stored states to match, and whether an asset with no record (legacy,
+	// counted as confirmed) matches too. Nil = no attribution filter.
+	Attribution *attribution.StateFilter
+
 	// Layer 2: Data Scope - filter assets by user's group membership
 	// When set, only assets accessible to this user are returned.
 	// Backward compat: if user has no group assignments, all assets are visible.
@@ -466,6 +472,12 @@ func (f Filter) WithPropertiesFilter(kv map[string][]string) Filter {
 // WithBusinessUnitIDs filters by business_units membership.
 func (f Filter) WithBusinessUnitIDs(ids ...string) Filter {
 	f.BusinessUnitIDs = ids
+	return f
+}
+
+// WithAttribution filters by attribution state (RFC-036).
+func (f Filter) WithAttribution(af attribution.StateFilter) Filter {
+	f.Attribution = &af
 	return f
 }
 

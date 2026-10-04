@@ -50,13 +50,16 @@ type Binding struct {
 	// Tool is the bound command's tool ("" when it names none); a bound
 	// report must be from that tool.
 	Tool string
+	// StepRunID is the pipeline step run the bound command belongs to (nil
+	// for a command outside a pipeline): the scan run its results came from.
+	StepRunID *shared.ID
 }
 
 // CommandBinding binds a report to cmd, which the caller has checked is
 // assigned to the submitting sensor and open.
 func CommandBinding(cmd *command.Command) Binding {
 	id := cmd.ID
-	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd)}
+	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd), StepRunID: cmd.StepRunID}
 }
 
 // TrustedBinding is the binding of a server-side ingest.
