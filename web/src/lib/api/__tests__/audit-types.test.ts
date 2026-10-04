@@ -53,6 +53,16 @@ describe('sensor audit events before and after the rename', () => {
     expect(canonicalAuditResourceType('scope_exclusion')).toBe('scope_exclusion')
   })
 
+  it('labels the remediation campaign actions', () => {
+    expect(getActionLabel('remediation_campaign.created')).toBe('Remediation Campaign Created')
+    expect(getActionLabel('remediation_campaign.updated')).toBe('Remediation Campaign Updated')
+    expect(getActionLabel('remediation_campaign.status_changed')).toBe(
+      'Remediation Campaign Status Changed'
+    )
+    expect(getActionLabel('remediation_campaign.deleted')).toBe('Remediation Campaign Deleted')
+    expect(canonicalAuditResourceType('remediation_campaign')).toBe('remediation_campaign')
+  })
+
   it('leaves every other action alone', () => {
     expect(canonicalAuditAction('finding.created')).toBe('finding.created')
     expect(canonicalAuditAction('user_agent.created')).toBe('user_agent.created')

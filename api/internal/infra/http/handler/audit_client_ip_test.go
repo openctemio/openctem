@@ -28,6 +28,7 @@ func TestAuditContexts_IgnoreForwardingHeadersFromUntrustedPeer(t *testing.T) {
 		"asset":             (&AssetHandler{}).buildAuditContext(req).ActorIP,
 		"credential_import": (&CredentialImportHandler{}).buildAuditContext(req).ActorIP,
 		"finding_evidence":  (&VulnerabilityHandler{}).buildAuditContext(req).ActorIP,
+		"remediation":       (&RemediationCampaignHandler{}).buildAuditContext(req).ActorIP,
 		"mcp":               auditClientIP(req),
 	}
 	for name, ip := range got {

@@ -284,6 +284,11 @@ className="flex flex-col gap-0 p-0 sm:p-0 …">` with a `<DialogHeaderBar>`
     `<DetailTabs>` (underline tabs; `useDetailTab(param, values)` keeps the
     tab in the URL when the page wants it, with a parameter the page does not
     already use).
+  - On phones `<DetailSheet>` is a Vaul drawer (`components/ui/drawer.tsx`):
+    swipe down from the handle, the header or a body scrolled to its top to
+    close; fields and the footer never start a drag; the Close button (44x44
+    hit area) and Esc always work; no slide under reduced motion. Never give
+    a sheet a swipe-only way out.
   - Real checks only: `<DetailChecklist>` ("Health checks: N of M passing",
     folded, failing first) and the `<DetailCallout>` above it appear only
     when the record has such state. Never placeholder checks.

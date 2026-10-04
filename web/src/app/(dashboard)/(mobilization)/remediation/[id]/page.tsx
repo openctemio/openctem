@@ -9,6 +9,8 @@ import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Can, Permission } from '@/lib/permissions'
 import { ResolveCampaignDialog } from '@/features/remediation/components/resolve-campaign-dialog'
+import { useConfirmCampaignCompletion } from '@/features/remediation/components/complete-campaign-confirm'
+import { progressPercent } from '@/features/remediation/lib/campaign-completion'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -187,6 +189,8 @@ export default function CampaignDetailPage() {
   const { data: campaign, error, isLoading, mutate: mutateCampaign } = useRemediationCampaign(id)
   const { trigger: updateCampaign, isMutating: isUpdating } = useUpdateRemediationCampaign(id)
   const { trigger: updateStatus, isMutating: isStatusUpdating } = useUpdateCampaignStatus(id)
+  // Completing with findings still open asks first and says how many.
+  const { confirmCompletion, completionDialog } = useConfirmCampaignCompletion()
 
   // The campaign's explicitly-linked findings (one fix → many findings). Only
   // fetched when there are some: without a finding_ids filter the hook would
@@ -273,15 +277,22 @@ export default function CampaignDetailPage() {
   }
 
   const handleStatusChange = async (newStatus: string) => {
-    try {
-      await updateStatus({ status: newStatus })
-      await mutateCampaign()
-      globalMutate(
-        (key: unknown) => typeof key === 'string' && key.includes('/remediation/campaigns')
-      )
-      toast.success(`Campaign status changed to ${STATUS_CONFIG[newStatus]?.label || newStatus}`)
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to update status'))
+    const apply = async () => {
+      try {
+        await updateStatus({ status: newStatus })
+        await mutateCampaign()
+        globalMutate(
+          (key: unknown) => typeof key === 'string' && key.includes('/remediation/campaigns')
+        )
+        toast.success(`Campaign status changed to ${STATUS_CONFIG[newStatus]?.label || newStatus}`)
+      } catch (err) {
+        toast.error(getErrorMessage(err, 'Failed to update status'))
+      }
+    }
+    if (newStatus === 'completed') {
+      await confirmCompletion([id], apply, campaign ? { [id]: campaign } : undefined)
+    } else {
+      await apply()
     }
   }
 
@@ -418,9 +429,9 @@ export default function CampaignDetailPage() {
               <span className="text-muted-foreground">
                 {campaign.resolved_count} of {campaign.finding_count} findings resolved
               </span>
-              <span className="font-medium">{campaign.progress}%</span>
+              <span className="font-medium">{progressPercent(campaign.progress)}%</span>
             </div>
-            <Progress value={campaign.progress} className="h-2" />
+            <Progress value={progressPercent(campaign.progress)} className="h-2" />
             {campaign.finding_count > campaign.resolved_count ? (
               <div className="flex items-center justify-between gap-2 pt-1">
                 {(campaign.status === 'active' || campaign.status === 'validating') && (
@@ -534,6 +545,8 @@ export default function CampaignDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {completionDialog}
 
         <ResolveCampaignDialog
           open={resolveOpen}

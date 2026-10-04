@@ -272,7 +272,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
-		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log),
+		AssetImport:            newAssetImportHandler(svc, log),
 		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
 
@@ -719,5 +719,12 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 	if svc.Audit != nil {
 		h.SetAuditService(svc.Audit)
 	}
+	return h
+}
+
+// newAssetImportHandler builds the asset import handler with its audit trail.
+func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
+	h := handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log)
+	h.SetAuditService(svc.Audit)
 	return h
 }
