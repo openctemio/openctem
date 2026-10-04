@@ -58,7 +58,6 @@ export function runOutcomeCallout(status: string): {
     case 'timeout':
       return { tone: 'destructive', title: 'Run timed out' }
     case 'canceled':
-    case 'cancelled':
       return { tone: 'info', title: 'Run canceled' }
     case 'failed':
       return { tone: 'destructive', title: 'Run failed' }
