@@ -25,7 +25,7 @@ const script = "least-privilege-roles.sql"
 // proves the app role can do the API's work and nothing more. It needs a
 // superuser DATABASE_URL (the Postgres CI tier) and psql; it skips otherwise.
 func TestLeastPrivilegeRoles(t *testing.T) {
-	admin := testdb.URL()
+	admin := testdb.AdminURL() // creates a database and roles: needs a superuser
 	if admin == "" {
 		t.Skip("DATABASE_URL not set to a test database")
 	}

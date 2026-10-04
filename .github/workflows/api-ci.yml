@@ -379,6 +379,8 @@ jobs:
           OPENCTEM_TEST_DB_REQUIRED: "1"
           DATABASE_URL: ${{ env.APP_URL }}
           DATABASE_MIGRATE_URL: ${{ env.MIGRATOR_URL }}
+          # testdb.PrivateDatabase only: CREATE DATABASE + migrations need a superuser.
+          DATABASE_ADMIN_URL: ${{ env.SUPER_URL }}
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USER: openctem_app

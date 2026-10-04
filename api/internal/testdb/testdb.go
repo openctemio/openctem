@@ -49,6 +49,16 @@ func URL() string {
 	return mustGuard("DATABASE_URL", raw)
 }
 
+// AdminURL is DATABASE_ADMIN_URL when set, and URL otherwise: the connection
+// PrivateDatabase creates and migrates its scratch database with. CREATE
+// DATABASE needs CREATEDB, which neither the app nor the migrator role has.
+func AdminURL() string {
+	if raw := os.Getenv("DATABASE_ADMIN_URL"); raw != "" {
+		return mustGuard("DATABASE_ADMIN_URL", raw)
+	}
+	return URL()
+}
+
 // MigratorURL is the connection for a test that runs DDL (replays a migration,
 // alters a constraint) and so needs the schema owner. It is
 // DATABASE_MIGRATE_URL when set, and URL otherwise. CI runs the DB tests as
