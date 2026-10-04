@@ -285,6 +285,22 @@ func (m *MockAssetRepository) GetPropertyFacets(_ context.Context, _ shared.ID, 
 	return nil, nil
 }
 
+func (m *MockAssetRepository) SetCrownJewel(_ context.Context, tenantID, id shared.ID, isCrownJewel bool, score float64, notes string) error {
+	a, ok := m.assets[id.String()]
+	if !ok || a.TenantID() != tenantID {
+		return shared.ErrNotFound
+	}
+	a.SetCrownJewel(isCrownJewel)
+	props := a.Properties()
+	if props == nil {
+		props = map[string]any{}
+	}
+	props["business_impact_score"] = score
+	props["business_impact_notes"] = notes
+	a.SetProperties(props)
+	return nil
+}
+
 func (m *MockAssetRepository) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
 	return nil, nil
 }

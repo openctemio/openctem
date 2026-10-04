@@ -66,14 +66,17 @@ func TestAssetService_CreateAsset_RejectsReservedProperties(t *testing.T) {
 func TestAssetService_UpdateAsset_RejectsChangedReservedProperties(t *testing.T) {
 	svc, repo := newTestService()
 	a := createAssetForTest(t, svc, serviceTenantID.String(), "jewel.example.com")
-	// The crown-jewel endpoint stored these.
-	a.SetProperties(map[string]any{"is_crown_jewel": true, "business_impact_score": float64(80), "registrar": "x"})
-	repo.assets[a.ID().String()] = a
+	// The crown-jewel endpoint stored these: the flag in its column, the
+	// business impact in properties.
+	if _, err := svc.UpdateCrownJewel(context.Background(), serviceTenantID.String(), a.ID().String(), true, 80, "core"); err != nil {
+		t.Fatal(err)
+	}
+	stored := repo.assets[a.ID().String()]
+	stored.SetProperties(map[string]any{"business_impact_score": float64(80), "business_impact_notes": "core", "registrar": "x"})
 
+	// Every reserved key with a value other than the stored one is refused,
+	// is_crown_jewel included: it is never stored in properties.
 	for _, props := range reservedPropertyCases {
-		if props["is_crown_jewel"] == true {
-			continue // equal to the stored value: an echo, covered below
-		}
 		patch := make(map[string]any, len(props))
 		for k, v := range props {
 			patch[k] = v
@@ -84,22 +87,34 @@ func TestAssetService_UpdateAsset_RejectsChangedReservedProperties(t *testing.T)
 			t.Errorf("update with %v: err = %v, want a validation error", props, err)
 		}
 	}
-	if got := repo.assets[a.ID().String()].Properties()["is_crown_jewel"]; got != true {
-		t.Errorf("is_crown_jewel changed to %v", got)
+	if !repo.assets[a.ID().String()].IsCrownJewel() {
+		t.Error("crown-jewel flag changed")
 	}
 
 	// A full-form PUT echoes the stored values: accepted, other keys applied.
 	desc := "updated"
 	updated, err := svc.UpdateAsset(context.Background(), a.ID().String(), serviceTenantID.String(), app.UpdateAssetInput{
 		Description: &desc,
-		Properties:  map[string]any{"is_crown_jewel": true, "business_impact_score": 80, "registrar": "y"},
+		Properties:  map[string]any{"business_impact_score": 80, "business_impact_notes": "core", "registrar": "y"},
 	})
 	if err != nil {
 		t.Fatalf("echo of unchanged reserved values: %v", err)
 	}
 	p := updated.Properties()
-	if p["is_crown_jewel"] != true || p["registrar"] != "y" {
-		t.Errorf("properties after echo = %v", p)
+	if !updated.IsCrownJewel() || p["registrar"] != "y" || p["business_impact_score"] != float64(80) {
+		t.Errorf("after echo: crown=%v properties=%v", updated.IsCrownJewel(), p)
+	}
+}
+
+func TestAssetService_UpdateCrownJewel_TenantScoped(t *testing.T) {
+	svc, _ := newTestService()
+	a := createAssetForTest(t, svc, serviceTenantID.String(), "cj-tenant.example.com")
+	if _, err := svc.UpdateCrownJewel(context.Background(), shared.NewID().String(), a.ID().String(), true, 10, ""); !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("another tenant: err = %v, want not found", err)
+	}
+	got, err := svc.UpdateCrownJewel(context.Background(), serviceTenantID.String(), a.ID().String(), true, 10, "n")
+	if err != nil || !got.IsCrownJewel() {
+		t.Errorf("own tenant: crown=%v err=%v", got != nil && got.IsCrownJewel(), err)
 	}
 }
 

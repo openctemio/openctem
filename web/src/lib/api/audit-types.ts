@@ -170,6 +170,9 @@ export type AuditAction =
   | 'scope_exclusion.deactivated'
   | 'scope_exclusion.approved'
   | 'scope_exclusion.rejected'
+  | 'easm_seed.created'
+  | 'easm_seed.updated'
+  | 'easm_seed.deleted'
   | 'report_schedule.created'
   | 'report_schedule.activated'
   | 'report_schedule.deleted'
@@ -214,6 +217,7 @@ export type AuditResourceType =
   | 'scan_zone'
   | 'scope_target'
   | 'scope_exclusion'
+  | 'easm_seed'
   | 'report_schedule'
   | 'tool'
   | 'scanner_template'
@@ -430,6 +434,10 @@ export function getActionLabel(action: AuditAction): string {
     'scope_exclusion.deactivated': 'Scope Exclusion Deactivated',
     'scope_exclusion.approved': 'Scope Exclusion Approved',
     'scope_exclusion.rejected': 'Scope Exclusion Rejected',
+    // EASM seeds (RFC-036)
+    'easm_seed.created': 'EASM Seed Added',
+    'easm_seed.updated': 'EASM Seed Changed',
+    'easm_seed.deleted': 'EASM Seed Removed',
     // Report schedules
     'report_schedule.created': 'Report Schedule Created',
     'report_schedule.activated': 'Report Schedule Activated',

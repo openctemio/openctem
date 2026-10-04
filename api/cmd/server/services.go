@@ -870,7 +870,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
+	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
+	s.Vulnerability.SetAssetRefChecker(s.DataScope) // POST /findings asset_id: tenant + caller scope
+	s.Vulnerability.SetBranchLookup(repos.Branch)   // a finding branch must belong to its asset
 	s.FindingActivity = app.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
@@ -1198,6 +1201,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
 	// Creates, edits, status changes and deletes go to audit_logs.
 	s.RemediationCampaign.SetAuditLogger(s.Audit)
+	s.RemediationCampaign.SetAssigneeChecker(repos.AccessControl) // a campaign owner must be an active member (21b C2)
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
@@ -1658,6 +1662,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Targets of a directly started run pass a scan trigger's checks:
 		// private-range policy, scope exclusions, scan zones (RFC-042 F16).
 		pipeline.WithTargetGate(s.Scan),
+		// A run's asset_id (copied into every step command) must be a live
+		// asset of the tenant in the caller's scope (research doc 21b, C4).
+		pipeline.WithAssetRefChecker(s.DataScope),
 	)
 
 	// Wire up pipeline deactivator to tool service for cascade deactivation
