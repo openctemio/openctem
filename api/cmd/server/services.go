@@ -779,7 +779,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithTenantAuditService(s.Audit),
 		app.WithUserInfoProvider(tenantapp.NewUserDisplayNames(repos.User)),
 	)
-	s.Tenant.SetDataScopePolicyStore(repos.Tenant)
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
@@ -1661,6 +1660,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Targets of a directly started run pass a scan trigger's checks:
 		// private-range policy, scope exclusions, scan zones (RFC-042 F16).
 		pipeline.WithTargetGate(s.Scan),
+		// A run's asset_id (copied into every step command) must be a live
+		// asset of the tenant in the caller's scope (research doc 21b, C4).
+		pipeline.WithAssetRefChecker(s.DataScope),
 	)
 
 	// Wire up pipeline deactivator to tool service for cascade deactivation
