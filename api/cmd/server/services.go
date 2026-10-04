@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"sync"
 	"time"
 
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
@@ -274,66 +273,6 @@ func membershipAdminLookup(tenants tenant.Repository) datascope.AdminLookup {
 	}
 }
 
-// dataScopePolicyAdapter reports a tenant's data-scope policy for members
-// without an access group (tenants.members_without_group_see: "nothing" =
-// fail-closed) to the data-scope enforcer and the asset & finding services.
-// It's read on the non-admin data-scope path, so it caches per tenant with a
-// short TTL (mirrors the module gate's cache); a policy change invalidates the
-// entry at once.
-type dataScopePolicyAdapter struct {
-	tenants tenantapp.DataScopePolicyStore
-	mu      sync.RWMutex
-	cache   map[string]dataScopeCacheEntry
-	ttl     time.Duration
-}
-
-type dataScopeCacheEntry struct {
-	restricted bool
-	exp        time.Time
-}
-
-func newDataScopePolicyAdapter(tenants tenantapp.DataScopePolicyStore) *dataScopePolicyAdapter {
-	return &dataScopePolicyAdapter{
-		tenants: tenants,
-		cache:   make(map[string]dataScopeCacheEntry),
-		ttl:     60 * time.Second,
-	}
-}
-
-// RestrictedDataScope returns whether the tenant enforces fail-closed data scope.
-// On any lookup error it returns false (fail-open) — a policy-read failure must
-// never silently hide a user's data.
-func (a *dataScopePolicyAdapter) RestrictedDataScope(ctx context.Context, tenantID string) bool {
-	now := time.Now()
-	a.mu.RLock()
-	if e, ok := a.cache[tenantID]; ok && now.Before(e.exp) {
-		a.mu.RUnlock()
-		return e.restricted
-	}
-	a.mu.RUnlock()
-
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return false
-	}
-	policy, err := a.tenants.GetMembersWithoutGroupSee(ctx, tid)
-	if err != nil {
-		return false
-	}
-	restricted := tenant.RestrictsMembersWithoutGroup(policy)
-	a.mu.Lock()
-	a.cache[tenantID] = dataScopeCacheEntry{restricted: restricted, exp: now.Add(a.ttl)}
-	a.mu.Unlock()
-	return restricted
-}
-
-// Invalidate drops the cached policy of one tenant (called after it changes).
-func (a *dataScopePolicyAdapter) Invalidate(tenantID string) {
-	a.mu.Lock()
-	delete(a.cache, tenantID)
-	a.mu.Unlock()
-}
-
 // moduleBundleStore adapts the tenant repository to module.BundleStore, storing
 // a tenant's product-bundle subscription in its settings JSON. Read on the
 // module-resolution path (cached by the gate); written on subscribe.
@@ -557,9 +496,6 @@ type Services struct {
 	// writes and on indirect lists (asset groups, attack surface, exposures,
 	// dashboards, notifications, WebSocket finding channels).
 	DataScope *datascope.Enforcer
-	// DataScopePolicy caches each organization's "members without an access
-	// group see" policy; invalidated when an administrator changes it.
-	DataScopePolicy *dataScopePolicyAdapter
 
 	// Assets
 	Asset                  *app.AssetService
@@ -856,14 +792,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetUserMatcher(assetOwnerMatcher{users: repos.User, tenants: repos.Tenant})
 	s.Asset.SetAssetGroupRepository(repos.AssetGroup)
 	s.Asset.SetAccessControlRepository(repos.AccessControl)
-	// Per-tenant fail-open/closed data-scope policy (default fail-open). Shared
-	// instance so asset + finding services read one cache.
-	dataScopePolicy := newDataScopePolicyAdapter(repos.Tenant)
-	s.DataScopePolicy = dataScopePolicy
-	s.Asset.SetDataScopePolicy(dataScopePolicy)
 	// One Layer 2 enforcer for every service: the caller comes from the HTTP
-	// auth context, so the admin decision is the auth layer's.
-	s.DataScope = datascope.New(repos.DataScope, dataScopePolicy, httpDataScopeCaller, log)
+	// auth context, so the admin decision is the auth layer's. A member with
+	// no scope row sees nothing, in every organization.
+	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
 	s.Asset.SetScoringConfigProvider(app.NewTenantScoringConfigProvider(repos.Tenant))
@@ -939,7 +871,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
-	s.Vulnerability.SetDataScopePolicy(dataScopePolicy)
 	s.Vulnerability.SetDataScope(s.DataScope)
 	s.FindingActivity = app.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts

@@ -291,16 +291,9 @@ type Filter struct {
 	// counted as confirmed) matches too. Nil = no attribution filter.
 	Attribution *attribution.StateFilter
 
-	// Layer 2: Data Scope - filter assets by user's group membership
-	// When set, only assets accessible to this user are returned.
-	// Backward compat: if user has no group assignments, all assets are visible.
+	// Layer 2: Data Scope. When set, only the assets in this user's scope
+	// rows (user_accessible_assets) are returned; a user with none sees none.
 	DataScopeUserID *shared.ID
-
-	// DataScopeStrict makes the DataScopeUserID filter fail-CLOSED: a user with
-	// no accessible assets sees none (instead of the default fail-open "see all").
-	// Set by the service from the tenant's RestrictedDataScope policy. No-op
-	// unless DataScopeUserID is also set.
-	DataScopeStrict bool
 }
 
 // ListOptions contains options for listing assets (sorting).
@@ -436,18 +429,17 @@ func (f Filter) WithParentID(parentID string) Filter {
 }
 
 // AccessScope narrows an aggregate read (stats, property facets) to the
-// assets the acting user may list. It carries the same two fields the list's
+// assets the acting user may list. It carries the same field the list's
 // Filter uses, so the repository applies the very same data-scope predicate
 // to counts as to rows. The zero value applies no data scope (admin, or a
 // caller with no user such as an API key), exactly like an unset Filter.
 type AccessScope struct {
 	DataScopeUserID *shared.ID
-	DataScopeStrict bool
 }
 
 // AccessScope returns the data-scope part of the filter.
 func (f Filter) AccessScope() AccessScope {
-	return AccessScope{DataScopeUserID: f.DataScopeUserID, DataScopeStrict: f.DataScopeStrict}
+	return AccessScope{DataScopeUserID: f.DataScopeUserID}
 }
 
 // WithDataScopeUserID adds a data scope filter by user's group membership.
@@ -456,14 +448,11 @@ func (f Filter) WithDataScopeUserID(id shared.ID) Filter {
 	return f
 }
 
-// WithDataScope narrows to a resolved data scope (nil = unchanged). A
-// resolved scope is always enforced strictly: the fail-open decision was
-// already taken when it was resolved.
+// WithDataScope narrows to a resolved data scope (nil = unchanged).
 func (f Filter) WithDataScope(scope *shared.DataScope) Filter {
 	if scope != nil {
 		id := scope.UserID
 		f.DataScopeUserID = &id
-		f.DataScopeStrict = true
 	}
 	return f
 }
