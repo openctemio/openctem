@@ -807,6 +807,15 @@ group's assignment, which is why adding or removing one needs
 | `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 409 when the grant exists; audited `asset.access_granted` |
 | `DELETE /api/v1/assets/{id}/access-grants/{grant_id}` | `team:groups:write`; the grant must be on that asset of the caller's organization (404); audited `asset.access_revoked`. The user keeps the asset only if a group still holds it |
 | `POST /api/v1/assets/{id}/owners` with `group_id` · `DELETE /api/v1/assets/{id}/owners/{id}` of a group owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise) |
+| `POST /api/v1/groups/{g}/assets` · `/assets/bulk` · scope rules | `team:groups:write`; the group must be in the caller's organization, and each asset must be a live asset of the **group's** organization. A single assign answers 404 for a foreign, deleted or unknown asset id alike; a bulk assign counts them as failed |
+
+**Group asset rows are same-tenant only.** `asset_owners` has no `tenant_id`,
+so every insert path (`CreateAssetOwner`, the bulk and scope-rule inserts) is an
+`INSERT … SELECT` joined to the asset's tenant, every read of a group's assets
+joins the asset to the group's tenant, and the access-refresh functions only
+materialize assets of the group's tenant. Trigger `asset_owners_same_tenant`
+(migration `000455`) refuses a cross-tenant group row from any writer, and the
+same migration removed any such row written before (research doc 15, L-01).
 
 **Who is restricted:**
 
