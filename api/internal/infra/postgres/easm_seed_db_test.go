@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// EASM seeds against the real schema (migration 000486): tenant isolation on
+// EASM seeds against the real schema (migration 000572): tenant isolation on
 // every read and write, per-tenant uniqueness (two tenants may seed the same
 // domain), and the CT monitor's view (discovery on only). Requires
 // DATABASE_URL.
