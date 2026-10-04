@@ -445,7 +445,7 @@ level of the hierarchy applies, plus a per-tenant cap on leased chunks
 that `get_next_platform_job` lacks (B10). `MaxConcurrentRunsPerTenant` (50)
 stays as an admission limit; it no longer has to double as a fairness tool.
 
-**Status (RFC-046 P1.7, migration 000432):** `get_next_platform_job` orders
+**Status (RFC-046 P1.7, migration 000461):** `get_next_platform_job` orders
 the shared queue by priority class (one class up per 30 minutes queued,
 never into critical), then by the tenant's platform jobs in flight (fewest
 first), then `queue_priority` and age; the tool and capability gates (B10)
