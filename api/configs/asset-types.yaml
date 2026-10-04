@@ -211,6 +211,12 @@ virtual_types:
   - { name: credential, unmodelled: true }
   - { name: mobile, type: application, sub_type: mobile_app }
 
+# Legacy type names still accepted on input that are no type of their own
+# (RFC-042 §6.3.8). `web_application` is stored as (application, website):
+# one web sub-type, labelled "Web application" (owner decision O3).
+type_inputs:
+  web_application: { type: application, sub_type: website }
+
 # Attribute types: string, int, number, bool, time, enum (needs values),
 # list (of strings) and object (opaque). Only string, int, enum and bool
 # attributes can be facets or group-by fields.
@@ -450,7 +456,11 @@ types:
     icon: app-window
     class: application
     legacy_category: application
-    sub_types: [website, web_application, api, mobile_app]
+    sub_types: [website, api, mobile_app]
+    # O3 (RFC-042 §6.3.8): one web sub-type, stored as `website` and
+    # labelled "Web application"; `web_application` is an input name.
+    sub_type_inputs:
+      web_application: { sub_type: website }
     identity_keys: [name]
     attributes:
       - { name: url, type: string }
@@ -466,8 +476,8 @@ types:
     sections: [overview, attributes, technologies, findings, services, relationships, owners, sources, history]
 
   - type: website
-    label: Website
-    plural: Websites
+    label: Web Application
+    plural: Web Applications
     icon: globe
     class: application
     alias_of: { type: application, sub_type: website }
@@ -479,33 +489,12 @@ types:
       - { name: technologies, type: list }
       - { name: server, type: string, facet: true, group: true }
       - { name: cms, type: string, facet: true, group: true }
+      - { name: framework, type: string, facet: true, group: true }
       - { name: response_code, type: int, facet: true }
       - { name: tls_version, type: string, facet: true }
       - { name: has_waf, type: bool, facet: true }
       - { name: waf_vendor, type: string, facet: true }
     columns: [name, title, server, findings.open, last_seen, owner]
-    card: application
-    scannable_by: [url]
-    exposure_default: public
-    sections: [overview, attributes, technologies, findings, relationships, owners, sources, history]
-
-  - type: web_application
-    label: Web Application
-    plural: Web Applications
-    icon: app-window
-    class: application
-    alias_of: { type: application, sub_type: web_application }
-    legacy_category: application
-    identity_keys: [name]
-    attributes:
-      - { name: url, type: string }
-      - { name: title, type: string }
-      - { name: technologies, type: list }
-      - { name: server, type: string, facet: true, group: true }
-      - { name: framework, type: string, facet: true, group: true }
-      - { name: response_code, type: int, facet: true }
-      - { name: has_waf, type: bool, facet: true }
-    columns: [name, title, framework, findings.open, last_seen, owner]
     card: application
     scannable_by: [url]
     exposure_default: public

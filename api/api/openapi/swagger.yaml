@@ -8806,9 +8806,17 @@ definitions:
         type: string
       cve_id:
         type: string
+      cve_ids:
+        description: Every CVE the scanner named, primary first
+        items:
+          type: string
+        type: array
       cvss_score:
         type: number
       cvss_vector:
+        type: string
+      cvss_version:
+        description: Version of cvss_score (2.0, 3.x, 3.1, 4.0)
         type: string
       cwe_ids:
         items:
@@ -8837,8 +8845,14 @@ definitions:
         type: number
       estimated_fix_time:
         type: integer
+      exploit_available:
+        description: The scanner reported a public exploit
+        type: boolean
       exposure_vector:
         description: CTEM Fields
+        type: string
+      family:
+        description: Scanner details kept since research 17 R2 (not priority inputs).
         type: string
       file_path:
         type: string
@@ -8938,6 +8952,9 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      patch_published_at:
+        description: When the vendor published the fix
+        type: string
       priority_class:
         description: Priority Classification (RFC-004)
         type: string
@@ -9056,6 +9073,9 @@ definitions:
         type: string
       verified_by:
         type: string
+      vpr_score:
+        description: Tenable VPR 0.1-10, display only
+        type: number
       vulnerability:
         allOf:
         - $ref: '#/definitions/internal_infra_http_handler.FindingVulnerabilityInfo'
@@ -9125,6 +9145,39 @@ definitions:
         type: string
       trigger:
         type: string
+    type: object
+  internal_infra_http_handler.FindingSearchPage:
+    properties:
+      page:
+        type: integer
+      per_page:
+        type: integer
+    type: object
+  internal_infra_http_handler.FindingSearchRequest:
+    properties:
+      filter:
+        additionalProperties: {}
+        description: |-
+          Filter is a node ({"all":[...]}, {"any":[...]}, {"not":{...}} or a
+          {"field","op","value"} leaf) or the flat-name shorthand
+          ({"severity":["critical"],"epss_score_gte":0.1}).
+        type: object
+      page:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.FindingSearchPage'
+        description: 'Page selects the page: {"page": 1, "per_page": 50}.'
+      q:
+        description: Q is free text over title, description and file path.
+        type: string
+      sort:
+        description: Sort keys, "-" for descending.
+        items:
+          type: string
+        type: array
+      v:
+        description: V is the document version (1).
+        example: 1
+        type: integer
     type: object
   internal_infra_http_handler.FindingSeverityResponse:
     properties:
@@ -11446,6 +11499,10 @@ definitions:
         type: integer
       created_at:
         type: string
+      deadline_at:
+        description: DeadlineAt is when the run is settled if it is still open (RFC-046
+          §6.3).
+        type: string
       dispatch:
         $ref: '#/definitions/internal_infra_http_handler.RunDispatchResponse'
       error_message:
@@ -11491,6 +11548,11 @@ definitions:
       triggered_by_name:
         description: display name, when triggered_by is a user id
         type: string
+      unfinished_target_count:
+        description: |-
+          UnfinishedTargetCount is how many targets were still open when the run
+          was settled at its deadline; the next scheduled run plans them first.
+        type: integer
     type: object
   internal_infra_http_handler.RunUncoveredTarget:
     properties:
@@ -23330,6 +23392,46 @@ paths:
       summary: Resolve a remediation group
       tags:
       - Findings
+  /findings/search:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Lists findings selected by a FilterDocument (RFC-048): all/any/not groups with field/op/value
+        leaves, for OR, nesting and id lists of up to 500. Same fields, permission, scope and
+        response as GET /findings. Limits: 50 leaves, depth 3, 32 KB body. A bad document is 400
+        INVALID_FILTER with the JSON path of each problem. Read-only.
+      parameters:
+      - description: Filter document
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.FindingSearchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: INVALID_FILTER with details[].path
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Search findings with a filter document
+      tags:
+      - Findings
   /findings/stats:
     get:
       description: |-
@@ -25094,6 +25196,25 @@ paths:
       summary: Get current user permissions
       tags:
       - Permissions
+  /meta/filters/findings:
+    get:
+      description: |-
+        The machine-readable filter contract of the findings list (RFC-048): fields, types, operators,
+        flat param names, enums, sortability, old param aliases and limits, plus the FilterDocument
+        JSON Schema. Fields the caller may not use are left out.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Findings filter contract
+      tags:
+      - Findings
   /notification-outbox:
     get:
       consumes:

@@ -697,3 +697,26 @@ func TestBoolTemplate(t *testing.T) {
 		t.Fatal("BoolTemplate on a string field must be rejected")
 	}
 }
+
+func TestDescribeHidesPermissionFields(t *testing.T) {
+	reg := testRegistry(t)
+	names := func(d Description) string {
+		var n []string
+		for _, f := range d.Fields {
+			n = append(n, f.Name)
+		}
+		return strings.Join(n, ",")
+	}
+	if strings.Contains(names(reg.Describe(nil)), "pentest_note") {
+		t.Fatal("a permission-gated field must be hidden without the permission")
+	}
+	d := reg.Describe(func(p string) bool { return p == "pentest:read" })
+	if !strings.Contains(names(d), "pentest_note") || d.Aliases["severities"] != "severity" || d.Limits["leaves"] != MaxLeaves {
+		t.Fatalf("describe: %+v", d)
+	}
+	for _, f := range d.Fields {
+		if f.Name == "epss_score" && strings.Join(f.Params, ",") != "epss_score_gte,epss_score_lte,epss_score_gt,epss_score_lt" {
+			t.Fatalf("epss params: %v", f.Params)
+		}
+	}
+}
