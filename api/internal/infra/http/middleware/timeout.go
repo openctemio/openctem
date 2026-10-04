@@ -62,7 +62,7 @@ func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Hand
 								// Sanitized: the path is attacker-controlled and the text
 								// handler emits plain lines, so a raw CR/LF here would let a
 								// caller forge log entries (CodeQL go/log-injection).
-								"path", logger.SanitizeValue(r.URL.Path),
+								"path", logger.SanitizeValue(RedactPath(r.URL.Path)),
 							)
 						}
 						// Report a 500 unless something was already written, or
