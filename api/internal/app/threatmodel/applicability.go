@@ -9,6 +9,7 @@
 package threatmodel
 
 import (
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
 )
 
@@ -68,9 +69,11 @@ func techniqueWeight(row tmdom.TechniqueApplicability) float64 {
 }
 
 // applicableTechniques filters the applicability catalog to the techniques that
-// apply at a hop of the given asset type reached over edgeType, for an attacker
-// with caps. A catalog row matches when:
-//   - its asset_type equals the hop asset type (exact), and
+// apply at a hop of the given stored (asset type, sub-type) reached over
+// edgeType, for an attacker with caps. A catalog row matches when:
+//   - its asset_type equals the hop's core type and its sub_type is empty or
+//     equals the hop's sub-type (a row still stored under a legacy alias name
+//     is read as the pair the alias stands for), and
 //   - its edge_type is empty (any incoming edge) or equals edgeType, and
 //   - the attacker's capabilities clear its min_network / min_credential /
 //     requires_persistence gate.
@@ -80,14 +83,15 @@ func techniqueWeight(row tmdom.TechniqueApplicability) float64 {
 // The result is deterministic (catalog order preserved) and de-duplicated per
 // technique id, keeping the highest weight when a technique has several rows.
 func applicableTechniques(
-	assetType, edgeType string,
+	assetType, subType, edgeType string,
 	caps tmdom.AttackerCapabilities,
 	catalog []tmdom.TechniqueApplicability,
 ) []ApplicableTechnique {
+	hop := asset.CanonicalPair(asset.AssetType(assetType), subType)
 	seen := make(map[string]int) // technique id -> index in out
 	out := make([]ApplicableTechnique, 0, 8)
 	for _, row := range catalog {
-		if row.AssetType != assetType {
+		if row.AssetType != string(hop.Type) || (row.SubType != "" && row.SubType != hop.SubType) {
 			continue
 		}
 		if row.EdgeType != "" && row.EdgeType != edgeType {

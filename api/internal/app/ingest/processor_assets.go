@@ -632,8 +632,7 @@ func (p *AssetProcessor) processBatch(
 			switch coreType {
 			case asset.AssetTypeRepository:
 				result, corrErr = p.correlator.CorrelateRepository(ctx, tenantID, normalizedName, "")
-			case asset.AssetTypeCloudAccount, asset.AssetTypeIdentity,
-				asset.AssetTypeIAMUser, asset.AssetTypeIAMRole, asset.AssetTypeServiceAccount:
+			case asset.AssetTypeCloudAccount, asset.AssetTypeIdentity:
 				// Try external_id from properties (account_id, arn, etc.)
 				props := p.buildPropertiesFromCTIS(ctisAsset)
 				externalID := ""
@@ -1853,10 +1852,11 @@ func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset)
 // normalisation (normalizeHostIPProperties) moves the legacy `ip` string into
 // `ip_addresses` and deletes `ip`, so reading `ip` alone never saw a host's IP.
 func inferAssetExposure(a *asset.Asset) asset.Exposure {
-	switch a.Type() {
-	case asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeCertificate,
-		asset.AssetTypeWebsite, asset.AssetTypeAPI:
-		return asset.ExposurePublic
+	// Internet-facing by nature, declared in the registry (exposure_default):
+	// it used to compare against website/api, which ingest never stores, so
+	// web applications and APIs were never marked public (RFC-042 §6.3.8).
+	if e := asset.DefaultExposure(a.Type(), a.SubType()); e != asset.ExposureUnknown {
+		return e
 	}
 	for _, ip := range ExtractAllIPs(a.Properties(), a.Name()) {
 		if isPublicIP(ip) {
