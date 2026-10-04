@@ -13,6 +13,7 @@ asset_merge_log
 asset_relationships
 asset_services
 asset_state_history
+asset_type_reclassifications
 assets
 assignment_rules
 attachments
@@ -49,6 +50,7 @@ finding_branch_occurrences
 finding_comments
 finding_fingerprints
 finding_group_assignments
+finding_rekey_runs
 finding_remediation_keys
 finding_retest_cursors
 finding_retests
