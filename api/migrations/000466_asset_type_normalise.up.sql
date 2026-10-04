@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 000458: normalise stored asset types to the registry
+-- Migration 000466: normalise stored asset types to the registry
 -- =============================================================================
 -- RFC-042 §6.3.8.1 (docs/rfcs/RFC-042-asset-inventory-v2.md), PR T3. Only
 -- core types are stored: every writer resolves its input since 000400, but
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS asset_type_legacy_codes (
     to_sub_type VARCHAR(50)
 );
 
-COMMENT ON TABLE asset_type_legacy_codes IS 'RFC-042 §6.3.8: what each legacy asset_types code was normalised to by 000458';
+COMMENT ON TABLE asset_type_legacy_codes IS 'RFC-042 §6.3.8: what each legacy asset_types code was normalised to by 000466';
 
 INSERT INTO asset_type_legacy_codes (code, to_type, to_sub_type) VALUES
     ('ip',                  'ip_address',   NULL),
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS asset_type_reclassifications (
 CREATE INDEX IF NOT EXISTS idx_asset_type_reclassifications_migration
     ON asset_type_reclassifications (migration, asset_id);
 
-COMMENT ON TABLE asset_type_reclassifications IS 'RFC-042 §6.3.8: ledger of the asset type normalisation (000458); added = the properties it set, which the down migration removes when unchanged';
+COMMENT ON TABLE asset_type_reclassifications IS 'RFC-042 §6.3.8: ledger of the asset type normalisation (000466); added = the properties it set, which the down migration removes when unchanged';
 
 CREATE TABLE IF NOT EXISTS asset_types_legacy_removed (
     code       VARCHAR(50) PRIMARY KEY,
@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS asset_types_legacy_removed (
     removed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE asset_types_legacy_removed IS 'RFC-042 §6.3.8: legacy asset_types rows removed by 000458, restored by its down migration';
+COMMENT ON TABLE asset_types_legacy_removed IS 'RFC-042 §6.3.8: legacy asset_types rows removed by 000466, restored by its down migration';
 
 CREATE OR REPLACE FUNCTION asset_type_normalise_batch(p_after UUID, p_batch INT,
                                                       OUT last_id UUID, OUT moved INT)
@@ -219,7 +219,7 @@ BEGIN
         INSERT INTO asset_type_reclassifications
             (migration, tenant_id, asset_id, rule, old_type, old_sub_type, old_provider,
              new_type, new_sub_type, new_provider, added)
-        VALUES (458, r.tenant_id, r.id, rule, r.asset_type, r.sub_type, r.provider,
+        VALUES (466, r.tenant_id, r.id, rule, r.asset_type, r.sub_type, r.provider,
                 new_type, new_sub, new_provider, added);
 
         label_old := r.asset_type || COALESCE('/' || r.sub_type, '');
@@ -228,7 +228,7 @@ BEGIN
             (tenant_id, asset_id, change_type, field, old_value, new_value, reason, source, metadata)
         VALUES (r.tenant_id, r.id, 'reclassified', 'asset_type', label_old, label_new,
                 'Asset type normalised to the asset type registry (RFC-042 §6.3.8)', 'system',
-                jsonb_build_object('migration', 458, 'rule', rule));
+                jsonb_build_object('migration', 466, 'rule', rule));
 
         moved := moved + 1;
     END LOOP;
@@ -248,7 +248,7 @@ BEGIN
         GROUP BY 1, 2
         ORDER BY 1, 2
     LOOP
-        RAISE NOTICE '000458: moving % asset row(s) stored as % / %', r.n, quote_literal(r.asset_type), quote_literal(r.sub_type);
+        RAISE NOTICE '000466: moving % asset row(s) stored as % / %', r.n, quote_literal(r.asset_type), quote_literal(r.sub_type);
     END LOOP;
 END $$;
 
@@ -265,14 +265,14 @@ BEGIN
         total := total + b.moved;
         cursor_id := b.last_id;
     END LOOP;
-    RAISE NOTICE '000458: % asset row(s) normalised', total;
+    RAISE NOTICE '000466: % asset row(s) normalised', total;
 END $$;
 ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;
 
 -- Applications that now share a host within a tenant: queued for review,
 -- never merged here. Only groups that contain a moved asset.
 WITH moved AS (
-    SELECT DISTINCT tenant_id, asset_id FROM asset_type_reclassifications WHERE migration = 458
+    SELECT DISTINCT tenant_id, asset_id FROM asset_type_reclassifications WHERE migration = 466
 ), cand AS (
     SELECT a.id, a.tenant_id, a.name, a.created_at, (m.asset_id IS NOT NULL) AS was_moved,
            lower(rtrim(split_part(split_part(split_part(
@@ -295,7 +295,7 @@ INSERT INTO asset_dedup_review
     (tenant_id, normalized_name, asset_type, keep_asset_id, keep_asset_name,
      merge_asset_ids, merge_asset_names, reason, evidence)
 SELECT tenant_id, host, 'application', ids[1], names[1], ids[2:], names[2:],
-       'type_consolidation', jsonb_build_object('migration', 458, 'rule', 'same host after type normalisation')
+       'type_consolidation', jsonb_build_object('migration', 466, 'rule', 'same host after type normalisation')
 FROM groups
 ON CONFLICT (tenant_id, keep_asset_id) WHERE status = 'pending' DO NOTHING;
 
