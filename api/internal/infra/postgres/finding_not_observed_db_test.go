@@ -12,7 +12,7 @@ import (
 
 // not_observed (research 18, owner decision O2): feature-branch expiry marks a
 // finding not_observed (stale, not fixed), a sighting reopens it, migration
-// 000505 relabels only rows whose provenance is certain, and the status CHECK
+// 000640 relabels only rows whose provenance is certain, and the status CHECK
 // refuses unknown values.
 
 func insertBranchFinding(ctx context.Context, t *testing.T, q interface {
@@ -103,13 +103,13 @@ func TestExpireFeatureBranchFindings_MarksNotObservedAndASightingReopens(t *test
 	}
 }
 
-// Migration 000505 relabels resolved/branch_expired rows (the only writer of
+// Migration 000640 relabels resolved/branch_expired rows (the only writer of
 // that value) and nothing else, does not mark them regressions, and adds a
 // status CHECK. Replayed inside a rolled-back transaction.
 func TestNotObservedMigration_RelabelsOnlyBranchExpiry(t *testing.T) {
 	ctx := context.Background()
 	db := openGroupsDB(t)
-	up, err := os.ReadFile("../../../migrations/000505_finding_status_not_observed.up.sql")
+	up, err := os.ReadFile("../../../migrations/000640_finding_status_not_observed.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

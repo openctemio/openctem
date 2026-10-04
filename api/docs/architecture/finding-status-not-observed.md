@@ -30,7 +30,7 @@ stale, **not fixed**.
 
 ## Storage
 
-- Migration 000505 adds the `chk_findings_status` CHECK constraint. It names
+- Migration 000640 adds the `chk_findings_status` CHECK constraint. It names
   every status the API knows (plus the legacy `open`); before it, `findings.status` had no constraint.
 - The migration moves rows closed by branch expiry (`status = 'resolved'`,
   `resolution = 'branch_expired'`) to `not_observed`, and clears `resolved_at`.
