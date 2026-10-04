@@ -18,8 +18,8 @@ Systematic per-page UI/UX audit + redesign of the OpenCTEM dashboard. **183 rout
 
 | Route                        | Audit | Redesign | PR  | QA  | Notes                                                                                                                                                                   |
 | ---------------------------- | :---: | :------: | :-: | :-: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/asset-groups`              |  🔎   |    ☐     |     |  ☐  | Good DataTable; but every group Assets=0 & Total Assets=0 while groups have findings/risk — asset-count join not populated.                                             |
-| `/asset-groups/[id]`         |   ☐   |    ☐     |     |  ☐  |                                                                                                                                                                         |
+| `/assets/groups`              |  🔎   |    ☐     |     |  ☐  | Good DataTable; but every group Assets=0 & Total Assets=0 while groups have findings/risk — asset-count join not populated.                                             |
+| `/assets/groups/[id]`         |   ☐   |    ☐     |     |  ☐  |                                                                                                                                                                         |
 | `/attack-surface`            |  ✅   |    ➖    |     |  ☐  | Clean overview (4 stats + breakdown). Seed data reads placeholder; subtitle "external" but mixes internal — wording drift.                                              |
 | `/attack-surface/cloud`      |  🔎   |    ☐     |     |  ☐  | Data bug: gcp-named row shows AWS badge + GCP/Azure distribution=0; region "unknown"; risk "Critical 1" contradicts "Clean 100% / Findings 0".                          |
 | `/attack-surface/external`   |  🔎   |    ☐     |     |  ☐  | 🐛 CRASH — error boundary "Failed to load scope config"; console: Element type is invalid (undefined import in shared scope component). HIGH priority.                  |
@@ -31,7 +31,7 @@ Systematic per-page UI/UX audit + redesign of the OpenCTEM dashboard. **183 rout
 | `/compliance`                |  🔎   |    ☐     |     |  ☐  | Module-gate correct BUT still fires query → 2×403 + 2 stacked red permission toasts on the gate; gate should short-circuit fetch. Gated pages also drop top header bar. |
 | `/crown-jewels`              |  ✅   |    ➖    |     |  ☐  | Full-featured (risk/impact bars, exposure). Nits: ugly seed asset id; "None" vs "0" label inconsistency.                                                                |
 | `/cycles`                    |  ✅   |    ➖    |     |  ☐  | Correct module-gate "Feature Not Available (ctem_cycles)" — intentional, not a stub.                                                                                    |
-| `/relationships/suggestions` |  ✅   |    ➖    |     |  ☐  | Useful (suggestions w/ confidence %, Approve/Reject, Approve-All). Nit: Reason truncated, no tooltip; example.com seed.                                                 |
+| `/assets/suggestions` |  ✅   |    ➖    |     |  ☐  | Useful (suggestions w/ confidence %, Approve/Reject, Approve-All). Nit: Reason truncated, no tooltip; example.com seed.                                                 |
 | `/scope-config`              |  ✅   |    ➖    |     |  ☐  | Strong (tabs, donut, status bar). Nits: donut ~18 tiny slices (top-N+other); unexplained red "Scope Status 11.48%".                                                     |
 
 ## Discovery (61)

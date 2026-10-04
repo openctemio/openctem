@@ -496,6 +496,7 @@ func TestExposureService_CreateExposure_AllEventTypes(t *testing.T) {
 		"credential_leaked", "sensitive_data_exposed", "misconfiguration",
 		"dns_change", "ssl_issue", "header_missing",
 		"identity_mfa_gap", "identity_stale_principal", "identity_overprivileged",
+		"dangling_cname", "dangling_ns", "email_security_weak",
 		"custom",
 	}
 

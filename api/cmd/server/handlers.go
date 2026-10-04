@@ -128,6 +128,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
+	// Continuous retest (RFC-039): a retest check's evidence is recorded
+	// advisory-only and its retest settled when the sensor completes or fails it.
+	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
 	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
 	// Ingest handler — opt into async mode (RFC-005) when configured. Default
@@ -263,8 +266,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
 
 		// CTEM Discovery - Network Services, State History & Relationships
-		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
-		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
+		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
@@ -278,6 +281,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RemediationGroup:          handler.NewRemediationGroupHandler(svc.RemediationGroup),
 		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:            findingActionsHandler,
+		FindingRetest:             handler.NewFindingRetestHandler(svc.Retest, log),
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
 		GitHubWebhook:             githubWebhookHandler,
@@ -424,7 +428,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
 		// Asset Dedup Review (RFC-001)
-		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
+		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log).SetDataScope(svc.DataScope),
 
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),

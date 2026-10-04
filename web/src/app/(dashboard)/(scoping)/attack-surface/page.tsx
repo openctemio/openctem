@@ -25,7 +25,7 @@ import {
   Lock,
   History,
 } from 'lucide-react'
-import { useAttackSurfaceStats } from '@/features/attack-surface'
+import { EASMOverview, useAttackSurfaceStats } from '@/features/attack-surface'
 import { newInWindow } from '@/features/attack-surface/lib/trend'
 import { formatDistanceToNow } from 'date-fns'
 import type { LucideIcon } from 'lucide-react'
@@ -168,6 +168,8 @@ export default function AttackSurfacePage() {
           </>
         )}
       </div>
+
+      <EASMOverview />
 
       <div className="mt-5 grid gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-1">

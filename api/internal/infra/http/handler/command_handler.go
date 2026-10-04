@@ -60,6 +60,8 @@ type CommandHandler struct {
 	audit            *app.AuditService
 	pipelineService  *pipelinesvc.Service
 	validationIngest validationEvidenceIngester
+	retestEvidence   retestEvidenceRecorder
+	retestSettler    retestSettler
 	simFinalizer     simulationRunFinalizer
 	coverage         commandCoverageEvaluator
 	validator        *validator.Validator
@@ -98,6 +100,27 @@ func (h *CommandHandler) SetPipelineService(svc *pipelinesvc.Service) {
 // completed validate command's result into finding evidence.
 func (h *CommandHandler) SetValidationIngest(svc validationEvidenceIngester) {
 	h.validationIngest = svc
+}
+
+// retestEvidenceRecorder records a retest check's evidence on the finding
+// without applying it (validation.EvidenceIngestService.IngestAdvisory): a
+// retest's two checks are interpreted together by the retest service, never one
+// by one by the validation verdict rule (RFC-039 §6.2).
+type retestEvidenceRecorder interface {
+	IngestAdvisory(ctx context.Context, tenantID, findingID shared.ID, simRunID *shared.ID, ev validation.Evidence) (validation.IngestResult, error)
+}
+
+// retestSettler settles a pending retest when one of its commands finishes.
+type retestSettler interface {
+	OnCommandFinished(ctx context.Context, tenantID, commandID shared.ID)
+}
+
+// SetRetestHooks wires continuous retest (RFC-039) into command completion:
+// a validate command that carries a retest_id has its evidence recorded
+// advisory-only and its retest settled (on complete and on fail).
+func (h *CommandHandler) SetRetestHooks(evidence retestEvidenceRecorder, settler retestSettler) {
+	h.retestEvidence = evidence
+	h.retestSettler = settler
 }
 
 // SetSimulationFinalizer wires the simulation-run finalizer used to complete a
@@ -781,9 +804,11 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 	}
 	if verdict.Outcome == "" {
 		// No outcome reported — nothing to reconcile (the run failed to produce
-		// a verdict). Leave the finding untouched.
+		// a verdict). Leave the finding untouched. A retest still settles (its
+		// check counts as a missing result, so the retest ends unknown).
 		h.logger.Warn("validate command completed without an outcome",
 			"command_id", cmd.ID.String(), "finding_id", payload.FindingID)
+		h.triggerRetestSettle(cmd)
 		return
 	}
 
@@ -835,6 +860,27 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 		}
 	}
 
+	// A retest check (RFC-039): record the evidence without applying it, then
+	// let the retest service settle the retest once both of its checks are in.
+	if payload.RetestID != "" {
+		if h.retestEvidence == nil || h.retestSettler == nil {
+			h.logger.Warn("retest command completed but retest hooks are not wired",
+				"command_id", cmd.ID.String(), "retest_id", payload.RetestID)
+			return
+		}
+		commandID := cmd.ID
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, err := h.retestEvidence.IngestAdvisory(bgCtx, tenantID, findingID, nil, ev); err != nil {
+				h.logger.Warn("failed to record retest evidence", "command_id", commandID.String(),
+					"finding_id", payload.FindingID, "error", logger.SanitizeError(err))
+			}
+			h.retestSettler.OnCommandFinished(bgCtx, tenantID, commandID)
+		}()
+		return
+	}
+
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -845,6 +891,26 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 				"error", logger.SanitizeError(err),
 			)
 		}
+	}()
+}
+
+// triggerRetestSettle hands a finished validate command that belongs to a
+// retest to the retest service, which settles the retest once both of its
+// checks have ended. Asynchronous and best-effort: the scheduler's sweep settles
+// anything this misses.
+func (h *CommandHandler) triggerRetestSettle(cmd *commanddom.Command) {
+	if h.retestSettler == nil || cmd == nil || cmd.Type != commanddom.CommandTypeValidate {
+		return
+	}
+	var payload validation.ValidateCommandPayload
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || payload.RetestID == "" {
+		return
+	}
+	tenantID, commandID := cmd.TenantID, cmd.ID
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		h.retestSettler.OnCommandFinished(bgCtx, tenantID, commandID)
 	}()
 }
 
@@ -980,6 +1046,9 @@ func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 
 	// Trigger pipeline failure if this command is part of a pipeline
 	h.triggerPipelineFailed(r.Context(), cmd, req.ErrorMessage)
+
+	// A failed retest check settles its retest as unknown (RFC-039).
+	h.triggerRetestSettle(cmd)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))

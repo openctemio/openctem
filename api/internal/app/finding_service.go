@@ -68,14 +68,11 @@ type (
 	RejectApprovalInput           = finding.RejectApprovalInput
 	RejectByFilterInput           = finding.RejectByFilterInput
 	RequestApprovalInput          = finding.RequestApprovalInput
-	RequestVerificationScanInput  = finding.RequestVerificationScanInput
-	RequestVerificationScanResult = finding.RequestVerificationScanResult
 	TenantLister                  = finding.TenantLister
 	UpdateCommentInput            = finding.UpdateCommentInput
 	UpdateFindingStatusInput      = finding.UpdateFindingStatusInput
 	UpdateRemediationInput        = finding.UpdateRemediationInput
 	UpdateVulnerabilityInput      = finding.UpdateVulnerabilityInput
-	VerificationScanTrigger       = finding.VerificationScanTrigger
 	VerifyByFilterInput           = finding.VerifyByFilterInput
 )
 

@@ -2,6 +2,9 @@
 
 > Status: **Accepted** (2026-10-03; owner decisions D1–D21 approved as
 > recommended, §12). Implementation starts with the P0 slices in §9.1.
+> **Amended 2026-10-03 by §6.3.8 (type model hardening)**: aliases are
+> input-only, sub-types are closed lists, owner decisions O1–O6 and the
+> ordered plan T0–T8.
 > Scope: api (data model, query compiler, facets, groups, policy engine,
 > target gate, screenshots store, rollups) + web (inventory pages; the UI
 > design is in a companion document) + sensor (screenshot capture, HTTP/TLS
@@ -328,7 +331,7 @@ named.
 - **Scope and assignment rules key on `assets.tags`**
   (`000074` `group_asset_scope_rules`; `000044:108` `assignment_rules`).
   Custom labels must stay in `assets.tags`, or both engines break.
-- **Open PRs reserve migrations 000273–000281.** This RFC uses names, not
+- **Open PRs reserve migrations 000273–000327.** This RFC uses names, not
   numbers; numbers are assigned when each phase is implemented.
 
 ## 4. What PD does, and where it falls short
@@ -790,11 +793,22 @@ Every lens keeps the same machinery:
 keep working through 308 redirects, following the
 `web/src/config/legacy-routes.ts` pattern.
 
+**Reserved `/assets/*` page segments.** These static pages sit next to
+`/assets/[id]` and are not lenses: `all`, `changes`, `duplicates`,
+`groups` (asset groups, static and dynamic, §6.12), `services` and
+`suggestions` (relationship suggestions). No lens, class or type id may
+take one of these names; `cmd/gen-asset-types` rejects the registry if
+one does. The Assets tabs (§6.19) all live in the web under `/assets`
+(`/assets/groups`, `/assets/changes`, `/assets/suggestions`), because a
+URL mirrors its place in the nav. The APIs keep their top-level
+resources, `/api/v1/asset-groups` and `/api/v1/relationships` (RFC-041;
+`/api/v1/assets/groups` would collide with `/assets/{asset_id}`).
+
 #### 6.3.7 How existing things map in (nothing breaks)
 
 | Existing | v2 |
 |---|---|
-| 37 types, `sub_type`, `TypeAliases` (`value_objects.go:88-113`) | Unchanged; the registry lists them with their sub-types and aliases |
+| 37 types, `sub_type`, `TypeAliases` (`value_objects.go:88-113`) | The registry lists them with their sub-types and aliases. **Amended by §6.3.8:** aliases are input names only and are never stored; sub-types are a closed list per type |
 | Owner decision: type / group / tag are all needed | Kept. Type = registry; group = static and dynamic groups (§6.12); tag = custom labels (§6.7) |
 | Owner decision: effective criticality = MAX(asset, BU, service), used by risk score and priority | Unchanged, exposed as the core field `effective_criticality`; policies set only the asset's own value |
 | `asset_types` / `asset_type_categories` tables | `asset_types.class` added and seeded from the YAML; categories table retired after one release |
@@ -802,6 +816,158 @@ keep working through 308 redirects, following the
 | 25 per-type `config.tsx` pages | Folded into registry entries one class at a time; custom cells become named renderers; URLs redirect to lenses |
 | `relationship-types.yaml` virtual types | Resolved to real types by codegen; constraints enforced on the server |
 | Type compatibility filter in `trigger.go` | `scannable_by` from the registry |
+
+#### 6.3.8 Type model hardening (amendment, 2026-10-03)
+
+> Status: **Accepted.** The owner approved O1–O6 as recommended on
+> 2026-10-03. The evidence is the asset-types review of the same date
+> (research 13: necessity, completeness, quality and best practice of the
+> asset types, with every HIGH finding re-read in code). This section
+> records the rules, the decisions and the ordered PR plan T0–T8.
+> Implementation status is kept in the table in "The plan" below.
+
+**Why.** The set of classes and core types is about right: 16 classes and
+17 core types, where Tenable Exposure Management has 13 classes, Axonius 8
+fixed categories and JupiterOne about 50 `_class`es. What is wrong is that
+the registry is **not yet the source of truth**:
+
+- **Alias types are stored.** `ParseAssetType` accepts all 38 names, so
+  `POST /assets`, CSV import and the seeds store `website`, `api`,
+  `kubernetes_cluster` and the like verbatim. Only ingest resolves aliases.
+- **Type-aware features compare against names that are never stored**,
+  so they silently do nothing (the "silently inert" class):
+  - exposure inference never marks websites and APIs public;
+  - 30 of 98 threat-model applicability rows are keyed by alias names;
+  - the asset-group `website_count` and `credential_count` are always 0;
+  - the scanner/target mappings know only alias names for url, kubernetes,
+    mobile and api, so every `application` is reported as skipped by ZAP
+    and the nuclei url target; the filter is advisory, so the UI reports
+    skips that never happen;
+  - relationship constraints resolve to alias names, which breaks the
+    Add-relationship dialog for `application`, `identity`, `kubernetes`,
+    `certificate` and `endpoint` assets.
+- **Sub-types are free text** with three meanings mixed: kind (`cluster`,
+  `iam_role`), vendor (`aws`, `github`) and engine (`postgresql`). Nothing
+  validates them, and the typed web pages never send one, so an asset
+  created on the Websites page disappears from that page.
+- **The registry's identity keys and attribute schemas are read by no
+  code.** Identity families and scanner compatibility are hard-coded.
+- **14 legacy `asset_types` rows** (`ip`, `ip_range`, `port`,
+  `code_artifact`, `container_image`, `cloud_resource`,
+  `serverless_function`, `user_account`, `credential`, `ssl_certificate`,
+  `iot_device`, `hardware`, `other`, `server`) are not in the registry but
+  are still valid foreign-key targets and are offered by the web.
+
+##### Rules
+
+These follow from D18/D19 and the evidence; they need no further
+decision.
+
+| # | Rule | How it is enforced |
+|---|---|---|
+| R1 | **Aliases are input names only.** An alias (`website`, `iam_user`, `s3_bucket` …) is accepted on every write path and resolved to (core type, sub_type) at the boundary. Only core types are stored. Feature code never compares against an alias | Generated `ResolveInputType` on every writer; the entity refuses a non-core type; `CHECK (asset_type IN (<core>))` on `assets` after the data cleanup (T3); a test fails on alias names in feature code |
+| R2 | **Sub-type = kind, from a closed list per core type.** A vendor goes to `assets.provider` or the `provider` attribute, an engine or OS to an attribute. Legacy sub-type values are accepted on input and mapped (`postgresql` → `relational` + `engine: postgresql`, `aws` → no sub-type + `provider: aws`) | `sub_types` + `sub_type_inputs` in the YAML; REST, CSV and bulk reject an unknown sub-type with a validation error; ingest keeps it in `properties.x_native_sub_type` with a warning, so a sensor is never refused for it |
+| R3 | **Every class is reachable through a core type of its own**, and an alias resolves within its own class | Generator check (from T4a, when `function`, `artifact_registry` and `web_endpoint` become core types) |
+| R4 | **No type without a producer.** A type or sub-type enters the registry when a parser, connector or committed RFC produces it. Everything else is an attribute, a relationship, an `asset_components` row or a separate entity | Review rule for registry PRs |
+| R5 | **Behaviour is declared, not coded:** `scannable_by`, `exposure_default`, identity family, hardware identifiers, relationship constraints | Generated from the YAML; read by ingest, the scan target gate and the relationship service |
+| R6 | **The registry is the only list of types.** Go, TypeScript, SQL seeds and option lists are generated or read from it | `make asset-types-check` (CI "Asset Types Drift") |
+
+`scannable_by` names **target types**, the vocabulary of a tool's
+`supported_targets` (`url`, `domain`, `ip`, `host`, `repository`, …), not
+tool names as the §6.3.3 example shows. Tools are tenant-addable, and a
+custom tool declares target types, never a list of asset types.
+
+##### Owner decisions (approved 2026-10-03)
+
+| # | Question | Decision |
+|---|---|---|
+| **O1** | Should `subdomain` stay a stored type? | **No.** It is stored as `(domain, subdomain)`; apex vs subdomain is derived from the public suffix list at write time; `subdomain` stays an input alias, so sensors and CTIS do not change |
+| **O2** | `network`: one type or two? | **One `network` type** with a closed sub-type list in two families, segments (`vpc`, `subnet`, `ip_block`, `vlan`, `security_group`) and devices (`firewall`, `router`, `switch`, `load_balancer`, `vpn_gateway`, `wireless_controller`, `access_point`, `ids_ips`), and per-sub-type identity flags (hardware identifiers only for devices). A `network_device` type is revisited when an OT or network-device connector lands |
+| **O3** | The canonical web sub-type | **`website`** is the stored code, labelled "Web application". `web_application` becomes an input alias of `(application, website)` |
+| **O4** | Secrets as assets | **A `secret` type** holding the per-tenant HMAC (#849) + metadata + locations, never the value; read gated by `findings:read` + data scope; never exported. P2 |
+| **O5** | AI assets | **One core type `ai`** (`model`, `agent`, `mcp_server`) in a new class `ai`, shown in the Applications lens, **only once a producer exists** (exposed MCP/Ollama detection or a cloud AI connector). Vector stores are `database/vector` either way |
+| **O6** | Scanner/asset type compatibility | **Enforcing**, generated from the registry's `scannable_by`, **after T2** (T2 gives it correct (type, sub_type) keys; enforcing earlier would block every `application` from url scanners). Dispatch refuses an incompatible tool/type pair with a clear reason; an asset whose compatibility cannot be decided (unclassified, or a tool target type the registry does not know) is dispatched, so the check never blocks a valid scan |
+
+##### Closed sub-type vocabulary (T1)
+
+| Core type | Sub-types (kinds) | Legacy inputs accepted and mapped |
+|---|---|---|
+| `service` | `http`, `open_port`, `discovered_url` | `port` → `open_port` |
+| `application` | `website`, `web_application`, `api`, `mobile_app` | — (`api_collection` removed: no producer) |
+| `host` | `compute`, `serverless` | `server` → none; `linux`/`windows`/`macos`/`bsd` → none + `os_family`; `kubernetes_cluster` → `kubernetes/cluster` |
+| `cloud_account` | `account`, `project`, `subscription`, `organization` | `aws`/`gcp`/`azure`/`digitalocean` → none + provider |
+| `container` | `image` | Kubernetes workload kinds (`deployment`, `statefulset`, …) → `kubernetes/workload` + `workload_kind` |
+| `kubernetes` | `cluster`, `namespace`, `workload` | — |
+| `repository` | none | `github`/`gitlab`/`bitbucket`/`azure_devops` → none + provider |
+| `identity` | `iam_user`, `iam_role`, `service_account`, `identity_provider` | — (`credential` removed: a secret, O4) |
+| `database` | `relational`, `document`, `key_value`, `graph`, `warehouse`, `vector` | engines (`postgresql`, `mysql`, `mongodb`, `redis`, …) → kind + `engine`; `data_store` → none |
+| `storage` | `bucket`, `file_share`, `disk`, `container_registry` | `s3_bucket`, `s3` → `bucket` + provider `aws` |
+| `network` | the O2 list | `wireless_ap` → `access_point`; `ids`, `ips` → `ids_ips`; `core_switch`, `access_switch` → `switch` |
+| `ip_address`, `certificate` | none | `ip`, `ssl`, `tls` → none |
+| `domain`, `subdomain`, `endpoint`, `unclassified` | none (O1 adds `domain/subdomain` in T4a) | — |
+
+`container_registry`, `serverless` and `discovered_url` stay sub-types
+until T4a gives their classes core types of their own.
+
+##### The plan (ordered PRs to `develop`)
+
+Every PR carries tests; data-access changes get two-tenant tests, and
+migrations are run up, down and up on a scratch Postgres 17 with seeded
+legacy data (never on live).
+
+| PR | Scope | Contents | Status |
+|---|---|---|---|
+| **T0** | docs | This section, the rfcs README row, `architecture/asset-inventory-v2.md`, `development/asset-type-registry.md` | this PR |
+| **T1** Close the writers | api + web | `ResolveInputType` / `StoredAssetTypes` / closed sub-types generated from the YAML; `POST`/`PATCH /assets`, CSV import, the Nessus and Kubernetes importers, ingest, connectors and seeds resolve aliases and validate the sub-type; fix the `properties.type` override (a non-alias value overwrote the type); typed web pages send `sub_type`; the CTIS mapper reads `properties.kind` for `kubernetes` | planned |
+| **T2** Re-key consumers | api + web | Exposure inference from the registry's `exposure_default`; asset-group counters by class; scan coverage by (type, sub_type); threat-model applicability keyed by (type, sub_type) with a migration rewriting the alias rows; relationship constraints resolved to (core, sub_type) and enforced for human writes; scanner compatibility from `scannable_by` (advisory); assignment-rule type conditions resolved through the registry; web option lists from the registry; a test that fails on alias names in feature code. Each fix has a probe test that fails on `develop` before it | planned |
+| **T3** Normalise data | api migration | §6.3.8.1. Stored aliases → (core, sub_type); undeclared sub-types → the closed list or attributes; delete the 14 legacy `asset_types` rows; drop the unread `asset_types.module_id`; `CHECK` on `assets.asset_type` | planned |
+| **O6** Enforce compatibility | api | Dispatch skips group members whose (type, sub_type) the scanner's target types cannot scan, with a reason per type; tested against every registry type | planned (after T2) |
+| **T4a** Boundary fixes | api + registry + migration | `endpoint` → `(host, workstation)`; core types `function`, `artifact_registry`, `web_endpoint`; network identity flags (O2); `web_application` → `(application, website)` (O3); `subdomain` → `(domain, subdomain)` with the PSL-derived sub-type (O1) | next |
+| **T4b** `container_image` | api + registry + sensor + ctis/sdk-go | New core type and class `image`; trivy `container_image` → `container_image`; move `container/image` rows; identity = digest; `built_from`/`deployed_to` edges | next |
+| **T5** Executable registry | api | Attribute validation and `x_*` quarantine on every write (warn-only on ingest for one release); identity family / hardware flags / `attr.*` keys read by the correlator (RFC-043 P3 #18); per-type `schema_version`; `x_native_type` kept on `unclassified` | next |
+| **T6** Web from the registry | web | Delete the hand-written type maps, alias branches and slug maps; the asset-group add dialog reads the registry | with RFC-042 slice 6 |
+| **T7** Interop | api + ctis | `ocsf` / `cyclonedx` fields per type; OCSF inventory export; CTIS enum parity test | after T5 |
+| **T8** Gaps, each gated on a producer | api + sensor + connectors | `identity` `user`/`group`/`oauth_app` (Entra/Okta connector); `network/ip_block` producers; `domain` email-posture attributes; then O4 `secret`, O5 `ai`, `saas_tenant`, IoT/OT | after T5 |
+
+Order: T1 → T2 → T3 → (O6) → T4a/T4b → T5; T6 follows slice 6; T7 and
+T8 run in parallel after T5. The research-12 isolation fixes (S0) land
+first; T1 touches the same `POST /assets` path.
+
+###### 6.3.8.1 The normalisation migration (T3, reused by T4a)
+
+1. **Ledger.** `asset_type_reclassifications` records, per moved asset
+   and migration, the old (type, sub_type, provider) and the exact
+   property keys it added. It is written in the same statement as each
+   update (`WITH moved AS (UPDATE … RETURNING …) INSERT …`). The down
+   migration replays it in reverse for its own migration only, so it
+   restores exactly even after later edits to other fields.
+2. **Mapping from the YAML.** The generated block seeds
+   `asset_type_input_map` (old type, old sub-type → new type, new
+   sub-type, provider, attributes) and each type's closed `sub_types`
+   into `asset_types`. Nothing is hand-mapped in SQL. An attribute that
+   already has a value is never overwritten; an undeclared sub-type with
+   no mapping moves to `properties.x_native_sub_type`.
+3. **Batches** of 5,000 by id, idempotent and re-runnable; only rows
+   whose (type, sub_type) need a change are touched; `updated_at` is not
+   bumped; the class/lens trigger re-derives in the same update.
+4. **Names are not touched**, so the unique `(tenant_id, name)` key
+   cannot collide, and identifiers, findings, relationships, groups,
+   owners and history keep the same `asset_id`.
+5. **Dedup-aware, not dedup-acting.** Pairs that are now the same class
+   in one tenant with the same host but different names (for example
+   `https://app.x.com` and `app.x.com`) go to the RFC-043 review queue
+   with reason `type_consolidation`. Nothing merges automatically.
+6. **History.** One `reclassified` state-history row per moved asset
+   (field `asset_type`, old → new).
+7. **Legacy rows.** The 14 legacy `asset_types` rows are deleted only
+   when no asset references them (the foreign key is `ON DELETE
+   RESTRICT`, so a stray reference fails loudly); a snapshot table keeps
+   them for the down migration. Alias rows stay (they carry `alias_of`
+   for the classifier) and are marked `is_storable = false`.
+8. **Constraint.** `chk_assets_core_type` is added `NOT VALID`, then
+   validated (SHARE UPDATE EXCLUSIVE; writers keep running).
+9. **Deploy.** `air` does not run migrations: deploy with an explicit
+   migrate step.
 
 ### 6.4 The services table (evolve `asset_services`)
 
@@ -1821,7 +1987,7 @@ Two log tables go with it:
 | `archive` | `state = archived`, `archived_reason = policy:<id>` | per-run cap (T10); reversible from the run page ("restore all from this run") |
 | `mark_out_of_scope` | creates a **pending** scope exclusion for each subject (exact pattern), through the normal approval flow | never self-approves; capped at 50 per run |
 | `set_criticality` | asset's own criticality (effective follows, §3.5) | only raises unless `allow_lower: true` |
-| `set_owner` | `assets.owner_id` and the RACI owner, using api#520's unified path | only when no owner is set, unless `overwrite: true` |
+| `set_owner` | the RACI primary owner in `asset_owners`, the one owner model (`assets.owner_id` was removed in 2026-10, see `architecture/asset-ownership.md`) | only when no owner is set, unless `overwrite: true` |
 | `trigger_scan` | creates a scan over the matched set (`selection = {q: condition AND id in run set}`) through the gate | author holds `scans:execute` at run time; `approved_by` set by a second user with `scans:execute`, otherwise the scan is created `pending_approval`; `max_scans_per_hour`; tenant budget |
 
 There is **no `delete` action** (§2.1).
@@ -2486,7 +2652,7 @@ table must be agreed with RFC-036 P4 (D4). P3 waits for RFC-036 P2.
 
 P0 ships as seven PR slices to `develop`, in order. Each slice merges on
 its own and leaves `develop` working. Migration numbers are taken at
-implementation time, after the ones open PRs reserve (000273–000281).
+implementation time, after the ones open PRs reserve (000273–000327).
 Every slice that adds a table referencing `assets` also updates
 `asset_merge_plan.go`, which the coverage test enforces.
 

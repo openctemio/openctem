@@ -2550,7 +2550,8 @@ func (r *AccessControlRepository) ListAssetOwnersWithNames(ctx context.Context, 
 		       COALESCE(u.name, '') AS user_name,
 		       COALESCE(u.email, '') AS user_email,
 		       COALESCE(g.name, '') AS group_name,
-		       COALESCE(ab.name, '') AS assigned_by_name
+		       COALESCE(ab.name, '') AS assigned_by_name,
+		       COALESCE(ao.assignment_source, 'manual') AS assignment_source
 		FROM asset_owners ao
 		LEFT JOIN users u ON ao.user_id = u.id
 		LEFT JOIN groups g ON ao.group_id = g.id
@@ -2580,10 +2581,11 @@ func (r *AccessControlRepository) ListAssetOwnersWithNames(ctx context.Context, 
 			userEmail      string
 			groupName      string
 			assignedByName string
+			source         string
 		)
 		if err := rows.Scan(&idStr, &assetIDStr, &groupIDStr, &userIDStr, &ownershipType,
 			&assignedAt, &assignedBy,
-			&userName, &userEmail, &groupName, &assignedByName); err != nil {
+			&userName, &userEmail, &groupName, &assignedByName, &source); err != nil {
 			return nil, fmt.Errorf("failed to scan asset owner with names: %w", err)
 		}
 
@@ -2593,11 +2595,12 @@ func (r *AccessControlRepository) ListAssetOwnersWithNames(ctx context.Context, 
 		}
 
 		results = append(results, &accesscontrol.AssetOwnerWithNames{
-			AssetOwner:     ao,
-			UserName:       userName,
-			UserEmail:      userEmail,
-			GroupName:      groupName,
-			AssignedByName: assignedByName,
+			AssetOwner:       ao,
+			UserName:         userName,
+			UserEmail:        userEmail,
+			GroupName:        groupName,
+			AssignedByName:   assignedByName,
+			AssignmentSource: source,
 		})
 	}
 	return results, nil
@@ -2618,6 +2621,7 @@ func (r *AccessControlRepository) GetPrimaryOwnerBrief(ctx context.Context, tena
 		  AND ao.ownership_type = 'primary'
 		  AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $2))
 		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = $2))
+		ORDER BY ao.assigned_at, ao.id
 		LIMIT 1`
 
 	var brief accesscontrol.OwnerBrief
@@ -2659,7 +2663,7 @@ func (r *AccessControlRepository) GetPrimaryOwnersByAssetIDs(ctx context.Context
 		  AND ao.ownership_type = 'primary'
 		  AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $2))
 		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = $2))
-		ORDER BY ao.asset_id, ao.assigned_at ASC`
+		ORDER BY ao.asset_id, ao.assigned_at ASC, ao.id`
 
 	rows, err := r.db.QueryContext(ctx, query, pq.Array(ids), tenantID.String())
 	if err != nil {

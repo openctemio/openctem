@@ -14,8 +14,34 @@ import (
 
 // AdminDedupHandler handles asset dedup review endpoints.
 type AdminDedupHandler struct {
-	repo   *postgres.AssetDedupRepository
-	logger *logger.Logger
+	repo      *postgres.AssetDedupRepository
+	logger    *logger.Logger
+	dataScope DataScopeEnforcer
+}
+
+// SetDataScope wires the Layer 2 data scope: a scoped member sees and acts
+// only on reviews whose assets are all in their scope (a merge deletes
+// assets, so a review that touches one they cannot see is not theirs to
+// approve). Returns h for chaining.
+func (h *AdminDedupHandler) SetDataScope(e DataScopeEnforcer) *AdminDedupHandler {
+	h.dataScope = e
+	return h
+}
+
+// scope resolves the caller's data scope, writing the error response itself.
+func (h *AdminDedupHandler) scope(w http.ResponseWriter, r *http.Request, tenantID string) (*shared.DataScope, bool) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
+		return nil, false
+	}
+	scope, err := resolveDataScope(r.Context(), h.dataScope, tid)
+	if err != nil {
+		h.logger.Error("failed to resolve data scope", "error", err)
+		apierror.InternalServerError("failed to resolve data scope").WriteJSON(w)
+		return nil, false
+	}
+	return scope, true
 }
 
 // NewAdminDedupHandler creates a new AdminDedupHandler.
@@ -30,7 +56,11 @@ func NewAdminDedupHandler(repo *postgres.AssetDedupRepository, log *logger.Logge
 func (h *AdminDedupHandler) ListPending(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	reviews, err := h.repo.ListPendingReviews(r.Context(), tenantID)
+	scope, ok := h.scope(w, r, tenantID)
+	if !ok {
+		return
+	}
+	reviews, err := h.repo.ListPendingReviews(r.Context(), tenantID, scope)
 	if err != nil {
 		h.logger.Error("failed to list dedup reviews", "error", err)
 		apierror.InternalServerError("failed to list reviews").WriteJSON(w)
@@ -50,7 +80,11 @@ func (h *AdminDedupHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	reviewID := r.PathValue("id")
 	userID := middleware.GetUserID(r.Context())
 
-	if err := h.repo.ApproveAndMerge(r.Context(), tenantID, reviewID, userID); err != nil {
+	scope, ok := h.scope(w, r, tenantID)
+	if !ok {
+		return
+	}
+	if err := h.repo.ApproveAndMerge(r.Context(), tenantID, reviewID, userID, scope); err != nil {
 		if writeDedupReviewError(w, err) {
 			return
 		}
@@ -74,7 +108,11 @@ func (h *AdminDedupHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	reviewID := r.PathValue("id")
 	userID := middleware.GetUserID(r.Context())
 
-	if err := h.repo.RejectReview(r.Context(), tenantID, reviewID, userID); err != nil {
+	scope, ok := h.scope(w, r, tenantID)
+	if !ok {
+		return
+	}
+	if err := h.repo.RejectReview(r.Context(), tenantID, reviewID, userID, scope); err != nil {
 		if writeDedupReviewError(w, err) {
 			return
 		}
@@ -107,7 +145,11 @@ func (h *AdminDedupHandler) MergeLog(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	limit := parseQueryInt(r.URL.Query().Get("limit"), 50)
 
-	log, err := h.repo.GetMergeLog(r.Context(), tenantID, limit)
+	scope, ok := h.scope(w, r, tenantID)
+	if !ok {
+		return
+	}
+	log, err := h.repo.GetMergeLog(r.Context(), tenantID, limit, scope)
 	if err != nil {
 		h.logger.Error("failed to get merge log", "error", err)
 		apierror.InternalServerError("failed to get merge log").WriteJSON(w)

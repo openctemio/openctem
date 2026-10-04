@@ -54,7 +54,7 @@ One SQL statement (scalar subqueries over CTEs); no per-row calls.
 | `active_cycle.attacker_profiles` | Rows in `ctem_cycle_attacker_profiles` for the cycle whose profile belongs to the tenant. |
 | `assets.total` | Assets with `status <> 'archived'`. All counts below that mention assets use the same population. |
 | `crown_jewels.total` | Those assets with `is_crown_jewel`. |
-| `crown_jewels.with_owner` | Crown jewels with an owner under either owner model: `assets.owner_id` is set, or an `asset_owners` row names a user who is a member of the tenant or a group of the tenant (the inventory's `has_owner` test). |
+| `crown_jewels.with_owner` | Crown jewels with an `asset_owners` row that names a user who is a member of the tenant or a group of the tenant (the inventory's `has_owner` test; see [asset-ownership.md](asset-ownership.md)). |
 | `business_services.with_assets` | Services with at least one `business_service_assets` row whose asset belongs to the tenant. |
 | `assets.in_business_unit` | Assets with a `business_unit_assets` row for one of the tenant's units. A business unit set on an asset group is not counted (see the group-BU follow-up, C14). |
 | `boundary` | Every `scope_targets` / `scope_exclusions` row, whatever its status (pending and rejected exclusions included): the `total_targets` / `total_exclusions` of `GET /scope/stats`. It counts the boundary as drawn, not what scans apply — only approved, active, unexpired exclusions are applied (see the scope exclusions section of `authorization-matrix.md`). |
