@@ -4,9 +4,9 @@ package safe
 // package-shape with Require* helpers.
 type middlewareShape struct{}
 
-func (middlewareShape) Require(perm any) any         { return nil }
-func (middlewareShape) RequireAny(perms ...any) any  { return nil }
-func (middlewareShape) RequireTeamAdmin() any        { return nil }
+func (middlewareShape) Require(perm any) any          { return nil }
+func (middlewareShape) RequireAny(perms ...any) any   { return nil }
+func (middlewareShape) RequireTeamAdmin() any         { return nil }
 func (middlewareShape) RequireCampaignRole(r any) any { return nil }
 
 var middleware middlewareShape

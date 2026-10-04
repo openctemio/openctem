@@ -12740,31 +12740,66 @@ export interface paths {
     }
     /**
      * List findings
-     * @description Retrieves a paginated list of findings for the current tenant
+     * @description Retrieves a paginated list of findings for the current tenant.
+     *     Filters follow the list query contract (RFC-048): every param is ANDed, a comma list is OR
+     *     within one field, and operators are suffixes (`_not`, `_gte`, `_gt`, `_lte`, `_lt`, `_contains`).
+     *     A bad value or an unsortable field is 400 INVALID_FILTER. Old names (severities, statuses,
+     *     exclude_statuses, sources, priority_classes, finding_ids, cve_ids, finding_types, asset_tags,
+     *     epss_min, search, assigned_to_me) still work and answer with Deprecation and Sunset headers.
      */
     get: {
       parameters: {
         query?: {
-          /** @description Filter by asset ID */
-          asset_id?: string
-          /** @description Filter by branch ID */
-          branch_id?: string
-          /** @description Filter by component ID */
-          component_id?: string
-          /** @description Filter by vulnerability ID */
-          vulnerability_id?: string
-          /** @description Filter by severities (comma-separated) */
-          severities?: string
-          /** @description Filter by statuses (comma-separated) */
-          statuses?: string
-          /** @description Exclude statuses (comma-separated) */
-          exclude_statuses?: string
-          /** @description Filter by sources */
-          sources?: string
-          /** @description Filter by SLA status (comma-separated: on_track,warning,overdue,exceeded,not_applicable) */
-          sla_status?: string
-          /** @description Filter by tool name */
-          tool_name?: string
+          /** @description Finding IDs */
+          id?: string[]
+          /** @description Asset IDs */
+          asset_id?: string[]
+          /** @description Branch IDs the finding occurs on */
+          branch_id?: string[]
+          /** @description Component IDs */
+          component_id?: string[]
+          /** @description Vulnerability IDs */
+          vulnerability_id?: string[]
+          /** @description Severities */
+          severity?: string[]
+          /** @description Statuses */
+          status?: string[]
+          /** @description Statuses to exclude */
+          status_not?: string[]
+          /** @description Sources */
+          source?: string[]
+          /** @description SLA statuses */
+          sla_status?: string[]
+          /** @description CTEM priority classes (P0..P3) */
+          priority_class?: string[]
+          /** @description CVE IDs */
+          cve_id?: string[]
+          /** @description Finding types */
+          finding_type?: string[]
+          /** @description Tags of the finding's asset (any of) */
+          asset_tag?: string[]
+          /** @description In CISA KEV */
+          is_in_kev?: boolean
+          /** @description Reachable */
+          is_reachable?: boolean
+          /** @description Minimum EPSS score */
+          epss_score_gte?: number
+          /** @description Tool names */
+          tool_name?: string[]
+          /** @description Rule IDs */
+          rule_id?: string[]
+          /** @description Scan IDs */
+          scan_id?: string[]
+          /** @description File path contains */
+          file_path?: string
+          /** @description me: assigned to, owned by or group-assigned to the caller */
+          related_to?: string
+          /** @description Created at or after (RFC 3339, YYYY-MM-DD or -P30D) */
+          created_at_gte?: string
+          /** @description Free text over title, description and file path */
+          q?: string
+          /** @description Sort keys, - for descending (default priority_class,severity,-created_at) */
+          sort?: string
           /** @description Page number */
           page?: number
           /** @description Items per page */
@@ -12793,9 +12828,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': {
-              [key: string]: string
-            }
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Unauthorized */
@@ -14132,6 +14165,64 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/groups': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Group findings
+     * @description Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
+     *     (RFC-048), so a grouped view counts exactly the rows the list shows.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type */
+          group_by?: string
+          /** @description Page number */
+          page?: number
+          /** @description Groups per page */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/remediation-groups': {
     parameters: {
       query?: never
@@ -14224,22 +14315,23 @@ export interface paths {
     }
     /**
      * Get finding statistics
-     * @description Returns aggregated statistics for findings. Optional asset_id query
-     *     parameter scopes the stats to a single asset (used by the Findings
-     *     page when filtered by `?assetId=…` so the severity cards match the
-     *     filtered table instead of showing global tenant counts).
-     *     Optional sources query parameter (comma-separated, same values and
-     *     validation as the list endpoint's sources filter) scopes every
-     *     number to those sources; the Exposures type pages use it to get
-     *     their counts in one request instead of walking the list.
+     * @description Aggregated statistics over the findings a filter selects. Takes every filter param of
+     *     GET /findings (RFC-048) and compiles the same WHERE, so the numbers always match the table
+     *     (the old asset_id and sources params are part of that filter).
      */
     get: {
       parameters: {
         query?: {
-          /** @description Restrict stats to a single asset */
-          asset_id?: string
-          /** @description Restrict stats to these finding sources (comma-separated, max 25) */
-          sources?: string
+          /** @description Asset IDs */
+          asset_id?: string[]
+          /** @description Sources */
+          source?: string[]
+          /** @description Severities */
+          severity?: string[]
+          /** @description Statuses */
+          status?: string[]
+          /** @description Free text */
+          q?: string
         }
         header?: never
         path?: never
@@ -14262,9 +14354,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': {
-              [key: string]: string
-            }
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Unauthorized */
@@ -17948,6 +18038,72 @@ export interface paths {
           }
           content: {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/settings/data-scope/impact': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Members who would see nothing after switching to "nothing"
+     * @description Lists the active members who are not owner or admin, hold no role with full data access, and are in no access group and have no grant: they see everything today only because the organization shows everything to members without a team, and would see nothing after the switch. Owners and admins only.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.DataScopeImpactResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -29364,7 +29520,7 @@ export interface paths {
     head?: never
     /**
      * Set the data scope of members without an access group
-     * @description Sets what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything. The change is audited.
+     * @description Switches what members who are in no access group see to nothing. "everything" is being retired: an organization that sees nothing cannot switch back (400). Owners only; owners and admins always see everything. The change is audited.
      */
     patch: {
       parameters: {
@@ -33537,6 +33693,7 @@ export interface components {
       | 'UPSTREAM_ERROR'
       | 'MFA_ENROLLMENT_REQUIRED'
       | 'APPROVAL_REQUIRED'
+      | 'INVALID_FILTER'
     'github_com_openctemio_openctem_api_pkg_apierror.Error': {
       /** @description Machine-readable error code */
       code?: components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Code']
@@ -36043,7 +36200,28 @@ export interface components {
       /** @description Ordered steps from source to sink */
       steps?: components['schemas']['internal_infra_http_handler.DataFlowStepResponse'][]
     }
+    'internal_infra_http_handler.DataScopeImpactMember': {
+      email?: string
+      name?: string
+      role?: string
+      user_id?: string
+    }
+    'internal_infra_http_handler.DataScopeImpactResponse': {
+      members?: components['schemas']['internal_infra_http_handler.DataScopeImpactMember'][]
+      /** @enum {string} */
+      members_without_group_see?: 'everything' | 'nothing'
+      /**
+       * @description TotalCount is the number of members who would see nothing (exact);
+       *     Members lists at most 500 of them.
+       */
+      total_count?: number
+    }
     'internal_infra_http_handler.DataScopePolicyResponse': {
+      /**
+       * @description Deprecated is true while the organization still shows everything: that
+       *     mode is being retired and only the owner can switch it off.
+       */
+      deprecated?: boolean
       /**
        * @description MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
        *     (fail-closed). Owners and admins always see everything.

@@ -23,7 +23,7 @@ import (
 // baselineCeiling is the agreed maximum number of diagnostics. Must
 // never go UP without review. After every Category C migration PR the
 // maintainer drops this number to match the new reality.
-const baselineCeiling = 40
+const baselineCeiling = 30
 
 func TestGetByIDLinter_BaselineNotRegressed(t *testing.T) {
 	if testing.Short() {

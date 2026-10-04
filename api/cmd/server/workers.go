@@ -391,6 +391,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Tenable.sc sensor connector (RFC-047): settle finished connector_sync
+	// commands and queue the next sync of each connector integration when due.
+	if svc.TenableSC != nil && integrationdom.TenableConnectorEnabled {
+		w.ControllerManager.Register(controller.NewTenableSCSyncController(repos.Integration, svc.TenableSC, log))
+	}
+
 	// RFC-013 Phase 2c: periodically pull due DefectDojo integrations so the
 	// co-existence sync is hands-off (nil-safe when the sync service is absent).
 	if svc.DefectDojoSync != nil {

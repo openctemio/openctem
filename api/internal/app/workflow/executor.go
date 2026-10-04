@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -251,6 +252,19 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 	return err
 }
 
+// errRunCanceled stops an execution whose run was canceled.
+var errRunCanceled = errors.New("workflow run canceled")
+
+// runCanceled reports whether run was canceled since the executor loaded it,
+// reading it again by its own tenant. A read error does not stop the run.
+func (e *WorkflowExecutor) runCanceled(ctx context.Context, run *workflowdom.Run) bool {
+	cur, err := e.runRepo.GetByTenantAndID(ctx, run.TenantID, run.ID)
+	if err != nil {
+		return false
+	}
+	return cur.Status == workflowdom.RunStatusCanceled
+}
+
 // ExecutionContext holds the state during workflow execution.
 type ExecutionContext struct {
 	Run               *workflowdom.Run
@@ -343,6 +357,9 @@ func (e *WorkflowExecutor) executeDownstream(ctx context.Context, execCtx *Execu
 			}
 
 			if err := e.executeNode(ctx, execCtx, node); err != nil {
+				if errors.Is(err, errRunCanceled) {
+					return err
+				}
 				e.logger.Error("node execution failed", "node_key", node.NodeKey, "error", err)
 				// Continue with other nodes - don't fail the entire workflow for one node
 				// The node is already marked as failed
@@ -450,13 +467,21 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 	if nodeRun == nil {
 		return fmt.Errorf("node run not found for %s", node.NodeKey)
 	}
+	// A canceled run starts no further step (RFC-046 §8).
+	if e.runCanceled(ctx, execCtx.Run) {
+		return errRunCanceled
+	}
 
 	e.logger.Info("executing node", "node_key", node.NodeKey, "node_type", node.NodeType)
 
-	// Mark as running
+	// Mark as running. A step a cancel already ended is refused here and
+	// never runs.
 	nodeRun.Start()
 	nodeRun.SetInput(e.buildNodeInput(execCtx, node))
 	if err := e.nodeRunRepo.Update(ctx, nodeRun); err != nil {
+		if errors.Is(err, workflowdom.ErrNodeRunAlreadyFinished) {
+			return errRunCanceled
+		}
 		return fmt.Errorf("failed to update node run status: %w", err)
 	}
 
@@ -493,6 +518,11 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 	}
 
 	if err := e.nodeRunRepo.Update(ctx, nodeRun); err != nil {
+		if errors.Is(err, workflowdom.ErrNodeRunAlreadyFinished) {
+			// The run was canceled while this step ran: the cancel ended it.
+			e.logger.Info("step ended by a cancel while it ran; result not recorded", "node_key", node.NodeKey)
+			return errRunCanceled
+		}
 		e.logger.Error("failed to save node run result", "error", err)
 	}
 
@@ -634,6 +664,13 @@ func (e *WorkflowExecutor) updateRunStats(execCtx *ExecutionContext, success boo
 func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionContext, execErr error) {
 	run := execCtx.Run
 
+	// Canceled while it ran: the cancel already recorded the outcome and
+	// closed the steps; the executor writes nothing over it.
+	if errors.Is(execErr, errRunCanceled) {
+		e.logger.Info("workflow run canceled; stopped before its next step", "run_id", run.ID)
+		return
+	}
+
 	// Determine final status
 	switch {
 	case execErr != nil:
@@ -644,8 +681,13 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 		run.Complete()
 	}
 
-	// Update run
+	// Update run. A run canceled meanwhile is refused (a finished run never
+	// changes), and then nothing else is recorded for it.
 	if err := e.runRepo.Update(ctx, run); err != nil {
+		if errors.Is(err, workflowdom.ErrRunAlreadyFinished) {
+			e.logger.Info("workflow run finished elsewhere (canceled); not recording an outcome", "run_id", run.ID)
+			return
+		}
 		e.logger.Error("failed to finalize run", "error", err)
 	}
 
