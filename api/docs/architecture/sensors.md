@@ -653,7 +653,9 @@ Each segment runs through the v1 pipeline with the v2 options:
   when it is `completed` AND every report filed under it is `completed`
   (checked from both ends: command completion and report finalize). It
   qualifies only if the command exited 0, every report has no rejected or
-  quarantined items and is not `partial`/`incremental`, all reports name one
+  quarantined items and declares `coverage_type: full` (an absent value is
+  not full, CTIS spec 4.5; sensors on sdk-go with openctemio/sdk-go#150
+  always send it), all reports name one
   tool the sensor declares, and the reports touched at least one asset. The
   candidates are open findings of that tool on the touched assets, with no
   branch, not reported by this run, and last seen by a v2 run of the same
