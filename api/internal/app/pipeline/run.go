@@ -527,7 +527,7 @@ func (s *Service) recordScanRun(ctx context.Context, run *pipeline.Run, status s
 	if s.scanRunRecorder == nil || run == nil || run.ScanID == nil {
 		return
 	}
-	if err := s.scanRunRecorder.RecordRun(ctx, *run.ScanID, run.ID, status); err != nil {
+	if err := s.scanRunRecorder.RecordRun(ctx, run.TenantID, *run.ScanID, run.ID, status); err != nil {
 		s.logger.Warn("failed to record run outcome on scan",
 			"scan_id", run.ScanID.String(), "run_id", run.ID.String(), "status", status, "error", err)
 	}
@@ -959,7 +959,7 @@ func (s *Service) evaluateQualityGate(ctx context.Context, run *pipeline.Run) *s
 	}
 
 	// Get the scan profile
-	profile, err := s.scanProfileRepo.GetByID(ctx, *run.ScanProfileID)
+	profile, err := s.scanProfileRepo.GetByTenantAndID(ctx, run.TenantID, *run.ScanProfileID)
 	if err != nil {
 		s.logger.Warn("failed to get scan profile for quality gate evaluation",
 			"error", err,

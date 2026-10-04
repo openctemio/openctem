@@ -30,8 +30,6 @@ const ALLOWED: Record<string, string> = {
   // Defensive branch for a coming_soon nav item. Those items are now filtered
   // out before they reach the nav (isHiddenReleaseStatus), so it never renders.
   'components/layout/nav-group.tsx': 'unreachable: coming_soon items are filtered',
-  // Permission sets are being removed entirely (owner decision D-2).
-  'app/(dashboard)/settings/access-control/permission-sets/page.tsx': 'removed with D-2',
 }
 
 function walk(dir: string, out: string[] = []): string[] {
