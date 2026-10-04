@@ -301,18 +301,18 @@ var laterRevocations = map[string][]string{
 }
 
 // laterRemovedPermissions are permission ids a migration after 000230
-// deletes from the catalog with every grant of them (000465: permission sets
+// deletes from the catalog with every grant of them (000492: permission sets
 // are gone, so team:permission_sets:* means nothing).
 var laterRemovedPermissions = []string{
 	"team:permission_sets:read", "team:permission_sets:write", "team:permission_sets:delete",
-	// 000468: permissions that gate nothing.
+	// 000541: permissions that gate nothing.
 	"assets:export", "findings:export", "compliance:frameworks:write", "compliance:reports:read",
 	"findings:policies:read", "findings:policies:write", "findings:policies:delete",
 	"settings:billing:read", "settings:billing:write",
 }
 
 // withoutLaterBackfill drops, from an access map taken after the upgrade, the
-// role grants migration 000467 added (recorded in granular_permission_backfill):
+// role grants migration 000540 added (recorded in granular_permission_backfill):
 // granting an enforced permission to every role that held the old gate is not
 // part of the rename.
 func withoutLaterBackfill(t *testing.T, db *sql.DB, access map[string]string) map[string]string {

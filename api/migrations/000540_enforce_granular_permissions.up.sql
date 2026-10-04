@@ -12,7 +12,7 @@
 -- Rows are (n, gate, granted): every role holding `gate` also gets `granted`.
 -- n is only an ordinal.
 
-CREATE TEMP TABLE granular_grant_pairs (n INT, gate VARCHAR(100), granted VARCHAR(100));
+CREATE TEMP TABLE IF NOT EXISTS granular_grant_pairs (n INT, gate VARCHAR(100), granted VARCHAR(100));
 INSERT INTO granular_grant_pairs (n, gate, granted) VALUES
     (1,  'assets:write',             'assets:import'),
     (2,  'findings:read',            'ai_triage:read'),
@@ -28,7 +28,8 @@ INSERT INTO granular_grant_pairs (n, gate, granted) VALUES
     (12, 'integrations:manage',      'integrations:scm:delete'),
     (13, 'scans:write',              'scans:execute'),
     (14, 'assets:write',             'scans:execute'),
-    (15, 'team:groups:write',        'team:groups:assets');
+    (15, 'team:groups:write',        'team:groups:assets')
+ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS granular_permission_backfill (
     role_id       UUID         NOT NULL,
@@ -36,7 +37,7 @@ CREATE TABLE IF NOT EXISTS granular_permission_backfill (
     PRIMARY KEY (role_id, permission_id)
 );
 COMMENT ON TABLE granular_permission_backfill IS
-    'Role grants added by migration 000467; its down migration removes exactly these';
+    'Role grants added by migration 000540; its down migration removes exactly these';
 
 WITH ins AS (
     INSERT INTO role_permissions (role_id, permission_id)
@@ -69,5 +70,3 @@ WITH ins AS (
 INSERT INTO granular_permission_backfill (role_id, permission_id)
 SELECT role_id, permission_id FROM ins
 ON CONFLICT DO NOTHING;
-
-DROP TABLE granular_grant_pairs;

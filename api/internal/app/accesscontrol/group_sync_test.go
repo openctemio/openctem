@@ -59,7 +59,7 @@ func (m *MockGroupRepository) Update(_ context.Context, _ *groupdom.Group) error
 	return nil
 }
 
-func (m *MockGroupRepository) Delete(_ context.Context, _ shared.ID) error {
+func (m *MockGroupRepository) Delete(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 

@@ -13,8 +13,8 @@
 -- The catalog rows and their role grants are copied, as JSON, into
 -- access_control_removed_archive first; the down migration restores them.
 
-CREATE TEMP TABLE removed_permission_ids (id VARCHAR(100) PRIMARY KEY);
-INSERT INTO removed_permission_ids (id) VALUES
+CREATE TEMP TABLE IF NOT EXISTS meaningless_permission_ids (id VARCHAR(100) PRIMARY KEY);
+INSERT INTO meaningless_permission_ids (id) VALUES
     ('assets:export'),
     ('findings:export'),
     ('compliance:frameworks:write'),
@@ -23,7 +23,8 @@ INSERT INTO removed_permission_ids (id) VALUES
     ('findings:policies:write'),
     ('findings:policies:delete'),
     ('settings:billing:read'),
-    ('settings:billing:write');
+    ('settings:billing:write')
+ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS access_control_removed_archive (
     id           BIGSERIAL PRIMARY KEY,
@@ -33,14 +34,12 @@ CREATE TABLE IF NOT EXISTS access_control_removed_archive (
 );
 
 INSERT INTO access_control_removed_archive (source_table, row_data)
-SELECT 'permissions:000468', to_jsonb(t) FROM permissions t
-WHERE t.id IN (SELECT id FROM removed_permission_ids);
+SELECT 'permissions:000541', to_jsonb(t) FROM permissions t
+WHERE t.id IN (SELECT id FROM meaningless_permission_ids);
 
 INSERT INTO access_control_removed_archive (source_table, row_data)
-SELECT 'role_permissions:000468', to_jsonb(t) FROM role_permissions t
-WHERE t.permission_id IN (SELECT id FROM removed_permission_ids);
+SELECT 'role_permissions:000541', to_jsonb(t) FROM role_permissions t
+WHERE t.permission_id IN (SELECT id FROM meaningless_permission_ids);
 
 -- role_permissions rows go with the catalog rows (ON DELETE CASCADE).
-DELETE FROM permissions WHERE id IN (SELECT id FROM removed_permission_ids);
-
-DROP TABLE removed_permission_ids;
+DELETE FROM permissions WHERE id IN (SELECT id FROM meaningless_permission_ids);
