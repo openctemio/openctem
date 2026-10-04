@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 type flResponse struct {
@@ -84,7 +83,7 @@ func TestFindingsList_FiltersNarrowWithinScope(t *testing.T) {
 	fa, fb, fb2, fp := h.findingA.String(), h.findingB.String(), h.findingB2.String(), h.findingP.String()
 	admin := flCaller{"owner", h.owner, true}
 	memberA := flCaller{"memberA", h.memberA, false}
-	free := flCaller{"member without group", h.memberFree, false}
+	free := flCaller{"full-data role", h.memberFull, false}
 
 	cases := []struct {
 		query                string
@@ -143,21 +142,28 @@ func TestFindingsList_RelatedToMe(t *testing.T) {
 			t.Errorf("memberA ?%s = %v, want [FA]", q, ids)
 		}
 	}
-	// ownerB owns B1, and the related-to rule applies inside the data scope:
-	// an unrestricted member sees B's findings, nobody else's.
+	// ownerB owns B1, and the related-to rule applies inside the data scope.
+	// Owning an asset is not a scope grant (O1): with no scope row ownerB
+	// sees nothing; with a full-data role, B's findings and nobody else's.
 	ownerB := flCaller{"ownerB", h.ownerB, false}
+	if ids, _, _ := h.listIDs(t, ownerB, "related_to=me"); len(ids) != 0 {
+		t.Errorf("ownerB without scope related_to=me = %v, want none", ids)
+	}
+	fullRole := shared.NewID()
+	h.exec(`INSERT INTO roles (id, tenant_id, slug, name, hierarchy_level, has_full_data_access) VALUES ($1, $2, $3, 'Global Reader', 30, TRUE)`,
+		fullRole.String(), h.tenant.String(), "fl-global-reader-"+fullRole.String()[:8])
+	h.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, h.ownerB.String(), h.tenant.String(), fullRole.String())
 	if ids, _, _ := h.listIDs(t, ownerB, "related_to=me"); strings.Join(ids, ",") != strings.Join(sorted(h.findingB.String(), h.findingB2.String()), ",") {
-		t.Errorf("ownerB related_to=me = %v", ids)
+		t.Errorf("ownerB (full-data) related_to=me = %v", ids)
 	}
 	if ids, _, _ := h.listIDs(t, memberA, "assigned_to_me=false"); len(ids) != 1 {
 		t.Errorf("assigned_to_me=false must not filter: %v", ids)
 	}
 }
 
-func TestFindingsList_StrictPolicyAndOtherTenant(t *testing.T) {
+func TestFindingsList_ScopelessMemberAndOtherTenant(t *testing.T) {
 	h := newGroupScopeHarness(t)
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
-	strict := flCaller{"member without group (nothing)", h.memberStrict, false}
+	strict := flCaller{"member without scope row", h.memberStrict, false}
 	for _, q := range []string{"", "asset_id=" + h.assetA.String(), "id=" + h.findingA.String()} {
 		if ids, total, _ := h.listIDs(t, strict, q); len(ids) != 0 || total != 0 {
 			t.Errorf("strict member ?%s = %v (total %d), want none", q, ids, total)

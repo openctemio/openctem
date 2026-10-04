@@ -313,13 +313,12 @@ func TestReportScheduler_SkipsRecipientsNoLongerAllowed(t *testing.T) {
 
 // recordingStats records the scope each render asks for.
 type recordingStats struct {
-	user   *shared.ID
-	strict bool
-	scope  *shared.DataScope
+	user  *shared.ID
+	scope *shared.DataScope
 }
 
-func (r *recordingStats) GetStats(_ context.Context, _ shared.ID, u *shared.ID, f vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
-	r.user, r.strict = u, f.ScopeStrict
+func (r *recordingStats) GetStats(_ context.Context, _ shared.ID, u *shared.ID, _ vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
+	r.user = u
 	return vulnerability.NewFindingStats(), nil
 }
 
@@ -365,8 +364,8 @@ func TestReportScheduler_RendersUnderCreatorScope(t *testing.T) {
 	s := newSchedule(t, "executive_summary", "0 9 * * 1", "ciso@acme.com")
 	s.SetCreatedBy(member)
 	stats, em, status := run(s, fakeScope{restricted: map[shared.ID]bool{member: true}})
-	if stats.user == nil || *stats.user != member || !stats.strict || stats.scope == nil || stats.scope.UserID != member {
-		t.Errorf("restricted creator: stats user=%v strict=%v window scope=%v, want the creator's strict scope", stats.user, stats.strict, stats.scope)
+	if stats.user == nil || *stats.user != member || stats.scope == nil || stats.scope.UserID != member {
+		t.Errorf("restricted creator: stats user=%v window scope=%v, want the creator's scope", stats.user, stats.scope)
 	}
 	if status != "completed" || len(em.sentTo) != 1 {
 		t.Errorf("restricted creator: status %q, sent %v", status, em.sentTo)
@@ -374,7 +373,7 @@ func TestReportScheduler_RendersUnderCreatorScope(t *testing.T) {
 
 	s2 := newSchedule(t, "executive_summary", "0 9 * * 1", "ciso@acme.com")
 	s2.SetCreatedBy(admin)
-	if stats, _, _ := run(s2, fakeScope{}); stats.user != nil || stats.strict || stats.scope != nil {
+	if stats, _, _ := run(s2, fakeScope{}); stats.user != nil || stats.scope != nil {
 		t.Errorf("unrestricted creator rendered with a scope: %+v", stats)
 	}
 

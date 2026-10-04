@@ -11552,6 +11552,11 @@ definitions:
         items:
           $ref: '#/definitions/internal_infra_http_handler.RunTaskResponse'
         type: array
+      tasks_next_cursor:
+        description: |-
+          TasksNextCursor continues the task list after Tasks
+          (GET /pipeline-runs/{id}/tasks?cursor=) when TasksTruncated.
+        type: string
       tasks_truncated:
         description: TasksTruncated is true when the run has more tasks than Tasks
           lists.
@@ -11574,6 +11579,16 @@ definitions:
           UnfinishedTargetCount is how many targets were still open when the run
           was settled at its deadline; the next scheduled run plans them first.
         type: integer
+    type: object
+  internal_infra_http_handler.RunTaskPageResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunTaskResponse'
+        type: array
+      next_cursor:
+        description: NextCursor continues after Data; absent on the last page.
+        type: string
     type: object
   internal_infra_http_handler.RunTaskResponse:
     properties:
@@ -28710,6 +28725,45 @@ paths:
       summary: Update auto-retest settings
       tags:
       - Tenants
+  /pipeline-runs/{id}/tasks:
+    get:
+      description: One page of the run's tasks (one dispatched command each) in dispatch
+        order. Page with next_cursor. Targets are counted, not listed.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: next_cursor of the previous page
+        in: query
+        name: cursor
+        type: string
+      - default: 50
+        description: Tasks per page (1-200)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.RunTaskPageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List a run's tasks
+      tags:
+      - Pipelines
   /repositories/{repository_id}/branches:
     get:
       description: Retrieves all branches for a repository
@@ -30277,6 +30331,12 @@ paths:
         in: query
         name: include_ad_hoc
         type: boolean
+      - default: name
+        description: 'One sort key, - for descending: name, created_at, last_run_at,
+          next_run_at, total_runs'
+        in: query
+        name: sort
+        type: string
       - default: 1
         description: Page number
         in: query

@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 
 	"github.com/lib/pq"
 
@@ -63,6 +64,36 @@ func (r *CommandRepository) ListRunTasks(ctx context.Context, tenantID, runID sh
 		return nil, sum, nil
 	}
 
+	tasks, err := r.queryRunTasks(ctx, membership, []any{tenantID.String(), runID.String()}, limit, min(sum.Total, limit))
+	if err != nil {
+		return nil, pipeline.TaskSummary{}, err
+	}
+	return tasks, sum, nil
+}
+
+var _ pipeline.TaskPager = (*CommandRepository)(nil)
+
+// ListRunTasksAfter returns up to limit tasks of runID after the cursor, in
+// dispatch order (created_at, id); from the first task when after is nil.
+// Only commands of tenantID are read, and sensors are named as in
+// ListRunTasks.
+func (r *CommandRepository) ListRunTasksAfter(ctx context.Context, tenantID, runID shared.ID, after *pipeline.TaskCursor, limit int) ([]pipeline.Task, error) {
+	if limit <= 0 || limit > pipeline.MaxRunTasks {
+		limit = pipeline.MaxRunTasks
+	}
+	where := `commands.tenant_id = $1 AND (commands.payload->>'pipeline_run_id') = $2::text`
+	args := []any{tenantID.String(), runID.String()}
+	if after != nil {
+		where += ` AND (commands.created_at, commands.id) > ($3::timestamptz, $4::uuid)`
+		args = append(args, after.CreatedAt, after.ID.String())
+	}
+	return r.queryRunTasks(ctx, where, args, limit, limit)
+}
+
+// queryRunTasks reads the tasks matching where (a constant predicate over
+// commands; values only in args) in dispatch order, at most limit of them.
+func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, args []any, limit, capacity int) ([]pipeline.Task, error) {
+	args = append(args, limit)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT commands.id, commands.step_run_id,
 		       COALESCE(sr.step_key, commands.payload->>'step_key', ''),
@@ -77,16 +108,15 @@ func (r *CommandRepository) ListRunTasks(ctx context.Context, tenantID, runID sh
 		FROM commands
 		LEFT JOIN step_runs sr ON sr.id = commands.step_run_id
 		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id
-		WHERE `+membership+`
+		WHERE `+where+`
 		ORDER BY commands.created_at, commands.id
-		LIMIT $3`,
-		tenantID.String(), runID.String(), limit)
+		LIMIT $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
-		return nil, pipeline.TaskSummary{}, fmt.Errorf("failed to list run tasks: %w", err)
+		return nil, fmt.Errorf("failed to list run tasks: %w", err)
 	}
 	defer rows.Close()
 
-	tasks := make([]pipeline.Task, 0, min(sum.Total, limit))
+	tasks := make([]pipeline.Task, 0, capacity)
 	for rows.Next() {
 		var (
 			t                     pipeline.Task
@@ -97,7 +127,7 @@ func (r *CommandRepository) ListRunTasks(ctx context.Context, tenantID, runID sh
 		)
 		if err := rows.Scan(&id, &stepRunID, &t.StepKey, &t.Tool, &status, &sensorID, &t.SensorName,
 			&t.Platform, &t.Targets, &t.Attempts, &t.CreatedAt, &startedAt, &completeAt, &t.ErrorMessage); err != nil {
-			return nil, pipeline.TaskSummary{}, fmt.Errorf("failed to scan run task: %w", err)
+			return nil, fmt.Errorf("failed to scan run task: %w", err)
 		}
 		t.ID, _ = shared.IDFromString(id)
 		t.Status = pipeline.TaskStatus(status)
@@ -122,9 +152,9 @@ func (r *CommandRepository) ListRunTasks(ctx context.Context, tenantID, runID sh
 		tasks = append(tasks, t)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, pipeline.TaskSummary{}, fmt.Errorf("failed to read run tasks: %w", err)
+		return nil, fmt.Errorf("failed to read run tasks: %w", err)
 	}
-	return tasks, sum, nil
+	return tasks, nil
 }
 
 // TaskSummaries returns the task summary of each run in runIDs that has

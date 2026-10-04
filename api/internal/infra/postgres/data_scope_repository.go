@@ -23,18 +23,6 @@ func NewDataScopeRepository(db *DB) *DataScopeRepository {
 	return &DataScopeRepository{db: db}
 }
 
-// HasAnyScopeAssignment reports whether the user has any scope row in the tenant.
-func (r *DataScopeRepository) HasAnyScopeAssignment(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
-	var exists bool
-	err := r.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $1 AND tenant_id = $2)`,
-		userID.String(), tenantID.String()).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("check scope assignment: %w", err)
-	}
-	return exists, nil
-}
-
 // HasFullDataRole reports whether the user holds a role with
 // has_full_data_access in the tenant.
 func (r *DataScopeRepository) HasFullDataRole(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
