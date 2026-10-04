@@ -70,7 +70,7 @@ describe('IssuesChip', () => {
     const link = screen.getByRole('link', { name: /4 issues found/ })
     const href = new URL(link.getAttribute('href') ?? '', 'http://x')
     expect(href.pathname).toBe('/findings')
-    expect(href.searchParams.get('assetId')).toBe('a/1')
+    expect(href.searchParams.get('asset_id')).toBe('a/1')
     const statuses = href.searchParams.get('status')?.split(',') ?? []
     expect(statuses).toEqual([...FINDINGS_OPEN_STATUSES])
     expect(statuses.length).toBeLessThanOrEqual(10)

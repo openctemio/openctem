@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { ScanRunsTab, runDurationMs } from '../scan-runs-tab'
+import { ScanRunsTab } from '../scan-runs-tab'
 
 // The Runs tab reads pipeline runs (the table every scan trigger writes),
 // paged on the server; it used to read scan sessions, which stayed empty.
@@ -17,7 +17,15 @@ vi.mock('@/lib/api/pipeline-hooks', () => ({
   },
   useScanManagementStats: () => ({
     data: {
-      pipelines: { total: 40, running: 1, pending: 0, completed: 4, failed: 35, canceled: 0 },
+      pipelines: {
+        total: 40,
+        running: 1,
+        pending: 0,
+        completed: 4,
+        partial: 2,
+        failed: 33,
+        canceled: 0,
+      },
     },
     isLoading: false,
   }),
@@ -112,14 +120,20 @@ describe('ScanRunsTab', () => {
     expect(within(table).getByText('no sensor online')).toBeInTheDocument()
     expect(within(table).getByText('(1 failed)')).toBeInTheDocument()
     expect(within(table).getByText('3m 12s')).toBeInTheDocument()
-    expect(within(table).getByText('Running…')).toBeInTheDocument()
+    expect(within(table).getByText(/so far$/)).toBeInTheDocument()
     expect(within(table).getByText('7')).toBeInTheDocument()
   })
 
   it('shows the real run counts; failed includes timed out and does not filter', () => {
     render(<ScanRunsTab />)
     expect(screen.getByText('Failed or timed out')).toBeInTheDocument()
-    expect(screen.getByText('35')).toBeInTheDocument()
+    expect(screen.getByText('33')).toBeInTheDocument()
+  })
+
+  it('counts partial runs and filters on them', async () => {
+    render(<ScanRunsTab />)
+    await userEvent.click(screen.getByText('Partial'))
+    expect(urlState.run_status).toBe('partial')
   })
 
   it('opens the run drawer on row click', async () => {
@@ -142,11 +156,44 @@ describe('ScanRunsTab', () => {
   })
 })
 
-describe('runDurationMs', () => {
-  it('is undefined until the run finished', () => {
-    expect(runDurationMs({ started_at: '2026-10-02T10:00:00Z' })).toBeUndefined()
-    expect(
-      runDurationMs({ started_at: '2026-10-02T10:00:00Z', completed_at: '2026-10-02T10:00:05Z' })
-    ).toBe(5000)
+describe('ScanRunsTab tasks', () => {
+  beforeEach(() => {
+    canReadPipelines = true
+    for (const k of Object.keys(urlState)) delete urlState[k]
+  })
+
+  it('shows a run as tasks done of total with the counts that matter', () => {
+    runsResponse = {
+      items: [
+        run({
+          status: 'partial',
+          error_message: undefined,
+          task_summary: {
+            total: 5,
+            queued: 0,
+            running: 0,
+            completed: 3,
+            failed: 2,
+            canceled: 0,
+            sensors: 2,
+          },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      per_page: 25,
+      total_pages: 1,
+    }
+    render(<ScanRunsTab />)
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('3/5 tasks')).toBeInTheDocument()
+    expect(within(table).getByText('2 failed')).toBeInTheDocument()
+    expect(within(table).getByText('Partial')).toBeInTheDocument()
+  })
+
+  it('falls back to steps for a run without a task summary', () => {
+    runsResponse = { items: [run({})], total: 1, page: 1, per_page: 25, total_pages: 1 }
+    render(<ScanRunsTab />)
+    expect(within(screen.getByRole('table')).getByText(/1\/2 steps/)).toBeInTheDocument()
   })
 })

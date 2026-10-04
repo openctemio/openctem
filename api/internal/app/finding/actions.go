@@ -204,7 +204,7 @@ func (s *FindingActionsService) autoQueueValidations(ctx context.Context, tenant
 // validGroupDimensions are the group_by values of the grouped view.
 var validGroupDimensions = map[string]bool{
 	"cve_id": true, "rule_id": true, "asset_id": true, "owner_id": true,
-	"component_id": true, "severity": true, "source": true, "finding_type": true,
+	"component_id": true, "severity": true, "source": true, "finding_type": true, "family": true,
 }
 
 // ListFindingGroups returns findings grouped by a dimension.
