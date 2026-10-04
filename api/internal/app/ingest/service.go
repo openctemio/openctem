@@ -67,6 +67,10 @@ type Service struct {
 	// not projected (prior behavior).
 	assetExposureProjector AssetExposureProjector
 
+	// scanAttribution stamps tenant_scanned attribution evidence on the
+	// assets of command-bound reports (RFC-036 O8). Nil-safe.
+	scanAttribution ScanAttributionStamper
+
 	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
 	// non-repository findings (coverage_autoresolve.go). The zero mode is
 	// dry_run.
@@ -392,6 +396,16 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		"assets_updated", output.AssetsUpdated,
 		"asset_map_size", len(assetMap),
 	)
+
+	// Step 1a: "the tenant scanned it" attribution evidence (RFC-036 O8),
+	// for command-bound reports only. Best-effort.
+	if binding.Kind == BindingCommand {
+		toolName := ""
+		if report.Tool != nil {
+			toolName = report.Tool.Name
+		}
+		s.stampScanAttribution(ctx, agt, tenantID, binding, scope, toolName, report.Metadata.ID, assetMap)
+	}
 
 	// Step 1b: Project recon-discovered assets (open ports, exposed services,
 	// TLS certificates) into the Exposure Register. Best-effort — a failure here
