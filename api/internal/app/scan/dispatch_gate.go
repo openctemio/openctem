@@ -1,8 +1,10 @@
 package scan
 
-// One target gate for the paths that dispatch scan work outside a scan
-// trigger: POST /pipelines/runs and the coverage dispatcher. Design:
-// docs/rfcs/RFC-042-asset-inventory-v2.md (§3.3 F16, §6.11, §6.13).
+// One target gate for the paths that send traffic at a target outside a scan
+// trigger: POST /pipelines/runs, the coverage dispatcher, and every validate
+// command (finding re-checks, retests, attack-simulation safe-checks). Design:
+// docs/rfcs/RFC-042-asset-inventory-v2.md (§3.3 F16, §6.11, §6.13);
+// architecture: docs/architecture/active-probe-gate.md.
 
 import (
 	"context"
@@ -11,13 +13,29 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // ErrDispatchGateUnavailable is returned when the target gate cannot check
 // exclusions (not wired). Nothing is dispatched then (fail closed).
 var ErrDispatchGateUnavailable = errors.New("scope exclusion check is not configured; nothing dispatched")
+
+// ErrAttributionGateUnavailable is returned when a target names an inventory
+// asset and the attribution check is not wired. Nothing is dispatched then.
+var ErrAttributionGateUnavailable = errors.New("attribution check is not configured; nothing dispatched")
+
+// DispatchAsset is the inventory asset (or assets: two assets can share an
+// address) behind a target.
+type DispatchAsset struct {
+	IDs []string // asset ids (UUIDs; anything else fails the lookup)
+	// AlsoMatch are the asset's other names (its inventory name when the
+	// target is a URL on it, its addresses). An exclusion of any of them
+	// excludes the target, as on a scan run.
+	AlsoMatch []string
+}
 
 // DispatchTargetsInput is a target list about to be dispatched.
 type DispatchTargetsInput struct {
@@ -26,6 +44,11 @@ type DispatchTargetsInput struct {
 	// SensorID is the sensor the work is pinned to, or nil. A target in a
 	// scan zone the sensor is not assigned to is refused.
 	SensorID *shared.ID
+	// Assets maps a target to the inventory asset it probes. Such a target is
+	// refused while any of its assets' attribution is not confirmed (RFC-036 O4),
+	// like an asset-group member of a scan. A target the tenant typed itself
+	// has no entry (O8). Keys match targets case-insensitively.
+	Assets map[string]DispatchAsset
 }
 
 // RefusedTarget is a target the gate will not dispatch, with the reason.
@@ -43,7 +66,8 @@ type DispatchTargets struct {
 	Excluded []string
 	// Refused fail the scan target validator (internal, loopback,
 	// link-local, metadata or malformed; a private address is allowed only
-	// inside a scan zone) or zone routing (no zone covers it, its zone has no
+	// inside a scan zone), name an asset whose ownership is not confirmed,
+	// or fail zone routing (no zone covers it, its zone has no
 	// sensor, or the pinned sensor is not in its zone).
 	Refused []RefusedTarget
 
@@ -88,6 +112,15 @@ func zoneSplitError() error {
 		shared.ErrValidation)
 }
 
+// NewTargetGate builds a Service that only answers ResolveDispatchTargets:
+// for tests and tools that need the gate without a scan service's other
+// dependencies. Production uses the scan service itself, wired with the same
+// options.
+func NewTargetGate(exclusions ScopeExclusionFilter, attr AttributionGate, zones ZoneDirectory, resolver scanzone.Resolver, log *logger.Logger) *Service {
+	return &Service{scopeExclusions: exclusions, attributionGate: attr, zones: zones, zoneResolver: resolver,
+		logger: log.With("service", "scan-target-gate")}
+}
+
 // ResolveDispatchTargets applies the checks of a scan trigger to a target
 // list that is dispatched some other way:
 //
@@ -95,6 +128,9 @@ func zoneSplitError() error {
 //     create (private addresses only inside a scan zone of the tenant);
 //   - active scope exclusions, matched as on a scan run (URL and host:port
 //     forms included); a failed lookup returns an error (fail closed);
+//   - the attribution of the inventory asset behind a target (in.Assets):
+//     an asset whose ownership is not confirmed is refused; a failed or
+//     unwired lookup returns an error (fail closed);
 //   - scan-zone routing: uncovered targets, zones without sensors and a
 //     pinned sensor outside the target's zone are refused.
 //
@@ -133,7 +169,15 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 			continue
 		}
 		id := shared.NewID()
-		candidates = append(candidates, scope.ExclusionCandidate{ID: id, Values: []string{t}})
+		values := []string{t}
+		if a, ok := assetOf(in.Assets, t); ok {
+			for _, v := range a.AlsoMatch {
+				if v = strings.TrimSpace(v); v != "" && !strings.EqualFold(v, t) {
+					values = append(values, v)
+				}
+			}
+		}
+		candidates = append(candidates, scope.ExclusionCandidate{ID: id, Values: values})
 		byID[id] = t
 	}
 	excluded := map[shared.ID]bool{}
@@ -152,10 +196,89 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 		kept = append(kept, byID[c.ID])
 	}
 
+	kept, err = s.refuseUnconfirmed(ctx, in, kept, out)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := s.routeDispatchTargets(ctx, in, kept, out); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// refuseUnconfirmed moves every kept target whose inventory asset is not
+// confirmed (an attribution state other than confirmed) to Refused. An asset
+// with no attribution row counts as confirmed, as on a scan run.
+func (s *Service) refuseUnconfirmed(ctx context.Context, in DispatchTargetsInput, kept []string, out *DispatchTargets) ([]string, error) {
+	ids := make([]string, 0, len(kept))
+	for _, t := range kept {
+		a, ok := assetOf(in.Assets, t)
+		if !ok {
+			continue
+		}
+		if len(a.IDs) == 0 {
+			return nil, fmt.Errorf("%w: target %q names an asset without an id", shared.ErrValidation, t)
+		}
+		for _, id := range a.IDs {
+			if strings.TrimSpace(id) == "" {
+				return nil, fmt.Errorf("%w: target %q names an asset without an id", shared.ErrValidation, t)
+			}
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return kept, nil
+	}
+	if s.attributionGate == nil {
+		return nil, ErrAttributionGateUnavailable
+	}
+	blocked, err := s.attributionGate.ActiveCheckBlocked(ctx, in.TenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("attribution check failed, nothing dispatched: %w", err)
+	}
+	allowed := make([]string, 0, len(kept))
+	for _, t := range kept {
+		if state, no := unconfirmedState(in.Assets, t, blocked); no {
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: fmt.Sprintf(
+				"the asset's ownership is not confirmed (attribution: %s); review its attribution before it is probed", state)})
+			continue
+		}
+		allowed = append(allowed, t)
+	}
+	return allowed, nil
+}
+
+// unconfirmedState reports the attribution state of the first asset behind
+// target that is not confirmed.
+func unconfirmedState(assets map[string]DispatchAsset, target string, blocked map[string]attribution.State) (attribution.State, bool) {
+	a, ok := assetOf(assets, target)
+	if !ok {
+		return "", false
+	}
+	for _, id := range a.IDs {
+		if state, no := blocked[id]; no {
+			return state, true
+		}
+	}
+	return "", false
+}
+
+// assetOf finds the inventory asset behind a target (case-insensitive).
+func assetOf(assets map[string]DispatchAsset, target string) (DispatchAsset, bool) {
+	if len(assets) == 0 {
+		return DispatchAsset{}, false
+	}
+	if a, ok := assets[target]; ok {
+		return a, true
+	}
+	want := strings.ToLower(strings.TrimSpace(target))
+	for k, a := range assets {
+		if strings.ToLower(strings.TrimSpace(k)) == want {
+			return a, true
+		}
+	}
+	return DispatchAsset{}, false
 }
 
 // routeDispatchTargets routes the kept targets over the tenant's zones and

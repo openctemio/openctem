@@ -3,7 +3,6 @@ package integration
 import (
 	"context"
 	"database/sql"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +11,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -30,7 +30,7 @@ type typeDetailsFixture struct {
 
 func newTypeDetailsFixture(t *testing.T) typeDetailsFixture {
 	t.Helper()
-	dsn := os.Getenv("DATABASE_URL")
+	dsn := testdb.URL()
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping finding type-details DB test")
 	}
@@ -39,7 +39,7 @@ func newTypeDetailsFixture(t *testing.T) typeDetailsFixture {
 		t.Fatalf("open: %v", err)
 	}
 	if err := db.Ping(); err != nil {
-		t.Skipf("database not available: %v", err)
+		testdb.Skipf(t, "database not available: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()

@@ -1,12 +1,15 @@
 package routes
 
 // POST /api/v1/assets with the name (or address) of an asset that already
-// exists merges into that asset instead of creating a second one. The merge
-// must respect the caller's data scope, must not change fields the create
-// does not own, and must leave an audit trail.
+// exists is a 409 and changes nothing (owner decision O4). The response names
+// the existing asset only when it is in the caller's data scope; otherwise it
+// is the same generic conflict for every match. Another tenant's assets never
+// match. POST /api/v1/assets/repository (the SCM import) still attaches SCM
+// data to a matching repository asset the caller may see.
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -44,9 +47,7 @@ func TestAssetCreate_MatchOutOfScope_ConflictWithoutTouchingIt(t *testing.T) {
 	status, body := h.do(h.memberA, false, http.MethodPost, "/api/v1/assets/", map[string]any{
 		"name": dsMarkerAssetB, "type": "domain", "criticality": "low", "description": "pwned",
 	})
-	if status != http.StatusConflict {
-		t.Errorf("scoped create of an out-of-scope name = %d, want 409 (body %.300s)", status, body)
-	}
+	h.wantConflict(status, body, "")
 	if strings.Contains(body, b) || strings.Contains(body, `"criticality"`) {
 		t.Errorf("conflict response revealed the existing asset: %.300s", body)
 	}
@@ -63,44 +64,119 @@ func TestAssetCreate_MatchOutOfScope_ConflictWithoutTouchingIt(t *testing.T) {
 	status, body = h.do(h.memberA, false, http.MethodPost, "/api/v1/assets/", map[string]any{
 		"name": "10.77.0.9", "type": "ip_address", "criticality": "low",
 	})
-	if status != http.StatusConflict || strings.Contains(body, b) {
-		t.Errorf("scoped create correlated to an out-of-scope asset = %d (body %.300s), want 409 without its data", status, body)
+	h.wantConflict(status, body, "")
+	if strings.Contains(body, b) {
+		t.Errorf("scoped create correlated to an out-of-scope asset revealed it: %.300s", body)
 	}
 	if crit, _, updated := h.assetState(b); crit != "high" || updated != beforeUpdated {
 		t.Errorf("IP-correlated out-of-scope asset changed: criticality %s updated %s->%s", crit, beforeUpdated, updated)
 	}
 }
 
-// A merge the caller may make never rewrites the existing criticality, and
-// is audited.
-func TestAssetCreate_MergeKeepsCriticalityAndIsAudited(t *testing.T) {
+// conflictBody decodes a 409 body.
+type conflictBody struct {
+	Code    string `json:"code"`
+	Details *struct {
+		ExistingAssetID string `json:"existing_asset_id"`
+	} `json:"details"`
+}
+
+func (h *dsHarness) wantConflict(status int, body, wantID string) {
+	h.t.Helper()
+	if status != http.StatusConflict {
+		h.t.Fatalf("create = %d, want 409 (body %.300s)", status, body)
+	}
+	var c conflictBody
+	if err := json.Unmarshal([]byte(body), &c); err != nil {
+		h.t.Fatalf("409 body: %v (%.300s)", err, body)
+	}
+	got := ""
+	if c.Details != nil {
+		got = c.Details.ExistingAssetID
+	}
+	if got != wantID {
+		h.t.Errorf("409 existing_asset_id = %q, want %q (body %.300s)", got, wantID, body)
+	}
+}
+
+// A create of an asset the caller may see is a 409 that names it, for an
+// in-scope member, an owner and a member whose organization lets members
+// without an access group see everything. Nothing is changed or audited as
+// a merge.
+func TestAssetCreate_DuplicateInScope_ConflictWithID(t *testing.T) {
 	h := newDSHarness(t)
 	a := h.assetA.String()
+	_, _, beforeUpdated := h.assetState(a)
 
 	for _, who := range []struct {
 		name  string
 		user  shared.ID
 		admin bool
-	}{{"member in scope", h.memberA, false}, {"owner", h.owner, true}} {
+	}{{"member in scope", h.memberA, false}, {"owner", h.owner, true}, {"member without a group (sees everything)", h.memberFree, false}} {
 		status, body := h.do(who.user, who.admin, http.MethodPost, "/api/v1/assets/", map[string]any{
 			"name": dsMarkerAssetA, "type": "domain", "criticality": "low", "description": "seen again",
 		})
-		if status != http.StatusCreated && status != http.StatusOK {
-			t.Fatalf("%s re-create of an in-scope name = %d (body %.300s)", who.name, status, body)
-		}
-		if !strings.Contains(body, a) {
-			t.Errorf("%s merge response does not return the existing asset (body %.300s)", who.name, body)
-		}
-		if crit, desc, _ := h.assetState(a); crit != "high" || desc != "seen again" {
-			t.Errorf("%s merge: criticality=%s (want unchanged high) description=%q (want the sent one)", who.name, crit, desc)
+		h.wantConflict(status, body, a)
+		if strings.Contains(body, `"criticality"`) || strings.Contains(body, dsMarkerAssetA) {
+			t.Errorf("%s: 409 carried asset data: %.300s", who.name, body)
 		}
 	}
-	if n := h.auditCount("asset.create_merged", a); n != 2 {
-		t.Errorf("merges audited %d times, want 2", n)
+	if crit, desc, updated := h.assetState(a); crit != "high" || desc != "" || updated != beforeUpdated {
+		t.Errorf("duplicate create changed the asset: criticality %s description %q updated %s->%s", crit, desc, beforeUpdated, updated)
+	}
+	if n := h.auditCount("asset.create_merged", a); n != 0 {
+		t.Errorf("duplicate create audited as a merge %d times", n)
+	}
+	var n int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM assets WHERE tenant_id = $1 AND name = $2`, h.tenant.String(), dsMarkerAssetA).Scan(&n); err != nil || n != 1 {
+		t.Errorf("assets named %s = %d (err %v), want 1", dsMarkerAssetA, n, err)
 	}
 }
 
-// The repository create (POST /assets/repository) merges the same way.
+// A strict organization's member without an access group sees nothing, so a
+// duplicate of any asset is the generic conflict.
+func TestAssetCreate_DuplicateStrictMemberWithoutGroup_ConflictWithoutID(t *testing.T) {
+	h := newDSHarness(t)
+	h.setPolicy("nothing")
+	status, body := h.do(h.memberStrict, false, http.MethodPost, "/api/v1/assets/", map[string]any{
+		"name": dsMarkerAssetA, "type": "domain", "criticality": "low",
+	})
+	h.wantConflict(status, body, "")
+	if strings.Contains(body, h.assetA.String()) {
+		t.Errorf("409 revealed the asset id: %.300s", body)
+	}
+}
+
+// Another tenant's asset of the same name is invisible: the create succeeds
+// as a new asset of the caller's tenant, and the response says nothing about
+// the other one.
+func TestAssetCreate_SameNameOtherTenant_CreatesWithoutLeak(t *testing.T) {
+	h := newDSHarness(t)
+	other, foreign := shared.NewID().String(), shared.NewID().String()
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, other, "dup-other-"+other)
+	t.Cleanup(func() { _, _ = h.db.Exec(`DELETE FROM tenants WHERE id = $1`, other) })
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, criticality, description) VALUES ($1, $2, 'dup-x.example.com', 'domain', 'critical', 'foreign-secret')`,
+		foreign, other)
+
+	status, body := h.do(h.owner, true, http.MethodPost, "/api/v1/assets/", map[string]any{
+		"name": "dup-x.example.com", "type": "domain", "criticality": "low",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("create of a name only another tenant uses = %d, want 201 (body %.300s)", status, body)
+	}
+	if strings.Contains(body, foreign) || strings.Contains(body, "foreign-secret") || strings.Contains(body, other) {
+		t.Errorf("response revealed the other tenant's asset: %.300s", body)
+	}
+	var crit, desc string
+	if err := h.db.QueryRow(`SELECT criticality, description FROM assets WHERE id = $1`, foreign).Scan(&crit, &desc); err != nil ||
+		crit != "critical" || desc != "foreign-secret" {
+		t.Errorf("other tenant's asset changed: %s %q (err %v)", crit, desc, err)
+	}
+}
+
+// The repository create (POST /assets/repository, the SCM import) still
+// attaches SCM data to a matching asset the caller may see, and is a plain
+// conflict for one outside their scope.
 func TestAssetCreateRepository_MatchOutOfScope_ConflictAndKeepsCriticality(t *testing.T) {
 	h := newDSHarness(t)
 	repoB := shared.NewID().String()
