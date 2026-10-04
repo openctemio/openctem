@@ -461,6 +461,12 @@ func (i *Integration) SetSyncInterval(minutes int) {
 	i.updatedAt = time.Now()
 }
 
+// SetNextSyncAt sets when the next scheduled sync is due (nil: not scheduled).
+func (i *Integration) SetNextSyncAt(t *time.Time) {
+	i.nextSyncAt = t
+	i.updatedAt = time.Now()
+}
+
 // syncIntervalOrDefault returns the configured sync interval, defaulting to 60
 // minutes when unset so a scheduled integration always advances.
 func (i *Integration) syncIntervalOrDefault() time.Duration {
