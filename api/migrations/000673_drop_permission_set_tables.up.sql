@@ -1,14 +1,14 @@
--- expand-contract-ok: contract step of 000560; no code has read or written these tables since that release
+-- expand-contract-ok: contract step of 000670; no code has read or written these tables since that release
 --
 -- Drop the group permission-set tables. Permissions come only from roles;
--- groups carry only data scope. Migration 000560 (the expand step) removed
+-- groups carry only data scope. Migration 000670 (the expand step) removed
 -- every code path that read or wrote permission_sets, permission_set_items,
 -- permission_set_versions, group_permission_sets and group_permissions, and
 -- the team:permission_sets:* permissions. Merge this only after a release
--- containing 000560, so no running pod still queries the tables.
+-- containing 000670, so no running pod still queries the tables.
 --
 -- Live data: every row of the dropped tables is copied, as JSON, into
--- access_control_removed_archive (created by 000560) before anything is
+-- access_control_removed_archive (created by 000670) before anything is
 -- dropped, so the down migration restores them exactly.
 
 CREATE TABLE IF NOT EXISTS access_control_removed_archive (
