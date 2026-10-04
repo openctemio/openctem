@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -20,9 +22,15 @@ import (
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
+// SetTenableSCConnector wires the Tenable.sc sensor connector: a sync of a
+// connector integration queues a connector_sync command for its sensor
+// (docs/rfcs/RFC-047-tenable-sc-sensor-connector.md).
+func (h *IntegrationHandler) SetTenableSCConnector(svc *tenablesc.Service) { h.connector = svc }
+
 // IntegrationHandler handles integration-related HTTP requests.
 type IntegrationHandler struct {
 	service              *app.IntegrationService
+	connector            *tenablesc.Service
 	validator            *validator.Validator
 	logger               *logger.Logger
 	testNotifRateLimiter *testNotificationRateLimiter
@@ -973,6 +981,12 @@ func (h *IntegrationHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.connector != nil {
+		if done := h.syncConnector(w, r, tenantID, id); done {
+			return
+		}
+	}
+
 	intg, err := h.service.SyncIntegration(r.Context(), id, tenantID)
 	if err != nil {
 		h.handleServiceError(w, err)
@@ -982,6 +996,48 @@ func (h *IntegrationHandler) Sync(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toIntegrationWithSCMResponse(intg))
+}
+
+// syncConnector queues a connector_sync for a Tenable.sc connector
+// integration and writes the response. It returns false, writing nothing,
+// when the integration is not a connector (the regular sync then runs). The
+// integration is read tenant-scoped: another tenant's id is not found.
+func (h *IntegrationHandler) syncConnector(w http.ResponseWriter, r *http.Request, tenantID, id string) bool {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant").WriteJSON(w)
+		return true
+	}
+	iid, err := shared.IDFromString(id)
+	if err != nil {
+		apierror.BadRequest("Invalid integration ID").WriteJSON(w)
+		return true
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   tenantID,
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	res, err := h.connector.RequestSync(r.Context(), tid, iid, tenablesc.TriggerManual, &actx)
+	switch {
+	case errors.Is(err, tenablesc.ErrNotConnector):
+		return false
+	case errors.Is(err, tenablesc.ErrSensorUnavailable), errors.Is(err, tenablesc.ErrDisabled):
+		var de *shared.DomainError
+		_ = errors.As(err, &de)
+		apierror.New(http.StatusConflict, apierror.Code(de.Code), de.Message).WriteJSON(w)
+		return true
+	case err != nil:
+		h.handleServiceError(w, err)
+		return true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toIntegrationResponse(res.Integration))
+	return true
 }
 
 // Enable handles POST /api/v1/integrations/{id}/enable
