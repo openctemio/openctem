@@ -225,16 +225,18 @@ COMMENT ON TABLE finding_definitions IS
 
 -- findings.definition_id: the primary definition, denormalized for hot paths.
 -- It must be one of the finding's own links, which already proves the
--- definition is global or the finding's tenant's. Deferred, so a transaction
--- can replace a finding's links and its primary in any order. NOT VALID here
--- (no scan under this migration's lock); 000825 validates.
+-- definition is global or the finding's tenant's: a writer links first, then
+-- sets the pointer (and clears the pointer before removing its link). Not
+-- deferrable on purpose: a deferred key leaves a trigger event pending after
+-- every write to findings, and a later ALTER TABLE findings in the same
+-- transaction (a migration) would fail. NOT VALID here (no scan under this
+-- migration's lock); 000825 validates.
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS definition_id UUID;
 
 ALTER TABLE findings DROP CONSTRAINT IF EXISTS fk_findings_definition_link;
 ALTER TABLE findings
     ADD CONSTRAINT fk_findings_definition_link FOREIGN KEY (id, tenant_id, definition_id)
-        REFERENCES finding_definitions (finding_id, tenant_id, definition_id)
-        DEFERRABLE INITIALLY DEFERRED NOT VALID;
+        REFERENCES finding_definitions (finding_id, tenant_id, definition_id) NOT VALID;
 
 -- Deleting a definition clears the pointer in the same statement that
 -- cascades its links away (as findings.vulnerability_id does).

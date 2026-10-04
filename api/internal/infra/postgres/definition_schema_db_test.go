@@ -142,28 +142,34 @@ func TestDefinitionSchema_FindingPrimaryMustBeItsOwnLink(t *testing.T) {
 	fA := seedPlainFinding(ctx, t, db, tA)
 
 	// definition_id naming another tenant's definition, or a definition the
-	// finding is not linked to, fails (the key is deferred: at commit).
+	// finding is not linked to, fails.
 	for name, def := range map[string]string{"B's definition": defB, "an unlinked global definition": global} {
 		_, err := db.ExecContext(ctx, `UPDATE findings SET definition_id = $1 WHERE tenant_id = $2 AND id = $3`, def, tA.String(), fA)
 		expectSQLState(t, "findings.definition_id = "+name, err, sqlStateFK)
 	}
 
-	// Linked first, in one transaction in either order: accepted.
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
+	// Linked first, then the pointer: accepted.
+	if err := linkFinding(ctx, db, fA, tA.String(), global, nilScope, "primary", 0); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `UPDATE findings SET definition_id = $1 WHERE tenant_id = $2 AND id = $3`, global, tA.String(), fA); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE findings SET definition_id = $1 WHERE tenant_id = $2 AND id = $3`, global, tA.String(), fA); err != nil {
+		t.Fatalf("primary set after its link: %v", err)
+	}
+	// The link cannot go while the pointer names it.
+	_, err := db.ExecContext(ctx, `DELETE FROM finding_definitions WHERE tenant_id = $1 AND finding_id = $2`, tA.String(), fA)
+	expectSQLState(t, "remove the link findings.definition_id names", err, sqlStateFK)
+
+	// Not deferrable: a deferred key leaves a trigger event pending after
+	// every write to findings, and a migration that writes findings and then
+	// alters the table in one transaction would fail.
+	var deferrable bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_constraint
+		WHERE conname IN ('fk_findings_definition_link', 'fk_findings_definition')
+		  AND (condeferrable OR condeferred))`).Scan(&deferrable); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO finding_definitions (finding_id, tenant_id, definition_id, definition_scope, role, ord, asserted_by)
-		VALUES ($1, $2, $3, $4, 'primary', 0, 'report')`, fA, tA.String(), global, nilScope); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("primary set together with its link: %v", err)
+	if deferrable {
+		t.Error("a findings definition key is deferrable")
 	}
 
 	// Deleting the definition removes the link and clears the pointer in one statement.

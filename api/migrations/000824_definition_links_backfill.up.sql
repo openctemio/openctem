@@ -66,10 +66,6 @@ BEGIN
             LOOP
                 BEGIN
                     PERFORM set_config('lock_timeout', '5s', true);
-                    -- findings.definition_id's link key is deferred; check it
-                    -- per statement here, so no trigger event is still pending
-                    -- when the updated_at trigger is enabled again.
-                    SET CONSTRAINTS ALL IMMEDIATE;
                     ALTER TABLE findings DISABLE TRIGGER trigger_findings_updated_at;
 
                     INSERT INTO finding_definitions
