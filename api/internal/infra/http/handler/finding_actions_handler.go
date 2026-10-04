@@ -693,38 +693,3 @@ func (h *FindingActionsHandler) writeJSON(w http.ResponseWriter, status int, dat
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }
-
-func splitCSV(s string) []string {
-	parts := make([]string, 0)
-	for _, p := range splitByComma(s) {
-		p = trimSpace(p)
-		if p != "" {
-			parts = append(parts, p)
-		}
-	}
-	return parts
-}
-
-func splitByComma(s string) []string {
-	result := make([]string, 0)
-	start := 0
-	for i := range len(s) {
-		if s[i] == ',' {
-			result = append(result, s[start:i])
-			start = i + 1
-		}
-	}
-	result = append(result, s[start:])
-	return result
-}
-
-func trimSpace(s string) string {
-	i, j := 0, len(s)
-	for i < j && s[i] == ' ' {
-		i++
-	}
-	for j > i && s[j-1] == ' ' {
-		j--
-	}
-	return s[i:j]
-}
