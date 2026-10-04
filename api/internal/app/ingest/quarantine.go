@@ -142,6 +142,7 @@ func (s *Service) bindingFromCommandID(ctx context.Context, tenantID shared.ID, 
 		if cmd, err := s.commands.GetByTenantAndID(ctx, tenantID, cid); err == nil && cmd != nil {
 			b.Targets = CommandTargets(cmd)
 			b.Tool = commandTool(cmd)
+			b.StepRunID = cmd.StepRunID
 		}
 	}
 	return b

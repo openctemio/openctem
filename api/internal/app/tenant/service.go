@@ -1284,7 +1284,8 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 
 	s.applyInvitationRoles(ctx, invitation, userID)
 
-	s.logger.Info("invitation accepted", "token", token[:8]+"...", "user_id", userID.String(),
+	// Never log the token, not even a prefix: it is a bearer credential.
+	s.logger.Info("invitation accepted", "invitation_id", invitation.ID().String(), "user_id", userID.String(),
 		"role_count", len(invitation.RoleIDs()))
 
 	// Log audit event

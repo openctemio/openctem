@@ -205,3 +205,19 @@ type StepBatchGate interface {
 type ExhaustedFailer interface {
 	FailExhaustedCommandsReturning(ctx context.Context, maxRetries int) ([]*Command, error)
 }
+
+// BatchClaimer claims several commands for one sensor in one statement
+// (claim-N, RFC-046 §11, RFC-030 §5.3). Optional extension of Repository,
+// asserted by the command service.
+type BatchClaimer interface {
+	// ClaimManyForSensor acknowledges, for sensorID, those of ids that are
+	// still pending in tenantID, pinned to the sensor or unpinned, and pass
+	// the poll's zone, tool and capability gates, skipping rows another
+	// claim holds locked (FOR UPDATE SKIP LOCKED). Every claimed command
+	// gets a lease and a new lease epoch. Returns the ids claimed.
+	ClaimManyForSensor(ctx context.Context, tenantID, sensorID shared.ID, capabilities []string, ids []shared.ID) ([]shared.ID, error)
+
+	// CountHeldScans counts the scan commands sensorID holds in tenantID
+	// (acknowledged or running): the slots it already uses.
+	CountHeldScans(ctx context.Context, tenantID, sensorID shared.ID) (int, error)
+}
