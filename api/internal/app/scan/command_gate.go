@@ -79,6 +79,9 @@ func (s *Service) GateCommandPayload(ctx context.Context, tenantID shared.ID, se
 	if err := s.refuseExcluded(ctx, tenantID, checked); err != nil {
 		return nil, err
 	}
+	if err := s.refuseOutOfActScope(ctx, tenantID, nil, checked); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrCommandTargetRefused, err)
+	}
 
 	zoneID, err := s.commandZone(ctx, tenantID, sensorID, checked)
 	if err != nil {

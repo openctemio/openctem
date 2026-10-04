@@ -6,6 +6,12 @@
 > [Scan Orchestration](scan-orchestration.md) (agent-run scanners); this doc
 > covers **external** Tenable engines.
 
+> **Superseded design (2026-10-04).** The live Tenable path is being rebuilt as a
+> two-way Tenable.sc connector inside the sensor:
+> [RFC-047](../rfcs/RFC-047-tenable-sc-sensor-connector.md). The runner and
+> direct modes described here are not coming back; the coverage planner and its
+> batch-scoped auto-resolve invariant return on top of RFC-047 P1.
+
 ## Problem
 
 Cover a large estate (e.g. 3000 IPs) with a scanner licensed for fewer active

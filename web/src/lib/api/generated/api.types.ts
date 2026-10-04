@@ -16570,6 +16570,291 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/invitations/accept': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Accept an invitation
+     * @description Joins the organization of the invitation. The caller must be signed in as the invited email. The token travels in the body, never in the URL.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.InvitationTokenRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.MemberResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/invitations/accept-with-refresh': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Accept an invitation with a refresh token
+     * @description For an invited user without an organization yet: accepts the invitation and issues an access token for the new organization. The refresh token comes from the body or the httpOnly cookie (cookie requires the CSRF pair). The invitation token travels in the body, never in the URL.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Invitation token and optional refresh token */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AcceptInvitationWithRefreshRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AcceptInvitationWithRefreshResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/invitations/decline': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Decline an invitation
+     * @description Deletes the invitation. Holding the token is the authorization, so no sign-in is needed. The token travels in the body, never in the URL.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.InvitationTokenRequest']
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/invitations/lookup': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Look up an invitation
+     * @description What an invitation token grants, readable before sign-in: the organization, the invited email and role, and whether it is still pending. The token travels in the body, never in the URL.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.InvitationTokenRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.InvitationLookupResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/me/assets': {
     parameters: {
       query?: never
@@ -22542,6 +22827,15 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Not Found */
         404: {
           headers: {
@@ -22588,6 +22882,15 @@ export interface paths {
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester */
+        403: {
           headers: {
             [name: string]: unknown
           }
@@ -22821,6 +23124,15 @@ export interface paths {
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester */
+        403: {
           headers: {
             [name: string]: unknown
           }
@@ -33161,6 +33473,11 @@ export interface components {
     'github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule': {
       peers?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef'][]
       relationship?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType']
+      /**
+       * @description SubType restricts the rule to the type's assets of one sub-type
+       *     ("" = any sub-type).
+       */
+      sub_type?: string
     }
     /** @enum {string} */
     'github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType':
@@ -33192,6 +33509,8 @@ export interface components {
       card?: string
       class?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Class']
       columns?: string[]
+      /** @description ExposureDefault is the exposure the type has by nature ("" = none). */
+      exposure_default?: string
       facets?: string[]
       group_by?: string[]
       icon?: string
@@ -33201,6 +33520,11 @@ export interface components {
       lens?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Lens']
       plural?: string
       relationships?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships']
+      /**
+       * @description ScannableBy lists the tool target types (supported_targets) that can
+       *     scan the type (RFC-042 §6.3.8 R5).
+       */
+      scannable_by?: string[]
       sections?: string[]
       storage?: string
       sub_types?: string[]
@@ -33859,6 +34183,20 @@ export interface components {
     'internal_infra_http_handler.AWSRoleDataRequest': {
       external_id?: string
       role_arn: string
+    }
+    'internal_infra_http_handler.AcceptInvitationWithRefreshRequest': {
+      refresh_token?: string
+      token?: string
+    }
+    'internal_infra_http_handler.AcceptInvitationWithRefreshResponse': {
+      access_token?: string
+      expires_in?: number
+      refresh_token?: string
+      role?: string
+      tenant_id?: string
+      tenant_name?: string
+      tenant_slug?: string
+      token_type?: string
     }
     'internal_infra_http_handler.AcceptQuarantinedResultResponse': {
       assets_created?: number
@@ -36478,6 +36816,27 @@ export interface components {
       data?: components['schemas']['internal_infra_http_handler.InvitationListItem'][]
       total?: number
     }
+    'internal_infra_http_handler.InvitationLookupInvitation': {
+      email?: string
+      expires_at?: string
+      id?: string
+      inviter_name?: string
+      pending?: boolean
+      role?: string
+    }
+    'internal_infra_http_handler.InvitationLookupResponse': {
+      invitation?: components['schemas']['internal_infra_http_handler.InvitationLookupInvitation']
+      tenant?: components['schemas']['internal_infra_http_handler.InvitationLookupTenant']
+    }
+    'internal_infra_http_handler.InvitationLookupTenant': {
+      id?: string
+      name?: string
+      slug?: string
+    }
+    'internal_infra_http_handler.InvitationTokenRequest': {
+      /** @example Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8 */
+      token?: string
+    }
     'internal_infra_http_handler.LicensingModuleResponse': {
       category?: string
       description?: string
@@ -36729,6 +37088,13 @@ export interface components {
     'internal_infra_http_handler.MFASetupResponse': {
       otpauth_uri?: string
       secret?: string
+    }
+    'internal_infra_http_handler.MemberResponse': {
+      id?: string
+      invited_by?: string
+      joined_at?: string
+      role?: string
+      user_id?: string
     }
     'internal_infra_http_handler.NotificationEventCategoryResponse': {
       /** @example finding */
@@ -39065,6 +39431,12 @@ export interface components {
     'internal_infra_http_handler.UpdateToolRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.UpdateToolRequest']
+      }
+    }
+    /** @description Invitation token */
+    'internal_infra_http_handler.InvitationTokenRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.InvitationTokenRequest']
       }
     }
     /** @description Content to refresh */

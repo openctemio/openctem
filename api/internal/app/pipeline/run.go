@@ -148,7 +148,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 
 	// The run's targets reach every step command; check them the way a scan
 	// trigger does (private-range policy, scope exclusions, scan zones).
-	runContext, err := s.gateRunContext(ctx, tenantID, input.Context)
+	runContext, err := s.gateRunContext(ctx, tenantID, input.TriggeredBy, input.Context)
 	if err != nil {
 		s.logger.Warn("pipeline run refused by the target gate",
 			"template_id", template.ID.String(), "error", err)
