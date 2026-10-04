@@ -67,7 +67,7 @@ cannot reopen one, recount its findings or record its outcome twice.
 | `partial` | done: settle matrix (P1.2) and deadline → `partial` (P1.3) | `api/internal/app/pipeline/run.go`, `pipeline_run_repository.go` (`MarkTimedOutRuns`) |
 | Deadline + rollover | done: `deadline_at` fixed when the run starts (scan timeout, 24 h cap); at the deadline open commands fail and lose their lease (the sensor is told to stop on its next heartbeat), unfinished targets (≤ 10,000, dispatch order) are recorded; the next **scheduled** run plans them first, reordering only targets the gate resolved again | `pipeline_run_repository.go` (`runDeadlineSQL`, `MarkTimedOutRuns`, `LatestRollover`), `api/internal/app/scan/rollover.go` |
 | Occurrence claim | compare-and-set on `next_run_at`; occurrence key planned (P1.5) | `api/internal/app/scan/scheduler.go`, `scan_repository.go` (`ClaimScheduledRun`) |
-| Overlap skip | done | `scheduler.go` (`SkipIfRunning`) |
+| Overlap skip | done; checked in the run-insert transaction under the scan row lock (P1.6), so a manual trigger cannot slip in between | `scheduler.go` (`SkipIfRunning`), `pipeline_run_repository.go` (`CreateRunIfUnderLimit`, `ErrScanRunActive`) |
 | rrule | planned (P1.5); daily/weekly/monthly/crontab + timezone today | `api/pkg/domain/scan/entity.go` |
 | Claim + leases + fencing | dispatch order: priority class (one class up per 30 min waited, never into critical), then round-robin across runs, then age; claim-1 by id, and claim-N for a v2 sensor that names the `capacity` feature (`GET /api/v2/sensor/commands` returns its commands already claimed, at most `max_jobs` minus the scans it holds, one `UPDATE … FOR UPDATE SKIP LOCKED`); platform-sensor tenant fair share still to do | `command_repository.go` (`ClaimForSensor`), `command_lease.go`, `api/pkg/domain/command/lease.go` |
 | Cancel to sensor | via heartbeat `cancel_command_ids`; doorbell busy interval while a held task was just canceled; run cancel closes steps + tasks (`CloseCanceledRun`) | `command_lease.go` (`CommandsToCancel`), sdk-go `pkg/core/doorbell.go` |
@@ -75,7 +75,7 @@ cannot reopen one, recount its findings or record its outcome twice.
 | Retry classes | done (run-level) | `api/pkg/domain/pipeline/failure.go`, `pipeline_run_repository.go` (`ListPendingRetries`) |
 | Coverage auto-resolve | done, dry-run by default | `api/internal/app/ingest/coverage_autoresolve.go`, `INGEST_COVERAGE_AUTO_RESOLVE` |
 | Stage chaining | not yet (every step scans the seed targets) | RFC-046 §5.2 |
-| Automations | in-process executor fed by callbacks; outbox planned (P2) | `api/internal/app/workflow/` |
+| Automations | in-process executor fed by callbacks; outbox planned (P2). Cancel skips open steps and the executor stops before its next step; finished runs and steps are never rewritten | `api/internal/app/workflow/` |
 | `scan_sessions` | written by nothing; retired in P2 | `api/internal/app/scan/session.go` |
 
 ## 3. Things that are deliberately not wired

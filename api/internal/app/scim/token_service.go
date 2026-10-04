@@ -139,7 +139,7 @@ func (s *TokenService) Authenticate(ctx context.Context, plaintext string) (*sci
 	}
 	// Best-effort last-used stamp (non-fatal). Uses a status-preserving,
 	// active-only update so a concurrent revoke is never clobbered.
-	if uerr := s.repo.TouchLastUsed(ctx, tok.ID(), s.now()); uerr != nil {
+	if uerr := s.repo.TouchLastUsed(ctx, tok.TenantID(), tok.ID(), s.now()); uerr != nil {
 		s.logger.Warn("scim token touch failed", "token_id", tok.ID().String(), "error", uerr)
 	}
 	return tok, nil

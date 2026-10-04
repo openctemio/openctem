@@ -369,7 +369,10 @@ the run again. Remaining (P1.10):
 - sdk-go honours cancels without the doorbell (today a sensor started with
   `-disable-doorbell` runs canceled work to the end);
 - `POST /commands/{id}/cancel` on a `scan` command needs `scans:write` too;
-- Automation-run cancel stops its pending steps, not just the row;
+- ~~Automation-run cancel stops its pending steps, not just the row~~
+  (shipped: the cancel skips the run's open steps, tenant-scoped; the
+  executor stops before its next step; a finished run or step is never
+  rewritten, so the executor finishing cannot overwrite the cancel);
 - the cancel is audited with the actor and the run; latency ≤ one heartbeat
   (≤ 60 s) is documented, with the long-poll doorbell as the fast path.
 
@@ -570,7 +573,7 @@ means a test against a migrated Postgres (skips without `DATABASE_URL`).
 | **P1.3** | **Deadline → `partial` + unfinished targets**: `deadline_at`; reaper ends runs with any completed task `partial` (else `timeout`), records unfinished targets, cancels leased commands; next occurrence plans unfinished targets first | DB: reaper on a run with one completed and one running command → partial, unfinished = the running command's targets, command canceled; next trigger orders unfinished first |
 | **P1.4** | **Runs read model (D2 step 1)**: `GET /scans/{id}/runs` and `/runs/{id}` return trigger, `scheduled_for`, status incl. partial, task summary (done/failed/running/queued, sensors), coverage summary; trigger types `ci`, `retest`, `automation`, `rollover`; CI ingest creates a `trigger=ci` run instead of a `scan_sessions` row; dead `useScanSessions` removed | Route tests incl. cross-tenant 404; CI ingest creates exactly one run per report; web vitest for the runs tab |
 | **P1.5** | **Occurrence key + rrule**: `scheduled_for` + `UNIQUE(scan_id, scheduled_for)`; rrule + tz with backfill from daily/weekly/monthly/crontab; minimum interval 15 min; stable jitter; misfire grace | DB: two inserts for one occurrence → one run, the second gets a conflict; rrule property tests (DST, month ends, every-15-min ok, every-5-min refused); backfill test per legacy type |
-| **P1.6** | Overlap check and run insert in one transaction | Race test: manual trigger and scheduler for the same scan concurrently → one active run |
+| **P1.6** | *(Shipped: the skip is checked in `CreateRunIfUnderLimit` under the scan row lock for every scheduled run.)* Overlap check and run insert in one transaction | Race test: manual trigger and scheduler for the same scan concurrently → one active run |
 | **P1.7** | *(Shipped for tenant sensors: v2 `capacity` feature, fair order by class with aging then round-robin per run; platform-sensor tenant fair share in #991.)* **Claim-N** with `FOR UPDATE SKIP LOCKED`, server capacity, priority classes with ageing, per-run round-robin | DB: two sensors × N polls never claim the same command; capacity respected; class order; round-robin across two runs; tenant/zone predicates hold |
 | **P1.8** | **`controller_leases`** + non-idempotent sweeps converted; remove the two session advisory locks | DB: two holders, one wins, epoch increments, expiry hands over; each converted sweep runs once with two instances |
 | **P1.9** | Observability: `tenant_id` out of metric labels, inert metrics written or deleted, `traceparent` in payloads, `run_id` log key, `/runs/{id}/explain` | Metric label test; explain route tests incl. cross-tenant; trace propagation unit test |
