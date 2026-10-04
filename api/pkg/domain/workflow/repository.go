@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -197,4 +198,22 @@ type NodeRunRepository interface {
 
 	// GetPendingByDependencies gets node runs that are pending and have their dependencies completed.
 	GetPendingByDependencies(ctx context.Context, workflowRunID shared.ID, completedNodeKeys []string) ([]*NodeRun, error)
+}
+
+// ErrRunAlreadyFinished: the run is completed, failed or canceled, and a
+// finished run never changes again (a late executor write after a cancel is
+// refused, so the cancel stands).
+var ErrRunAlreadyFinished = errors.New("workflow run already finished")
+
+// ErrNodeRunAlreadyFinished: the node run is completed, failed or skipped
+// (for example skipped because its run was canceled), and never changes.
+var ErrNodeRunAlreadyFinished = errors.New("workflow node run already finished")
+
+// NodeRunCanceler closes what a canceled automation run leaves open
+// (RFC-046 §8). Optional extension of NodeRunRepository.
+type NodeRunCanceler interface {
+	// SkipOpenNodeRuns ends the pending and running node runs of runID as
+	// skipped ("run canceled"), only when the run is in tenantID and is
+	// canceled. Returns how many it ended; repeating it ends none.
+	SkipOpenNodeRuns(ctx context.Context, tenantID, runID shared.ID) (int64, error)
 }

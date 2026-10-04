@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -534,29 +533,6 @@ func (h *FindingActionsHandler) buildFilter(r *http.Request) vulnerability.Findi
 	}
 
 	return filter
-}
-
-func (h *FindingActionsHandler) buildPagination(r *http.Request, defaultPerPage int) pagination.Pagination {
-	q := r.URL.Query()
-	perPage := defaultPerPage
-	page := 1
-
-	if pp := q.Get("per_page"); pp != "" {
-		if v, err := strconv.Atoi(pp); err == nil && v > 0 && v <= 100 {
-			perPage = v
-		}
-	}
-	if p := q.Get("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v > 0 {
-			page = v
-		}
-	}
-
-	// pagination.New(page, perPage) computes the offset internally. The args
-	// were swapped (perPage passed as page, a pre-computed offset as perPage),
-	// so page 1 became New(20,0) → LIMIT 20 OFFSET 980 and any dataset under
-	// ~980 groups returned an empty first page.
-	return pagination.New(page, perPage)
 }
 
 func (h *FindingActionsHandler) handleError(w http.ResponseWriter, err error) {
