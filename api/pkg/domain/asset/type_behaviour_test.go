@@ -15,7 +15,9 @@ func TestDefaultExposure_StoredPairs(t *testing.T) {
 		want Exposure
 	}{
 		{AssetTypeApplication, "website", ExposurePublic},
-		{AssetTypeApplication, "web_application", ExposurePublic},
+		{AssetTypeApplication, "website", ExposurePublic},
+		// O3: web_application is no stored sub-type any more
+		{AssetTypeApplication, "", ExposureUnknown},
 		{AssetTypeApplication, "api", ExposurePublic},
 		{AssetTypeApplication, "mobile_app", ExposureUnknown},
 		{AssetTypeApplication, "", ExposureUnknown},

@@ -50,9 +50,26 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
   const [approvalTarget, setApprovalTarget] = useState<FindingStatus | null>(null)
 
   // Follow the server after a revalidation or when another finding is shown.
-  useEffect(() => setStatus(finding.status), [finding.id, finding.status])
-  useEffect(() => setSeverity(finding.severity), [finding.id, finding.severity])
-  useEffect(() => setAssignee(finding.assignee), [finding.id, finding.assignee])
+  //
+  // The parent rebuilds `finding` (and a fresh `assignee` object) on every
+  // render. The effects therefore compare by VALUE and return `prev` when
+  // nothing changed, so React bails out instead of scheduling another render.
+  // Calling setState unconditionally with the new object reference — as this
+  // used to — set a new value every render and looped ("Maximum update depth
+  // exceeded"). Assignee is compared by id (the only stable identity on the
+  // rebuilt object); the effect still re-runs cheaply each render, but no longer
+  // re-renders.
+  useEffect(() => {
+    setStatus((prev) => (prev === finding.status ? prev : finding.status))
+  }, [finding.id, finding.status])
+  useEffect(() => {
+    setSeverity((prev) => (prev === finding.severity ? prev : finding.severity))
+  }, [finding.id, finding.severity])
+  useEffect(() => {
+    setAssignee((prev) =>
+      (prev?.id ?? null) === (finding.assignee?.id ?? null) ? prev : finding.assignee
+    )
+  }, [finding.id, finding.assignee])
 
   const { trigger: updateStatus, isMutating: statusBusy } = useUpdateFindingStatusApi(finding.id)
   const { trigger: updateSeverity, isMutating: severityBusy } = useUpdateFindingSeverityApi(
