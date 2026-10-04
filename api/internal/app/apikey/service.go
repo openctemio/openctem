@@ -312,7 +312,7 @@ func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeyd
 	}
 
 	// Best-effort usage telemetry — a failure here must never fail auth.
-	if terr := s.repo.TouchLastUsed(ctx, key.ID(), ip); terr != nil {
+	if terr := s.repo.TouchLastUsed(ctx, key.TenantID(), key.ID(), ip); terr != nil {
 		s.logger.Debug("api key touch-last-used failed", "id", key.ID().String(), "error", terr.Error())
 	}
 
