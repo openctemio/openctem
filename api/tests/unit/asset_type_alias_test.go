@@ -20,7 +20,7 @@ func TestResolveTypeAlias(t *testing.T) {
 		{"compute", "host", "compute"},
 		{"serverless", "host", "serverless"},
 		{"website", "application", "website"},
-		{"web_application", "application", "web_application"},
+		{"web_application", "application", "website"}, // O3: one web sub-type
 		{"api", "application", "api"},
 		{"mobile_app", "application", "mobile_app"},
 		{"iam_user", "identity", "iam_user"},

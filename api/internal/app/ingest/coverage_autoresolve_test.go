@@ -66,6 +66,18 @@ func TestDecideCoverage(t *testing.T) {
 			c.Reports = append(c.Reports, second)
 		}, coverageUndeclared},
 		{"not a scan command", func(c *ingestreport.CommandCoverage) { c.CommandType = "validate" }, coverageNotScanCommand},
+		{"a Tenable.sc scan through the connector", func(c *ingestreport.CommandCoverage) {
+			c.CommandType = "connector_scan"
+			c.Reports[0].ToolName = "tenable_sc"
+			c.Reports[0].Header = coverageHeader(t, "tenable_sc", ctis.ReportMetadata{CoverageType: "full"})
+		}, coverageEligible},
+		{"a connector pull never resolves by absence", func(c *ingestreport.CommandCoverage) {
+			c.CommandType = "connector_sync"
+		}, coverageNotScanCommand},
+		{"a connector scan that did not finish", func(c *ingestreport.CommandCoverage) {
+			c.CommandType = "connector_scan"
+			c.Reports[0].Header = coverageHeader(t, "tenable_sc", ctis.ReportMetadata{CoverageType: "partial"})
+		}, coveragePartial},
 		{"command failed", func(c *ingestreport.CommandCoverage) { c.CommandStatus = "failed" }, coverageCommandNotCompleted},
 		{"command canceled", func(c *ingestreport.CommandCoverage) { c.CommandStatus = "canceled" }, coverageCommandNotCompleted},
 		{"command expired", func(c *ingestreport.CommandCoverage) { c.CommandStatus = "expired" }, coverageCommandNotCompleted},
