@@ -301,6 +301,54 @@ func TestEnforcer_AssertAssetRef(t *testing.T) {
 	}
 }
 
+// FilterAssetRefs is the batch AssertAssetRef: same answers per id.
+func TestEnforcer_FilterAssetRefs(t *testing.T) {
+	tenant, other := shared.NewID(), shared.NewID()
+	scoped := shared.NewID()
+	inScope, outScope, foreign, unknown := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+	repo := &fakeRepo{
+		rows:   map[shared.ID]map[shared.ID]bool{scoped: {inScope: true, foreign: true}},
+		tenant: map[shared.ID]shared.ID{inScope: tenant, outScope: tenant, foreign: other},
+	}
+	all := []shared.ID{inScope, outScope, foreign, unknown, {}}
+	cases := []struct {
+		name   string
+		caller Caller
+		admit  []shared.ID
+	}{
+		{"admin", Caller{UserID: shared.NewID().String(), IsAdmin: true}, []shared.ID{inScope, outScope}},
+		{"internal call", Caller{}, []shared.ID{inScope, outScope}},
+		{"scoped member", Caller{UserID: scoped.String()}, []shared.ID{inScope}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := New(repo, policy(false), ctxCaller, nil)
+			admit, err := e.FilterAssetRefs(withCaller(tc.caller), tenant, all)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := map[shared.ID]bool{}
+			for _, id := range tc.admit {
+				want[id] = true
+			}
+			for _, id := range all {
+				if admit(id) != want[id] {
+					t.Errorf("admit(%s) = %v, want %v", id, admit(id), want[id])
+				}
+			}
+		})
+	}
+
+	var nilEnforcer *Enforcer
+	if admit, err := nilEnforcer.FilterAssetRefs(context.Background(), tenant, all); err != nil || admit(inScope) {
+		t.Errorf("nil enforcer must admit nothing (err=%v)", err)
+	}
+	repo.err = errors.New("db down")
+	if _, err := New(repo, policy(false), ctxCaller, nil).FilterAssetRefs(context.Background(), tenant, all); err == nil {
+		t.Error("a lookup error must be returned")
+	}
+}
+
 // A has_full_data_access role is the Layer 2 bypass (owner decision D3),
 // except through an API key; a lookup error restricts.
 func TestEnforcer_FullDataRole(t *testing.T) {
