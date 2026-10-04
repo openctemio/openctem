@@ -57,6 +57,7 @@ export type GroupByDimension =
   | 'severity'
   | 'source'
   | 'finding_type'
+  | 'family'
 
 export interface FindingGroupsFilters {
   group_by: GroupByDimension

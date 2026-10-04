@@ -362,6 +362,12 @@ export interface ApiFinding {
   misconfig_expected?: string
   misconfig_actual?: string
   misconfig_cause?: string
+  /** Rule family / category from the scanner (research 17 R2). */
+  family?: string
+  vpr_score?: number
+  cvss_version?: string
+  cve_ids?: string[]
+  patch_published_at?: string
 }
 
 // ============================================
@@ -497,6 +503,8 @@ export interface FindingApiFilters {
   /** One finding group's rows (group by CVE / type). Sent as `cve_ids` / `finding_types`. */
   cve_ids?: string[]
   finding_types?: string[]
+  /** Scanner rule families (Nessus / Tenable.sc plugin family). Sent as `family`. */
+  families?: string[]
   /** Sort spec, e.g. 'priority_class,severity,-created_at'. */
   sort?: string
   page?: number
