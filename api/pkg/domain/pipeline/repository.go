@@ -270,6 +270,28 @@ type UnclaimedRunAborter interface {
 	AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error)
 }
 
+// Rollover is the work a scan's previous scheduled run left unfinished at its
+// deadline (RFC-046 D5): the next scheduled run plans these targets first.
+type Rollover struct {
+	FromRunID shared.ID
+	Targets   []string
+}
+
+// RolloverStore reads the unfinished targets runs recorded at their deadline.
+// Optional extension of RunRepository, asserted by the scan trigger and the
+// run handler. Every read is scoped to the caller's tenant.
+type RolloverStore interface {
+	// GetUnfinishedTargets returns the targets runID recorded as unfinished,
+	// or shared.ErrNotFound when the run is not in tenantID.
+	GetUnfinishedTargets(ctx context.Context, tenantID, runID shared.ID) ([]string, error)
+
+	// LatestRollover returns what the scan's most recent settled run left
+	// unfinished when that run was a scheduled run that ended partial, and
+	// nil otherwise (the latest settled run finished everything, failed,
+	// was canceled, or was not a scheduled run).
+	LatestRollover(ctx context.Context, tenantID, scanID shared.ID) (*Rollover, error)
+}
+
 // CanceledRunClosure is what closing a canceled run changed.
 type CanceledRunClosure struct {
 	// Steps is how many open step runs ended canceled.
