@@ -121,7 +121,8 @@ export default function ScanDetailPage() {
     () => (config ? scanRunCounts(config, recentRuns) : null),
     [config, recentRuns]
   )
-  const progress = counts?.successRate ?? 0
+  // null before any run settled: shown as "n/a", not as a 0% failure.
+  const progress = counts?.successRate ?? null
 
   // Action handlers
   const handleTriggerScan = async () => {
@@ -509,7 +510,10 @@ export default function ScanDetailPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{config.failed_runs}</p>
-                <p className="text-xs text-muted-foreground">Failed</p>
+                <p className="text-xs text-muted-foreground">
+                  Failed
+                  {counts && counts.partial > 0 && <> · {counts.partial} partial</>}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -523,16 +527,16 @@ export default function ScanDetailPage() {
               <div>
                 <p
                   className={`text-2xl font-bold ${
-                    progress >= 80
-                      ? 'text-green-500'
-                      : progress >= 50
-                        ? 'text-yellow-500'
-                        : progress === 0
-                          ? 'text-muted-foreground'
-                          : 'text-red-500'
+                    progress === null
+                      ? 'text-muted-foreground'
+                      : progress >= 80
+                        ? 'text-success'
+                        : progress >= 50
+                          ? 'text-warning'
+                          : 'text-destructive'
                   }`}
                 >
-                  {progress}%
+                  {progress === null ? 'n/a' : `${progress}%`}
                 </p>
                 <p className="text-xs text-muted-foreground">Success Rate</p>
               </div>

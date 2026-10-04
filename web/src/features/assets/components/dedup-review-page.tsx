@@ -133,7 +133,7 @@ export function DedupReviewPage() {
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
-          <Can permission={Permission.AssetsWrite}>
+          <Can permission={Permission.AssetsDelete}>
             <div className="flex justify-end gap-2">
               <Button
                 size="sm"

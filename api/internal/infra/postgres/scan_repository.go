@@ -434,10 +434,12 @@ func (r *ScanRepository) RecordRunStarted(ctx context.Context, id shared.ID, run
 // last_run_status follows only while this run is still the scan's latest: an
 // older run finishing late must not relabel a newer one that is running.
 func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error {
-	var successIncrement, failedIncrement int
+	var successIncrement, failedIncrement, partialIncrement int
 	switch status {
 	case "completed", "success":
 		successIncrement = 1
+	case "partial":
+		partialIncrement = 1
 	case "failed", "error", "timeout":
 		failedIncrement = 1
 	}
@@ -450,10 +452,11 @@ func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shar
 		    total_runs = total_runs + 1,
 		    successful_runs = successful_runs + $4,
 		    failed_runs = failed_runs + $5,
+		    partial_runs = partial_runs + $6,
 		    updated_at = NOW()
 		WHERE id = $1
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), status, successIncrement, failedIncrement)
+	_, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), status, successIncrement, failedIncrement, partialIncrement)
 	if err != nil {
 		return fmt.Errorf("failed to record run: %w", err)
 	}
@@ -658,7 +661,7 @@ func (r *ScanRepository) selectQuery() string {
 		       max_retries, retry_backoff_seconds, status,
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
-		       created_by, created_at, updated_at, scan_zone_id, ad_hoc
+		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs
 		FROM scans
 	`
 }
@@ -737,6 +740,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.UpdatedAt,
 		&scanZoneID,
 		&s.AdHoc,
+		&s.PartialRuns,
 	)
 	if err != nil {
 		return nil, err

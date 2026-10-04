@@ -1,0 +1,447 @@
+package retest_test
+
+// Continuous retest (RFC-039) end to end against a migrated Postgres: request →
+// two real validate commands → the sensor's results → the finding moves (or,
+// for an unreachable target, does not). DB-gated: needs DATABASE_URL naming a
+// disposable test database (testdb.URL), never the live one.
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	_ "github.com/lib/pq"
+
+	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
+	"github.com/openctemio/openctem/api/internal/app/validation"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
+	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+)
+
+type sensorsOnline bool
+
+func (s sensorsOnline) HasNucleiValidationSensor(context.Context, shared.ID) (bool, error) {
+	return bool(s), nil
+}
+
+type fixture struct {
+	t      *testing.T
+	db     *sql.DB
+	pg     *postgres.DB
+	repo   *postgres.FindingRetestRepository
+	tenant shared.ID
+	user   shared.ID
+	asset  shared.ID
+}
+
+func newFixture(t *testing.T) *fixture {
+	t.Helper()
+	url := testdb.URL()
+	if url == "" {
+		t.Skip("DATABASE_URL not set to a test database; skipping retest DB test")
+	}
+	db, err := sql.Open("postgres", url)
+	if err != nil {
+		t.Skipf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Ping(); err != nil {
+		t.Skipf("cannot reach test DB: %v", err)
+	}
+	fx := &fixture{t: t, db: db, pg: &postgres.DB{DB: db}, tenant: shared.NewID(), user: shared.NewID()}
+	fx.repo = postgres.NewFindingRetestRepository(fx.pg)
+	fx.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'retest IT', $2)`, fx.tenant.String(), "retest-"+fx.tenant.String())
+	fx.exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'analyst')`, fx.user.String(), fx.user.String()+"@retest.test")
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = db.ExecContext(bg, `DELETE FROM commands WHERE tenant_id = $1`, fx.tenant.String())
+		_, _ = db.ExecContext(bg, `DELETE FROM tenants WHERE id = $1`, fx.tenant.String())
+		_, _ = db.ExecContext(bg, `DELETE FROM users WHERE id = $1`, fx.user.String())
+	})
+	fx.asset = fx.newAsset("shop.example.com")
+	return fx
+}
+
+func (fx *fixture) exec(q string, args ...any) {
+	fx.t.Helper()
+	if _, err := fx.db.ExecContext(context.Background(), q, args...); err != nil {
+		fx.t.Fatalf("exec %q: %v", q, err)
+	}
+}
+
+func (fx *fixture) newAsset(name string) shared.ID {
+	id := shared.NewID()
+	fx.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, status) VALUES ($1, $2, $3, 'domain', 'active')`,
+		id.String(), fx.tenant.String(), name)
+	return id
+}
+
+// newFinding inserts a nuclei finding in the given status.
+func (fx *fixture) newFinding(asset shared.ID, status, template string) shared.ID {
+	id := shared.NewID()
+	fx.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, rule_id, file_path, message, severity,
+			fingerprint, status, resolved_at, resolved_by, resolution)
+		VALUES ($1::uuid, $2, $3, 'dast', 'nuclei', $4, 'https://shop.example.com/admin', 'nuclei hit', 'high', $1::text, $5::text,
+			CASE WHEN $5::text = 'resolved' THEN NOW() END, CASE WHEN $5::text = 'resolved' THEN $6::uuid END,
+			CASE WHEN $5::text = 'resolved' THEN 'patched' END)`,
+		id.String(), fx.tenant.String(), asset.String(), template, status, fx.user.String())
+	return id
+}
+
+func (fx *fixture) service() *retestapp.Service {
+	return retestapp.NewService(fx.repo, postgres.NewFindingRepository(fx.pg), postgres.NewAssetRepository(fx.pg),
+		postgres.NewCommandRepository(fx.pg), validation.NewCommandDispatcher(postgres.NewCommandRepository(fx.pg), logger.NewNop()),
+		sensorsOnline(true), logger.NewNop())
+}
+
+// finish reports a sensor result for a command: completed with an outcome, or
+// failed when outcome is "".
+func (fx *fixture) finish(cmd *shared.ID, outcome, summary string) {
+	fx.t.Helper()
+	if cmd == nil {
+		fx.t.Fatal("retest has no command")
+	}
+	if outcome == "" {
+		fx.exec(`UPDATE commands SET status = 'failed', error_message = 'sensor crashed', completed_at = NOW() WHERE id = $1`, cmd.String())
+		return
+	}
+	res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": outcome, "summary": summary}})
+	fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, cmd.String(), res)
+}
+
+func (fx *fixture) findingState(id shared.ID) (status, method, resolvedBy string) {
+	fx.t.Helper()
+	var m, by sql.NullString
+	if err := fx.db.QueryRow(`SELECT status, resolution_method, resolved_by::text FROM findings WHERE id = $1`, id.String()).
+		Scan(&status, &m, &by); err != nil {
+		fx.t.Fatal(err)
+	}
+	return status, m.String, by.String
+}
+
+func (fx *fixture) retest(id shared.ID) *retestdom.Retest {
+	fx.t.Helper()
+	rt, err := fx.repo.GetByID(context.Background(), fx.tenant, id)
+	if err != nil {
+		fx.t.Fatal(err)
+	}
+	return rt
+}
+
+func (fx *fixture) request(svc *retestapp.Service, finding shared.ID) *retestdom.Retest {
+	fx.t.Helper()
+	user := fx.user
+	rt, err := svc.Request(context.Background(), retestapp.RequestInput{
+		TenantID: fx.tenant, FindingID: finding, Trigger: retestdom.TriggerManual, RequestedBy: &user,
+	})
+	if err != nil {
+		fx.t.Fatalf("request retest: %v", err)
+	}
+	return rt
+}
+
+// The commands a retest queues are real validate commands: the template re-run
+// routed to validate:nuclei, the probe to validate, both tagged with the retest.
+func TestRetestDB_QueuesTwoScopedValidateCommands(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	f := fx.newFinding(fx.asset, "confirmed", "CVE-2024-1234")
+	rt := fx.request(svc, f)
+
+	rows, err := fx.db.Query(`SELECT type, payload FROM commands WHERE tenant_id = $1 ORDER BY created_at`, fx.tenant.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	kinds := map[string]validation.ValidateCommandPayload{}
+	for rows.Next() {
+		var typ string
+		var raw []byte
+		if err := rows.Scan(&typ, &raw); err != nil {
+			t.Fatal(err)
+		}
+		var p validation.ValidateCommandPayload
+		_ = json.Unmarshal(raw, &p)
+		if typ != "validate" || p.RetestID != rt.ID.String() || p.FindingID != f.String() {
+			t.Errorf("unexpected command %s %+v", typ, p)
+		}
+		kinds[p.ExecutorKind] = p
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	nuc, ok := kinds["nuclei"]
+	if !ok || nuc.TemplateID != "CVE-2024-1234" || nuc.Target.Address != "https://shop.example.com/admin" ||
+		len(nuc.RequiredCapabilities) != 1 || nuc.RequiredCapabilities[0] != "validate:nuclei" {
+		t.Errorf("template re-run command wrong: %+v", nuc)
+	}
+	if sc, ok := kinds["safe-check"]; !ok || sc.Target.Address != nuc.Target.Address || sc.TemplateID != "" {
+		t.Errorf("reachability probe command wrong: %+v", sc)
+	}
+}
+
+func TestRetestDB_NoMatchOnReachableTargetResolves(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	f := fx.newFinding(fx.asset, "confirmed", "exposed-admin-panel")
+	rt := fx.request(svc, f)
+
+	fx.finish(rt.CheckCommandID, "not_detected", "detection template did not match")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.CheckCommandID)
+	if got := fx.retest(rt.ID); got.Status != retestdom.StatusPending {
+		t.Fatalf("settled with one check outstanding: %+v", got)
+	}
+	fx.finish(rt.ReachCommandID, "detected", "target is still reachable")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+
+	got := fx.retest(rt.ID)
+	if got.Outcome != retestdom.OutcomeFixed || got.ResultStatus != "resolved" {
+		t.Fatalf("retest = %+v, want fixed → resolved", got)
+	}
+	status, method, by := fx.findingState(f)
+	if status != "resolved" || method != "retest_verified" || by != fx.user.String() {
+		t.Errorf("finding = %s/%s/%s, want resolved/retest_verified/<requester>", status, method, by)
+	}
+	var actorType, actorName string
+	if err := fx.db.QueryRow(`SELECT actor_type, actor_name FROM finding_activities
+		WHERE finding_id = $1 AND activity_type = 'retest_completed'`, f.String()).Scan(&actorType, &actorName); err != nil {
+		t.Fatalf("retest_completed activity: %v", err)
+	}
+	if actorType != "system" || actorName != "system: retest" {
+		t.Errorf("activity actor = %s/%s, want system/system: retest", actorType, actorName)
+	}
+}
+
+// An unreachable target is unknown, never fixed: nuclei prints nothing for a
+// host that does not answer, which the sensor reports as not_detected.
+func TestRetestDB_UnreachableTargetIsUnknownNotFixed(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+
+	refused := fx.newFinding(fx.asset, "confirmed", "tpl-refused")
+	rt := fx.request(svc, refused)
+	fx.finish(rt.CheckCommandID, "not_detected", "")
+	fx.finish(rt.ReachCommandID, "not_detected", "target is no longer reachable (connection refused)")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+	got := fx.retest(rt.ID)
+	if got.Outcome != retestdom.OutcomeUnknown || !strings.HasPrefix(got.Reason, "target unreachable") {
+		t.Fatalf("retest = %+v, want unknown / target unreachable", got)
+	}
+	if status, _, _ := fx.findingState(refused); status != "confirmed" {
+		t.Errorf("unreachable target moved the finding to %s", status)
+	}
+
+	// The probe itself failing (sensor error) is unknown too.
+	failed := fx.newFinding(fx.newAsset("api.example.com"), "fix_applied", "tpl-failed")
+	rt2 := fx.request(svc, failed)
+	fx.finish(rt2.CheckCommandID, "not_detected", "")
+	fx.finish(rt2.ReachCommandID, "", "")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt2.ReachCommandID)
+	if got := fx.retest(rt2.ID); got.Outcome != retestdom.OutcomeUnknown {
+		t.Fatalf("retest with a failed probe = %+v, want unknown", got)
+	}
+	if status, _, _ := fx.findingState(failed); status != "fix_applied" {
+		t.Errorf("failed probe moved the finding to %s", status)
+	}
+}
+
+// A retest that sees a resolved finding again reopens it as a regression, with
+// the system: retest actor.
+func TestRetestDB_StillPresentReopensResolvedFinding(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	f := fx.newFinding(fx.asset, "resolved", "tpl-regress")
+	rt := fx.request(svc, f)
+	fx.finish(rt.CheckCommandID, "detected", "exposure still reproducible")
+	fx.finish(rt.ReachCommandID, "detected", "")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.CheckCommandID)
+
+	if got := fx.retest(rt.ID); got.Outcome != retestdom.OutcomeStillPresent || got.ResultStatus != "confirmed" {
+		t.Fatalf("retest = %+v, want still_present → confirmed", got)
+	}
+	status, _, by := fx.findingState(f)
+	if status != "confirmed" || by != "" {
+		t.Errorf("finding = %s (resolved_by %q), want confirmed and the resolution cleared", status, by)
+	}
+	var isRegression bool
+	var changes []byte
+	if err := fx.db.QueryRow(`SELECT COALESCE(is_regression, false) FROM findings WHERE id = $1`, f.String()).Scan(&isRegression); err != nil {
+		t.Fatal(err)
+	}
+	if !isRegression {
+		t.Error("retest reopen not counted as a regression")
+	}
+	if err := fx.db.QueryRow(`SELECT changes FROM finding_activities WHERE finding_id = $1 AND activity_type = 'retest_completed'`,
+		f.String()).Scan(&changes); err != nil {
+		t.Fatal(err)
+	}
+	var c map[string]any
+	_ = json.Unmarshal(changes, &c)
+	if c["regression"] != true || c["old_status"] != "resolved" || c["new_status"] != "confirmed" || c["actor"] != "system: retest" {
+		t.Errorf("activity changes = %v", c)
+	}
+}
+
+func TestRetestDB_OneInFlightPerFindingThenCooldown(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	f := fx.newFinding(fx.asset, "confirmed", "tpl-once")
+	rt := fx.request(svc, f)
+	user := fx.user
+	_, err := svc.Request(context.Background(), retestapp.RequestInput{TenantID: fx.tenant, FindingID: f, Trigger: retestdom.TriggerManual, RequestedBy: &user})
+	if !errors.Is(err, retestdom.ErrRateLimited) && !errors.Is(err, retestdom.ErrInFlight) {
+		t.Fatalf("second request while one is pending: err = %v, want in-flight or rate-limited", err)
+	}
+	fx.finish(rt.CheckCommandID, "detected", "")
+	fx.finish(rt.ReachCommandID, "detected", "")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.CheckCommandID)
+	_, err = svc.Request(context.Background(), retestapp.RequestInput{TenantID: fx.tenant, FindingID: f, Trigger: retestdom.TriggerManual, RequestedBy: &user})
+	if !errors.Is(err, retestdom.ErrRateLimited) {
+		t.Fatalf("request inside the cooldown: err = %v, want rate-limited", err)
+	}
+}
+
+// A retest whose sensor never answers is settled unknown by the sweep once its
+// deadline passes; the finding is not touched.
+func TestRetestDB_SweepSettlesPastDeadlineAsUnknown(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	f := fx.newFinding(fx.asset, "in_progress", "tpl-silent")
+	rt := fx.request(svc, f)
+
+	svc.SetClock(func() time.Time { return time.Now().Add(retestapp.Deadline + time.Minute) })
+	if _, err := svc.Sweep(context.Background(), 1000); err != nil {
+		t.Fatal(err)
+	}
+	got := fx.retest(rt.ID)
+	if got.Outcome != retestdom.OutcomeUnknown || got.Reason != "no sensor result before the deadline" {
+		t.Fatalf("retest = %+v, want unknown / no result before the deadline", got)
+	}
+	if status, _, _ := fx.findingState(f); status != "in_progress" {
+		t.Errorf("silent sensor moved the finding to %s", status)
+	}
+}
+
+// Ineligible findings are refused before anything is queued.
+func TestRetestDB_IneligibleFindingsAreRefused(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	user := fx.user
+	fp := fx.newFinding(fx.asset, "false_positive", "tpl-fp")
+	notNuclei := fx.newFinding(fx.asset, "confirmed", "tpl-x")
+	fx.exec(`UPDATE findings SET tool_name = 'trivy' WHERE id = $1`, notNuclei.String())
+	destructive := fx.newFinding(fx.asset, "confirmed", "apache-dos-check")
+	for name, f := range map[string]shared.ID{"false positive": fp, "not a nuclei finding": notNuclei, "destructive template": destructive} {
+		_, err := svc.Request(context.Background(), retestapp.RequestInput{TenantID: fx.tenant, FindingID: f, Trigger: retestdom.TriggerManual, RequestedBy: &user})
+		if !errors.Is(err, retestdom.ErrNotEligible) {
+			t.Errorf("%s: err = %v, want not eligible", name, err)
+		}
+	}
+	var n int
+	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM commands WHERE tenant_id = $1`, fx.tenant.String()).Scan(&n)
+	if n != 0 {
+		t.Errorf("%d commands queued for ineligible findings", n)
+	}
+}
+
+// --- no double-fire ---
+
+// rendezvousAuto makes every replica list the due tenants and then wait until
+// all of them have, so their claims race for the same tick.
+type rendezvousAuto struct {
+	*postgres.FindingRetestRepository
+	want    int32
+	arrived atomic.Int32
+	all     chan struct{}
+	once    sync.Once
+}
+
+func (r *rendezvousAuto) ListDueAutoTenants(ctx context.Context, now time.Time, limit int) ([]retestdom.AutoTenant, error) {
+	list, err := r.FindingRetestRepository.ListDueAutoTenants(ctx, now, limit)
+	if r.arrived.Add(1) >= r.want {
+		r.once.Do(func() { close(r.all) })
+	}
+	select {
+	case <-r.all:
+	case <-time.After(3 * time.Second):
+	}
+	return list, err
+}
+
+// Two API replicas run the scheduler at the same moment. The tenant's tick must
+// be served once: with a daily cap of 2 and 4 eligible findings, exactly 2
+// retests are queued. Without the claim each replica reads "0 queued today" and
+// queues its own 2.
+func TestRetestDB_TwoSchedulerReplicasDoNotDoubleFire(t *testing.T) {
+	fx := newFixture(t)
+	fx.exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{retest}', '{"auto_enabled": true, "daily_cap": 2}') WHERE id = $1`,
+		fx.tenant.String())
+	other := fx.newAsset("api.example.com")
+	for i, a := range []shared.ID{fx.asset, fx.asset, other, other} {
+		fx.newFinding(a, "confirmed", "tpl-auto-"+string(rune('a'+i)))
+	}
+
+	auto := &rendezvousAuto{FindingRetestRepository: fx.repo, want: 2, all: make(chan struct{})}
+	replicas := []*retestapp.Service{fx.service(), fx.service()}
+	results := make([]retestapp.TickResult, len(replicas))
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i, svc := range replicas {
+		wg.Add(1)
+		go func(i int, svc *retestapp.Service) {
+			defer wg.Done()
+			<-start
+			res, err := svc.RunAutoTick(context.Background(), auto)
+			if err != nil {
+				t.Errorf("replica %d: %v", i, err)
+			}
+			results[i] = res
+		}(i, svc)
+	}
+	close(start)
+	wg.Wait()
+
+	claimed := results[0].TenantsClaimed + results[1].TenantsClaimed
+	if claimed != 1 {
+		t.Errorf("tenant tick served by %d replicas, want exactly 1 (%+v)", claimed, results)
+	}
+	var n, distinct int
+	if err := fx.db.QueryRow(`SELECT COUNT(*), COUNT(DISTINCT finding_id) FROM finding_retests WHERE tenant_id = $1 AND trigger = 'auto'`,
+		fx.tenant.String()).Scan(&n, &distinct); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 || distinct != 2 {
+		t.Fatalf("auto retests queued = %d (%d findings), want exactly the daily cap of 2", n, distinct)
+	}
+
+	// The next tick is not due yet: running again queues nothing.
+	auto2 := &rendezvousAuto{FindingRetestRepository: fx.repo, want: 1, all: make(chan struct{})}
+	res, err := replicas[0].RunAutoTick(context.Background(), auto2)
+	if err != nil || res.TenantsClaimed != 0 {
+		t.Errorf("a tick that is not due was served again: %+v %v", res, err)
+	}
+}
+
+// Auto-retest is off unless the tenant turned it on.
+func TestRetestDB_AutoRetestOffByDefault(t *testing.T) {
+	fx := newFixture(t)
+	fx.newFinding(fx.asset, "confirmed", "tpl-default-off")
+	res, err := fx.service().RunAutoTick(context.Background(), fx.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM finding_retests WHERE tenant_id = $1`, fx.tenant.String()).Scan(&n)
+	if n != 0 {
+		t.Errorf("auto-retest queued %d retests for a tenant that never enabled it (%+v)", n, res)
+	}
+}

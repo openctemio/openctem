@@ -197,6 +197,16 @@ and advances the rotation cursor (`scan_coverage_state`, migration 000176) so th
 assets sort last next cycle. The runner scans its local appliance and pushes CTIS back;
 ingest auto-resolve is scoped to the batch's `session_id` + assets.
 
+Every batch passes the checks of a scan trigger before it is claimed
+(`scan.Service.ResolveDispatchTargets`, RFC-042 F16): scan create's target
+validator (a private address only inside a scan zone; loopback, link-local and
+metadata never), approved scope exclusions, and zone routing. A skipped asset
+is claimed without a dispatch, so it rotates to the back and is checked again
+on its next turn. A batch stays in the zone of its top candidate, the command
+is stamped with that zone, and a pinned sensor must be in it. No gate, or a
+failed exclusion lookup, dispatches nothing. Internal networks therefore need
+a scan zone covering them, as for any other scan.
+
 > **Scope:** today the scheduler drives only **unlimited engines (Nessus Pro)** —
 > exactly the 3000-IP-on-Nessus-Pro use case. **Capped engines (Tenable.sc) are
 > skipped** (logged) until active-IP accounting + reclaim-ACK ship (Phase 3.5):

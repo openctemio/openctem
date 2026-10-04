@@ -23,6 +23,11 @@
  *
  * A right-hand drawer from `md`, a bottom sheet on phones. The header (title,
  * state, actions, tabs) stays put while the body scrolls.
+ *
+ * On phones the sheet has one fixed height (92% of the small viewport), like a
+ * native sheet at a fixed detent: switching tabs or loading more content does
+ * not make it jump, short content leaves empty space under it, and a tab change
+ * starts the new tab at the top.
  */
 
 'use client'
@@ -84,8 +89,10 @@ export interface DetailSheetProps {
   /** Scroll events of the body. */
   onBodyScroll?: React.UIEventHandler<HTMLDivElement>
   /**
-   * Phones: `auto` (default) grows with the content up to 92% of the
-   * screen; `full` always takes that height (a feed with a pinned composer).
+   * Phones: `full` (default) always takes 92% of the screen, so the sheet
+   * keeps one height whatever the tab or content. `auto` grows with the
+   * content up to that height; keep it for a small, tab-less sheet that would
+   * look empty at full height.
    */
   phoneHeight?: 'auto' | 'full'
   /**
@@ -95,6 +102,12 @@ export interface DetailSheetProps {
   initialFocus?: () => HTMLElement | null | undefined
   /** Where focus returns on close; Radix's default (the opener) otherwise. */
   returnFocus?: () => HTMLElement | null | undefined
+}
+
+/** Points a caller's ref (object or callback) at a node. */
+function assignRef<T>(ref: React.Ref<T> | undefined, node: T | null) {
+  if (typeof ref === 'function') ref(node)
+  else if (ref) ref.current = node
 }
 
 export function DetailSheet({
@@ -110,13 +123,33 @@ export function DetailSheet({
   bodyRef,
   bodyClassName,
   onBodyScroll,
-  phoneHeight = 'auto',
+  phoneHeight = 'full',
   initialFocus,
   returnFocus,
 }: DetailSheetProps) {
   // Phones get a bottom sheet, larger screens the side drawer.
   const isPhone = useIsMobile()
   const pad = isPhone ? 'px-4' : 'px-5'
+
+  // The body is ours to reset and the caller's to manage: hand the node to both.
+  const scrollRef = React.useRef<HTMLDivElement | null>(null)
+  const setBodyRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollRef.current = node
+      assignRef(bodyRef, node)
+    },
+    [bodyRef]
+  )
+
+  // A new tab starts at its top, not wherever the previous tab was scrolled.
+  // Before paint, so the new tab never flashes mid-way down.
+  const lastPanel = React.useRef(panel)
+  React.useLayoutEffect(() => {
+    if (lastPanel.current === panel) return
+    lastPanel.current = panel
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
+  }, [panel])
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -125,7 +158,12 @@ export function DetailSheet({
         className={cn(
           'flex w-full flex-col gap-0 overflow-hidden p-0 [&>button]:hidden',
           isPhone
-            ? cn('max-h-[92svh] rounded-t-2xl', phoneHeight === 'full' && 'h-[92svh]')
+            ? cn(
+                // One height whatever the content (svh: the browser's bars
+                // never cover it), clear of the home indicator.
+                'rounded-t-2xl pb-[env(safe-area-inset-bottom)]',
+                phoneHeight === 'auto' ? 'max-h-[92svh]' : 'h-[92svh]'
+              )
             : WIDTH[width],
           className
         )}
@@ -154,7 +192,8 @@ export function DetailSheet({
           {tabs}
         </div>
         <div
-          ref={bodyRef}
+          ref={setBodyRef}
+          data-slot="detail-sheet-body"
           onScroll={onBodyScroll}
           className={cn('min-h-0 flex-1 overflow-y-auto pt-4 pb-6', pad, bodyClassName)}
           {...(panel ? { role: 'tabpanel', 'aria-label': panel } : {})}

@@ -5,6 +5,15 @@
 > agent in the tenant's network executes the technique; the API persists the
 > evidence and applies the outcome.
 
+> **Continuous retest** ([RFC-039](../rfcs/RFC-039-continuous-retest.md),
+> [continuous-retest.md](continuous-retest.md)) reuses this engine's `validate`
+> command transport for a finding's own nuclei template plus a reachability
+> probe. Retest commands carry `retest_id`; their evidence is recorded
+> advisory-only and the retest service, not the verdict rule below, moves the
+> finding. Known gap in the verdict rule below: a nuclei re-run against an
+> unreachable host reports `not_detected` and downgrades the finding (RFC-039
+> §2.3 D-a).
+
 ## What "Validation" means here
 
 CTEM Stage-4 answers: *did the fix actually hold, and is the exposure really
@@ -17,9 +26,10 @@ agent executes technique ──► POST /api/v1/validation/evidence ──► pe
                                                                       │
                                                                       ▼
                                                     reconcile finding status
-                                          not_detected → resolved (fix stood)
-                                          detected     → in_progress + notify
-                                          else         → no status change
+                     (only exploitability-grade evidence, RFC-039 D3 — see below)
+                                          not_detected + reachable → resolved (fix stood)
+                                          detected                 → in_progress + notify
+                                          safe-check, bare miss    → evidence only
 ```
 
 ## Shipped (this MVP)
@@ -131,6 +141,28 @@ advertises it. Both strings are the single source of truth in
 `internal/app/validation/dispatcher.go` (`AgentCapabilityValidate` /
 `AgentCapabilityValidateNuclei`).
 
+## Which evidence may move a finding (RFC-039 D3, 2026-10-03)
+
+Only an **exploitability-grade** result reaches the verdict table below
+(`actionableVerdict` in `internal/app/validation/verdict.go`):
+
+- A **safe-check** (reachability probe) never moves a finding and stamps no
+  verdict. "Port open" is not "fix did not hold", "connection refused" is not
+  "fix stood". Its evidence stays visible (the web labels it *Reachable* /
+  *Not reachable*).
+- A **nuclei / BAS** run that **matched** is `reproducible`, as before.
+- A run that did **not** match counts only when its evidence says the target
+  answered (`raw_meta.reachable == true`). nuclei prints nothing and exits 0
+  for a host that does not answer, so a bare `not_detected` is *unknown, never
+  fixed*. Today's sensor does not send `reachable`, so in practice `/validate`
+  confirms an issue is still there but never closes one: closing on a clean
+  re-run is the job of a **retest**, which proves reachability with its own
+  probe ([continuous-retest.md](continuous-retest.md)).
+
+Proof of fix on `fix_applied` now goes through `retest.ProofOfFix`: a nuclei
+finding gets a proof-of-fix retest; any other finding falls back to this
+validation re-check.
+
 ## Confirm-or-downgrade verdict + downgrade % (RFC-011.2 Phase 2a)
 
 When a validation result is ingested, the status-reconciliation step
@@ -159,8 +191,7 @@ outcome metric real: `GET /api/v1/validation/coverage` now returns `downgraded`,
 `downgrade_validated`, and `downgrade_pct` (`validation.DowngradePct`), so the
 Program-Health board's "not measured" blank can go live (ui = Phase 2c).
 
-The rule works with the existing `safe-check` result — no agent/nuclei work is
-required for the loop to *close*. Phase 2b (now shipped API-side) deepens the
+Since RFC-039 D3 the rule no longer acts on a `safe-check` result (see above). Phase 2b (now shipped API-side) deepens the
 *depth* of the result by adding the capability-gated `nuclei` re-verify kind
 described above; the only remaining Phase 2b gap is the **agent-side executor**
 (see "Not yet shipped" below).

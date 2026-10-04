@@ -29,6 +29,7 @@ type Settings struct {
 	AssetIdentity  AssetIdentitySettings  `json:"asset_identity"`
 	AssetSource    AssetSourceSettings    `json:"asset_source"`
 	AssetLifecycle AssetLifecycleSettings `json:"asset_lifecycle"`
+	Retest         RetestSettings         `json:"retest"`
 
 	// SubscribedBundles is the set of product-bundle IDs the tenant runs
 	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the
@@ -892,6 +893,9 @@ func (s *Settings) Validate() error {
 	if err := s.AssetLifecycle.Validate(); err != nil {
 		return fmt.Errorf("asset_lifecycle settings: %w", err)
 	}
+	if err := s.Retest.Validate(); err != nil {
+		return fmt.Errorf("retest settings: %w", err)
+	}
 	return nil
 }
 
@@ -1296,6 +1300,16 @@ func (t *Tenant) UpdateAssetSourceSettings(as AssetSourceSettings) error {
 	}
 	settings := t.TypedSettings()
 	settings.AssetSource = as
+	return t.UpdateSettings(settings)
+}
+
+// UpdateRetestSettings updates only the auto-retest settings (RFC-039).
+func (t *Tenant) UpdateRetestSettings(rs RetestSettings) error {
+	if err := rs.Validate(); err != nil {
+		return err
+	}
+	settings := t.TypedSettings()
+	settings.Retest = rs
 	return t.UpdateSettings(settings)
 }
 

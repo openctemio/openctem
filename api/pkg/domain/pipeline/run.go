@@ -14,15 +14,19 @@ const (
 	RunStatusPending   RunStatus = "pending"
 	RunStatusRunning   RunStatus = "running"
 	RunStatusCompleted RunStatus = "completed"
-	RunStatusFailed    RunStatus = "failed"
-	RunStatusCanceled  RunStatus = "canceled"
-	RunStatusTimeout   RunStatus = "timeout"
+	// RunStatusPartial: the run kept results but lost some work (a step or a
+	// batch failed while others completed). Terminal; never retried as a
+	// whole (RFC-046 D5).
+	RunStatusPartial  RunStatus = "partial"
+	RunStatusFailed   RunStatus = "failed"
+	RunStatusCanceled RunStatus = "canceled"
+	RunStatusTimeout  RunStatus = "timeout"
 )
 
 // IsValid checks if the run status is valid.
 func (s RunStatus) IsValid() bool {
 	switch s {
-	case RunStatusPending, RunStatusRunning, RunStatusCompleted, RunStatusFailed, RunStatusCanceled, RunStatusTimeout:
+	case RunStatusPending, RunStatusRunning, RunStatusCompleted, RunStatusPartial, RunStatusFailed, RunStatusCanceled, RunStatusTimeout:
 		return true
 	}
 	return false
@@ -31,14 +35,14 @@ func (s RunStatus) IsValid() bool {
 // IsTerminal checks if the status is terminal (no more state changes).
 func (s RunStatus) IsTerminal() bool {
 	switch s {
-	case RunStatusCompleted, RunStatusFailed, RunStatusCanceled, RunStatusTimeout:
+	case RunStatusCompleted, RunStatusPartial, RunStatusFailed, RunStatusCanceled, RunStatusTimeout:
 		return true
 	}
 	return false
 }
 
 // ErrRunAlreadyFinished is returned when a write would move a run that already
-// reached a terminal state (completed, failed, canceled, timeout). A terminal
+// reached a terminal state (completed, partial, failed, canceled, timeout). A terminal
 // run is final: a late sensor result, a cancel racing a completion, or a stale
 // in-memory copy must not reopen it or record its outcome a second time.
 var ErrRunAlreadyFinished = shared.NewDomainError("RUN_ALREADY_FINISHED",

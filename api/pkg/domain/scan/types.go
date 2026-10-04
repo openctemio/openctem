@@ -73,6 +73,7 @@ const (
 const (
 	RunStatusCompleted = "completed"
 	RunStatusSuccess   = "success"
+	RunStatusPartial   = "partial"
 	RunStatusFailed    = "failed"
 	RunStatusError     = "error"
 )
