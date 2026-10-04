@@ -1,3 +1,6 @@
+DROP INDEX IF EXISTS idx_findings_tenant_exploit;
+DROP INDEX IF EXISTS idx_findings_cve_ids;
+DROP INDEX IF EXISTS idx_findings_tenant_family;
 ALTER TABLE findings DROP CONSTRAINT IF EXISTS chk_findings_cve_ids_len;
 ALTER TABLE findings DROP CONSTRAINT IF EXISTS chk_findings_vpr_score;
 ALTER TABLE findings
