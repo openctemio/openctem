@@ -1,6 +1,6 @@
 package postgres
 
-// Safe asset delete (owner decision O3, migrations 000373-000375).
+// Safe asset delete (owner decision O3, migrations 000378-000380).
 //
 // A person's delete never destroys findings. An asset that has findings is
 // refused (archive it instead); one without findings is soft-deleted:
