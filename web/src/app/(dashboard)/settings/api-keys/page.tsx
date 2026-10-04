@@ -12,7 +12,6 @@ import {
   StackedCell,
   ErrorState,
 } from '@/features/shared'
-import { StatsCard } from '@/features/shared/components/stats-card'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -37,13 +36,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { useUrlPagination } from '@/hooks/use-url-pagination'
+import { useDebounce } from '@/hooks/use-debounce'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   KeyRound,
   Plus,
-  ShieldCheck,
-  AlertTriangle,
-  Eye,
   Ban,
   Trash2,
   Copy,
@@ -342,8 +341,17 @@ function LoadingSkeleton() {
   )
 }
 
+const API_KEY_PAGE_SIZES = [10, 20, 50, 100]
+
 export default function APIKeysPage() {
-  const { data, error, isLoading, mutate } = useApiKeys()
+  const { pagination, setPagination, resetPage } = useUrlPagination(API_KEY_PAGE_SIZES, 20)
+  const [searchParam, setSearchParam] = useUrlFilter('q', '')
+  const search = useDebounce(searchParam.trim(), 300)
+  const { data, error, isLoading, mutate } = useApiKeys({
+    page: pagination.pageIndex + 1,
+    perPage: pagination.pageSize,
+    search: search || undefined,
+  })
   // Owners and administrators see every key of the organization; anyone else
   // gets only their own keys from the API, and cannot mint or revoke keys.
   const { can, isAdmin } = usePermissions()
@@ -422,13 +430,7 @@ export default function APIKeysPage() {
     [mutate]
   )
 
-  const stats = useMemo(() => {
-    const active = keys.filter(isActive).length
-    const expired = keys.filter(isExpired).length
-    const scopes = new Set<string>()
-    keys.forEach((k) => k.scopes.forEach((s) => scopes.add(s)))
-    return { total: keys.length, active, expired, scopes: scopes.size }
-  }, [keys])
+  const total = data?.total ?? 0
 
   if (isLoading) return <LoadingSkeleton />
   // A failed read must not render as "No API keys yet" with all-zero stats —
@@ -452,29 +454,6 @@ export default function APIKeysPage() {
         )}
       </PageHeader>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-4">
-        <StatsCard title="Total Keys" value={stats.total} icon={KeyRound} description="All keys" />
-        <StatsCard
-          title="Active Keys"
-          value={stats.active}
-          icon={ShieldCheck}
-          changeType={stats.active > 0 ? 'positive' : 'neutral'}
-          description="Currently valid"
-        />
-        <StatsCard
-          title="Expired Keys"
-          value={stats.expired}
-          icon={AlertTriangle}
-          changeType={stats.expired > 0 ? 'negative' : 'neutral'}
-          description="Need rotation"
-        />
-        <StatsCard
-          title="Unique Scopes"
-          value={stats.scopes}
-          icon={Eye}
-          description="Permissions granted"
-        />
-      </div>
 
       <Card className="mt-6">
         <CardHeader>
@@ -489,7 +468,7 @@ export default function APIKeysPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {keys.length === 0 ? (
+          {total === 0 && !search ? (
             <EmptyState
               icon={KeyRound}
               title="No API keys yet"
@@ -512,7 +491,26 @@ export default function APIKeysPage() {
             <DataTable
               columns={columns}
               data={keys}
-              searchPlaceholder="Search API keys..."
+              getRowId={(k) => k.id}
+              manualPagination
+              rowCount={total}
+              pagination={pagination}
+              onPaginationChange={setPagination}
+              pageSizeOptions={API_KEY_PAGE_SIZES}
+              paginationNoun="keys"
+              showSearch={false}
+              toolbarStart={
+                <Input
+                  placeholder="Search API keys..."
+                  value={searchParam}
+                  onChange={(e) => {
+                    setSearchParam(e.target.value)
+                    resetPage()
+                  }}
+                  className="h-9 max-w-sm"
+                  aria-label="Search API keys"
+                />
+              }
               emptyMessage="No API keys"
               emptyDescription="No API keys match your search."
             />

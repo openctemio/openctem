@@ -685,6 +685,16 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 		args = append(args, searchPattern)
 		argIndex++
 	}
+	if filters.Status != "" {
+		whereClause += fmt.Sprintf(" AND COALESCE(m.status, 'active') = $%d", argIndex)
+		args = append(args, filters.Status)
+		argIndex++
+	}
+	if filters.Role != "" {
+		whereClause += fmt.Sprintf(" AND COALESCE(ver.role, 'member') = $%d", argIndex)
+		args = append(args, filters.Role)
+		argIndex++
+	}
 
 	// Single query with COUNT(*) OVER() window function to avoid 2 round-trips
 	// This returns total matching count alongside each row.
