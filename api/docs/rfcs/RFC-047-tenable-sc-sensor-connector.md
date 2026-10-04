@@ -408,7 +408,7 @@ solved, by mapping a repository to a scan zone (owner question Q5).
 | `pluginPubDate`, `patchPubDate`, `vulnPubDate`, `pluginModDate` | `properties.tenable_*_date` (RFC 3339) |
 | `acceptRisk`, `recastRisk` (+ rule comments, capped) | `properties.tenable_accept_risk`, `tenable_recast_risk`, `tenable_recast_severity` |
 | `hasBeenMitigated`, `lastMitigated` | `properties.tenable_previously_mitigated`, `tenable_last_mitigated` |
-| `sourceType` | `properties.tenable_state` = `open` or `mitigated`; mitigated rows also set `status: fixed` |
+| `sourceType` | `properties.tenable_state` = `open` or `mitigated`; mitigated rows also set `status: resolved` |
 | `repository`, `vulnUUID` | `properties.tenable_repository_id`, `tenable_vuln_uuid` |
 | — | `fingerprint` = `tenable_sc:<repository>:<ip>:<plugin>:<port>/<proto>`. Never the identity: today ingest ignores a non-hex sensor fingerprint (`isValidFingerprint`), and RFC-043 item 12 keeps converter fingerprints as sighting keys |
 
