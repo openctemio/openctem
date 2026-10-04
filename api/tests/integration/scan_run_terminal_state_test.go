@@ -220,8 +220,11 @@ func TestScanRun_TimeoutClosesTheCommandAndRecordsTheScan(t *testing.T) {
 		 WHERE payload->>'pipeline_run_id' = $1`, run.ID.String()); err != nil {
 		t.Fatalf("mark command running: %v", err)
 	}
+	// The deadline is fixed when the run starts (RFC-046 §6.3), so aging the
+	// run means moving its stored deadline along with its start.
 	if _, err := db.ExecContext(ctx,
-		`UPDATE pipeline_runs SET started_at = NOW() - INTERVAL '2 hours' WHERE id = $1`, run.ID.String()); err != nil {
+		`UPDATE pipeline_runs SET started_at = NOW() - INTERVAL '2 hours',
+		        deadline_at = NOW() - INTERVAL '1 hour' WHERE id = $1`, run.ID.String()); err != nil {
 		t.Fatalf("age run: %v", err)
 	}
 

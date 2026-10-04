@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -337,5 +338,62 @@ func TestRunRollover_LatestScheduledPartialOnlyAndTenantScoped(t *testing.T) {
 	}
 	if ro, err := f.runs.LatestRollover(f.ctx, f.tenant, f.scan); err != nil || ro != nil {
 		t.Fatalf("after a later completed run: %+v, %v; want nil", ro, err)
+	}
+}
+
+// A command of another tenant that names the run in its payload neither makes
+// the run look as if it kept results nor is recorded or closed by the reaper.
+func TestRunDeadline_OtherTenantsCommandIsIgnored(t *testing.T) {
+	f := newDeadlineFixture(t)
+	run, sr := f.newRun(t, pipeline.TriggerTypeSchedule, 0)
+	f.command(t, run, sr, "running", "a.example")
+
+	other, _ := seedCounterScan(f.ctx, t, f.db)
+	payload, _ := json.Marshal(map[string]any{"pipeline_run_id": run.ID.String(), "targets": []string{"victim.example"}})
+	foreignDone, foreignOpen := shared.NewID(), shared.NewID()
+	f.exec(t, `INSERT INTO commands (id, tenant_id, type, status, payload) VALUES ($1, $2, 'scan', 'completed', $3)`,
+		foreignDone, other, payload)
+	f.exec(t, `INSERT INTO commands (id, tenant_id, type, status, payload) VALUES ($1, $2, 'scan', 'running', $3)`,
+		foreignOpen, other, payload)
+
+	f.pastDeadline(t, run)
+	if _, err := f.runs.MarkTimedOutRuns(f.ctx); err != nil {
+		t.Fatalf("MarkTimedOutRuns: %v", err)
+	}
+	got, _ := f.runs.GetByTenantAndID(f.ctx, f.tenant, run.ID)
+	if got.Status != pipeline.RunStatusTimeout {
+		t.Fatalf("run status = %q, want timeout (the completed command belongs to another tenant)", got.Status)
+	}
+	targets, err := f.runs.GetUnfinishedTargets(f.ctx, f.tenant, run.ID)
+	if err != nil || !reflect.DeepEqual(targets, []string{"a.example"}) {
+		t.Fatalf("unfinished = %v (%v), want only this tenant's target", targets, err)
+	}
+	if st, _ := f.commandStatus(t, foreignOpen); st != "running" {
+		t.Fatalf("another tenant's command became %q; the reaper must not touch it", st)
+	}
+}
+
+// The recorded leftovers are bounded; the run still settles.
+func TestRunDeadline_UnfinishedTargetsAreCapped(t *testing.T) {
+	f := newDeadlineFixture(t)
+	run, sr := f.newRun(t, pipeline.TriggerTypeSchedule, 0)
+	f.command(t, run, sr, "completed", "done.example")
+	targets := make([]string, MaxUnfinishedTargets+50)
+	for i := range targets {
+		targets[i] = fmt.Sprintf("host-%05d.example", i)
+	}
+	f.command(t, run, sr, "running", targets...)
+
+	f.pastDeadline(t, run)
+	if _, err := f.runs.MarkTimedOutRuns(f.ctx); err != nil {
+		t.Fatalf("MarkTimedOutRuns: %v", err)
+	}
+	got, _ := f.runs.GetByTenantAndID(f.ctx, f.tenant, run.ID)
+	if got.Status != pipeline.RunStatusPartial || got.UnfinishedTargetCount != MaxUnfinishedTargets {
+		t.Fatalf("status=%q unfinished=%d, want partial with %d", got.Status, got.UnfinishedTargetCount, MaxUnfinishedTargets)
+	}
+	recorded, _ := f.runs.GetUnfinishedTargets(f.ctx, f.tenant, run.ID)
+	if len(recorded) == 0 || recorded[0] != "host-00000.example" {
+		t.Fatalf("first recorded target = %v, want the first dispatched", recorded[:min(1, len(recorded))])
 	}
 }
