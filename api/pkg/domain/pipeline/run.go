@@ -100,7 +100,7 @@ type Run struct {
 
 	// DeadlineAt is when the reaper settles the run if it is still open:
 	// started_at plus the scan timeout, capped at 24 h, fixed when the run
-	// starts (RFC-046 §6.3). Nil for runs started before migration 000459.
+	// starts (RFC-046 §6.3). Nil for runs started before migration 000464.
 	DeadlineAt *time.Time
 
 	// UnfinishedTargetCount is how many targets were still open when the run

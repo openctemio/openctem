@@ -28,7 +28,10 @@ func TestOf(t *testing.T) {
 		{"/api/v1/users/me/sessions", Self, true},
 		{"/api/v1/users/{userId}/roles", User, false},
 		{"/api/v1/auth/login", Auth, false},
-		{"/api/v1/invitations/{token}", Auth, false},
+		{"/api/v1/invitations/{token}", Auth, true},
+		{"/api/v1/invitations/{token}/accept", Auth, true},
+		{"/api/v1/invitations/accept", Auth, false},
+		{"/api/v1/invitations/lookup", Auth, false},
 		{"/health", Ops, false},
 		{"/metrics", Ops, false},
 	} {

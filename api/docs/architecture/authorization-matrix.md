@@ -167,6 +167,7 @@ Details: [api-keys.md](./api-keys.md).
 | `DELETE /api/v1/findings/{id}` | `findings:delete` |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status` |
 | `POST /api/v1/findings/{id}/triage` | `findings:triage` |
+| `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; also `findings:approve` when either finding is a false positive or risk acceptance (service check). Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
@@ -209,6 +210,7 @@ two-person control:
 | `POST /api/v1/scope/exclusions` · `PUT /{id}` · `POST /{id}/activate` · `/{id}/deactivate` | `attack_surface:scope:write` |
 | `POST /api/v1/scope/exclusions/{id}/approve` · `/{id}/reject` | `attack_surface:scope:exclusions:approve` (owner, admin) |
 | `DELETE /api/v1/scope/exclusions/{id}` · `POST /bulk/delete` | `attack_surface:scope:delete` |
+| Taking an exclusion **in effect** out of effect: `/{id}/deactivate`, `DELETE`, bulk delete, or a `PUT` that moves `expires_at` earlier (a past date included) | in addition `attack_surface:scope:exclusions:approve`, and the caller must not be the requester (403 otherwise; research doc 15, L-07) |
 
 - A new exclusion is created `pending` and is applied nowhere — not to scan
   target selection, not to `POST /scope/check`, not to coverage — until it is
@@ -228,6 +230,16 @@ two-person control:
   be used to skip the approval.
 - Extending the window of an approved exclusion (a later `expires_at`, or
   removing it) sends it back to `pending`; shortening it keeps the approval.
+- Removing protection is the same two-person control as granting it
+  (`Exclusion.AuthorizeReduction`): deactivating, deleting or shortening an
+  exclusion in effect needs the approve permission and someone other than the
+  requester. Before, `scope:write` (a member default) could switch off the
+  exclusion protecting a production host and then scan it. Changes to an
+  exclusion not in effect (pending, inactive, rejected, expired) and edits of
+  the reason keep their ordinary permission. The web console disables the
+  switch for callers without the approve permission.
+- Known gap: rows from before `created_by` was recorded have no requester, so
+  the not-the-requester check cannot apply to them.
 - Every change to a scope target or exclusion (create, update, delete, bulk
   delete, activate, deactivate, approve, reject) is one audit entry
   (`scope_target.*`, `scope_exclusion.*`) with the caller and the state before
@@ -483,8 +495,12 @@ These routes require the tenant ID in the URL path and use database-based member
 
 | Endpoint | Required Role |
 |----------|---------------|
-| `GET /api/v1/invitations/{token}` | Any authenticated |
-| `POST /api/v1/invitations/{token}/accept` | Any authenticated (email must match) |
+| `POST /api/v1/invitations/lookup` | Public (token in the body, rate limited) |
+| `POST /api/v1/invitations/decline` | Public (token in the body, rate limited) |
+| `POST /api/v1/invitations/accept` | Any authenticated (email must match) |
+| `POST /api/v1/invitations/accept-with-refresh` | Refresh token (email must match) |
+
+The `/api/v1/invitations/{token}/...` paths are deprecated aliases of these (RFC-041) with the same chains.
 
 ### User Routes (`/api/v1/users`)
 
@@ -779,6 +795,11 @@ owner-managed) are enforced, not just stored. See
 
 ## Data scope (Layer 2: access groups)
 
+Scans act on assets, so the data scope also limits scan targets: a restricted
+member scans only assets in their scope, and an unrestricted actor's free-text
+targets must match a scope target (decision D9). See
+[active-probe-gate.md](active-probe-gate.md#act-scope-who-may-scan-what).
+
 Permissions decide what *kind* of thing a member may do; the data scope decides
 *which* assets — and so which findings, exposures and other asset-bound rows —
 they may see and change. Scope rows live in `user_accessible_assets`, computed
@@ -915,6 +936,7 @@ results an out-of-scope id is reported exactly like an unknown id.
 | In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
 | `GET /notification-outbox` (+ `/stats`, `/{id}`, retry, delete), `GET /integrations/{id}/notification-events` | **bypass (every finding/asset event, owner emails) to members and viewers via `notifications:read` / `integrations:read`** | channel managers only: `integrations:manage` in addition (owner/admin by default); not scoped, because a channel manager already routes the whole stream (L-03) |
+| `POST /assets/import/nessus-findings` | **bypass (write)**: ran as a trusted server-side sensor, so a member added findings to any host and auto-resolved any tool's findings on it (`?tool=`) | runs with the uploader's rights (`ingest.Options.Actor`): a restricted uploader only adds findings to existing in-scope assets, creates no asset, never auto-resolves; hidden and unknown hosts both count as `assets_skipped_out_of_scope`. An unrestricted uploader auto-resolves only with the default `tenable` tool (any other `?tool=` = partial coverage). Audited `asset.imported` (L-05) |
 
 ### Deliberately tenant-wide (counts only, no row data)
 
@@ -1128,7 +1150,8 @@ URL-Tenant Routes (Role-based):
 └── /api/v1/tenants/{tenant}             → admin+ (U), owner (D)
 
 Invitations:
-└── /api/v1/invitations/{token}/*        → Any authenticated
+└── /api/v1/invitations/{lookup,decline,accept,accept-with-refresh}
+                                         → token in the body; accept needs the invited email
 ```
 
 Legend: (R) = Read, (W) = Write, (U) = Update, (D) = Delete

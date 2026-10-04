@@ -73,10 +73,46 @@ that finding is re-keyed in place on that sighting
 asset merge re-keys a version-2 finding by rewriting the `asset` field of its
 stored tuple, only when the stored tuple still reproduces the stored key.
 
+**Mark duplicate of (manual merge):** `POST /api/v1/findings/{id}/duplicates`
+`{"finding_id": …}` folds a finding into the original `{id}` with the same
+`mergeFindingInto` the asset merge uses, in one transaction with both rows
+locked and the rules re-checked under the lock
+(`FindingRepository.MarkDuplicateOf`, rules in
+`vulnerability.CheckMarkDuplicate`): same tenant and data scope (404
+otherwise), same asset, neither already a duplicate, no pentest finding, and
+`findings:approve` when either finding is a false positive or risk acceptance
+(otherwise a merge would close an open finding under, or carry onto it, a
+decision that needs approval). The activity on both findings names the user;
+the audit log records `finding.duplicate_marked`.
+
 Known limits: the SAST occurrence index is counted within one report, so twin
 snippets split across report chunks can swap; the secret HMAC is over the
 masked value the sensor sends (CTIS carries no raw value), so two secrets that
 mask alike in one file are one finding.
+
+CTIS producer fields and identity (coordinated with the CTIS review,
+`research/16-ctis-review-2026-10-04.md` G5, Q1, Q2, Q8, P4, P5):
+
+- **Producer fingerprints (Q8, D1):** a finding with a version-2 recipe never
+  takes its identity from `Finding.Fingerprint`; the value is kept as the
+  sighting key `partial_fingerprints["sensor/fingerprint"]`. Only kinds
+  without a recipe (compliance, web3, a generic finding without a location)
+  still use the version-1 key, which can include it.
+- **Network transport:** the version-2 network recipe keys on `port/proto`
+  (`tcp` when absent) for CVE and non-CVE findings alike, so the version-1
+  split between `netva:` (no transport) and `netport:` (transport) is gone.
+- **SARIF paths (Q2):** `NormalizeRepoPath` drops any `file:` scheme form and
+  percent-decoding (once, only when no `%` is left, so it stays idempotent).
+  `uriBaseId` is not resolved: an absolute runner path stays absolute.
+- **SARIF secrets (Q1):** while `ctis.FromSARIF` leaves `secret.masked_value`
+  empty, such a secret has no keyed HMAC and keeps its version-1 key; once
+  CTIS sets it, the next sighting re-keys the finding to its version-2 key in
+  place (`AdoptFingerprint`), with its triage. No separate migration.
+- **Ready for CTIS 1.4 (P4, P5):** a producer `fingerprint_recipe` and
+  `fingerprint_aliases[]` would be sighting keys and alias candidates, never
+  the identity; a producer `secret.hash` would replace the masked value as
+  the input of the server-keyed HMAC (`identity_v2_apply.go`, where the
+  secret input is chosen), so the server key stays the only key.
 
 What `ctis/fingerprint.GenerateAuto` keys on, per detected type
 (`ctis/fingerprint/fingerprint.go:112-213`, `DetectType` `:435-472`), given the

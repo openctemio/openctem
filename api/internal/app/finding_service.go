@@ -71,6 +71,7 @@ type (
 	TenantLister                  = finding.TenantLister
 	UpdateCommentInput            = finding.UpdateCommentInput
 	UpdateFindingStatusInput      = finding.UpdateFindingStatusInput
+	MarkDuplicateInput            = finding.MarkDuplicateInput
 	UpdateRemediationInput        = finding.UpdateRemediationInput
 	UpdateVulnerabilityInput      = finding.UpdateVulnerabilityInput
 	VerifyByFilterInput           = finding.VerifyByFilterInput
