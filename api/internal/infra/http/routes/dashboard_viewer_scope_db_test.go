@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // Dashboard counts follow the viewer (owner decision D6, research doc 15
@@ -68,7 +67,7 @@ func TestDashboardStats_FollowTheViewer_DB(t *testing.T) {
 		name  string
 		user  string
 		admin bool
-	}{{"owner", h.owner.String(), true}, {"member without group (fail-open)", h.memberFree.String(), false}} {
+	}{{"owner", h.owner.String(), true}, {"full-data role", h.memberFull.String(), false}} {
 		if s := get(req(who.user, who.admin, nil)); s.AssetCount != 2 || s.FindingCount != 2 {
 			t.Errorf("%s counts = %+v, want 2 assets and 2 findings", who.name, s)
 		}
@@ -85,7 +84,6 @@ func TestDashboardStats_FollowTheViewer_DB(t *testing.T) {
 	}
 
 	// Fail-closed organization: a member without a group counts nothing.
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
 	if s := get(req(h.memberStrict.String(), false, nil)); s.AssetCount != 0 || s.FindingCount != 0 {
 		t.Errorf("fail-closed member without group counts = %+v, want 0", s)
 	}

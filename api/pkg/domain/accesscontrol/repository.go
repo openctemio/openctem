@@ -80,9 +80,6 @@ type Repository interface {
 	ListAccessibleAssets(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
 	CanAccessAsset(ctx context.Context, userID, assetID shared.ID) (bool, error)
 	GetUserAssetAccess(ctx context.Context, userID, assetID shared.ID) (*UserAssetAccess, error)
-	// HasAnyScopeAssignment checks if a user has any rows in user_accessible_assets.
-	// Used for backward compat: if false, user sees all data (no groups configured).
-	HasAnyScopeAssignment(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 
 	// Assignment Rules
 	CreateAssignmentRule(ctx context.Context, rule *AssignmentRule) error
