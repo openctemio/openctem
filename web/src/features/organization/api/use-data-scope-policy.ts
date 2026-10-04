@@ -9,7 +9,11 @@ import useSWRMutation from 'swr/mutation'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { fetcher, fetcherWithOptions } from '@/lib/api/client'
 import { usePermissions } from '@/lib/permissions'
-import type { DataScopePolicy, MembersWithoutGroupSee } from '../types/settings.types'
+import type {
+  DataScopeImpact,
+  DataScopePolicy,
+  MembersWithoutGroupSee,
+} from '../types/settings.types'
 
 export function useDataScopePolicy(tenantIdOrSlug: string | undefined) {
   const { isAdmin } = usePermissions()
@@ -38,4 +42,18 @@ export function useUpdateDataScopePolicy(tenantIdOrSlug: string | undefined) {
     updatePolicy
   )
   return { updatePolicy: trigger, isUpdating: isMutating }
+}
+
+/**
+ * The members who would see nothing after switching off "everything"
+ * (owner decision D2). Owners and admins only; fetched only while the
+ * organization still shows everything.
+ */
+export function useDataScopeImpact(tenantIdOrSlug: string | undefined, enabled: boolean) {
+  const { isAdmin } = usePermissions()
+  const key = tenantIdOrSlug && enabled && isAdmin() ? tenantEndpoints.dataScopeImpact() : null
+  const { data, error, isLoading, mutate } = useSWR<DataScopeImpact>(key, fetcher, {
+    revalidateOnFocus: false,
+  })
+  return { impact: data, isLoading: key ? isLoading : false, isError: !!error, mutate }
 }

@@ -69,13 +69,6 @@ func (r *SLAPolicyRepository) Create(ctx context.Context, policy *sla.Policy) er
 	return nil
 }
 
-// GetByID retrieves a policy by ID.
-func (r *SLAPolicyRepository) GetByID(ctx context.Context, id shared.ID) (*sla.Policy, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanPolicy(row)
-}
-
 // GetByTenantAndID retrieves a policy by tenant and ID (tenant-scoped).
 func (r *SLAPolicyRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*sla.Policy, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
@@ -134,7 +127,7 @@ func (r *SLAPolicyRepository) Update(ctx context.Context, policy *sla.Policy) er
 			critical_days = $5, high_days = $6, medium_days = $7, low_days = $8, info_days = $9,
 			warning_threshold_percent = $10, escalation_enabled = $11, escalation_config = $12,
 			is_active = $13, updated_at = $14
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $15
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -152,6 +145,7 @@ func (r *SLAPolicyRepository) Update(ctx context.Context, policy *sla.Policy) er
 		escalationConfig,
 		policy.IsActive(),
 		policy.UpdatedAt(),
+		policy.TenantID().String(),
 	)
 
 	if err != nil {
@@ -170,11 +164,11 @@ func (r *SLAPolicyRepository) Update(ctx context.Context, policy *sla.Policy) er
 	return nil
 }
 
-// Delete removes a policy.
-func (r *SLAPolicyRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM sla_policies WHERE id = $1`
+// Delete removes a policy of the tenant.
+func (r *SLAPolicyRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM sla_policies WHERE tenant_id = $1 AND id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete SLA policy: %w", err)
 	}

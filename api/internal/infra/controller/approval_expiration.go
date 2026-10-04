@@ -146,6 +146,7 @@ func (c *ApprovalExpirationController) processExpiredApproval(ctx context.Contex
 		vulnerability.FindingStatusConfirmed,
 		"auto_reopened_expired_acceptance",
 		nil, // no resolvedBy — system action
+		"",  // a reopen clears resolution_method
 	)
 	if err != nil {
 		return fmt.Errorf("failed to reopen finding: %w", err)

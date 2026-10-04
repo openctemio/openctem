@@ -199,8 +199,8 @@ func (r *ComponentRepository) LinkAsset(ctx context.Context, dep *component.Asse
 	return nil
 }
 
-// GetDependency retrieves a dependency by ID.
-func (r *ComponentRepository) GetDependency(ctx context.Context, id shared.ID) (*component.AssetDependency, error) {
+// GetDependency retrieves a dependency of the tenant by ID.
+func (r *ComponentRepository) GetDependency(ctx context.Context, tenantID, id shared.ID) (*component.AssetDependency, error) {
 	// We need to join with components to get full details
 	query := `
 		SELECT
@@ -208,9 +208,9 @@ func (r *ComponentRepository) GetDependency(ctx context.Context, id shared.ID) (
 			c.id, c.name, c.version, c.ecosystem, c.purl, c.description, c.homepage, c.vulnerability_count, c.metadata, c.created_at, c.updated_at
 		FROM asset_components ac
 		JOIN components c ON ac.component_id = c.id
-		WHERE ac.id = $1
+		WHERE ac.tenant_id = $1 AND ac.id = $2
 	`
-	row := r.db.QueryRowContext(ctx, query, id.String())
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 	return r.scanDependency(row)
 }
 
@@ -222,26 +222,33 @@ func (r *ComponentRepository) UpdateDependency(ctx context.Context, dep *compone
 			path = $3,
 			manifest_file = $4,
 			updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $5
 	`
-	_, err := r.db.ExecContext(ctx, query,
+	result, err := r.db.ExecContext(ctx, query,
 		dep.ID().String(),
 		dep.DependencyType().String(),
 		dep.Path(),
 		nullString(dep.ManifestFile()),
+		dep.TenantID().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update dependency: %w", err)
 	}
+	if n, err := result.RowsAffected(); err == nil && n == 0 {
+		return shared.ErrNotFound
+	}
 	return nil
 }
 
-// DeleteDependency removes a specific dependency link.
-func (r *ComponentRepository) DeleteDependency(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM asset_components WHERE id = $1`
-	_, err := r.db.ExecContext(ctx, query, id.String())
+// DeleteDependency removes a dependency link of the tenant.
+func (r *ComponentRepository) DeleteDependency(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM asset_components WHERE tenant_id = $1 AND id = $2`
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete dependency: %w", err)
+	}
+	if n, err := result.RowsAffected(); err == nil && n == 0 {
+		return shared.ErrNotFound
 	}
 	return nil
 }
@@ -328,13 +335,13 @@ func (r *ComponentRepository) GetAssetDependency(ctx context.Context, tenantID, 
 }
 
 // UpdateAssetDependencyParent updates the parent_component_id and depth of an asset_component.
-func (r *ComponentRepository) UpdateAssetDependencyParent(ctx context.Context, id shared.ID, parentID shared.ID, depth int) error {
+func (r *ComponentRepository) UpdateAssetDependencyParent(ctx context.Context, tenantID, id shared.ID, parentID shared.ID, depth int) error {
 	query := `
 		UPDATE asset_components
 		SET parent_component_id = $1, depth = $2, updated_at = NOW()
-		WHERE id = $3
+		WHERE id = $3 AND tenant_id = $4
 	`
-	result, err := r.db.ExecContext(ctx, query, parentID.String(), depth, id.String())
+	result, err := r.db.ExecContext(ctx, query, parentID.String(), depth, id.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to update dependency parent: %w", err)
 	}
