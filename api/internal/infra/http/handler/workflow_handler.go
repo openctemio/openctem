@@ -97,6 +97,12 @@ type WorkflowResponse struct {
 	CreatedBy      *string        `json:"created_by,omitempty"`
 	CreatedAt      string         `json:"created_at"`
 	UpdatedAt      string         `json:"updated_at"`
+	// UnsupportedFeatures lists the trigger and action types this workflow
+	// uses that the platform does not execute ("trigger:schedule",
+	// "action:assign_team", ...). Such a workflow stays readable but cannot
+	// be activated or saved until they are removed. Only set when the graph
+	// is loaded.
+	UnsupportedFeatures []string `json:"unsupported_features,omitempty"`
 }
 
 // NodeResponse represents a node in the workflow response.
@@ -144,7 +150,7 @@ type EdgeResponse struct {
 
 // TriggerWorkflowRequest represents the request body for triggering a workflow run.
 type TriggerWorkflowRequest struct {
-	TriggerType string         `json:"trigger_type" validate:"omitempty,oneof=manual schedule finding_created finding_updated finding_age asset_discovered scan_completed webhook"`
+	TriggerType string         `json:"trigger_type" validate:"omitempty,oneof=manual finding_created finding_updated asset_discovered scan_completed webhook"`
 	TriggerData map[string]any `json:"trigger_data"`
 }
 
@@ -1004,6 +1010,8 @@ func toWorkflowResponse(wf *workflow.Workflow) *WorkflowResponse {
 		id := wf.CreatedBy.String()
 		resp.CreatedBy = &id
 	}
+
+	resp.UnsupportedFeatures = wf.UnsupportedFeatures()
 
 	if len(wf.Nodes) > 0 {
 		resp.Nodes = make([]NodeResponse, len(wf.Nodes))
