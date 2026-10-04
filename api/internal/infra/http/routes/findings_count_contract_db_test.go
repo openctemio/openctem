@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 func (h *gsHarness) statsTotal(t *testing.T, c flCaller, query string) int64 {
@@ -55,7 +53,7 @@ func TestFindingsCountContract_ListStatsGroupsAgree(t *testing.T) {
 	callers := []flCaller{
 		{"owner", h.owner, true},
 		{"memberA", h.memberA, false},
-		{"member without group", h.memberFree, false},
+		{"full-data role", h.memberFull, false},
 	}
 	// The grouped view never shows pentest findings (they have their own
 	// campaign views), so the matrix excludes them for every caller; for a
@@ -112,7 +110,7 @@ func TestFindingsCountContract_ScopeAndPentest(t *testing.T) {
 	if n := h.statsTotal(t, memberA, ""); n != 1 {
 		t.Errorf("memberA stats total = %d, want 1 (FA only)", n)
 	}
-	free := flCaller{"member without group", h.memberFree, false}
+	free := flCaller{"full-data role", h.memberFull, false}
 	if n := h.statsTotal(t, free, "source=pentest"); n != 0 {
 		t.Errorf("non-member stats counted the pentest finding: %d", n)
 	}
@@ -120,7 +118,6 @@ func TestFindingsCountContract_ScopeAndPentest(t *testing.T) {
 		t.Errorf("owner stats source=pentest = %d, want 1", n)
 	}
 
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
 	strict := flCaller{"strict", h.memberStrict, false}
 	if n := h.statsTotal(t, strict, ""); n != 0 {
 		t.Errorf("strict member stats total = %d, want 0", n)

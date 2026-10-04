@@ -33,6 +33,10 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -60,6 +64,7 @@ import {
   useGroupExpansion,
   type DataTableRowGroups,
 } from './data-table-groups'
+import { useTableDensity, type TableDensity } from './use-table-density'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
@@ -172,10 +177,26 @@ interface DataTableProps<TData, TValue> {
   paginationNoun?: string
   /** Label of the page-size select. Default "Rows per page". */
   pageSizeLabel?: string
+  /**
+   * Row density until the user picks one in the table's View menu (style
+   * contract D14): `compact` (32px) for single-line lists, `comfortable`
+   * (40px, the default) for multi-line rows. The user's choice is a per-user
+   * preference that every table follows.
+   */
+  defaultDensity?: TableDensity
 }
 
 /** Skeleton rows shown in an empty body while `isLoading`. */
 const LOADING_ROWS = 5
+
+/** Cell and header classes for compact rows (32px instead of 40px). */
+const COMPACT_CELL_CLASS = 'py-1'
+const COMPACT_HEAD_CLASS = 'h-8'
+
+const DENSITY_LABELS: Record<TableDensity, string> = {
+  compact: 'Compact',
+  comfortable: 'Comfortable',
+}
 
 /** Fixed width of the selection column, so the pinned column after it knows its offset. */
 const SELECT_COL_WIDTH = 40
@@ -342,7 +363,10 @@ export function DataTable<TData, TValue>({
   rowGroups,
   paginationNoun = 'results',
   pageSizeLabel = 'Rows per page',
+  defaultDensity = 'comfortable',
 }: DataTableProps<TData, TValue>) {
+  const [density, setDensity] = useTableDensity(defaultDensity)
+  const compact = density === 'compact'
   // Cards replace the table on phones. Decided in JS rather than by hiding one
   // with CSS, so only one of the two is ever rendered.
   const isPhone = useIsMobile()
@@ -610,17 +634,44 @@ export function DataTable<TData, TValue>({
             </span>
           )}
 
-          {/* Column visibility toggle */}
-          {showColumnToggle && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className={cn('h-9', phoneCards && 'hidden')}>
-                  <SlidersHorizontal className="h-4 w-4 sm:me-2" />
-                  <span className="hidden sm:inline">Columns</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[180px]">
-                {table
+          {/* View menu: row density (every table, D14) and, when the table
+              allows it, which columns show. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn('h-9', phoneCards && 'hidden')}
+                aria-label="Table view: density and columns"
+              >
+                <SlidersHorizontal className="h-4 w-4 sm:me-2" />
+                <span className="hidden sm:inline">View</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[200px]">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                Density
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={density}
+                onValueChange={(v) => setDensity(v as TableDensity)}
+              >
+                {(['compact', 'comfortable'] as const).map((d) => (
+                  <DropdownMenuRadioItem key={d} value={d}>
+                    {DENSITY_LABELS[d]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              {showColumnToggle && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">
+                    Columns
+                  </DropdownMenuLabel>
+                </>
+              )}
+              {showColumnToggle &&
+                table
                   .getAllColumns()
                   .filter((column) => column.getCanHide())
                   .map((column) => {
@@ -636,9 +687,8 @@ export function DataTable<TData, TValue>({
                       </DropdownMenuCheckboxItem>
                     )
                   })}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -733,6 +783,7 @@ export function DataTable<TData, TValue>({
       <div
         ref={tableWrapRef}
         className={cn('group/table rounded-md border overflow-x-auto', phoneCards && 'hidden')}
+        data-density={density}
         data-hidden-start={hiddenEdges.start}
         data-hidden-end={hiddenEdges.end}
         // scroll does not bubble, but a capture listener on an ancestor sees the
@@ -747,7 +798,14 @@ export function DataTable<TData, TValue>({
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
                   return (
-                    <TableHead key={header.id} {...pinnedProps(header.column.id)}>
+                    <TableHead
+                      key={header.id}
+                      {...pinnedProps(header.column.id)}
+                      className={cn(
+                        pinnedProps(header.column.id).className,
+                        compact && COMPACT_HEAD_CLASS
+                      )}
+                    >
                       {header.isPlaceholder
                         ? null
                         : flexRender(header.column.columnDef.header, header.getContext())}
@@ -826,7 +884,14 @@ export function DataTable<TData, TValue>({
                         }}
                       >
                         {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id} {...pinnedProps(cell.column.id)}>
+                          <TableCell
+                            key={cell.id}
+                            {...pinnedProps(cell.column.id)}
+                            className={cn(
+                              pinnedProps(cell.column.id).className,
+                              compact && COMPACT_CELL_CLASS
+                            )}
+                          >
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                           </TableCell>
                         ))}

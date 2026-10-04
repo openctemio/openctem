@@ -97,8 +97,18 @@ func newV1Harness(t *testing.T) *v1Harness {
 	ih := NewIngestHandler(ingestSvc, sensorSvc, log)
 	// The doorbell is wired as in production: flow.golden proves an idle
 	// heartbeat is still byte-identical with it on.
+	// The load back-off is the one input that depends on how fast the test
+	// database answers: a doorbell query slower than SlowQuery advises the
+	// loaded interval, which a non-doorbell sensor also receives. On a busy CI
+	// runner that turned the idle heartbeat into "next_heartbeat_seconds":120
+	// and failed the golden for reasons unrelated to the wire. Raise the
+	// threshold so the golden pins the wire, not the runner's latency; the
+	// back-off itself is covered by the doorbell unit tests.
+	golden := app.DefaultDoorbellConfig()
+	golden.SlowQuery = 30 * time.Second
+	golden.QueryTimeout = time.Minute
 	ih.SetDoorbell(app.NewDoorbell(postgres.NewCommandRepository(db),
-		app.DefaultDoorbellConfig().Normalized(5*time.Minute), log))
+		golden.Normalized(5*time.Minute), log))
 	// So is the protocol v2 advertisement (RFC-026): flow.golden proves a v1
 	// sensor that does not ask for it sees nothing new.
 	ih.SetV2Advertised(true)

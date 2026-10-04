@@ -206,15 +206,11 @@ func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) (
 		argOffset += 2
 	}
 
-	// Layer 2 data scope. A resolved scope (WithDataScope) is strict; the
-	// legacy non-strict form keeps the list's fail-open "no scope row ⇒ all".
+	// Layer 2 data scope, always strict: a user with no scope row sees no
+	// group.
 	if filter.DataScopeUserID != nil {
 		scope := &shared.DataScope{TenantID: *filter.TenantID, UserID: *filter.DataScopeUserID}
 		cond, scopeArgs := dataScopeCondAt("f.asset_id", scope, argOffset)
-		if !filter.DataScopeStrict {
-			cond = fmt.Sprintf(`(NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d) OR %s)`,
-				argOffset, argOffset+1, cond)
-		}
 		clauses = append(clauses, cond)
 		args = append(args, scopeArgs...)
 	}
