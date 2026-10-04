@@ -979,7 +979,9 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 		WITH asset_stats AS (
 			SELECT
 				COUNT(*) AS total,
-				COUNT(*) FILTER(WHERE owner_id IS NOT NULL) AS with_owner,
+				-- Owned = at least one asset_owners row (user or group), the one
+				-- owner model. assets.owner_id only held email-matched owners.
+				COUNT(*) FILTER(WHERE EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = assets.id)) AS with_owner,
 				-- Internet-exposed = exposure 'public' or flagged internet-accessible,
 				-- the same definition the program metrics use. assets.exposure has no
 				-- 'internet' value; filtering on it made this median a constant 0.

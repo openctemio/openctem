@@ -203,7 +203,7 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 }
 
 // terminalRunStatusesSQL lists the statuses a run never leaves.
-const terminalRunStatusesSQL = `('completed', 'failed', 'canceled', 'timeout')`
+const terminalRunStatusesSQL = `('completed', 'partial', 'failed', 'canceled', 'timeout')`
 
 // notUpdatedError explains a guarded UPDATE that touched no row: the run is
 // missing, or it already finished.
@@ -1067,6 +1067,7 @@ func (r *PipelineRunRepository) GetStatsByTenant(ctx context.Context, tenantID s
 			COUNT(*) FILTER (WHERE status = 'pending') as pending,
 			COUNT(*) FILTER (WHERE status = 'running') as running,
 			COUNT(*) FILTER (WHERE status = 'completed') as completed,
+			COUNT(*) FILTER (WHERE status = 'partial') as partial,
 			COUNT(*) FILTER (WHERE status = 'failed' OR status = 'timeout') as failed,
 			COUNT(*) FILTER (WHERE status = 'canceled') as canceled
 		FROM pipeline_runs
@@ -1078,6 +1079,7 @@ func (r *PipelineRunRepository) GetStatsByTenant(ctx context.Context, tenantID s
 		&stats.Pending,
 		&stats.Running,
 		&stats.Completed,
+		&stats.Partial,
 		&stats.Failed,
 		&stats.Canceled,
 	)
@@ -1383,7 +1385,7 @@ func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) er
 }
 
 // terminalStepRunStatusesSQL lists the statuses a step run never leaves.
-const terminalStepRunStatusesSQL = `('completed', 'failed', 'skipped', 'canceled', 'timeout')`
+const terminalStepRunStatusesSQL = `('completed', 'partial', 'failed', 'skipped', 'canceled', 'timeout')`
 
 // notUpdatedError explains a guarded UPDATE that touched no row: the step run
 // is missing, or it already finished.
@@ -1511,6 +1513,7 @@ func (r *StepRunRepository) GetStatsByTenant(ctx context.Context, tenantID share
 			COUNT(*) FILTER (WHERE sr.status = 'pending') as pending,
 			COUNT(*) FILTER (WHERE sr.status IN ('queued', 'running')) as running,
 			COUNT(*) FILTER (WHERE sr.status = 'completed') as completed,
+			COUNT(*) FILTER (WHERE sr.status = 'partial') as partial,
 			COUNT(*) FILTER (WHERE sr.status IN ('failed', 'timeout')) as failed,
 			COUNT(*) FILTER (WHERE sr.status IN ('canceled', 'skipped')) as canceled
 		FROM step_runs sr
@@ -1523,6 +1526,7 @@ func (r *StepRunRepository) GetStatsByTenant(ctx context.Context, tenantID share
 		&stats.Pending,
 		&stats.Running,
 		&stats.Completed,
+		&stats.Partial,
 		&stats.Failed,
 		&stats.Canceled,
 	)

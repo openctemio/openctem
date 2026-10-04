@@ -37060,6 +37060,8 @@ export interface components {
       max_retries?: number
       name?: string
       next_run_at?: string
+      /** @description PartialRuns: runs that kept results but lost some work (RFC-046 D5). */
+      partial_runs?: number
       pipeline_id?: string
       profile_id?: string
       retry_backoff_seconds?: number

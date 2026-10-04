@@ -134,8 +134,13 @@ func (h *gsHarness) seedGroups() {
 		_, _ = h.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, h.ownerB.String())
 		_, _ = h.db.ExecContext(ctx, `DELETE FROM components WHERE id IN ($1, $2)`, h.componentA.String(), h.componentB.String())
 	})
-	h.exec(`UPDATE assets SET owner_id = $2 WHERE id = $1`, h.assetA.String(), h.memberA.String())
-	h.exec(`UPDATE assets SET owner_id = $2 WHERE id = $1`, h.assetB.String(), h.ownerB.String())
+	// B1's owner is a member of the tenant: only a member can be a finding's
+	// assignee (assign-to-owners).
+	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, h.ownerB.String(), t)
+	// Primary user owners (asset_owners is the only owner store; 'owner_ref'
+	// rows do not grant data scope, so the scope under test is unchanged).
+	h.exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'primary', 'owner_ref')`, h.assetA.String(), h.memberA.String())
+	h.exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'primary', 'owner_ref')`, h.assetB.String(), h.ownerB.String())
 	for id, name := range map[shared.ID]string{h.componentA: gsComponentA, h.componentB: gsMarkerComponentB} {
 		h.exec(`INSERT INTO components (id, purl, name, version, ecosystem) VALUES ($1, $2, $3, '1.0.0', 'npm')`,
 			id.String(), "pkg:npm/"+name+"-"+id.String()+"@1.0.0", name)
