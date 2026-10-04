@@ -64,7 +64,8 @@ cannot reopen one, recount its findings or record its outcome twice.
 | Runs and tasks | `pipeline_runs`, `step_runs`, `commands` | `api/internal/app/pipeline/run.go`, `api/internal/app/scan/trigger.go`, `zones.go` |
 | Run terminal guard | done | `api/internal/infra/postgres/pipeline_run_repository.go` (`terminalRunStatusesSQL`) |
 | Step terminal guard | RFC-046 P1.1 (first implementation PR) | same file |
-| `partial` | planned (P1.2, P1.3) | — |
+| `partial` | done: settle matrix (P1.2) and deadline → `partial` (P1.3) | `api/internal/app/pipeline/run.go`, `pipeline_run_repository.go` (`MarkTimedOutRuns`) |
+| Deadline + rollover | done: `deadline_at` fixed when the run starts (scan timeout, 24 h cap); at the deadline open commands fail and lose their lease (the sensor is told to stop on its next heartbeat), unfinished targets (≤ 10,000, dispatch order) are recorded; the next **scheduled** run plans them first, reordering only targets the gate resolved again | `pipeline_run_repository.go` (`runDeadlineSQL`, `MarkTimedOutRuns`, `LatestRollover`), `api/internal/app/scan/rollover.go` |
 | Occurrence claim | compare-and-set on `next_run_at`; occurrence key planned (P1.5) | `api/internal/app/scan/scheduler.go`, `scan_repository.go` (`ClaimScheduledRun`) |
 | Overlap skip | done | `scheduler.go` (`SkipIfRunning`) |
 | rrule | planned (P1.5); daily/weekly/monthly/crontab + timezone today | `api/pkg/domain/scan/entity.go` |

@@ -98,6 +98,16 @@ type Run struct {
 	// occurrence: UNIQUE(scan_id, scheduled_for).
 	ScheduledFor *time.Time
 
+	// DeadlineAt is when the reaper settles the run if it is still open:
+	// started_at plus the scan timeout, capped at 24 h, fixed when the run
+	// starts (RFC-046 §6.3). Nil for runs started before migration 000430.
+	DeadlineAt *time.Time
+
+	// UnfinishedTargetCount is how many targets were still open when the run
+	// was settled at its deadline. The targets themselves are read with
+	// RolloverStore.GetUnfinishedTargets.
+	UnfinishedTargetCount int
+
 	// Step runs (loaded separately)
 	StepRuns []*StepRun
 
