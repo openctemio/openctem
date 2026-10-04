@@ -209,10 +209,11 @@ func TestNessusFindingsUpload_UploaderScope_DB(t *testing.T) {
 	if r := upload(admin, true, "tool=nuclei", nfsReport(nfsHost{hostIn, nil})); r.FindingsAutoResolved != 0 || openFindings(in, "nuclei") != 1 {
 		t.Errorf("admin ?tool=nuclei upload resolved nuclei findings: %+v", r)
 	}
-	// An administrator's Tenable batch still auto-resolves on its hosts (the
-	// finding on the seeded branch; the scoped upload's has none).
-	if r := upload(admin, true, "", nfsReport(nfsHost{hostIn, nil})); r.FindingsAutoResolved != 1 || openFindings(in, "tenable") != 1 {
-		t.Errorf("admin tenable batch = %+v (open %d), want the branch finding on the host resolved", r, openFindings(in, "tenable"))
+	// An administrator's Tenable batch does not close anything either: an
+	// upload is not a run bound to a command, so it never closes a finding
+	// (owner decision O11, research 18 F3).
+	if r := upload(admin, true, "", nfsReport(nfsHost{hostIn, nil})); r.FindingsAutoResolved != 0 || openFindings(in, "tenable") != 2 {
+		t.Errorf("admin tenable batch = %+v (open %d), want nothing resolved", r, openFindings(in, "tenable"))
 	}
 	if openFindings(in, "nuclei") != 1 || openFindings(out, "tenable") != 1 {
 		t.Error("the admin batch resolved findings of another tool or another host")

@@ -1,8 +1,10 @@
 # RFC-048: List query contract (one filter model, two encodings, one compiler)
 
 > Status: **Accepted** (owner decisions 2026-10-04, §9). Implementation in
-> progress (§8): P0 `pkg/filterspec` shipped (#1016); P1 findings in review
-> (#1027, #1034, #1049, #1054 and the generated-params PR).
+> progress (§8): P0 `pkg/filterspec` shipped (#1016); P1 findings list shipped
+> (#1027); stats/groups, research 17 filters, search, generated params, export,
+> web URL codec, scanner details (R2), family filter, related CVEs and saved
+> views in review.
 > Scope: `api/` (`pkg/filterspec`, list/stats/groups/export handlers and
 > repositories, OpenAPI generation, `openapicontract`), `web/` (URL codec,
 > `buildQueryString`), the gateway access log.
