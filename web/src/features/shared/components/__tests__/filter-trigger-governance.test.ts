@@ -43,12 +43,7 @@ const FILTER_ICONS = new Set([
 ])
 
 /** file -> icons it may import, and why it is not a filter trigger. */
-const ICON_ALLOWLIST: Record<string, { icons: string[]; reason: string }> = {
-  'src/features/scans/components/filtering-result-banner.tsx': {
-    icons: ['Filter'],
-    reason: 'Banner reporting how many scan results the scanner filtered out; no trigger.',
-  },
-}
+const ICON_ALLOWLIST: Record<string, { icons: string[]; reason: string }> = {}
 
 /** Elements that act as a button. */
 const TRIGGER_TAGS = [

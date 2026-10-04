@@ -62,33 +62,6 @@ export interface UpdateSecuritySettingsInput {
   require_sensor_local_policy_for_private_targets?: boolean
 }
 
-/**
- * What members who are in no team (access group) see. Owners and admins always
- * see everything; members in a team see that team's assets either way.
- * GET/PATCH /tenants/{tenant}/settings/data-scope (owner/admin).
- */
-export type MembersWithoutGroupSee = 'everything' | 'nothing'
-
-export interface DataScopePolicy {
-  members_without_group_see: MembersWithoutGroupSee
-  /** True while the organization still shows everything (being retired). */
-  deprecated?: boolean
-}
-
-export interface DataScopeImpactMember {
-  user_id: string
-  name: string
-  email: string
-  role: string
-}
-
-/** Members who would see nothing after switching off "everything". */
-export interface DataScopeImpact {
-  members_without_group_see: MembersWithoutGroupSee
-  total_count: number
-  members: DataScopeImpactMember[]
-}
-
 // ============================================
 // API SETTINGS
 // ============================================
