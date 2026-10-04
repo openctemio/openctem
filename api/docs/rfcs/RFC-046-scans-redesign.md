@@ -2,9 +2,9 @@
 
 > Status: **Accepted.** Product decisions D1–D13 approved by the owner on
 > 2026-10-02; backend decisions B1–B12 approved on 2026-10-03. P0 shipped
-> (§2.3); P1 in progress (§16). P1.4 started: runs carry a task summary
-> (`task_summary` on `GET /pipeline-runs`) and their tasks (`tasks` on
-> `GET /pipeline-runs/{id}`); the web Runs tab and run drawer show them.
+> (§2.3); P1 in progress (§16): merged P1.1 (#940), P1.2 `partial` (#946)
+> and the P1.5 occurrence key `UNIQUE(scan_id, scheduled_for)` (#949; the
+> rrule part of P1.5 is open).
 > Scope: api + web, with sdk-go and sensor changes where a phase says so.
 > Builds on and does not duplicate:
 > [RFC-030](RFC-030-scan-work-distribution.md) (pull, chunks, leases, fair
@@ -357,7 +357,13 @@ Shipped: `POST /pipeline-runs/{id}/cancel` needs `pipelines:write` **and**
 `scans:write`; it cancels the run's open commands; the next heartbeat returns
 `cancel_command_ids` for any id the sensor runs but no longer holds; sdk-go
 cancels the job's context (process-group kill); the reaper does the same at
-the deadline. Remaining (P1.10):
+the deadline. Also shipped: the cancel closes the run's open **step runs**
+and commands in one statement (`CloseCanceledRun`), the commands lose their
+lease so the expired-lease sweep never re-queues them (a sensor that was
+offline is told to stop when it comes back and reports them), a sensor that
+held a just-canceled command is asked to ring again within the busy interval
+(5 s) instead of the idle one, and a second cancel succeeds without counting
+the run again. Remaining (P1.10):
 
 - sdk-go honours cancels without the doorbell (today a sensor started with
   `-disable-doorbell` runs canceled work to the end);
@@ -561,7 +567,7 @@ means a test against a migrated Postgres (skips without `DATABASE_URL`).
 | **P1.1** | A finished **step run** stays finished: `StepRunRepository.Update/UpdateStatus/Complete` guarded on non-terminal status, `ErrStepRunAlreadyFinished`; `OnStepCompleted/OnStepFailed` ignore results for a finished step | DB: second Complete, late failure and stale Update all refused, row unchanged; every terminal status final; live transitions still work. Unit: duplicate completion does not recount or settle the run; late failure does not fail the run |
 | **P1.2** | **`partial`** run and step status: migration (CHECKs + `scans.partial_runs`); a batched step with some failed and some completed batches ends `partial`; a run ends `partial` when it has completed and failed/partial steps; `partial` is terminal, counted in `partial_runs`, never auto-retried; web: status badge, filter, one success-rate formula; dead step-level retry removed | DB: run with one failed batch of three → step and run `partial`, counters (total+1, partial+1); retry controller skips partial; terminal guards include partial. Unit: settle matrix (all ok → completed, all failed → failed, mixed → partial). Web: vitest for the formula and badge |
 | **P1.3** | **Deadline → `partial` + unfinished targets**: `deadline_at`; reaper ends runs with any completed task `partial` (else `timeout`), records unfinished targets, cancels leased commands; next occurrence plans unfinished targets first | DB: reaper on a run with one completed and one running command → partial, unfinished = the running command's targets, command canceled; next trigger orders unfinished first |
-| **P1.4** | **Runs read model (D2 step 1)**: `GET /scans/{id}/runs` and `/runs/{id}` return trigger, `scheduled_for`, status incl. partial, task summary (done/failed/running/queued, sensors), coverage summary; trigger types `ci`, `retest`, `automation`, `rollover`; CI ingest creates a `trigger=ci` run instead of a `scan_sessions` row; dead `useScanSessions` removed | Route tests incl. cross-tenant 404; CI ingest creates exactly one run per report; web vitest for the runs tab |
+| **P1.4** | *(Started: runs carry `task_summary` and `tasks`, shown in the web Runs tab and run drawer, migration 000460.)* **Runs read model (D2 step 1)**: `GET /scans/{id}/runs` and `/runs/{id}` return trigger, `scheduled_for`, status incl. partial, task summary (done/failed/running/queued, sensors), coverage summary; trigger types `ci`, `retest`, `automation`, `rollover`; CI ingest creates a `trigger=ci` run instead of a `scan_sessions` row; dead `useScanSessions` removed | Route tests incl. cross-tenant 404; CI ingest creates exactly one run per report; web vitest for the runs tab |
 | **P1.5** | **Occurrence key + rrule**: `scheduled_for` + `UNIQUE(scan_id, scheduled_for)`; rrule + tz with backfill from daily/weekly/monthly/crontab; minimum interval 15 min; stable jitter; misfire grace | DB: two inserts for one occurrence → one run, the second gets a conflict; rrule property tests (DST, month ends, every-15-min ok, every-5-min refused); backfill test per legacy type |
 | **P1.6** | Overlap check and run insert in one transaction | Race test: manual trigger and scheduler for the same scan concurrently → one active run |
 | **P1.7** | **Claim-N** with `FOR UPDATE SKIP LOCKED`, server capacity, priority classes with ageing, per-run round-robin | DB: two sensors × N polls never claim the same command; capacity respected; class order; round-robin across two runs; tenant/zone predicates hold |

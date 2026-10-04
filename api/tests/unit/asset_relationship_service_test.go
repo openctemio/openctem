@@ -217,15 +217,38 @@ func newRelTestLogger() *logger.Logger {
 	return logger.NewNop()
 }
 
-// createRelTestAsset creates a test asset and adds it to the mock repo.
+// createRelTestAsset creates a test asset and adds it to the mock repo. It is
+// a `service`: the registry lets a service take part in most relationship
+// types (RFC-042 §6.3.8 enforces the constraints on writes). A test that
+// needs another type uses createRelTestAssetOf.
 func createRelTestAsset(t *testing.T, repo *MockAssetRepository, tenantID shared.ID, name string) *asset.Asset {
 	t.Helper()
-	a, err := asset.NewAssetWithTenant(tenantID, name, asset.AssetTypeWebsite, asset.CriticalityMedium)
+	return createRelTestAssetOf(t, repo, tenantID, name, asset.TypeRef{Type: asset.AssetTypeService})
+}
+
+// createRelTestAssetOf creates a test asset of a stored (type, sub_type).
+func createRelTestAssetOf(t *testing.T, repo *MockAssetRepository, tenantID shared.ID, name string, ref asset.TypeRef) *asset.Asset {
+	t.Helper()
+	a, err := asset.NewAssetWithSubType(name, ref.Type, ref.SubType, asset.CriticalityMedium)
 	if err != nil {
 		t.Fatalf("failed to create test asset %q: %v", name, err)
 	}
+	a.SetTenantID(tenantID)
 	repo.assets[a.ID().String()] = a
 	return a
+}
+
+// relTestPair returns a (source, target) pair the registry allows for rel.
+func relTestPair(t *testing.T, rel string) (asset.TypeRef, asset.TypeRef) {
+	t.Helper()
+	for _, d := range asset.RegistryDocument().Types {
+		for _, r := range d.Relationships.Out {
+			if string(r.Relationship) == rel && len(r.Peers) > 0 {
+				return asset.TypeRef{Type: d.Type, SubType: r.SubType}, r.Peers[0]
+			}
+		}
+	}
+	return asset.TypeRef{}, asset.TypeRef{}
 }
 
 // buildRelationshipWithAssets builds a RelationshipWithAssets for testing.
@@ -811,8 +834,12 @@ func TestAssetRelationshipService_AllRelationshipTypes(t *testing.T) {
 			assetRepo := NewMockAssetRepository()
 			log := newRelTestLogger()
 
-			src := createRelTestAsset(t, assetRepo, tenantID, fmt.Sprintf("src-%s", tc.name))
-			tgt := createRelTestAsset(t, assetRepo, tenantID, fmt.Sprintf("tgt-%s", tc.name))
+			srcRef, tgtRef := relTestPair(t, tc.relType)
+			if srcRef.Type == "" {
+				t.Skipf("the registry has no constraint for %q yet", tc.relType)
+			}
+			src := createRelTestAssetOf(t, assetRepo, tenantID, fmt.Sprintf("src-%s", tc.name), srcRef)
+			tgt := createRelTestAssetOf(t, assetRepo, tenantID, fmt.Sprintf("tgt-%s", tc.name), tgtRef)
 			svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 			result, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
@@ -1622,7 +1649,7 @@ func TestAssetRelationshipService_ImpactWeightBoundaries(t *testing.T) {
 				TenantID:      tenantID.String(),
 				SourceAssetID: src.ID().String(),
 				TargetAssetID: tgt.ID().String(),
-				Type:          "contains",
+				Type:          "depends_on",
 				ImpactWeight:  &tc.value,
 			})
 			if tc.valid && err != nil {
@@ -1656,7 +1683,7 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
-			Type:          "runs_on",
+			Type:          "depends_on",
 			Tags:          nil,
 		})
 		if err != nil {
@@ -1680,7 +1707,7 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
-			Type:          "deployed_to",
+			Type:          "peer_of",
 			Tags:          []string{},
 		})
 		if err != nil {
@@ -1704,7 +1731,7 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
-			Type:          "resolves_to",
+			Type:          "sends_data_to",
 			Description:   "",
 		})
 		if err != nil {
@@ -1809,7 +1836,7 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
-			Type:          "RUNS_ON",
+			Type:          "DEPENDS_ON",
 		})
 		if err != nil {
 			t.Fatalf("expected uppercase type to be accepted, got error: %v", err)
@@ -1949,9 +1976,9 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 
 		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
 			[]app.BatchCreateRelationshipInput{
-				{TargetAssetID: target1.ID().String(), Type: "exposes"},
-				{TargetAssetID: target2.ID().String(), Type: "exposes"},
-				{TargetAssetID: target3.ID().String(), Type: "exposes"},
+				{TargetAssetID: target1.ID().String(), Type: "depends_on"},
+				{TargetAssetID: target2.ID().String(), Type: "depends_on"},
+				{TargetAssetID: target3.ID().String(), Type: "depends_on"},
 			})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1982,9 +2009,9 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 
 		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
 			[]app.BatchCreateRelationshipInput{
-				{TargetAssetID: target1.ID().String(), Type: "exposes"},
-				{TargetAssetID: shared.NewID().String(), Type: "exposes"}, // does not exist
-				{TargetAssetID: target2.ID().String(), Type: "exposes"},
+				{TargetAssetID: target1.ID().String(), Type: "depends_on"},
+				{TargetAssetID: shared.NewID().String(), Type: "depends_on"}, // does not exist
+				{TargetAssetID: target2.ID().String(), Type: "depends_on"},
 			})
 		if err != nil {
 			t.Fatalf("unexpected whole-batch error: %v", err)
@@ -2033,7 +2060,7 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 
 		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), shared.NewID().String(),
 			[]app.BatchCreateRelationshipInput{
-				{TargetAssetID: shared.NewID().String(), Type: "exposes"},
+				{TargetAssetID: shared.NewID().String(), Type: "depends_on"},
 			})
 		if err == nil {
 			t.Fatal("expected whole-batch error for missing source asset")
@@ -2052,7 +2079,7 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 
 		_, err := svc.CreateRelationshipBatch(ctx, "not-a-uuid", shared.NewID().String(),
 			[]app.BatchCreateRelationshipInput{
-				{TargetAssetID: shared.NewID().String(), Type: "exposes"},
+				{TargetAssetID: shared.NewID().String(), Type: "depends_on"},
 			})
 		if err == nil {
 			t.Fatal("expected validation error for malformed tenant ID")
@@ -2089,8 +2116,8 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 
 		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
 			[]app.BatchCreateRelationshipInput{
-				{TargetAssetID: target1.ID().String(), Type: "exposes"},
-				{TargetAssetID: target2.ID().String(), Type: "exposes"},
+				{TargetAssetID: target1.ID().String(), Type: "depends_on"},
+				{TargetAssetID: target2.ID().String(), Type: "depends_on"},
 			})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
