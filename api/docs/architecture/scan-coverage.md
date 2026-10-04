@@ -6,6 +6,12 @@
 > [Scan Orchestration](scan-orchestration.md) (agent-run scanners); this doc
 > covers **external** Tenable engines.
 
+> **Superseded design (2026-10-04).** The live Tenable path is being rebuilt as a
+> two-way Tenable.sc connector inside the sensor:
+> [RFC-047](../rfcs/RFC-047-tenable-sc-sensor-connector.md). The runner and
+> direct modes described here are not coming back; the coverage planner and its
+> batch-scoped auto-resolve invariant return on top of RFC-047 P1.
+
 ## Problem
 
 Cover a large estate (e.g. 3000 IPs) with a scanner licensed for fewer active
@@ -200,11 +206,13 @@ ingest auto-resolve is scoped to the batch's `session_id` + assets.
 Every batch passes the checks of a scan trigger before it is claimed
 (`scan.Service.ResolveDispatchTargets`, RFC-042 F16): scan create's target
 validator (a private address only inside a scan zone; loopback, link-local and
-metadata never), approved scope exclusions, and zone routing. A skipped asset
+metadata never), approved scope exclusions, the attribution of the candidate
+asset (an asset whose ownership is not confirmed is skipped, RFC-036 O4), and
+zone routing ([active-probe-gate.md](active-probe-gate.md)). A skipped asset
 is claimed without a dispatch, so it rotates to the back and is checked again
 on its next turn. A batch stays in the zone of its top candidate, the command
 is stamped with that zone, and a pinned sensor must be in it. No gate, or a
-failed exclusion lookup, dispatches nothing. Internal networks therefore need
+failed exclusion or attribution lookup, dispatches nothing. Internal networks therefore need
 a scan zone covering them, as for any other scan.
 
 > **Scope:** today the scheduler drives only **unlimited engines (Nessus Pro)** —

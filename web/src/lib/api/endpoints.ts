@@ -506,18 +506,22 @@ export const tenantEndpoints = {
 // ============================================
 
 /**
- * Invitation endpoints for accepting invitations
+ * Invitation endpoints for accepting invitations. The token is a bearer
+ * credential: every call sends it in the JSON body ({ token }), never in the
+ * URL (RFC-041).
  */
 export const invitationEndpoints = {
-  /**
-   * Get invitation details by token
-   */
-  get: (token: string) => `${API_BASE.INVITATIONS}/${token}`,
+  /** What a token grants, readable before sign-in (public). */
+  lookup: () => `${API_BASE.INVITATIONS}/lookup`,
 
-  /**
-   * Accept invitation
-   */
-  accept: (token: string) => `${API_BASE.INVITATIONS}/${token}/accept`,
+  /** Accept as the signed-in, invited email. */
+  accept: () => `${API_BASE.INVITATIONS}/accept`,
+
+  /** Accept with the refresh token, for a user who has no organization yet. */
+  acceptWithRefresh: () => `${API_BASE.INVITATIONS}/accept-with-refresh`,
+
+  /** Decline (public: holding the token is the authorization). */
+  decline: () => `${API_BASE.INVITATIONS}/decline`,
 } as const
 
 // ============================================

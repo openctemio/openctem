@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
@@ -907,7 +908,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability = app.NewVulnerabilityService(repos.Vulnerability, repos.Finding, log)
 	s.Vulnerability.SetCommentRepository(repos.FindingComment)
 	s.Vulnerability.SetCommentReactionRepository(repos.CommentReaction)
-	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation
+	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
@@ -1087,6 +1088,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	// Wire unified finding repository for CTEM integration (pentest findings → findings table)
 	s.Pentest.SetUnifiedFindingRepository(repos.Finding)
+	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
 	s.Pentest.SetAuditService(s.Audit)                     // audit logging for team changes + status changes
 	s.Pentest.SetFindingActivityService(s.FindingActivity) // finding activity trail
@@ -1165,10 +1167,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Producer side: dispatch a safe-check validation job for a finding. The
 	// sensor runs the probe and reports back; the command-completion hook maps
 	// the result into evidence via ValidationEvidence above.
+	// One dispatcher, the only producer of validate commands, for every
+	// re-check, retest and simulation probe. Each job passes the active-probe
+	// gate (scope exclusions, private-range policy, attribution, scan zones)
+	// of the scan service, set below once it exists; until then it refuses.
+	probeGate := &lateTargetGate{}
+	validationDispatcher := validation.NewCommandDispatcher(repos.Command, probeGate, log)
 	s.ValidationRun = validation.NewRunService(
 		repos.Finding,
 		repos.Asset,
-		validation.NewCommandDispatcher(repos.Command, log),
+		validationDispatcher,
 		validation.DefaultSelector{},
 		[]validation.ExecutorKind{validation.KindSafeCheck},
 		log,
@@ -1199,19 +1207,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Simulation.SetSafeCheckDispatcher(s.ValidationRun)
 
 	// Continuous retest (RFC-039): re-run a finding's own nuclei template plus a
-	// reachability probe through the same validate-command transport, gated by
-	// the fail-closed scope exclusions (the #835 attribution gate plugs into the
-	// same TargetGate list). Evidence is recorded advisory-only; the retest
-	// service settles the finding (fixed / still present / unknown).
+	// reachability probe through the same validate-command dispatcher, so the
+	// same fail-closed active-probe gate applies (exclusions, zones,
+	// attribution). Evidence is recorded advisory-only; the retest service
+	// settles the finding (fixed / still present / unknown).
 	s.Retest = retestapp.NewService(
 		repos.FindingRetest,
 		repos.Finding,
 		repos.Asset,
 		repos.Command,
-		validation.NewCommandDispatcher(repos.Command, log),
+		validationDispatcher,
 		validationSensorAvailability{sensors: repos.Sensor},
 		log,
-		retestapp.ScopeExclusionGate{Scope: s.Scope},
 	)
 	s.Retest.SetAuditLogger(s.Audit)
 
@@ -1579,8 +1586,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to from the platform.
 		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
+		// Scan targets limited to the actor: restricted members scan only
+		// assets in their data scope; free text must match a scope target
+		// (research/15 L-06, decision D9).
+		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope)),
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
+	// The validate-command dispatcher gates every probe through the scan
+	// service from here on.
+	probeGate.set(s.Scan)
 
 	// Closed-loop CTEM: auto-queue a proof-of-fix safe-check re-check when
 	// findings transition to fix_applied, so a "fixed" claim is verified rather
@@ -1768,12 +1782,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	assignmentEngine := assignment.NewEngine(repos.AccessControl, log)
 	// Resolve a finding's asset type so rules scoped by AssetTypes can match
 	// (without this, such rules never fire).
-	assignmentEngine.SetAssetTypeResolver(func(ctx context.Context, tenantID, assetID shared.ID) (string, error) {
+	assignmentEngine.SetAssetTypeResolver(func(ctx context.Context, tenantID, assetID shared.ID) (assetdom.TypeRef, error) {
 		a, err := repos.Asset.GetByID(ctx, tenantID, assetID)
 		if err != nil {
-			return "", err
+			return assetdom.TypeRef{}, err
 		}
-		return a.Type().String(), nil
+		return assetdom.TypeRef{Type: a.Type(), SubType: a.SubType()}, nil
 	})
 	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
 

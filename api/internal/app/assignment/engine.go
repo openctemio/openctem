@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,11 +21,11 @@ type Result struct {
 	Options accesscontrol.AssignmentOptions
 }
 
-// AssetTypeResolver returns the asset type (e.g. "domain", "repository") for a
-// finding's asset, so rules scoped by AssetTypes can be evaluated. Optional —
-// when unset, rules with an AssetTypes condition cannot match (previous
-// behavior); wiring it makes those rules work.
-type AssetTypeResolver func(ctx context.Context, tenantID, assetID shared.ID) (string, error)
+// AssetTypeResolver returns the stored (type, sub_type) of a finding's asset,
+// so rules scoped by AssetTypes can be evaluated. Optional — when unset,
+// rules with an AssetTypes condition cannot match (previous behavior);
+// wiring it makes those rules work.
+type AssetTypeResolver func(ctx context.Context, tenantID, assetID shared.ID) (asset.TypeRef, error)
 
 // Engine evaluates assignment rules against findings
 // and returns the list of matching groups with their options.
@@ -133,7 +134,7 @@ func (e *Engine) matchRules(ctx context.Context, tenantID shared.ID, finding *vu
 	// Resolve the finding's asset type ONCE, only when some rule actually filters
 	// by it — otherwise AssetTypes conditions can never match (they need the type
 	// and it isn't carried on the finding).
-	assetType := ""
+	var assetType asset.TypeRef
 	if needAssetType {
 		if aid := finding.AssetID(); !aid.IsZero() {
 			if t, terr := e.assetTypeFor(ctx, tenantID, aid); terr == nil {
@@ -172,8 +173,12 @@ func (e *Engine) matchRules(ctx context.Context, tenantID shared.ID, finding *vu
 // MatchesConditions checks if a finding matches the given conditions.
 // All non-empty condition fields must match (AND logic).
 // Empty conditions = catch-all (always matches).
-// assetType is optional — pass the asset's type when available for AssetTypes condition evaluation.
-func (e *Engine) MatchesConditions(conds accesscontrol.AssignmentConditions, finding *vulnerability.Finding, assetType ...string) bool {
+// assetType is optional — pass the asset's stored (type, sub_type) when
+// available for AssetTypes condition evaluation. A condition names types as a
+// person wrote them (`host`, `website`); they are matched on the stored pair
+// through the asset type registry (RFC-042 §6.3.8), so a rule on `website`
+// matches a stored (application, website).
+func (e *Engine) MatchesConditions(conds accesscontrol.AssignmentConditions, finding *vulnerability.Finding, assetType ...asset.TypeRef) bool {
 	if finding == nil {
 		return false
 	}
@@ -208,15 +213,22 @@ func (e *Engine) MatchesConditions(conds accesscontrol.AssignmentConditions, fin
 	}
 
 	if len(conds.AssetTypes) > 0 {
-		at := ""
+		var at asset.TypeRef
 		if len(assetType) > 0 {
 			at = assetType[0]
 		}
-		if at == "" {
+		if at.Type == "" {
 			// No asset type available — cannot match this condition
 			return false
 		}
-		if !stringInSliceFold(at, conds.AssetTypes) {
+		matched := false
+		for _, name := range conds.AssetTypes {
+			if asset.TypeNameMatches(name, at) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false
 		}
 	}
