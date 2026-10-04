@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 
@@ -902,7 +904,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize component & branch services
 	s.Component = app.NewComponentService(repos.Component, repos.Asset, log)
+	s.Component.SetDataScope(s.DataScope)
 	s.SBOMImport = app.NewSBOMImportService(repos.Component, repos.Asset, log)
+	s.SBOMImport.SetDataScope(s.DataScope)
 	s.ReportSchedule = app.NewReportScheduleService(repos.ReportSchedule, log)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
 	s.Branch = app.NewBranchService(repos.Branch, log)
@@ -1463,6 +1467,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
+	// Assets reported for a tenant's own scan commands get tenant_scanned
+	// attribution evidence (RFC-036 O8).
+	if repos.Attribution != nil {
+		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution))
+	}
 	// CT names become inventory assets through this same ingest path, with
 	// attribution evidence (RFC-036 P0). Wired here because the CT monitor is
 	// built before ingest.

@@ -67,7 +67,9 @@ func newTypeCompatibility(ctx context.Context, repo tool.TargetMappingRepository
 // decide reports whether the tool can scan a stored pair, and whether that
 // could be decided at all.
 func (c *typeCompatibility) decide(ref asset.TypeRef) (compatible, decidable bool) {
-	if ref.Type == asset.AssetTypeUnclassified || !c.known {
+	// A type the registry does not know (empty, or a legacy code the data
+	// normalisation has not mapped yet) cannot be decided either.
+	if ref.Type == asset.AssetTypeUnclassified || !ref.Type.IsValid() || !c.known {
 		return false, false
 	}
 	pair := asset.CanonicalPair(ref.Type, ref.SubType)

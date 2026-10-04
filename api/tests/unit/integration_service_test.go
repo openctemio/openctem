@@ -1276,7 +1276,7 @@ func TestListIntegrations_SearchFilter(t *testing.T) {
 
 	tenantID := shared.NewID().String()
 
-	for _, name := range []string{"Production DefectDojo", "Staging DefectDojo", "Production DefectDojo 2"} {
+	for _, name := range []string{"Production DefectDojo", "Staging DefectDojo", "Production DefectDojo EU"} {
 		input := validCreateInput(tenantID)
 		input.Name = name
 		_, err := svc.CreateIntegration(context.Background(), input)
@@ -1299,126 +1299,125 @@ func TestListIntegrations_SearchFilter(t *testing.T) {
 	}
 }
 
-// stubTenableConnector validates connector configs like tenablesc does, with
-// a fixed set of sensors per tenant (tenant-scoped like the sensor store).
-type stubTenableConnector struct {
-	sensors map[string]string // sensor id -> tenant id
-	calls   int
-}
-
-func (s *stubTenableConnector) ValidateConnector(_ context.Context, tenantID shared.ID, cfg map[string]any) error {
-	s.calls++
-	cc, err := tenablesc.ParseConnectorConfigMap(cfg)
-	if err != nil {
-		return err
+// TestCreateIntegration_Tenable_RefusedWhilePaused: sensor v0.8.0 removed the
+// Tenable runner, so a new Tenable integration would never run (owner decision
+// D-14). Creating one is refused in every execution mode, and nothing is stored.
+func TestCreateIntegration_Tenable_RefusedWhilePaused(t *testing.T) {
+	if integration.TenableConnectorEnabled {
+		t.Skip("Tenable connector is enabled")
 	}
-	if s.sensors[cc.SensorID.String()] != tenantID.String() {
-		return fmt.Errorf("%w: sensor_id names no sensor of this organization", shared.ErrValidation)
-	}
-	return nil
-}
-
-func tenableConnectorInput(tenantID, sensorID string) app.CreateIntegrationInput {
-	in := validCreateInput(tenantID)
-	in.Name = "Tenable.sc"
-	in.Provider = "tenable"
-	in.Credentials = ""
-	in.BaseURL = ""
-	in.Config = map[string]any{"engine": "tenable_sc", "execution_mode": "sensor", "sensor_id": sensorID, "instance": "sc-prod"}
-	return in
-}
-
-// Without the connector, Tenable integrations are refused (nothing would run
-// them).
-func TestCreateIntegration_Tenable_RefusedWithoutConnector(t *testing.T) {
-	svc := newTestIntegrationService(newMockIntegrationRepo(), newMockSCMExtRepo(), nil)
-	in := tenableConnectorInput(shared.NewID().String(), shared.NewID().String())
-	if _, err := svc.CreateIntegration(context.Background(), in); !errors.Is(err, shared.ErrValidation) {
-		t.Fatalf("want refusal, got %v", err)
-	}
-}
-
-// RFC-047: Tenable is only the Tenable.sc sensor connector. The sensor must be
-// the tenant's own, no credentials are stored in the control plane (RFC-007
-// §8), and Nessus Pro or direct mode are refused.
-func TestCreateIntegration_Tenable_Connector(t *testing.T) {
 	repo := newMockIntegrationRepo()
-	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
-	tenantID, otherTenant := shared.NewID().String(), shared.NewID().String()
-	own, foreign := shared.NewID().String(), shared.NewID().String()
-	conn := &stubTenableConnector{sensors: map[string]string{own: tenantID, foreign: otherTenant}}
-	svc.SetTenableConnector(conn)
-	ctx := context.Background()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, nil)
+	tenantID := shared.NewID().String()
 
-	created, err := svc.CreateIntegration(ctx, tenableConnectorInput(tenantID, own))
-	if err != nil {
-		t.Fatalf("connector with the tenant's own sensor: %v", err)
-	}
-	if created.SyncIntervalMinutes() != 360 {
-		t.Fatalf("sync interval %d, want 360", created.SyncIntervalMinutes())
-	}
-	if created.CredentialsEncrypted() != "" {
-		t.Fatal("no credentials may be stored")
-	}
-
-	refuse := func(name string, mut func(*app.CreateIntegrationInput)) {
-		t.Helper()
-		in := tenableConnectorInput(tenantID, own)
-		in.Name = name
-		mut(&in)
-		if _, err := svc.CreateIntegration(ctx, in); err == nil {
-			t.Errorf("%s: must be refused", name)
+	for _, mode := range []string{"sensor", "direct"} {
+		input := validCreateInput(tenantID)
+		input.Name = "Tenable " + mode
+		input.Provider = "tenable"
+		input.Config = map[string]any{"execution_mode": mode}
+		if mode == "sensor" {
+			input.Credentials = ""
+		}
+		_, err := svc.CreateIntegration(context.Background(), input)
+		if !errors.Is(err, integration.ErrProviderNotSupported) {
+			t.Fatalf("%s-mode Tenable create: want ErrProviderNotSupported, got %v", mode, err)
 		}
 	}
-	refuse("another tenant's sensor", func(in *app.CreateIntegrationInput) { in.Config["sensor_id"] = foreign })
-	refuse("unknown sensor", func(in *app.CreateIntegrationInput) { in.Config["sensor_id"] = shared.NewID().String() })
-	refuse("credentials", func(in *app.CreateIntegrationInput) { in.Credentials = `{"access_key":"a","secret_key":"s"}` })
-	refuse("nessus pro", func(in *app.CreateIntegrationInput) { in.Config["engine"] = "nessus_pro" })
-	refuse("direct mode", func(in *app.CreateIntegrationInput) {
-		in.Config["execution_mode"] = "direct"
-		in.Credentials = `{"access_key":"a","secret_key":"s"}`
-		in.BaseURL = "https://sc.corp.example"
-	})
-	refuse("no sensor", func(in *app.CreateIntegrationInput) { delete(in.Config, "sensor_id") })
+	result, err := svc.ListIntegrations(context.Background(), app.ListIntegrationsInput{TenantID: tenantID, Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if result.Total != 0 {
+		t.Fatalf("refused Tenable integrations were stored: %d", result.Total)
+	}
 }
 
-// The connector rules hold on update too: no credentials, no other tenant's
-// sensor, no switch to direct mode.
-func TestUpdateIntegration_Tenable_Connector(t *testing.T) {
-	repo := newMockIntegrationRepo()
-	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
-	tenantID, otherTenant := shared.NewID().String(), shared.NewID().String()
-	own, own2, foreign := shared.NewID().String(), shared.NewID().String(), shared.NewID().String()
-	svc.SetTenableConnector(&stubTenableConnector{sensors: map[string]string{own: tenantID, own2: tenantID, foreign: otherTenant}})
-	ctx := context.Background()
-
-	created, err := svc.CreateIntegration(ctx, tenableConnectorInput(tenantID, own))
+// seedTenableIntegration stores a Tenable integration the way one created
+// before the pause looks, bypassing CreateIntegration (which now refuses it).
+func seedTenableIntegration(t *testing.T, repo *mockIntegrationRepo, tenantID, name string, cfg map[string]any, creds string) *integration.Integration {
+	t.Helper()
+	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("tenant id: %v", err)
 	}
+	intg := integration.NewIntegration(shared.NewID(), tid, name, integration.CategorySecurity,
+		integration.ProviderTenable, integration.AuthTypeAPIKey)
+	intg.SetConfig(cfg)
+	intg.SetBaseURL("https://tenable.example.com")
+	if creds != "" {
+		intg.SetCredentials(creds)
+	}
+	if err := repo.Create(context.Background(), intg); err != nil {
+		t.Fatalf("seed %s: %v", name, err)
+	}
+	return intg
+}
+
+// TestUpdateIntegration_Tenable_SensorModeRejectsCredentials ensures the
+// RFC-007 section 8 rule still holds for stored Tenable rows: a sensor-mode
+// integration can never gain control-plane credentials through update.
+func TestUpdateIntegration_Tenable_SensorModeRejectsCredentials(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, nil)
+	tenantID := shared.NewID().String()
+
+	sensor := seedTenableIntegration(t, repo, tenantID, "Sensor Tenable",
+		map[string]any{"execution_mode": "sensor", "engine": "nessus_pro"}, "")
+	creds := "tenable-secret"
+	if _, err := svc.UpdateIntegration(context.Background(), sensor.ID().String(), tenantID, app.UpdateIntegrationInput{Credentials: &creds}); err == nil {
+		t.Fatal("update must not let a sensor-mode Tenable integration gain control-plane credentials")
+	}
+
+	direct := seedTenableIntegration(t, repo, tenantID, "Direct Tenable",
+		map[string]any{"execution_mode": "direct", "engine": "nessus_pro"}, "enc-creds")
+	if _, err := svc.UpdateIntegration(context.Background(), direct.ID().String(), tenantID, app.UpdateIntegrationInput{Credentials: &creds}); err != nil {
+		t.Fatalf("direct-mode credential update should be allowed: %v", err)
+	}
+}
+
+// TestUpdateIntegration_Tenable_ConfigModeSwitch covers updating execution_mode
+// via config on a stored row, incl. the security-sensitive direct->sensor switch.
+func TestUpdateIntegration_Tenable_ConfigModeSwitch(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, nil)
+	tenantID := shared.NewID().String()
+
+	created := seedTenableIntegration(t, repo, tenantID, "Tenable",
+		map[string]any{"execution_mode": "direct", "engine": "nessus_pro"}, "enc-creds")
 	id := created.ID().String()
 
-	creds := "tenable-secret"
-	if _, err := svc.UpdateIntegration(ctx, id, tenantID, app.UpdateIntegrationInput{Credentials: &creds}); err == nil {
-		t.Fatal("a sensor connector must not gain control-plane credentials")
+	// Switching to sensor while credentials remain must be rejected.
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
+		Config: map[string]any{"execution_mode": "sensor"},
+	}); err == nil {
+		t.Fatal("direct->sensor must be rejected while credentials are still stored")
 	}
-	if _, err := svc.UpdateIntegration(ctx, id, tenantID, app.UpdateIntegrationInput{
-		Config: map[string]any{"sensor_id": foreign}}); err == nil {
-		t.Fatal("switching to another tenant's sensor must be refused")
+
+	// Switching to sensor AND clearing credentials is allowed.
+	empty := ""
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
+		Config:      map[string]any{"execution_mode": "sensor"},
+		Credentials: &empty,
+	}); err != nil {
+		t.Fatalf("direct->sensor with cleared credentials should be allowed: %v", err)
 	}
-	url := "https://sc.corp.example"
-	if _, err := svc.UpdateIntegration(ctx, id, tenantID, app.UpdateIntegrationInput{
-		Config: map[string]any{"execution_mode": "direct"}, Credentials: &creds, BaseURL: &url}); err == nil {
-		t.Fatal("switching to direct mode must be refused")
+
+	// Engine change persists.
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
+		Config: map[string]any{"engine": "tenable_sc"},
+	}); err != nil {
+		t.Fatalf("engine change should be allowed: %v", err)
 	}
-	if _, err := svc.UpdateIntegration(ctx, id, tenantID, app.UpdateIntegrationInput{
-		Config: map[string]any{"sensor_id": own2, "min_severity": float64(0)}}); err != nil {
-		t.Fatalf("moving to another own sensor: %v", err)
-	}
-	// Another tenant cannot update it at all.
-	if _, err := svc.UpdateIntegration(ctx, id, otherTenant, app.UpdateIntegrationInput{
-		Config: map[string]any{"sensor_id": foreign}}); err == nil {
-		t.Fatal("cross-tenant update must fail")
+
+	// Another tenant cannot update it.
+	other := shared.NewID().String()
+	if _, err := svc.UpdateIntegration(context.Background(), id, other, app.UpdateIntegrationInput{
+		Config: map[string]any{"engine": "nessus_pro"},
+	}); err == nil {
+		t.Fatal("cross-tenant update of a Tenable integration must fail")
 	}
 }
 
@@ -2879,5 +2878,128 @@ func TestTestIntegration_Jira_OtherTenantNotFound(t *testing.T) {
 	}
 	if tester.calls != 0 {
 		t.Fatal("another tenant's credentials must never be tested")
+	}
+}
+
+// stubTenableConnector validates connector configs like tenablesc does, with
+// a fixed set of sensors per tenant (tenant-scoped like the sensor store).
+type stubTenableConnector struct {
+	sensors map[string]string // sensor id -> tenant id
+	calls   int
+}
+
+func (s *stubTenableConnector) ValidateConnector(_ context.Context, tenantID shared.ID, cfg map[string]any) error {
+	s.calls++
+	cc, err := tenablesc.ParseConnectorConfigMap(cfg)
+	if err != nil {
+		return err
+	}
+	if s.sensors[cc.SensorID.String()] != tenantID.String() {
+		return fmt.Errorf("%w: sensor_id names no sensor of this organization", shared.ErrValidation)
+	}
+	return nil
+}
+
+func tenableConnectorInput(tenantID, sensorID string) app.CreateIntegrationInput {
+	in := validCreateInput(tenantID)
+	in.Name = "Tenable.sc"
+	in.Provider = "tenable"
+	in.Credentials = ""
+	in.BaseURL = ""
+	in.Config = map[string]any{"engine": "tenable_sc", "execution_mode": "sensor", "sensor_id": sensorID, "instance": "sc-prod"}
+	return in
+}
+
+// Without the connector, Tenable integrations are refused (nothing would run
+// them).
+func TestCreateIntegration_Tenable_RefusedWithoutConnector(t *testing.T) {
+	svc := newTestIntegrationService(newMockIntegrationRepo(), newMockSCMExtRepo(), nil)
+	in := tenableConnectorInput(shared.NewID().String(), shared.NewID().String())
+	if _, err := svc.CreateIntegration(context.Background(), in); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("want refusal, got %v", err)
+	}
+}
+
+// RFC-047: Tenable is only the Tenable.sc sensor connector. The sensor must be
+// the tenant's own, no credentials are stored in the control plane (RFC-007
+// §8), and Nessus Pro or direct mode are refused.
+func TestCreateIntegration_Tenable_Connector(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
+	tenantID, otherTenant := shared.NewID().String(), shared.NewID().String()
+	own, foreign := shared.NewID().String(), shared.NewID().String()
+	conn := &stubTenableConnector{sensors: map[string]string{own: tenantID, foreign: otherTenant}}
+	svc.SetTenableConnector(conn)
+	ctx := context.Background()
+
+	created, err := svc.CreateIntegration(ctx, tenableConnectorInput(tenantID, own))
+	if err != nil {
+		t.Fatalf("connector with the tenant's own sensor: %v", err)
+	}
+	if created.SyncIntervalMinutes() != 360 {
+		t.Fatalf("sync interval %d, want 360", created.SyncIntervalMinutes())
+	}
+	if created.CredentialsEncrypted() != "" {
+		t.Fatal("no credentials may be stored")
+	}
+
+	refuse := func(name string, mut func(*app.CreateIntegrationInput)) {
+		t.Helper()
+		in := tenableConnectorInput(tenantID, own)
+		in.Name = name
+		mut(&in)
+		if _, err := svc.CreateIntegration(ctx, in); err == nil {
+			t.Errorf("%s: must be refused", name)
+		}
+	}
+	refuse("another tenant's sensor", func(in *app.CreateIntegrationInput) { in.Config["sensor_id"] = foreign })
+	refuse("unknown sensor", func(in *app.CreateIntegrationInput) { in.Config["sensor_id"] = shared.NewID().String() })
+	refuse("credentials", func(in *app.CreateIntegrationInput) { in.Credentials = `{"access_key":"a","secret_key":"s"}` })
+	refuse("nessus pro", func(in *app.CreateIntegrationInput) { in.Config["engine"] = "nessus_pro" })
+	refuse("direct mode", func(in *app.CreateIntegrationInput) {
+		in.Config["execution_mode"] = "direct"
+		in.Credentials = `{"access_key":"a","secret_key":"s"}`
+		in.BaseURL = "https://sc.corp.example"
+	})
+	refuse("no sensor", func(in *app.CreateIntegrationInput) { delete(in.Config, "sensor_id") })
+}
+
+// The connector rules hold on update too: no credentials, no other tenant's
+// sensor, no switch to direct mode.
+func TestUpdateIntegration_Tenable_Connector(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
+	tenantID, otherTenant := shared.NewID().String(), shared.NewID().String()
+	own, own2, foreign := shared.NewID().String(), shared.NewID().String(), shared.NewID().String()
+	svc.SetTenableConnector(&stubTenableConnector{sensors: map[string]string{own: tenantID, own2: tenantID, foreign: otherTenant}})
+	ctx := context.Background()
+
+	created, err := svc.CreateIntegration(ctx, tenableConnectorInput(tenantID, own))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := created.ID().String()
+
+	creds := "tenable-secret"
+	if _, err := svc.UpdateIntegration(ctx, id, tenantID, app.UpdateIntegrationInput{Credentials: &creds}); err == nil {
+		t.Fatal("a sensor connector must not gain control-plane credentials")
+	}
+	if _, err := svc.UpdateIntegration(ctx, id, tenantID, app.UpdateIntegrationInput{
+		Config: map[string]any{"sensor_id": foreign}}); err == nil {
+		t.Fatal("switching to another tenant's sensor must be refused")
+	}
+	url := "https://sc.corp.example"
+	if _, err := svc.UpdateIntegration(ctx, id, tenantID, app.UpdateIntegrationInput{
+		Config: map[string]any{"execution_mode": "direct"}, Credentials: &creds, BaseURL: &url}); err == nil {
+		t.Fatal("switching to direct mode must be refused")
+	}
+	if _, err := svc.UpdateIntegration(ctx, id, tenantID, app.UpdateIntegrationInput{
+		Config: map[string]any{"sensor_id": own2, "min_severity": float64(0)}}); err != nil {
+		t.Fatalf("moving to another own sensor: %v", err)
+	}
+	// Another tenant cannot update it at all.
+	if _, err := svc.UpdateIntegration(ctx, id, otherTenant, app.UpdateIntegrationInput{
+		Config: map[string]any{"sensor_id": foreign}}); err == nil {
+		t.Fatal("cross-tenant update must fail")
 	}
 }

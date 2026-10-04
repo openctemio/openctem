@@ -226,6 +226,7 @@ type ScanMember struct {
 	ID         shared.ID
 	Name       string
 	Type       string
+	SubType    string // stored sub-type; scanner compatibility reads it
 	Status     string
 	Properties map[string]any // only the keys exclusion matching reads
 }
