@@ -9,7 +9,7 @@ import "testing"
 func TestProviderHasClient(t *testing.T) {
 	withClient := []Provider{
 		ProviderGitHub, ProviderGitLab, ProviderBitbucket, ProviderAzureDevOps,
-		ProviderTenable, ProviderDefectDojo,
+		ProviderDefectDojo,
 		ProviderJira,
 		ProviderSlack, ProviderTeams, ProviderTelegram, ProviderEmail, ProviderWebhook, ProviderSplunk,
 	}
@@ -17,6 +17,12 @@ func TestProviderHasClient(t *testing.T) {
 		ProviderWiz, ProviderSnyk, ProviderCrowdStrike,
 		ProviderAWS, ProviderGCP, ProviderAzure,
 		ProviderLinear, ProviderAsana,
+	}
+	if !TenableConnectorEnabled {
+		// Paused until the RFC-047 runner ships (D-14).
+		withoutClient = append(withoutClient, ProviderTenable)
+	} else {
+		withClient = append(withClient, ProviderTenable)
 	}
 	for _, p := range withClient {
 		if !p.IsValid() {
