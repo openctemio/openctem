@@ -103,7 +103,7 @@ describe('legacy route redirects', () => {
     expect(redirectOnce('/settings/integrations/apps?x=1')).toBe('/settings/integrations?x=1')
     expect(redirectOnce('/settings/integrations')).toBeNull()
     // Validation, campaign-first.
-    expect(redirectOnce('/pentest/findings')).toBe('/findings?sources=pentest')
+    expect(redirectOnce('/pentest/findings')).toBe('/findings?source=pentest')
     expect(redirectOnce('/pentest/findings?campaign=c1')).toBe(
       '/pentest/campaigns/c1?view=findings&campaign=c1'
     )
