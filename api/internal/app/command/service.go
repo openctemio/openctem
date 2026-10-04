@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
+
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -428,6 +430,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	if !claimed {
 		return nil, shared.NewDomainError("CONFLICT", "command already claimed by another sensor", shared.ErrConflict)
 	}
+	metrics.CommandClaimsTotal.WithLabelValues("claim").Inc()
 
 	// Return the freshly-claimed state.
 	return s.Get(ctx, tenantID, commandID)

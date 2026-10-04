@@ -65,6 +65,10 @@ func (r *scopeRepo) FindingIDsInScope(context.Context, shared.ID, shared.ID, []s
 	return nil, nil
 }
 
+func (r *scopeRepo) HasFullDataRole(context.Context, shared.ID, shared.ID) (bool, error) {
+	return false, nil
+}
+
 func (r *scopeRepo) AssetIDsInTenant(_ context.Context, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	return ids, r.err
 }

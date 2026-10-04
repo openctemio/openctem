@@ -51,14 +51,32 @@ func Start(zone map[string]Entry) (*Server, error) {
 }
 
 // StartOn serves zone on addr (port 0 picks one).
+//
+// UDP and TCP share one port. With port 0 the UDP port is picked first and
+// the same TCP port may already be taken by another process, so the pair is
+// retried a few times instead of failing the test on a busy machine.
 func StartOn(addr string, zone map[string]Entry) (*Server, error) {
-	pc, err := net.ListenPacket("udp", addr)
-	if err != nil {
-		return nil, err
-	}
-	l, err := net.Listen("tcp", pc.LocalAddr().String())
-	if err != nil {
+	var (
+		pc  net.PacketConn
+		l   net.Listener
+		err error
+	)
+	_, port, _ := net.SplitHostPort(addr)
+	for attempt := 0; attempt < 20; attempt++ {
+		pc, err = net.ListenPacket("udp", addr)
+		if err != nil {
+			return nil, err
+		}
+		l, err = net.Listen("tcp", pc.LocalAddr().String())
+		if err == nil {
+			break
+		}
 		_ = pc.Close()
+		if port != "0" {
+			return nil, err
+		}
+	}
+	if err != nil {
 		return nil, err
 	}
 	s := &Server{Addr: pc.LocalAddr().String(), zone: map[string]Entry{}, udp: pc, tcp: l}
