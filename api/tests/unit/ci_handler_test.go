@@ -78,7 +78,7 @@ func (m *ciMockScanRepository) Update(_ context.Context, s *scan.Scan) error {
 	return nil
 }
 
-func (m *ciMockScanRepository) Delete(_ context.Context, id shared.ID) error {
+func (m *ciMockScanRepository) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	delete(m.scans, id.String())
 	return nil
 }
@@ -91,19 +91,19 @@ func (m *ciMockScanRepository) ListDueForExecution(_ context.Context, _ time.Tim
 	return nil, nil
 }
 
-func (m *ciMockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _ *time.Time) error {
+func (m *ciMockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _ shared.ID, _ *time.Time) error {
 	return nil
 }
 
-func (m *ciMockScanRepository) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID) error {
+func (m *ciMockScanRepository) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 
-func (m *ciMockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
+func (m *ciMockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID, _ string) error {
 	return nil
 }
 
-func (m *ciMockScanRepository) RecordTriggerFailure(_ context.Context, _ shared.ID, _ string) error {
+func (m *ciMockScanRepository) RecordTriggerFailure(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
 	return nil
 }
 
@@ -127,7 +127,7 @@ func (m *ciMockScanRepository) UpdateStatusByAssetGroupID(_ context.Context, _ s
 	return nil
 }
 
-func (m *ciMockScanRepository) ClaimScheduledRun(_ context.Context, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
+func (m *ciMockScanRepository) ClaimScheduledRun(_ context.Context, _ shared.ID, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
 	return true, nil
 }
 

@@ -39,6 +39,13 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
     destination: '/settings/teams?tab=assignment-rules',
     permanent: true,
   },
+  // Permission sets were removed: permissions come only from roles, and teams
+  // carry only data scope. An old link lands on Roles.
+  {
+    source: '/settings/access-control/permission-sets/:path*',
+    destination: '/settings/roles',
+    permanent: true,
+  },
   { source: '/settings/integrations/api-keys', destination: '/settings/api-keys', permanent: true },
   { source: '/settings/integrations/scim-tokens', destination: '/settings/scim', permanent: true },
   { source: '/settings/integrations/mcp', destination: '/settings/mcp', permanent: true },

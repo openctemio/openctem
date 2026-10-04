@@ -354,7 +354,7 @@ middleware.RequireAdmin()                                               // Owner
 middleware.RequireOwner()                                               // Owner only
 ```
 
-**Owner-only operations:** `TeamDelete`, `BillingManage`, `GroupsDelete`, `PermissionSetsDelete`
+**Owner-only operations:** `TeamDelete`, `BillingManage`, `GroupsDelete`, `AssignmentRulesDelete`
 
 **Route registration pattern:**
 
