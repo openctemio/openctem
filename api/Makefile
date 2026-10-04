@@ -157,6 +157,8 @@ swagger: swagger-install
 	@# why the gate compares sets of operations rather than bytes. See
 	@# tools/lint/openapicontract.
 	@GOWORK=off go mod download
+	@# The list query params come from the field registries (RFC-048).
+	@GOWORK=off go run ./tools/gen/filterparams
 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
 	@echo "Swagger docs generated in api/openapi/"
 
