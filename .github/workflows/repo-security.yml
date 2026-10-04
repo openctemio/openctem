@@ -26,8 +26,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -36,13 +34,17 @@ concurrency:
 jobs:
   secret-scan:
     name: Secret Scanning
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     runs-on: ubuntu-latest
     env:
       BETTERLEAKS_VERSION: 1.9.0
       BETTERLEAKS_SHA256: f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -85,7 +87,7 @@ jobs:
             --report-format sarif --report-path betterleaks.sarif "${args[@]}" .
 
       - name: Upload Betterleaks results
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         # The merge queue deletes its temporary gh-readonly-queue branch when a group
         # is rebuilt; an upload still in flight then fails with ref not found. The scan
         # result above already ran; only the upload is tolerated in merge_group.
@@ -99,8 +101,17 @@ jobs:
     name: Workflow Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: actionlint
+        # Release tarball pinned by SHA-256 (no curl | bash of a mutable script).
+        env:
+          ACTIONLINT_VERSION: 1.7.7
+          ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
         run: |
-          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          curl -sSfL -o actionlint.tgz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tgz" | sha256sum -c -
+          tar -xzf actionlint.tgz actionlint
           ./actionlint -color
+      - name: Actions are pinned to commit SHAs
+        run: bash .github/scripts/check-action-pins.sh

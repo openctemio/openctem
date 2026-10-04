@@ -36,14 +36,20 @@ describe('personal settings are ungated', () => {
 })
 
 describe('org notification channels stay gated', () => {
+  it('/settings/integrations/notifications', () => {
+    const cfg = matchRoutePermission('/settings/integrations/notifications')
+    expect(cfg?.permission).toBe(Permission.IntegrationsRead)
+    expect(cfg?.module).toBe('integrations')
+  })
+  // Delivery history and the queue carry every event of the organization
+  // regardless of data scope: channel managers only, as the API enforces.
   for (const path of [
-    '/settings/integrations/notifications',
     '/settings/integrations/notifications/history',
     '/settings/integrations/notifications/outbox',
   ]) {
     it(path, () => {
       const cfg = matchRoutePermission(path)
-      expect(cfg?.permission).toBe(Permission.IntegrationsRead)
+      expect(cfg?.permission).toBe(Permission.IntegrationsManage)
       expect(cfg?.module).toBe('integrations')
     })
   }
