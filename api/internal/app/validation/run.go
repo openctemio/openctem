@@ -78,7 +78,6 @@ var networkAddressableTypes = map[asset.AssetType]bool{
 	asset.AssetTypeApplication: true,
 	asset.AssetTypeService:     true,
 	asset.AssetTypeHost:        true,
-	asset.AssetTypeEndpoint:    true,
 }
 
 // IsNetworkAddressable reports whether an asset of type t has a network
