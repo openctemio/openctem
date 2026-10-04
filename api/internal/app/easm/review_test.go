@@ -65,6 +65,10 @@ func (r *scopeRepo) FindingIDsInScope(context.Context, shared.ID, shared.ID, []s
 	return nil, nil
 }
 
+func (r *scopeRepo) AssetIDsInTenant(_ context.Context, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	return ids, r.err
+}
+
 func memberEnforcer(repo datascope.Repository, user shared.ID) *datascope.Enforcer {
 	return datascope.New(repo, nil, func(context.Context) datascope.Caller {
 		return datascope.Caller{UserID: user.String()}
