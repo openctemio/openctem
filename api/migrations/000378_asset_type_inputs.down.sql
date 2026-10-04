@@ -1,9 +1,9 @@
--- Reverts 000360. Asset rows were not changed by the up migration.
+-- Reverts 000378. Asset rows were not changed by the up migration.
 
 DROP TABLE IF EXISTS asset_type_input_map;
 
 -- Back to the 000243 list. NOT VALID: rows recorded as reclassified while
--- 000360 was applied stay (asset_state_history is append-only).
+-- 000378 was applied stay (asset_state_history is append-only).
 ALTER TABLE asset_state_history DROP CONSTRAINT IF EXISTS chk_change_type;
 ALTER TABLE asset_state_history ADD CONSTRAINT chk_change_type CHECK (change_type IN (
     'appeared', 'disappeared', 'recovered',

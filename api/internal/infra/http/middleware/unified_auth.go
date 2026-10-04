@@ -44,6 +44,11 @@ type UnifiedAuthConfig struct {
 	// stop working on the next request instead of when they expire. A lookup
 	// error fails open (logged): the token still expires on its own.
 	RevokedSessions RevokedSessionChecker
+	// CookieName is the access-token cookie (AUTH_ACCESS_TOKEN_COOKIE_NAME,
+	// matching the web's NEXT_PUBLIC_AUTH_COOKIE_NAME). Empty means
+	// DefaultAccessTokenCookieName. The WebSocket upgrade is the browser
+	// request that reaches the API with this cookie (RFC-045).
+	CookieName string
 }
 
 // RevokedSessionChecker answers whether a session id has been revoked.
@@ -75,7 +80,7 @@ const DefaultAccessTokenCookieName = "auth_token"
 // The source matters for CSRF: a cookie is attached by the browser to
 // requests the page did not write (an ambient credential), so a request it
 // authenticates needs CSRF protection; a header token does not.
-func extractTokenWithSource(r *http.Request) (string, bool) {
+func extractTokenWithSource(r *http.Request, cookieName string) (string, bool) {
 	// 1. Try Authorization header first (standard API auth)
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
@@ -88,7 +93,10 @@ func extractTokenWithSource(r *http.Request) (string, bool) {
 	// 2. Try httpOnly cookie (for WebSocket connections + cookie-based SPA)
 	// Browser automatically sends cookies during WebSocket upgrade request,
 	// eliminating any need for frontend to expose token via query param.
-	if cookie, err := r.Cookie(DefaultAccessTokenCookieName); err == nil && cookie.Value != "" {
+	if cookieName == "" {
+		cookieName = DefaultAccessTokenCookieName
+	}
+	if cookie, err := r.Cookie(cookieName); err == nil && cookie.Value != "" {
 		return cookie.Value, true
 	}
 
@@ -107,7 +115,7 @@ func extractTokenWithSource(r *http.Request) (string, bool) {
 func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tokenString, fromCookie := extractTokenWithSource(r)
+			tokenString, fromCookie := extractTokenWithSource(r, cfg.CookieName)
 			if tokenString == "" {
 				apierror.Unauthorized("Missing authorization token").WriteJSON(w)
 				return
@@ -320,6 +328,28 @@ func GetSessionID(ctx context.Context) string {
 		return id
 	}
 	return ""
+}
+
+// CredentialExpiresAtKey carries the expiry of the credential that
+// authenticated the request when no token claims are in the context to read
+// it from (the single-use WebSocket ticket).
+const CredentialExpiresAtKey logger.ContextKey = "credential_expires_at"
+
+// GetCredentialExpiry returns when the credential that authenticated the
+// request stops being valid: the access token's exp (local or OIDC), or the
+// value a ticket middleware recorded. Zero when unknown. A long-lived
+// connection (the WebSocket) must not outlive it.
+func GetCredentialExpiry(ctx context.Context) time.Time {
+	if t, ok := ctx.Value(CredentialExpiresAtKey).(time.Time); ok && !t.IsZero() {
+		return t
+	}
+	if c := GetLocalClaims(ctx); c != nil && c.ExpiresAt != nil {
+		return c.ExpiresAt.Time
+	}
+	if c := GetClaims(ctx); c != nil && c.ExpiresAt != nil {
+		return c.ExpiresAt.Time
+	}
+	return time.Time{}
 }
 
 // GetPermissions extracts the permissions from context.

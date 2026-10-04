@@ -12,7 +12,8 @@
 #     /api/v1/auth/saml/*                                     SAML metadata, login redirect,
 #                                                             ACS (IdP form POST)
 #     /api/v1/auth/backchannel-logout                         OIDC back-channel logout (IdP)
-#     /api/v1/ws                                              browser WebSocket (ticket auth)
+#     /api/v1/ws                                              browser WebSocket (session cookie,
+#                                                             same origin as the UI)
 #     /health  /openapi.yaml  /docs                           liveness, API reference
 #     /api/* with Authorization: Bearer oct_*  or  X-API-Key  API-key clients
 #                                                           (tenant REST routes, read-only;
@@ -70,7 +71,7 @@
 
 	# Access log: one readable line per request. Secrets are removed:
 	# Authorization/Cookie are redacted by Caddy itself; API keys sent as
-	# headers and the single-use WebSocket ticket are removed here.
+	# headers are removed here. No credential travels in a URL.
 	log {
 		output stdout
 		format filter {
@@ -81,9 +82,6 @@
 				request>headers>X-Api-Key delete
 				request>headers>X-Sensor-Api-Key delete
 				request>headers>X-Csrf-Token delete
-				request>uri query {
-					replace ticket REDACTED
-				}
 			}
 		}
 	}

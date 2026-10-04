@@ -109,7 +109,7 @@ func (h *RemediationCampaignHandler) Create(w http.ResponseWriter, r *http.Reque
 		DueDate:       req.DueDate,
 		Tags:          req.Tags,
 		ActorID:       userID,
-	})
+	}, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -189,7 +189,7 @@ func (h *RemediationCampaignHandler) UpdateStatus(w http.ResponseWriter, r *http
 		return
 	}
 
-	campaign, err := h.service.UpdateCampaignStatus(r.Context(), tenantID, id, req.Status)
+	campaign, err := h.service.UpdateCampaignStatus(r.Context(), tenantID, id, req.Status, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -218,7 +218,7 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 		FindingFilter: req.FindingFilter,
 		AssignedTo:    req.AssignedTo,
 		AssignedTeam:  req.AssignedTeam,
-	})
+	}, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -232,7 +232,7 @@ func (h *RemediationCampaignHandler) Refresh(w http.ResponseWriter, r *http.Requ
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	campaign, err := h.service.RefreshCampaignProgress(r.Context(), tenantID, id)
+	campaign, err := h.service.RefreshCampaignProgress(r.Context(), tenantID, id, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -270,11 +270,24 @@ func (h *RemediationCampaignHandler) Delete(w http.ResponseWriter, r *http.Reque
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	if err := h.service.DeleteCampaign(r.Context(), tenantID, id); err != nil {
+	if err := h.service.DeleteCampaign(r.Context(), tenantID, id, h.buildAuditContext(r)); err != nil {
 		h.handleError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// buildAuditContext names who changed a campaign and from where. Forwarding
+// headers count only from a trusted proxy (S-4), as for every audit context.
+func (h *RemediationCampaignHandler) buildAuditContext(r *http.Request) app.AuditContext {
+	return app.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
 }
 
 func (h *RemediationCampaignHandler) handleError(w http.ResponseWriter, err error) {

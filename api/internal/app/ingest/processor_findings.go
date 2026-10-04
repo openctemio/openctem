@@ -264,6 +264,7 @@ func (p *FindingProcessor) processBatch(
 		return ff
 	}
 
+	candidates := make([]findingMeta, 0, len(report.Findings))
 	validFindings := make([]findingMeta, 0, len(report.Findings))
 	fingerprints := make([]string, 0, len(report.Findings))
 	seenFingerprints := make(map[string]struct{}, len(report.Findings))
@@ -331,23 +332,13 @@ func (p *FindingProcessor) processBatch(
 		// recomputed for a new asset_id after an asset merge).
 		fp, base := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
 
-		// One report naming the same finding twice (the same package in two
-		// lockfiles, a template matching twice) is one observation. Keep the
-		// first; the rest would otherwise reach the multi-row upsert twice,
-		// fail it, and be counted as two created findings (RFC-043 B2).
-		if _, dup := seenFingerprints[fp]; dup {
-			duplicatesInReport++
-			continue
-		}
-		seenFingerprints[fp] = struct{}{}
-
 		// Get branch ID for this asset (if available)
 		var branchID *shared.ID
 		if bid, ok := branchMap[targetAssetID]; ok {
 			branchID = &bid
 		}
 
-		validFindings = append(validFindings, findingMeta{
+		candidates = append(candidates, findingMeta{
 			index:       i,
 			finding:     ctisFinding,
 			assetID:     targetAssetID,
@@ -355,14 +346,9 @@ func (p *FindingProcessor) processBatch(
 			fingerprint: fp,
 			base:        base,
 		})
-		fingerprints = append(fingerprints, fp)
 	}
 
-	if duplicatesInReport > 0 {
-		p.logger.Debug("folded repeated findings within one report", "count", duplicatesInReport)
-	}
-
-	if len(validFindings) == 0 {
+	if len(candidates) == 0 {
 		return nil
 	}
 
@@ -370,10 +356,38 @@ func (p *FindingProcessor) processBatch(
 	// port (RFC-043 P0). Hand a row stored under that old key to the first port
 	// in this batch that reports it, so its triage carries over before the
 	// existence check below sees the new key.
-	p.adoptLegacyPortlessFingerprints(ctx, tenantID, validFindingsLegacy(validFindings, func(fm findingMeta) (string, string, string) {
+	p.adoptLegacyPortlessFingerprints(ctx, tenantID, validFindingsLegacy(candidates, func(fm findingMeta) (string, string, string) {
 		legacy := legacyPortlessFingerprint(fm.assetID, &fm.finding)
 		return legacy, fm.fingerprint, fm.base
 	}))
+
+	// Step 1c: a key a finding gave up (an asset merge, a duplicate folded
+	// into another finding, an older recipe) is an alias of the finding that
+	// carries it now (RFC-043 §6). Look the keys up so the re-sighting lands
+	// on that finding instead of creating a new one.
+	aliases := resolveFingerprintAliasesOf(ctx, p, tenantID, candidates, func(fm findingMeta) string { return fm.fingerprint })
+
+	for _, fm := range candidates {
+		if current, ok := aliases[fm.fingerprint]; ok {
+			fm.fingerprint = current
+		}
+		// One report naming the same finding twice (the same package in two
+		// lockfiles, a template matching twice, two keys of one finding) is
+		// one observation. Keep the first; the rest would otherwise reach the
+		// multi-row upsert twice, fail it, and be counted as two created
+		// findings (RFC-043 B2).
+		if _, dup := seenFingerprints[fm.fingerprint]; dup {
+			duplicatesInReport++
+			continue
+		}
+		seenFingerprints[fm.fingerprint] = struct{}{}
+		validFindings = append(validFindings, fm)
+		fingerprints = append(fingerprints, fm.fingerprint)
+	}
+
+	if duplicatesInReport > 0 {
+		p.logger.Debug("folded repeated findings within one report", "count", duplicatesInReport)
+	}
 
 	// Step 2: Batch check existing fingerprints
 	existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, fingerprints)
@@ -681,6 +695,16 @@ func (p *FindingProcessor) CheckFingerprints(
 		existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, batch)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to check fingerprints: %w", err)
+		}
+		// A former key of a finding (RFC-043 §6) is known too.
+		var unknown []string
+		for _, fp := range batch {
+			if !existsMap[fp] {
+				unknown = append(unknown, fp)
+			}
+		}
+		for alias := range resolveFingerprintAliasesOf(ctx, p, tenantID, unknown, func(fp string) string { return fp }) {
+			existsMap[alias] = true
 		}
 		for _, fp := range batch {
 			if existsMap[fp] {
@@ -2105,6 +2129,38 @@ func legacyPortlessFingerprint(assetID shared.ID, f *ctis.Finding) string {
 		return ""
 	}
 	return composite
+}
+
+// fingerprintAliasResolver is implemented by the postgres finding repository.
+// Optional: a repository without it (tests, mocks) resolves nothing.
+type fingerprintAliasResolver interface {
+	ResolveFingerprintAliases(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]string, error)
+}
+
+// resolveFingerprintAliases maps the keys of items that are former keys of a
+// finding of the tenant to that finding's current key. A failed lookup is
+// logged and resolves nothing: the report is still ingested, and a former key
+// at worst creates a finding the next merge folds back.
+func resolveFingerprintAliasesOf[T any](ctx context.Context, p *FindingProcessor, tenantID shared.ID, items []T, key func(T) string) map[string]string {
+	resolver, ok := p.repo.(fingerprintAliasResolver)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(items))
+	for _, it := range items {
+		if k := key(it); k != "" {
+			keys = append(keys, k)
+		}
+	}
+	aliases, err := resolver.ResolveFingerprintAliases(ctx, tenantID, keys)
+	if err != nil {
+		p.logger.Warn("failed to resolve finding fingerprint aliases", "error", err)
+		return nil
+	}
+	if len(aliases) > 0 {
+		p.logger.Debug("resolved former finding keys", "count", len(aliases))
+	}
+	return aliases
 }
 
 // legacyKey pairs an old fingerprint with the one that replaces it.

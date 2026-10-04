@@ -136,3 +136,36 @@ func TestCSRFOptional_CookieAuthenticated_FailsClosed(t *testing.T) {
 		t.Fatalf("bearer POST: status = %d, want 200", rr.Code)
 	}
 }
+
+// The access-token cookie name follows AUTH_ACCESS_TOKEN_COOKIE_NAME (the web
+// sets the cookie under NEXT_PUBLIC_AUTH_COOKIE_NAME); the WebSocket upgrade
+// reaches the API with it (RFC-045). The default name is not accepted then.
+func TestUnifiedAuth_ConfiguredCookieName(t *testing.T) {
+	gen := jwt.NewGenerator(jwt.TokenConfig{
+		Secret: "csrf-cookie-auth-test-secret-0123456789abcdef", Issuer: "test",
+		AccessTokenDuration: time.Hour, RefreshTokenDuration: time.Hour,
+	})
+	tok, _, err := gen.GenerateAccessToken("0a0e0c09-5e75-4556-8a26-c8de3ded5d73", "sid", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mw := UnifiedAuth(UnifiedAuthConfig{
+		Provider: config.AuthProviderLocal, LocalValidator: gen,
+		Logger: logger.New(logger.Config{Level: "error"}), CookieName: "kc_auth_token",
+	})
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !IsCookieAuthenticated(r.Context()) {
+			t.Error("cookie request not marked cookie-authenticated")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	for name, want := range map[string]int{"kc_auth_token": http.StatusOK, DefaultAccessTokenCookieName: http.StatusUnauthorized} {
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/ws/", nil)
+		r.AddCookie(&http.Cookie{Name: name, Value: tok})
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		if rec.Code != want {
+			t.Errorf("cookie %q: status %d, want %d", name, rec.Code, want)
+		}
+	}
+}

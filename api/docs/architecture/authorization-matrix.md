@@ -512,28 +512,49 @@ cannot fingerprint the build. Release images stamp it with `-ldflags` from the
 tag; the dev container's air build stamps `<highest tag>-dev`; an unstamped
 binary reads the checkout's `.git` (`pkg/version`).
 
-### Real-time WebSocket (`/api/v1/auth/ws-token`, `/api/v1/ws`)
+### Real-time WebSocket (`/api/v1/ws`)
 
-A WebSocket ticket opens the tenant's real-time stream, so it is held to the
-same tenant gates as any JWT-tenant route.
+The socket opens the tenant's real-time stream, so the upgrade is held to the
+same tenant gates as any session tenant route ([RFC-045](../rfcs/RFC-045-websocket-auth.md)).
 
 | Endpoint | Required Auth |
 |----------|---------------|
-| `GET /api/v1/auth/ws-token` | JWT session (no `oct_` keys) + tenant chain: SSO enforcement, organization IP allowlist, `RequireTenant`, active membership (`wsTokenMiddlewares`) |
-| `GET /api/v1/ws/?ticket=…` | Single-use ticket (Redis `GETDEL`, 30 s), bound to the user + tenant it was issued for; **active membership re-checked at upgrade** (`WSTicketAuth`) |
+| `GET /api/v1/ws` | Session access token from the `auth_token` cookie (browser, same origin) or `Authorization: Bearer`; no `oct_` keys. Tenant chain: revoked-session check, SSO enforcement, organization IP allowlist, `RequireTenant`, active membership, read rate limit (`realtimeMiddlewares`). Origin must be in `CORS_ALLOWED_ORIGINS` (exact match); a cookie-authenticated upgrade without an Origin is refused |
 
+- No credential travels in the URL. The single-use ticket
+  (`GET /api/v1/auth/ws-token`) and the short-lived JWT fallback were
+  removed; a `?ticket=` parameter is ignored.
 - A suspended member, a user who is not a member of the token's tenant, a
-  caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`) and a
-  password session in an SSO-enforced tenant get no ticket.
-- A member suspended or removed between issue and upgrade gets 403 on the
-  upgrade. The upgrade does not re-run the IP allowlist (the ticket is
-  single-use and lives 30 s).
-- Without Redis (no ticket service) `/ws` falls back to a short-lived JWT and
-  the full `buildTokenTenantMiddlewares` chain.
+  caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`), a
+  password session in an SSO-enforced tenant and a revoked session are
+  refused at the upgrade.
+- The browser always opens the socket on the UI's own origin: the gateway
+  routes `/api/v1/ws` to the API, and the web server (`server-with-ws.mjs`,
+  all-in-one image and Helm) or `next dev` forwards it with the `Cookie` and
+  `Origin` headers. Cross-site WebSocket deployments are not supported; serve
+  the path on the UI origin.
 - After the upgrade, every channel subscription is authorized by
   `websocket.Hub.defaultAuthorize` against the connection's user and tenant
   (own `user:{tenant}:{user}` only, own `tenant:{id}` only, permission +
   data scope for `finding:`/`triage:`, `scans:read` for `scan:`).
+- **The socket is bound to its session** ([RFC-045](../rfcs/RFC-045-websocket-auth.md)).
+  The server closes it with code `4401`:
+  - at the expiry of the access token it was opened with, and at most 15 minutes
+    (less up to 60 s of jitter) after it opened, so gates that publish no
+    event (IP allowlist edits, SSO enforcement, data scope) are re-applied
+    on the reconnect;
+  - when its session is signed out or revoked: every path that writes the
+    session revocation store (logout, sign out device / everywhere,
+    password change, 2FA enrolment, user or member suspension, session-limit
+    eviction, OIDC back-channel logout) also publishes on Redis `ws:revoke`,
+    and every API instance closes its matching sockets;
+  - when the user's membership or role in its tenant changes (permission
+    version bumped or dropped: role assigned, removed or redefined, member
+    role changed, member removed or suspended).
+- Limits: 10 sockets per user per instance (more → `4429`), 50 subscriptions
+  per socket, 10 messages/s (burst 60; abuse → `1008`), 4 KiB frames, 60 s
+  read deadline with server pings. Nothing is delivered after the server's
+  close frame.
 
 ### Platform Admin Routes (`/api/v1/admin/*`)
 

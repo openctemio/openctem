@@ -24,6 +24,14 @@
  * A right-hand drawer from `md`, a bottom sheet on phones. The header (title,
  * state, actions, tabs) stays put while the body scrolls.
  *
+ * The phone sheet is a Vaul drawer (components/ui/drawer.tsx): it follows the
+ * finger when swiped down, closes past a quarter of its height or on a quick
+ * flick, and springs back otherwise. A swipe starts a drag only from the
+ * handle and header, or from the body when the body is scrolled to its top;
+ * scrolling the body, a sideways swipe, selected text, a field or the footer
+ * never drags it. Swiping is a shortcut: the Close button and Esc still close.
+ * Motion is transform-only and stops under `prefers-reduced-motion`.
+ *
  * On phones the sheet has one fixed height (92% of the small viewport), like a
  * native sheet at a fixed detent: switching tabs or loading more content does
  * not make it jump, short content leaves empty space under it, and a tab change
@@ -43,6 +51,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Drawer, DrawerContent, DrawerHandle } from '@/components/ui/drawer'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -100,7 +109,7 @@ export interface DetailSheetProps {
    * (no field grabs it); return an element to focus it instead.
    */
   initialFocus?: () => HTMLElement | null | undefined
-  /** Where focus returns on close; Radix's default (the opener) otherwise. */
+  /** Where focus returns on close; the element focused before opening otherwise. */
   returnFocus?: () => HTMLElement | null | undefined
 }
 
@@ -108,6 +117,24 @@ export interface DetailSheetProps {
 function assignRef<T>(ref: React.Ref<T> | undefined, node: T | null) {
   if (typeof ref === 'function') ref(node)
   else if (ref) ref.current = node
+}
+
+/**
+ * Inputs and other controls never start a drag: dragging on a text field
+ * selects text or moves the caret, a slider slides. Vaul skips any element
+ * under `[data-vaul-no-drag]`, so the control under the finger is tagged as
+ * the press starts, before Vaul decides.
+ */
+const NO_DRAG_SELECTOR =
+  'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="slider"], [role="textbox"]'
+
+function keepControlsFromDragging(e: React.PointerEvent) {
+  const target = e.target
+  if (!(target instanceof Element)) return
+  const control = target.closest(NO_DRAG_SELECTOR)
+  if (control && !control.hasAttribute('data-vaul-no-drag')) {
+    control.setAttribute('data-vaul-no-drag', '')
+  }
 }
 
 export function DetailSheet({
@@ -127,7 +154,9 @@ export function DetailSheet({
   initialFocus,
   returnFocus,
 }: DetailSheetProps) {
-  // Phones get a bottom sheet, larger screens the side drawer.
+  // Phones get a bottom sheet you can swipe away, larger screens the side
+  // drawer. Read on the first render, so an opening sheet never starts as one
+  // and becomes the other.
   const isPhone = useIsMobile()
   const pad = isPhone ? 'px-4' : 'px-5'
 
@@ -150,57 +179,111 @@ export function DetailSheet({
     if (scrollRef.current) scrollRef.current.scrollTop = 0
   }, [panel])
 
+  // Focus: the caller's element, or the sheet itself, so no field grabs focus
+  // (and, on a phone, no keyboard slides up over the opening sheet) while the
+  // focus trap still holds and screen readers start at the dialog.
+  // The element focused before opening is where focus returns on close:
+  // Radix returns it to a `Dialog.Trigger`, and these sheets are opened by the
+  // caller's own controls.
+  const opener = React.useRef<HTMLElement | null>(null)
+  const onOpenAutoFocus = React.useCallback(
+    (e: Event) => {
+      e.preventDefault()
+      const sheet = e.currentTarget as HTMLElement | null
+      const active = document.activeElement
+      opener.current =
+        active instanceof HTMLElement && active !== document.body && !sheet?.contains(active)
+          ? active
+          : null
+      const el = initialFocus?.()
+      if (el) el.focus({ preventScroll: true })
+      // Something inside already took focus (a composer focusing itself).
+      else if (sheet && !sheet.contains(document.activeElement)) {
+        sheet.focus({ preventScroll: true })
+      }
+    },
+    [initialFocus]
+  )
+  const onCloseAutoFocus = React.useCallback(
+    (e: Event) => {
+      const el = returnFocus?.() ?? opener.current
+      opener.current = null
+      if (el && el.isConnected) {
+        e.preventDefault()
+        el.focus({ preventScroll: true })
+      }
+    },
+    [returnFocus]
+  )
+
+  const frame = (
+    <>
+      <div className={cn('shrink-0 border-b', isPhone ? 'pt-2' : 'pt-4', pad, !tabs && 'pb-4')}>
+        {header}
+        {tabs}
+      </div>
+      <div
+        ref={setBodyRef}
+        data-slot="detail-sheet-body"
+        onScroll={onBodyScroll}
+        className={cn(
+          'min-h-0 flex-1 overflow-y-auto pt-4 pb-6',
+          // No scroll chaining into the page, no pull-to-refresh behind it.
+          isPhone && 'overscroll-contain',
+          pad,
+          bodyClassName
+        )}
+        {...(panel ? { role: 'tabpanel', 'aria-label': panel } : {})}
+      >
+        {children}
+      </div>
+      {footer && (
+        // A composer or a primary action: pressing it never drags the sheet.
+        <div data-vaul-no-drag="" className={cn('shrink-0 border-t bg-background', pad)}>
+          {footer}
+        </div>
+      )}
+    </>
+  )
+
+  if (isPhone) {
+    return (
+      <Drawer open={open} onOpenChange={onOpenChange}>
+        <DrawerContent
+          data-slot="detail-sheet"
+          className={cn(
+            'w-full gap-0 overflow-hidden p-0 outline-none',
+            // One height whatever the content (svh: the browser's bars never
+            // cover it), clear of the home indicator.
+            'rounded-t-2xl border-t pb-[env(safe-area-inset-bottom)]',
+            phoneHeight === 'auto' ? 'max-h-[92svh]' : 'h-[92svh]',
+            className
+          )}
+          onPointerDownCapture={keepControlsFromDragging}
+          onOpenAutoFocus={onOpenAutoFocus}
+          onCloseAutoFocus={onCloseAutoFocus}
+        >
+          <DrawerHandle />
+          {frame}
+        </DrawerContent>
+      </Drawer>
+    )
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side={isPhone ? 'bottom' : 'right'}
+        side="right"
         data-slot="detail-sheet"
         className={cn(
-          'flex w-full flex-col gap-0 overflow-hidden p-0 [&>button]:hidden',
-          isPhone
-            ? cn(
-                // One height whatever the content (svh: the browser's bars
-                // never cover it), clear of the home indicator.
-                'rounded-t-2xl pb-[env(safe-area-inset-bottom)]',
-                phoneHeight === 'auto' ? 'max-h-[92svh]' : 'h-[92svh]'
-              )
-            : WIDTH[width],
+          'flex w-full flex-col gap-0 overflow-hidden p-0 outline-none [&>button]:hidden',
+          WIDTH[width],
           className
         )}
-        onOpenAutoFocus={(e) => {
-          e.preventDefault()
-          const el = initialFocus?.()
-          if (el) el.focus({ preventScroll: true })
-        }}
-        onCloseAutoFocus={
-          returnFocus
-            ? (e) => {
-                const el = returnFocus()
-                if (el && el.isConnected) {
-                  e.preventDefault()
-                  el.focus({ preventScroll: true })
-                }
-              }
-            : undefined
-        }
+        onOpenAutoFocus={onOpenAutoFocus}
+        onCloseAutoFocus={onCloseAutoFocus}
       >
-        {isPhone && (
-          <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-border" />
-        )}
-        <div className={cn('shrink-0 border-b pt-4', pad, !tabs && 'pb-4')}>
-          {header}
-          {tabs}
-        </div>
-        <div
-          ref={setBodyRef}
-          data-slot="detail-sheet-body"
-          onScroll={onBodyScroll}
-          className={cn('min-h-0 flex-1 overflow-y-auto pt-4 pb-6', pad, bodyClassName)}
-          {...(panel ? { role: 'tabpanel', 'aria-label': panel } : {})}
-        >
-          {children}
-        </div>
-        {footer && <div className={cn('shrink-0 border-t bg-background', pad)}>{footer}</div>}
+        {frame}
       </SheetContent>
     </Sheet>
   )
@@ -243,6 +326,14 @@ export interface DetailHeaderProps {
   onClose: () => void
 }
 
+/**
+ * The header's icon buttons (`⋯`, Close): a small 32px button with the 16px
+ * icon, and a 44×44 hit area around it (WCAG 2.5.5; Apple's minimum touch
+ * target) from an invisible `::after`. The `gap-3` between the two keeps
+ * their hit areas from overlapping.
+ */
+const HEADER_ICON_BUTTON = 'relative size-8 after:absolute after:-inset-1.5'
+
 export function DetailHeader({ title, badges, meta, actions, menu, onClose }: DetailHeaderProps) {
   const parts = (meta ?? []).filter((p) => p !== null && p !== undefined && p !== false && p !== '')
   return (
@@ -269,11 +360,16 @@ export function DetailHeader({ title, badges, meta, actions, menu, onClose }: De
             <SheetDescription className="sr-only">Details</SheetDescription>
           )}
         </div>
-        <div className="-me-2 flex shrink-0 items-center">
+        <div className="-me-2 flex shrink-0 items-center gap-3">
           {menu && menu.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-8" aria-label="More actions">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={HEADER_ICON_BUTTON}
+                  aria-label="More actions"
+                >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -301,7 +397,7 @@ export function DetailHeader({ title, badges, meta, actions, menu, onClose }: De
           <Button
             variant="ghost"
             size="icon"
-            className="size-8"
+            className={HEADER_ICON_BUTTON}
             aria-label="Close"
             onClick={onClose}
           >

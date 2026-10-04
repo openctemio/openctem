@@ -190,6 +190,90 @@ describe('DetailSheet on phones', () => {
     expect(body().scrollTop).toBe(0)
   })
 
+  it('is a swipeable drawer with a grabber, still a dialog named by its title', () => {
+    render(<PhoneSheet panel="overview" />)
+    expect(sheet()).toHaveAttribute('data-vaul-drawer-direction', 'bottom')
+    expect(screen.getByRole('dialog', { name: 'dmz-scanner-01' })).toBe(sheet())
+    // The grabber is decorative; the Close button is the accessible way out.
+    const handle = sheet().querySelector('[data-vaul-handle]') as HTMLElement
+    expect(handle).toHaveAttribute('aria-hidden', 'true')
+    expect(handle.querySelector('[data-vaul-handle-hitarea]')).not.toBeNull()
+  })
+
+  it('focuses the sheet itself on open, so no keyboard slides up', () => {
+    render(<PhoneSheet panel="overview" />)
+    expect(document.activeElement).toBe(sheet())
+  })
+
+  it('closes with Esc and from the 44px Close button', async () => {
+    const onOpenChange = vi.fn()
+    const onClose = vi.fn()
+    render(
+      <DetailSheet
+        open
+        onOpenChange={onOpenChange}
+        header={<DetailHeader title="x" onClose={onClose} />}
+      />
+    )
+    const close = screen.getByRole('button', { name: 'Close' })
+    // 32px button, 44x44 hit area from ::after.
+    expect(close).toHaveClass('size-8', 'after:absolute', 'after:-inset-1.5')
+    await userEvent.click(close)
+    expect(onClose).toHaveBeenCalled()
+    await userEvent.keyboard('{Escape}')
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('returns focus to the control that opened it', async () => {
+    function Opener() {
+      const [open, setOpen] = React.useState(false)
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Open details</button>
+          <DetailSheet
+            open={open}
+            onOpenChange={setOpen}
+            header={<DetailHeader title="x" onClose={() => setOpen(false)} />}
+          />
+        </>
+      )
+    }
+    render(<Opener />)
+    const button = screen.getByRole('button', { name: 'Open details' })
+    await userEvent.click(button)
+    expect(document.activeElement).toBe(sheet())
+    await userEvent.keyboard('{Escape}')
+    await vi.waitFor(() => expect(document.activeElement).toBe(button))
+  })
+
+  it('never drags from a field or the footer', () => {
+    render(
+      <DetailSheet
+        open
+        onOpenChange={() => {}}
+        header={<DetailHeader title="x" onClose={() => {}} />}
+        footer={<button>Send</button>}
+      >
+        <input aria-label="Search" />
+        <textarea aria-label="Note" />
+        <p>Plain text</p>
+      </DetailSheet>
+    )
+    const search = screen.getByRole('textbox', { name: 'Search' })
+    const note = screen.getByRole('textbox', { name: 'Note' })
+    const text = screen.getByText('Plain text')
+    for (const el of [search, note, text]) {
+      el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    }
+    expect(search).toHaveAttribute('data-vaul-no-drag')
+    expect(note).toHaveAttribute('data-vaul-no-drag')
+    // Plain content drags the sheet (when the body is at its top).
+    expect(text.closest('[data-vaul-no-drag]')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Send' }).closest('[data-vaul-no-drag]')
+    ).not.toBeNull()
+  })
+
   it('still hands the body to a caller that manages its scroll', () => {
     const ref = React.createRef<HTMLDivElement>()
     const { unmount } = render(<PhoneSheet panel="overview" bodyRef={ref} />)
@@ -212,6 +296,7 @@ describe('DetailSheet on larger screens', () => {
     )
     const el = document.querySelector('[data-slot="detail-sheet"]') as HTMLElement
     expect(el).toHaveClass('h-full', 'sm:max-w-xl')
+    expect(el).not.toHaveAttribute('data-vaul-drawer')
     expect(el).not.toHaveClass('h-[92svh]')
     expect(el).not.toHaveClass('max-h-[92svh]')
   })

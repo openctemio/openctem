@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -104,7 +105,7 @@ func TestCreateCampaign_SeedsProgress(t *testing.T) {
 		TenantID:      shared.NewID().String(),
 		Name:          "Fix Log4j",
 		FindingFilter: map[string]any{"cve_ids": []any{"CVE-2021-44228"}},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -128,7 +129,7 @@ func TestCreateCampaign_EmptyFilter_TracksNothing(t *testing.T) {
 		TenantID: shared.NewID().String(),
 		Name:     "Unscoped",
 		// no FindingFilter → empty scope
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestCreateCampaign_NoCounter_StaysZero(t *testing.T) {
 	c, err := svc.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
 		TenantID: shared.NewID().String(),
 		Name:     "Plain CRUD",
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestGetCampaign_RefreshesLive(t *testing.T) {
 		TenantID:      tid,
 		Name:          "C",
 		FindingFilter: map[string]any{"severities": []any{"critical"}},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -203,11 +204,11 @@ func TestReconcileProgress_AutoCompletes(t *testing.T) {
 		TenantID:      tid,
 		Name:          "Activate me",
 		FindingFilter: map[string]any{"severities": []any{"critical"}},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
-	if _, err := svc.UpdateCampaignStatus(context.Background(), tid, c.ID().String(), string(remediation.CampaignStatusActive)); err != nil {
+	if _, err := svc.UpdateCampaignStatus(context.Background(), tid, c.ID().String(), string(remediation.CampaignStatusActive), auditapp.AuditContext{}); err != nil {
 		t.Fatalf("activate: %v", err)
 	}
 

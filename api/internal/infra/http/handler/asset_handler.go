@@ -150,6 +150,23 @@ func (h *AssetHandler) buildAuditContext(r *http.Request) auditapp.AuditContext 
 	}
 }
 
+// auditCreateMerged records that a create request updated an existing asset
+// instead of creating one. Only field names are recorded, never values.
+func (h *AssetHandler) auditCreateMerged(r *http.Request, a *asset.Asset, changed []string) {
+	if h.auditService == nil {
+		return
+	}
+	if changed == nil {
+		changed = []string{}
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionAssetCreateMerged, auditdom.ResourceTypeAsset, a.ID().String()).
+		WithResourceName(a.Name()).
+		WithMessage("Create request matched an existing asset and updated it").
+		WithMetadata("changed_fields", changed).
+		WithSeverity(auditdom.SeverityMedium)
+	_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+}
+
 // SnoozeLifecycleRequest is the body for POST /assets/{id}/lifecycle/snooze.
 // Duration is expressed in days so the HTTP contract is simple;
 // service layer converts to an absolute timestamp on the server
@@ -715,10 +732,16 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Properties:  req.Properties,
 	}
 
-	a, err := h.service.CreateAsset(r.Context(), input)
+	a, outcome, err := h.service.CreateAssetWithOutcome(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+	if outcome.Merged {
+		h.auditCreateMerged(r, a, outcome.ChangedFields)
+	} else {
+		h.auditAsset(r, auditdom.ActionAssetCreated, a.ID().String(), a.Name(), "Asset created",
+			map[string]any{"type": a.Type().String(), "criticality": a.Criticality().String()})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -822,11 +845,20 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		ImpactAvailability:    req.ImpactAvailability,
 	}
 
+	// The version before the change, for the audit trail's changed-field list.
+	before, err := h.service.GetAsset(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
 	a, err := h.service.UpdateAsset(r.Context(), id, tenantID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetUpdated, a.ID().String(), a.Name(), "Asset updated",
+		map[string]any{"changed_fields": assetChangedFields(before, a)})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -854,10 +886,19 @@ func (h *AssetHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read the name first: the audit entry outlives the asset.
+	existing, err := h.service.GetAsset(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
 	if err := h.service.DeleteAsset(r.Context(), id, tenantID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetDeleted, existing.ID().String(), existing.Name(), "Asset deleted",
+		map[string]any{"type": existing.Type().String()})
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1064,10 +1105,13 @@ func (h *AssetHandler) CreateRepository(w http.ResponseWriter, r *http.Request) 
 		RepoPushedAt:    req.RepoPushedAt,
 	}
 
-	a, ext, err := h.service.CreateRepositoryAsset(r.Context(), input)
+	a, ext, outcome, err := h.service.CreateRepositoryAssetWithOutcome(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+	if outcome.Merged {
+		h.auditCreateMerged(r, a, outcome.ChangedFields)
 	}
 
 	response := AssetWithRepositoryResponse{
@@ -1270,11 +1314,18 @@ func (h *AssetHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ActivateAsset now enforces tenant isolation internally
+	before, err := h.service.GetAsset(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
 	a, err := h.service.ActivateAsset(r.Context(), tenantID, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetStatusChanged, a.ID().String(), a.Name(), "Asset status changed",
+		map[string]any{"from": before.Status().String(), "to": a.Status().String()})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1304,11 +1355,18 @@ func (h *AssetHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// DeactivateAsset now enforces tenant isolation internally
+	before, err := h.service.GetAsset(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
 	a, err := h.service.DeactivateAsset(r.Context(), tenantID, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetStatusChanged, a.ID().String(), a.Name(), "Asset status changed",
+		map[string]any{"from": before.Status().String(), "to": a.Status().String()})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1338,11 +1396,18 @@ func (h *AssetHandler) Archive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ArchiveAsset now enforces tenant isolation internally
+	before, err := h.service.GetAsset(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
 	a, err := h.service.ArchiveAsset(r.Context(), tenantID, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetStatusChanged, a.ID().String(), a.Name(), "Asset status changed",
+		map[string]any{"from": before.Status().String(), "to": a.Status().String()})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1404,6 +1469,8 @@ func (h *AssetHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) 
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetBulkStatusChanged, "", "", "Bulk asset status change",
+		map[string]any{"status": req.Status, "asset_ids": req.AssetIDs, "updated": result.Updated, "failed": result.Failed})
 
 	resp := AssetBulkStatusResponse{
 		Updated: result.Updated,
@@ -2049,6 +2116,12 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 	if props == nil {
 		props = make(map[string]any)
 	}
+	before := map[string]any{}
+	for _, k := range []string{"is_crown_jewel", "business_impact_score", "business_impact_notes"} {
+		if v, ok := props[k]; ok {
+			before[k] = v
+		}
+	}
 	props["is_crown_jewel"] = req.IsCrownJewel
 	props["business_impact_score"] = req.BusinessImpactScore
 	props["business_impact_notes"] = req.BusinessImpactNotes
@@ -2058,6 +2131,15 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 		h.handleServiceError(w, err)
 		return
 	}
+	changed := []string{}
+	for _, k := range changedPropertyKeys(before, map[string]any{
+		"is_crown_jewel": req.IsCrownJewel, "business_impact_score": req.BusinessImpactScore,
+		"business_impact_notes": req.BusinessImpactNotes,
+	}) {
+		changed = append(changed, k[len("properties."):])
+	}
+	h.auditAsset(r, auditdom.ActionAssetCrownJewelChanged, a.ID().String(), a.Name(), "Crown-jewel designation changed",
+		map[string]any{"is_crown_jewel": req.IsCrownJewel, "changed_fields": changed})
 
 	writeJSON(w, http.StatusOK, toAssetResponse(a))
 }

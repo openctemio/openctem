@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -45,7 +46,7 @@ func TestCreateCampaign_KeyedUsesSideTableCount(t *testing.T) {
 		TenantID:      shared.NewID().String(),
 		Name:          "Upgrade openssl",
 		FindingFilter: map[string]any{"remediation_key": "sol:abc123"},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestResolveCampaignFindings_KeyedRoutesToKeyResolver(t *testing.T) {
 		TenantID:      tid.String(),
 		Name:          "Patch family",
 		FindingFilter: map[string]any{"remediation_key": "sol:deadbeef"},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestResolveCampaignFindings_KeyedButNoKeyResolver_FailsClosed(t *testing.T)
 		TenantID:      tid.String(),
 		Name:          "Keyed no resolver",
 		FindingFilter: map[string]any{"remediation_key": "sca:pkg:npm/lodash"},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}

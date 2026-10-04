@@ -8080,56 +8080,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/auth/ws-token': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get WebSocket token
-     * @description Returns a short-lived token for WebSocket authentication
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.WSTokenResponse']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': {
-              [key: string]: string
-            }
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/commands': {
     parameters: {
       query?: never
@@ -38675,11 +38625,6 @@ export interface components {
       status?: string
       title?: string
       updated_at?: string
-    }
-    'internal_infra_http_handler.WSTokenResponse': {
-      /** @description Seconds until expiration */
-      expires_in?: number
-      token?: string
     }
     'internal_infra_http_handler.remediationGroupsResponse': {
       groups?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_remediation.Group'][]

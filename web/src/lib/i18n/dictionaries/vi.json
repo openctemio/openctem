@@ -282,6 +282,7 @@
   "sensors.activity.audit.key_regenerated": "Đã xoay vòng khóa API",
   "sensors.activity.audit.key_renewed": "Đã gia hạn khóa API",
   "sensors.activity.audit.key_renewal_refused": "Từ chối gia hạn khóa API (khóa đã bị thu hồi)",
+  "sensors.activity.audit.commands_released": "Đã thu hồi các tác vụ đang giữ (xếp lại hàng đợi hoặc đánh dấu thất bại)",
   "sensors.activity.audit.connected": "Cảm biến đã kết nối",
   "sensors.activity.audit.disconnected": "Cảm biến đã ngắt kết nối",
   "sensors.version.sensor": "Cảm biến",
