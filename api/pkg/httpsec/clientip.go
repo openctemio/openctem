@@ -80,18 +80,20 @@ func (s *TrustedProxySet) IsEmpty() bool {
 // The immediate TCP peer (r.RemoteAddr) is authoritative. Forwarding headers
 // are consulted only when that peer is inside the trusted-proxy set:
 //
-//  1. X-Real-IP, when it is a well-formed IP. Every proxy the platform ships
-//     (the Caddy gateway, the web UI's API proxy, the sample nginx config)
-//     overwrites it with the address it saw, so its value was set by the
-//     trusted peer, not by the client.
-//  2. Otherwise X-Forwarded-For, walked from the RIGHT: each proxy appends
-//     the address it received the request from, so entries are skipped while
-//     they are themselves trusted proxies and the first untrusted entry is the
-//     client. Everything to its left was supplied by that client and is never
+//  1. X-Forwarded-For, walked from the RIGHT: each proxy appends the address
+//     it received the request from (or, like Caddy, replaces the header when
+//     its own peer is untrusted), so entries are skipped while they are
+//     themselves trusted proxies and the first untrusted entry is the client.
+//     Everything to its left was supplied by that client and is never
 //     believed. (Taking the left-most entry, as this function used to, let a
 //     client behind an appending proxy such as nginx's
 //     $proxy_add_x_forwarded_for choose its own address.) A malformed entry
 //     ends the walk: nothing left of it can be attributed to a trusted hop.
+//  2. Only when X-Forwarded-For is absent: X-Real-IP, when it is a well-formed
+//     IP. It comes second because a proxy that does not know the header
+//     passes the client's value through untouched (Caddy's reverse_proxy does,
+//     unless told to overwrite it), whereas every standard proxy maintains
+//     X-Forwarded-For.
 //  3. Otherwise the TCP peer.
 //
 // With no trusted proxies configured the headers are never read.
@@ -107,10 +109,13 @@ func ClientIP(r *http.Request, trusted *TrustedProxySet) string {
 	if trusted.IsEmpty() || !trusted.Contains(peer) {
 		return peer.String()
 	}
-	if ip := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); ip != nil {
-		return ip.String()
+	if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
+		if ip := forwardedForClient(xff, trusted); ip != nil {
+			return ip.String()
+		}
+		return peer.String()
 	}
-	if ip := forwardedForClient(r.Header.Values("X-Forwarded-For"), trusted); ip != nil {
+	if ip := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); ip != nil {
 		return ip.String()
 	}
 	return peer.String()

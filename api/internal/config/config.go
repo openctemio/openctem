@@ -335,9 +335,9 @@ type ServerConfig struct {
 	// X-Real-IP / X-Forwarded-For headers will be honored. Requests from
 	// peers outside this list have their forwarding headers ignored —
 	// preventing IP spoofing of rate-limit and audit-log keys (S-4).
-	// Empty list = treat the API as directly Internet-facing. A trusted proxy
-	// must overwrite (or strip) X-Real-IP; X-Forwarded-For is read right to
-	// left, so list every proxy hop (see httpsec.ClientIP).
+	// Empty list = treat the API as directly Internet-facing. X-Forwarded-For
+	// is read right to left (list every proxy hop); X-Real-IP is used only when
+	// X-Forwarded-For is absent (see httpsec.ClientIP).
 	// Configure via SERVER_TRUSTED_PROXIES (comma-separated CIDRs).
 	TrustedProxies []string
 }

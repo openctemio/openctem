@@ -25,8 +25,10 @@ func TestClientIP(t *testing.T) {
 		{name: "no headers at all", trusted: trusted, remote: "203.0.113.7:5555", want: "203.0.113.7"},
 
 		// Trusted peer.
-		{name: "trusted proxy, X-Real-IP wins", trusted: trusted, remote: "10.0.0.10:40000", xff: []string{"198.51.100.9"}, xrealip: "198.51.100.1", want: "198.51.100.1"},
-		{name: "trusted proxy, malformed X-Real-IP falls back to XFF", trusted: trusted, remote: "10.0.0.10:40000", xff: []string{"198.51.100.9"}, xrealip: "not-an-ip", want: "198.51.100.9"},
+		{name: "trusted proxy, XFF wins over a passed-through X-Real-IP", trusted: trusted, remote: "10.0.0.10:40000", xff: []string{"198.51.100.9"}, xrealip: "198.51.100.1", want: "198.51.100.9"},
+		{name: "trusted proxy, malformed X-Real-IP ignored when XFF is present", trusted: trusted, remote: "10.0.0.10:40000", xff: []string{"198.51.100.9"}, xrealip: "not-an-ip", want: "198.51.100.9"},
+		{name: "trusted proxy, X-Real-IP used only without XFF", trusted: trusted, remote: "10.0.0.10:40000", xrealip: "198.51.100.1", want: "198.51.100.1"},
+		{name: "trusted proxy, malformed XFF does not fall back to X-Real-IP", trusted: trusted, remote: "10.0.0.10:40000", xff: []string{"garbage"}, xrealip: "1.2.3.4", want: "10.0.0.10"},
 		{name: "trusted proxy, single XFF entry", trusted: trusted, remote: "10.0.0.10:40000", xff: []string{"198.51.100.9"}, want: "198.51.100.9"},
 		{
 			// An appending proxy keeps whatever the client sent on the left.
