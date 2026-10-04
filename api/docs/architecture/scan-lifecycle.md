@@ -72,7 +72,7 @@ cannot reopen one, recount its findings or record its outcome twice.
 | Cancel to sensor | via heartbeat `cancel_command_ids`; doorbell busy interval while a held task was just canceled; run cancel closes steps + tasks (`CloseCanceledRun`) | `command_lease.go` (`CommandsToCancel`), sdk-go `pkg/core/doorbell.go` |
 | Abort unclaimed | done (4 h / 1 h) | `pipeline_run_repository.go` (`AbortUnclaimedRuns`), `controller/scan_timeout.go` |
 | Retry classes | done (run-level) | `api/pkg/domain/pipeline/failure.go`, `pipeline_run_repository.go` (`ListPendingRetries`) |
-| Coverage auto-resolve | done, dry-run by default | `api/internal/app/ingest/coverage_autoresolve.go`, `INGEST_COVERAGE_AUTO_RESOLVE` |
+| Coverage auto-resolve | done, **stays dry-run** (D-22 postponed until the research 18 P2 closure evaluator) | `api/internal/app/ingest/coverage_autoresolve.go`, `INGEST_COVERAGE_AUTO_RESOLVE` |
 | Stage chaining | not yet (every step scans the seed targets) | RFC-046 §5.2 |
 | Automations | in-process executor fed by callbacks; outbox planned (P2) | `api/internal/app/workflow/` |
 | `scan_sessions` | written by nothing; retired in P2 | `api/internal/app/scan/session.go` |
