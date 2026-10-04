@@ -27,10 +27,10 @@ func parseScalar(f *Field, raw string, now time.Time, endOfDay bool) (any, error
 	}
 	switch f.Type {
 	case TypeEnum:
-		v := strings.ToLower(strings.TrimSpace(raw))
+		v := strings.TrimSpace(raw)
 		for _, e := range f.Enum {
-			if e == v {
-				return v, nil
+			if strings.EqualFold(e, v) {
+				return e, nil // the registry's spelling
 			}
 		}
 		return nil, fmt.Errorf("must be one of: %s", strings.Join(f.Enum, ", "))

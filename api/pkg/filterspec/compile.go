@@ -16,30 +16,48 @@ import (
 // the zero value is rejected by Compile.
 type Actor struct {
 	tenantID shared.ID
+	userID   shared.ID
+	isAdmin  bool
 	scope    *shared.DataScope
 	system   bool
 	reason   string
 	has      func(permission string) bool
 }
 
-// UserActor is a request's caller. scope is the result of
-// datascope.Enforcer.Resolve for this tenant: nil only for an unrestricted
-// caller (administrator, or a member of a fail-open tenant with no scope
-// row). has reports the caller's permissions, for fields with a Permission;
-// nil denies every such field.
-func UserActor(tenantID shared.ID, scope *shared.DataScope, has func(permission string) bool) (Actor, error) {
-	if tenantID.IsZero() {
+// UserActorInput describes a request's caller.
+type UserActorInput struct {
+	TenantID shared.ID
+	// UserID is the acting user; zero for a user-less API key.
+	UserID shared.ID
+	// IsAdmin is the request's owner/admin decision.
+	IsAdmin bool
+	// Scope is datascope.Enforcer.Resolve for this tenant: nil only for an
+	// unrestricted caller (administrator, or a member of a fail-open tenant
+	// with no scope row).
+	Scope *shared.DataScope
+	// Has reports the caller's permissions, for fields with a Permission;
+	// nil denies every such field.
+	Has func(permission string) bool
+}
+
+// UserActor is a request's caller.
+func UserActor(in UserActorInput) (Actor, error) {
+	if in.TenantID.IsZero() {
 		return Actor{}, errors.New("filterspec: actor without a tenant")
 	}
-	if scope != nil && scope.TenantID != tenantID {
+	if in.Scope != nil && in.Scope.TenantID != in.TenantID {
 		return Actor{}, errors.New("filterspec: data scope belongs to another tenant")
 	}
-	return Actor{tenantID: tenantID, scope: scope, has: has}, nil
+	if in.Scope != nil && in.Scope.UserID != in.UserID {
+		return Actor{}, errors.New("filterspec: data scope belongs to another user")
+	}
+	return Actor{tenantID: in.TenantID, userID: in.UserID, isAdmin: in.IsAdmin, scope: in.Scope, has: in.Has}, nil
 }
 
 // SystemActor is background work whose output only administrators see. It
-// keeps the tenant predicate and skips the data scope. Call sites are
-// allowlisted (systemactor_allowlist_test.go); reason is logged by callers.
+// keeps the tenant predicate and skips the data scope and the registry's
+// member visibility rule. Call sites are allowlisted
+// (systemactor_allowlist_test.go); reason is logged by callers.
 func SystemActor(tenantID shared.ID, reason string) Actor {
 	return Actor{tenantID: tenantID, system: true, reason: reason}
 }
@@ -49,6 +67,10 @@ func (a Actor) TenantID() shared.ID { return a.tenantID }
 
 // Restricted reports whether a data-scope predicate applies.
 func (a Actor) Restricted() bool { return a.scope != nil && !a.system }
+
+// member reports whether the registry's member visibility rule applies:
+// every request caller that is not an administrator.
+func (a Actor) member() bool { return !a.system && !a.isAdmin }
 
 func (a Actor) may(permission string) bool {
 	if permission == "" || a.system {
@@ -88,7 +110,8 @@ func CompileFrom(spec *Spec, reg *Registry, actor Actor, first int) (*Where, err
 	}
 	c := &compiler{reg: reg, actor: actor, next: first}
 
-	parts := []string{reg.TenantSQL + " = " + c.bind(actor.tenantID.String())}
+	c.tenantPH = c.bind(actor.tenantID.String())
+	parts := []string{reg.TenantSQL + " = " + c.tenantPH}
 	// An Unscoped registry (tenant configuration) has no asset to scope by;
 	// its registry records why.
 	if actor.Restricted() && reg.ScopeAssetSQL != "" {
@@ -96,6 +119,9 @@ func CompileFrom(spec *Spec, reg *Registry, actor Actor, first int) (*Where, err
 		parts = append(parts, cond)
 		c.args = append(c.args, args...)
 		c.next += len(args)
+	}
+	if reg.MemberVisibility != "" && actor.member() {
+		parts = append(parts, "("+c.render(reg.MemberVisibility, "")+")")
 	}
 	if spec.Root != nil {
 		if s := c.node(spec.Root); s != "" {
@@ -107,7 +133,7 @@ func CompileFrom(spec *Spec, reg *Registry, actor Actor, first int) (*Where, err
 		if reg.Search.Pattern {
 			v = "%" + EscapeLike(v) + "%"
 		}
-		parts = append(parts, "("+strings.ReplaceAll(reg.Search.Template, ArgToken, c.bind(v))+")")
+		parts = append(parts, "("+c.render(reg.Search.Template, c.bind(v))+")")
 	}
 	order := c.orderBy(spec.Sort)
 	if err := c.e.err(); err != nil {
@@ -133,11 +159,24 @@ func EscapeLike(s string) string {
 }
 
 type compiler struct {
-	reg   *Registry
-	actor Actor
-	args  []any
-	next  int
-	e     errs
+	reg      *Registry
+	actor    Actor
+	args     []any
+	next     int
+	e        errs
+	tenantPH string
+	userPH   string
+}
+
+// render substitutes the template tokens: ArgToken with argPH, TenantToken
+// with the tenant placeholder, UserToken with the acting user (bound once
+// per compile; the zero UUID for a caller without a user, which matches no
+// row, so a user-relative rule fails closed).
+func (c *compiler) render(tpl, argPH string) string {
+	if strings.Contains(tpl, UserToken) && c.userPH == "" {
+		c.userPH = c.bind(c.actor.userID.String()) + "::uuid"
+	}
+	return strings.NewReplacer(ArgToken, argPH, TenantToken, c.tenantPH, UserToken, c.userPH).Replace(tpl)
 }
 
 func (c *compiler) bind(v any) string {
@@ -187,6 +226,11 @@ func (c *compiler) leaf(l *Leaf) string {
 		return ""
 	}
 	if tpl, ok := f.Templates[l.Op]; ok {
+		if strings.Contains(tpl, UserToken) && (c.actor.system || c.actor.userID.IsZero()) {
+			// "related to me" has no meaning without a user.
+			c.fail(l, "unknown field")
+			return ""
+		}
 		return c.template(f, l, tpl)
 	}
 	col := f.SQL
@@ -234,20 +278,27 @@ func (c *compiler) leaf(l *Leaf) string {
 // template renders a registry template. Multi-value operators bind one
 // array; others bind the single value. is_null templates bind nothing.
 func (c *compiler) template(f *Field, l *Leaf, tpl string) string {
-	switch l.Op {
-	case OpIsNull:
+	if l.Op == OpIsNull {
 		if l.Values[0] == true {
-			return "(" + tpl + ")"
+			return "(" + c.render(tpl, "") + ")"
 		}
-		return "(NOT (" + tpl + "))"
+		return "(NOT (" + c.render(tpl, "") + "))"
+	}
+	if !strings.Contains(tpl, ArgToken) {
+		// A constant-value field ("related_to=me"): nothing to bind.
+		return "(" + c.render(tpl, "") + ")"
+	}
+	var ph string
+	switch l.Op {
 	case OpIn, OpNotIn:
-		return "(" + strings.ReplaceAll(tpl, ArgToken, c.bindArray(f, l.Values)) + ")"
+		ph = c.bindArray(f, l.Values)
 	case OpContains:
 		s, _ := l.Values[0].(string)
-		return "(" + strings.ReplaceAll(tpl, ArgToken, c.bind("%"+EscapeLike(s)+"%")) + ")"
+		ph = c.bind("%" + EscapeLike(s) + "%")
 	default:
-		return "(" + strings.ReplaceAll(tpl, ArgToken, c.bindValue(f, l.Values[0])) + ")"
+		ph = c.bindValue(f, l.Values[0])
 	}
+	return "(" + c.render(tpl, ph) + ")"
 }
 
 func (c *compiler) bindValue(f *Field, v any) string {
@@ -320,10 +371,12 @@ func (c *compiler) orderBy(keys []SortKey) string {
 		if expr == "" {
 			expr = f.SQL
 		}
+		// Postgres defaults (ASC NULLS LAST, DESC NULLS FIRST), so the order
+		// matches the sort indexes built for the hand-written queries.
 		if k.Desc {
-			expr += " DESC NULLS LAST"
+			expr += " DESC"
 		} else {
-			expr += " ASC NULLS LAST"
+			expr += " ASC"
 		}
 		parts = append(parts, expr)
 	}

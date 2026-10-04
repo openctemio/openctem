@@ -99,9 +99,17 @@ var suffixOps = []struct {
 	{"_lt", OpLt},
 }
 
-// ArgToken is the placeholder for the bound value inside a Field template or
-// the search template. Compile replaces every occurrence with the same $n.
-const ArgToken = "{arg}"
+// Template tokens. Compile replaces every occurrence of a token with the
+// same bound placeholder:
+//   - ArgToken: the leaf's value (or array of values);
+//   - TenantToken: the actor's tenant;
+//   - UserToken: the acting user (::uuid), for user-relative fields and the
+//     member visibility rule.
+const (
+	ArgToken    = "{arg}"
+	TenantToken = "{tenant}"
+	UserToken   = "{user}"
+)
 
 // Limits (RFC-048 §3.7).
 const (
@@ -197,6 +205,11 @@ type Registry struct {
 	Unscoped string
 	// IDSQL is the primary key, the final sort tiebreaker.
 	IDSQL string
+	// MemberVisibility is a constant predicate ANDed for every request caller
+	// that is not an administrator (never for SystemActor), on top of the data
+	// scope: for findings, "pentest findings only for campaign members". It may
+	// use TenantToken and UserToken.
+	MemberVisibility string
 	// DefaultSort applies when the request names no sort.
 	DefaultSort []SortKey
 	Search      *Search
@@ -312,7 +325,8 @@ func validateField(f *Field) error {
 		if op == OpIsNull && has {
 			return fmt.Errorf("field %q: is_null template must not bind a value", f.Name)
 		}
-		if op != OpIsNull && !has {
+		if op != OpIsNull && !has && !(strings.Contains(tpl, UserToken) && f.Type == TypeEnum && len(f.Enum) == 1) {
+			// Only a one-value enum ("related_to=me") may ignore its value.
 			return fmt.Errorf("field %q: template for %s has no %s", f.Name, op, ArgToken)
 		}
 	}
