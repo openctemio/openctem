@@ -217,7 +217,7 @@ func (m *mockComponentRepo) GetLicenseStats(_ context.Context, _ shared.ID) ([]c
 	return m.getLicenseStatsResult, m.getLicenseStatsErr
 }
 
-func (m *mockComponentRepo) ListAssetUsage(_ context.Context, _ shared.ID, _ shared.ID, _ bool, page pagination.Pagination) (pagination.Result[component.ComponentAssetUsage], error) {
+func (m *mockComponentRepo) ListAssetUsage(_ context.Context, _ shared.ID, _ shared.ID, _ bool, _ *shared.DataScope, page pagination.Pagination) (pagination.Result[component.ComponentAssetUsage], error) {
 	return pagination.NewResult([]component.ComponentAssetUsage{}, 0, page), nil
 }
 

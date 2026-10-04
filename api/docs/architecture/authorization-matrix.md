@@ -916,6 +916,8 @@ results an out-of-scope id is reported exactly like an unknown id.
 | In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
 | `GET /notification-outbox` (+ `/stats`, `/{id}`, retry, delete), `GET /integrations/{id}/notification-events` | **bypass (every finding/asset event, owner emails) to members and viewers via `notifications:read` / `integrations:read`** | channel managers only: `integrations:manage` in addition (owner/admin by default); not scoped, because a channel manager already routes the whole stream (L-03) |
+| `GET /components/{id}/assets` (reverse lookup), `GET /components` (incl. `?asset_id=`, export), `POST/PUT/DELETE /components[/{id}]`, `POST /components/import?asset_id=`, `GET /vulnerabilities/...` dependency detail | **bypass**: names, criticality and risk of every asset using a package; writes on any asset of the tenant | the reverse lookup and list only show in-scope assets (`dataScopeCond` in SQL); an out-of-scope asset id or dependency id answers 404 (`ComponentService`, `SBOMImportService`; L-10) |
+| `/repositories/{id}/branches/**` (list, get, default, compare, create, update, delete) | **bypass** (tenant only) | the repository must be in scope (`AssetService.GetAssetInCallerScope`): 404 otherwise (L-10) |
 
 ### Deliberately tenant-wide (counts only, no row data)
 

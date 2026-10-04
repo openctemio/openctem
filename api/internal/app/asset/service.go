@@ -895,6 +895,23 @@ func (s *AssetService) GetAsset(ctx context.Context, tenantID, assetID string) (
 	return s.GetAssetWithScope(ctx, tenantID, assetID, "", true)
 }
 
+// GetAssetInCallerScope is GetAsset for a path keyed on an asset that the
+// route guard does not see (another resource's URL, a query parameter): it
+// also answers shared.ErrNotFound when the request's caller may not see the
+// asset, through the data-scope enforcer.
+func (s *AssetService) GetAssetInCallerScope(ctx context.Context, tenantID, assetID string) (*assetdom.Asset, error) {
+	a, err := s.GetAsset(ctx, tenantID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	if s.dataScope != nil {
+		if err := s.dataScope.AssertAsset(ctx, a.TenantID(), a.ID()); err != nil {
+			return nil, err
+		}
+	}
+	return a, nil
+}
+
 // GetAssetWithScope retrieves an asset with optional data scope enforcement.
 // Non-admin users with group assignments can only access assets in their groups.
 // Security: fail-closed — any error during scope check denies access.
