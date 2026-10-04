@@ -32,11 +32,12 @@ UPDATE assets
 ALTER TABLE assets ALTER COLUMN is_crown_jewel SET DEFAULT FALSE;
 ALTER TABLE assets ALTER COLUMN is_crown_jewel SET NOT NULL;
 
--- idx_assets_crown_jewel (000126) is (tenant_id, is_crown_jewel) WHERE
--- is_crown_jewel = TRUE; replace it with the plain (tenant_id) partial index
--- the readers use.
-DROP INDEX IF EXISTS idx_assets_crown_jewel;
-CREATE INDEX IF NOT EXISTS idx_assets_crown_jewel ON assets (tenant_id) WHERE is_crown_jewel;
+-- idx_assets_crown_jewel (000126, (tenant_id, is_crown_jewel) WHERE
+-- is_crown_jewel = TRUE) already serves the readers and is kept as it is, so
+-- this migration builds no index under a write lock.
+--
+-- Locks: the backfills touch only rows that carry the key or a NULL flag;
+-- SET NOT NULL scans assets once under an ACCESS EXCLUSIVE lock (no rewrite).
 
 COMMENT ON COLUMN assets.is_crown_jewel IS
     'Crown-jewel flag (the only source). Written by PATCH /assets/{id}/crown-jewel; never taken from properties.';

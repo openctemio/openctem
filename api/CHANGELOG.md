@@ -118,6 +118,21 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Changed (behaviour change)
 
+- **The crown-jewel flag is the `assets.is_crown_jewel` column** (owner
+  decision O5). It was written into `properties.is_crown_jewel`, while the
+  scoping summary read the column, so the two disagreed. Migration 000390
+  backfills the column from the property (JSON `true` or the string `"true"`,
+  any case; anything else reads as false), removes the key from properties
+  and makes the column `NOT NULL DEFAULT FALSE`. Priority classification, the
+  attack-path graph, exposure chains, threat models, the executive
+  dashboard, the crown-jewel filter and dedup merge (a merged crown jewel
+  keeps the flag) read the column; asset responses carry `is_crown_jewel`.
+  Only `PATCH /assets/{id}/crown-jewel` writes it: assets:write, the asset in
+  the caller's data scope (404 otherwise), audited. `is_crown_jewel` stays a
+  reserved key, so a create, update, import or sensor report cannot set it
+  through properties. **Upgrade note:** a crown jewel marked by a pod of the
+  previous release while the migration runs must be marked again.
+
 - **Tenable rolling coverage of private addresses needs a scan zone.**
   The coverage dispatcher now applies scan create's private-range policy:
   a private address is dispatched only when a scan zone of the tenant
