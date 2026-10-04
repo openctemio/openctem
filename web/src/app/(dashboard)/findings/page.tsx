@@ -800,9 +800,6 @@ function FindingsContent() {
       a.click()
       URL.revokeObjectURL(url)
       toast.success('JSON exported successfully')
-    } else {
-      // PDF export not yet implemented
-      return
     }
   }
 
@@ -1588,7 +1585,6 @@ function FindingsContent() {
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => handleExport('CSV')}>Export as CSV</DropdownMenuItem>
         <DropdownMenuItem onClick={() => handleExport('JSON')}>Export as JSON</DropdownMenuItem>
-        <DropdownMenuItem disabled>Export as PDF report</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

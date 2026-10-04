@@ -27,6 +27,17 @@ published at https://docs.openctem.io (operations/release-notes-*).
 - The unused, unguarded `VulnerabilityService.BulkUpdateFindingStatus` was
   removed.
 
+### Security: validation evidence no longer resolves a finding
+
+- **A validation "not detected" keeps a `fix_applied` finding open**
+  (research 18 F6, RFC-040). The only proof that the target answered was
+  `raw_meta.reachable`, which the sensor asserts about its own run, so a
+  hostile or broken sensor could close any `fix_applied` finding. The verdict
+  is still recorded on the finding; a retest (whose reachability probe the
+  platform dispatches) or a `findings:verify` holder closes it. Downgrades of
+  still-open findings to `validated_fixed` (which a person still closes) and
+  reopen on "detected" are unchanged.
+
 ### Security: custom template trust (RFC-038 §6.12)
 
 - **Custom templates reach sensors only in a signed manifest.** Every
@@ -88,7 +99,6 @@ published at https://docs.openctem.io (operations/release-notes-*).
   it. Fingerprints are unchanged. Existing findings get the value on their
   next scan.
 
-
 - **Scope exclusions apply on every path that scans or discovers, not
   only at scan trigger** (RFC-042 F16). Four paths ignored them:
   - `POST /api/v1/pipelines/runs` and the `trigger_pipeline` workflow
@@ -112,7 +122,6 @@ published at https://docs.openctem.io (operations/release-notes-*).
     asset of the report. Assets already in the inventory are not changed
     or deleted.
   A failed exclusion lookup stops each of these paths (fail closed).
-
 
 - **Group scans resolve members as assets and skip archived ones.** A scan
   of an asset group matched scope exclusions against each member's name

@@ -671,14 +671,11 @@ func (s *TenantService) getOwnMembership(ctx context.Context, membershipID, call
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
 	}
-	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
-	if err != nil {
-		return nil, err
-	}
-	if callerTenantID == "" || membership.TenantID().String() != callerTenantID {
+	tid, err := shared.IDFromString(callerTenantID)
+	if err != nil || tid.IsZero() {
 		return nil, shared.ErrNotFound
 	}
-	return membership, nil
+	return s.repo.GetMembershipByID(ctx, tid, parsedID)
 }
 
 func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID string, input UpdateMemberRoleInput, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
@@ -753,7 +750,7 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 	tenantID := membership.TenantID().String()
 	userID := membership.UserID().String()
 
-	if err := s.repo.DeleteMembership(ctx, membership.ID()); err != nil {
+	if err := s.repo.DeleteMembership(ctx, membership.TenantID(), membership.ID()); err != nil {
 		return err
 	}
 
@@ -1284,7 +1281,8 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 
 	s.applyInvitationRoles(ctx, invitation, userID)
 
-	s.logger.Info("invitation accepted", "token", token[:8]+"...", "user_id", userID.String(),
+	// Never log the token, not even a prefix: it is a bearer credential.
+	s.logger.Info("invitation accepted", "invitation_id", invitation.ID().String(), "user_id", userID.String(),
 		"role_count", len(invitation.RoleIDs()))
 
 	// Log audit event
@@ -1324,15 +1322,11 @@ func (s *TenantService) DeleteInvitation(ctx context.Context, tenantID, invitati
 	// ResendInvitation). Without this any team-admin could cancel another
 	// tenant's pending invitations by guessing IDs. Not-found on mismatch to
 	// avoid existence disclosure.
-	inv, err := s.repo.GetInvitationByID(ctx, parsedID)
-	if err != nil {
+	if _, err := s.repo.GetInvitationByID(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
-	if inv.TenantID().String() != parsedTenantID.String() {
-		return shared.ErrNotFound
-	}
 
-	if err := s.repo.DeleteInvitation(ctx, parsedID); err != nil {
+	if err := s.repo.DeleteInvitation(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
 
@@ -1375,7 +1369,7 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 		return fmt.Errorf("%w: invalid invitation id format", shared.ErrValidation)
 	}
 
-	inv, err := s.repo.GetInvitationByID(ctx, parsedInvID)
+	inv, err := s.repo.GetInvitationByID(ctx, parsedTenantID, parsedInvID)
 	if err != nil {
 		return err
 	}

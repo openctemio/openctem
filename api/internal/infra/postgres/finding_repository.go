@@ -1778,6 +1778,11 @@ func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Contex
 	if scanID == "" {
 		return 0, nil
 	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
+		return 0, nil
+	}
 	const query = `
 		UPDATE finding_branch_occurrences o
 		SET status = 'auto_fixed', resolved_at = NOW(), resolved_reason = 'not_seen_in_scan', updated_at = NOW()
@@ -3289,6 +3294,11 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 	if currentScanID == "" {
 		return nil, nil
 	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
+		return nil, nil
+	}
 	// Auto-resolve findings that:
 	// 1. Belong to the same tenant, asset, and tool
 	// 2. Are on the default branch (via JOIN to repository_branches.is_default = true)
@@ -3382,6 +3392,11 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 	// Same guard as AutoResolveStale: without a scan identity, staleness is
 	// undeterminable and would resolve everything.
 	if currentScanID == "" || len(assetIDs) == 0 {
+		return nil, nil
+	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
 		return nil, nil
 	}
 
