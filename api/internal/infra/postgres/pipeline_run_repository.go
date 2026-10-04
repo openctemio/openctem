@@ -623,6 +623,63 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 	return runs, nil
 }
 
+var _ pipeline.CanceledRunCloser = (*PipelineRunRepository)(nil)
+
+// CloseCanceledRun ends the open step runs and commands of a canceled run as
+// canceled (RFC-046 §8). It acts only on a run of tenantID whose status is
+// canceled, so it can be repeated (a second cancel, a retry after a partial
+// failure) and never touches a run that is still open or finished otherwise.
+//
+// A command belongs to the run through the pipeline_run_id in its payload
+// (scan dispatcher) or through its step run (pipeline dispatcher). Its lease
+// is cleared: the expired-lease sweep only re-queues acknowledged or running
+// commands, and the sensor still running one finds it in cancel_command_ids
+// on its next heartbeat because it no longer holds it.
+func (r *PipelineRunRepository) CloseCanceledRun(ctx context.Context, tenantID, runID shared.ID) (pipeline.CanceledRunClosure, error) {
+	query := `
+		WITH run AS (
+			SELECT id, tenant_id FROM pipeline_runs
+			WHERE tenant_id = $1 AND id = $2 AND status = 'canceled'
+		), closed_steps AS (
+			UPDATE step_runs sr
+			SET status = 'canceled', completed_at = NOW()
+			FROM run
+			WHERE sr.pipeline_run_id = run.id
+			  AND sr.status IN ('pending', 'queued', 'running')
+			RETURNING sr.id
+		), closed_commands AS (
+			UPDATE commands c
+			SET status = 'canceled',
+			    completed_at = NOW(),
+			    lease_expires_at = NULL,
+			    error_message = 'scan run canceled'
+			FROM run
+			WHERE c.tenant_id = run.tenant_id
+			  AND c.status IN ('pending', 'acknowledged', 'running')
+			  AND (c.payload->>'pipeline_run_id' = run.id::text
+			       OR c.step_run_id IN (SELECT sr.id FROM step_runs sr WHERE sr.pipeline_run_id = run.id))
+			RETURNING c.id, c.sensor_id
+		)
+		SELECT (SELECT COUNT(*) FROM closed_steps),
+		       (SELECT COUNT(*) FROM closed_commands),
+		       COALESCE((SELECT array_agg(DISTINCT sensor_id::text) FROM closed_commands WHERE sensor_id IS NOT NULL), '{}')
+	`
+	var (
+		out     pipeline.CanceledRunClosure
+		sensors []string
+	)
+	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), runID.String()).
+		Scan(&out.Steps, &out.Commands, pq.Array(&sensors)); err != nil {
+		return pipeline.CanceledRunClosure{}, fmt.Errorf("failed to close canceled run: %w", err)
+	}
+	for _, s := range sensors {
+		if id, err := shared.IDFromString(s); err == nil {
+			out.Sensors = append(out.Sensors, id)
+		}
+	}
+	return out, nil
+}
+
 // AbortUnclaimedRuns ends runs no sensor ever picked up (D8): every command of
 // the run is still 'pending' and was never acknowledged or started, and the
 // run is older than its threshold (4h scheduled / 1h interactive by default,
