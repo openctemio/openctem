@@ -26,6 +26,11 @@ import (
 //     (still permission-gated; see route_authz_coverage_test.go).
 //   - system: authentication, the caller's own data, sensor protocols, the
 //     platform-admin realm, global catalogs and public endpoints.
+//
+// registryFile is named in every failure so whoever added or removed a route
+// knows what to edit.
+const registryFile = "api/tests/unit/route_scope_classification_test.go (dataSurfaceRegistry)"
+
 type dataScopeClass string
 
 const (
@@ -197,7 +202,7 @@ func TestEveryRouteHasADataScopeClass(t *testing.T) {
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		t.Errorf("routes with no data-scope class: classify each in dataSurfaceRegistry "+
+		t.Errorf("a route was added: update "+registryFile+": routes with no data-scope class: classify each in dataSurfaceRegistry "+
 			"(scoped, partial, gap with its research id, separate, config or system):\n  %s",
 			strings.Join(missing, "\n  "))
 	}
@@ -214,10 +219,10 @@ func TestEveryRouteHasADataScopeClass(t *testing.T) {
 	sort.Strings(stale)
 	sort.Strings(untracked)
 	if len(stale) > 0 {
-		t.Errorf("registry entries that match no route (remove or fix them):\n  %s", strings.Join(stale, "\n  "))
+		t.Errorf("a route was removed or renamed: update "+registryFile+": registry entries that match no route (remove or fix them):\n  %s", strings.Join(stale, "\n  "))
 	}
 	if len(untracked) > 0 {
-		t.Errorf("gap entries must cite the research finding that tracks them (L-xx or §):\n  %s", strings.Join(untracked, "\n  "))
+		t.Errorf("update "+registryFile+": gap entries must cite the research finding that tracks them (L-xx or §):\n  %s", strings.Join(untracked, "\n  "))
 	}
 	t.Logf("data-scope classes: %v", counts)
 }
