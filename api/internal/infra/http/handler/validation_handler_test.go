@@ -112,7 +112,55 @@ func sensorCtxReq(t *testing.T, method, target string, body []byte, tenantID sha
 
 // With the validate command assigned to the submitting sensor for this finding
 // cited, the evidence is authoritative and moves the finding.
-func TestValidationHandler_IngestEvidence_Resolves(t *testing.T) {
+// Bound evidence (the sensor holds the validate command) is applied to the
+// finding: a "detected" re-check reopens a fix_applied finding.
+func TestValidationHandler_IngestEvidence_AppliesBoundOutcome(t *testing.T) {
+	repo := &fakeEvidenceRepo{}
+	fm := &fakeFindingMutator{current: fixAppliedFinding(t)}
+	h := newValidationHandler(repo, fm)
+
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	r0 := sensorCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", nil, tenantID)
+	sensorID := SensorFromContext(r0.Context()).ID
+	cmd := validateCmd(t, tenantID, &sensorID, findingID, commanddom.CommandStatusRunning)
+	h.SetCommandLookup(&fakeCommandLookup{cmds: []*commanddom.Command{cmd}})
+
+	body, _ := json.Marshal(evidenceRequest{
+		FindingID:    findingID.String(),
+		CommandID:    cmd.ID.String(),
+		ExecutorKind: "nuclei",
+		Technique:    "T1190",
+		Outcome:      "detected",
+		Summary:      "still exploitable",
+		RawMeta:      map[string]any{"reachable": true},
+	})
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/validation/evidence", bytes.NewReader(body)).WithContext(r0.Context())
+	w := httptest.NewRecorder()
+
+	h.IngestEvidence(w, r)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body=%s", w.Code, w.Body.String())
+	}
+	var resp evidenceResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode resp: %v", err)
+	}
+	if len(repo.rows) != 1 {
+		t.Fatalf("evidence rows = %d, want 1", len(repo.rows))
+	}
+	if repo.rows[0].TenantID != tenantID {
+		t.Error("evidence tenant must come from the sensor context, not the body")
+	}
+	if fm.current.Status() != vulnerability.FindingStatusInProgress {
+		t.Errorf("finding status = %s, want in_progress (the fix did not hold)", fm.current.Status())
+	}
+}
+
+// Even bound, a "not detected" whose reachability the sensor asserts itself
+// (raw_meta.reachable) never resolves the finding (research 18 F6).
+func TestValidationHandler_IngestEvidence_NotDetectedNeverResolves(t *testing.T) {
 	repo := &fakeEvidenceRepo{}
 	fm := &fakeFindingMutator{current: fixAppliedFinding(t)}
 	h := newValidationHandler(repo, fm)
@@ -145,8 +193,8 @@ func TestValidationHandler_IngestEvidence_Resolves(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode resp: %v", err)
 	}
-	if !resp.StatusChanged {
-		t.Error("expected status_changed=true")
+	if resp.StatusChanged {
+		t.Error("status_changed = true, want false: sensor-asserted reachability is not proof of fix")
 	}
 	if len(repo.rows) != 1 {
 		t.Fatalf("evidence rows = %d, want 1", len(repo.rows))
@@ -154,8 +202,8 @@ func TestValidationHandler_IngestEvidence_Resolves(t *testing.T) {
 	if repo.rows[0].TenantID != tenantID {
 		t.Error("evidence tenant must come from the sensor context, not the body")
 	}
-	if fm.current.Status() != vulnerability.FindingStatusResolved {
-		t.Errorf("finding status = %s, want resolved", fm.current.Status())
+	if fm.current.Status() != vulnerability.FindingStatusFixApplied {
+		t.Errorf("finding status = %s, want fix_applied (unchanged)", fm.current.Status())
 	}
 }
 

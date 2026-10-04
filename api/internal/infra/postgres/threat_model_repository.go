@@ -253,6 +253,11 @@ func (r *ThreatModelRepository) ListModels(ctx context.Context, tenantID shared.
 		args = append(args, filter.ScopeRefID.String())
 		where += fmt.Sprintf(" AND scope_ref_id = $%d", len(args))
 	}
+	if filter.DataScope != nil {
+		cond, scopeArgs := dataScopeCondAt("scope_ref_id", filter.DataScope, len(args)+1)
+		args = append(args, scopeArgs...)
+		where += " AND (scope_type <> 'crown_jewel' OR " + cond + ")"
+	}
 
 	var total int
 	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM threat_models "+where, args...).Scan(&total); err != nil {
@@ -301,6 +306,21 @@ func (r *ThreatModelRepository) ListThreats(ctx context.Context, tenantID, model
 	if filter.TechniqueID != "" {
 		args = append(args, filter.TechniqueID)
 		where += fmt.Sprintf(" AND technique_id = $%d", len(args))
+	}
+	if filter.DataScope != nil {
+		// Every asset the threat names, and the asset of its evidence
+		// finding, must be in scope: a threat is dropped rather than
+		// shown with an out-of-scope hop.
+		first := len(args) + 1
+		in := func(col string) string {
+			c, _ := dataScopeCondAt(col, filter.DataScope, first)
+			return "(" + col + " IS NULL OR " + c + ")"
+		}
+		_, scopeArgs := dataScopeCondAt("x", filter.DataScope, first)
+		args = append(args, scopeArgs...)
+		findingIn, _ := dataScopeCondAt("f.asset_id", filter.DataScope, first)
+		where += " AND " + in("entry_point_asset_id") + " AND " + in("target_asset_id") + " AND " + in("hop_asset_id") +
+			" AND (evidence_finding_id IS NULL OR EXISTS (SELECT 1 FROM findings f WHERE f.id = evidence_finding_id AND f.tenant_id = $1 AND " + findingIn + "))"
 	}
 
 	query := "SELECT " + threatSelectCols + " FROM threat_model_threats " + where +

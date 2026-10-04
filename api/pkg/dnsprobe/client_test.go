@@ -2,6 +2,8 @@ package dnsprobe_test
 
 import (
 	"context"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -120,5 +122,51 @@ func TestNew_SystemResolver(t *testing.T) {
 	}
 	if c, err := dnsprobe.New(dnsprobe.Config{Server: "192.0.2.1"}); err != nil || c.Server() != "192.0.2.1:53" {
 		t.Fatalf("port default: %v %v", c, err)
+	}
+}
+
+// QueryServer reads a referral (authority NS) and the AA bit from an
+// authoritative server, and asks without recursion.
+func TestQueryServer_ReferralAndAuthoritative(t *testing.T) {
+	srv, err := dnstest.Start(map[string]dnstest.Entry{
+		"dev.example.com": {Referral: []string{"ns-1.dead-provider.example", "ns-2.dead-provider.example"}},
+		"example.com":     {NS: []string{"ns1.example.com"}, Authoritative: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Close)
+	c, err := dnsprobe.New(dnsprobe.Config{Server: "192.0.2.1", QPS: 1000, Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, port, _ := net.SplitHostPort(srv.Addr)
+	dnsprobe.AllowServersForTest(c, port)
+	ctx := context.Background()
+
+	a, err := c.QueryServer(ctx, host, "dev.example.com", dnsprobe.TypeNS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Authoritative || len(a.Records) != 0 || len(a.Authority) != 2 || a.Authority[0].Value != "ns-1.dead-provider.example" || a.Authority[0].Name != "dev.example.com" {
+		t.Fatalf("referral = %+v", a)
+	}
+	a, err = c.QueryServer(ctx, host, "example.com", dnsprobe.TypeNS)
+	if err != nil || !a.Authoritative || !a.Has(dnsprobe.TypeNS) {
+		t.Fatalf("authoritative = %+v %v", a, err)
+	}
+}
+
+// QueryServer refuses addresses outside the SSRF policy without sending
+// anything: loopback, private, link-local (cloud metadata) and non-literals.
+func TestQueryServer_RefusesNonPublicAddresses(t *testing.T) {
+	c, err := dnsprobe.New(dnsprobe.Config{Server: "192.0.2.1", QPS: 1000, Timeout: 200 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ip := range []string{"127.0.0.1", "10.0.0.53", "169.254.169.254", "::1", "ns1.example.com", ""} {
+		if _, err := c.QueryServer(context.Background(), ip, "example.com", dnsprobe.TypeNS); !errors.Is(err, dnsprobe.ErrServerNotAllowed) {
+			t.Errorf("%q: err = %v, want ErrServerNotAllowed", ip, err)
+		}
 	}
 }

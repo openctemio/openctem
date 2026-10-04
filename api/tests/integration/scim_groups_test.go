@@ -199,10 +199,10 @@ func TestSCIMGroups_Repository_RoundTrip(t *testing.T) {
 		t.Fatalf("round-trip mismatch: name=%s members=%v", got.DisplayName(), got.Members())
 	}
 
-	if err := repo.AddMembers(ctx, g.ID(), []shared.ID{u2}); err != nil {
+	if err := repo.AddMembers(ctx, tenantID, g.ID(), []shared.ID{u2}); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	if err := repo.RemoveMembers(ctx, g.ID(), []shared.ID{u1}); err != nil {
+	if err := repo.RemoveMembers(ctx, tenantID, g.ID(), []shared.ID{u1}); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 	names, err := repo.RoleGroupNamesForUser(ctx, tenantID, u2)
