@@ -2659,6 +2659,26 @@ definitions:
       review_oldest_since:
         type: string
     type: object
+  github_com_openctemio_openctem_api_internal_app_easm.Decision:
+    properties:
+      asset_id:
+        type: string
+      from:
+        type: string
+      to:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.DecisionResult:
+    properties:
+      decided:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.Decision'
+        type: array
+      not_found:
+        items:
+          type: string
+        type: array
+    type: object
   github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock:
     properties:
       by_severity:
@@ -2692,6 +2712,56 @@ definitions:
       last_30_days:
         type: integer
       since_cycle:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence:
+    properties:
+      first_observed_at:
+        type: string
+      last_observed_at:
+        type: string
+      observed:
+        additionalProperties: {}
+        type: object
+      rule:
+        type: string
+      source:
+        type: string
+      technique:
+        type: string
+      weight:
+        type: number
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.ReviewItem:
+    properties:
+      asset_id:
+        type: string
+      confidence:
+        type: integer
+      evidence:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence'
+        type: array
+      in_queue_since:
+        type: string
+      last_seen:
+        type: string
+      name:
+        type: string
+      reason:
+        type: string
+      state:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.ReviewPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.ReviewItem'
+        type: array
+      total:
         type: integer
     type: object
   github_com_openctemio_openctem_api_internal_app_easm.Risk:
@@ -3376,6 +3446,11 @@ definitions:
         type: array
       relationship:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType'
+      sub_type:
+        description: |-
+          SubType restricts the rule to the type's assets of one sub-type
+          ("" = any sub-type).
+        type: string
     type: object
   github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType:
     enum:
@@ -3440,6 +3515,10 @@ definitions:
         items:
           type: string
         type: array
+      exposure_default:
+        description: ExposureDefault is the exposure the type has by nature ("" =
+          none).
+        type: string
       facets:
         items:
           type: string
@@ -3464,6 +3543,13 @@ definitions:
         type: string
       relationships:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships'
+      scannable_by:
+        description: |-
+          ScannableBy lists the tool target types (supported_targets) that can
+          scan the type (RFC-042 §6.3.8 R5).
+        items:
+          type: string
+        type: array
       sections:
         items:
           type: string
@@ -8235,6 +8321,19 @@ definitions:
       type:
         type: string
       url:
+        type: string
+    type: object
+  internal_infra_http_handler.EASMDecisionRequest:
+    properties:
+      asset_ids:
+        items:
+          type: string
+        type: array
+      note:
+        description: Note is an optional reason, kept in the audit log.
+        type: string
+      state:
+        description: 'State: confirmed, rejected, dependency, monitor_only or needs_review.'
         type: string
     type: object
   internal_infra_http_handler.EffectivePermissionsResponse:
@@ -17429,6 +17528,13 @@ paths:
         in: query
         name: last_seen_before
         type: string
+      - description: 'Filter by attribution (comma-separated): confirmed (includes
+          assets with no record), needs_review, candidate, dependency, monitor_only,
+          rejected, unknown (no record), unconfirmed (needs_review+candidate), approved
+          (confirmed+unknown+dependency+monitor_only)'
+        in: query
+        name: attribution
+        type: string
       - description: Sort field (e.g., -created_at, name, -risk_score)
         in: query
         name: sort
@@ -21222,6 +21328,103 @@ paths:
       summary: Get global dashboard stats
       tags:
       - Dashboard
+  /easm/candidates:
+    get:
+      description: Assets the platform found but could not prove are the organization's
+        (attribution needs_review or candidate by default), most confident first,
+        each with its evidence. Narrowed to the caller's data scope.
+      parameters:
+      - description: Attribution states (comma-separated); default needs_review,candidate
+        in: query
+        name: states
+        type: string
+      - description: Asset types (comma-separated)
+        in: query
+        name: types
+        type: string
+      - description: Minimum confidence 0-100
+        in: query
+        name: min_confidence
+        type: integer
+      - description: Substring of the asset name
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Items per page
+        in: query
+        maximum: 100
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.ReviewPage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: EASM review queue
+      tags:
+      - Attack Surface
+  /easm/candidates/decisions:
+    post:
+      consumes:
+      - application/json
+      description: 'Record whether each asset is the organization''s: confirmed lets
+        scans reach it; rejected, dependency and monitor_only keep it passive. At
+        most 200 assets per call. Assets that are not the organization''s, are deleted
+        or are outside the caller''s data scope are listed in not_found. Each decision
+        is audited.'
+      parameters:
+      - description: Decision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.DecisionResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Decide EASM attribution in bulk
+      tags:
+      - Attack Surface
   /easm/summary:
     get:
       description: 'The external attack surface in one call: surface assets by type
