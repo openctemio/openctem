@@ -244,6 +244,28 @@ export function useUpdateFindingStatusApi(findingId: string) {
 }
 
 /**
+ * Mark a finding as a duplicate of another (RFC-043): findingId is folded
+ * into the original (POST /findings/{original}/duplicates), which keeps the
+ * stronger status and inherits its comments, retests, evidence and tickets.
+ * Returns the original finding.
+ */
+export function useMarkDuplicateApi(findingId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && findingId ? `mark-duplicate:${findingId}` : null,
+    async (_key: string, { arg }: { arg: { duplicate_of_id: string } }) => {
+      return post<ApiFinding>(
+        `${buildFindingEndpoint(encodeURIComponent(arg.duplicate_of_id))}/duplicates`,
+        {
+          finding_id: findingId,
+        }
+      )
+    }
+  )
+}
+
+/**
  * Update finding severity
  */
 export function useUpdateFindingSeverityApi(findingId: string) {

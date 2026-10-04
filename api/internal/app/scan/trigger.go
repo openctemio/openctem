@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -1214,7 +1215,7 @@ func (s *Service) filterAssetsForSingleScan(ctx context.Context, sc *scan.Scan) 
 	}
 
 	// Get asset type counts across every asset group of the scan
-	assetTypeCounts := map[string]int64{}
+	assetTypeCounts := map[asset.TypeRef]int64{}
 	listed := map[shared.ID]bool{}
 	for _, groupID := range sc.GetAllAssetGroupIDs() {
 		if listed[groupID] {

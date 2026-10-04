@@ -169,8 +169,8 @@ DELETE /api/v1/tenants/{tenant}/members/{id}
 
 # Invitations
 POST   /api/v1/tenants/{tenant}/invitations
-GET    /api/v1/invitations/{token}
-POST   /api/v1/invitations/{token}/accept
+POST   /api/v1/invitations/lookup       {"token": ...}
+POST   /api/v1/invitations/accept       {"token": ...}
 
 # Tenant-scoped resources (future)
 GET    /api/v1/tenants/{tenant}/assets

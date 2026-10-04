@@ -18,6 +18,7 @@ import type {
   ScopeTargetType,
 } from '../types'
 import { SCOPE_TO_ASSET_TYPE_MAP } from '../types'
+import { assetMatchesAnyTypeName } from '@/features/asset-types/type-match'
 
 // Constants for security limits
 const MAX_PATTERN_LENGTH = 500
@@ -171,11 +172,16 @@ export const matchCloudAccount = (pattern: string, account: string): boolean => 
 }
 
 /**
- * Check if asset type is compatible with scope target type
- * Uses the centralized SCOPE_TO_ASSET_TYPE_MAP from types
+ * Check if an asset's stored (type, sub-type) is compatible with a scope
+ * target type. Uses the centralized SCOPE_TO_ASSET_TYPE_MAP from types,
+ * resolved through the asset type registry.
  */
-const checkTypeCompatibility = (scopeType: ScopeTargetType, assetType: string): boolean => {
-  return SCOPE_TO_ASSET_TYPE_MAP[scopeType]?.includes(assetType) ?? false
+const checkTypeCompatibility = (
+  scopeType: ScopeTargetType,
+  assetType: string,
+  subType?: string
+): boolean => {
+  return assetMatchesAnyTypeName(SCOPE_TO_ASSET_TYPE_MAP[scopeType], { type: assetType, subType })
 }
 
 /**
@@ -183,10 +189,10 @@ const checkTypeCompatibility = (scopeType: ScopeTargetType, assetType: string): 
  */
 export const matchesScopeTarget = (
   target: ScopeTarget,
-  asset: { type: string; name: string; metadata?: Record<string, unknown> }
+  asset: { type: string; subType?: string; name: string; metadata?: Record<string, unknown> }
 ): { matches: boolean; matchType: 'exact' | 'wildcard' | 'cidr' | 'regex' } => {
   const { type: targetType, pattern } = target
-  const { type: assetType, name, metadata } = asset
+  const { type: assetType, subType, name, metadata } = asset
 
   // Validate pattern
   const validPattern = validatePattern(pattern)
@@ -195,7 +201,7 @@ export const matchesScopeTarget = (
   }
 
   // Type compatibility check
-  const typeMatches = checkTypeCompatibility(targetType, assetType)
+  const typeMatches = checkTypeCompatibility(targetType, assetType, subType)
   if (!typeMatches) {
     return { matches: false, matchType: 'exact' }
   }

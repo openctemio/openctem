@@ -56,4 +56,4 @@ export {
   useNavItemAccess,
   useVisibleSectionTabs,
 } from './use-filtered-sidebar'
-export { subModuleStatus } from './sub-modules'
+export { subModuleStatus, isHiddenReleaseStatus } from './sub-modules'
