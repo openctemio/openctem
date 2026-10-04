@@ -1,7 +1,7 @@
 # RFC-041: API path design, plane separation and a route style guard
 
 > Status: **Accepted** (owner decisions 2026-10-03: D1–D12 approved as
-> recommended, §8). Design PR #871. Implementation in progress (§10).
+> recommended, §8). Design PR #871. P0 merged; P1 in progress (§10).
 > Scope: `api/` (routes, OpenAPI, edge gateway), `web/` (API call sites,
 > generated types), sdk-go and the sensor (only through the protocol v2
 > feature negotiation of RFC-029), helm charts (edge rules).
@@ -804,7 +804,7 @@ Two notes from the approval:
 | P1 (security first) | URL-tenant chain runs the SSO-enforcement gate for the organization in the URL, and the read rate limit | #874 |
 | P0 | `routes/plane` plane table | #876 |
 | P0 | `tools/lint/routestyle`, blocking, shrink-only baseline (362 violations frozen) | #876 |
-| P0 | `openapicontract` check D (spec and router parameter names equal) | — |
-| P0 | web check: every `endpoints.ts` builder targets a real route | — |
-| P0 | `Deprecated()` middleware + `deprecated_route_requests_total` | — |
-| P1 | live phantom web calls fixed or removed | — |
+| P0 | `openapicontract` check D (spec and router parameter names equal) | #879 |
+| P0 | web check: every `endpoints.ts` builder targets a real route | #890 |
+| P0 | `Deprecated()` middleware + `deprecated_route_requests_total` | #880 |
+| P1 | live phantom web calls fixed or removed (four helpers that called routes the API never served) | #883 |

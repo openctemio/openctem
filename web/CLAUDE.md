@@ -205,8 +205,12 @@ Moved pages get a 308 in `src/config/legacy-routes.ts`.
 ## Access Control (RBAC)
 
 ```
-User → Membership (owner | member) → Roles → Permissions (DO) → Groups → Data Scope (SEE)
+User → Membership (owner | member) → Roles → Permissions (DO)
+User → Groups + explicit asset access grants → Data Scope (SEE)
 ```
+
+Being an asset owner is not a data-scope grant (owner decision O1); the backend
+is the only authority (`api/docs/architecture/authorization-matrix.md`, "Data scope").
 
 ```tsx
 const { hasPermission } = useMyPermissions()
