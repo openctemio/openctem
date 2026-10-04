@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 
@@ -33,7 +35,10 @@ type GroupService struct {
 	accessControlRepo   accesscontroldom.Repository
 	auditService        *auditapp.AuditService
 	notificationService *integration.NotificationService
-	logger              *logger.Logger
+	// delegation caps what a caller can hand out through a group to the
+	// scope they hold (D13). Nil: no cap (tests).
+	delegation *datascope.Enforcer
+	logger     *logger.Logger
 }
 
 // NewGroupService creates a new GroupService.
@@ -75,6 +80,21 @@ func WithAccessControlRepository(repo accesscontroldom.Repository) GroupServiceO
 		s.accessControlRepo = repo
 	}
 }
+
+// WithScopeDelegationCap wires the data-scope enforcer that caps group
+// asset assignment and membership at the caller's own scope (owner decision
+// D13, research doc 15 L-09).
+func WithScopeDelegationCap(e *datascope.Enforcer) GroupServiceOption {
+	return func(s *GroupService) { s.delegation = e }
+}
+
+// ErrDelegationExceedsScope: the change would give someone access to assets
+// the caller does not hold.
+var ErrDelegationExceedsScope = fmt.Errorf("%w: the group holds assets outside your own data scope; only someone with access to all of them can add members", shared.ErrForbidden)
+
+// ErrSelfMembership: a caller without full data access cannot widen their
+// own scope by joining a group.
+var ErrSelfMembership = fmt.Errorf("%w: you cannot add yourself to a group; ask another administrator", shared.ErrForbidden)
 
 // SetNotificationService sets the notification service for GroupService.
 // This is used for late-binding when integration.NotificationService is initialized after GroupService.
@@ -450,6 +470,44 @@ type AddGroupMemberInput struct {
 	Role    string    `json:"role" validate:"required,oneof=owner lead member"`
 }
 
+// checkMembershipDelegation applies D13 to adding userID to group g: a
+// caller without full data access cannot add themselves, and can add others
+// only when every asset the group holds is in their own scope.
+func (s *GroupService) checkMembershipDelegation(ctx context.Context, g *groupdom.Group, userID shared.ID, actorID string) error {
+	if s.delegation == nil {
+		return nil
+	}
+	if actorID != "" && actorID == userID.String() {
+		full, err := s.delegation.FullDataCaller(ctx, g.TenantID())
+		if err != nil {
+			return err
+		}
+		if !full {
+			return ErrSelfMembership
+		}
+	}
+	if s.accessControlRepo == nil {
+		return nil
+	}
+	held, err := s.accessControlRepo.ListAssetsByGroup(ctx, g.ID())
+	if err != nil {
+		return fmt.Errorf("failed to list group assets: %w", err)
+	}
+	admit, unrestricted, err := s.delegation.Delegable(ctx, g.TenantID(), held)
+	if err != nil {
+		return err
+	}
+	if unrestricted {
+		return nil
+	}
+	for _, id := range held {
+		if !admit(id) {
+			return ErrDelegationExceedsScope
+		}
+	}
+	return nil
+}
+
 // AddMember adds a user to a group.
 func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput, actx auditapp.AuditContext) (*groupdom.Member, error) {
 	groupID, err := shared.IDFromString(input.GroupID)
@@ -465,6 +523,21 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 	// Verify group belongs to caller's tenant before any mutation.
 	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
 	if err != nil {
+		return nil, err
+	}
+
+	// The user must be a member of the group's organization (L-14): an
+	// outsider would otherwise get the group's notifications and name.
+	if s.accessControlRepo != nil {
+		inTenant, terr := s.accessControlRepo.IsUserInTenant(ctx, g.TenantID(), input.UserID)
+		if terr != nil {
+			return nil, fmt.Errorf("failed to verify user tenant membership: %w", terr)
+		}
+		if !inTenant {
+			return nil, fmt.Errorf("%w: user not found", shared.ErrNotFound)
+		}
+	}
+	if err := s.checkMembershipDelegation(ctx, g, input.UserID, actx.ActorID); err != nil {
 		return nil, err
 	}
 
@@ -901,6 +974,18 @@ func (s *GroupService) AssignAsset(ctx context.Context, input AssignAssetInput, 
 		return err
 	}
 
+	// D13: only an asset the caller holds can be handed to a group; any
+	// other answers like an unknown asset.
+	if s.delegation != nil {
+		admit, _, derr := s.delegation.Delegable(ctx, g.TenantID(), []shared.ID{assetID})
+		if derr != nil {
+			return derr
+		}
+		if !admit(assetID) {
+			return fmt.Errorf("%w: asset not found", shared.ErrNotFound)
+		}
+	}
+
 	// Create the asset owner relationship
 	ao, err := accesscontroldom.NewAssetOwner(assetID, groupID, ownershipType, &assignedBy)
 	if err != nil {
@@ -1141,13 +1226,27 @@ func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAss
 		return nil, err
 	}
 
+	// D13: assets the caller does not hold are skipped like unknown ones.
+	admit := func(shared.ID) bool { return true }
+	if s.delegation != nil {
+		ids := make([]shared.ID, 0, len(input.AssetIDs))
+		for _, raw := range input.AssetIDs {
+			if id, perr := shared.IDFromString(raw); perr == nil {
+				ids = append(ids, id)
+			}
+		}
+		if admit, _, err = s.delegation.Delegable(ctx, g.TenantID(), ids); err != nil {
+			return nil, err
+		}
+	}
+
 	// Build AssetOwner entities
 	owners := make([]*accesscontroldom.AssetOwner, 0, len(input.AssetIDs))
 	failedAssets := make([]string, 0)
 
 	for _, assetIDStr := range input.AssetIDs {
 		assetID, err := shared.IDFromString(assetIDStr)
-		if err != nil {
+		if err != nil || !admit(assetID) {
 			failedAssets = append(failedAssets, assetIDStr)
 			continue
 		}
