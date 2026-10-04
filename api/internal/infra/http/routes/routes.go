@@ -53,6 +53,7 @@ type Handlers struct {
 	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
 	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
 	UserDashboard    *handler.UserDashboardHandler    // nil if not initialized - per-user customizable dashboards (RFC-021)
+	SavedView        *handler.SavedViewHandler        // nil if not initialized - saved list views (D15, RFC-048)
 	Audit            *handler.AuditHandler            // nil if not initialized (no database)
 	Branch           *handler.BranchHandler           // nil if not initialized (no database)
 	SLA              *handler.SLAHandler              // nil if not initialized (no database)
@@ -812,6 +813,9 @@ func Register(
 	// Per-user customizable dashboards (RFC-021) - self-scoped under /me/*.
 	if h.UserDashboard != nil {
 		registerUserDashboardRoutes(router, h.UserDashboard, authMiddleware, userSync)
+	}
+	if h.SavedView != nil {
+		registerSavedViewRoutes(router, h.SavedView, authMiddleware, userSync)
 	}
 
 	// Permission Sync routes (real-time permission sync with ETag support)

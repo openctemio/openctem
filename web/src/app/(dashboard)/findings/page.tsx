@@ -119,6 +119,8 @@ import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
 import { FINDINGS_LEGACY_URL_ALIASES, migrateLegacyParams } from '@/lib/filters/url-codec'
+import { SavedViewsMenu } from '@/features/saved-views/components/saved-views-menu'
+import { savedViewId, type SavedView } from '@/features/saved-views/api/use-saved-views'
 import {
   FINDINGS_LIST_HIDDEN_STATUSES,
   FINDINGS_OPEN_STATUSES,
@@ -503,6 +505,30 @@ function FindingsContent() {
     ? (groupParam as GroupByDimension)
     : null
   const verifyView = viewParam === 'verify'
+  // A saved view (D15) lives in the same param as its id; the API applies its
+  // filter, with any filter in the URL on top, as the viewer.
+  const savedId = savedViewId(viewParam)
+  // Opening a saved view replaces the URL's filters with the view (and its
+  // grouping); clearing it goes back to the plain list.
+  const openSavedView = useCallback(
+    (view: SavedView | null) => {
+      if (!view) {
+        router.replace('/findings')
+        return
+      }
+      const q = new URLSearchParams({ view: view.id })
+      if (view.group_by) q.set('group', view.group_by)
+      router.replace(`/findings?${q.toString()}`)
+    },
+    [router]
+  )
+  // The view is "modified" when filters in the URL sit on top of it.
+  const savedViewModified =
+    !!savedId &&
+    Array.from(searchParams.keys()).some(
+      (k) => !['view', 'group', 'page', 'per_page', 'tab', 'density'].includes(k)
+    )
+
   const [, setAssetParam] = useUrlFilter('asset_id', '')
   // A CVE group's "View": the list narrowed to that CVE (search does not match
   // the CVE id, so it cannot stand in for this).
@@ -608,9 +634,11 @@ function FindingsContent() {
     if (cveParam) filters.cve_ids = [cveParam]
     if (ruleParam) filters.rule_id = ruleParam
     if (severities.length > 0) filters.severities = severities
+    if (savedId) filters.view = savedId
     if (statuses.length > 0) {
       filters.statuses = statuses as NonNullable<FindingApiFilters['statuses']>
-    } else {
+    } else if (!savedId) {
+      // (A saved view carries its own status scope.)
       // Default: exclude draft/in_review (pentest WIP not ready for dashboard)
       filters.exclude_statuses = HIDDEN_STATUSES
     }
@@ -647,6 +675,7 @@ function FindingsContent() {
     HIDDEN_STATUSES,
     pagination,
     sortParam,
+    savedId,
   ])
 
   // The metric strip counts what the table shows (RFC-048: stats take the
@@ -1631,6 +1660,13 @@ function FindingsContent() {
 
   const toolbarEnd = (
     <>
+      <SavedViewsMenu
+        page="findings"
+        activeId={savedId}
+        modified={savedViewModified}
+        groupBy={groupParam}
+        onSelect={openSavedView}
+      />
       {groupBySelect}
       {refreshButton}
       {exportMenu}
@@ -1860,6 +1896,7 @@ function FindingsContent() {
                     statuses: statuses.join(',') || undefined,
                     sources: sourceFilter.join(',') || undefined,
                     assignedToMe: mineActive,
+                    view: savedId,
                   }}
                   renderGroupActions={groupActions}
                   onViewGroup={viewableGroup ? viewGroup : undefined}
