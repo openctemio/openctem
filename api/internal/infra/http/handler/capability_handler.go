@@ -415,7 +415,7 @@ func (h *CapabilityHandler) DeleteCustomCapability(w http.ResponseWriter, r *htt
 // buildAuditContext builds an AuditContext from the HTTP request.
 func (h *CapabilityHandler) buildAuditContext(r *http.Request) app.AuditContext {
 	actx := app.AuditContext{
-		ActorIP:   r.RemoteAddr,
+		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
 	}
