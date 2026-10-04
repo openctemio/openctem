@@ -42,8 +42,8 @@ import {
   Activity,
 } from 'lucide-react'
 import { copyToClipboard } from '@/lib/clipboard'
-import { triggerErrorHint } from '@/features/scan-zones'
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
+import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
 import { Can, Permission } from '@/lib/permissions'
 import { useScanConfig, useScanRuns, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
 import { post, del } from '@/lib/api/client'
@@ -92,7 +92,6 @@ export default function ScanDetailPage() {
   const router = useRouter()
   const scanId = params.id as string
 
-  const [isTriggering, setIsTriggering] = useState(false)
   const [isPausing, setIsPausing] = useState(false)
   const [isActivating, setIsActivating] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -116,6 +115,16 @@ export default function ScanDetailPage() {
 
   const recentRuns = useMemo(() => runsResponse?.data || [], [runsResponse])
 
+  // Trigger asks first when a run is already in progress and ignores a second
+  // click while the first is in flight (live use: two clicks 12 s apart
+  // started two runs on one host).
+  const {
+    trigger: triggerScan,
+    isTriggering: isScanTriggering,
+    dialog: triggerDialog,
+  } = useScanTrigger({ onViewRun: setOpenRunId, onTriggered: () => void refetchRuns() })
+  const isTriggering = isScanTriggering(scanId)
+
   // Run counts. The scan's counters only move when a run finishes, so the
   // total adds the runs still in progress (see scanRunCounts).
   const counts = useMemo(
@@ -128,19 +137,7 @@ export default function ScanDetailPage() {
   // Action handlers
   const handleTriggerScan = async () => {
     if (!config) return
-    setIsTriggering(true)
-    try {
-      await post(scanEndpoints.trigger(config.id), {})
-      toast.success(`Scan "${config.name}" triggered successfully`)
-      await invalidateScanConfigsCache()
-    } catch (error) {
-      console.error('Failed to trigger scan:', error)
-      toast.error(getErrorMessage(error, `Failed to trigger scan "${config.name}"`), {
-        description: triggerErrorHint(error),
-      })
-    } finally {
-      setIsTriggering(false)
-    }
+    await triggerScan(config)
   }
 
   // Cancel an active run. Backend cascade-cancels all in-flight commands.
@@ -838,6 +835,7 @@ export default function ScanDetailPage() {
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfig}
       />
+      {triggerDialog}
       <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
     </Main>
   )
