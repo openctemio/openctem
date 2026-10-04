@@ -69,6 +69,7 @@ var (
 	NewRuleService                        = accesscontrol.NewRuleService
 	WithAccessControlRepository           = accesscontrol.WithAccessControlRepository
 	WithGroupAuditService                 = accesscontrol.WithGroupAuditService
+	WithScopeDelegationCap                = accesscontrol.WithScopeDelegationCap
 	WithPermissionAccessControlRepository = accesscontrol.WithPermissionAccessControlRepository
 	WithPermissionAuditService            = accesscontrol.WithPermissionAuditService
 	WithPermissionGroupRepository         = accesscontrol.WithPermissionGroupRepository

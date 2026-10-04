@@ -1793,11 +1793,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithGroupAuditService(s.Audit),
 		app.WithPermissionSetRepository(repos.PermissionSet),
 		app.WithAccessControlRepository(repos.AccessControl),
+		app.WithScopeDelegationCap(s.DataScope),
 	)
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule = scope.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule.SetAssetGroupValidator(repos.AccessControl)
+	s.ScopeRule.SetScopeDelegationCap(s.DataScope)
 
 	// Wire scope rule hooks for real-time evaluation
 	s.Asset.SetScopeRuleEvaluator(s.ScopeRule.EvaluateAsset)
