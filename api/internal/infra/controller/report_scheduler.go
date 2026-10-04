@@ -64,7 +64,14 @@ type ReportScheduler struct {
 	// moduleGuard skips schedules whose tenant has not subscribed to the reports
 	// module. Optional — nil means "never skip" (fully backward compatible).
 	moduleGuard ModuleGuard
+	// recipients re-checks every recipient at send time (a member may have
+	// left, a domain may have been removed): owner decision D12. Nil: no
+	// check (tests).
+	recipients reportschedule.RecipientPolicy
 }
+
+// SetRecipientPolicy wires the send-time recipient check.
+func (c *ReportScheduler) SetRecipientPolicy(p reportschedule.RecipientPolicy) { c.recipients = p }
 
 // NewReportScheduler builds the controller. moduleGuard is optional (nil = never
 // skip); when set, schedules for tenants without the reports module are skipped.
@@ -168,6 +175,24 @@ func (c *ReportScheduler) runOne(ctx context.Context, s *reportschedule.ReportSc
 	switch s.DeliveryChannel() {
 	case "", "email":
 		to := recipientEmails(s.Recipients())
+		if refused, err := reportschedule.RefusedRecipients(ctx, c.recipients, s.TenantID(), s.Recipients()); err != nil {
+			c.logger.Error("failed to check report recipients", "schedule_id", s.ID().String(), "error", err)
+			return "failed"
+		} else if len(refused) > 0 {
+			drop := make(map[string]bool, len(refused))
+			for _, e := range refused {
+				drop[e] = true
+			}
+			kept := to[:0]
+			for _, e := range to {
+				if !drop[strings.ToLower(strings.TrimSpace(e))] {
+					kept = append(kept, e)
+				}
+			}
+			to = kept
+			c.logger.Warn("report recipients not allowed were skipped (not a member, not an allowed domain)",
+				"schedule_id", s.ID().String(), "skipped", len(refused))
+		}
 		if len(to) == 0 {
 			c.logger.Warn("schedule has no recipients", "schedule_id", s.ID().String())
 			return "no_recipients"

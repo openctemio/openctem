@@ -273,7 +273,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            newAssetImportHandler(svc, log),
-		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
+		ReportSchedule:         newReportScheduleHandler(svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
 
 		// Vulnerabilities & Exposures
@@ -740,5 +740,13 @@ func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImpo
 	h := handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log)
 	h.SetAuditService(svc.Audit)
 	h.SetDataScope(svc.DataScope)
+	return h
+}
+
+// newReportScheduleHandler builds the report schedule handler with its audit
+// trail.
+func newReportScheduleHandler(svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
+	h := handler.NewReportScheduleHandler(svc.ReportSchedule, log)
+	h.SetAuditService(svc.Audit)
 	return h
 }
