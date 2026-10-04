@@ -191,6 +191,35 @@ by severity and type; the ten most severe open external exposures; and CT
 monitoring freshness (`ct_monitor_state`). Code: `internal/app/easm`,
 `internal/infra/postgres/easm_summary_repository.go`.
 
+## 4b. Review queue and inventory filter (built, P1)
+
+Until P2 adds `easm_candidates`, the review queue is the set of inventory
+assets whose attribution is `needs_review` or `candidate`.
+
+| Route | Permission | Behaviour |
+|---|---|---|
+| `GET /api/v1/easm/candidates?states=&types=&min_confidence=&search=` | `assets:read` | Most confident first, each row with its evidence. Default states `needs_review,candidate`; `states=rejected` lists rejections for undo |
+| `POST /api/v1/easm/candidates/decisions` `{asset_ids ≤ 200, state, note?}` | `assets:write` | One statement upserts a human decision for each asset that is the tenant's and not deleted; automation never changes it afterwards. One `asset.attribution_decided` audit event per asset (from, to, `via=review_queue`, the note) |
+| `GET /api/v1/assets?attribution=` | `assets:read` | `confirmed` (includes assets with no record), `needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`, `unknown` (no record), `unconfirmed` (= needs_review + candidate), `approved` (= confirmed + unknown + dependency + monitor_only) |
+
+Both EASM routes sit behind the `attack_surface` module. **Isolation:** every
+query pins `tenant_id`; the caller's data scope narrows the queue
+(`user_accessible_assets`, as for the asset list) and filters the decision's
+asset ids first (`datascope.Enforcer.FilterForCaller`). An asset outside the
+scope, of another tenant or deleted is returned in `not_found`; the three cases
+look the same. A data-scope lookup error fails the request. Code:
+`internal/app/easm/review.go`, `internal/infra/postgres/easm_review_repository.go`.
+
+**Web.** `/attack-surface/review` (assets:read, `attack_surface` module) lists
+the queue with each row's evidence in words, with tabs for "Awaiting review"
+and "Not ours" and bulk Confirm / Not ours / Dependency / Monitor only for
+assets:write; the Overview's "Needs review" row links to it. The asset
+inventory (`/assets`) shows only the organisation's assets by default
+(`attribution=approved`): names awaiting review and rejected names are hidden
+behind a "Show all" link, and the filter panel has an Attribution facet.
+Code: `web/src/features/attack-surface/components/easm-review-queue.tsx`,
+`web/src/features/assets/lib/inventory-url.ts` (`attributionQuery`).
+
 ## 5. Data model (planned)
 
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and

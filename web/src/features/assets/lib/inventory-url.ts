@@ -36,6 +36,7 @@ export type InventoryFilters = Pick<
   | 'hasFindings'
   | 'lastSeenBefore'
   | 'lastSeenAfter'
+  | 'attribution'
   | 'sort'
   | 'page'
   | 'pageSize'
@@ -53,6 +54,7 @@ const ARRAY_PARAMS = {
   environments: 'environments',
   providers: 'providers',
   businessUnitIds: 'business_unit_ids',
+  attribution: 'attribution',
 } as const
 
 // Boolean-valued filter keys and their URL param names.
@@ -134,6 +136,31 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
   if (f.pageSize && f.pageSize !== DEFAULT_PAGE_SIZE) sp.set('per_page', String(f.pageSize))
 
   return sp
+}
+
+/**
+ * Attribution values the inventory offers (RFC-036). With none selected the
+ * inventory shows only assets that are the organisation's: confirmed
+ * (including assets with no attribution record), dependency and monitor only
+ * (the API alias `approved`). Names awaiting review and rejected names are
+ * hidden until asked for.
+ */
+export const ATTRIBUTION_FILTER_VALUES = [
+  'confirmed',
+  'unknown',
+  'needs_review',
+  'candidate',
+  'dependency',
+  'monitor_only',
+  'rejected',
+] as const
+
+/** What the inventory asks the API for when no attribution is selected. */
+export const DEFAULT_ATTRIBUTION = ['approved']
+
+/** The attribution query for the current filters. */
+export function attributionQuery(f: InventoryFilters): string[] {
+  return f.attribution?.length ? f.attribution : DEFAULT_ATTRIBUTION
 }
 
 /** Same default as the other server-paginated lists (Findings). */

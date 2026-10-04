@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -25,9 +27,17 @@ import (
 // CTEMCycleHandler handles CTEM cycle CRUD and state transition endpoints.
 // Uses direct SQL queries for pragmatic speed (no DDD repo layer yet).
 type CTEMCycleHandler struct {
-	db      *sql.DB
-	metrics ctemcycle.MetricsRepository
-	logger  *logger.Logger
+	db        *sql.DB
+	metrics   ctemcycle.MetricsRepository
+	dataScope *datascope.Enforcer
+	logger    *logger.Logger
+}
+
+// WithDataScope limits a cycle's scope snapshot to the assets the caller
+// may see (nil: the whole snapshot).
+func (h *CTEMCycleHandler) WithDataScope(e *datascope.Enforcer) *CTEMCycleHandler {
+	h.dataScope = e
+	return h
 }
 
 // NewCTEMCycleHandler creates a new handler. metrics may be nil (metric
@@ -582,6 +592,12 @@ func (h *CTEMCycleHandler) GetScope(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := rows.Err(); err != nil {
 		h.logger.Error("ctem cycle scope rows", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	items, err = filterLinksInScope(r, h.dataScope, tenantID, items, func(s CTEMScopeSnapshotResponse) string { return s.AssetID })
+	if err != nil {
+		h.logger.Error("ctem cycle scope data scope", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}

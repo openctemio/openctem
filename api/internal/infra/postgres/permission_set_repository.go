@@ -78,16 +78,17 @@ func (r *PermissionSetRepository) Create(ctx context.Context, ps *permissionset.
 	return nil
 }
 
-// GetByID retrieves a permission set by ID.
-func (r *PermissionSetRepository) GetByID(ctx context.Context, id shared.ID) (*permissionset.PermissionSet, error) {
+// GetByID retrieves a permission set visible to tenantID: a system set
+// (tenant_id NULL) or one of tenantID's own.
+func (r *PermissionSetRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*permissionset.PermissionSet, error) {
 	query := `
 		SELECT id, tenant_id, name, slug, description, set_type,
 			   parent_set_id, cloned_from_version, is_active, created_at, updated_at
 		FROM permission_sets
-		WHERE id = $1
+		WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)
 	`
 
-	return r.scanPermissionSet(r.db.QueryRowContext(ctx, query, id.String()))
+	return r.scanPermissionSet(r.db.QueryRowContext(ctx, query, id.String(), tenantID.String()))
 }
 
 // GetByTenantAndID retrieves a permission set by tenant and ID (tenant-scoped).
@@ -136,9 +137,12 @@ func (r *PermissionSetRepository) Update(ctx context.Context, ps *permissionset.
 	query := `
 		UPDATE permission_sets
 		SET name = $2, slug = $3, description = $4, is_active = $5, updated_at = $6
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $7
 	`
 
+	if ps.TenantID() == nil {
+		return permissionset.ErrPermissionSetNotFound
+	}
 	result, err := r.db.ExecContext(ctx, query,
 		ps.ID().String(),
 		ps.Name(),
@@ -146,6 +150,7 @@ func (r *PermissionSetRepository) Update(ctx context.Context, ps *permissionset.
 		ps.Description(),
 		ps.IsActive(),
 		ps.UpdatedAt(),
+		ps.TenantID().String(),
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "uq_permission_sets_slug") {
@@ -166,9 +171,9 @@ func (r *PermissionSetRepository) Update(ctx context.Context, ps *permissionset.
 }
 
 // Delete removes a permission set.
-func (r *PermissionSetRepository) Delete(ctx context.Context, id shared.ID) error {
+func (r *PermissionSetRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
 	// First check if it's a system set
-	ps, err := r.GetByID(ctx, id)
+	ps, err := r.GetByID(ctx, tenantID, id)
 	if err != nil {
 		return err
 	}
@@ -185,9 +190,9 @@ func (r *PermissionSetRepository) Delete(ctx context.Context, id shared.ID) erro
 		return permissionset.ErrPermissionSetInUse
 	}
 
-	query := `DELETE FROM permission_sets WHERE id = $1`
+	query := `DELETE FROM permission_sets WHERE tenant_id = $1 AND id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete permission set: %w", err)
 	}
@@ -435,9 +440,9 @@ func (r *PermissionSetRepository) ListItems(ctx context.Context, permissionSetID
 	return items, rows.Err()
 }
 
-// GetWithItems retrieves a permission set with its items.
-func (r *PermissionSetRepository) GetWithItems(ctx context.Context, id shared.ID) (*permissionset.PermissionSetWithItems, error) {
-	ps, err := r.GetByID(ctx, id)
+// GetWithItems retrieves a permission set visible to tenantID with its items.
+func (r *PermissionSetRepository) GetWithItems(ctx context.Context, tenantID, id shared.ID) (*permissionset.PermissionSetWithItems, error) {
+	ps, err := r.GetByID(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -602,19 +607,6 @@ func (r *PermissionSetRepository) ListVersions(ctx context.Context, permissionSe
 // Inheritance Queries
 // =============================================================================
 
-// GetParent retrieves the parent of a permission set.
-func (r *PermissionSetRepository) GetParent(ctx context.Context, permissionSetID shared.ID) (*permissionset.PermissionSet, error) {
-	query := `
-		SELECT p.id, p.tenant_id, p.name, p.slug, p.description, p.set_type,
-			   p.parent_set_id, p.cloned_from_version, p.is_active, p.created_at, p.updated_at
-		FROM permission_sets ps
-		INNER JOIN permission_sets p ON ps.parent_set_id = p.id
-		WHERE ps.id = $1
-	`
-
-	return r.scanPermissionSet(r.db.QueryRowContext(ctx, query, permissionSetID.String()))
-}
-
 // ListChildren retrieves all children of a permission set.
 func (r *PermissionSetRepository) ListChildren(ctx context.Context, parentSetID shared.ID) ([]*permissionset.PermissionSet, error) {
 	query := `
@@ -644,14 +636,14 @@ func (r *PermissionSetRepository) ListChildren(ctx context.Context, parentSetID 
 }
 
 // GetInheritanceChain retrieves the full inheritance chain for a permission set.
-func (r *PermissionSetRepository) GetInheritanceChain(ctx context.Context, permissionSetID shared.ID) ([]*permissionset.PermissionSet, error) {
+func (r *PermissionSetRepository) GetInheritanceChain(ctx context.Context, tenantID, permissionSetID shared.ID) ([]*permissionset.PermissionSet, error) {
 	// Use recursive CTE to get the full chain
 	query := `
 		WITH RECURSIVE chain AS (
 			SELECT id, tenant_id, name, slug, description, set_type,
 				   parent_set_id, cloned_from_version, is_active, created_at, updated_at, 0 as depth
 			FROM permission_sets
-			WHERE id = $1
+			WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)
 
 			UNION ALL
 
@@ -660,6 +652,7 @@ func (r *PermissionSetRepository) GetInheritanceChain(ctx context.Context, permi
 			FROM permission_sets p
 			INNER JOIN chain c ON p.id = c.parent_set_id
 			WHERE c.depth < 10  -- Prevent infinite loops
+			  AND (p.tenant_id = $2 OR p.tenant_id IS NULL)
 		)
 		SELECT id, tenant_id, name, slug, description, set_type,
 			   parent_set_id, cloned_from_version, is_active, created_at, updated_at
@@ -667,7 +660,7 @@ func (r *PermissionSetRepository) GetInheritanceChain(ctx context.Context, permi
 		ORDER BY depth DESC  -- Root first
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, permissionSetID.String())
+	rows, err := r.db.QueryContext(ctx, query, permissionSetID.String(), tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get inheritance chain: %w", err)
 	}
