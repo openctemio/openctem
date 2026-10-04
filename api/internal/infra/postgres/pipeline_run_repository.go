@@ -566,7 +566,7 @@ const MaxUnfinishedTargets = 10000
 // MarkTimedOutRuns settles every open run past its deadline (RFC-046 D5).
 //
 // The deadline is the run's deadline_at, or for runs started before migration
-// 000488 the same formula computed now (runDeadlineSQL).
+// 000674 the same formula computed now (runDeadlineSQL).
 //
 // A run that kept results ends 'partial': any of its commands completed, or
 // any of its steps completed or ended partial. Otherwise it ends 'timeout' as
