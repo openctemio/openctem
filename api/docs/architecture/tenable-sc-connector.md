@@ -100,7 +100,35 @@ Source-asserted resolve writes one audit entry per report:
 `ingest.source_resolved` (enforce) or `ingest.source_resolve_dry_run`
 (dry run), with the command id, the count and up to 200 finding ids.
 
+## Rolling coverage (P2)
+
+The RFC-007 rotation (`scancoverage` planner and scheduler, the
+`scan_coverage_state` cursor, the claim-once across replicas, the target gate)
+now drives the connector; the old runner dispatcher is gone.
+
+- **Opt-in per connector**: `coverage_enabled: true` with
+  `coverage_policy_id` and `coverage_repository_id` (optional
+  `coverage_zone_id`, `coverage_max_scan_seconds`), plus `batch_size`,
+  `license_cap` (optional lower cap) and `safety_margin`. Validated on create
+  and update.
+- **License numbers are Tenable.sc's own**: `licensedIPs` / `activeIPs` from
+  `/rest/status`, reported by every sync and scan and kept in
+  `metadata.tenable_sync`. No sync yet → no coverage. Headroom =
+  `min(licensed, license_cap) - active - safety_margin`.
+- **One batch at a time per connector**
+  (`tenablesc.Service.CoverageStatus`): the next batch waits until the
+  previous `connector_scan` finished and its reports were ingested, then takes
+  that scan's reported active count. A full license stops the rotation;
+  OpenCTEM never deletes data from Tenable.sc to free licenses (owner decision
+  Q4), so space comes back through Tenable.sc's own aging.
+- **Each batch** is one `connector_scan` (`DispatchCoverageBatch`) of the
+  gated targets, pinned to the connector's sensor. One connector per tenant
+  drives coverage; another is logged and skipped. Nessus Pro integrations are
+  not driven (no runner since sensor v0.8.0).
+- **Results** auto-resolve by coverage only for the batch's covered assets,
+  only from a completed, `full` scan (RFC-007's batch invariant).
+
 ## Not built yet
 
-Coverage on the connector (P2) and the web integration page (still hidden
-until the connector ships end to end).
+The web integration page and the Coverage panel (hidden until the connector
+ships end to end).
