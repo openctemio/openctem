@@ -8,7 +8,8 @@ package ingest
 // This closes that gap, conservatively: a finding is closed only when a scan
 // command that ran the same tool (and the same scan profile) COMPLETED with
 // full coverage of the finding's asset and did not report it. A failed,
-// canceled, expired or partial run, a report with rejected items, an asset the
+// canceled, expired or partial run, a report that does not declare
+// coverage_type "full" (an absent value is not full), a report with rejected items, an asset the
 // run never reached, or a finding whose last sighting cannot be tied to a run
 // of the same profile: none of them close anything.
 //
@@ -75,6 +76,7 @@ const (
 	coverageReportNotCompleted  = "report_failed"
 	coverageRejectedItems       = "report_rejected_items"
 	coveragePartial             = "partial_coverage"
+	coverageUndeclared          = "coverage_undeclared"
 	coverageRepositoryScan      = "repository_scan"
 	coverageToolMismatch        = "tool_ambiguous"
 	coverageReservedTool        = "reserved_tool"
@@ -129,14 +131,20 @@ func decideCoverage(c *ingestreport.CommandCoverage) coverageDecision {
 		if len(r.Header) > 0 {
 			_ = json.Unmarshal(r.Header, &header)
 		}
-		switch strings.ToLower(header.Metadata.CoverageType) {
-		case "", string(CoverageTypeFull):
-		default:
-			return coverageDecision{reason: coveragePartial}
-		}
 		if header.Metadata.Branch != nil {
 			// Repository scans keep their own (default-branch) auto-resolve.
 			return coverageDecision{reason: coverageRepositoryScan}
+		}
+		// Only an explicit "full" proves coverage. An absent coverage_type is
+		// not full (CTIS spec 4.5), the same as the report-level path
+		// (Input.ShouldAutoResolve): a sensor that does not say it covered
+		// everything closes nothing.
+		switch strings.ToLower(strings.TrimSpace(header.Metadata.CoverageType)) {
+		case string(CoverageTypeFull):
+		case "":
+			return coverageDecision{reason: coverageUndeclared}
+		default:
+			return coverageDecision{reason: coveragePartial}
 		}
 		tool := strings.TrimSpace(r.ToolName)
 		switch {

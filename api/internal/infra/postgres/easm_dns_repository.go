@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -181,4 +182,68 @@ func (r *EASMDNSRepository) TryLockTenant(ctx context.Context, tenantID shared.I
 		_, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1, hashtext($2))`, easmDNSLockNamespace, key)
 		_ = conn.Close()
 	}, true, nil
+}
+
+var _ easmdns.TakeoverStore = (*EASMDNSRepository)(nil)
+
+// OpenDanglingCNAMEs returns the tenant's active dangling_cname exposures
+// raised by the DNS check on the given assets.
+func (r *EASMDNSRepository) OpenDanglingCNAMEs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) ([]easmdns.OpenDangling, error) {
+	if len(assetIDs) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		ids = append(ids, id.String())
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, asset_id, COALESCE(details->>'domain', ''), COALESCE(details->>'target', ''), COALESCE(details->>'provider', '')
+		FROM exposure_events
+		WHERE tenant_id = $1 AND source = $2 AND event_type = 'dangling_cname' AND state = 'active'
+		  AND asset_id = ANY($3::uuid[])`,
+		tenantID.String(), easmdns.Source, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("list open dangling CNAMEs: %w", err)
+	}
+	defer rows.Close()
+	var out []easmdns.OpenDangling
+	for rows.Next() {
+		var (
+			d       easmdns.OpenDangling
+			assetID string
+		)
+		if err := rows.Scan(&d.ExposureID, &assetID, &d.Name, &d.Target, &d.Provider); err != nil {
+			return nil, err
+		}
+		id, err := shared.IDFromString(assetID)
+		if err != nil {
+			continue
+		}
+		d.AssetID = id
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// MarkConfirmed records on the tenant's exposures that a sensor confirmed
+// them: details.confirmation = "confirmed" plus the evidence keys.
+func (r *EASMDNSRepository) MarkConfirmed(ctx context.Context, tenantID shared.ID, exposureIDs []string, evidence map[string]any) error {
+	if len(exposureIDs) == 0 {
+		return nil
+	}
+	patch := map[string]any{"confirmation": "confirmed"}
+	for k, v := range evidence {
+		patch[k] = v
+	}
+	b, err := json.Marshal(patch)
+	if err != nil {
+		return fmt.Errorf("encode confirmation: %w", err)
+	}
+	if _, err := r.db.ExecContext(ctx, `
+		UPDATE exposure_events SET details = COALESCE(details, '{}'::jsonb) || $3::jsonb, updated_at = now()
+		WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+		tenantID.String(), pq.Array(exposureIDs), string(b)); err != nil {
+		return fmt.Errorf("mark exposures confirmed: %w", err)
+	}
+	return nil
 }
