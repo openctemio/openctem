@@ -331,7 +331,7 @@ var laterRevocations = map[string][]string{
 }
 
 // laterRemovedPermissions are permission ids a migration after 000230
-// deletes from the catalog with every grant of them (000492: permission sets
+// deletes from the catalog with every grant of them (000560: permission sets
 // are gone, so team:permission_sets:* means nothing).
 var laterRemovedPermissions = []string{
 	"team:permission_sets:read", "team:permission_sets:write", "team:permission_sets:delete",
