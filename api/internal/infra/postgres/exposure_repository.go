@@ -466,7 +466,7 @@ func (r *ExposureRepository) CountByState(ctx context.Context, tenantID shared.I
 	query := `
 		SELECT state, COUNT(*) as count
 		FROM exposure_events
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ` + notOfDeletedAssetSQL("exposure_events.asset_id") + `
 		GROUP BY state
 	`
 
@@ -499,7 +499,7 @@ func (r *ExposureRepository) CountBySeverity(ctx context.Context, tenantID share
 	query := `
 		SELECT severity, COUNT(*) as count
 		FROM exposure_events
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ` + notOfDeletedAssetSQL("exposure_events.asset_id") + `
 		GROUP BY severity
 	`
 
@@ -659,7 +659,8 @@ func (r *ExposureRepository) doScan(scan func(dest ...any) error) (*exposure.Exp
 }
 
 func (r *ExposureRepository) buildWhereClause(filter exposure.Filter) (string, []any) {
-	var conditions []string
+	// Exposures of a soft-deleted asset are history, not work: not listed.
+	conditions := []string{notOfDeletedAssetSQL("exposure_events.asset_id")}
 	var args []any
 	argIndex := 1
 
