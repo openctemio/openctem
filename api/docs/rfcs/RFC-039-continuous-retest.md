@@ -332,7 +332,9 @@ coverage `partial` so it can never auto-resolve other findings.
 ### 7.1 Suppressions, accepted risk, false positives
 
 Never retested, never reopened: `false_positive`, `accepted`, `accepted_risk`,
-`duplicate` and `resolved` with `resolution = suppressed` are outside the
+`duplicate` and findings a suppression rule matched (since research 18 F7 they
+are `false_positive` / `accepted` with `resolution = suppressed`; older rows may
+still be `resolved` with it) are outside the
 eligible set and excluded by the reopen SQL. An expired acceptance re-enters the
 eligible set through its existing reopen path.
 
