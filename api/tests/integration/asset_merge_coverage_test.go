@@ -23,7 +23,11 @@ func assetReferenceColumns(t *testing.T, db *sql.DB) map[string]string {
 		SELECT c.conrelid::regclass::text || '.' || a.attname,
 		       CASE c.confdeltype WHEN 'c' THEN 'fk cascade' WHEN 'n' THEN 'fk set null' ELSE 'fk' END
 		FROM pg_constraint c
-		JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+		-- The referencing column paired with assets.id: the only column of a
+		-- single-column key, the asset column of a composite (tenant_id, asset)
+		-- key (migration 000811).
+		JOIN pg_attribute a ON a.attrelid = c.conrelid
+		 AND a.attnum = c.conkey[array_position(c.confkey, (SELECT attnum FROM pg_attribute WHERE attrelid = 'assets'::regclass AND attname = 'id'))]
 		WHERE c.contype = 'f' AND c.confrelid = 'assets'::regclass
 		UNION
 		SELECT col.table_name || '.' || col.column_name, 'no fk'
@@ -34,7 +38,7 @@ func assetReferenceColumns(t *testing.T, db *sql.DB) map[string]string {
 		  AND col.udt_name IN ('uuid', '_uuid')
 		  AND NOT EXISTS (
 			SELECT 1 FROM pg_constraint k
-			JOIN pg_attribute ka ON ka.attrelid = k.conrelid AND ka.attnum = k.conkey[1]
+			JOIN pg_attribute ka ON ka.attrelid = k.conrelid AND ka.attnum = ANY(k.conkey)
 			WHERE k.contype = 'f' AND k.conrelid::regclass::text = col.table_name AND ka.attname = col.column_name)`)
 	if err != nil {
 		t.Fatalf("list asset references: %v", err)

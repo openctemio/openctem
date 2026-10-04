@@ -5,6 +5,21 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
+### Security: asset references are tenant-checked in the database (migrations 000810-000812)
+
+- Every table that stores an asset id next to a `tenant_id` (27 columns:
+  findings, exposures, exposure events, pipeline runs, scan sessions,
+  suppressions, SLA policies, scope rows, grants, relationships, ...) gets a
+  composite foreign key `(tenant_id, asset) → assets(tenant_id, id)`: a row of
+  one organization can no longer point at another organization's asset,
+  whatever writes it. Backstop for the application checks on `POST /findings`,
+  exposure create/ingest and pipeline runs (research doc 21b, C1/C3/C4).
+- **Deploy note:** `000811` first counts existing cross-tenant references and
+  refuses to run, changing nothing, if there are any. See
+  `docs/deployment/safe-deploy-and-migrations.md` ("Asset tenant foreign keys")
+  for the listing query and the recovery steps. `000810` builds an index
+  `CONCURRENTLY`; `000812` validates without blocking writes.
+
 ### Security: members without a scope row see nothing, in every organization
 
 - **The "see everything" mode is retired** (research doc 15 L-04, owner
