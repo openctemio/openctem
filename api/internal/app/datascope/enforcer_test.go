@@ -36,13 +36,6 @@ func (f *fakeRepo) AssetIDsInTenant(_ context.Context, tenantID shared.ID, ids [
 	return out, nil
 }
 
-func (f *fakeRepo) HasAnyScopeAssignment(_ context.Context, _, userID shared.ID) (bool, error) {
-	if f.err != nil {
-		return false, f.err
-	}
-	return len(f.rows[userID]) > 0, nil
-}
-
 func (f *fakeRepo) AssetIDsInScope(_ context.Context, _, userID shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -74,10 +67,6 @@ func (f *fakeRepo) FindingIDsInScope(_ context.Context, _, userID shared.ID, ids
 	return out, nil
 }
 
-type policy bool
-
-func (p policy) RestrictedDataScope(context.Context, string) bool { return bool(p) }
-
 type callerKey struct{}
 
 func withCaller(c Caller) context.Context {
@@ -101,24 +90,25 @@ func TestEnforcer(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		strict  bool
 		caller  Caller
 		asset   shared.ID
 		finding shared.ID
 		wantErr bool
 	}{
-		{"admin sees out-of-scope", false, Caller{UserID: scoped.String(), IsAdmin: true}, assetB, findingB, false},
-		{"internal call (no user) unrestricted", false, Caller{}, assetB, findingB, false},
-		{"scoped member in scope", false, Caller{UserID: scoped.String()}, assetA, findingA, false},
-		{"scoped member out of scope", false, Caller{UserID: scoped.String()}, assetB, findingB, true},
-		{"member without group, fail-open", false, Caller{UserID: free.String()}, assetB, findingB, false},
-		{"member without group, fail-closed tenant", true, Caller{UserID: free.String()}, assetA, findingA, true},
-		{"admin in fail-closed tenant", true, Caller{UserID: free.String(), IsAdmin: true}, assetA, findingA, false},
-		{"unparseable user fails closed", false, Caller{UserID: "not-a-uuid"}, assetA, findingA, true},
+		{"admin sees out-of-scope", Caller{UserID: scoped.String(), IsAdmin: true}, assetB, findingB, false},
+		{"internal call (no user) unrestricted", Caller{}, assetB, findingB, false},
+		{"scoped member in scope", Caller{UserID: scoped.String()}, assetA, findingA, false},
+		{"scoped member out of scope", Caller{UserID: scoped.String()}, assetB, findingB, true},
+		// No scope row means nothing, in every organization: there is no
+		// "see everything" mode (owner decision D2, research doc 15 L-04).
+		{"member without scope row sees nothing", Caller{UserID: free.String()}, assetA, findingA, true},
+		{"member without scope row, other asset", Caller{UserID: free.String()}, assetB, findingB, true},
+		{"admin without scope row", Caller{UserID: free.String(), IsAdmin: true}, assetA, findingA, false},
+		{"unparseable user fails closed", Caller{UserID: "not-a-uuid"}, assetA, findingA, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := New(repo, policy(tc.strict), ctxCaller, nil)
+			e := New(repo, ctxCaller, nil)
 			ctx := withCaller(tc.caller)
 			if err := e.AssertAsset(ctx, tenant, tc.asset); (err != nil) != tc.wantErr {
 				t.Errorf("AssertAsset err=%v, wantErr=%v", err, tc.wantErr)
@@ -143,7 +133,7 @@ func TestEnforcer_NilAndErrors(t *testing.T) {
 		t.Errorf("nil enforcer Resolve = %v, %v", s, err)
 	}
 
-	broken := New(&fakeRepo{err: errors.New("db down")}, nil, ctxCaller, nil)
+	broken := New(&fakeRepo{err: errors.New("db down")}, ctxCaller, nil)
 	if err := broken.AssertAsset(ctx, tenant, shared.NewID()); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("a failing scope lookup must deny (fail closed), got %v", err)
 	}
@@ -152,7 +142,7 @@ func TestEnforcer_NilAndErrors(t *testing.T) {
 	}
 
 	// Unknown finding: not found, never "allowed".
-	e := New(&fakeRepo{rows: map[shared.ID]map[shared.ID]bool{user: {shared.NewID(): true}}}, nil, ctxCaller, nil)
+	e := New(&fakeRepo{rows: map[shared.ID]map[shared.ID]bool{user: {shared.NewID(): true}}}, ctxCaller, nil)
 	if err := e.AssertFinding(ctx, tenant, shared.NewID()); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("unknown finding = %v, want ErrNotFound", err)
 	}
@@ -166,7 +156,7 @@ func TestEnforcer_Filters(t *testing.T) {
 		rows:     map[shared.ID]map[shared.ID]bool{user: {in: true}},
 		findings: map[shared.ID]shared.ID{fIn: in, fOut: out},
 	}
-	e := New(repo, nil, ctxCaller, nil)
+	e := New(repo, ctxCaller, nil)
 	ctx := withCaller(Caller{UserID: user.String()})
 
 	keep, err := e.FilterForCaller(ctx, tenant, []shared.ID{in, out, in})
@@ -192,7 +182,7 @@ func TestEnforcer_ForUserUsesAdminLookup(t *testing.T) {
 		rows:     map[shared.ID]map[shared.ID]bool{user: {shared.NewID(): true}},
 		findings: map[shared.ID]shared.ID{finding: asset},
 	}
-	e := New(repo, nil, nil, nil)
+	e := New(repo, nil, nil)
 	if err := e.AssertFindingForUser(context.Background(), tenant, user, finding); err == nil {
 		t.Error("restricted user without admin lookup must be denied")
 	}
@@ -211,10 +201,10 @@ func TestEnforcer_ForUserUsesAdminLookup(t *testing.T) {
 // unrestricted. A lookup error is returned (the caller refuses).
 func TestEnforcer_CanActOnAssets(t *testing.T) {
 	tenant := shared.NewID()
-	scoped, admin := shared.NewID(), shared.NewID()
+	scoped, admin, scopeless := shared.NewID(), shared.NewID(), shared.NewID()
 	assetA, assetB := shared.NewID(), shared.NewID()
 	repo := &fakeRepo{rows: map[shared.ID]map[shared.ID]bool{scoped: {assetA: true}}}
-	e := New(repo, policy(false), ctxCaller, nil)
+	e := New(repo, ctxCaller, nil)
 	e.SetAdminLookup(func(_ context.Context, _, user shared.ID) (bool, error) { return user == admin, nil })
 	ids := []shared.ID{assetA, assetB}
 
@@ -230,6 +220,9 @@ func TestEnforcer_CanActOnAssets(t *testing.T) {
 		{"no caller, restricted owner", context.Background(), &scoped, want{true, false, false}},
 		{"no caller, admin owner", context.Background(), &admin, want{true, true, true}},
 		{"system", context.Background(), nil, want{true, true, true}},
+		// A member with no scope row acts on nothing, never on everything.
+		{"scopeless caller", withCaller(Caller{UserID: shared.NewID().String()}), nil, want{false, false, false}},
+		{"no caller, scopeless owner", context.Background(), &scopeless, want{false, false, false}},
 		// The caller wins over the owner: a restricted member triggering an
 		// admin scan acts with their own scope.
 		{"restricted caller, admin owner", withCaller(Caller{UserID: scoped.String()}), &admin, want{true, false, false}},
@@ -246,7 +239,7 @@ func TestEnforcer_CanActOnAssets(t *testing.T) {
 		})
 	}
 
-	failing := New(&fakeRepo{err: errors.New("db down")}, policy(false), ctxCaller, nil)
+	failing := New(&fakeRepo{err: errors.New("db down")}, ctxCaller, nil)
 	if _, _, err := failing.CanActOnAssets(withCaller(Caller{UserID: scoped.String()}), tenant, nil, ids); err == nil {
 		t.Fatal("a failed scope lookup must be returned")
 	}
@@ -280,7 +273,7 @@ func TestEnforcer_AssertAssetRef(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := New(repo, policy(false), ctxCaller, nil)
+			e := New(repo, ctxCaller, nil)
 			err := e.AssertAssetRef(withCaller(tc.caller), tenant, tc.asset)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("AssertAssetRef err=%v, wantErr=%v", err, tc.wantErr)
@@ -296,7 +289,7 @@ func TestEnforcer_AssertAssetRef(t *testing.T) {
 		t.Errorf("nil enforcer must fail closed for an asset reference, got %v", err)
 	}
 	repo.err = errors.New("db down")
-	if err := New(repo, policy(false), ctxCaller, nil).AssertAssetRef(withCaller(admin), tenant, inScope); !errors.Is(err, shared.ErrNotFound) {
+	if err := New(repo, ctxCaller, nil).AssertAssetRef(withCaller(admin), tenant, inScope); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("a lookup error must fail closed, got %v", err)
 	}
 }
@@ -313,18 +306,17 @@ func TestEnforcer_FullDataRole(t *testing.T) {
 	}
 	cases := []struct {
 		name       string
-		strict     bool
 		caller     Caller
 		wantScoped bool
 	}{
-		{"full-data role, fail-closed tenant", true, Caller{UserID: reader.String()}, false},
-		{"full-data role with group rows", false, Caller{UserID: reader.String()}, false},
-		{"full-data role through an API key", true, Caller{UserID: reader.String(), APIKey: true}, true},
-		{"member without the role", false, Caller{UserID: member.String()}, true},
+		{"full-data role without scope rows", Caller{UserID: reader.String()}, false},
+		{"full-data role through an API key", Caller{UserID: reader.String(), APIKey: true}, true},
+		{"member without the role", Caller{UserID: member.String()}, true},
+		{"member without the role or scope rows", Caller{UserID: shared.NewID().String()}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := New(repo, policy(tc.strict), ctxCaller, nil)
+			e := New(repo, ctxCaller, nil)
 			scope, err := e.ResolveFor(context.Background(), tenant, tc.caller)
 			if err != nil {
 				t.Fatal(err)
@@ -347,7 +339,7 @@ func TestEnforcer_FullDataRole(t *testing.T) {
 		})
 	}
 	repo.err = errors.New("db down")
-	if _, err := New(repo, policy(false), ctxCaller, nil).ResolveFor(context.Background(), tenant, Caller{UserID: reader.String()}); err == nil {
+	if _, err := New(repo, ctxCaller, nil).ResolveFor(context.Background(), tenant, Caller{UserID: reader.String()}); err == nil {
 		t.Error("a failed full-data lookup must not resolve to unrestricted")
 	}
 }

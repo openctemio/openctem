@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 const dsMarkerRegistrarB = "dsB-SECRET-registrar"
@@ -108,7 +107,7 @@ func TestDataScope_AssetStatsAndFacets_CountOnlyInScope(t *testing.T) {
 		name  string
 		user  shared.ID
 		admin bool
-	}{{"owner", h.owner, true}, {"member without group", h.memberFree, false}} {
+	}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
 		st := h.stats(who.user, who.admin)
 		if st.Total != 3 || st.MetadataCounts["registrar"][dsMarkerRegistrarB] != 1 {
 			t.Errorf("%s stats total=%d registrar[B]=%d, want 3 and 1", who.name, st.Total, st.MetadataCounts["registrar"][dsMarkerRegistrarB])
@@ -123,7 +122,6 @@ func TestDataScope_AssetStatsAndFacets_CountOnlyInScope(t *testing.T) {
 func TestDataScope_AssetStatsAndFacets_StrictTenantMemberWithoutGroupSeesNothing(t *testing.T) {
 	h := newDSHarness(t)
 	h.seedFacetAssets()
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
 
 	if st := h.stats(h.memberStrict, false); st.Total != 0 || len(st.ByType) != 0 {
 		t.Errorf("strict tenant, member without group: stats total=%d by_type=%v, want nothing", st.Total, st.ByType)
