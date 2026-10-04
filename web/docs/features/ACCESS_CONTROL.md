@@ -119,8 +119,7 @@ Access Control is enforced at two layers, not just in the UI chrome:
   renders.
 
 Recently-added route gates include `/settings/scanning/credentials` (was `/secret-store`), `/runners`,
-`/exceptions` (→ `SuppressionsRead`), `/simulation/scenarios` and
-`/attack-simulation`, and the three `/settings/access-control/*` sub-pages
+`/exceptions` (→ `SuppressionsRead`), `/attack-simulation`, and the three `/settings/access-control/*` sub-pages
 (`groups`, `permission-sets`, `assignment-rules`).
 
 ---

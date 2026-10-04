@@ -26,6 +26,16 @@ path prefix, and each plane has one authenticator. **(lint)**
 | mcp | `/api/v1/mcp` | `oct_` key | |
 | ops | `/health`, `/ready`, `/metrics` | none / metrics bearer | `/metrics` and `/ready` are never exposed publicly |
 
+The same table drives the public gateway. `PlaneEdges` and `EdgeOverrides`
+(`routes/plane/edge.go`) say how the edge treats each plane: straight to the
+API (sensor, inbound, scim, mcp, ops, and the IdP-facing auth paths),
+through the web app's BFF (user, self, auth and admin, which browsers call
+with a session cookie), or never (`/metrics`, `/ready`).
+`api/deploy/gateway/planes.caddy` is generated from it
+(`UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/`), and a
+test fails when the committed file and the table disagree. A new plane or
+prefix therefore reaches the edge in the same PR, or CI is red.
+
 Rules:
 
 - A credential is accepted only on its own plane:
