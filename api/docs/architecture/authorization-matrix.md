@@ -843,9 +843,23 @@ same migration removed any such row written before (research doc 15, L-01).
 | Caller | Sees |
 |---|---|
 | Owner / admin (`IsAdmin`) | everything in the tenant |
+| A user holding a role with `has_full_data_access` (the system Owner and Administrator roles, or a custom role such as a "Global Reader") | everything in the tenant, whatever their group rows and the organization's policy; **not** through an API key |
 | Internal calls with no user (jobs, sensors, ingest) | everything in the tenant |
 | Member with ≥ 1 scope row | only their in-scope assets |
 | Member with no scope row | the organization's policy: **everything** or **nothing** |
+
+**Full data access is the Layer 2 bypass** (owner decision D3, research doc
+15 L-11). `roles.has_full_data_access` used to be stored, shown in the role
+editor ("Access all data regardless of group membership") and guarded on
+grant, but nothing read it. Now `datascope.Enforcer.ResolveFor` checks it
+(`DataScopeRepository.HasFullDataRole`, one indexed query per resolve) before
+the scope rows, and the older list paths (asset list, stats and facets,
+finding list and stats, asset and finding by id) use the same decision
+through `Enforcer.FullData`. A lookup error restricts. A request made with an
+API key never gets full data from its holder's role; a dedicated full-data key
+is future work (research doc 15, §5.7). Granting the flag is capped by the
+grant guard (you cannot give what you do not hold). A view-only level is part
+of the view/act work (P2).
 
 **Policy for members without an access group** (owner decision 2026-10-02):
 `tenants.members_without_group_see` (migration `000247`), `everything`
