@@ -1,4 +1,4 @@
--- Revert 000505. not_observed rows go back to how feature-branch expiry wrote
+-- Revert 000640. not_observed rows go back to how feature-branch expiry wrote
 -- them (resolved / branch_expired) when that is why they are not observed;
 -- any other not_observed row (none are written yet) becomes confirmed, an open
 -- state, so nothing is silently counted as fixed.

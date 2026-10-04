@@ -1,4 +1,4 @@
--- 000505: the not_observed finding status (research 18, owner decision O2).
+-- 000640: the not_observed finding status (research 18, owner decision O2).
 --
 -- not_observed = recent scans no longer report the finding, but nothing proves
 -- the check ran against it. It is stale, NOT fixed: never counted as fixed, and

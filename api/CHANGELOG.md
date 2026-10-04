@@ -15,7 +15,7 @@ published at https://docs.openctem.io (operations/release-notes-*).
   `resolved` only through a retest or a `findings:verify` holder.
 - **Feature-branch expiry writes `not_observed`** instead of `resolved`, so
   "not seen for N days on a branch" no longer counts as a fix in fix-rate
-  or MTTR. Migration 000505 moves existing `resolved` / `branch_expired`
+  or MTTR. Migration 000640 moves existing `resolved` / `branch_expired`
   rows to `not_observed` (no other row is touched) and adds a CHECK
   constraint on `findings.status`, which had none.
 - Retest runs on `not_observed` findings. The web labels the status
