@@ -179,7 +179,7 @@ function AssignedToMeWidget() {
       title="Assigned to me · open"
       value={data?.total ?? 0}
       loading={isLoading}
-      href="/findings?mine=true"
+      href="/findings?related_to=me"
     />
   )
 }
@@ -197,7 +197,7 @@ function MyCriticalHighWidget() {
       value={data?.total ?? 0}
       loading={isLoading}
       tone="danger"
-      href="/findings?mine=true&priority=P0"
+      href="/findings?related_to=me&priority_class=P0"
     />
   )
 }
@@ -215,7 +215,7 @@ function MyOverdueSlaWidget() {
       value={data?.total ?? 0}
       loading={isLoading}
       tone="danger"
-      href="/findings?mine=true&sla_status=overdue"
+      href="/findings?related_to=me&sla_status=overdue"
     />
   )
 }
@@ -263,7 +263,7 @@ function P0OpenWidget() {
       value={data?.p0_open ?? 0}
       loading={isLoading}
       tone="danger"
-      href="/findings?priority=P0"
+      href="/findings?priority_class=P0"
     />
   )
 }
