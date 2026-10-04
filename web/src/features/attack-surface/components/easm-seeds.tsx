@@ -12,7 +12,7 @@
  * own verified domains, requires the attestation and audits every change.
  */
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { BadgeCheck, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -77,18 +77,23 @@ export function EASMSeedsPanel() {
     }
   }
 
-  const toggle = async (s: EASMSeed, on: boolean) => {
-    if (!s.id) return
-    setBusyId(s.id)
-    try {
-      await updateSeed(s.id, { discovery_enabled: on })
-      void mutate()
-    } catch (e) {
-      toast.error(getErrorMessage(e, 'Could not change the seed'))
-    } finally {
-      setBusyId(null)
-    }
-  }
+  // Stable across renders: it reads only its arguments, the state setter and
+  // SWR's bound mutate, so the column definitions can depend on it.
+  const toggle = useCallback(
+    async (s: EASMSeed, on: boolean) => {
+      if (!s.id) return
+      setBusyId(s.id)
+      try {
+        await updateSeed(s.id, { discovery_enabled: on })
+        void mutate()
+      } catch (e) {
+        toast.error(getErrorMessage(e, 'Could not change the seed'))
+      } finally {
+        setBusyId(null)
+      }
+    },
+    [mutate]
+  )
 
   const remove = async () => {
     if (!removing?.id) return
@@ -166,8 +171,7 @@ export function EASMSeedsPanel() {
           ) : null,
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- toggle reads the latest state
-    [canWrite, canDelete, busyId]
+    [canWrite, canDelete, busyId, toggle]
   )
 
   if (!enabled && !isLoading) {

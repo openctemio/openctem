@@ -61,6 +61,7 @@ const seeds = {
 beforeEach(() => {
   api.get.mockReset()
   api.post.mockReset()
+  api.patch.mockReset()
   perms.write = true
   modules.ids = ['attack_surface']
 })
@@ -92,6 +93,25 @@ describe('EASMSeedsPanel', () => {
       kind: 'root_domain',
       value: 'acme.org',
       attested: true,
+    })
+  })
+
+  it('turns discovery on for the row clicked and reloads the list', async () => {
+    api.get.mockResolvedValue(seeds)
+    api.patch.mockResolvedValue({ ...seeds.data[1], discovery_enabled: true })
+    const user = userEvent.setup()
+    wrap(<EASMSeedsPanel />)
+    await screen.findByText('acme.io')
+    const before = api.get.mock.calls.length
+    await user.click(screen.getByRole('switch', { name: 'Discovery from acme.io' }))
+    expect(api.patch).toHaveBeenCalledTimes(1)
+    expect(api.patch).toHaveBeenCalledWith('/api/v1/easm/seeds/s2', { discovery_enabled: true })
+    // The memoized column calls the live toggle: the list is fetched again.
+    await vi.waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(before))
+    // A second click after the re-render still targets the right row.
+    await user.click(screen.getByRole('switch', { name: 'Discovery from acme.com' }))
+    expect(api.patch).toHaveBeenLastCalledWith('/api/v1/easm/seeds/s1', {
+      discovery_enabled: false,
     })
   })
 
