@@ -195,6 +195,10 @@ const (
 	// which were re-queued for another sensor and which were failed.
 	ActionSensorCommandsReleased Action = "sensor.commands_released"
 
+	// ActionIntegrationSyncRequested records a connector sync queued for an
+	// integration's sensor (RFC-047), by a person or by the schedule.
+	ActionIntegrationSyncRequested Action = "integration.sync_requested"
+
 	// Sensor results without a command (RFC-040 §5.3).
 	// ActionSensorResultsQuarantined records an unsolicited report held for
 	// review instead of applied.
@@ -485,6 +489,7 @@ func (a Action) IsValid() bool {
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
+		ActionIntegrationSyncRequested,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
@@ -596,6 +601,8 @@ func (a Action) Category() string {
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
 		return "scan_zone"
+	case ActionIntegrationSyncRequested:
+		return "integration"
 	case ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted:
 		return "api_key"
 	case ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted:
@@ -699,6 +706,7 @@ const (
 	ResourceTypeScopeTarget     ResourceType = "scope_target"
 	ResourceTypeScopeExclusion  ResourceType = "scope_exclusion"
 	ResourceTypeScannerTemplate ResourceType = "scanner_template"
+	ResourceTypeIntegration     ResourceType = "integration"
 )
 
 // String returns the string representation of the resource type.
@@ -722,7 +730,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
-		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate,
+		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate, ResourceTypeIntegration,
 		ResourceTypeRemediationCampaign:
 		return true
 	}
