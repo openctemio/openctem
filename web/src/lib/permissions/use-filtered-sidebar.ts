@@ -251,7 +251,7 @@ function filterNavGroup(group: NavGroup, checks: AccessCheckFunctions): NavGroup
     return null
   }
 
-  // The header links to the overview only while its row is visible.
+  // The rail flyout heading links to the overview only while its row is visible.
   const overviewVisible =
     group.url !== undefined && filteredItems.some((item) => 'url' in item && item.url === group.url)
 
