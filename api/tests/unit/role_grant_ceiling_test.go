@@ -225,10 +225,11 @@ func TestGrantCeiling_AllowedChanges(t *testing.T) {
 	ctx := context.Background()
 	tid := f.tenant.String()
 
-	// An admin may grant roles within their own grants.
-	if err := f.svc.AssignRole(ctx, app.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.AdminRoleID.String()},
+	// An admin may grant roles within their own grants (but not the admin
+	// role itself: only the owner promotes to admin, settings decision B2).
+	if err := f.svc.AssignRole(ctx, app.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.ViewerRoleID.String()},
 		f.admin.String(), app.AuditContext{}); err != nil {
-		t.Fatalf("admin grants admin: %v", err)
+		t.Fatalf("admin grants viewer: %v", err)
 	}
 	// An owner may grant anything, including the owner role and owner-only permissions.
 	if err := f.svc.AssignRole(ctx, app.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: f.analyst.ID().String()},

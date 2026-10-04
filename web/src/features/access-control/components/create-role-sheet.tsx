@@ -86,7 +86,12 @@ function getPermissionType(permissionId: string): string {
 
 export function CreateRoleSheet({ open, onOpenChange, onSuccess }: CreateRoleSheetProps) {
   const { createRole, isCreating } = useCreateRole()
-  const { modules: permissionModules, isLoading: isLoadingModules } = useTenantPermissionModules()
+  const { modules: permissionModules, isLoading: isLoadingModules } = useTenantPermissionModules(
+    true,
+    {
+      forCustomRole: true,
+    }
+  )
 
   // Form state
   const [form, setForm] = useState({
