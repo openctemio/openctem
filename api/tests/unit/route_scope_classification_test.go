@@ -26,6 +26,11 @@ import (
 //     (still permission-gated; see route_authz_coverage_test.go).
 //   - system: authentication, the caller's own data, sensor protocols, the
 //     platform-admin realm, global catalogs and public endpoints.
+//
+// registryFile is named in every failure so whoever added or removed a route
+// knows what to edit.
+const registryFile = "api/tests/unit/route_scope_classification_test.go (dataSurfaceRegistry)"
+
 type dataScopeClass string
 
 const (
@@ -141,9 +146,9 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/attachments": {classSeparate, "pentest and finding evidence; campaign membership"},
 
 	// --- gap -----------------------------------------------------------------------
-	"/api/v1/credentials":                 {classGap, "L-10, fixed by #1020"},
-	"/api/v1/vulnerabilities/active":      {classGap, "L-10, fixed by #1020"},
-	"GET /api/v1/groups/{groupId}/assets": {classGap, "L-10, fixed by #1020"},
+	"/api/v1/credentials":                 {classScoped, "leaks on in-scope assets; asset-less leaks: unrestricted callers only (L-10)"},
+	"/api/v1/vulnerabilities/active":      {classScoped, "aggregated over in-scope findings, REST and MCP (L-10)"},
+	"GET /api/v1/groups/{groupId}/assets": {classScoped, "only the group's assets in the caller's scope (L-10)"},
 	"/api/v1/scans":                       {classGap, "L-06 (scan reads and targets; D9)"},
 	"/api/v1/scan-sessions":               {classGap, "L-06 (scan reads)"},
 	"/api/v1/commands":                    {classGap, "L-06 (command payloads)"},
@@ -197,7 +202,7 @@ func TestEveryRouteHasADataScopeClass(t *testing.T) {
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		t.Errorf("routes with no data-scope class: classify each in dataSurfaceRegistry "+
+		t.Errorf("a route was added: update "+registryFile+": routes with no data-scope class: classify each in dataSurfaceRegistry "+
 			"(scoped, partial, gap with its research id, separate, config or system):\n  %s",
 			strings.Join(missing, "\n  "))
 	}
@@ -214,10 +219,10 @@ func TestEveryRouteHasADataScopeClass(t *testing.T) {
 	sort.Strings(stale)
 	sort.Strings(untracked)
 	if len(stale) > 0 {
-		t.Errorf("registry entries that match no route (remove or fix them):\n  %s", strings.Join(stale, "\n  "))
+		t.Errorf("a route was removed or renamed: update "+registryFile+": registry entries that match no route (remove or fix them):\n  %s", strings.Join(stale, "\n  "))
 	}
 	if len(untracked) > 0 {
-		t.Errorf("gap entries must cite the research finding that tracks them (L-xx or §):\n  %s", strings.Join(untracked, "\n  "))
+		t.Errorf("update "+registryFile+": gap entries must cite the research finding that tracks them (L-xx or §):\n  %s", strings.Join(untracked, "\n  "))
 	}
 	t.Logf("data-scope classes: %v", counts)
 }
@@ -226,9 +231,9 @@ func TestEveryRouteHasADataScopeClass(t *testing.T) {
 func TestDataSurfaceLookup_LongestPrefixWins(t *testing.T) {
 	cases := map[string]dataScopeClass{
 		"GET /api/v1/vulnerabilities/":                         classSystem,
-		"GET /api/v1/vulnerabilities/active":                   classGap,
+		"GET /api/v1/vulnerabilities/active":                   classScoped,
 		"GET /api/v1/vulnerabilities/{id}/affected-assets":     classScoped,
-		"GET /api/v1/groups/{groupId}/assets":                  classGap,
+		"GET /api/v1/groups/{groupId}/assets":                  classScoped,
 		"POST /api/v1/groups/{groupId}/assets":                 classConfig,
 		"GET /api/v1/compliance/findings/{findingId}/controls": classScoped,
 		"GET /api/v1/compliance/frameworks/":                   classConfig,
