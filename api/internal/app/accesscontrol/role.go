@@ -322,6 +322,16 @@ func assertRoleTenant(r *roledom.Role, tenantID string) error {
 	return nil
 }
 
+// roleForTenant loads a role visible to the caller's tenant (a system role or
+// one of its own). Another tenant's role is ErrRoleNotFound.
+func (s *RoleService) roleForTenant(ctx context.Context, tenantID string, id roledom.ID) (*roledom.Role, error) {
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.roleRepo.GetByID(ctx, tid, id)
+}
+
 // ValidateRolesForTenant checks that every id names a role the tenant may
 // grant: a system role or one of the tenant's own custom roles. Another
 // tenant's role, an unknown id and a malformed id all fail with
@@ -346,7 +356,7 @@ func (s *RoleService) GetRole(ctx context.Context, tenantID, roleID string) (*ro
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, id)
+	r, err := s.roleForTenant(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +396,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, id)
+	r, err := s.roleForTenant(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +524,7 @@ func (s *RoleService) DeleteRole(ctx context.Context, tenantID, roleID string, a
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, id)
+	r, err := s.roleForTenant(ctx, tenantID, id)
 	if err != nil {
 		return err
 	}
@@ -550,7 +560,7 @@ func (s *RoleService) DeleteRole(ctx context.Context, tenantID, roleID string, a
 		tenantIDStr = r.TenantID().String()
 	}
 
-	if err := s.roleRepo.Delete(ctx, id); err != nil {
+	if err := s.roleRepo.Delete(ctx, tid, id); err != nil {
 		if errors.Is(err, roledom.ErrRoleInUse) {
 			return fmt.Errorf("%w: role is assigned to users and cannot be deleted", shared.ErrValidation)
 		}
@@ -699,7 +709,7 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 	}
 
 	// Verify role exists and is available for tenant
-	r, err := s.roleRepo.GetByID(ctx, rid)
+	r, err := s.roleRepo.GetByID(ctx, tid, rid)
 	if err != nil {
 		return err
 	}
@@ -772,7 +782,7 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, rid)
+	r, err := s.roleRepo.GetByID(ctx, tid, rid)
 	if err != nil {
 		return err
 	}
@@ -854,7 +864,7 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		}
 
 		// Verify role exists and is available for tenant
-		r, err := s.roleRepo.GetByID(ctx, rid)
+		r, err := s.roleRepo.GetByID(ctx, tid, rid)
 		if err != nil {
 			return fmt.Errorf("role not found: %s", ridStr)
 		}
@@ -956,7 +966,7 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 	}
 
 	// Verify role exists and is available for tenant
-	r, err := s.roleRepo.GetByID(ctx, rid)
+	r, err := s.roleRepo.GetByID(ctx, tid, rid)
 	if err != nil {
 		return nil, err
 	}
