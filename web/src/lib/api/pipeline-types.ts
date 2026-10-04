@@ -9,7 +9,8 @@
 // TRIGGER TYPES
 // ============================================
 
-import type { RunTaskSummary } from './generated'
+import type { RunTask, RunTaskSummary } from './generated'
+import type { RunDispatch } from './scan-types'
 
 export const PIPELINE_TRIGGERS = [
   'manual',
@@ -59,7 +60,8 @@ export const PIPELINE_RUN_STATUSES = [
   'completed',
   'partial',
   'failed',
-  'cancelled',
+  // Spelled as the API stores it (pipeline.RunStatusCanceled).
+  'canceled',
   'timeout',
 ] as const
 export type PipelineRunStatus = (typeof PIPELINE_RUN_STATUSES)[number]
@@ -70,8 +72,8 @@ export const PIPELINE_RUN_STATUS_LABELS: Record<PipelineRunStatus, string> = {
   completed: 'Completed',
   partial: 'Partial',
   failed: 'Failed',
-  cancelled: 'Cancelled',
-  timeout: 'Timeout',
+  canceled: 'Canceled',
+  timeout: 'Timed out',
 }
 
 export const STEP_RUN_STATUSES = [
@@ -82,7 +84,7 @@ export const STEP_RUN_STATUSES = [
   'partial',
   'failed',
   'skipped',
-  'cancelled',
+  'canceled',
   'timeout',
 ] as const
 export type StepRunStatus = (typeof STEP_RUN_STATUSES)[number]
@@ -244,12 +246,19 @@ export interface StepRun {
 // PIPELINE RUN
 // ============================================
 
+/**
+ * A pipeline run as GET /pipeline-runs and GET /pipeline-runs/{id} return it.
+ * Scan runs are pipeline runs: this is the one run type of the web (scan-types
+ * re-exports it). List rows carry no step runs or tasks; the run read does.
+ */
 export interface PipelineRun {
   id: string
   tenant_id: string
   pipeline_id: string
   asset_id?: string
   scan_id?: string
+  /** The run's scan, named by the server on list rows (empty when deleted). */
+  scan_name?: string
   trigger_type: PipelineTriggerType
   triggered_by?: string
   /** Display name of the user in triggered_by, when it is a user id (API fills it). */
@@ -267,8 +276,16 @@ export interface PipelineRun {
   step_runs?: StepRun[]
   error_message?: string
   created_at: string
+  /** What the trigger dispatched (scope exclusions, zone routing). RFC-023. */
+  dispatch?: RunDispatch
   /** Tasks (dispatched commands) by status, once the run has any. RFC-046. */
   task_summary?: RunTaskSummary
+  /** The run's tasks, in dispatch order (GET /pipeline-runs/{id} only). */
+  tasks?: RunTask[]
+  /** True when the run has more tasks than `tasks` lists. */
+  tasks_truncated?: boolean
+  /** Continues the task list after `tasks` (GET /pipeline-runs/{id}/tasks?cursor=). */
+  tasks_next_cursor?: string
 }
 
 // ============================================
@@ -370,6 +387,8 @@ export interface PipelineRunListFilters {
   asset_id?: string
   status?: PipelineRunStatus
   trigger_type?: PipelineTriggerType
+  /** One sort key, `-` for descending (created_at, started_at, completed_at, total_findings). */
+  sort?: string
   page?: number
   per_page?: number
 }

@@ -32,6 +32,9 @@ import (
 type mockScanRepo struct {
 	scans map[string]*scan.Scan
 
+	// lastListFilter is the filter of the most recent List call.
+	lastListFilter scan.Filter
+
 	// Error overrides for specific methods
 	createErr        error
 	getByTenantErr   error
@@ -90,7 +93,8 @@ func (m *mockScanRepo) GetByName(_ context.Context, tenantID shared.ID, name str
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockScanRepo) List(_ context.Context, _ scan.Filter, page pagination.Pagination) (pagination.Result[*scan.Scan], error) {
+func (m *mockScanRepo) List(_ context.Context, filter scan.Filter, page pagination.Pagination) (pagination.Result[*scan.Scan], error) {
+	m.lastListFilter = filter
 	if m.listErr != nil {
 		return pagination.Result[*scan.Scan]{}, m.listErr
 	}
@@ -2454,5 +2458,37 @@ func TestScanService_TriggerScan_Workflow_StartsByDependencyGraph(t *testing.T) 
 	}
 	if got := len(deps.commandRepo.commands) - before; got != 2 {
 		t.Fatalf("queued %d step command(s), want 2 (the two independent steps; not the 'never' one, not the dependent)", got)
+	}
+}
+
+// The list sort reaches the repository validated; an unknown field is a
+// validation error (400), never silently dropped (RFC-048 §3.5).
+func TestScanService_ListScans_Sort(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+
+	_, err := svc.ListScans(context.Background(), scanservice.ListScansInput{
+		TenantID: tenantID.String(), Sort: "-last_run_at", Page: 1, PerPage: 10,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	got := deps.scanRepo.lastListFilter
+	if got.Sort.Field() != "last_run_at" || !got.Sort.Desc() {
+		t.Fatalf("sort reached the repository as %s desc=%v", got.Sort.Field(), got.Sort.Desc())
+	}
+	if got.TenantID == nil || *got.TenantID != tenantID {
+		t.Fatal("the list filter lost the caller's tenant")
+	}
+
+	deps.scanRepo.lastListFilter = scan.Filter{}
+	_, err = svc.ListScans(context.Background(), scanservice.ListScansInput{
+		TenantID: tenantID.String(), Sort: "tenant_id", Page: 1, PerPage: 10,
+	})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("unknown sort field: err = %v, want a validation error", err)
+	}
+	if deps.scanRepo.lastListFilter.TenantID != nil {
+		t.Fatal("an invalid sort still queried the repository")
 	}
 }
