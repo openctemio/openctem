@@ -779,19 +779,18 @@ Effort is engineer-weeks across all repos.
 | **P5 — Sources and connectors** | `discovery_source` integrations (Cert Spotter, Censys, Shodan, SecurityTrails, Chaos, urlscan, HIBP, GitHub) with quota + cache; cloud connectors AWS (Route 53, public IPs, ELB, S3), Azure Resource Graph, GCP CAI as authoritative evidence; "cloud public IPs not in inventory" coverage metric | 6–8 (S per source, M per cloud) | Medium (credentials, terms) | P2 | Each source is per-tenant (`ListByProvider`) and isolation-tested. Quota exhaustion degrades to skip + warning. A connector-only asset auto-confirms with w = 1.0 |
 | **P6 — Optional modes** (each its own owner decision) | Lookalike monitoring (Go permutations + UTS #39 skeletons; registration/MX/CT checks; `lookalike_domain` exposure; T0 only); T2 intrusive opt-in with approver + expiry; shared platform sensors with published egress ranges, rDNS, info page, opt-out handling | 3 + 2 + (4 + ops) | Medium (legal/ops for platform sensors) | O2, O3, O5 | Lookalikes never receive active probes. T2 runs refuse without a verified seed and an unexpired approval. Published range document matches the actual egress (automated check) |
 
-**Shipped in P1 so far:** dangling CNAME/NS and email posture checks (#852),
-`GET /easm/summary` and the Overview (#839, #857), the asset ownership section
-(#856), and the review queue with bulk decisions plus the asset-list
-attribution filter (`GET /easm/candidates`, `POST /easm/candidates/decisions`,
-`/assets?attribution=`; [easm.md §4b](../architecture/easm.md)).
+**Status on `develop` (checked 2026-10-04).**
 
-**When and where.** The RFC is accepted (§12.3). Implementation of P0, then
-P1, starts now that the api + ui monorepo cutover has merged. It is written
-directly in the monorepo: `api/` for the backend and `web/` for the UI, which
-replaces the separate ui repository. sdk-go and sensor changes (E2–E5, P3
-tools) stay in their own repositories. P2 should not start before P1's
-attribution columns ship. P3's daily
-cadence waits on RFC-030 P4.
+| Phase | Status |
+|---|---|
+| P0 | Shipped on the api/web side: E1 CT rotation and retries (#811, migration `000266`), `certificate_expired` for the newest certificate only, E7 presets with shipped tools only (#815, `000270`), E8/E9 honest numbers and real trends (#829), E11 (#724); CT names promoted to assets and the scan attribution gate (#839). Open: E10 (automatic external/shadow scope). E2–E5 are tracked in sdk-go and the sensor. |
+| P1 | Mostly shipped: dangling CNAME/NS and email posture checks (#852, `000325`; **off by default**, `EASM_DNS_CHECKS_ENABLED`); attribution side tables and evidence, CT promotion and `GET /api/v1/easm/summary` (#839, `000324`); the asset Ownership section (#856); the EASM overview cards on `/attack-surface` (#857); the review queue with bulk decisions and the asset-list attribution filter (`GET /easm/candidates`, `POST /easm/candidates/decisions`, `/assets?attribution=`; [easm.md §4b](../architecture/easm.md)). Open: sensor nuclei takeover confirmation → `subdomain_takeover` (no producer; the type is not in the exposure CHECK, and a fingerprint match stays medium "until a sensor confirms"). |
+| P2–P6 | Not started (no `easm_seeds`, `easm_candidates` or `easm_observations`). |
+
+**When and where.** Implementation is written directly in the monorepo
+(`api/` + `web/`); sdk-go and sensor changes (E2–E5, P3 tools) stay in their
+own repositories. P2 may start: P1's attribution tables shipped (migration
+`000324`). P3's daily cadence waits on RFC-030 P4.
 
 ## 10. Metrics
 

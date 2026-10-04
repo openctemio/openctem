@@ -433,11 +433,13 @@ var ModulePermissionMapping = map[string]string{
 	ModuleIOCs:         "threat_intel:read",
 
 	// CTEM scoping (seeded by 000161). Permissions seeded by 000153_ctem_permissions.
-	ModuleAttackSurface:    "attack_surface:read",
+	// Each entry names the permission its routes gate on, so the sidebar and
+	// the API agree (/attack-surface/* is gated by assets:read).
+	ModuleAttackSurface:    "assets:read",
 	ModuleScopeConfig:      "attack_surface:scope:read",
-	ModuleBusinessServices: "attack_surface:business_services:read",
-	ModuleCTEMCycles:       "attack_surface:cycles:read",
-	ModuleAttackerProfiles: "threat_intel:read",
+	ModuleBusinessServices: "ctem:business_services:read",
+	ModuleCTEMCycles:       "ctem:cycles:read",
+	ModuleAttackerProfiles: "ctem:attacker_profiles:read",
 	ModuleRelationships:    "assets:read",
 
 	// CTEM scoping split-outs (seeded by 000214). Their routes are gated
@@ -451,11 +453,11 @@ var ModulePermissionMapping = map[string]string{
 	// Prioritisation extensions.
 	ModulePriorityRules:  "findings:read",
 	ModuleRiskAnalysis:   "findings:read",
-	ModuleBusinessImpact: "attack_surface:business_services:read",
+	ModuleBusinessImpact: "ctem:business_services:read",
 	ModuleRiskScoring:    "settings:read",
 
 	// Validation extensions.
-	ModuleCompensatingControls: "findings:compensating_controls:read",
+	ModuleCompensatingControls: "ctem:compensating_controls:read",
 
 	// Mobilisation extensions.
 	ModuleWorkflows:        "findings:workflows:read",
@@ -470,7 +472,7 @@ var ModulePermissionMapping = map[string]string{
 	// Settings extensions.
 	ModuleScannerTemplates: "scans:templates:read",
 	ModuleTemplateSources:  "scans:templates:read",
-	ModuleScanPipelines:    "scans:pipelines:read",
+	ModuleScanPipelines:    "integrations:pipelines:read",
 }
 
 // GetRequiredPermission returns the required permission for a module.

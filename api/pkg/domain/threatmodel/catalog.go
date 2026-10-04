@@ -25,8 +25,11 @@ type TechniqueMitigation struct {
 // attacker capability that unlocks the technique; EdgeType may be empty to mean
 // "any incoming edge".
 type TechniqueApplicability struct {
-	TechniqueID         string
+	TechniqueID string
+	// AssetType and SubType key the row on a stored (core type, sub_type)
+	// pair; SubType "" matches every sub-type of the type (RFC-042 §6.3.8).
 	AssetType           string
+	SubType             string
 	EdgeType            string // "" = any edge (stored NULL)
 	MinNetwork          string // external|internal ("" = none required)
 	MinCredential       string // none|user|admin ("" = none required)

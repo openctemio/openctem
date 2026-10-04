@@ -9,6 +9,8 @@
 #   sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 # The sensor refuses every job outside it, whatever the platform sends, and
 # reports only its digest and a summary. The platform cannot change it.
+# Requires a sensor release later than v0.8.0: v0.8.0 and older ignore this
+# file (and the kill switch) and scan without a local policy.
 # Every key: https://github.com/openctemio/sensor/blob/main/docs/LOCAL_POLICY.md
 apiVersion: openctem.io/sensor-policy/v1
 
