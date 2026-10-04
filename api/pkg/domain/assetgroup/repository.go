@@ -3,6 +3,8 @@ package assetgroup
 import (
 	"context"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -78,9 +80,10 @@ type Repository interface {
 	// Used when scan has multiple asset groups (AssetGroupIDs[]).
 	GetDistinctAssetTypesMultiple(ctx context.Context, groupIDs []shared.ID) ([]string, error)
 
-	// CountAssetsByType returns count of assets per type in a group.
+	// CountAssetsByType returns the count of assets per stored
+	// (type, sub_type) pair in a group.
 	// Used for compatibility preview at scan creation.
-	CountAssetsByType(ctx context.Context, groupID shared.ID) (map[string]int64, error)
+	CountAssetsByType(ctx context.Context, groupID shared.ID) (map[asset.TypeRef]int64, error)
 }
 
 // Filter defines the filtering options for listing asset groups.

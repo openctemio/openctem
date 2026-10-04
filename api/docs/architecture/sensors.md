@@ -1164,6 +1164,12 @@ A sensor holds every command it claims under a **lease** (migration 000260:
 
 ## Sensor-local policy (RFC-040 §5.7)
 
+> **Version requirement.** Enforcement is in sdk-go#140 and sensor#119, merged
+> after sensor v0.8.0. Sensor v0.8.0 and older ignore `SENSOR_LOCAL_POLICY`,
+> the policy file and the kill-switch file, and report no `local_policy`
+> (the page shows `unknown`). The install snippets mount the file anyway; it
+> takes effect once the sensor runs a release later than v0.8.0.
+
 The owner of the scanned network installs a read-only policy file on the
 sensor host (`/etc/openctem/sensor-policy.yaml`, `SENSOR_LOCAL_POLICY`; keys
 and semantics in the sensor repository, `docs/LOCAL_POLICY.md`). The sensor
@@ -1222,7 +1228,12 @@ and narrows dispatch:
 ## Network egress and proxies (RFC-034, proposed)
 
 > Design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md). Status:
-> **Proposed**. Only "Today" below is implemented.
+> **Proposed**; Phase 0 shipped on the sensor side. sdk-go v0.15.0 and later
+> (sdk-go#111, sensor#102) add `SENSOR_CONTROL_PROXY`, `SENSOR_CONTENT_PROXY`
+> (content sources, including `SafeHTTPClient`, which checks the target before
+> the proxy) and `SENSOR_SCAN_PROXY` (`inherit` or `direct`). "Today" below
+> describes sensors built on older SDKs; "Proposed" (profiles, forwarder) is
+> not built.
 
 A sensor sends three kinds of traffic, and RFC-034 configures each one
 separately:

@@ -41,20 +41,24 @@ import { useFindingSourcesApi, groupFindingSourcesByCategory } from '@/features/
 import { SEVERITY_CONFIG } from '../types'
 import type { Severity } from '@/features/shared/types'
 import type { FindingSource } from '../types'
-import type { AssetType } from '@/features/assets/types'
+import { canonicalAssetType, resolveTypeName } from '@/features/asset-types/type-match'
 
-// Asset type categories for conditional field rendering
-const CODE_ASSET_TYPES: AssetType[] = ['repository']
-const NETWORK_ASSET_TYPES: AssetType[] = [
-  'website',
-  'api',
-  'domain',
-  'ip_address',
-  'endpoint',
+// Asset type names per field category, matched on the stored (type,
+// sub-type) through the registry (RFC-042 §6.3.8). Order matters: a host
+// that is a cloud compute instance or a function is `cloud`.
+const CODE_ASSET_TYPES = ['repository']
+const CLOUD_ASSET_TYPES = ['cloud_account', 'compute', 'serverless', 'storage']
+const CONTAINER_ASSET_TYPES = ['container', 'kubernetes']
+const NETWORK_ASSET_TYPES = [
   'application',
+  'domain',
+  'subdomain',
+  'ip_address',
+  'service',
+  'host',
+  'endpoint',
+  'network',
 ]
-const CONTAINER_ASSET_TYPES: AssetType[] = ['container']
-const CLOUD_ASSET_TYPES: AssetType[] = ['cloud_account', 'compute', 'storage', 'serverless']
 
 const SEVERITY_OPTIONS = Object.entries(SEVERITY_CONFIG)
   .filter(([key]) => key !== 'none')
@@ -125,11 +129,20 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
   // Determine which field category to show based on selected asset type
   const assetCategory = useMemo(() => {
     if (!selectedAsset) return null
-    const type = selectedAsset.type
-    if (CODE_ASSET_TYPES.includes(type)) return 'code'
-    if (NETWORK_ASSET_TYPES.includes(type)) return 'network'
-    if (CONTAINER_ASSET_TYPES.includes(type)) return 'container'
-    if (CLOUD_ASSET_TYPES.includes(type)) return 'cloud'
+    const ref = canonicalAssetType({
+      type: selectedAsset.type,
+      subType: selectedAsset.subType,
+    })
+    const any = (names: string[]) =>
+      names.some((n) => {
+        const want = resolveTypeName(n)
+        // exact kind here: an unknown kind must not pull a host into `cloud`
+        return want.type === ref.type && (!want.subType || want.subType === ref.subType)
+      })
+    if (any(CODE_ASSET_TYPES)) return 'code'
+    if (any(CLOUD_ASSET_TYPES)) return 'cloud'
+    if (any(CONTAINER_ASSET_TYPES)) return 'container'
+    if (any(NETWORK_ASSET_TYPES)) return 'network'
     return 'other'
   }, [selectedAsset])
 
