@@ -114,7 +114,7 @@ export function RegisterForm({
 
   // Pre-fill the email field when the user arrives from an invitation
   // link. The invitation page redirects to /login?email=alice@co.com&
-  // returnTo=/invitations/{token}, and the "Create Account" link on
+  // returnTo=/invitations, and the "Create Account" link on
   // the login page preserves the email param. Without this the user
   // has to manually re-type the exact email the invitation was sent
   // to — error-prone and high friction.

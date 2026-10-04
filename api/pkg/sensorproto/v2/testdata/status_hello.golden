@@ -103,7 +103,8 @@
     "load",
     "release",
     "manifest",
-    "local_policy"
+    "local_policy",
+    "capacity"
   ],
   "media_types": [
     "application/vnd.openctem.ctis.v1+json"

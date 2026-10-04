@@ -208,3 +208,64 @@ type Evidence struct {
 	Weight    float64
 	Observed  map[string]any
 }
+
+// Filter values accepted by the asset list (?attribution=) besides the six
+// states. Unrecorded matches assets with no attribution record (legacy:
+// in the inventory before EASM, counted as confirmed). Unconfirmed is the
+// review queue (needs_review and candidate). Approved is what the default
+// inventory shows: confirmed (recorded or legacy), dependency and
+// monitor_only; it leaves out the review queue and rejected assets.
+const (
+	FilterUnrecorded  = "unknown"
+	FilterUnconfirmed = "unconfirmed"
+	FilterApproved    = "approved"
+)
+
+// StateFilter is a parsed attribution filter: the stored states to match,
+// and whether an asset with no record matches too.
+type StateFilter struct {
+	States     []State
+	Unrecorded bool
+}
+
+// ParseFilter expands ?attribution= values into a StateFilter. confirmed
+// includes unrecorded assets, matching how the attribution API reports them.
+// An empty input returns ok=false (no filter). An unknown value is an error.
+func ParseFilter(values []string) (StateFilter, bool, error) {
+	var f StateFilter
+	seen := map[State]bool{}
+	add := func(states ...State) {
+		for _, s := range states {
+			if !seen[s] {
+				seen[s] = true
+				f.States = append(f.States, s)
+			}
+		}
+	}
+	given := false
+	for _, v := range values {
+		switch v {
+		case "":
+			continue
+		case FilterUnrecorded:
+			f.Unrecorded = true
+		case FilterUnconfirmed:
+			add(StateNeedsReview, StateCandidate)
+		case FilterApproved:
+			add(StateConfirmed, StateDependency, StateMonitorOnly)
+			f.Unrecorded = true
+		default:
+			s := State(v)
+			if !s.Valid() {
+				return StateFilter{}, false, fmt.Errorf("unknown attribution filter %q", v)
+			}
+			add(s)
+			if s == StateConfirmed {
+				f.Unrecorded = true
+			}
+		}
+		given = true
+	}
+	sort.Slice(f.States, func(i, j int) bool { return f.States[i] < f.States[j] })
+	return f, given, nil
+}

@@ -1,10 +1,21 @@
 # License-Aware Scan Coverage (Tenable Nessus Pro + Tenable.sc)
 
-> **Status**: Converter (#139) + manual `.nessus` ingest endpoint shipped.
-> Live connector + scheduler designed in
+> **Status**: Converter (#139) + manual `.nessus` ingest endpoint shipped and
+> in use. The live connector and the coverage scheduler are **paused** (owner
+> decision D-14): sensor v0.8.0 removed the Tenable runner, so new Tenable
+> integrations are refused, the scheduler is not registered and the web hides
+> Connect/Edit/Coverage, all behind one switch
+> (`integration.TenableConnectorEnabled`, web `TENABLE_CONNECTOR_ENABLED`).
+> Rebuild: RFC-047 (two-way Tenable.sc connector in the sensor). Design in
 > [RFC-007](../rfcs/RFC-007-license-aware-scan-coverage.md). Complements
 > [Scan Orchestration](scan-orchestration.md) (agent-run scanners); this doc
 > covers **external** Tenable engines.
+
+> **Superseded design (2026-10-04).** The live Tenable path is being rebuilt as a
+> two-way Tenable.sc connector inside the sensor:
+> [RFC-047](../rfcs/RFC-047-tenable-sc-sensor-connector.md). The runner and
+> direct modes described here are not coming back; the coverage planner and its
+> batch-scoped auto-resolve invariant return on top of RFC-047 P1.
 
 ## Problem
 

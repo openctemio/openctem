@@ -48,12 +48,12 @@ var AllStages = []Stage{
 type Outcome string
 
 const (
-	OutcomeAdvanced       Outcome = "advanced"        // moved to the next stage
-	OutcomeDeferred       Outcome = "deferred"        // explicitly parked (accepted / compensating control)
-	OutcomeFalsePositive  Outcome = "false_positive"  // closed as FP
-	OutcomeReopened       Outcome = "reopened"        // came back to this stage from downstream (feedback loop)
-	OutcomeFailed         Outcome = "failed"          // stage rejected the item (e.g. validation proved it unexploitable)
-	OutcomeClosed         Outcome = "closed"          // terminal
+	OutcomeAdvanced      Outcome = "advanced"       // moved to the next stage
+	OutcomeDeferred      Outcome = "deferred"       // explicitly parked (accepted / compensating control)
+	OutcomeFalsePositive Outcome = "false_positive" // closed as FP
+	OutcomeReopened      Outcome = "reopened"       // came back to this stage from downstream (feedback loop)
+	OutcomeFailed        Outcome = "failed"         // stage rejected the item (e.g. validation proved it unexploitable)
+	OutcomeClosed        Outcome = "closed"         // terminal
 )
 
 var (
@@ -95,17 +95,17 @@ var (
 			Name: "ctem_stage_latency_seconds",
 			Help: "Wall-clock latency of a finding within a CTEM stage.",
 			Buckets: []float64{
-				60,            // 1m
-				5 * 60,        // 5m
-				15 * 60,       // 15m
-				60 * 60,       // 1h
-				4 * 60 * 60,   // 4h
-				12 * 60 * 60,  // 12h
-				24 * 60 * 60,  // 1d
-				3 * 86400,     // 3d
-				7 * 86400,     // 1w
-				30 * 86400,    // 30d
-				90 * 86400,    // 90d
+				60,           // 1m
+				5 * 60,       // 5m
+				15 * 60,      // 15m
+				60 * 60,      // 1h
+				4 * 60 * 60,  // 4h
+				12 * 60 * 60, // 12h
+				24 * 60 * 60, // 1d
+				3 * 86400,    // 3d
+				7 * 86400,    // 1w
+				30 * 86400,   // 30d
+				90 * 86400,   // 90d
 			},
 		},
 		[]string{"stage", "tenant_id"},
