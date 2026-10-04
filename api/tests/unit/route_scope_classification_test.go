@@ -141,9 +141,9 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/attachments": {classSeparate, "pentest and finding evidence; campaign membership"},
 
 	// --- gap -----------------------------------------------------------------------
-	"/api/v1/credentials":                 {classGap, "L-10, fixed by #1020"},
-	"/api/v1/vulnerabilities/active":      {classGap, "L-10, fixed by #1020"},
-	"GET /api/v1/groups/{groupId}/assets": {classGap, "L-10, fixed by #1020"},
+	"/api/v1/credentials":                 {classScoped, "leaks on in-scope assets; asset-less leaks: unrestricted callers only (L-10)"},
+	"/api/v1/vulnerabilities/active":      {classScoped, "aggregated over in-scope findings, REST and MCP (L-10)"},
+	"GET /api/v1/groups/{groupId}/assets": {classScoped, "only the group's assets in the caller's scope (L-10)"},
 	"/api/v1/scans":                       {classGap, "L-06 (scan reads and targets; D9)"},
 	"/api/v1/scan-sessions":               {classGap, "L-06 (scan reads)"},
 	"/api/v1/commands":                    {classGap, "L-06 (command payloads)"},
@@ -226,9 +226,9 @@ func TestEveryRouteHasADataScopeClass(t *testing.T) {
 func TestDataSurfaceLookup_LongestPrefixWins(t *testing.T) {
 	cases := map[string]dataScopeClass{
 		"GET /api/v1/vulnerabilities/":                         classSystem,
-		"GET /api/v1/vulnerabilities/active":                   classGap,
+		"GET /api/v1/vulnerabilities/active":                   classScoped,
 		"GET /api/v1/vulnerabilities/{id}/affected-assets":     classScoped,
-		"GET /api/v1/groups/{groupId}/assets":                  classGap,
+		"GET /api/v1/groups/{groupId}/assets":                  classScoped,
 		"POST /api/v1/groups/{groupId}/assets":                 classConfig,
 		"GET /api/v1/compliance/findings/{findingId}/controls": classScoped,
 		"GET /api/v1/compliance/frameworks/":                   classConfig,
