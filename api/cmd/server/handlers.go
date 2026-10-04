@@ -260,7 +260,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
-		EASM:          handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log),
+		EASM:          newEASMHandler(repos, svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -711,6 +711,17 @@ func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Ser
 		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
 	log.Info("sensor protocol v2 results enabled", "path", protov2.PathPrefix)
 	return handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+}
+
+// newEASMHandler builds the EASM overview and review queue handler; every
+// review decision is audited (RFC-036).
+func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMHandler {
+	h := handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log)
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return h.SetReview(easmapp.NewReviewService(repos.Attribution, svc.DataScope), audit)
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit
