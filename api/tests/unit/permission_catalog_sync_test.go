@@ -34,7 +34,7 @@ var permSeedMigrations = []string{
 	"000231_scan_zones.up.sql",                    // sensors:zones:* (RFC-023 D16)
 	"000232_credentials_reveal_permission.up.sql", // findings:credentials:reveal
 	"000267_scope_exclusion_approval.up.sql",      // attack_surface:scope:exclusions:approve
-	"000600_dashboard_aggregate_permission.up.sql", // dashboard:aggregate (D6)
+	"000687_dashboard_aggregate_permission.up.sql", // dashboard:aggregate (D6)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
@@ -42,6 +42,13 @@ var permSeedMigrations = []string{
 // in order, on top of the seeded ids.
 var permRenameMigrations = []string{
 	"000230_rename_agent_to_sensor.up.sql", // agents:* → sensors:* (RFC-023 §9.5)
+}
+
+// permRemoveMigrations delete permission ids. Each lists the removed ids as
+// one-column VALUES rows ('id'), which tupleID parses; they are applied, in
+// order, after the renames.
+var permRemoveMigrations = []string{
+	"000670_remove_group_permission_sets.up.sql", // team:permission_sets:* (permissions come only from roles)
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)
@@ -97,6 +104,28 @@ func seededPermissionIDs(t *testing.T) map[string]string {
 		}
 		if renamed == 0 {
 			t.Errorf("%s is listed as renaming permissions but no rename row was parsed", m)
+		}
+	}
+	for _, m := range permRemoveMigrations {
+		data, err := os.ReadFile(filepath.Join(root, "migrations", m))
+		if err != nil {
+			t.Fatalf("read remove migration %s: %v", m, err)
+		}
+		removed := 0
+		for _, line := range strings.Split(string(data), "\n") {
+			mm := tupleID.FindStringSubmatch(line)
+			if mm == nil {
+				continue
+			}
+			if _, ok := out[mm[1]]; !ok {
+				t.Errorf("%s removes %q, which no seed migration creates", m, mm[1])
+				continue
+			}
+			delete(out, mm[1])
+			removed++
+		}
+		if removed == 0 {
+			t.Errorf("%s is listed as removing permissions but no removed id was parsed", m)
 		}
 	}
 	return out
