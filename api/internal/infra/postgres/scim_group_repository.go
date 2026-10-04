@@ -154,21 +154,29 @@ func (r *ScimGroupRepository) Delete(ctx context.Context, tenantID, id shared.ID
 	return notFoundIfZero(res)
 }
 
-func (r *ScimGroupRepository) SetMembers(ctx context.Context, groupID shared.ID, userIDs []shared.ID) error {
+func (r *ScimGroupRepository) SetMembers(ctx context.Context, tenantID, groupID shared.ID, userIDs []shared.ID) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Touch (and lock) the group first: a group of another tenant stops here,
+	// before its membership is touched.
+	res, err := tx.ExecContext(ctx,
+		`UPDATE scim_groups SET updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), groupID.String())
+	if err != nil {
+		return fmt.Errorf("touch group: %w", err)
+	}
+	if err := notFoundIfZero(res); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM scim_group_members WHERE group_id = $1`, groupID.String()); err != nil {
 		return fmt.Errorf("clear group members: %w", err)
 	}
 	if err := insertGroupMembers(ctx, tx, groupID, userIDs); err != nil {
 		return err
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE scim_groups SET updated_at = NOW() WHERE id = $1`, groupID.String()); err != nil {
-		return fmt.Errorf("touch group: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
@@ -176,11 +184,13 @@ func (r *ScimGroupRepository) SetMembers(ctx context.Context, groupID shared.ID,
 	return nil
 }
 
-func (r *ScimGroupRepository) AddMembers(ctx context.Context, groupID shared.ID, userIDs []shared.ID) error {
+func (r *ScimGroupRepository) AddMembers(ctx context.Context, tenantID, groupID shared.ID, userIDs []shared.ID) error {
 	for _, uid := range userIDs {
 		if _, err := r.db.ExecContext(ctx,
-			`INSERT INTO scim_group_members (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-			groupID.String(), uid.String(),
+			`INSERT INTO scim_group_members (group_id, user_id)
+			 SELECT g.id, $2 FROM scim_groups g WHERE g.id = $1 AND g.tenant_id = $3
+			 ON CONFLICT DO NOTHING`,
+			groupID.String(), uid.String(), tenantID.String(),
 		); err != nil {
 			return fmt.Errorf("add group member: %w", err)
 		}
@@ -188,11 +198,13 @@ func (r *ScimGroupRepository) AddMembers(ctx context.Context, groupID shared.ID,
 	return nil
 }
 
-func (r *ScimGroupRepository) RemoveMembers(ctx context.Context, groupID shared.ID, userIDs []shared.ID) error {
+func (r *ScimGroupRepository) RemoveMembers(ctx context.Context, tenantID, groupID shared.ID, userIDs []shared.ID) error {
 	for _, uid := range userIDs {
 		if _, err := r.db.ExecContext(ctx,
-			`DELETE FROM scim_group_members WHERE group_id = $1 AND user_id = $2`,
-			groupID.String(), uid.String(),
+			`DELETE FROM scim_group_members
+			 WHERE group_id = $1 AND user_id = $2
+			   AND group_id IN (SELECT id FROM scim_groups WHERE tenant_id = $3)`,
+			groupID.String(), uid.String(), tenantID.String(),
 		); err != nil {
 			return fmt.Errorf("remove group member: %w", err)
 		}
