@@ -206,6 +206,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
 	}
+	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
 	targets := resolved.Targets
 	zones, err := s.loadZones(ctx, sc.TenantID)
 	if err != nil {
@@ -312,6 +313,13 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	}
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
+	}
+	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
+
+	// A connector scan (RFC-047) is one command for the connector's sensor;
+	// the sensor's zone routing and platform routing below do not apply.
+	if _, connector := s.isConnectorScanner(ctx, sc.ScannerName); connector {
+		return s.triggerConnectorScan(ctx, sc, resolved, triggerType, triggeredBy, runContext, retryAttempt, scheduledFor)
 	}
 
 	// Scan zones (RFC-023): once the tenant has zones, a network scanner's
@@ -1037,12 +1045,8 @@ func (s *Service) validateSingleScanTool(ctx context.Context, scannerName string
 			shared.ErrValidation,
 		)
 	}
-	if tool.IsConnector() {
-		return shared.NewDomainError(
-			"TOOL_NOT_SCANNER",
-			fmt.Sprintf("'%s' is a connector, not a scanner: it runs on its integration's connector commands. Use a scanner.", scannerName),
-			shared.ErrValidation,
-		)
+	if tool.IsConnector() && s.connectorScans == nil {
+		return ErrConnectorScansUnavailable
 	}
 
 	return nil
