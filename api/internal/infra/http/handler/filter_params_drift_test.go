@@ -26,6 +26,7 @@ var filterOperations = []struct {
 	{"/findings", "get", "findings", []string{"q", "sort", "page", "per_page"}},
 	{"/findings/stats", "get", "findings", []string{"q"}},
 	{"/findings/groups", "get", "findings", []string{"q", "sort", "page", "per_page", "group_by"}},
+	{"/findings/export", "get", "findings", []string{"q", "format"}},
 }
 
 func TestFilterParamBlocksAreGenerated(t *testing.T) {
