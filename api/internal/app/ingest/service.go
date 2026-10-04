@@ -71,6 +71,10 @@ type Service struct {
 	// assets of command-bound reports (RFC-036 O8). Nil-safe.
 	scanAttribution ScanAttributionStamper
 
+	// takeoverConfirmer raises subdomain_takeover from nuclei takeover
+	// findings of command-bound reports (RFC-036 P1). Nil-safe.
+	takeoverConfirmer TakeoverConfirmer
+
 	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
 	// non-repository findings (coverage_autoresolve.go). The zero mode is
 	// dry_run.
@@ -474,6 +478,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 			s.auditSourceResolve(ctx, tenantID, binding, report.Tool.Name, output)
 		}
 	}
+
+	// Step 2d: takeover-template findings confirm open dangling CNAMEs
+	// (RFC-036 P1); command-bound reports only. Best-effort.
+	s.confirmTakeovers(ctx, agt, tenantID, binding, scope, report, assetMap)
 
 	// Step 3: Auto-resolve stale findings (only for full coverage scans on default branch)
 	// This marks findings as 'resolved' if they were not seen in this scan.

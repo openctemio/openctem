@@ -195,13 +195,15 @@ func (m *mockAITriageTenantRepo) CreateMembership(_ context.Context, _ *tenant.M
 func (m *mockAITriageTenantRepo) GetMembership(_ context.Context, _, _ shared.ID) (*tenant.Membership, error) {
 	return nil, nil
 }
-func (m *mockAITriageTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID) (*tenant.Membership, error) {
+func (m *mockAITriageTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Membership, error) {
 	return nil, nil
 }
 func (m *mockAITriageTenantRepo) UpdateMembership(_ context.Context, _ *tenant.Membership) error {
 	return nil
 }
-func (m *mockAITriageTenantRepo) DeleteMembership(_ context.Context, _ shared.ID) error { return nil }
+func (m *mockAITriageTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, _ shared.ID) error {
+	return nil
+}
 func (m *mockAITriageTenantRepo) ListMembersByTenant(_ context.Context, _ shared.ID) ([]*tenant.Membership, error) {
 	return nil, nil
 }
@@ -238,13 +240,15 @@ func (m *mockAITriageTenantRepo) CreateInvitation(_ context.Context, _ *tenant.I
 func (m *mockAITriageTenantRepo) GetInvitationByToken(_ context.Context, _ string) (*tenant.Invitation, error) {
 	return nil, nil
 }
-func (m *mockAITriageTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID) (*tenant.Invitation, error) {
+func (m *mockAITriageTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Invitation, error) {
 	return nil, nil
 }
 func (m *mockAITriageTenantRepo) UpdateInvitation(_ context.Context, _ *tenant.Invitation) error {
 	return nil
 }
-func (m *mockAITriageTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID) error { return nil }
+func (m *mockAITriageTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID, _ shared.ID) error {
+	return nil
+}
 func (m *mockAITriageTenantRepo) ListPendingInvitationsByTenant(_ context.Context, _ shared.ID) ([]*tenant.Invitation, error) {
 	return nil, nil
 }
