@@ -22,7 +22,7 @@ import (
 const (
 	defCatalogFirst = 820
 	defCatalogLast  = 827
-	// More findings than one backfill batch (2000), so the batching is crossed.
+	// More findings than four backfill batches (1000 each), so the batching is crossed.
 	defCatalogFindings = 4100
 )
 

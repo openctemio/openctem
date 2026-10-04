@@ -9,7 +9,7 @@
 --    findings.definition_id is set to it. A finding without a catalog link
 --    gets its primary definition when ingest writes the links.
 --
--- Safe on large tables: batches by id (5000 definitions, 2000 findings), each
+-- Safe on large tables: batches by id (5000 definitions, 1000 findings), each
 -- committed on its own, so no lock is held longer than one batch. The
 -- findings batches suspend the updated_at trigger inside their own
 -- transaction: filling a denormalized column is not a change to the finding,
@@ -54,7 +54,7 @@ BEGIN
     last_id := nil_id;
     LOOP
         SELECT b.id INTO next_id
-        FROM (SELECT id FROM findings WHERE id > last_id ORDER BY id LIMIT 2000) b
+        FROM (SELECT id FROM findings WHERE id > last_id ORDER BY id LIMIT 1000) b
         ORDER BY b.id DESC
         LIMIT 1;
         EXIT WHEN next_id IS NULL;
