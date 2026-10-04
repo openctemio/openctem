@@ -107,6 +107,8 @@ export interface ScanConfig {
   total_runs: number
   successful_runs: number
   failed_runs: number
+  /** Runs that kept results but lost some work; neither a success nor a failure. */
+  partial_runs?: number
   created_by?: string
   created_by_name?: string
   created_at: string

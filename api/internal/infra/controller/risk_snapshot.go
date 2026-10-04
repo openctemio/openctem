@@ -42,7 +42,7 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 				COALESCE(AVG(risk_score) FILTER(WHERE risk_score > 0), 0) AS avg_risk,
 				COALESCE(MAX(risk_score), 0) AS max_risk,
 				CASE WHEN COUNT(*) = 0 THEN 0
-					ELSE COUNT(*) FILTER(WHERE owner_id IS NOT NULL) * 100.0 / COUNT(*)
+					ELSE COUNT(*) FILTER(WHERE EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = assets.id)) * 100.0 / COUNT(*)
 				END AS ownership_pct
 			FROM assets GROUP BY tenant_id
 		),

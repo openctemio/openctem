@@ -48,6 +48,25 @@ provenance.
 
 OQL has `lens:`, `class:` and `type:` core fields.
 
+**Stored types vs input names** ([RFC-042 §6.3.8](../rfcs/RFC-042-asset-inventory-v2.md#638-type-model-hardening-amendment-2026-10-03)).
+Of the 38 names in the table, 17 are **core types** and are the only
+values `assets.asset_type` may hold. The other 21 (`website`, `api`,
+`compute`, `iam_user`, `s3_bucket`, `firewall` …) are **aliases**: input
+names that every write path (REST, CSV and bulk import, importers,
+ingest, connectors, seeds) resolves to (core type, sub_type). Feature
+code keys on the class or on (type, sub_type), never on an alias.
+
+- A **sub-type is a kind**, from a closed list per core type. A vendor is
+  the `provider`, an engine or OS is an attribute. Legacy sub-type values
+  are mapped on input (`postgresql` → `relational` + `engine`).
+- REST and import reject an unknown sub-type; ingest keeps it in
+  `properties.x_native_sub_type` and stores no sub-type.
+- Behaviour is declared in the registry: `scannable_by` (the tool target
+  types that can scan the type), `exposure_default`, and the relationship
+  constraints resolved to (core type, sub_type).
+- Status: rules accepted 2026-10-03; implementation in the T1–T3 PRs of
+  §6.3.8. This page moves the bullets to "shipped" as they land.
+
 **The registry.** `api/configs/asset-types.yaml` is the single
 definition. `make generate-asset-types` emits Go and TypeScript, and
 `GET /api/v1/asset-types` serves the same data to the web. Per type it

@@ -20,15 +20,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// VerificationScanTrigger is the interface for triggering targeted verification scans.
-// Implemented by the scan.Service; kept as interface to avoid import cycles.
-type VerificationScanTrigger interface {
-	// TriggerVerificationScan launches a quick scan on the given targets.
-	// targets is a list of asset identifiers (names / hostnames / URLs).
-	// Returns the pipeline run ID and scan ID on success.
-	TriggerVerificationScan(ctx context.Context, tenantID, createdBy, scannerName, workflowID string, targets []string) (pipelineRunID, scanID string, err error)
-}
-
 // AutoValidator dispatches a CTEM Stage-4 safe-check re-check for a finding and
 // returns the command ID it was queued under. Implemented by
 // *validation.RunService. When wired, marking findings fix_applied auto-queues a
@@ -45,9 +36,8 @@ type FindingActionsService struct {
 	groupRepo       group.Repository
 	assetRepo       asset.Repository
 	activityService *activity.FindingActivityService
-	scanTrigger     VerificationScanTrigger // optional; set via SetVerificationScanTrigger
-	autoValidator   AutoValidator           // optional; set via SetAutoValidator
-	dataScope       *datascope.Enforcer     // optional; Layer 2 scope on by-id actions
+	autoValidator   AutoValidator       // optional; set via SetAutoValidator
+	dataScope       *datascope.Enforcer // optional; Layer 2 scope on by-id actions
 	db              *sql.DB
 	logger          *logger.Logger
 }
@@ -157,14 +147,10 @@ func loadVerificationChecklist(
 	return vulnerability.ReconstituteVerificationChecklist(data), nil
 }
 
-// SetVerificationScanTrigger wires the scan trigger (called after both services are initialized).
-func (s *FindingActionsService) SetVerificationScanTrigger(trigger VerificationScanTrigger) {
-	s.scanTrigger = trigger
-}
-
 // SetAutoValidator wires the proof-of-fix auto-validator. When set, a successful
-// fix_applied transition auto-queues a safe-check re-check per finding (bounded,
-// best-effort). Optional: nil → no auto-validation (prior behavior).
+// fix_applied transition auto-queues a proof-of-fix check per finding (bounded,
+// best-effort): a retest of the finding's own template for a nuclei finding
+// (RFC-039), a plain validation re-check otherwise. Optional: nil → none.
 func (s *FindingActionsService) SetAutoValidator(v AutoValidator) {
 	s.autoValidator = v
 }
@@ -415,24 +401,14 @@ func (s *FindingActionsService) BulkFixApplied(
 		findingGroupMap = make(map[shared.ID][]shared.ID)
 	}
 
-	// Preload asset→owner (deduplicated by asset ID)
-	assetOwnerMap := make(map[shared.ID]*shared.ID)
-	seenAssets := make(map[shared.ID]bool)
-	for _, f := range allFindings {
-		if seenAssets[f.AssetID()] {
-			continue
-		}
-		seenAssets[f.AssetID()] = true
-		assetEntity, err := s.assetRepo.GetByID(ctx, tid, f.AssetID())
-		if err == nil {
-			ownerID := assetEntity.OwnerID()
-			assetOwnerMap[f.AssetID()] = ownerID
-		}
-	}
+	// Preload the assets this user owns (1 query). asset_owners is the only
+	// owner store: a primary or secondary user owner of the asset is "the
+	// asset owner" for this check.
+	ownedAssets := s.assetsOwnedBy(ctx, tid, uid, allFindings)
 
 	// Process findings with preloaded data (all auth checks in-memory)
 	for _, f := range allFindings {
-		if !s.canMarkFixApplied(uid, groupIDSet, findingGroupMap, assetOwnerMap, f) {
+		if !s.canMarkFixApplied(uid, groupIDSet, findingGroupMap, ownedAssets, f) {
 			result.Skipped++
 			continue
 		}
@@ -475,7 +451,7 @@ func (s *FindingActionsService) canMarkFixApplied(
 	userID shared.ID,
 	userGroupIDs map[shared.ID]bool,
 	findingGroupMap map[shared.ID][]shared.ID, // finding ID → assigned group IDs
-	assetOwnerMap map[shared.ID]*shared.ID, // asset ID → owner ID
+	ownedAssets map[shared.ID]bool, // assets the user is a primary or secondary owner of
 	finding *vulnerability.Finding,
 ) bool {
 	// 1. Direct assignee
@@ -492,12 +468,35 @@ func (s *FindingActionsService) canMarkFixApplied(
 		}
 	}
 
-	// 3. Asset owner (in-memory via preloaded map)
-	if ownerID, ok := assetOwnerMap[finding.AssetID()]; ok && ownerID != nil && *ownerID == userID {
+	// 3. Asset owner (in-memory via preloaded set)
+	if ownedAssets[finding.AssetID()] {
 		return true
 	}
 
 	return false
+}
+
+// assetsOwnedBy returns the assets of the findings that the user is a primary
+// or secondary owner of (asset_owners, one query). A lookup failure is logged
+// and yields no owned assets, so the owner path never widens on error.
+func (s *FindingActionsService) assetsOwnedBy(ctx context.Context, tenantID, userID shared.ID, findings []*vulnerability.Finding) map[shared.ID]bool {
+	if s.accessCtrlRepo == nil || len(findings) == 0 {
+		return map[shared.ID]bool{}
+	}
+	seen := make(map[shared.ID]bool, len(findings))
+	assetIDs := make([]shared.ID, 0, len(findings))
+	for _, f := range findings {
+		if !seen[f.AssetID()] {
+			seen[f.AssetID()] = true
+			assetIDs = append(assetIDs, f.AssetID())
+		}
+	}
+	owned, err := s.accessCtrlRepo.FilterAssetsOwnedByUser(ctx, tenantID, userID, assetIDs)
+	if err != nil {
+		s.logger.Warn("failed to load the user's owned assets", "error", err)
+		return map[shared.ID]bool{}
+	}
+	return owned
 }
 
 // --- Bulk Verify ---
@@ -792,18 +791,16 @@ func (s *FindingActionsService) AutoAssignToOwners(
 			info, ok := assetCache[f.AssetID()]
 			if !ok {
 				if assetEntity, err := s.assetRepo.GetByID(ctx, f.TenantID(), f.AssetID()); err == nil {
-					ownerID := assetEntity.OwnerID()
-					// Unify the two ownership models: assets.owner_id is only ever
-					// set by email auto-match of owner_ref, whereas the asset_owners
-					// RACI table (what data-scope uses) is set explicitly in the UI.
-					// When owner_id is empty, fall back to the primary RACI owner so a
-					// user designated as primary owner also receives auto-assigned
-					// findings. Only a user (not a group) primary can be an assignee.
-					if ownerID == nil && s.accessCtrlRepo != nil {
-						if brief, oErr := s.accessCtrlRepo.GetPrimaryOwnerBrief(ctx, f.TenantID(), f.AssetID()); oErr == nil && brief != nil && brief.Type == "user" {
-							if uid, pErr := shared.IDFromString(brief.ID); pErr == nil {
-								ownerID = &uid
-							}
+					// The assignee is the asset's primary user owner in
+					// asset_owners (the one owner model). A group primary is
+					// not an assignee.
+					var ownerID *shared.ID
+					if s.accessCtrlRepo != nil {
+						owners, oErr := s.accessCtrlRepo.GetPrimaryUserOwnersByAssetIDs(ctx, f.TenantID(), []shared.ID{f.AssetID()})
+						if oErr != nil {
+							s.logger.Warn("failed to load the asset's primary owner", "asset_id", f.AssetID(), "error", oErr)
+						} else if uid, ok := owners[f.AssetID()]; ok {
+							ownerID = &uid
 						}
 					}
 					info = assetInfo{ownerID: ownerID, name: assetEntity.Name(), found: true}
@@ -839,92 +836,6 @@ func (s *FindingActionsService) AutoAssignToOwners(
 	}
 
 	return result, nil
-}
-
-// --- Verification Scan ---
-
-// RequestVerificationScanInput is the input for requesting a verification scan.
-type RequestVerificationScanInput struct {
-	FindingID   string
-	ScannerName string // required if WorkflowID is empty
-	WorkflowID  string // required if ScannerName is empty
-}
-
-// RequestVerificationScanResult is the result of requesting a verification scan.
-type RequestVerificationScanResult struct {
-	FindingID     string `json:"finding_id"`
-	AssetID       string `json:"asset_id"`
-	AssetName     string `json:"asset_name"`
-	PipelineRunID string `json:"pipeline_run_id"`
-	ScanID        string `json:"scan_id"`
-}
-
-// RequestVerificationScan triggers a targeted quick scan on the asset associated with a finding.
-// The finding must be in fix_applied status (dev has marked it as fixed; awaiting scan verification).
-// The scan result is expected to either confirm the fix (→ resolved) or reveal the vuln still exists
-// (→ back to in_progress) via the normal ingest pipeline.
-func (s *FindingActionsService) RequestVerificationScan(
-	ctx context.Context, tenantID, userID string, input RequestVerificationScanInput,
-) (*RequestVerificationScanResult, error) {
-	if s.scanTrigger == nil {
-		return nil, fmt.Errorf("%w: verification scan trigger not configured", shared.ErrInternal)
-	}
-
-	if input.ScannerName == "" && input.WorkflowID == "" {
-		return nil, fmt.Errorf("%w: scanner_name or workflow_id is required", shared.ErrValidation)
-	}
-
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)
-	}
-
-	fid, err := shared.IDFromString(input.FindingID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid finding_id", shared.ErrValidation)
-	}
-
-	f, err := s.findingRepo.GetByID(ctx, tid, fid)
-	if err != nil {
-		return nil, fmt.Errorf("finding not found: %w", err)
-	}
-
-	if f.Status() != vulnerability.FindingStatusFixApplied {
-		return nil, fmt.Errorf(
-			"%w: finding must be in fix_applied status to request verification scan (current: %s)",
-			shared.ErrValidation, f.Status(),
-		)
-	}
-
-	assetEntity, err := s.assetRepo.GetByID(ctx, tid, f.AssetID())
-	if err != nil {
-		return nil, fmt.Errorf("asset not found for finding: %w", err)
-	}
-
-	targets := []string{assetEntity.Name()}
-
-	runID, scanID, err := s.scanTrigger.TriggerVerificationScan(
-		ctx, tenantID, userID, input.ScannerName, input.WorkflowID, targets,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to trigger verification scan: %w", err)
-	}
-
-	s.logger.Info("verification scan triggered",
-		"finding_id", f.ID(),
-		"asset_id", f.AssetID(),
-		"asset_name", assetEntity.Name(),
-		"pipeline_run_id", runID,
-		"scan_id", scanID,
-	)
-
-	return &RequestVerificationScanResult{
-		FindingID:     f.ID().String(),
-		AssetID:       f.AssetID().String(),
-		AssetName:     assetEntity.Name(),
-		PipelineRunID: runID,
-		ScanID:        scanID,
-	}, nil
 }
 
 // --- Validation helpers ---

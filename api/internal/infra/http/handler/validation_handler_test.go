@@ -127,10 +127,11 @@ func TestValidationHandler_IngestEvidence_Resolves(t *testing.T) {
 	body, _ := json.Marshal(evidenceRequest{
 		FindingID:    findingID.String(),
 		CommandID:    cmd.ID.String(),
-		ExecutorKind: "safe-check",
-		Technique:    "T1046",
+		ExecutorKind: "nuclei",
+		Technique:    "T1190",
 		Outcome:      "not_detected",
 		Summary:      "exposure gone",
+		RawMeta:      map[string]any{"reachable": true},
 	})
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/validation/evidence", bytes.NewReader(body)).WithContext(r0.Context())
 	w := httptest.NewRecorder()
