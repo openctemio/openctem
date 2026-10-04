@@ -33,7 +33,11 @@ import { ImportResultsDialog, StatusBadge, getConfigString } from './shared'
 import { toast } from 'sonner'
 
 /** The .nessus import route requires both (api routes/assets.go). */
-const IMPORT_PERMISSIONS = [Permission.AssetsWrite, Permission.FindingsWrite]
+const IMPORT_PERMISSIONS = [
+  Permission.AssetsWrite,
+  Permission.FindingsWrite,
+  Permission.AssetsImport,
+]
 
 // ─────────────────────────────────────────────────────────
 // Paused Tenable integration (created before the pause)

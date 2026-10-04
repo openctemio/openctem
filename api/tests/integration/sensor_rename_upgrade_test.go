@@ -305,6 +305,48 @@ var laterRevocations = map[string][]string{
 // are gone, so team:permission_sets:* means nothing).
 var laterRemovedPermissions = []string{
 	"team:permission_sets:read", "team:permission_sets:write", "team:permission_sets:delete",
+	// 000468: permissions that gate nothing.
+	"assets:export", "findings:export", "compliance:frameworks:write", "compliance:reports:read",
+	"findings:policies:read", "findings:policies:write", "findings:policies:delete",
+	"settings:billing:read", "settings:billing:write",
+}
+
+// withoutLaterBackfill drops, from an access map taken after the upgrade, the
+// role grants migration 000467 added (recorded in granular_permission_backfill):
+// granting an enforced permission to every role that held the old gate is not
+// part of the rename.
+func withoutLaterBackfill(t *testing.T, db *sql.DB, access map[string]string) map[string]string {
+	t.Helper()
+	if queryString(t, db, `SELECT coalesce(to_regclass('public.granular_permission_backfill')::text, '')`) == "" {
+		return access
+	}
+	rows, err := db.Query(`SELECT 'role:' || r.slug, b.permission_id FROM granular_permission_backfill b JOIN roles r ON r.id = b.role_id`)
+	if err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	defer rows.Close()
+	added := map[string][]string{}
+	for rows.Next() {
+		var who, p string
+		if err := rows.Scan(&who, &p); err != nil {
+			t.Fatal(err)
+		}
+		added[who] = append(added[who], p)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	out := make(map[string]string, len(access))
+	for who, perms := range access {
+		kept := []string{}
+		for _, p := range strings.Split(perms, ",") {
+			if !slices.Contains(added[who], p) {
+				kept = append(kept, p)
+			}
+		}
+		out[who] = strings.Join(kept, ",")
+	}
+	return out
 }
 
 func withoutLaterRevocations(access map[string]string) map[string]string {
@@ -324,7 +366,7 @@ func withoutLaterRevocations(access map[string]string) map[string]string {
 func assertUpgraded(t *testing.T, db *sql.DB, before map[string]string, known map[string]bool, assetsUpdatedAt string) {
 	t.Helper()
 	before = withoutLaterRevocations(before)
-	if got := withoutLaterPermissions(effectiveAccess(t, db), known); fmt.Sprint(got) != fmt.Sprint(before) {
+	if got := withoutLaterBackfill(t, db, withoutLaterPermissions(effectiveAccess(t, db), known)); fmt.Sprint(got) != fmt.Sprint(before) {
 		t.Errorf("effective access changed by the upgrade:\nbefore %v\nafter  %v", before, got)
 	}
 	for _, c := range []struct{ name, q, want string }{

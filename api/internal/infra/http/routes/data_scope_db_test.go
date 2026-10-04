@@ -88,6 +88,8 @@ var dsMemberPerms = []string{ //nolint:gochecknoglobals // test fixture
 	permission.FindingsStatus.String(), permission.FindingsTriage.String(), permission.FindingsAssign.String(),
 	permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String(),
 	permission.AssetGroupsRead.String(), permission.DashboardRead.String(),
+	permission.ExposuresRead.String(), permission.ExposuresWrite.String(), permission.ExposuresTriage.String(),
+	permission.ExposuresDelete.String(),
 }
 
 // dsAuth is a stand-in for UnifiedAuth: the test names the caller in headers.
