@@ -3376,6 +3376,11 @@ definitions:
         type: array
       relationship:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType'
+      sub_type:
+        description: |-
+          SubType restricts the rule to the type's assets of one sub-type
+          ("" = any sub-type).
+        type: string
     type: object
   github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType:
     enum:
@@ -3440,6 +3445,10 @@ definitions:
         items:
           type: string
         type: array
+      exposure_default:
+        description: ExposureDefault is the exposure the type has by nature ("" =
+          none).
+        type: string
       facets:
         items:
           type: string
@@ -3464,6 +3473,13 @@ definitions:
         type: string
       relationships:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships'
+      scannable_by:
+        description: |-
+          ScannableBy lists the tool target types (supported_targets) that can
+          scan the type (RFC-042 §6.3.8 R5).
+        items:
+          type: string
+        type: array
       sections:
         items:
           type: string
