@@ -314,6 +314,36 @@ func (s *TenantService) bumpPermissionVersion(ctx context.Context, tenantID, use
 type DataScopePolicyStore interface {
 	GetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID) (string, error)
 	SetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID, value string) error
+	ListMembersWithoutDataScope(ctx context.Context, tenantID shared.ID, limit int) ([]tenantdom.ScopeImpactMember, int, error)
+}
+
+// maxScopeImpactMembers bounds the members listed in the impact report (the
+// total is always exact).
+const maxScopeImpactMembers = 500
+
+// DataScopeImpact is the pre-flight report for switching an organization to
+// "members without a team see nothing" (owner decision D2).
+type DataScopeImpact struct {
+	Policy     string
+	Members    []tenantdom.ScopeImpactMember
+	TotalCount int
+}
+
+// GetDataScopeImpact lists the members who see everything today only
+// because the organization shows everything to members without a team, and
+// so would see nothing after the switch. For a fail-closed organization the
+// same members already see nothing.
+func (s *TenantService) GetDataScopeImpact(ctx context.Context, tenantID string) (*DataScopeImpact, error) {
+	policy, err := s.GetDataScopePolicy(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	tid, _ := shared.IDFromString(tenantID) // validated by GetDataScopePolicy
+	members, total, err := s.dataScopePolicy.ListMembersWithoutDataScope(ctx, tid, maxScopeImpactMembers)
+	if err != nil {
+		return nil, err
+	}
+	return &DataScopeImpact{Policy: policy, Members: members, TotalCount: total}, nil
 }
 
 // SetDataScopePolicyStore wires the data-scope policy store. Without it the
@@ -348,6 +378,12 @@ func (s *TenantService) UpdateDataScopePolicy(ctx context.Context, tenantID, val
 	}
 	if old == value {
 		return value, nil
+	}
+	// "Everything" is being retired (D2): an organization only ever moves to
+	// "nothing". The setting is never flipped by a migration; each
+	// organization's owner switches it after reviewing the impact report.
+	if value == tenantdom.MembersWithoutGroupSeeEverything {
+		return "", tenantdom.ErrSeeEverythingRetired
 	}
 	tid, _ := shared.IDFromString(tenantID) // validated by GetDataScopePolicy
 	if err := s.dataScopePolicy.SetMembersWithoutGroupSee(ctx, tid, value); err != nil {
