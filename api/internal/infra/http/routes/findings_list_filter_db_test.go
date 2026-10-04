@@ -230,3 +230,64 @@ func TestFindingsList_ContractHeadersAndErrors(t *testing.T) {
 		t.Errorf("branch_status=open: %d %s", status, body)
 	}
 }
+
+// The research 17 filters (Tenable.sc parity) narrow inside the caller's
+// scope like every other field.
+func TestFindingsList_Research17Filters(t *testing.T) {
+	h := newGroupScopeHarness(t)
+	fa, fb, fb2, fp := h.findingA.String(), h.findingB.String(), h.findingB2.String(), h.findingP.String()
+	h.exec(`UPDATE findings SET cvss_score = 9.8, network_port = 443, network_transport = 'tcp', network_service = 'https',
+		assigned_to = $2, metadata = '{"scanner_exploit_available": true}', last_seen_at = now() - interval '2 days',
+		first_detected_at = now() - interval '40 days' WHERE id = $1`, fa, h.memberA.String())
+	h.exec(`UPDATE findings SET cvss_score = 5.0, network_port = 22, network_transport = 'tcp', network_service = 'ssh',
+		last_seen_at = now() - interval '90 days', first_detected_at = now() - interval '100 days' WHERE id = $1`, fb)
+	h.exec(`UPDATE findings SET last_seen_at = now() - interval '200 days', first_detected_at = now() - interval '300 days' WHERE id IN ($1, $2)`, fb2, fp)
+	h.exec(`UPDATE assets SET criticality = 'critical' WHERE id = $1`, h.assetB.String())
+
+	admin := flCaller{"owner", h.owner, true}
+	memberA := flCaller{"memberA", h.memberA, false}
+	cases := []struct {
+		query          string
+		admin, memberA []string
+	}{
+		{"cvss_score_gte=9", sorted(fa), sorted(fa)},
+		{"cvss_score_lt=9", sorted(fb), nil},
+		{"cvss_score_gte=4&cvss_score_lte=6", sorted(fb), nil},
+		{"last_seen_at_gte=-P30D", sorted(fa), sorted(fa)},
+		{"last_seen_at_lt=-P60D", sorted(fb, fb2, fp), nil},
+		{"first_detected_at_lte=-P50D", sorted(fb, fb2, fp), nil},
+		{"network_port=443,22", sorted(fa, fb), sorted(fa)},
+		{"network_port_gte=100", sorted(fa), sorted(fa)},
+		{"network_transport=tcp", sorted(fa, fb), sorted(fa)},
+		{"network_service=ssh", sorted(fb), nil},
+		{"assigned_to=" + h.memberA.String(), sorted(fa), sorted(fa)},
+		{"assigned_to_null=false", sorted(fa), sorted(fa)},
+		{"assigned_to_null=true", sorted(fb, fb2, fp), nil},
+		{"asset_criticality=critical", sorted(fb, fb2), nil},
+		{"asset_criticality=high", sorted(fa, fp), sorted(fa)},
+		{"asset_criticality_not=critical", sorted(fa, fp), sorted(fa)},
+		{"exploit_available=true", sorted(fa), sorted(fa)},
+		{"exploit_available=false", sorted(fb, fb2, fp), nil},
+		{"sort=-cvss_score", sorted(fa, fb, fb2, fp), sorted(fa)},
+		{"sort=-last_seen_at,network_port", sorted(fa, fb, fb2, fp), sorted(fa)},
+	}
+	for _, c := range cases {
+		t.Run(c.query, func(t *testing.T) {
+			for _, who := range []struct {
+				caller flCaller
+				want   []string
+			}{{admin, c.admin}, {memberA, c.memberA}} {
+				ids, total, _ := h.listIDs(t, who.caller, c.query)
+				if strings.Join(ids, ",") != strings.Join(who.want, ",") || total != int64(len(who.want)) {
+					t.Errorf("%s ?%s = %v (total %d), want %v", who.caller.name, c.query, ids, total, who.want)
+				}
+			}
+		})
+	}
+	// Sort order really follows the key: highest CVSS first, unscored last.
+	status, _, body := h.listFindings(t, admin, "sort=-cvss_score&source_not=pentest")
+	var out flResponse
+	if err := json.Unmarshal([]byte(body), &out); status != http.StatusOK || err != nil || len(out.Data) < 2 || out.Data[0].ID != fa || out.Data[1].ID != fb {
+		t.Errorf("sort=-cvss_score order: %d %s", status, body)
+	}
+}

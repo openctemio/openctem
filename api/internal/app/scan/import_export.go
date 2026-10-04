@@ -37,6 +37,7 @@ type ScanConfigExport struct {
 	// Schedule
 	ScheduleType     string  `json:"schedule_type"`
 	ScheduleCron     string  `json:"schedule_cron,omitempty"`
+	ScheduleRRule    string  `json:"schedule_rrule,omitempty"`
 	ScheduleDay      *int    `json:"schedule_day,omitempty"`
 	ScheduleTime     *string `json:"schedule_time,omitempty"`
 	ScheduleTimezone string  `json:"schedule_timezone"`
@@ -95,6 +96,7 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 		TargetsPerJob:       sc.TargetsPerJob,
 		ScheduleType:        string(sc.ScheduleType),
 		ScheduleCron:        sc.ScheduleCron,
+		ScheduleRRule:       sc.ScheduleRRule,
 		ScheduleDay:         sc.ScheduleDay,
 		ScheduleTimezone:    sc.ScheduleTimezone,
 		RunOnTenantRunner:   sc.RunOnTenantRunner,
@@ -224,6 +226,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		TargetsPerJob:       export.TargetsPerJob,
 		ScheduleType:        export.ScheduleType,
 		ScheduleCron:        export.ScheduleCron,
+		ScheduleRRule:       export.ScheduleRRule,
 		ScheduleDay:         export.ScheduleDay,
 		ScheduleTime:        scheduleTime,
 		Timezone:            export.ScheduleTimezone,
