@@ -835,16 +835,16 @@ func (s *Service) lazySyncTemplatesIfNeeded(ctx context.Context, tenantID shared
 		}
 
 		// Record metrics
-		metrics.TemplateSyncsTotal.WithLabelValues(tenantID.String(), string(source.SourceType)).Inc()
+		metrics.TemplateSyncsTotal.WithLabelValues(string(source.SourceType)).Inc()
 		if result.Success {
-			metrics.TemplateSyncsSuccessTotal.WithLabelValues(tenantID.String()).Inc()
+			metrics.TemplateSyncsSuccessTotal.WithLabelValues().Inc()
 			s.logger.Info("template source synced",
 				"source_id", source.ID.String(),
 				"source_name", source.Name,
 				"templates_found", result.TemplatesFound,
 				"templates_added", result.TemplatesAdded)
 		} else {
-			metrics.TemplateSyncsFailedTotal.WithLabelValues(tenantID.String()).Inc()
+			metrics.TemplateSyncsFailedTotal.WithLabelValues().Inc()
 		}
 	}
 

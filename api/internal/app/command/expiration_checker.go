@@ -206,8 +206,8 @@ func (c *ExpirationChecker) handleExpiredCommand(ctx context.Context, cmd *comma
 	cmd.ErrorMessage = reason.errorMessage
 
 	// Record metric
-	app.CommandsExpired.WithLabelValues(cmd.TenantID.String()).Inc()
-	app.CommandsTotal.WithLabelValues(cmd.TenantID.String(), string(cmd.Type), "expired").Inc()
+	app.CommandsExpired.WithLabelValues().Inc()
+	app.CommandsTotal.WithLabelValues(string(cmd.Type), "expired").Inc()
 
 	c.logger.Info("command expired", "command_id", cmd.ID.String(), "reason", reason.code)
 
