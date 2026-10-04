@@ -79,10 +79,10 @@ code keys on the class or on (type, sub_type), never on an alias.
   (`internal/app/scan/type_gate.go`). A run or step with nothing left is
   refused (`NO_COMPATIBLE_TARGETS` / `INCOMPATIBLE_TARGETS`); assets whose
   compatibility cannot be decided are dispatched.
-- One web sub-type (O3, migration 000470): a web application is stored as
+- One web sub-type (O3, migration 000491): a web application is stored as
   `(application, website)` and labelled "Web application";
   `web_application` is an input name only (`type_inputs`).
-- Stored data is normalised (T3, migration 000467): every row holds a core
+- Stored data is normalised (T3, migration 000490): every row holds a core
   type and a declared sub-type, enforced by `chk_assets_core_type`. Each
   move is ledgered and reversible, recorded as a `reclassified` history
   entry, and look-alike applications are queued for dedup review, never

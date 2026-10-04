@@ -1,4 +1,4 @@
--- Reverts 000467 from its ledger. An asset whose type or sub-type changed
+-- Reverts 000490 from its ledger. An asset whose type or sub-type changed
 -- again after the normalisation keeps its current value (it was edited
 -- since); a property the migration set is removed only while it still has
 -- the value the migration gave it; the provider is restored only while it
@@ -16,7 +16,7 @@ ON CONFLICT (code) DO NOTHING;
 DELETE FROM asset_dedup_review
 WHERE reason = 'type_consolidation'
   AND status = 'pending'
-  AND evidence->>'migration' = '467';
+  AND evidence->>'migration' = '490';
 
 ALTER TABLE assets DISABLE TRIGGER trigger_assets_updated_at;
 UPDATE assets a
@@ -27,7 +27,7 @@ UPDATE assets a
            SELECT e.key FROM jsonb_each(l.added) e WHERE a.properties -> e.key = e.value
        )
   FROM asset_type_reclassifications l
- WHERE l.migration = 467
+ WHERE l.migration = 490
    AND a.id = l.asset_id
    AND a.tenant_id = l.tenant_id
    AND a.asset_type = l.new_type
