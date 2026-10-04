@@ -36903,6 +36903,8 @@ export interface components {
       quality_gate_result?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult']
       scan_id?: string
       scan_profile_id?: string
+      /** @description ScheduledFor is the schedule occurrence this run serves (scheduled runs only). */
+      scheduled_for?: string
       skipped_steps?: number
       started_at?: string
       status?: string
