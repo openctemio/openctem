@@ -19,7 +19,9 @@ describe('migrateLegacyParams', () => {
 
   it('rewrites the old page vocabulary to the API names', () => {
     const out = new URLSearchParams(
-      migrate('assetId=a1&sources=sast,dast&priority=p0&kev=true&reachable=false&mine=true&cve=CVE-1&rule=r1')!
+      migrate(
+        'assetId=a1&sources=sast,dast&priority=p0&kev=true&reachable=false&mine=true&cve=CVE-1&rule=r1'
+      )!
     )
     expect(out.get('asset_id')).toBe('a1')
     expect(out.get('source')).toBe('sast,dast')
@@ -29,7 +31,16 @@ describe('migrateLegacyParams', () => {
     expect(out.get('related_to')).toBe('me')
     expect(out.get('cve_id')).toBe('CVE-1')
     expect(out.get('rule_id')).toBe('r1')
-    for (const old of ['assetId', 'sources', 'priority', 'kev', 'reachable', 'mine', 'cve', 'rule']) {
+    for (const old of [
+      'assetId',
+      'sources',
+      'priority',
+      'kev',
+      'reachable',
+      'mine',
+      'cve',
+      'rule',
+    ]) {
       expect(out.has(old)).toBe(false)
     }
   })
@@ -53,13 +64,17 @@ describe('migrateLegacyParams', () => {
   })
 
   it('merges an alias into a param already present', () => {
-    expect(new URLSearchParams(migrate('source=sast&sources=dast,sast')!).get('source')).toBe('sast,dast')
+    expect(new URLSearchParams(migrate('source=sast&sources=dast,sast')!).get('source')).toBe(
+      'sast,dast'
+    )
   })
 })
 
 describe('findingsHref', () => {
   it('builds API-named links', () => {
-    expect(findingsHref({ related_to: 'me', priority_class: ['P0'] })).toBe('/findings?related_to=me&priority_class=P0')
+    expect(findingsHref({ related_to: 'me', priority_class: ['P0'] })).toBe(
+      '/findings?related_to=me&priority_class=P0'
+    )
     expect(findingsHref({ asset_id: 'a', is_in_kev: false, q: '' })).toBe('/findings?asset_id=a')
     expect(findingsHref({})).toBe('/findings')
   })

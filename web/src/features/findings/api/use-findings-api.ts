@@ -484,7 +484,10 @@ export function buildFindingStatsUrl(filters?: FindingStatsFilters): string {
 }
 
 /** `/api/v1/findings/export` for a filter set (RFC-048; needs findings:export). */
-export function buildFindingsExportUrl(filters: FindingApiFilters, format: 'csv' | 'ndjson'): string {
+export function buildFindingsExportUrl(
+  filters: FindingApiFilters,
+  format: 'csv' | 'ndjson'
+): string {
   const { page: _page, per_page: _perPage, sort: _sort, ...rest } = filters
   const params = buildFindingsQuery(rest)
   params.set('format', format)
