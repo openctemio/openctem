@@ -21989,47 +21989,164 @@ paths:
       - Configuration
   /findings:
     get:
-      description: Retrieves a paginated list of findings for the current tenant
+      description: |-
+        Retrieves a paginated list of findings for the current tenant.
+        Filters follow the list query contract (RFC-048): every param is ANDed, a comma list is OR
+        within one field, and operators are suffixes (`_not`, `_gte`, `_gt`, `_lte`, `_lt`, `_contains`).
+        A bad value or an unsortable field is 400 INVALID_FILTER. Old names (severities, statuses,
+        exclude_statuses, sources, priority_classes, finding_ids, cve_ids, finding_types, asset_tags,
+        epss_min, search, assigned_to_me) still work and answer with Deprecation and Sunset headers.
       parameters:
-      - description: Filter by asset ID
+      - collectionFormat: csv
+        description: Finding IDs
         in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: Asset IDs
+        in: query
+        items:
+          type: string
         name: asset_id
-        type: string
-      - description: Filter by branch ID
+        type: array
+      - collectionFormat: csv
+        description: Branch IDs the finding occurs on
         in: query
+        items:
+          type: string
         name: branch_id
-        type: string
-      - description: Filter by component ID
+        type: array
+      - collectionFormat: csv
+        description: Component IDs
         in: query
+        items:
+          type: string
         name: component_id
-        type: string
-      - description: Filter by vulnerability ID
+        type: array
+      - collectionFormat: csv
+        description: Vulnerability IDs
         in: query
+        items:
+          type: string
         name: vulnerability_id
-        type: string
-      - description: Filter by severities (comma-separated)
+        type: array
+      - collectionFormat: csv
+        description: Severities
         in: query
-        name: severities
-        type: string
-      - description: Filter by statuses (comma-separated)
+        items:
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: Statuses
         in: query
-        name: statuses
-        type: string
-      - description: Exclude statuses (comma-separated)
+        items:
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: Statuses to exclude
         in: query
-        name: exclude_statuses
-        type: string
-      - description: Filter by sources
+        items:
+          type: string
+        name: status_not
+        type: array
+      - collectionFormat: csv
+        description: Sources
         in: query
-        name: sources
-        type: string
-      - description: 'Filter by SLA status (comma-separated: on_track,warning,overdue,exceeded,not_applicable)'
+        items:
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: SLA statuses
         in: query
+        items:
+          type: string
         name: sla_status
-        type: string
-      - description: Filter by tool name
+        type: array
+      - collectionFormat: csv
+        description: CTEM priority classes (P0..P3)
         in: query
+        items:
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: CVE IDs
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: Finding types
+        in: query
+        items:
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: Tags of the finding's asset (any of)
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - description: In CISA KEV
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: Reachable
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: Minimum EPSS score
+        in: query
+        name: epss_score_gte
+        type: number
+      - collectionFormat: csv
+        description: Tool names
+        in: query
+        items:
+          type: string
         name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: Rule IDs
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: Scan IDs
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - description: File path contains
+        in: query
+        name: file_path
+        type: string
+      - description: 'me: assigned to, owned by or group-assigned to the caller'
+        in: query
+        name: related_to
+        type: string
+      - description: Created at or after (RFC 3339, YYYY-MM-DD or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: Free text over title, description and file path
+        in: query
+        name: q
+        type: string
+      - description: Sort keys, - for descending (default priority_class,severity,-created_at)
+        in: query
+        name: sort
         type: string
       - default: 1
         description: Page number
@@ -22052,9 +22169,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
         "401":
           description: Unauthorized
           schema:
