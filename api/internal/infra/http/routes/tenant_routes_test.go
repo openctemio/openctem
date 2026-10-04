@@ -145,3 +145,55 @@ func TestTenantRoutes_SSOChangeDecisionsAreOwnerOnly(t *testing.T) {
 		}
 	}
 }
+
+// Resetting a member's 2FA is an owner/administrator action: a member or
+// viewer is refused by the route before the handler runs.
+func TestTenantRoutes_ResetMemberMFAIsAdminOnly(t *testing.T) {
+	tn, err := tenant.NewTenant("Acme", "acme", shared.NewID().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		role       tenant.Role
+		wantHandle bool
+	}{
+		{tenant.RoleOwner, true},
+		{tenant.RoleAdmin, true},
+		{tenant.RoleMember, false},
+		{tenant.RoleViewer, false},
+	} {
+		u, err := userdom.NewProvisionedLocalUser("u@acme.test", "U")
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := tenant.NewMembership(u.ID(), tn.ID(), tc.role, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		auth := func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), middleware.LocalUserKey, u)))
+			})
+		}
+		router := infrahttp.NewChiRouter()
+		registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, &handler.LocalAuthHandler{}, nil)
+		mux := router.(interface{ Handler() http.Handler }).Handler()
+
+		code := func() (code int) {
+			defer func() {
+				if recover() != nil {
+					code = reachedHandler // the zero handler panics on its nil service
+				}
+			}()
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/tenants/acme/members/"+shared.NewID().String()+"/reset-2fa", nil))
+			return rec.Code
+		}()
+		if tc.wantHandle && code != reachedHandler {
+			t.Errorf("as %s: got %d, want the handler", tc.role, code)
+		}
+		if !tc.wantHandle && code != http.StatusForbidden {
+			t.Errorf("as %s: got %d, want 403", tc.role, code)
+		}
+	}
+}
