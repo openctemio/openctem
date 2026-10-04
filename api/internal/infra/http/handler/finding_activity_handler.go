@@ -99,7 +99,7 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 		"user_id", userID,
 		"finding_id", findingID,
 		"tenant_id", tenantID,
-		"client_ip", r.RemoteAddr,
+		"client_ip", getClientIP(r),
 	)
 
 	// Parse pagination

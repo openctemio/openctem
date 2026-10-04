@@ -48,9 +48,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
+import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
 import {
   createAsset,
-  deleteAsset as apiDeleteAsset,
   updateAsset,
   useAssets,
   type Asset,
@@ -324,14 +325,9 @@ export default function ExternalSurfacePage() {
 
   const handleDelete = async () => {
     if (!deleteAsset) return
-    try {
-      await apiDeleteAsset(deleteAsset.id)
-      toast.success('External asset deleted')
-      setDeleteAsset(null)
-      await refetchAssets()
-    } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to delete external asset'))
-    }
+    // Refused when the asset has findings: the toast offers Archive.
+    const result = await deleteAssetSafely(deleteAsset.id, deleteAsset.name, refetchAssets)
+    if (result !== 'failed') setDeleteAsset(null)
   }
 
   const openEdit = useCallback((a: Asset) => {
@@ -741,24 +737,13 @@ export default function ExternalSurfacePage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!deleteAsset} onOpenChange={(open) => !open && setDeleteAsset(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete asset</DialogTitle>
-            <DialogDescription>
-              Delete &quot;{deleteAsset?.name}&quot;? This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteAsset(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDelete}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AssetDeleteDialogShared
+        open={!!deleteAsset}
+        onOpenChange={(open) => !open && setDeleteAsset(null)}
+        assetName={deleteAsset?.name}
+        typeName="External asset"
+        onConfirm={handleDelete}
+      />
 
       <ScanAssetsDialog
         open={scanDialogOpen}

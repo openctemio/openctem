@@ -9,7 +9,8 @@
 // This package centralises the logic and only honors the proxy headers when
 // the immediate TCP peer (r.RemoteAddr) sits inside a configured trusted
 // CIDR. For requests originating outside that CIDR the headers are ignored
-// and r.RemoteAddr wins.
+// and r.RemoteAddr wins. Code outside this package must not read the
+// forwarding headers itself; scripts/security-lint.sh Rule 7 enforces that.
 package httpsec
 
 import (
@@ -73,34 +74,75 @@ func (s *TrustedProxySet) IsEmpty() bool {
 	return s == nil || len(s.cidrs) == 0
 }
 
-// ClientIP returns the apparent client IP. If the immediate TCP peer
-// (r.RemoteAddr) is inside the trusted-proxy set, it honors X-Real-IP and
-// the leftmost X-Forwarded-For entry. Otherwise it returns the TCP peer.
+// ClientIP returns the apparent client IP. It is the ONLY place in the API
+// that may read X-Real-IP / X-Forwarded-For (scripts/security-lint.sh Rule 7).
 //
-// Returns an empty string only if r.RemoteAddr is malformed.
+// The immediate TCP peer (r.RemoteAddr) is authoritative. Forwarding headers
+// are consulted only when that peer is inside the trusted-proxy set:
+//
+//  1. X-Forwarded-For, walked from the RIGHT: each proxy appends the address
+//     it received the request from (or, like Caddy, replaces the header when
+//     its own peer is untrusted), so entries are skipped while they are
+//     themselves trusted proxies and the first untrusted entry is the client.
+//     Everything to its left was supplied by that client and is never
+//     believed. (Taking the left-most entry, as this function used to, let a
+//     client behind an appending proxy such as nginx's
+//     $proxy_add_x_forwarded_for choose its own address.) A malformed entry
+//     ends the walk: nothing left of it can be attributed to a trusted hop.
+//  2. Only when X-Forwarded-For is absent: X-Real-IP, when it is a well-formed
+//     IP. It comes second because a proxy that does not know the header
+//     passes the client's value through untouched (Caddy's reverse_proxy does,
+//     unless told to overwrite it), whereas every standard proxy maintains
+//     X-Forwarded-For.
+//  3. Otherwise the TCP peer.
+//
+// With no trusted proxies configured the headers are never read.
+//
+// The result is always a bare IP (no port) except in the last-ditch case of
+// an unparseable RemoteAddr, where the trimmed RemoteAddr is returned.
 func ClientIP(r *http.Request, trusted *TrustedProxySet) string {
 	peer := remoteAddrIP(r)
-	if trusted != nil && !trusted.IsEmpty() && peer != nil && trusted.Contains(peer) {
-		// Trusted proxy in front; honor forwarding headers.
-		if xrip := strings.TrimSpace(r.Header.Get("X-Real-IP")); xrip != "" {
-			return xrip
-		}
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			// First entry = original client; subsequent entries = chain of
-			// proxies. We take the leftmost client-asserted value because the
-			// trusted proxy is what populated the header in the first place.
-			if idx := strings.Index(xff, ","); idx != -1 {
-				return strings.TrimSpace(xff[:idx])
-			}
-			return strings.TrimSpace(xff)
-		}
+	if peer == nil {
+		// net/http always sets host:port; stay defensive.
+		return strings.TrimSpace(r.RemoteAddr)
 	}
-	if peer != nil {
+	if trusted.IsEmpty() || !trusted.Contains(peer) {
 		return peer.String()
 	}
-	// Last-ditch fallback when RemoteAddr can't be parsed (shouldn't happen
-	// with net/http, but stay defensive).
-	return strings.TrimSpace(r.RemoteAddr)
+	if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
+		if ip := forwardedForClient(xff, trusted); ip != nil {
+			return ip.String()
+		}
+		return peer.String()
+	}
+	if ip := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); ip != nil {
+		return ip.String()
+	}
+	return peer.String()
+}
+
+// forwardedForClient returns the right-most X-Forwarded-For entry that is not
+// a trusted proxy. Multiple header lines are one list, in order (RFC 7230
+// section 3.2.2). When every entry is a trusted proxy the left-most one is
+// returned, being the hop furthest from the API that a trusted proxy vouched
+// for. Nil when the header is absent or its right-most entry is malformed.
+func forwardedForClient(values []string, trusted *TrustedProxySet) net.IP {
+	var entries []string
+	for _, v := range values {
+		entries = append(entries, strings.Split(v, ",")...)
+	}
+	var last net.IP
+	for i := len(entries) - 1; i >= 0; i-- {
+		ip := net.ParseIP(strings.TrimSpace(entries[i]))
+		if ip == nil {
+			return last
+		}
+		if !trusted.Contains(ip) {
+			return ip
+		}
+		last = ip
+	}
+	return last
 }
 
 func remoteAddrIP(r *http.Request) net.IP {
