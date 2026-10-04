@@ -1507,6 +1507,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// built before ingest.
 	if s.CertMonitor != nil {
 		s.CertMonitor.SetPromotion(s.Ingest, repos.Asset, repos.Attribution)
+		s.CertMonitor.SetTombstones(repos.Attribution)
 	}
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
