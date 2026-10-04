@@ -4,7 +4,6 @@ import {
   Shield,
   ShieldCheck,
   TicketCheck,
-  Workflow,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -64,13 +63,5 @@ export const INTEGRATION_CATEGORIES: IntegrationCategoryCard[] = [
     description: 'Forward security events to Splunk',
     icon: Shield,
     href: '/settings/integrations/siem',
-  },
-  {
-    id: 'cicd',
-    title: 'CI/CD',
-    description: 'Integrate with Jenkins, GitHub Actions, GitLab CI',
-    icon: Workflow,
-    href: '/settings/integrations/cicd',
-    badge: 'Soon',
   },
 ]

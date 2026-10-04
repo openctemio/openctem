@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"time"
+
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -179,27 +181,60 @@ func registerTenantRoutes(
 		r.DELETE("/", h.Delete, middleware.RequireTeamOwner())
 	}, tenantMiddlewares...)
 
-	// Invitation routes - mixed public and authenticated. The token in the
-	// path is the credential, so every route is rate limited per IP, in the
-	// shared auth store (its own "invitation" budget, 20/min: the UI makes a
-	// preview + accept per invitation, and users behind one NAT share an IP).
+	// Invitation routes - mixed public and authenticated. The token is the
+	// credential, so every route is rate limited per IP, in the shared auth
+	// store (its own "invitation" budget, 20/min: the UI makes a lookup +
+	// accept per invitation, and users behind one NAT share an IP).
+	//
+	// The token travels in the request body (RFC-041). The /{token}/...
+	// routes are deprecated aliases with the same handlers and chains;
+	// Deprecated() runs first so that even their errors say so.
 	invitationRL := newAuthRateLimiter("invitation").TokenExchangeMiddleware()
+	authed := func(mw ...Middleware) []Middleware {
+		return append(append(append([]Middleware{}, mw...), baseMiddlewares...), invitationRL)
+	}
 	router.Group("/api/v1/invitations", func(r Router) {
-		// Public: preview invitation without auth (for better UX)
-		r.GET("/{token}/preview", h.GetInvitationPreview, invitationRL)
-
-		// Public: decline invitation (token is authorization)
-		r.POST("/{token}/decline", h.DeclineInvitation, invitationRL)
-
-		// Public: accept invitation with refresh token (for users without tenant)
-		// This is for users who were invited but don't have a tenant yet (only refresh token)
+		// Public: what the token grants, before sign-in.
+		r.POST("/lookup", h.LookupInvitation, invitationRL)
+		// Public: decline (holding the token is the authorization).
+		r.POST("/decline", h.DeclineInvitationToken, invitationRL)
+		// Public: accept with a refresh token, for an invited user who has
+		// no organization yet (so only a refresh token).
 		if localAuth != nil {
-			r.POST("/{token}/accept-with-refresh", localAuth.AcceptInvitationWithRefresh, invitationRL)
+			r.POST("/accept-with-refresh", localAuth.AcceptInvitationWithRefreshBody, invitationRL)
 		}
+		// Authenticated: accept as the signed-in, invited email.
+		r.POST("/accept", ChainFunc(h.AcceptInvitationToken, authed()...).ServeHTTP)
 
-		// Authenticated: full invitation details and accept
-		r.GET("/{token}", ChainFunc(h.GetInvitation, append(append([]Middleware{}, baseMiddlewares...), invitationRL)...).ServeHTTP)
-		r.POST("/{token}/accept", ChainFunc(h.AcceptInvitation, append(append([]Middleware{}, baseMiddlewares...), invitationRL)...).ServeHTTP)
+		// Deprecated aliases: the token in the path.
+		r.GET("/{token}/preview", h.GetInvitationPreview, invitationDeprecated("preview", "/api/v1/invitations/lookup"), invitationRL)
+		r.POST("/{token}/decline", h.DeclineInvitation, invitationDeprecated("decline", "/api/v1/invitations/decline"), invitationRL)
+		if localAuth != nil {
+			r.POST("/{token}/accept-with-refresh", localAuth.AcceptInvitationWithRefresh,
+				invitationDeprecated("accept_with_refresh", "/api/v1/invitations/accept-with-refresh"), invitationRL)
+		}
+		r.GET("/{token}", ChainFunc(h.GetInvitation, authed(invitationDeprecated("get", "/api/v1/invitations/lookup"))...).ServeHTTP)
+		r.POST("/{token}/accept", ChainFunc(h.AcceptInvitation, authed(invitationDeprecated("accept", "/api/v1/invitations/accept"))...).ServeHTTP)
+	})
+}
+
+// The /api/v1/invitations/{token}/... aliases are deprecated now and removed
+// on the RFC-041 D10 date for web-only aliases (emailed links point at the
+// web app, never at these).
+var (
+	invitationPathDeprecatedAt = time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+	invitationPathSunsetAt     = time.Date(2027, 1, 15, 0, 0, 0, 0, time.UTC)
+)
+
+// invitationDeprecated marks one /api/v1/invitations/{token}/... alias. The
+// metric label is a fixed name, never the request path (which holds the token).
+func invitationDeprecated(name, successor string) Middleware {
+	return middleware.Deprecated(middleware.Deprecation{
+		Plane:        "auth",
+		Route:        "invitations_token_path_" + name,
+		Successor:    successor,
+		DeprecatedAt: invitationPathDeprecatedAt,
+		SunsetAt:     invitationPathSunsetAt,
 	})
 }
 

@@ -402,10 +402,10 @@ func (r *ThreatModelRepository) ListTechniqueMitigations(ctx context.Context, da
 
 // ListApplicability returns the global technique-applicability catalog.
 func (r *ThreatModelRepository) ListApplicability(ctx context.Context, datasetVersion string) ([]threatmodel.TechniqueApplicability, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT technique_id, asset_type, edge_type,
+	rows, err := r.db.QueryContext(ctx, `SELECT technique_id, asset_type, sub_type, edge_type,
 		min_network, min_credential, requires_persistence, dataset_version
 		FROM technique_applicability WHERE dataset_version = $1
-		ORDER BY technique_id, asset_type`, datasetVersion)
+		ORDER BY technique_id, asset_type, sub_type`, datasetVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list technique applicability: %w", err)
 	}
@@ -415,7 +415,7 @@ func (r *ThreatModelRepository) ListApplicability(ctx context.Context, datasetVe
 	for rows.Next() {
 		var a threatmodel.TechniqueApplicability
 		var edge, minNet, minCred sql.NullString
-		if err := rows.Scan(&a.TechniqueID, &a.AssetType, &edge,
+		if err := rows.Scan(&a.TechniqueID, &a.AssetType, &a.SubType, &edge,
 			&minNet, &minCred, &a.RequiresPersistence, &a.DatasetVersion); err != nil {
 			return nil, fmt.Errorf("failed to scan technique applicability: %w", err)
 		}

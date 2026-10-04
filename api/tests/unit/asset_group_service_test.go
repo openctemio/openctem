@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	assettyperef "github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -270,7 +272,7 @@ func (m *mockAssetGroupServiceRepo) GetDistinctAssetTypesMultiple(_ context.Cont
 	return nil, nil
 }
 
-func (m *mockAssetGroupServiceRepo) CountAssetsByType(_ context.Context, _ shared.ID) (map[string]int64, error) {
+func (m *mockAssetGroupServiceRepo) CountAssetsByType(_ context.Context, _ shared.ID) (map[assettyperef.TypeRef]int64, error) {
 	return nil, nil
 }
 

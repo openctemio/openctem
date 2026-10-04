@@ -256,29 +256,21 @@ func isHostContainer(t assetdom.AssetType) bool {
 }
 
 // isServiceLike reports whether the asset is a network service worth an
-// Exposes edge. Naabu/HTTPX assets normalize to the `service` core type;
-// crawled URLs (sub_type discovered_url) are excluded — they are page
-// endpoints, not listening services, and linking every crawled URL to a host
-// would flood the graph with low-value edges.
+// Exposes edge. Naabu/HTTPX assets are the `service` core type; crawled URLs
+// (sub_type discovered_url) are excluded — they are page endpoints, not
+// listening services, and linking every crawled URL to a host would flood the
+// graph with low-value edges. A row still stored under an alias name reads as
+// the pair it stands for (RFC-042 §6.3.8).
 func isServiceLike(t assetdom.AssetType, subType string) bool {
-	if subType == "discovered_url" {
-		return false
-	}
-	return t == assetdom.AssetTypeService || t == assetdom.AssetTypeHTTPService || t == assetdom.AssetTypeOpenPort
+	p := assetdom.CanonicalPair(t, subType)
+	return p.Type == assetdom.AssetTypeService && p.SubType != "discovered_url"
 }
 
 // isApplicationLike reports whether the asset is an application worth a RunsOn
-// edge. Handles both the consolidated `application` core type and the legacy
-// website/web_application/api/mobile_app types (in case a tenant predates
-// consolidation).
+// edge: the `application` core type, or a row still stored under one of its
+// alias names (website, api ...).
 func isApplicationLike(t assetdom.AssetType) bool {
-	switch t {
-	case assetdom.AssetTypeApplication, assetdom.AssetTypeWebsite,
-		assetdom.AssetTypeWebApplication, assetdom.AssetTypeAPI, assetdom.AssetTypeMobileApp:
-		return true
-	default:
-		return false
-	}
+	return assetdom.CanonicalPair(t, "").Type == assetdom.AssetTypeApplication
 }
 
 // normalizeHostKey lower-cases and trims a host key for stable map lookups.

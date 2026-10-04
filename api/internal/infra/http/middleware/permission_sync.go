@@ -201,7 +201,7 @@ func (m *PermissionSyncMiddleware) EnrichPermissions(next http.Handler) http.Han
 			if !isSafeMethod(r.Method) {
 				m.logger.Info("rejecting unsafe request with stale permissions",
 					"user_id", userID, "tenant_id", tenantID,
-					"method", r.Method, "path", r.URL.Path,
+					"method", r.Method, "path", logSafe(RedactPath(r.URL.Path)),
 					"jwt_version", jwtPermVersion, "current_version", currentVersion)
 				writeStale(w)
 				return

@@ -314,6 +314,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// unsolicited gate unless the accept side ran it already: quarantined
 	// (stored, not applied) or applied with the unsolicited limits.
 	opts := input.Options
+	if opts.Actor != nil {
+		// An upload's findings land only on the assets its rows name, never
+		// on an asset made up from the metadata or on "the only asset".
+		opts.RequireAssetForFindings = true
+	}
 	binding := opts.Binding
 	if agt.ID.IsZero() {
 		binding = TrustedBinding()
@@ -337,7 +342,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// behavior until the tenant switches.
 	unsolicitedMayResolve := binding.Kind != BindingUnsolicited ||
 		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
-	scope := newAlterScope(binding)
+	scope := newAlterScope(binding).withActor(ctx, opts.Actor)
 
 	// report.Metadata.ID and SourceType come from the CTIS payload
 	// submitted by the sensor. A compromised/malicious sensor can
@@ -383,6 +388,18 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		// the findings on new ones. It was logged only, and the sensor got a
 		// clean response.
 		addError(output, fmt.Sprintf("assets: %v", err))
+	}
+
+	// A restricted upload creates no asset, so every asset it maps must be
+	// one its actor may change; drop any other (an id a concurrent create
+	// race remapped to an existing row) with its findings.
+	if scope.actorRestricted() {
+		for ref, id := range assetMap {
+			if scope.actorDenies(id) {
+				delete(assetMap, ref)
+				skipOutOfScope(output, ref)
+			}
+		}
 	}
 
 	output.AssetMap = assetMap
@@ -456,6 +473,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	switch {
 	case opts.DeferAutoResolve:
 		s.logger.Debug("auto-resolve deferred to the report commit")
+	case autoResolveEligible && scope.actorRestricted():
+		// A person whose data scope is limited never closes findings by
+		// upload: what their report does not mention is not proof of a fix.
+		s.logger.Info("auto-resolve skipped: uploaded by a person with a limited data scope",
+			"tool_name", sanitizeIngestLogField(report.Tool.Name))
 	case autoResolveEligible && !unsolicitedMayResolve:
 		s.logger.Info("auto-resolve skipped: the report names no command (tenant mode quarantine)",
 			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(report.Tool.Name))
@@ -516,7 +538,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// the scan no longer reports as auto_fixed — so per-branch state reflects what
 	// is actually present on that branch. Additive: it only touches occurrence
 	// rows, never the finding's headline status. Best-effort.
-	if !opts.DeferAutoResolve && unsolicitedMayResolve && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
+	if !opts.DeferAutoResolve && unsolicitedMayResolve && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
 		report.Tool != nil && report.Metadata.ID != "" &&
 		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
 		toolName := report.Tool.Name

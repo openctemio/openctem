@@ -4626,6 +4626,32 @@ definitions:
     required:
     - role_arn
     type: object
+  internal_infra_http_handler.AcceptInvitationWithRefreshRequest:
+    properties:
+      refresh_token:
+        type: string
+      token:
+        type: string
+    type: object
+  internal_infra_http_handler.AcceptInvitationWithRefreshResponse:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+      refresh_token:
+        type: string
+      role:
+        type: string
+      tenant_id:
+        type: string
+      tenant_name:
+        type: string
+      tenant_slug:
+        type: string
+      token_type:
+        type: string
+    type: object
   internal_infra_http_handler.AcceptQuarantinedResultResponse:
     properties:
       assets_created:
@@ -4685,6 +4711,13 @@ definitions:
         type: boolean
     required:
     - content
+    type: object
+  internal_infra_http_handler.AddFindingDuplicateRequest:
+    properties:
+      finding_id:
+        type: string
+    required:
+    - finding_id
     type: object
   internal_infra_http_handler.AddGroupMemberRequest:
     properties:
@@ -9821,6 +9854,43 @@ definitions:
       total:
         type: integer
     type: object
+  internal_infra_http_handler.InvitationLookupInvitation:
+    properties:
+      email:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      inviter_name:
+        type: string
+      pending:
+        type: boolean
+      role:
+        type: string
+    type: object
+  internal_infra_http_handler.InvitationLookupResponse:
+    properties:
+      invitation:
+        $ref: '#/definitions/internal_infra_http_handler.InvitationLookupInvitation'
+      tenant:
+        $ref: '#/definitions/internal_infra_http_handler.InvitationLookupTenant'
+    type: object
+  internal_infra_http_handler.InvitationLookupTenant:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      slug:
+        type: string
+    type: object
+  internal_infra_http_handler.InvitationTokenRequest:
+    properties:
+      token:
+        example: Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8
+        type: string
+    type: object
   internal_infra_http_handler.LicensingModuleResponse:
     properties:
       category:
@@ -10343,6 +10413,19 @@ definitions:
       otpauth_uri:
         type: string
       secret:
+        type: string
+    type: object
+  internal_infra_http_handler.MemberResponse:
+    properties:
+      id:
+        type: string
+      invited_by:
+        type: string
+      joined_at:
+        type: string
+      role:
+        type: string
+      user_id:
         type: string
     type: object
   internal_infra_http_handler.NotificationEventCategoryResponse:
@@ -17395,7 +17478,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a new asset for the current tenant
+      description: Creates a new asset for the current tenant. A name (or a correlated
+        address) that matches an existing asset is a 409 and nothing is changed; details.existing_asset_id
+        names the existing asset only when it is in the caller's data scope.
       parameters:
       - description: Asset data
         in: body
@@ -22283,6 +22368,58 @@ paths:
       summary: Get finding data flows
       tags:
       - Findings
+  /findings/{id}/duplicates:
+    post:
+      consumes:
+      - application/json
+      description: Folds the finding named in the body into the finding in the path,
+        the original (RFC-043 §9). Both must be in the caller's organization and data
+        scope and on the same asset, and neither may already be a duplicate. The canonical
+        finding keeps the stronger status and inherits the duplicate's comments, activities,
+        retests, evidence, tickets and fingerprints; the duplicate stays as a tombstone
+        (status duplicate, duplicate_of). Merging with a false positive or risk acceptance
+        also requires findings:approve. Pentest findings are managed in the pentest
+        module. Returns the canonical finding.
+      parameters:
+      - description: ID of the original finding
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: The finding that duplicates it
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AddFindingDuplicateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Mark a finding as a duplicate of this one
+      tags:
+      - Findings
   /findings/{id}/retests:
     get:
       description: The finding's retest history, newest first (RFC-039).
@@ -24222,6 +24359,155 @@ paths:
       summary: Test integration credentials without creating
       tags:
       - Integrations
+  /invitations/accept:
+    post:
+      consumes:
+      - application/json
+      description: Joins the organization of the invitation. The caller must be signed
+        in as the invited email. The token travels in the body, never in the URL.
+      parameters:
+      - description: Invitation token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.InvitationTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.MemberResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Accept an invitation
+      tags:
+      - Invitations
+  /invitations/accept-with-refresh:
+    post:
+      consumes:
+      - application/json
+      description: 'For an invited user without an organization yet: accepts the invitation
+        and issues an access token for the new organization. The refresh token comes
+        from the body or the httpOnly cookie (cookie requires the CSRF pair). The
+        invitation token travels in the body, never in the URL.'
+      parameters:
+      - description: Invitation token and optional refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AcceptInvitationWithRefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AcceptInvitationWithRefreshResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Accept an invitation with a refresh token
+      tags:
+      - Invitations
+  /invitations/decline:
+    post:
+      consumes:
+      - application/json
+      description: Deletes the invitation. Holding the token is the authorization,
+        so no sign-in is needed. The token travels in the body, never in the URL.
+      parameters:
+      - description: Invitation token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.InvitationTokenRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Decline an invitation
+      tags:
+      - Invitations
+  /invitations/lookup:
+    post:
+      consumes:
+      - application/json
+      description: 'What an invitation token grants, readable before sign-in: the
+        organization, the invited email and role, and whether it is still pending.
+        The token travels in the body, never in the URL.'
+      parameters:
+      - description: Invitation token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.InvitationTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.InvitationLookupResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Look up an invitation
+      tags:
+      - Invitations
   /me/assets:
     get:
       description: List all assets the current user can access through their group
@@ -27555,6 +27841,11 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
           description: Not Found
           schema:
@@ -27627,6 +27918,11 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
@@ -27747,6 +28043,11 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":

@@ -133,7 +133,7 @@ ACCESS_TOKEN=
 JAR="$WORK/member-cookies"
 call POST /api/v1/auth/register "{\"email\":\"$MEMBER_EMAIL\",\"password\":\"$MEMBER_PASSWORD\",\"name\":\"E2E Member\"}"
 call POST /api/v1/auth/login "{\"email\":\"$MEMBER_EMAIL\",\"password\":\"$MEMBER_PASSWORD\"}"
-call POST "/api/v1/invitations/$INVITE_TOKEN/accept-with-refresh" "{\"refresh_token\":\"$(jq -r '.refresh_token // empty' <<<"$BODY")\"}"
+call POST /api/v1/invitations/accept-with-refresh "{\"token\":\"$INVITE_TOKEN\",\"refresh_token\":\"$(jq -r '.refresh_token // empty' <<<"$BODY")\"}"
 call POST /api/v1/auth/logout '{}'
 
 log "done"

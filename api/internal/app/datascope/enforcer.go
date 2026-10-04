@@ -55,6 +55,9 @@ type Repository interface {
 	// FindingIDsInScope returns the subset of findingIDs (in the tenant) whose
 	// asset the user has a scope row for.
 	FindingIDsInScope(ctx context.Context, tenantID, userID shared.ID, findingIDs []shared.ID) ([]shared.ID, error)
+	// AssetIDsInTenant returns the subset of assetIDs that are live (not
+	// soft-deleted) assets of the tenant.
+	AssetIDsInTenant(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) ([]shared.ID, error)
 }
 
 // Policy reports whether a tenant runs data scope fail-closed.
@@ -170,6 +173,28 @@ func (e *Enforcer) AssertAsset(ctx context.Context, tenantID, assetID shared.ID)
 	return e.assertIn(ctx, scope, assetID)
 }
 
+// AssertAssetRef is the check for an asset id a caller supplies to be
+// written onto a row (a finding, a component link, ...). It returns
+// shared.ErrNotFound unless the asset is a live asset of the tenant AND the
+// request's caller may see it. Unlike AssertAsset it checks the tenant for
+// unrestricted callers too, because a foreign or unknown id must never be
+// stored, whoever sends it; both cases get the same error, so the answer is
+// no existence oracle. Any error while checking also denies (fail closed).
+func (e *Enforcer) AssertAssetRef(ctx context.Context, tenantID, assetID shared.ID) error {
+	if e == nil || e.repo == nil || assetID.IsZero() {
+		return shared.ErrNotFound
+	}
+	ids, err := e.repo.AssetIDsInTenant(ctx, tenantID, []shared.ID{assetID})
+	if err != nil {
+		e.logger.Warn("asset tenant check failed", "error", err)
+		return shared.ErrNotFound
+	}
+	if len(ids) != 1 {
+		return shared.ErrNotFound
+	}
+	return e.AssertAsset(ctx, tenantID, assetID)
+}
+
 // AssertFinding is AssertAsset for the asset a finding belongs to. A finding
 // that does not exist in the tenant is also ErrNotFound.
 func (e *Enforcer) AssertFinding(ctx context.Context, tenantID, findingID shared.ID) error {
@@ -258,6 +283,35 @@ func (e *Enforcer) FilterFindings(ctx context.Context, scope *shared.DataScope, 
 		return nil, fmt.Errorf("filter findings by data scope: %w", err)
 	}
 	return setOf(in), nil
+}
+
+// CanActOnAssets is the one check of "may this actor act on (scan, probe)
+// these assets". The actor is the request's caller; without a user in the
+// context (a scheduled run) it is fallbackUser, resolved like ForUser; with
+// neither it is the system, which is unrestricted. unrestricted reports that
+// the actor may act on every asset of the tenant (today an administrator, or
+// a member of a fail-open organization with no scope row). Any lookup error
+// is returned, and the caller must refuse (fail closed).
+func (e *Enforcer) CanActOnAssets(ctx context.Context, tenantID shared.ID, fallbackUser *shared.ID, assetIDs []shared.ID) (canAct func(shared.ID) bool, unrestricted bool, err error) {
+	var scope *shared.DataScope
+	c := e.CallerOf(ctx)
+	switch {
+	case c.UserID != "" || c.IsAdmin:
+		scope, err = e.ResolveFor(ctx, tenantID, c)
+	case fallbackUser != nil && !fallbackUser.IsZero():
+		scope, err = e.ForUser(ctx, tenantID, *fallbackUser)
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("resolve act scope: %w", err)
+	}
+	if scope == nil {
+		return func(shared.ID) bool { return true }, true, nil
+	}
+	pred, err := e.Filter(ctx, scope, assetIDs)
+	if err != nil {
+		return nil, false, err
+	}
+	return pred, false, nil
 }
 
 // FilterForCaller is Filter for the request's caller.

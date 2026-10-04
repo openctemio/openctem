@@ -131,7 +131,7 @@ Details: [api-keys.md](./api-keys.md).
 |----------|---------------------|
 | `GET /api/v1/assets` | `assets:read` |
 | `GET /api/v1/assets/{id}` | `assets:read` |
-| `POST /api/v1/assets` | `assets:write` |
+| `POST /api/v1/assets` | `assets:write`. A name (or correlated address) that already exists in the organization is a 409 and changes nothing; `details.existing_asset_id` is set only when that asset is in the caller's data scope, otherwise the conflict is generic. Another organization's assets never match. Ingest keeps its own merge path. |
 | `PUT /api/v1/assets/{id}` | `assets:write` |
 | `DELETE /api/v1/assets/{id}` | `assets:delete` + data scope. Refused with 409 (`asset_has_findings`) while the asset has any finding (archive it instead); otherwise a soft delete, audited `asset.deleted` (see [asset-deletion.md](asset-deletion.md)) |
 
@@ -167,6 +167,7 @@ Details: [api-keys.md](./api-keys.md).
 | `DELETE /api/v1/findings/{id}` | `findings:delete` |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status` |
 | `POST /api/v1/findings/{id}/triage` | `findings:triage` |
+| `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; also `findings:approve` when either finding is a false positive or risk acceptance (service check). Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
@@ -209,6 +210,7 @@ two-person control:
 | `POST /api/v1/scope/exclusions` · `PUT /{id}` · `POST /{id}/activate` · `/{id}/deactivate` | `attack_surface:scope:write` |
 | `POST /api/v1/scope/exclusions/{id}/approve` · `/{id}/reject` | `attack_surface:scope:exclusions:approve` (owner, admin) |
 | `DELETE /api/v1/scope/exclusions/{id}` · `POST /bulk/delete` | `attack_surface:scope:delete` |
+| Taking an exclusion **in effect** out of effect: `/{id}/deactivate`, `DELETE`, bulk delete, or a `PUT` that moves `expires_at` earlier (a past date included) | in addition `attack_surface:scope:exclusions:approve`, and the caller must not be the requester (403 otherwise; research doc 15, L-07) |
 
 - A new exclusion is created `pending` and is applied nowhere — not to scan
   target selection, not to `POST /scope/check`, not to coverage — until it is
@@ -228,6 +230,16 @@ two-person control:
   be used to skip the approval.
 - Extending the window of an approved exclusion (a later `expires_at`, or
   removing it) sends it back to `pending`; shortening it keeps the approval.
+- Removing protection is the same two-person control as granting it
+  (`Exclusion.AuthorizeReduction`): deactivating, deleting or shortening an
+  exclusion in effect needs the approve permission and someone other than the
+  requester. Before, `scope:write` (a member default) could switch off the
+  exclusion protecting a production host and then scan it. Changes to an
+  exclusion not in effect (pending, inactive, rejected, expired) and edits of
+  the reason keep their ordinary permission. The web console disables the
+  switch for callers without the approve permission.
+- Known gap: rows from before `created_by` was recorded have no requester, so
+  the not-the-requester check cannot apply to them.
 - Every change to a scope target or exclusion (create, update, delete, bulk
   delete, activate, deactivate, approve, reject) is one audit entry
   (`scope_target.*`, `scope_exclusion.*`) with the caller and the state before
@@ -484,8 +496,12 @@ These routes require the tenant ID in the URL path and use database-based member
 
 | Endpoint | Required Role |
 |----------|---------------|
-| `GET /api/v1/invitations/{token}` | Any authenticated |
-| `POST /api/v1/invitations/{token}/accept` | Any authenticated (email must match) |
+| `POST /api/v1/invitations/lookup` | Public (token in the body, rate limited) |
+| `POST /api/v1/invitations/decline` | Public (token in the body, rate limited) |
+| `POST /api/v1/invitations/accept` | Any authenticated (email must match) |
+| `POST /api/v1/invitations/accept-with-refresh` | Refresh token (email must match) |
+
+The `/api/v1/invitations/{token}/...` paths are deprecated aliases of these (RFC-041) with the same chains.
 
 ### User Routes (`/api/v1/users`)
 
@@ -780,6 +796,11 @@ owner-managed) are enforced, not just stored. See
 
 ## Data scope (Layer 2: access groups)
 
+Scans act on assets, so the data scope also limits scan targets: a restricted
+member scans only assets in their scope, and an unrestricted actor's free-text
+targets must match a scope target (decision D9). See
+[active-probe-gate.md](active-probe-gate.md#act-scope-who-may-scan-what).
+
 Permissions decide what *kind* of thing a member may do; the data scope decides
 *which* assets — and so which findings, exposures and other asset-bound rows —
 they may see and change. Scope rows live in `user_accessible_assets`, computed
@@ -915,6 +936,8 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `GET /vulnerabilities/{id}/affected-assets`, `/cve/{cve}/affected-assets` | bypass | filtered |
 | In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
+| `GET /notification-outbox` (+ `/stats`, `/{id}`, retry, delete), `GET /integrations/{id}/notification-events` | **bypass (every finding/asset event, owner emails) to members and viewers via `notifications:read` / `integrations:read`** | channel managers only: `integrations:manage` in addition (owner/admin by default); not scoped, because a channel manager already routes the whole stream (L-03) |
+| `POST /assets/import/nessus-findings` | **bypass (write)**: ran as a trusted server-side sensor, so a member added findings to any host and auto-resolved any tool's findings on it (`?tool=`) | runs with the uploader's rights (`ingest.Options.Actor`): a restricted uploader only adds findings to existing in-scope assets, creates no asset, never auto-resolves; hidden and unknown hosts both count as `assets_skipped_out_of_scope`. An unrestricted uploader auto-resolves only with the default `tenable` tool (any other `?tool=` = partial coverage). Audited `asset.imported` (L-05) |
 
 ### Deliberately tenant-wide (counts only, no row data)
 
@@ -939,6 +962,13 @@ scans, audit logs, report schedules, and access-control administration
 (`/groups/{id}/assets/{assetId}`, which defines scope and needs `groups:write`).
 The reachability oracle used by priority classification and threat models reads
 the full graph on purpose (`GetExposureChains` stays unscoped).
+
+**Asset references a caller writes** go through `datascope.Enforcer.AssertAssetRef`:
+the asset must be a live asset of the tenant (checked for unrestricted callers
+too) **and** in the caller's scope; a foreign, unknown, deleted or out-of-scope
+id all answer 404. It fails closed when not wired. Used by
+`POST /pentest/campaigns/{id}/findings` (`asset_id`), whose
+`findings.asset_id` references `assets(id)` without the tenant (research doc 15, L-02).
 
 Outside a request (WebSocket subscriptions, cross-organization dashboard) admin
 status is the team role from `v_user_effective_role` (owner/admin) — the same
@@ -1121,7 +1151,8 @@ URL-Tenant Routes (Role-based):
 └── /api/v1/tenants/{tenant}             → admin+ (U), owner (D)
 
 Invitations:
-└── /api/v1/invitations/{token}/*        → Any authenticated
+└── /api/v1/invitations/{lookup,decline,accept,accept-with-refresh}
+                                         → token in the body; accept needs the invited email
 ```
 
 Legend: (R) = Read, (W) = Write, (U) = Update, (D) = Delete
@@ -1289,16 +1320,17 @@ Tenable.sc's RBAC.
 
 ## CI invariants that keep this from drifting
 
-Two tests fail the build if the model erodes. Treat them as executable spec:
+Three tests fail the build if the model erodes. Treat them as executable spec:
 
 | Invariant | Test | What it guarantees |
 |-----------|------|--------------------|
 | **Every route is gated or explicitly allowlisted** | `tests/unit/route_authz_coverage_test.go` (AUTHZ-02) | A go/ast walk of `routes/*.go` resolves chi `.Group` nesting + inherited gates; any route with no `Require*`/`RequireTeam*`/`RequireRole` and not in `allowlistPrefixes` fails the build, naming the route. Removing one `Require(...)` → red. |
 | **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
+| **Every referenced permission exists** | `tests/unit/permission_references_exist_test.go` | Every value in `module.ModulePermissionMapping` (sidebar/bootstrap), every `permission.X` constant used in api Go code, and every value of the web `Permission` object (`web/src/lib/permissions/constants.ts`) is in `permission.AllPermissions()`. A reference to a permission no role can hold (which silently hides a module from every non-admin) → red. |
 
-The permission strings themselves are also mirrored in the UI (TS constants); the
-sync test covers Go↔DB, and code review covers UI drift until the monorepo contract
-codegen (RFC-020) subsumes both.
+Each module in `ModulePermissionMapping` names the permission its routes gate
+on, so the sidebar and the API agree (for example Attack Surface → `assets:read`,
+CTEM Cycles → `ctem:cycles:read`, Scan Pipelines → `integrations:pipelines:read`).
 
 ## How to … (recipes that stay inside the invariants)
 

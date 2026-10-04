@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Swords, Play, Plus } from 'lucide-react'
+import { Swords, Play } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   useSimulations,
@@ -188,12 +188,7 @@ export default function AttackSimulationPage() {
       <PageHeader
         title="Attack simulation"
         description="Run MITRE ATT&CK-mapped attack techniques to check that your controls catch them."
-      >
-        <Button size="sm" disabled title="Simulation creation is coming soon">
-          <Plus className="h-4 w-4 sm:me-2" />
-          <span className="hidden sm:inline">New simulation</span>
-        </Button>
-      </PageHeader>
+      />
 
       <MetricStrip className="mt-5" items={metrics} />
 
