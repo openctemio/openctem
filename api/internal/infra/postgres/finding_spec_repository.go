@@ -90,3 +90,12 @@ func (r *FindingRepository) CountWhere(ctx context.Context, w *filterspec.Where)
 	}
 	return total, nil
 }
+
+// GetStatsWhere computes the findings stats over a compiled filter, so the
+// numbers count exactly the rows ListWhere lists for the same filter.
+func (r *FindingRepository) GetStatsWhere(ctx context.Context, w *filterspec.Where) (*vulnerability.FindingStats, error) {
+	if err := checkFindingWhere(w); err != nil {
+		return nil, err
+	}
+	return r.queryFindingStats(ctx, findingStatsSelect+" WHERE "+w.SQL, w.Args)
+}
