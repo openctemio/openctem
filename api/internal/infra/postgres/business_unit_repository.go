@@ -166,7 +166,7 @@ func (r *BusinessUnitRepository) AddAsset(ctx context.Context, tenantID, buID, a
 	// foreign asset even if a caller bypasses the service.
 	query := `INSERT INTO business_unit_assets (id, tenant_id, business_unit_id, asset_id, created_at)
 		SELECT $1, $2, $3, $4, NOW()
-		WHERE EXISTS (SELECT 1 FROM assets WHERE id = $4 AND tenant_id = $2)
+		WHERE EXISTS (SELECT 1 FROM assets WHERE id = $4 AND tenant_id = $2 AND deleted_at IS NULL)
 		ON CONFLICT DO NOTHING`
 	_, err := r.db.ExecContext(ctx, query, shared.NewID().String(), tenantID.String(), buID.String(), assetID.String())
 	return err
