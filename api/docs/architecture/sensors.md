@@ -1084,6 +1084,21 @@ offers more scan commands than that; selection skips sensors with no free
 slot and prefers the most free slots, then the highest reported throughput
 for the tool. `sensors.current_jobs` (never written) is no longer read.
 
+The poll orders commands fairly (RFC-046 §11): by priority class, a command
+moving up one class per 30 minutes waited (never into `critical`), then
+round-robin across runs (the first pending command of every run before the
+second of any), then age.
+
+**Claim-N** (feature `capacity`, RFC-030 §5.9): a v2 sensor that names
+`capacity` in `X-OpenCTEM-Sensor-Features` gets `GET /api/v2/sensor/commands`
+already claimed for it: acknowledged, lease and epoch set, in one
+`UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` that re-checks the
+tenant, pinning, zone, tool and capability gates. Scans are capped at the
+sensor's effective max jobs minus the scans it holds, counted from the
+commands, and at a fresh reported `slots_free`. Its later `claim` of each
+command is a replay (`200`). Without the feature the poll only lists, as
+before.
+
 A sensor hands a command it holds back with
 `POST /api/v2/sensor/commands/{id}/release` (feature `release`): the
 command returns to `pending`, unpinned, zone kept, so another sensor takes
