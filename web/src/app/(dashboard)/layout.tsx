@@ -9,6 +9,7 @@ import {
   AppSidebar,
   TenantGate,
   MainRegion,
+  SeeEverythingBanner,
 } from '@/components/layout'
 import { SkipToMain } from '@/components/skip-to-main'
 import { RouteGuard } from '@/components/route-guard'
@@ -52,6 +53,9 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                 <RouteGuard>
                   {/* Global header that handles per-route visibility */}
                   <DashboardHeader />
+                  {/* Owners and admins of an organization still showing everything
+                      to members without a team (being retired, D2). */}
+                  <SeeEverythingBanner />
                   {/*
                     `flex flex-1 flex-col` propagates the flex context
                     from SidebarInset (which is `flex flex-col flex-1`)

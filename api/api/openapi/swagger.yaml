@@ -8268,8 +8268,41 @@ definitions:
           $ref: '#/definitions/internal_infra_http_handler.DataFlowStepResponse'
         type: array
     type: object
+  internal_infra_http_handler.DataScopeImpactMember:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      role:
+        type: string
+      user_id:
+        type: string
+    type: object
+  internal_infra_http_handler.DataScopeImpactResponse:
+    properties:
+      members:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.DataScopeImpactMember'
+        type: array
+      members_without_group_see:
+        enum:
+        - everything
+        - nothing
+        type: string
+      total_count:
+        description: |-
+          TotalCount is the number of members who would see nothing (exact);
+          Members lists at most 500 of them.
+        type: integer
+    type: object
   internal_infra_http_handler.DataScopePolicyResponse:
     properties:
+      deprecated:
+        description: |-
+          Deprecated is true while the organization still shows everything: that
+          mode is being retired and only the owner can switch it off.
+        type: boolean
       members_without_group_see:
         description: |-
           MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
@@ -25420,6 +25453,37 @@ paths:
       summary: Get unread notification count
       tags:
       - notifications
+  /organization/settings/data-scope/impact:
+    get:
+      description: 'Lists the active members who are not owner or admin, hold no role
+        with full data access, and are in no access group and have no grant: they
+        see everything today only because the organization shows everything to members
+        without a team, and would see nothing after the switch. Owners and admins
+        only.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.DataScopeImpactResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Members who would see nothing after switching to "nothing"
+      tags:
+      - Tenants
   /organization/settings/retest:
     get:
       description: The tenant's auto-retest settings (RFC-039). auto_enabled is false
@@ -32105,9 +32169,10 @@ paths:
     patch:
       consumes:
       - application/json
-      description: 'Sets what members who are in no access group see: everything (all
-        assets and findings) or nothing. Owners and admins always see everything.
-        The change is audited.'
+      description: 'Switches what members who are in no access group see to nothing.
+        "everything" is being retired: an organization that sees nothing cannot switch
+        back (400). Owners only; owners and admins always see everything. The change
+        is audited.'
       parameters:
       - description: Tenant ID or slug
         in: path
