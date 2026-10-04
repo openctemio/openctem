@@ -261,6 +261,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:          newEASMHandler(repos, svc, log),
+		EASMSeed:      newEASMSeedHandler(repos, svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -723,6 +724,15 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 		audit = svc.Audit
 	}
 	return h.SetReview(easmapp.NewReviewService(repos.Attribution, svc.DataScope), audit)
+}
+
+// newEASMSeedHandler builds the seeds handler; every change is audited.
+func newEASMSeedHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMSeedHandler {
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewEASMSeedHandler(easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed), audit, log)
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit

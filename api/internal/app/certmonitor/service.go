@@ -130,6 +130,12 @@ type VerifiedDomainLister interface {
 	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*verifieddomain.VerifiedDomain, error)
 }
 
+// SeedRootLister lists a tenant's root_domain seeds with discovery on.
+// Satisfied by *postgres.EASMSeedRepository.
+type SeedRootLister interface {
+	DiscoveryRootDomains(ctx context.Context, tenantID shared.ID) ([]string, error)
+}
+
 // ScopeTargetLister lists a tenant's active scope targets. Satisfied by
 // *postgres.ScopeTargetRepository.
 type ScopeTargetLister interface {
@@ -181,6 +187,9 @@ type Service struct {
 	now             func() time.Time
 
 	logger *logger.Logger
+
+	// seeds lists root_domain seeds to watch (nil: none).
+	seeds SeedRootLister
 }
 
 // NewService constructs the CT discovery service. An empty feedBaseURL defaults
@@ -225,6 +234,11 @@ func (s *Service) SetDomainSources(verified VerifiedDomainLister, targets ScopeT
 	s.verified = verified
 	s.scopeTargets = targets
 }
+
+// SetSeedSource adds the tenant's root_domain seeds (RFC-036 §6.3) to the
+// names the sweep queries. A seed is the tenant's assertion: names found
+// under it get fqdn_under_asserted_root unless a verified domain covers them.
+func (s *Service) SetSeedSource(seeds SeedRootLister) { s.seeds = seeds }
 
 // SetStateStore enables the persisted rotation cursor and failure back-off.
 func (s *Service) SetStateStore(st StateStore) { s.state = st }
@@ -428,7 +442,8 @@ func truncate(s string, n int) string {
 }
 
 // gatherRoots collects every domain the tenant asked us to watch: all domain
-// assets (paged, no cap), verified domains and active domain scope targets.
+// assets (paged, no cap), verified domains, root_domain seeds with discovery
+// on and active domain scope targets.
 // It also returns the domain assets by name so a discovered host can be tied
 // to its nearest known domain asset.
 func (s *Service) gatherRoots(ctx context.Context, tenantID shared.ID) ([]rootDomain, map[string]shared.ID, error) {
@@ -472,6 +487,16 @@ func (s *Service) gatherRoots(ctx context.Context, tenantID shared.ID) ([]rootDo
 			if vd.IsVerified() {
 				in = append(in, rootDomain{name: vd.Domain(), origin: OriginVerified})
 			}
+		}
+	}
+
+	if s.seeds != nil {
+		names, err := s.seeds.DiscoveryRootDomains(ctx, tenantID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to list seeds: %w", err)
+		}
+		for _, n := range names {
+			in = append(in, rootDomain{name: n, origin: OriginSeed})
 		}
 	}
 
