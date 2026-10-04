@@ -72,7 +72,7 @@ func execFile(t *testing.T, db *sql.DB, path string) {
 
 func scratchDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	dbURL := testdb.URL()
+	dbURL := testdb.AdminURL() // CREATE DATABASE needs CREATEDB
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping the sensor rename upgrade test")
 	}
