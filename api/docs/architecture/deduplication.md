@@ -73,6 +73,26 @@ that finding is re-keyed in place on that sighting
 asset merge re-keys a version-2 finding by rewriting the `asset` field of its
 stored tuple, only when the stored tuple still reproduces the stored key.
 
+Findings a scan does not report again are re-keyed by the re-fingerprint job
+(`cmd/refingerprint`, shipped in the API image as `/app/refingerprint`):
+
+```bash
+refingerprint                 # dry run, every tenant with older keys (read-only connection)
+refingerprint -tenant <id>    # one tenant
+refingerprint -apply          # commit; resumable from finding_rekey_runs, idempotent
+refingerprint -json           # machine-readable report
+```
+
+It recomputes a key only where the row holds every recipe input
+(`vulnerability.IdentityFromStored`: SCA with a linked PURL, secrets with a
+stored HMAC, misconfig, SAST with a tool anchor); network VA and DAST rows lack
+the port or method and are re-keyed on their next sighting. When the new key is
+held by another finding of the same asset, the earliest-created survives
+through the finding merge; a holder on another asset is reported
+(`held_by_other_asset`) and never merged automatically. While an applying run
+is open, scan auto-resolve is paused for the tenant (D11); a run with no
+progress for 2 hours stops pausing.
+
 **Mark duplicate of (manual merge):** `POST /api/v1/findings/{id}/duplicates`
 `{"finding_id": …}` folds a finding into the original `{id}` with the same
 `mergeFindingInto` the asset merge uses, in one transaction with both rows
