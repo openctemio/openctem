@@ -12,7 +12,7 @@ import (
 )
 
 // The crown-jewel flag is the assets.is_crown_jewel column (migration
-// 000463). Every reader takes it from there; a properties->'is_crown_jewel'
+// 000487). Every reader takes it from there; a properties->'is_crown_jewel'
 // left behind by an older writer, whatever its type, is ignored.
 func TestCrownJewelReads_UseTheColumn(t *testing.T) {
 	ctx := context.Background()
@@ -107,8 +107,8 @@ func TestCrownJewelReads_UseTheColumn(t *testing.T) {
 	}
 }
 
-// Migration 000463 backfills the column from properties and removes the
-// key. Run inside a rolled-back transaction, starting from the pre-000463
+// Migration 000487 backfills the column from properties and removes the
+// key. Run inside a rolled-back transaction, starting from the pre-000487
 // shape that its down migration restores.
 func TestCrownJewelMigration_Backfill(t *testing.T) {
 	ctx := context.Background()

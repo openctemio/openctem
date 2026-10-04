@@ -53,7 +53,7 @@ One SQL statement (scalar subqueries over CTEs); no per-row calls.
 | `active_cycle.scope_assets` | Rows in `ctem_cycle_scope_snapshots` for the cycle (0 until it is activated). |
 | `active_cycle.attacker_profiles` | Rows in `ctem_cycle_attacker_profiles` for the cycle whose profile belongs to the tenant. |
 | `assets.total` | Assets with `status <> 'archived'`. All counts below that mention assets use the same population. |
-| `crown_jewels.total` | Those assets with the `assets.is_crown_jewel` column set. The column is the only crown-jewel store (migration 000463): `PATCH /assets/{id}/crown-jewel` writes it (assets:write, the asset in the caller's data scope, audited as `asset.crown_jewel_changed`), and `is_crown_jewel` is a reserved key that `properties` refuse. |
+| `crown_jewels.total` | Those assets with the `assets.is_crown_jewel` column set. The column is the only crown-jewel store (migration 000487): `PATCH /assets/{id}/crown-jewel` writes it (assets:write, the asset in the caller's data scope, audited as `asset.crown_jewel_changed`), and `is_crown_jewel` is a reserved key that `properties` refuse. |
 | `crown_jewels.with_owner` | Crown jewels with an `asset_owners` row that names a user who is a member of the tenant or a group of the tenant (the inventory's `has_owner` test; see [asset-ownership.md](asset-ownership.md)). |
 | `business_services.with_assets` | Services with at least one `business_service_assets` row whose asset belongs to the tenant. |
 | `assets.in_business_unit` | Assets with a `business_unit_assets` row for one of the tenant's units. A business unit set on an asset group is not counted (see the group-BU follow-up, C14). |
