@@ -12978,76 +12978,238 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description Finding IDs */
+          /** @description id: any of (comma list) */
           id?: string[]
-          /** @description Asset IDs */
+          /** @description id: none of (comma list) */
+          id_not?: string[]
+          /** @description asset id: any of (comma list) */
           asset_id?: string[]
-          /** @description Branch IDs the finding occurs on */
+          /** @description asset id: none of (comma list) */
+          asset_id_not?: string[]
+          /** @description branch id: any of (comma list) */
           branch_id?: string[]
-          /** @description Component IDs */
+          /** @description open on branch id: any of (comma list) */
+          open_on_branch_id?: string[]
+          /** @description fixed on branch id: any of (comma list) */
+          fixed_on_branch_id?: string[]
+          /** @description component id: any of (comma list) */
           component_id?: string[]
-          /** @description Vulnerability IDs */
+          /** @description component id: none of (comma list) */
+          component_id_not?: string[]
+          /** @description vulnerability id: any of (comma list) */
           vulnerability_id?: string[]
-          /** @description Severities */
-          severity?: string[]
-          /** @description Statuses */
-          status?: string[]
-          /** @description Statuses to exclude */
-          status_not?: string[]
-          /** @description Sources */
-          source?: string[]
-          /** @description SLA statuses */
-          sla_status?: string[]
-          /** @description CTEM priority classes (P0..P3) */
-          priority_class?: string[]
-          /** @description CVE IDs */
+          /** @description vulnerability id: none of (comma list) */
+          vulnerability_id_not?: string[]
+          /** @description severity: any of (comma list) */
+          severity?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description severity: none of (comma list) */
+          severity_not?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description status: any of (comma list) */
+          status?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description status: none of (comma list) */
+          status_not?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description source: any of (comma list) */
+          source?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description source: none of (comma list) */
+          source_not?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description sla status: any of (comma list) */
+          sla_status?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description sla status: none of (comma list) */
+          sla_status_not?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description priority class: any of (comma list) */
+          priority_class?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description priority class: none of (comma list) */
+          priority_class_not?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description cve id: any of (comma list) */
           cve_id?: string[]
-          /** @description Finding types */
-          finding_type?: string[]
-          /** @description Tags of the finding's asset (any of) */
-          asset_tag?: string[]
-          /** @description In CISA KEV */
+          /** @description cve id: none of (comma list) */
+          cve_id_not?: string[]
+          /** @description finding type: any of (comma list) */
+          finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
+          /** @description finding type: none of (comma list) */
+          finding_type_not?: (
+            'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
+          )[]
+          /** @description is in kev equals */
           is_in_kev?: boolean
-          /** @description Reachable */
+          /** @description is reachable equals */
           is_reachable?: boolean
-          /** @description Minimum EPSS score */
+          /** @description epss score at least */
           epss_score_gte?: number
-          /** @description Tool names */
+          /** @description epss score at most */
+          epss_score_lte?: number
+          /** @description epss score greater than */
+          epss_score_gt?: number
+          /** @description epss score less than */
+          epss_score_lt?: number
+          /** @description tool name: any of (comma list) */
           tool_name?: string[]
-          /** @description Rule IDs */
+          /** @description tool name: none of (comma list) */
+          tool_name_not?: string[]
+          /** @description rule id: any of (comma list) */
           rule_id?: string[]
-          /** @description Scan IDs */
+          /** @description rule id: none of (comma list) */
+          rule_id_not?: string[]
+          /** @description scan id: any of (comma list) */
           scan_id?: string[]
-          /** @description File path contains */
+          /** @description scan id: none of (comma list) */
+          scan_id_not?: string[]
+          /** @description file path contains */
           file_path?: string
-          /** @description me: assigned to, owned by or group-assigned to the caller */
-          related_to?: string
-          /** @description Minimum CVSS score */
+          /** @description file path contains */
+          file_path_contains?: string
+          /** @description asset tag: any of (comma list) */
+          asset_tag?: string[]
+          /** @description asset tag: none of (comma list) */
+          asset_tag_not?: string[]
+          /** @description related to equals */
+          related_to?: 'me'
+          /** @description cvss score at least */
           cvss_score_gte?: number
-          /** @description Maximum CVSS score */
+          /** @description cvss score at most */
           cvss_score_lte?: number
-          /** @description First seen at or after (RFC 3339, YYYY-MM-DD or -P30D) */
+          /** @description cvss score greater than */
+          cvss_score_gt?: number
+          /** @description cvss score less than */
+          cvss_score_lt?: number
+          /** @description first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
           first_detected_at_gte?: string
-          /** @description Last seen at or after (RFC 3339, YYYY-MM-DD or -P30D) */
+          /** @description first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lte?: string
+          /** @description first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gt?: string
+          /** @description first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lt?: string
+          /** @description last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_gte?: string
-          /** @description Last seen before */
+          /** @description last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lte?: string
+          /** @description last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gt?: string
+          /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
-          /** @description Ports the finding was observed on */
+          /** @description network port: any of (comma list) */
           network_port?: number[]
-          /** @description tcp, udp, sctp */
-          network_transport?: string[]
-          /** @description Services on the port (https, ssh, ...) */
+          /** @description network port: none of (comma list) */
+          network_port_not?: number[]
+          /** @description network port at least */
+          network_port_gte?: number
+          /** @description network port at most */
+          network_port_lte?: number
+          /** @description network transport: any of (comma list) */
+          network_transport?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network transport: none of (comma list) */
+          network_transport_not?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network service: any of (comma list) */
           network_service?: string[]
-          /** @description Assignee user IDs */
+          /** @description network service: none of (comma list) */
+          network_service_not?: string[]
+          /** @description assigned to: any of (comma list) */
           assigned_to?: string[]
-          /** @description true: unassigned; false: assigned */
+          /** @description assigned to is unset (true) or set (false) */
           assigned_to_null?: boolean
-          /** @description The asset's own criticality (critical, high, medium, low) */
-          asset_criticality?: string[]
-          /** @description A public exploit is known (scanner or CVE catalog) */
+          /** @description assigned to: none of (comma list) */
+          assigned_to_not?: string[]
+          /** @description asset criticality: any of (comma list) */
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset criticality: none of (comma list) */
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description exploit available equals */
           exploit_available?: boolean
-          /** @description Created at or after (RFC 3339, YYYY-MM-DD or -P30D) */
+          /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
           created_at_gte?: string
+          /** @description created at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lte?: string
+          /** @description created at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gt?: string
+          /** @description created at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lt?: string
+          /** @description updated at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gte?: string
+          /** @description updated at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lte?: string
+          /** @description updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gt?: string
+          /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lt?: string
           /** @description Free text over title, description and file path */
           q?: string
           /** @description Sort keys, - for descending (default priority_class,severity,-created_at) */
@@ -14417,6 +14579,369 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/export': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Export findings
+     * @description Streams every finding the list's filter selects as CSV (default) or NDJSON (`format=ndjson`),
+     *     in id order, at most 100,000 rows; the X-Export-Truncated trailer says whether rows were left
+     *     out. Same scope as GET /findings. Needs findings:export. One export per user at a time (429
+     *     otherwise). Audit-logged without filter values. CSV formula cells are neutralized.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description csv (default) or ndjson */
+          format?: 'csv' | 'ndjson'
+          /** @description id: any of (comma list) */
+          id?: string[]
+          /** @description id: none of (comma list) */
+          id_not?: string[]
+          /** @description asset id: any of (comma list) */
+          asset_id?: string[]
+          /** @description asset id: none of (comma list) */
+          asset_id_not?: string[]
+          /** @description branch id: any of (comma list) */
+          branch_id?: string[]
+          /** @description open on branch id: any of (comma list) */
+          open_on_branch_id?: string[]
+          /** @description fixed on branch id: any of (comma list) */
+          fixed_on_branch_id?: string[]
+          /** @description component id: any of (comma list) */
+          component_id?: string[]
+          /** @description component id: none of (comma list) */
+          component_id_not?: string[]
+          /** @description vulnerability id: any of (comma list) */
+          vulnerability_id?: string[]
+          /** @description vulnerability id: none of (comma list) */
+          vulnerability_id_not?: string[]
+          /** @description severity: any of (comma list) */
+          severity?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description severity: none of (comma list) */
+          severity_not?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description status: any of (comma list) */
+          status?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description status: none of (comma list) */
+          status_not?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description source: any of (comma list) */
+          source?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description source: none of (comma list) */
+          source_not?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description sla status: any of (comma list) */
+          sla_status?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description sla status: none of (comma list) */
+          sla_status_not?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description priority class: any of (comma list) */
+          priority_class?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description priority class: none of (comma list) */
+          priority_class_not?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description cve id: any of (comma list) */
+          cve_id?: string[]
+          /** @description cve id: none of (comma list) */
+          cve_id_not?: string[]
+          /** @description finding type: any of (comma list) */
+          finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
+          /** @description finding type: none of (comma list) */
+          finding_type_not?: (
+            'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
+          )[]
+          /** @description is in kev equals */
+          is_in_kev?: boolean
+          /** @description is reachable equals */
+          is_reachable?: boolean
+          /** @description epss score at least */
+          epss_score_gte?: number
+          /** @description epss score at most */
+          epss_score_lte?: number
+          /** @description epss score greater than */
+          epss_score_gt?: number
+          /** @description epss score less than */
+          epss_score_lt?: number
+          /** @description tool name: any of (comma list) */
+          tool_name?: string[]
+          /** @description tool name: none of (comma list) */
+          tool_name_not?: string[]
+          /** @description rule id: any of (comma list) */
+          rule_id?: string[]
+          /** @description rule id: none of (comma list) */
+          rule_id_not?: string[]
+          /** @description scan id: any of (comma list) */
+          scan_id?: string[]
+          /** @description scan id: none of (comma list) */
+          scan_id_not?: string[]
+          /** @description file path contains */
+          file_path?: string
+          /** @description file path contains */
+          file_path_contains?: string
+          /** @description asset tag: any of (comma list) */
+          asset_tag?: string[]
+          /** @description asset tag: none of (comma list) */
+          asset_tag_not?: string[]
+          /** @description related to equals */
+          related_to?: 'me'
+          /** @description cvss score at least */
+          cvss_score_gte?: number
+          /** @description cvss score at most */
+          cvss_score_lte?: number
+          /** @description cvss score greater than */
+          cvss_score_gt?: number
+          /** @description cvss score less than */
+          cvss_score_lt?: number
+          /** @description first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gte?: string
+          /** @description first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lte?: string
+          /** @description first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gt?: string
+          /** @description first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lt?: string
+          /** @description last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gte?: string
+          /** @description last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lte?: string
+          /** @description last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gt?: string
+          /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lt?: string
+          /** @description network port: any of (comma list) */
+          network_port?: number[]
+          /** @description network port: none of (comma list) */
+          network_port_not?: number[]
+          /** @description network port at least */
+          network_port_gte?: number
+          /** @description network port at most */
+          network_port_lte?: number
+          /** @description network transport: any of (comma list) */
+          network_transport?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network transport: none of (comma list) */
+          network_transport_not?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network service: any of (comma list) */
+          network_service?: string[]
+          /** @description network service: none of (comma list) */
+          network_service_not?: string[]
+          /** @description assigned to: any of (comma list) */
+          assigned_to?: string[]
+          /** @description assigned to is unset (true) or set (false) */
+          assigned_to_null?: boolean
+          /** @description assigned to: none of (comma list) */
+          assigned_to_not?: string[]
+          /** @description asset criticality: any of (comma list) */
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset criticality: none of (comma list) */
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description exploit available equals */
+          exploit_available?: boolean
+          /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gte?: string
+          /** @description created at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lte?: string
+          /** @description created at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gt?: string
+          /** @description created at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lt?: string
+          /** @description updated at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gte?: string
+          /** @description updated at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lte?: string
+          /** @description updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gt?: string
+          /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lt?: string
+          /** @description Free text */
+          q?: string
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description CSV or NDJSON stream */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': string
+            'application/x-ndjson': string
+          }
+        }
+        /** @description INVALID_FILTER */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': {
+              [key: string]: unknown
+            }
+            'application/x-ndjson': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': {
+              [key: string]: unknown
+            }
+            'application/x-ndjson': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Export findings selected by a filter document
+     * @description POST /findings/search's FilterDocument body, streamed like GET /findings/export.
+     */
+    post: {
+      parameters: {
+        query?: {
+          /** @description csv (default) or ndjson */
+          format?: 'csv' | 'ndjson'
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.FindingSearchRequest']
+      responses: {
+        /** @description CSV or NDJSON stream */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': string
+            'application/x-ndjson': string
+          }
+        }
+        /** @description INVALID_FILTER */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': {
+              [key: string]: unknown
+            }
+            'application/x-ndjson': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': {
+              [key: string]: unknown
+            }
+            'application/x-ndjson': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/groups': {
     parameters: {
       query?: never
@@ -14434,6 +14959,242 @@ export interface paths {
         query?: {
           /** @description cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type */
           group_by?: string
+          /** @description id: any of (comma list) */
+          id?: string[]
+          /** @description id: none of (comma list) */
+          id_not?: string[]
+          /** @description asset id: any of (comma list) */
+          asset_id?: string[]
+          /** @description asset id: none of (comma list) */
+          asset_id_not?: string[]
+          /** @description branch id: any of (comma list) */
+          branch_id?: string[]
+          /** @description open on branch id: any of (comma list) */
+          open_on_branch_id?: string[]
+          /** @description fixed on branch id: any of (comma list) */
+          fixed_on_branch_id?: string[]
+          /** @description component id: any of (comma list) */
+          component_id?: string[]
+          /** @description component id: none of (comma list) */
+          component_id_not?: string[]
+          /** @description vulnerability id: any of (comma list) */
+          vulnerability_id?: string[]
+          /** @description vulnerability id: none of (comma list) */
+          vulnerability_id_not?: string[]
+          /** @description severity: any of (comma list) */
+          severity?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description severity: none of (comma list) */
+          severity_not?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description status: any of (comma list) */
+          status?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description status: none of (comma list) */
+          status_not?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description source: any of (comma list) */
+          source?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description source: none of (comma list) */
+          source_not?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description sla status: any of (comma list) */
+          sla_status?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description sla status: none of (comma list) */
+          sla_status_not?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description priority class: any of (comma list) */
+          priority_class?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description priority class: none of (comma list) */
+          priority_class_not?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description cve id: any of (comma list) */
+          cve_id?: string[]
+          /** @description cve id: none of (comma list) */
+          cve_id_not?: string[]
+          /** @description finding type: any of (comma list) */
+          finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
+          /** @description finding type: none of (comma list) */
+          finding_type_not?: (
+            'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
+          )[]
+          /** @description is in kev equals */
+          is_in_kev?: boolean
+          /** @description is reachable equals */
+          is_reachable?: boolean
+          /** @description epss score at least */
+          epss_score_gte?: number
+          /** @description epss score at most */
+          epss_score_lte?: number
+          /** @description epss score greater than */
+          epss_score_gt?: number
+          /** @description epss score less than */
+          epss_score_lt?: number
+          /** @description tool name: any of (comma list) */
+          tool_name?: string[]
+          /** @description tool name: none of (comma list) */
+          tool_name_not?: string[]
+          /** @description rule id: any of (comma list) */
+          rule_id?: string[]
+          /** @description rule id: none of (comma list) */
+          rule_id_not?: string[]
+          /** @description scan id: any of (comma list) */
+          scan_id?: string[]
+          /** @description scan id: none of (comma list) */
+          scan_id_not?: string[]
+          /** @description file path contains */
+          file_path?: string
+          /** @description file path contains */
+          file_path_contains?: string
+          /** @description asset tag: any of (comma list) */
+          asset_tag?: string[]
+          /** @description asset tag: none of (comma list) */
+          asset_tag_not?: string[]
+          /** @description related to equals */
+          related_to?: 'me'
+          /** @description cvss score at least */
+          cvss_score_gte?: number
+          /** @description cvss score at most */
+          cvss_score_lte?: number
+          /** @description cvss score greater than */
+          cvss_score_gt?: number
+          /** @description cvss score less than */
+          cvss_score_lt?: number
+          /** @description first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gte?: string
+          /** @description first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lte?: string
+          /** @description first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gt?: string
+          /** @description first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lt?: string
+          /** @description last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gte?: string
+          /** @description last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lte?: string
+          /** @description last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gt?: string
+          /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lt?: string
+          /** @description network port: any of (comma list) */
+          network_port?: number[]
+          /** @description network port: none of (comma list) */
+          network_port_not?: number[]
+          /** @description network port at least */
+          network_port_gte?: number
+          /** @description network port at most */
+          network_port_lte?: number
+          /** @description network transport: any of (comma list) */
+          network_transport?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network transport: none of (comma list) */
+          network_transport_not?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network service: any of (comma list) */
+          network_service?: string[]
+          /** @description network service: none of (comma list) */
+          network_service_not?: string[]
+          /** @description assigned to: any of (comma list) */
+          assigned_to?: string[]
+          /** @description assigned to is unset (true) or set (false) */
+          assigned_to_null?: boolean
+          /** @description assigned to: none of (comma list) */
+          assigned_to_not?: string[]
+          /** @description asset criticality: any of (comma list) */
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset criticality: none of (comma list) */
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description exploit available equals */
+          exploit_available?: boolean
+          /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gte?: string
+          /** @description created at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lte?: string
+          /** @description created at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gt?: string
+          /** @description created at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lt?: string
+          /** @description updated at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gte?: string
+          /** @description updated at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lte?: string
+          /** @description updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gt?: string
+          /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lt?: string
+          /** @description Free text */
+          q?: string
+          /** @description Ignored by groups (accepted for URL parity with the list) */
+          sort?: string
           /** @description Page number */
           page?: number
           /** @description Groups per page */
@@ -14581,12 +15342,7 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      /** @description Filter document */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.FindingSearchRequest']
-        }
-      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.FindingSearchRequest']
       responses: {
         /** @description OK */
         200: {
@@ -14645,14 +15401,238 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description Asset IDs */
+          /** @description id: any of (comma list) */
+          id?: string[]
+          /** @description id: none of (comma list) */
+          id_not?: string[]
+          /** @description asset id: any of (comma list) */
           asset_id?: string[]
-          /** @description Sources */
-          source?: string[]
-          /** @description Severities */
-          severity?: string[]
-          /** @description Statuses */
-          status?: string[]
+          /** @description asset id: none of (comma list) */
+          asset_id_not?: string[]
+          /** @description branch id: any of (comma list) */
+          branch_id?: string[]
+          /** @description open on branch id: any of (comma list) */
+          open_on_branch_id?: string[]
+          /** @description fixed on branch id: any of (comma list) */
+          fixed_on_branch_id?: string[]
+          /** @description component id: any of (comma list) */
+          component_id?: string[]
+          /** @description component id: none of (comma list) */
+          component_id_not?: string[]
+          /** @description vulnerability id: any of (comma list) */
+          vulnerability_id?: string[]
+          /** @description vulnerability id: none of (comma list) */
+          vulnerability_id_not?: string[]
+          /** @description severity: any of (comma list) */
+          severity?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description severity: none of (comma list) */
+          severity_not?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description status: any of (comma list) */
+          status?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description status: none of (comma list) */
+          status_not?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description source: any of (comma list) */
+          source?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description source: none of (comma list) */
+          source_not?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description sla status: any of (comma list) */
+          sla_status?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description sla status: none of (comma list) */
+          sla_status_not?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description priority class: any of (comma list) */
+          priority_class?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description priority class: none of (comma list) */
+          priority_class_not?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description cve id: any of (comma list) */
+          cve_id?: string[]
+          /** @description cve id: none of (comma list) */
+          cve_id_not?: string[]
+          /** @description finding type: any of (comma list) */
+          finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
+          /** @description finding type: none of (comma list) */
+          finding_type_not?: (
+            'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
+          )[]
+          /** @description is in kev equals */
+          is_in_kev?: boolean
+          /** @description is reachable equals */
+          is_reachable?: boolean
+          /** @description epss score at least */
+          epss_score_gte?: number
+          /** @description epss score at most */
+          epss_score_lte?: number
+          /** @description epss score greater than */
+          epss_score_gt?: number
+          /** @description epss score less than */
+          epss_score_lt?: number
+          /** @description tool name: any of (comma list) */
+          tool_name?: string[]
+          /** @description tool name: none of (comma list) */
+          tool_name_not?: string[]
+          /** @description rule id: any of (comma list) */
+          rule_id?: string[]
+          /** @description rule id: none of (comma list) */
+          rule_id_not?: string[]
+          /** @description scan id: any of (comma list) */
+          scan_id?: string[]
+          /** @description scan id: none of (comma list) */
+          scan_id_not?: string[]
+          /** @description file path contains */
+          file_path?: string
+          /** @description file path contains */
+          file_path_contains?: string
+          /** @description asset tag: any of (comma list) */
+          asset_tag?: string[]
+          /** @description asset tag: none of (comma list) */
+          asset_tag_not?: string[]
+          /** @description related to equals */
+          related_to?: 'me'
+          /** @description cvss score at least */
+          cvss_score_gte?: number
+          /** @description cvss score at most */
+          cvss_score_lte?: number
+          /** @description cvss score greater than */
+          cvss_score_gt?: number
+          /** @description cvss score less than */
+          cvss_score_lt?: number
+          /** @description first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gte?: string
+          /** @description first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lte?: string
+          /** @description first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gt?: string
+          /** @description first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lt?: string
+          /** @description last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gte?: string
+          /** @description last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lte?: string
+          /** @description last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gt?: string
+          /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lt?: string
+          /** @description network port: any of (comma list) */
+          network_port?: number[]
+          /** @description network port: none of (comma list) */
+          network_port_not?: number[]
+          /** @description network port at least */
+          network_port_gte?: number
+          /** @description network port at most */
+          network_port_lte?: number
+          /** @description network transport: any of (comma list) */
+          network_transport?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network transport: none of (comma list) */
+          network_transport_not?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network service: any of (comma list) */
+          network_service?: string[]
+          /** @description network service: none of (comma list) */
+          network_service_not?: string[]
+          /** @description assigned to: any of (comma list) */
+          assigned_to?: string[]
+          /** @description assigned to is unset (true) or set (false) */
+          assigned_to_null?: boolean
+          /** @description assigned to: none of (comma list) */
+          assigned_to_not?: string[]
+          /** @description asset criticality: any of (comma list) */
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset criticality: none of (comma list) */
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description exploit available equals */
+          exploit_available?: boolean
+          /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gte?: string
+          /** @description created at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lte?: string
+          /** @description created at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gt?: string
+          /** @description created at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lt?: string
+          /** @description updated at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gte?: string
+          /** @description updated at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lte?: string
+          /** @description updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gt?: string
+          /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lt?: string
           /** @description Free text */
           q?: string
         }
@@ -39699,6 +40679,12 @@ export interface components {
     'internal_infra_http_handler.UpdateToolRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.UpdateToolRequest']
+      }
+    }
+    /** @description Filter document */
+    'internal_infra_http_handler.FindingSearchRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.FindingSearchRequest']
       }
     }
     /** @description Invitation token */
