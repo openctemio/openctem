@@ -953,6 +953,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, repos.Exposure, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
+	s.CertMonitor.SetSeedSource(repos.EASMSeed)
 	// Excluded names are neither queried nor discovered (RFC-042 F16).
 	s.CertMonitor.SetExclusions(s.Scope)
 	s.CertMonitor.SetStateStore(repos.CTMonitorState)
@@ -1631,6 +1632,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
 		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope)),
+		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
+		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
+		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
@@ -2322,4 +2326,13 @@ func logTokensOnPreviousPepper(db *postgres.DB, keyPepperID, sensorPepperID stri
 	log.Warn("APP_ENCRYPTION_KEY_PREVIOUS is set; active tokens not yet re-hashed under the current key",
 		"total", total, "api_keys", counts["api_keys"], "scim_tokens", counts["scim_tokens"],
 		"sensors", counts["sensors"], "sensor_api_keys", counts["sensor_api_keys"])
+}
+
+// connectorScansIfEnabled is the Tenable.sc connector as the scan service's
+// connector, or nil while integrationdom.TenableConnectorEnabled is off.
+func connectorScansIfEnabled(c *tenablesc.Service) scan.ConnectorScans {
+	if !integrationdom.TenableConnectorEnabled || c == nil {
+		return nil
+	}
+	return c
 }
