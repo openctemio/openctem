@@ -25165,6 +25165,7 @@ paths:
           - in_progress
           - fix_applied
           - validated_fixed
+          - not_observed
           - resolved
           - false_positive
           - accepted
@@ -25188,6 +25189,7 @@ paths:
           - in_progress
           - fix_applied
           - validated_fixed
+          - not_observed
           - resolved
           - false_positive
           - accepted
