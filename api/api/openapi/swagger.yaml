@@ -7573,6 +7573,12 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        description: |-
+          ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+          evaluated in timezone; at most every 15 minutes.
+        maxLength: 500
+        type: string
       schedule_time:
         type: string
       schedule_type:
@@ -7582,6 +7588,7 @@ definitions:
         - weekly
         - monthly
         - crontab
+        - rrule
         type: string
       sensor_preference:
         enum:
@@ -11729,6 +11736,8 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        type: string
       schedule_time:
         type: string
       schedule_timezone:
@@ -14207,6 +14216,12 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        description: |-
+          ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+          evaluated in timezone; at most every 15 minutes.
+        maxLength: 500
+        type: string
       schedule_time:
         type: string
       schedule_type:
@@ -14216,6 +14231,7 @@ definitions:
         - weekly
         - monthly
         - crontab
+        - rrule
         type: string
       sensor_preference:
         enum:
@@ -22169,6 +22185,69 @@ paths:
         in: query
         name: related_to
         type: string
+      - description: Minimum CVSS score
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: Maximum CVSS score
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: First seen at or after (RFC 3339, YYYY-MM-DD or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: Last seen at or after (RFC 3339, YYYY-MM-DD or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: Last seen before
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - collectionFormat: csv
+        description: Ports the finding was observed on
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: tcp, udp, sctp
+        in: query
+        items:
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: Services on the port (https, ssh, ...)
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: Assignee user IDs
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: 'true: unassigned; false: assigned'
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: The asset's own criticality (critical, high, medium, low)
+        in: query
+        items:
+          type: string
+        name: asset_criticality
+        type: array
+      - description: A public exploit is known (scanner or CVE catalog)
+        in: query
+        name: exploit_available
+        type: boolean
       - description: Created at or after (RFC 3339, YYYY-MM-DD or -P30D)
         in: query
         name: created_at_gte
@@ -25174,6 +25253,45 @@ paths:
       summary: Get unread notification count
       tags:
       - notifications
+  /organization/members/{member_id}/mfa:
+    delete:
+      description: An owner or administrator turns off the second factor of a member
+        of their organization who lost their authenticator and recovery codes. The
+        member is signed out everywhere and e-mailed. An owner or administrator target
+        needs the owner; a member who also belongs to another organization needs the
+        same authority there; nobody resets their own factor here.
+      parameters:
+      - description: Membership ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reset a member's two-factor authentication
+      tags:
+      - Tenants
   /organization/settings/data-scope/impact:
     get:
       description: 'Lists the active members who are not owner or admin, hold no role

@@ -110,25 +110,34 @@ func scratchDatabase(t *testing.T) *sql.DB {
 // sensors:*, so the value must be identical before and after the rename.
 func effectiveAccess(t *testing.T, db *sql.DB) map[string]string {
 	t.Helper()
-	const q = `
+	q := `
 		SELECT 'role:' || r.slug, string_agg(p, ',' ORDER BY p)
 		FROM role_permissions rp JOIN roles r ON r.id = rp.role_id,
 		     LATERAL (SELECT replace(rp.permission_id, 'agents:', 'sensors:') AS p) m
 		GROUP BY r.slug
 		UNION ALL
+		SELECT 'api_key:' || k.name, array_to_string(ARRAY(
+			SELECT replace(s, 'agents:', 'sensors:') AS p FROM unnest(k.scopes::text[]) s ORDER BY p), ',')
+		FROM api_keys k`
+	// Group permission overrides and permission sets exist until migration
+	// 000673 removes them (permissions come only from roles); include them
+	// while they exist.
+	if queryString(t, db, `SELECT coalesce(to_regclass('public.group_permissions')::text, '')`) != "" {
+		q += `
+		UNION ALL
 		SELECT 'group:' || g.slug, string_agg(p, ',' ORDER BY p)
 		FROM group_permissions gp JOIN groups g ON g.id = gp.group_id,
 		     LATERAL (SELECT replace(gp.permission_id, 'agents:', 'sensors:') AS p) m
-		GROUP BY g.slug
+		GROUP BY g.slug`
+	}
+	if queryString(t, db, `SELECT coalesce(to_regclass('public.permission_sets')::text, '')`) != "" {
+		q += `
 		UNION ALL
 		SELECT 'permission_set:' || ps.slug, string_agg(p, ',' ORDER BY p)
 		FROM permission_set_items i JOIN permission_sets ps ON ps.id = i.permission_set_id,
 		     LATERAL (SELECT replace(i.permission_id, 'agents:', 'sensors:') AS p) m
-		GROUP BY ps.slug
-		UNION ALL
-		SELECT 'api_key:' || k.name, array_to_string(ARRAY(
-			SELECT replace(s, 'agents:', 'sensors:') AS p FROM unnest(k.scopes::text[]) s ORDER BY p), ',')
-		FROM api_keys k`
+		GROUP BY ps.slug`
+	}
 	rows, err := db.Query(q)
 	if err != nil {
 		t.Fatalf("effective access: %v", err)
@@ -185,8 +194,14 @@ func TestSensorRenameUpgrade(t *testing.T) {
 	}
 	assertUpgraded(t, db, before, known, assetsUpdatedAt)
 
-	// 3. Re-running the rename on an upgraded database changes nothing.
+	// 3. Re-running the rename on an upgraded database changes nothing. The
+	// rename also rewrites group permission overrides and permission sets,
+	// which 000673 later drops, so the re-run happens with 000673 rolled back
+	// (its down restores the archived rows) and 000673 is applied again after.
+	removal := migrationByVersion(t, pending, groupPermissionSetRemovalVersion)
+	execFile(t, db, removal.down)
 	execFile(t, db, pending[0].up)
+	execFile(t, db, removal.up)
 	assertUpgraded(t, db, before, known, assetsUpdatedAt)
 
 	items, err := postgres.CheckSensorRename(ctx, db, true)
@@ -237,6 +252,21 @@ func TestSensorRenameUpgrade(t *testing.T) {
 		execFile(t, db, m.up)
 	}
 	assertUpgraded(t, db, before, known, assetsUpdatedAt)
+}
+
+// groupPermissionSetRemovalVersion drops group permission overrides and
+// permission sets (permissions come only from roles).
+const groupPermissionSetRemovalVersion = "000673"
+
+func migrationByVersion(t *testing.T, migs []migrationFile, version string) migrationFile {
+	t.Helper()
+	for _, m := range migs {
+		if m.version == version {
+			return m
+		}
+	}
+	t.Fatalf("migration %s not found", version)
+	return migrationFile{}
 }
 
 // renamedCatalog is the sensor permission catalog the rename produces.
@@ -349,9 +379,17 @@ func withoutLaterBackfill(t *testing.T, db *sql.DB, access map[string]string) ma
 	return out
 }
 
+// laterRemovedPrincipals are grant holders a migration after 000230 removes
+// (000673: group permission overrides and permission sets; their rows are
+// archived and restored by its down migration).
+var laterRemovedPrincipals = []string{"group:", "permission_set:"}
+
 func withoutLaterRevocations(access map[string]string) map[string]string {
 	out := make(map[string]string, len(access))
 	for who, perms := range access {
+		if slices.ContainsFunc(laterRemovedPrincipals, func(prefix string) bool { return strings.HasPrefix(who, prefix) }) {
+			continue
+		}
 		kept := []string{}
 		for _, p := range strings.Split(perms, ",") {
 			if !slices.Contains(laterRevocations[who], p) && !slices.Contains(laterRemovedPermissions, p) {
