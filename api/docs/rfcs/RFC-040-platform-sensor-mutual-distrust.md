@@ -2,7 +2,8 @@
 
 > Status: **Accepted** (2026-10-03; owner approved every recommendation in
 > §9). Proposed 2026-10-03 in #870. P0 implementation is split into the PR
-> groups of §6.1.
+> groups of §6.1: groups A, B and C merged; group D merged on the platform
+> and in sdk-go/sensor `main`, not yet in a sensor release (§6.1).
 > Scope: api (sensor gateway, signer, ingest pipeline, audit, detections) +
 > web (output encoding) + sdk-go (job verification, local policy, credential
 > providers, local audit) + sensor (`openctemio/sensor`) + helm-charts and
@@ -315,6 +316,17 @@ tenant switch (`sensor_results_require_command`, default **off** until
 P1 ships the SDK, **on** for new tenants, forced on at the
 bearer-key sunset, §7).
 
+> **As implemented (#889, migration `000317`).** The switch is the tenant
+> result policy `mode`, `warn` or `quarantine`
+> (`GET/PUT /api/v1/sensors/result-policy`), not a boolean
+> `sensor_results_require_command`. Every tenant that existed at the
+> migration got `warn` (unsolicited reports applied with the limits, audited
+> and counted); a tenant with no policy row, so every new one, is
+> `quarantine`. Advisory validation evidence is the policy's
+> `allow_advisory_evidence` (default off). Review:
+> `/api/v1/sensors/quarantined-results` (list, get, approve, reject). Details:
+> [architecture/sensor-result-binding.md](../architecture/sensor-result-binding.md).
+
 ### 5.4 Hostile-results pipeline
 
 **Threat.** Results are produced by scanners from attacker-controllable
@@ -529,6 +541,12 @@ a tool, tier, port range or credential the owner forbids.
 **Design.** RFC-023 D8 decided an operator-set allow-list intersected with
 the job; RFC-034 §6.4 added the host's egress veto. This RFC makes them one
 file.
+
+> **Version requirement.** The P0 subset is enforced by sdk-go#140 and
+> sensor#119, merged after sensor **v0.8.0**. Sensor v0.8.0 and older ignore
+> `SENSOR_LOCAL_POLICY`, the policy file and the kill-switch file: the
+> install snippets that mount the file need a sensor release later than
+> v0.8.0 to have any effect.
 
 ```yaml
 # /etc/openctem/sensor-policy.yaml  (root:root 0644, mounted read-only)
@@ -790,12 +808,12 @@ P0 ships as four independent PR groups, each owned by its own
 implementation work, each verified end to end before it merges. RFC-032
 P1–P2 runs in parallel as the P0 dependency.
 
-| Group | Repos | Contents |
-|---|---|---|
-| **(A) API authorization and scope** | api | Q5 (c): `scan` commands through `POST /api/v1/commands` run the scan target resolution (exclusions, zone routing, private-address check) **and** are owner/admin only; `UpdateScan` runs the config validator; the ingest worker re-reads the sensor's status before processing a queued report, and revoking a sensor re-queues its leased commands; audit events for scope targets, exclusions, tools and scanner templates, and the widening alert (A7); length caps on sensor-supplied text fields (title, description, message, remediation, references) |
-| **(B) Output encoding** | web, api | `sanitizeExternalUrl` (`safeHref`) on every data-driven `href`/`src` plus an ESLint rule; markdown sanitiser refuses `//host`; CSP `img-src` narrowed and a plan for script nonces; Jira descriptions escaped for wiki markup; server CSV skips leading whitespace like the client |
-| **(C) Result binding and quarantine** | api (+ sdk-go for the command id on v1 where needed) | Q6 (a): unsolicited reports only from collector/CI roles, stored in a quarantine state that never auto-resolves; tenant switch `sensor_results_require_command` (on for new tenants); advisory validation evidence off by default; scan sessions and ingest-job status scoped to the sensor; sensor reports never change compliance, classification, PII/PHI or exposure flags of an existing asset and never reactivate archived assets; auto-reopen and auto-resolve only from command-bound reports of the same tool; legacy "no tools declared" auto-resolve off |
-| **(D) Sensor-local gates** | sdk-go, sensor, helm-charts, snippets | Q3 (a) / Q4 (a): the policy file loader with the P0 subset (`targets.allow/deny`, `ports.allow`, `templates.custom`, `interactsh`, `kill_switch_file`), `SENSOR_ALLOWED_RANGES` / `SENSOR_ALLOWED_PORTS` shorthands in `ScanTargetPolicy`; custom templates and `allow_interactsh` opt-in (off for new installs, existing installs warned); `no_local_policy` health flag and the tenant switch to refuse private targets without a policy; a cap on `timeout_seconds`; hardening defaults (`runAsNonRoot`, read-only root, `cap_drop`, seccomp) in snippets and the chart |
+| Group | Repos | Contents | Status (2026-10-04) |
+|---|---|---|---|
+| **(A) API authorization and scope** | api | Q5 (c): `scan` commands through `POST /api/v1/commands` run the scan target resolution (exclusions, zone routing, private-address check) **and** are owner/admin only; `UpdateScan` runs the config validator; the ingest worker re-reads the sensor's status before processing a queued report, and revoking a sensor re-queues its leased commands; audit events for scope targets, exclusions, tools and scanner templates, and the widening alert (A7); length caps on sensor-supplied text fields (title, description, message, remediation, references) | Merged: #877 (`scan` commands admin-only and scope-checked), #882 (worker drops queued reports of revoked sensors), #902 (revoke takes back leased commands), #885 (scope, tool and template audit), #886 (text caps) |
+| **(B) Output encoding** | web, api | `sanitizeExternalUrl` (`safeHref`) on every data-driven `href`/`src` plus an ESLint rule; markdown sanitiser refuses `//host`; CSP `img-src` narrowed and a plan for script nonces; Jira descriptions escaped for wiki markup; server CSV skips leading whitespace like the client | Merged: #884 (encoded links and images, nonce-based CSP), #887 (scanner text encoded in tickets and notifications) |
+| **(C) Result binding and quarantine** | api (+ sdk-go for the command id on v1 where needed) | Q6 (a): unsolicited reports only from collector/CI roles, stored in a quarantine state that never auto-resolves; tenant switch `sensor_results_require_command` (on for new tenants); advisory validation evidence off by default; scan sessions and ingest-job status scoped to the sensor; sensor reports never change compliance, classification, PII/PHI or exposure flags of an existing asset and never reactivate archived assets; auto-reopen and auto-resolve only from command-bound reports of the same tool; legacy "no tools declared" auto-resolve off | Merged: #889 (migration `000317`). The switch shipped as the result policy `warn`/`quarantine` (§5.3 note). Follow-ups: console review page, sdk-go sending the command id on the v1 fallback, S3e/S3f binding |
+| **(D) Sensor-local gates** | sdk-go, sensor, helm-charts, snippets | Q3 (a) / Q4 (a): the policy file loader with the P0 subset (`targets.allow/deny`, `ports.allow`, `templates.custom`, `interactsh`, `kill_switch_file`), `SENSOR_ALLOWED_RANGES` / `SENSOR_ALLOWED_PORTS` shorthands in `ScanTargetPolicy`; custom templates and `allow_interactsh` opt-in (off for new installs, existing installs warned); `no_local_policy` health flag and the tenant switch to refuse private targets without a policy; a cap on `timeout_seconds`; hardening defaults (`runAsNonRoot`, read-only root, `cap_drop`, seccomp) in snippets and the chart | Platform side merged: #916 (reported policy, refusals, private-target switch, hardened snippets). sdk-go#140 and sensor#119 merged on `main` after sensor v0.8.0: needs the next sensor release |
 
 ## 7. Compatibility
 

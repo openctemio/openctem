@@ -1,7 +1,7 @@
 # RFC-043 — Deduplication and identity
 
 > Status: **Accepted — decisions D1–D15 approved** (owner, 2026-10-03; #892).
-> Progress: P0 merged; P1 item 10 implemented (see §12).
+> Progress: P0 merged; P1 item 10 implemented, item 11 v2 recipes at ingest implemented (see §12).
 > Scope: api (ingest, finding and asset repositories, merge, tickets,
 > notifications, migrations) + sensor/sdk-go (fingerprint hints only) + web
 > (duplicate link, correlation group view). No change to the CTIS wire format is
@@ -424,11 +424,25 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
 11. v2 recipes for SAST (snippet/logical location; SARIF partialFingerprints in
    sdk-go `FromSARIF`), secrets (HMAC from #849, no line), SCA (no version),
    DAST, network VA (one finding per CVE). Re-fingerprint migration with dry run.
+   **v2 recipes done** (`pkg/domain/vulnerability/identity*.go`,
+   `internal/app/ingest/identity_v2*.go`): computed at ingest for SAST, SCA,
+   secret, DAST, network VA (one finding per CVE) and misconfig; a version-1
+   finding is re-keyed in place on its next sighting, keeping its old key as an
+   alias; asset merge rewrites the tuple's asset. Golden corpus in
+   `tests/integration/testdata/dedup/`. sdk-go keeps SARIF
+   `partialFingerprints` in `FromSARIF` (sdk-go#142).
 12. Pentest `finding_key`; manual recipe with separators; "mark duplicate of"
    (writes `duplicate_of`). Converter fingerprints (Nessus, DefectDojo) kept as
    sighting keys; SARIF adapter picks `fingerprints` deterministically; one
    parser per tool (retire the in-tree adapters or make them call the sensor
    parsers) (B23).
+   **"Mark duplicate of" done:** `POST /api/v1/findings/{id}/duplicates`
+   (`findings:triage`; `findings:approve` as well when either finding is a
+   false positive or risk acceptance) folds the body's finding into `{id}`
+   through the finding merge (tombstone, references and keys move). Both must
+   be in the caller's tenant and data scope and on the same asset; pentest
+   findings are excluded; audited as `finding.duplicate_marked`. Web: "Mark as
+   duplicate" in the finding page menu.
 
 **P2 — sightings and correlation**
 

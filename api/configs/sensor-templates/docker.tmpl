@@ -21,6 +21,8 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 # {{if .CACert}}2{{else}}1{{end}}. Install the sensor-local policy (the "Local policy" tab, saved as
 # sensor-policy.yaml), reviewed by the owner of the network this sensor scans.
 # The sensor refuses every job outside it; without the file it does not start.
+# This needs a sensor release later than v0.8.0: v0.8.0 and older ignore the
+# policy and the kill switch, and scan without a local policy.
 sudo install -d -m 0755 /etc/openctem
 sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 

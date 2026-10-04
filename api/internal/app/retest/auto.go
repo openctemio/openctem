@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/validation"
 	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -108,6 +109,10 @@ func (s *Service) serveTenant(ctx context.Context, auto AutoStore, t retestdom.A
 		case errors.Is(err, retestdom.ErrNoSensor):
 			// Nothing can run for this tenant now; try again next tick.
 			return queued
+		case errors.Is(err, validation.ErrTargetRefused):
+			s.logger.Info("auto-retest skipped: the active-probe gate refused the target",
+				"tenant_id", t.TenantID.String(), "finding_id", fid.String(), "reason", err.Error())
+			continue
 		case errors.Is(err, retestdom.ErrNotEligible), errors.Is(err, retestdom.ErrInFlight),
 			errors.Is(err, retestdom.ErrRateLimited), errors.Is(err, shared.ErrNotFound):
 			continue
