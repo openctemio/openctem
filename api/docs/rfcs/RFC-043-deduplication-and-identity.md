@@ -436,6 +436,13 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
    sighting keys; SARIF adapter picks `fingerprints` deterministically; one
    parser per tool (retire the in-tree adapters or make them call the sensor
    parsers) (B23).
+   **"Mark duplicate of" done:** `POST /api/v1/findings/{id}/duplicates`
+   (`findings:triage`; `findings:approve` as well when either finding is a
+   false positive or risk acceptance) folds the body's finding into `{id}`
+   through the finding merge (tombstone, references and keys move). Both must
+   be in the caller's tenant and data scope and on the same asset; pentest
+   findings are excluded; audited as `finding.duplicate_marked`. Web: "Mark as
+   duplicate" in the finding page menu.
 
 **P2 — sightings and correlation**
 

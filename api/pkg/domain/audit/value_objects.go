@@ -112,6 +112,9 @@ const (
 	// another member's reaction from a finding comment (moderation). A
 	// person adding or removing their own reaction is not audited.
 	ActionFindingCommentReactionRemoved Action = "finding.comment_reaction_removed"
+	// ActionFindingDuplicateMarked records a user folding a finding into the
+	// one it duplicates (RFC-043 §9): which finding, into which, both statuses.
+	ActionFindingDuplicateMarked Action = "finding.duplicate_marked"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -465,7 +468,7 @@ func (a Action) IsValid() bool {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingRetestRequested,
-		ActionFindingCommentReactionRemoved,
+		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
@@ -566,7 +569,7 @@ func (a Action) Category() string {
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
-		ActionFindingRetestRequested, ActionFindingCommentReactionRemoved:
+		ActionFindingRetestRequested, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
 		return "finding"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"
