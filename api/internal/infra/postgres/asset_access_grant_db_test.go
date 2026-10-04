@@ -9,7 +9,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Migration 000355 (owner decision O1) turns today's owner-derived access
+// Migration 000372 (owner decision O1) turns today's owner-derived access
 // into explicit grants, so nobody loses an asset they can see at upgrade, and
 // nobody gains one: an owner_ref owner or an owner whose access row is
 // missing gets no grant. After a full refresh, direct ownership alone gives
@@ -17,7 +17,7 @@ import (
 func TestAccessGrantMigration_PreservesOwnerAccess(t *testing.T) {
 	ctx := context.Background()
 	db := openGroupsDB(t)
-	up, err := os.ReadFile("../../../migrations/000355_asset_access_grants.up.sql")
+	up, err := os.ReadFile("../../../migrations/000372_asset_access_grants.up.sql")
 	if err != nil {
 		t.Fatalf("read migration: %v", err)
 	}

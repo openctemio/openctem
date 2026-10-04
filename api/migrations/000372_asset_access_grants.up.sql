@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 000355: asset owner is not a data-scope grant
+-- Migration 000372: asset owner is not a data-scope grant
 -- =============================================================================
 -- Owner decision O1 (research 12, 2026-10-03). Until now naming a user as an
 -- owner of an asset (asset_owners.user_id, Owners tab, assets:write) also put

@@ -1,6 +1,6 @@
 package postgres
 
-// Explicit per-user data-scope grants (asset_access_grants, migration 000355).
+// Explicit per-user data-scope grants (asset_access_grants, migration 000372).
 //
 // Being an asset owner is an assignment only; it does not change what the
 // owner can see. A user's data scope (user_accessible_assets) is the assets

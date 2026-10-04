@@ -787,14 +787,14 @@ from exactly two sources:
 | Source | Managed with | Rows |
 |---|---|---|
 | **Group assignment**: the assets assigned to the user's active groups | `team:groups:write` (Groups → Assets, scope rules, or a *group* owner on an asset's Owners tab) | `asset_owners` rows with `group_id` × `group_members` |
-| **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`) | `asset_access_grants` (migration `000355`) |
+| **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`) | `asset_access_grants` (migration `000372`) |
 
 **Being an owner is not an access grant** (owner decision O1, 2026-10-03).
 Naming a user as an owner of an asset, in any RACI role or through the
 `owner_ref` email match, is an assignment (accountability, finding
 assignment, notifications) and never changes what that user can see. Before
 O1 it did: `assets:write` alone could narrow a fail-open member to that one
-asset, or widen a fail-closed one. Migration `000355` turned every such
+asset, or widen a fail-closed one. Migration `000372` turned every such
 owner-derived access row into an explicit grant (source `migration`), so
 nobody lost an asset at the upgrade; administrators review and revoke them
 on the asset's Owners tab (*Direct access*). A group owner remains the
