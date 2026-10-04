@@ -360,6 +360,37 @@ func (e *Enforcer) CanActOnAssets(ctx context.Context, tenantID shared.ID, fallb
 	return pred, false, nil
 }
 
+// Delegable returns a predicate admitting the assets the request's caller
+// may hand to others (assign to a group, grant, add a member to a group that
+// holds them). Owner decision D13 (research doc 15 L-09): a caller can only
+// delegate scope they hold themselves. An unrestricted caller (admin,
+// full-data role, member of a fail-open organization with no scope row,
+// internal call) may delegate any asset of the tenant; that is the second
+// return value.
+func (e *Enforcer) Delegable(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, bool, error) {
+	scope, err := e.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, false, err
+	}
+	if scope == nil {
+		return func(shared.ID) bool { return true }, true, nil
+	}
+	admit, err := e.Filter(ctx, scope, assetIDs)
+	return admit, false, err
+}
+
+// FullDataCaller reports whether the request's caller has full data access:
+// an admin, a holder of a has_full_data_access role (not through an API key),
+// or an internal call with no user. Changes that widen the caller's own
+// scope (adding themselves to a group) need it.
+func (e *Enforcer) FullDataCaller(ctx context.Context, tenantID shared.ID) (bool, error) {
+	c := e.CallerOf(ctx)
+	if c.IsAdmin || c.UserID == "" {
+		return true, nil
+	}
+	return e.FullData(ctx, tenantID, c.UserID)
+}
+
 // FilterForCaller is Filter for the request's caller.
 func (e *Enforcer) FilterForCaller(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, error) {
 	scope, err := e.Resolve(ctx, tenantID)

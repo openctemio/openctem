@@ -208,8 +208,12 @@ func (t coverTarget) coversLocator(host, path string) bool {
 // which human-resolved findings it may reopen. It is filled while the
 // report's assets are processed.
 type alterScope struct {
-	all     bool
-	targets []coverTarget
+	all bool
+	// commandBound: the report names a command assigned to the submitting
+	// sensor (BindingCommand). Only such reports may resolve findings on a
+	// source's say-so (source_resolve.go).
+	commandBound bool
+	targets      []coverTarget
 	// allowed are the persisted ids of the assets this report may change:
 	// those it created and the existing ones its command covers.
 	allowed map[shared.ID]bool
@@ -263,6 +267,7 @@ func newAlterScope(b Binding) *alterScope {
 		s.all = true
 	case BindingCommand:
 		s.targets = newCoverTargets(b.Targets)
+		s.commandBound = true
 	}
 	return s
 }
