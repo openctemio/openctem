@@ -144,8 +144,13 @@ func NewAssetWithSubType(name string, assetType AssetType, subType string, criti
 	if err := validateName(name); err != nil {
 		return nil, err
 	}
-	if !assetType.IsValid() {
-		return nil, fmt.Errorf("%w: invalid asset type", shared.ErrValidation)
+	// Only core types are stored; an alias or a legacy sub-type must be
+	// resolved first (ResolveInputType, RFC-042 §6.3.8).
+	if !assetType.IsStored() {
+		return nil, fmt.Errorf("%w: invalid asset type %q (not a stored type; resolve input names with ResolveInputType)", shared.ErrValidation, assetType)
+	}
+	if !IsValidSubType(assetType, subType) {
+		return nil, fmt.Errorf("%w: invalid sub_type %q for asset type %q", shared.ErrValidation, subType, assetType)
 	}
 	if !criticality.IsValid() {
 		return nil, fmt.Errorf("%w: invalid criticality", shared.ErrValidation)
@@ -305,9 +310,41 @@ func (a *Asset) SubType() string {
 	return a.subType
 }
 
-// SetSubType sets the asset sub-type.
+// SetSubType sets the asset sub-type without validation. It is for the
+// repository (rows read back) and tests; writes use ChangeSubType or
+// ApplyResolvedType so only the registry's closed list is stored.
 func (a *Asset) SetSubType(subType string) {
 	a.subType = subType
+}
+
+// ChangeSubType sets a sub-type from the asset type's closed list
+// (RFC-042 §6.3.8 R2). "" clears it.
+func (a *Asset) ChangeSubType(subType string) error {
+	if !IsValidSubType(a.assetType, subType) {
+		return fmt.Errorf("%w: invalid sub_type %q for asset type %q (allowed: %s)",
+			shared.ErrValidation, subType, a.assetType, allowedSubTypes(a.assetType))
+	}
+	a.subType = subType
+	return nil
+}
+
+// ApplyResolvedType records what a resolved input implied on an asset of the
+// resolved type: the sub-type when the asset has none, the provider when it
+// has none, and the implied attributes and native sub-type where the
+// properties have no value. It never overwrites a value.
+func (a *Asset) ApplyResolvedType(r ResolvedType) {
+	if r.Type != a.assetType {
+		return
+	}
+	if a.subType == "" && IsValidSubType(a.assetType, r.SubType) {
+		a.subType = r.SubType
+	}
+	if (a.provider == "" || a.provider == ProviderOther) && r.Provider != "" {
+		a.provider = r.Provider
+	}
+	if len(r.Attributes) > 0 || r.NativeSubType != "" {
+		a.properties = r.MergeImplied(a.properties)
+	}
 }
 
 // Category returns the asset category (derived from type, not stored).

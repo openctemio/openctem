@@ -43,6 +43,14 @@ func liveAssetSQL(alias string) string {
 	return alias + ".deleted_at IS NULL"
 }
 
+// notOfDeletedAssetSQL is the predicate for rows that point at an asset
+// (exposure events, ...): a row of a soft-deleted asset is history, not
+// work, so it is not listed or counted. col is the asset id column; a NULL
+// asset id stays visible.
+func notOfDeletedAssetSQL(col string) string {
+	return "NOT EXISTS (SELECT 1 FROM assets d WHERE d.id = " + col + " AND d.deleted_at IS NOT NULL)"
+}
+
 // assetDetachStatements remove the rows that make a deleted asset appear in
 // lists or receive work. $1 is the asset id (already checked against the
 // tenant).

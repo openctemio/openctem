@@ -378,7 +378,6 @@ func TestInferAssetExposure(t *testing.T) {
 		want asset.Exposure
 	}{
 		{"domain is internet-facing", mk("example.com", asset.AssetTypeDomain, nil), asset.ExposurePublic},
-		{"website is internet-facing", mk("https://app.example.com", asset.AssetTypeWebsite, nil), asset.ExposurePublic},
 		{"legacy ip string (public)", mk("web-1", asset.AssetTypeHost, map[string]any{"ip": "8.8.8.8"}), asset.ExposurePublic},
 		{"legacy ip string (private)", mk("db-1", asset.AssetTypeHost, map[string]any{"ip": "10.0.0.5"}), asset.ExposureUnknown},
 		// The shapes normalised host properties really have: []string right

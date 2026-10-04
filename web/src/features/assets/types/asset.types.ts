@@ -1083,6 +1083,12 @@ export interface Asset {
  */
 export interface CreateAssetInput {
   type: AssetType
+  /**
+   * The kind within the type, from the registry's closed list
+   * (`ASSET_SUB_TYPES`). Typed pages send theirs (websites → `website`), so
+   * the new asset shows on the page that created it.
+   */
+  subType?: string
   name: string
   description?: string
   criticality?: Criticality // Defaults to 'medium' if not provided
