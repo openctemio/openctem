@@ -52,10 +52,8 @@ var sensorRenameProbes = []upgradeProbe{
 
 	{area: "data", what: "permission catalog ids agents:*", query: `
 		SELECT count(*) FROM permissions WHERE id LIKE 'agents:%'`},
-	{area: "data", what: "role, group and permission-set grants of agents:*", query: `
-		SELECT (SELECT count(*) FROM role_permissions WHERE permission_id LIKE 'agents:%')
-		     + (SELECT count(*) FROM group_permissions WHERE permission_id LIKE 'agents:%')
-		     + (SELECT count(*) FROM permission_set_items WHERE permission_id LIKE 'agents:%')`},
+	{area: "data", what: "role grants of agents:*", query: `
+		SELECT count(*) FROM role_permissions WHERE permission_id LIKE 'agents:%'`},
 	{area: "data", what: "oct_ API keys with agents:* scopes", query: `
 		SELECT count(*) FROM api_keys k
 		WHERE EXISTS (SELECT 1 FROM unnest(k.scopes::text[]) s WHERE s LIKE 'agents:%')`},

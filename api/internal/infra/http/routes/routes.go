@@ -114,7 +114,6 @@ type Handlers struct {
 
 	// Access Control handlers
 	Group          *handler.GroupHandler          // nil if not initialized (no database)
-	PermissionSet  *handler.PermissionSetHandler  // nil if not initialized (no database)
 	Role           *handler.RoleHandler           // nil if not initialized (no database)
 	Permission     *handler.PermissionHandler     // nil if not initialized (permission sync handler)
 	AssignmentRule *handler.AssignmentRuleHandler // nil if not initialized (no database)
@@ -472,6 +471,7 @@ func Register(
 	// Continuous retest (RFC-039): Retest now + a finding's retest history.
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerOrganizationMemberRoutes(router, h.LocalAuth, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {
@@ -809,11 +809,6 @@ func Register(
 	// Per-user customizable dashboards (RFC-021) - self-scoped under /me/*.
 	if h.UserDashboard != nil {
 		registerUserDashboardRoutes(router, h.UserDashboard, authMiddleware, userSync)
-	}
-
-	// Permission Set routes (Access Control - tenant from JWT token)
-	if h.PermissionSet != nil {
-		registerPermissionSetRoutes(router, h.PermissionSet, authMiddleware, userSync)
 	}
 
 	// Permission Sync routes (real-time permission sync with ETag support)

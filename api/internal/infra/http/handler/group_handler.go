@@ -168,11 +168,6 @@ type UpdateGroupMemberRoleRequest struct {
 	Role string `json:"role" validate:"required,oneof=owner lead member"`
 }
 
-// AssignPermissionSetRequest represents the request to assign a permission set.
-type AssignPermissionSetRequest struct {
-	PermissionSetID string `json:"permission_set_id" validate:"required,uuid"`
-}
-
 // =============================================================================
 // Response Converters
 // =============================================================================
@@ -748,126 +743,6 @@ func (h *GroupHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 // Permission Set Assignment Handlers
 // =============================================================================
-
-// AssignPermissionSet handles POST /api/v1/groups/{groupId}/permission-sets
-// @Summary Assign a permission set to a group
-// @Description Assign a permission set to the group
-// @Tags groups
-// @Accept json
-// @Produce json
-// @Param groupId path string true "Group ID"
-// @Param request body AssignPermissionSetRequest true "Permission set details"
-// @Success 204 "No Content"
-// @Failure 400 {object} apierror.Error
-// @Failure 404 {object} apierror.Error
-// @Router /groups/{groupId}/permission-sets [post]
-func (h *GroupHandler) AssignPermissionSet(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	groupID := chi.URLParam(r, "groupId")
-
-	userID := middleware.GetLocalUserID(ctx)
-	if userID.IsZero() {
-		apierror.Unauthorized("User context required").WriteJSON(w)
-		return
-	}
-
-	var req AssignPermissionSetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := app.AssignPermissionSetInput{
-		GroupID:         groupID,
-		PermissionSetID: req.PermissionSetID,
-	}
-
-	actx := h.buildAuditContext(r)
-
-	if err := h.service.AssignPermissionSet(ctx, input, userID, actx); err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// UnassignPermissionSet handles DELETE /api/v1/groups/{groupId}/permission-sets/{permissionSetId}
-// @Summary Remove a permission set from a group
-// @Description Remove a permission set assignment from the group
-// @Tags groups
-// @Param groupId path string true "Group ID"
-// @Param permissionSetId path string true "Permission Set ID"
-// @Success 204 "No Content"
-// @Failure 404 {object} apierror.Error
-// @Router /groups/{groupId}/permission-sets/{permissionSetId} [delete]
-func (h *GroupHandler) UnassignPermissionSet(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	groupID := chi.URLParam(r, "groupId")
-	permissionSetID := chi.URLParam(r, "permissionSetId")
-
-	actx := h.buildAuditContext(r)
-
-	if err := h.service.UnassignPermissionSet(ctx, groupID, permissionSetID, actx); err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// ListAssignedPermissionSets handles GET /api/v1/groups/{groupId}/permission-sets
-// @Summary List permission sets assigned to a group
-// @Description Get all permission sets assigned to the group with full details
-// @Tags groups
-// @Produce json
-// @Param groupId path string true "Group ID"
-// @Success 200 {array} PermissionSetResponse
-// @Failure 404 {object} apierror.Error
-// @Router /groups/{groupId}/permission-sets [get]
-func (h *GroupHandler) ListAssignedPermissionSets(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenantID := middleware.MustGetTenantID(ctx)
-	groupID := chi.URLParam(r, "groupId")
-
-	permissionSets, err := h.service.ListGroupPermissionSetsWithDetails(ctx, tenantID, groupID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	// Convert to response objects
-	result := make([]PermissionSetWithItemsResponse, len(permissionSets))
-	for i, ps := range permissionSets {
-		// Resolve permission items to permission strings
-		// Since we don't have a resolver helper handy here, and we just want raw permission keys
-		// we can map them directly if items contain the key.
-		// Assumption: ps.Items contains PermissionItem which has PermissionID/Key.
-
-		// Wait, toPermissionSetWithItemsResponse requires resolved string slice.
-		// We'll simplisticly assume for now that listing assigned sets might not need FULL resolved hierarchy
-		// if complex, but the UI expects a list of strings.
-
-		// Let's implement a simple extraction loop locally or reuse what we can.
-		// Actually, let's map what we have.
-
-		permStrings := make([]string, 0, len(ps.Items))
-		for _, item := range ps.Items {
-			// PermissionID is the string key like "user:read"
-			permStrings = append(permStrings, item.PermissionID())
-		}
-
-		result[i] = toPermissionSetWithItemsResponse(ps, permStrings)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
-}
 
 // =============================================================================
 // My Groups (Current User)

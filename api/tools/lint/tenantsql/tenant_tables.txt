@@ -75,7 +75,6 @@ pentest_finding_templates
 pentest_findings
 pentest_reports
 pentest_retests
-permission_sets
 pipeline_runs
 pipeline_templates
 priority_class_audit_log
