@@ -48,7 +48,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		MembersRead, MembersInvite, MembersWrite,
 		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets,
 		RolesRead, RolesWrite, RolesDelete, RolesAssign,
-		PermissionSetsRead, PermissionSetsWrite, PermissionSetsDelete,
 		AssignmentRulesRead, AssignmentRulesWrite, AssignmentRulesDelete,
 		// Integrations
 		IntegrationsRead, IntegrationsManage,
@@ -124,7 +123,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		MembersRead, MembersInvite, MembersWrite,
 		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets,
 		RolesRead, RolesWrite, RolesDelete, RolesAssign,
-		PermissionSetsRead, PermissionSetsWrite, PermissionSetsDelete,
 		AssignmentRulesRead, AssignmentRulesWrite, AssignmentRulesDelete,
 		// Integrations
 		IntegrationsRead, IntegrationsManage,
@@ -207,7 +205,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		MembersRead,
 		GroupsRead,
 		RolesRead,
-		PermissionSetsRead,
 		// Integrations (read + limited write)
 		IntegrationsRead,
 		SCMConnectionsRead, SCMConnectionsWrite,
@@ -278,7 +275,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		MembersRead,
 		GroupsRead,
 		RolesRead,
-		PermissionSetsRead,
 		// Integrations (read only)
 		IntegrationsRead,
 		SCMConnectionsRead,
