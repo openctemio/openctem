@@ -219,8 +219,6 @@ describe('settings shell', () => {
       // "SSO is managed by your platform administrator" landing pages for old links.
       '/settings/integrations/saml',
       '/settings/integrations/verified-domains',
-      // Unlinked until the IAM model decision (owner decision D5).
-      '/settings/access-control/permission-sets',
     ])
     const pages = [...staticPagesUnder('/settings'), ...staticPagesUnder('/account')].filter(
       (u) => u !== '/settings' && isSettingsShellPath(u)

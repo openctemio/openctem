@@ -132,7 +132,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	// ran (a pause, a config change), and never stored the run status anyway
 	// (the generic Update does not carry the run columns). The run is counted
 	// when it finishes (RecordRun / the timeout reaper).
-	if err := s.scanRepo.RecordRunStarted(ctx, sc.ID, run.ID); err != nil {
+	if err := s.scanRepo.RecordRunStarted(ctx, sc.TenantID, sc.ID, run.ID); err != nil {
 		s.logger.Warn("failed to record run in scan", "error", err)
 	}
 
@@ -1037,6 +1037,13 @@ func (s *Service) validateSingleScanTool(ctx context.Context, scannerName string
 			shared.ErrValidation,
 		)
 	}
+	if tool.IsConnector() {
+		return shared.NewDomainError(
+			"TOOL_NOT_SCANNER",
+			fmt.Sprintf("'%s' is a connector, not a scanner: it runs on its integration's connector commands. Use a scanner.", scannerName),
+			shared.ErrValidation,
+		)
+	}
 
 	return nil
 }
@@ -1088,6 +1095,13 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 			return shared.NewDomainError(
 				"TOOL_NOT_SCANNER",
 				fmt.Sprintf("'%s' used by step '%s' is an asset collector, not a scanner: it runs on its collector sensor's own schedule. Use a scanner.", step.Tool, step.StepKey),
+				shared.ErrValidation,
+			)
+		}
+		if tool.IsConnector() {
+			return shared.NewDomainError(
+				"TOOL_NOT_SCANNER",
+				fmt.Sprintf("'%s' used by step '%s' is a connector, not a scanner: it runs on its integration's connector commands. Use a scanner.", step.Tool, step.StepKey),
 				shared.ErrValidation,
 			)
 		}

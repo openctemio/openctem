@@ -32,14 +32,20 @@ type FilterCaller struct {
 type findingWhereRepo interface {
 	ListWhere(ctx context.Context, w *filterspec.Where, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error)
 	CountWhere(ctx context.Context, w *filterspec.Where) (int64, error)
+	GetStatsWhere(ctx context.Context, w *filterspec.Where) (*vulnerability.FindingStats, error)
 }
 
 var errNoFindingWhereRepo = errors.New("finding repository cannot run compiled filters")
 
 // FilterActor resolves the caller's data scope and returns the actor every
-// findings filter compiles as. It fails closed: a member's read with no
-// data-scope enforcer wired, or a failed scope lookup, is an error.
+// findings filter compiles as.
 func (s *VulnerabilityService) FilterActor(ctx context.Context, c FilterCaller) (filterspec.Actor, error) {
+	return filterActor(ctx, s.dataScope, c)
+}
+
+// filterActor resolves c's data scope with e. It fails closed: a member's
+// read with no enforcer wired, or a failed scope lookup, is an error.
+func filterActor(ctx context.Context, e *datascope.Enforcer, c FilterCaller) (filterspec.Actor, error) {
 	tenantID, err := shared.IDFromString(c.TenantID)
 	if err != nil {
 		return filterspec.Actor{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -52,10 +58,10 @@ func (s *VulnerabilityService) FilterActor(ctx context.Context, c FilterCaller) 
 	}
 	var scope *shared.DataScope
 	if !c.IsAdmin && c.UserID != "" {
-		if s.dataScope == nil {
+		if e == nil {
 			return filterspec.Actor{}, errors.New("data scope enforcer not configured")
 		}
-		scope, err = s.dataScope.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: false})
+		scope, err = e.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: false})
 		if err != nil {
 			return filterspec.Actor{}, fmt.Errorf("resolve data scope: %w", err)
 		}
@@ -83,4 +89,52 @@ func (s *VulnerabilityService) ListFindingsBySpec(ctx context.Context, c FilterC
 		return empty, err
 	}
 	return repo.ListWhere(ctx, where, pagination.New(spec.Page, spec.PerPage))
+}
+
+// GetFindingStatsBySpec computes the findings stats for a decoded filter, as
+// the caller: the same compiled WHERE as ListFindingsBySpec, so the metric
+// strip and the table count the same rows.
+func (s *VulnerabilityService) GetFindingStatsBySpec(ctx context.Context, c FilterCaller, spec *filterspec.Spec) (*vulnerability.FindingStats, error) {
+	repo, ok := s.findingRepo.(findingWhereRepo)
+	if !ok {
+		return nil, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	where, err := filterspec.Compile(spec, vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	return repo.GetStatsWhere(ctx, where)
+}
+
+// groupsArgOffset is the first placeholder the grouped-view queries leave to
+// the filter ($1 is their tenant).
+const groupsArgOffset = 2
+
+// ListFindingGroupsBySpec groups the findings a decoded filter selects, as
+// the caller: the filter is compiled once against FindingFieldsF and is the
+// whole WHERE of every dimension's query.
+func (s *FindingActionsService) ListFindingGroupsBySpec(
+	ctx context.Context, c FilterCaller, groupBy string, spec *filterspec.Spec, page pagination.Pagination,
+) (pagination.Result[*vulnerability.FindingGroup], error) {
+	var empty pagination.Result[*vulnerability.FindingGroup]
+	if !validGroupDimensions[groupBy] {
+		return empty, fmt.Errorf("%w: invalid group_by: %s", shared.ErrValidation, groupBy)
+	}
+	actor, err := filterActor(ctx, s.dataScope, c)
+	if err != nil {
+		return empty, err
+	}
+	where, err := filterspec.CompileFrom(spec, vulnerability.FindingFieldsF, actor, groupsArgOffset)
+	if err != nil {
+		return empty, err
+	}
+	tid := actor.TenantID()
+	filter := vulnerability.NewFindingFilter()
+	filter.TenantID = &tid
+	filter.Compiled = where
+	return s.findingRepo.ListFindingGroups(ctx, tid, groupBy, filter, page)
 }
