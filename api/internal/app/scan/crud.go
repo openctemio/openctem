@@ -82,6 +82,11 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, err
 	}
 
+	// The creator may scan only targets in their act scope (D9).
+	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), validatedTargets); err != nil {
+		return nil, err
+	}
+
 	// Parse and validate asset groups
 	assetGroupID, assetGroupIDs, err := s.validateScanAssetGroups(ctx, tenantID, input)
 	if err != nil {
@@ -643,6 +648,11 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 
 	sc, err := s.GetScan(ctx, input.TenantID, input.ScanID)
 	if err != nil {
+		return nil, err
+	}
+	// Editing a scan is acting on its targets: the editor must be allowed
+	// to scan every direct target (D9). Group members are filtered per run.
+	if err := s.refuseOutOfActScope(ctx, sc.TenantID, nil, sc.Targets); err != nil {
 		return nil, err
 	}
 

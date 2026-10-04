@@ -136,6 +136,11 @@ func (s *WorkflowService) CreateWorkflow(ctx context.Context, input CreateWorkfl
 		w.Tags = input.Tags
 	}
 
+	// Refuse trigger/action types the platform does not execute, before any write.
+	if err := validateSupportedNodeInputs(input.Nodes); err != nil {
+		return nil, err
+	}
+
 	// Create workflow
 	if err := s.workflowRepo.Create(ctx, w); err != nil {
 		return nil, fmt.Errorf("failed to create workflow: %w", err)
@@ -265,6 +270,15 @@ func (s *WorkflowService) UpdateWorkflow(ctx context.Context, input UpdateWorkfl
 	var activationChange string
 	if input.IsActive != nil {
 		if *input.IsActive && !w.IsActive {
+			// A workflow that uses a trigger or action the platform does not
+			// execute stays readable, but cannot be switched on.
+			full, err := s.workflowRepo.GetWithGraph(ctx, w.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load workflow graph: %w", err)
+			}
+			if err := full.ValidateSupported(); err != nil {
+				return nil, err
+			}
 			w.Activate()
 			activationChange = "activated"
 		} else if !*input.IsActive && w.IsActive {
@@ -326,6 +340,12 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 	}
 	if activeCount > 0 {
 		return nil, shared.NewDomainError("ACTIVE_RUNS_EXIST", "cannot update workflow graph with active runs", shared.ErrValidation)
+	}
+
+	// Refuse trigger/action types the platform does not execute, before the
+	// existing graph is deleted.
+	if err := validateSupportedNodeInputs(input.Nodes); err != nil {
+		return nil, err
 	}
 
 	// Update metadata if provided
@@ -474,6 +494,10 @@ func (s *WorkflowService) AddNode(ctx context.Context, input AddNodeInput) (*wor
 		return nil, err
 	}
 
+	if err := workflowdom.ValidateSupported(input.Config); err != nil {
+		return nil, err
+	}
+
 	node, err := workflowdom.NewNode(w.ID, input.NodeKey, input.NodeType, input.Name)
 	if err != nil {
 		return nil, err
@@ -530,6 +554,9 @@ func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput)
 		node.SetUIPosition(*input.UIPositionX, *input.UIPositionY)
 	}
 	if input.Config != nil {
+		if err := workflowdom.ValidateSupported(*input.Config); err != nil {
+			return nil, err
+		}
 		node.Config = *input.Config
 	}
 
@@ -775,4 +802,14 @@ func (s *WorkflowService) CancelRun(ctx context.Context, tenantID, userID, runID
 			WithMessage("Workflow run canceled"))
 
 	return nil
+}
+
+// validateSupportedNodeInputs refuses node inputs that use a trigger or action
+// type the platform does not execute (see workflowdom.ValidateSupported).
+func validateSupportedNodeInputs(nodes []CreateNodeInput) error {
+	configs := make([]workflowdom.NodeConfig, 0, len(nodes))
+	for _, n := range nodes {
+		configs = append(configs, n.Config)
+	}
+	return workflowdom.ValidateSupported(configs...)
 }

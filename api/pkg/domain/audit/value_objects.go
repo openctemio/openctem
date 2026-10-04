@@ -41,9 +41,10 @@ const (
 	// ActionAssetAttributionDecided: a person set whether an asset is the
 	// organization's (RFC-036 attribution review).
 	ActionAssetAttributionDecided Action = "asset.attribution_decided"
-	// ActionAssetCreateMerged: a create request matched an existing asset by
-	// name or address and updated it instead of creating a new one.
-	// Metadata lists the changed field names.
+	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
+	// existing repository asset and attached its SCM data to it. POST
+	// /assets no longer merges (a duplicate is a 409); older rows from it
+	// keep this action. Metadata lists the changed field names.
 	ActionAssetCreateMerged Action = "asset.create_merged"
 
 	// Human changes to assets (API/UI). Metadata carries the names of the
@@ -111,6 +112,9 @@ const (
 	// another member's reaction from a finding comment (moderation). A
 	// person adding or removing their own reaction is not audited.
 	ActionFindingCommentReactionRemoved Action = "finding.comment_reaction_removed"
+	// ActionFindingDuplicateMarked records a user folding a finding into the
+	// one it duplicates (RFC-043 §9): which finding, into which, both statuses.
+	ActionFindingDuplicateMarked Action = "finding.duplicate_marked"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -464,7 +468,7 @@ func (a Action) IsValid() bool {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingRetestRequested,
-		ActionFindingCommentReactionRemoved,
+		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
@@ -565,7 +569,7 @@ func (a Action) Category() string {
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
-		ActionFindingRetestRequested, ActionFindingCommentReactionRemoved:
+		ActionFindingRetestRequested, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
 		return "finding"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"

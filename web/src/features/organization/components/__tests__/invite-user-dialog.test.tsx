@@ -77,7 +77,7 @@ describe('InviteUserDialog', () => {
     )
     expect(await screen.findByText('Invitation created')).toBeInTheDocument()
     expect(screen.getByTestId('invitation-link')).toHaveTextContent(
-      `${window.location.origin}/invitations/raw-token-abc`
+      `${window.location.origin}/invitations#token=raw-token-abc`
     )
     expect(onInvited).toHaveBeenCalled()
   })
@@ -122,7 +122,7 @@ describe('InviteUserDialog', () => {
 describe('buildInvitationLink', () => {
   it('points at the invitation page', () => {
     expect(buildInvitationLink('GWEu-eZWS_bit', 'https://x.test')).toBe(
-      'https://x.test/invitations/GWEu-eZWS_bit'
+      'https://x.test/invitations#token=GWEu-eZWS_bit'
     )
   })
 })
