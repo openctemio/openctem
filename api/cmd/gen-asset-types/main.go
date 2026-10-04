@@ -235,14 +235,22 @@ type typeCfg struct {
 	SubTypes []string  `yaml:"sub_types"`
 	// SubTypeInputs maps a legacy sub-type value, still accepted on input,
 	// to what it is stored as (RFC-042 §6.3.8 R2).
-	SubTypeInputs  map[string]inputCfg `yaml:"sub_type_inputs"`
-	LegacyCategory string              `yaml:"legacy_category"`
-	Storage        string              `yaml:"storage"`
-	IdentityKeys   []string            `yaml:"identity_keys"`
-	Attributes     []attrCfg           `yaml:"attributes"`
-	Columns        []string            `yaml:"columns"`
-	Card           string              `yaml:"card"`
-	Sections       []string            `yaml:"sections"`
+	SubTypeInputs map[string]inputCfg `yaml:"sub_type_inputs"`
+	// ScannableBy lists the tool target types (a tool's supported_targets
+	// vocabulary) that can scan the type. On an alias it is the sub-type's
+	// own list; otherwise an alias inherits its core type's list.
+	ScannableBy []string `yaml:"scannable_by"`
+	// ExposureDefault is the exposure an asset has by nature (domains and
+	// web applications are internet-facing); ingest applies it when the
+	// scanner sent none. "" = no default.
+	ExposureDefault string    `yaml:"exposure_default"`
+	LegacyCategory  string    `yaml:"legacy_category"`
+	Storage         string    `yaml:"storage"`
+	IdentityKeys    []string  `yaml:"identity_keys"`
+	Attributes      []attrCfg `yaml:"attributes"`
+	Columns         []string  `yaml:"columns"`
+	Card            string    `yaml:"card"`
+	Sections        []string  `yaml:"sections"`
 }
 
 type relConfig struct {
@@ -294,8 +302,11 @@ type classOut struct {
 }
 
 type relRule struct {
-	Relationship string    `json:"relationship"`
-	Peers        []typeRef `json:"peers"`
+	Relationship string `json:"relationship"`
+	// SubType restricts the rule to this type's assets of one sub-type
+	// ("" = any sub-type).
+	SubType string    `json:"sub_type,omitempty"`
+	Peers   []typeRef `json:"peers"`
 }
 
 type typeRels struct {
@@ -310,24 +321,26 @@ type inputOut struct {
 }
 
 type typeOut struct {
-	Type           string    `json:"type"`
-	Label          string    `json:"label"`
-	Plural         string    `json:"plural"`
-	Icon           string    `json:"icon"`
-	Class          string    `json:"class"`
-	Lens           string    `json:"lens,omitempty"`
-	AliasOf        *typeRef  `json:"alias_of,omitempty"`
-	SubTypes       []string  `json:"sub_types"`
-	LegacyCategory string    `json:"legacy_category"`
-	Storage        string    `json:"storage"`
-	IdentityKeys   []string  `json:"identity_keys"`
-	Attributes     []attrCfg `json:"attributes"`
-	Facets         []string  `json:"facets"`
-	GroupBy        []string  `json:"group_by"`
-	Columns        []string  `json:"columns"`
-	Card           string    `json:"card"`
-	Sections       []string  `json:"sections"`
-	Relationships  typeRels  `json:"relationships"`
+	Type            string    `json:"type"`
+	Label           string    `json:"label"`
+	Plural          string    `json:"plural"`
+	Icon            string    `json:"icon"`
+	Class           string    `json:"class"`
+	Lens            string    `json:"lens,omitempty"`
+	AliasOf         *typeRef  `json:"alias_of,omitempty"`
+	SubTypes        []string  `json:"sub_types"`
+	LegacyCategory  string    `json:"legacy_category"`
+	Storage         string    `json:"storage"`
+	IdentityKeys    []string  `json:"identity_keys"`
+	Attributes      []attrCfg `json:"attributes"`
+	Facets          []string  `json:"facets"`
+	GroupBy         []string  `json:"group_by"`
+	Columns         []string  `json:"columns"`
+	Card            string    `json:"card"`
+	Sections        []string  `json:"sections"`
+	Relationships   typeRels  `json:"relationships"`
+	ScannableBy     []string  `json:"scannable_by"`
+	ExposureDefault string    `json:"exposure_default,omitempty"`
 }
 
 // =============================================================================
@@ -597,6 +610,17 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 		if err := dup(where+" sub_type_inputs", sortedKeys(t.SubTypeInputs)); err != nil {
 			return nil, err
 		}
+		if err := dup(where+" scannable_by", t.ScannableBy); err != nil {
+			return nil, err
+		}
+		for _, tt := range t.ScannableBy {
+			if !knownTargetTypes[tt] {
+				return nil, fmt.Errorf("%s: scannable_by %q is not a tool target type", where, tt)
+			}
+		}
+		if t.ExposureDefault != "" && !knownExposures[t.ExposureDefault] {
+			return nil, fmt.Errorf("%s: exposure_default %q is not an exposure", where, t.ExposureDefault)
+		}
 		storage := t.Storage
 		if storage == "" {
 			storage = "core"
@@ -608,6 +632,7 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 			IdentityKeys: t.IdentityKeys, Attributes: nonNilAttrs(t.Attributes),
 			Facets: nonNil(facets), GroupBy: nonNil(groupBy),
 			Columns: t.Columns, Card: t.Card, Sections: t.Sections,
+			ScannableBy: nonNil(t.ScannableBy), ExposureDefault: t.ExposureDefault,
 		}
 		m.Types = append(m.Types, out)
 		classTypes[t.Class] = append(classTypes[t.Class], t.Type)
@@ -662,6 +687,10 @@ func resolveRelationships(m *model, types map[string]bool, rel *relConfig) error
 	for _, t := range m.Types {
 		subTypes[t.Type] = t.SubTypes
 	}
+	aliasOf := map[string]bool{}
+	for _, t := range m.Types {
+		aliasOf[t.Type] = t.AliasOf != nil
+	}
 	for _, v := range m.VirtualTypes {
 		switch {
 		case types[v.Name]:
@@ -671,6 +700,8 @@ func resolveRelationships(m *model, types map[string]bool, rel *relConfig) error
 		case v.Unmodelled:
 		case !types[v.Type]:
 			return fmt.Errorf("virtual type %q: unknown type %q", v.Name, v.Type)
+		case aliasOf[v.Type]:
+			return fmt.Errorf("virtual type %q: %q is an alias; name the core type and sub_type", v.Name, v.Type)
 		case v.SubType != "" && !slices.Contains(subTypes[v.Type], v.SubType):
 			return fmt.Errorf("virtual type %q: sub_type %q is not in %s's sub_types", v.Name, v.SubType, v.Type)
 		}
@@ -683,8 +714,18 @@ func resolveRelationships(m *model, types map[string]bool, rel *relConfig) error
 		}
 		virtual[v.Name] = typeRef{Type: v.Type, SubType: v.SubType}
 	}
+	aliasPair := map[string]typeRef{}
+	for _, t := range m.Types {
+		if t.AliasOf != nil {
+			aliasPair[t.Type] = *t.AliasOf
+		}
+	}
 	errSkip := errors.New("unmodelled")
 	resolveName := func(rt, name string) (typeRef, error) {
+		// An alias names its stored pair: `website` is (application, website).
+		if p, ok := aliasPair[name]; ok {
+			return p, nil
+		}
 		if types[name] {
 			return typeRef{Type: name}, nil
 		}
@@ -697,8 +738,14 @@ func resolveRelationships(m *model, types map[string]bool, rel *relConfig) error
 		return typeRef{}, fmt.Errorf("%s: relationship %q names %q, which is neither an asset type nor a virtual_types entry", relationshipPath, rt, name)
 	}
 
-	type key struct{ typ, rel string }
+	type key struct{ typ, sub, rel string }
 	out, in := map[key][]typeRef{}, map[key][]typeRef{}
+	subsOf := map[string][]string{} // own sub-types seen per type, in order
+	noteSub := func(r typeRef) {
+		if !slices.Contains(subsOf[r.Type], r.SubType) {
+			subsOf[r.Type] = append(subsOf[r.Type], r.SubType)
+		}
+	}
 	add := func(m map[key][]typeRef, k key, r typeRef) {
 		for _, x := range m[k] {
 			if x == r {
@@ -727,8 +774,10 @@ func resolveRelationships(m *model, types map[string]bool, rel *relConfig) error
 					if err != nil {
 						return err
 					}
-					add(out, key{src.Type, rt.ID}, tgt)
-					add(in, key{tgt.Type, rt.ID}, src)
+					add(out, key{src.Type, src.SubType, rt.ID}, tgt)
+					add(in, key{tgt.Type, tgt.SubType, rt.ID}, src)
+					noteSub(src)
+					noteSub(tgt)
 				}
 			}
 		}
@@ -736,17 +785,29 @@ func resolveRelationships(m *model, types map[string]bool, rel *relConfig) error
 	for i := range m.Types {
 		t := &m.Types[i]
 		t.Relationships = typeRels{Out: []relRule{}, In: []relRule{}}
+		subs := slices.Clone(subsOf[t.Type])
+		sort.Strings(subs) // "" (any sub-type) first
 		for _, r := range relOrder {
-			if peers := out[key{t.Type, r}]; len(peers) > 0 {
-				t.Relationships.Out = append(t.Relationships.Out, relRule{Relationship: r, Peers: peers})
-			}
-			if peers := in[key{t.Type, r}]; len(peers) > 0 {
-				t.Relationships.In = append(t.Relationships.In, relRule{Relationship: r, Peers: peers})
+			for _, sub := range subs {
+				if peers := out[key{t.Type, sub, r}]; len(peers) > 0 {
+					t.Relationships.Out = append(t.Relationships.Out, relRule{Relationship: r, SubType: sub, Peers: peers})
+				}
+				if peers := in[key{t.Type, sub, r}]; len(peers) > 0 {
+					t.Relationships.In = append(t.Relationships.In, relRule{Relationship: r, SubType: sub, Peers: peers})
+				}
 			}
 		}
 	}
 	return nil
 }
+
+// knownTargetTypes are the tool target types (pkg/domain/tool
+// ValidTargetTypes; a test keeps the two equal).
+var knownTargetTypes = set([]string{"url", "domain", "ip", "host", "repository", "file", "container", "kubernetes",
+	"cloud_account", "compute", "storage", "serverless", "network", "service", "port", "database", "mobile", "api", "certificate"})
+
+// knownExposures are the assets.exposure values a type may default to.
+var knownExposures = set([]string{"public", "restricted", "private", "isolated"})
 
 // knownProviders are the assets.provider values (pkg/domain/asset
 // AllProviders; a test keeps the two equal).
@@ -896,7 +957,11 @@ func goRules(rules []relRule) string {
 		for i, p := range r.Peers {
 			refs[i] = goTypeRef(p)
 		}
-		fmt.Fprintf(&b, "\n{Relationship: %q, Peers: []TypeRef{%s}},", r.Relationship, strings.Join(refs, ", "))
+		sub := ""
+		if r.SubType != "" {
+			sub = fmt.Sprintf(" SubType: %q,", r.SubType)
+		}
+		fmt.Fprintf(&b, "\n{Relationship: %q,%s Peers: []TypeRef{%s}},", r.Relationship, sub, strings.Join(refs, ", "))
 	}
 	if len(rules) > 0 {
 		b.WriteString("\n")
@@ -976,7 +1041,12 @@ func renderGo(m *model) ([]byte, error) {
 		}
 		w("},\nFacets: %s,\nGroupBy: %s,\nColumns: %s,\nCard: %q,\nSections: %s,\n",
 			goStrings(t.Facets), goStrings(t.GroupBy), goStrings(t.Columns), t.Card, goStrings(t.Sections))
-		w("Relationships: TypeRelationships{\nOut: %s,\nIn: %s,\n},\n},\n", goRules(t.Relationships.Out), goRules(t.Relationships.In))
+		w("Relationships: TypeRelationships{\nOut: %s,\nIn: %s,\n},\n", goRules(t.Relationships.Out), goRules(t.Relationships.In))
+		w("ScannableBy: %s,\n", goStrings(t.ScannableBy))
+		if t.ExposureDefault != "" {
+			w("ExposureDefault: %q,\n", t.ExposureDefault)
+		}
+		w("},\n")
 	}
 	w("}\n\nvar registrySections = []SectionDefinition{\n")
 	for _, s := range m.Sections {
@@ -1162,6 +1232,31 @@ func renderTS(m *model) string {
 			continue
 		}
 		w("%s\n", line)
+	}
+	w("}\n\n")
+	w("/**\n * Every non-core name the relationship constraints use (aliases and virtual\n")
+	w(" * names), resolved to the stored (core type, sub-type). A core type name\n")
+	w(" * stands for itself with any sub-type.\n */\n")
+	w("export const ASSET_RELATIONSHIP_NAMES: Readonly<\n  Record<string, { type: StoredAssetType; subType?: string }>\n> = {\n")
+	for _, t := range m.Types {
+		if t.AliasOf == nil {
+			continue
+		}
+		if t.AliasOf.SubType == "" {
+			w("  %s: { type: '%s' },\n", t.Type, t.AliasOf.Type)
+			continue
+		}
+		w("  %s: { type: '%s', subType: '%s' },\n", t.Type, t.AliasOf.Type, t.AliasOf.SubType)
+	}
+	for _, v := range m.VirtualTypes {
+		if v.Unmodelled {
+			continue
+		}
+		if v.SubType == "" {
+			w("  %s: { type: '%s' },\n", v.Name, v.Type)
+			continue
+		}
+		w("  %s: { type: '%s', subType: '%s' },\n", v.Name, v.Type, v.SubType)
 	}
 	w("}\n\n")
 	w("/** Input-only alias names and the (core type, sub-type) they are stored as. */\n")

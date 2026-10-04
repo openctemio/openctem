@@ -62,29 +62,23 @@ type SensorAvailability interface {
 	HasValidationSensor(ctx context.Context, tenantID shared.ID) (bool, error)
 }
 
-// networkAddressableTypes is the set of asset types whose Name() is a host,
+// networkAddressableTypes are the stored core types whose Name() is a host,
 // IP, or URL a safe-check probe can reach over the network. Types outside this
 // set (repository, container, cloud_account, …) cannot be reachability-probed.
 //
-// Application, HTTPService and DiscoveredURL are included because their Name()
-// is normalized to a reachable URL / host:port (see asset.NormalizeName:
-// AssetTypeApplication -> normalizeURL; AssetTypeHTTPService/DiscoveredURL ->
-// normalizeServiceName -> normalizeURL). Application in particular is the
-// consolidated core type ingest normalizes website/web_application/api/mobile_app
-// INTO (asset.TypeAliases), so it is the primary DAST/nuclei re-verify target;
-// omitting it rejected every URL/app re-verify as "not network-addressable".
+// Application and service names are normalized to a reachable URL or
+// host:port (asset.NormalizeName); every web, API and recon URL kind is a
+// sub-type of one of them. A row still stored under a legacy alias name
+// (website, http_service ...) is read as the core type it stands for
+// (RFC-042 §6.3.8), so the check never depends on the spelling.
 var networkAddressableTypes = map[asset.AssetType]bool{
-	asset.AssetTypeDomain:         true,
-	asset.AssetTypeSubdomain:      true,
-	asset.AssetTypeIPAddress:      true,
-	asset.AssetTypeWebsite:        true,
-	asset.AssetTypeWebApplication: true,
-	asset.AssetTypeAPI:            true,
-	asset.AssetTypeApplication:    true, // consolidated web/api/mobile core type (URL name)
-	asset.AssetTypeService:        true,
-	asset.AssetTypeHTTPService:    true, // httpx HTTP/HTTPS service (URL name)
-	asset.AssetTypeDiscoveredURL:  true, // katana-discovered URL/endpoint
-	asset.AssetTypeHost:           true,
+	asset.AssetTypeDomain:      true,
+	asset.AssetTypeSubdomain:   true,
+	asset.AssetTypeIPAddress:   true,
+	asset.AssetTypeApplication: true,
+	asset.AssetTypeService:     true,
+	asset.AssetTypeHost:        true,
+	asset.AssetTypeEndpoint:    true,
 }
 
 // IsNetworkAddressable reports whether an asset of type t has a network
@@ -94,7 +88,7 @@ func IsNetworkAddressable(t asset.AssetType) bool { return isNetworkAddressable(
 // isNetworkAddressable reports whether a safe-check reachability probe can
 // meaningfully target an asset of the given type.
 func isNetworkAddressable(t asset.AssetType) bool {
-	return networkAddressableTypes[t]
+	return networkAddressableTypes[asset.CanonicalPair(t, "").Type]
 }
 
 // RunService turns "validate this finding" into a dispatched validation job.

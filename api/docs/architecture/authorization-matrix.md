@@ -167,6 +167,7 @@ Details: [api-keys.md](./api-keys.md).
 | `DELETE /api/v1/findings/{id}` | `findings:delete` |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status` |
 | `POST /api/v1/findings/{id}/triage` | `findings:triage` |
+| `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; also `findings:approve` when either finding is a false positive or risk acceptance (service check). Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
@@ -779,6 +780,11 @@ owner-managed) are enforced, not just stored. See
 
 ## Data scope (Layer 2: access groups)
 
+Scans act on assets, so the data scope also limits scan targets: a restricted
+member scans only assets in their scope, and an unrestricted actor's free-text
+targets must match a scope target (decision D9). See
+[active-probe-gate.md](active-probe-gate.md#act-scope-who-may-scan-what).
+
 Permissions decide what *kind* of thing a member may do; the data scope decides
 *which* assets — and so which findings, exposures and other asset-bound rows —
 they may see and change. Scope rows live in `user_accessible_assets`, computed
@@ -915,6 +921,7 @@ results an out-of-scope id is reported exactly like an unknown id.
 | In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
 | `GET /notification-outbox` (+ `/stats`, `/{id}`, retry, delete), `GET /integrations/{id}/notification-events` | **bypass (every finding/asset event, owner emails) to members and viewers via `notifications:read` / `integrations:read`** | channel managers only: `integrations:manage` in addition (owner/admin by default); not scoped, because a channel manager already routes the whole stream (L-03) |
+| `POST /assets/import/nessus-findings` | **bypass (write)**: ran as a trusted server-side sensor, so a member added findings to any host and auto-resolved any tool's findings on it (`?tool=`) | runs with the uploader's rights (`ingest.Options.Actor`): a restricted uploader only adds findings to existing in-scope assets, creates no asset, never auto-resolves; hidden and unknown hosts both count as `assets_skipped_out_of_scope`. An unrestricted uploader auto-resolves only with the default `tenable` tool (any other `?tool=` = partial coverage). Audited `asset.imported` (L-05) |
 
 ### Deliberately tenant-wide (counts only, no row data)
 
@@ -1296,16 +1303,17 @@ Tenable.sc's RBAC.
 
 ## CI invariants that keep this from drifting
 
-Two tests fail the build if the model erodes. Treat them as executable spec:
+Three tests fail the build if the model erodes. Treat them as executable spec:
 
 | Invariant | Test | What it guarantees |
 |-----------|------|--------------------|
 | **Every route is gated or explicitly allowlisted** | `tests/unit/route_authz_coverage_test.go` (AUTHZ-02) | A go/ast walk of `routes/*.go` resolves chi `.Group` nesting + inherited gates; any route with no `Require*`/`RequireTeam*`/`RequireRole` and not in `allowlistPrefixes` fails the build, naming the route. Removing one `Require(...)` → red. |
 | **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
+| **Every referenced permission exists** | `tests/unit/permission_references_exist_test.go` | Every value in `module.ModulePermissionMapping` (sidebar/bootstrap), every `permission.X` constant used in api Go code, and every value of the web `Permission` object (`web/src/lib/permissions/constants.ts`) is in `permission.AllPermissions()`. A reference to a permission no role can hold (which silently hides a module from every non-admin) → red. |
 
-The permission strings themselves are also mirrored in the UI (TS constants); the
-sync test covers Go↔DB, and code review covers UI drift until the monorepo contract
-codegen (RFC-020) subsumes both.
+Each module in `ModulePermissionMapping` names the permission its routes gate
+on, so the sidebar and the API agree (for example Attack Surface → `assets:read`,
+CTEM Cycles → `ctem:cycles:read`, Scan Pipelines → `integrations:pipelines:read`).
 
 ## How to … (recipes that stay inside the invariants)
 
