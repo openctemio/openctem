@@ -46,7 +46,7 @@ domains per tenant, picked from `ct_monitor_state` (migration 000266):
    within three daily runs.
 
 A tenant's sweep also stops after 30 minutes; the domains it did not reach
-lead the next run. A per-tenant advisory lock keeps two API replicas from
+lead the next run. A per-tenant controller lease (`ct_monitor:<tenant>`, RFC-046 P1.8) keeps two API replicas from
 sweeping the same tenant at once.
 
 ## From CT name to inventory asset

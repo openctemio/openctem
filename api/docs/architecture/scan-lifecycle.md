@@ -74,6 +74,7 @@ cannot reopen one, recount its findings or record its outcome twice.
 | Abort unclaimed | done (4 h / 1 h) | `pipeline_run_repository.go` (`AbortUnclaimedRuns`), `controller/scan_timeout.go` |
 | Retry classes | done (run-level) | `api/pkg/domain/pipeline/failure.go`, `pipeline_run_repository.go` (`ListPendingRetries`) |
 | Coverage auto-resolve | done, **stays dry-run** (D-22 postponed until the research 18 P2 closure evaluator) | `api/internal/app/ingest/coverage_autoresolve.go`, `INGEST_COVERAGE_AUTO_RESOLVE` |
+| Controller leases | done (P1.8): `controller_leases` (name, holder, epoch, expires_at); take by compare-and-set on expiry, renew every third of the TTL, epoch bumps on every take; `Exclusive` controllers skip a tick when another replica holds the lease and stop if they lose it | `api/internal/infra/postgres/controller_lease_repository.go`, `api/internal/infra/controller/controller.go` |
 | Stage chaining | not yet (every step scans the seed targets) | RFC-046 §5.2 |
 | Automations | in-process executor fed by callbacks; outbox planned (P2). Cancel skips open steps and the executor stops before its next step; finished runs and steps are never rewritten | `api/internal/app/workflow/` |
 | `scan_sessions` | written by nothing; retired in P2 | `api/internal/app/scan/session.go` |
