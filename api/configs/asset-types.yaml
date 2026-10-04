@@ -554,7 +554,10 @@ types:
     icon: server
     class: host
     legacy_category: infrastructure
-    sub_types: [compute, serverless]
+    # workstation: a user device (laptop, desktop, kiosk) an EDR or MDM
+    # reports. It is a host, so a laptop seen by a network scan and by EDR
+    # can be matched (RFC-042 §6.3.8 T4a: `endpoint` was a type of its own).
+    sub_types: [compute, serverless, workstation]
     sub_type_inputs:
       server: {}
       linux: { attributes: { os_family: linux } }
@@ -612,6 +615,7 @@ types:
     plural: Endpoints
     icon: laptop
     class: host
+    alias_of: { type: host, sub_type: workstation }
     legacy_category: infrastructure
     identity_keys: [host_id, bios_uuid, serial_number, mac, hostname, name]
     attributes:
