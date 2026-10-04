@@ -1296,16 +1296,17 @@ Tenable.sc's RBAC.
 
 ## CI invariants that keep this from drifting
 
-Two tests fail the build if the model erodes. Treat them as executable spec:
+Three tests fail the build if the model erodes. Treat them as executable spec:
 
 | Invariant | Test | What it guarantees |
 |-----------|------|--------------------|
 | **Every route is gated or explicitly allowlisted** | `tests/unit/route_authz_coverage_test.go` (AUTHZ-02) | A go/ast walk of `routes/*.go` resolves chi `.Group` nesting + inherited gates; any route with no `Require*`/`RequireTeam*`/`RequireRole` and not in `allowlistPrefixes` fails the build, naming the route. Removing one `Require(...)` → red. |
 | **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
+| **Every referenced permission exists** | `tests/unit/permission_references_exist_test.go` | Every value in `module.ModulePermissionMapping` (sidebar/bootstrap), every `permission.X` constant used in api Go code, and every value of the web `Permission` object (`web/src/lib/permissions/constants.ts`) is in `permission.AllPermissions()`. A reference to a permission no role can hold (which silently hides a module from every non-admin) → red. |
 
-The permission strings themselves are also mirrored in the UI (TS constants); the
-sync test covers Go↔DB, and code review covers UI drift until the monorepo contract
-codegen (RFC-020) subsumes both.
+Each module in `ModulePermissionMapping` names the permission its routes gate
+on, so the sidebar and the API agree (for example Attack Surface → `assets:read`,
+CTEM Cycles → `ctem:cycles:read`, Scan Pipelines → `integrations:pipelines:read`).
 
 ## How to … (recipes that stay inside the invariants)
 
