@@ -181,6 +181,9 @@ type Service struct {
 	now             func() time.Time
 
 	logger *logger.Logger
+
+	// tombstones lets promotion skip rejected names (nil: no check).
+	tombstones TombstoneChecker
 }
 
 // NewService constructs the CT discovery service. An empty feedBaseURL defaults
@@ -288,6 +291,13 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 			return 0, nil
 		}
 		defer release()
+	}
+
+	// Retention (O7): rejected-name tombstones expire after 12 months.
+	if s.tombstones != nil {
+		if _, err := s.tombstones.PurgeExpiredTombstones(ctx, tenantID); err != nil {
+			s.logger.Warn("ct sweep: expired tombstones not purged", "tenant_id", tenantID.String(), "error", err)
+		}
 	}
 
 	roots, assetsByName, err := s.gatherRoots(ctx, tenantID)
