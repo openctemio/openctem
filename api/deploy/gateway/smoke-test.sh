@@ -130,31 +130,6 @@ probe 404 GET /metrics
 probe 404 GET /ready
 probe 404 GET /debug/pprof/
 
-echo "== The access log never records an invitation token"
-# Links emailed before RFC-041 and the deprecated API aliases carry the token
-# in the path; the gateway's access log replaces it.
-invtok="Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8"
-probe web GET "/invitations/$invtok"
-probe web GET "/api/v1/invitations/$invtok/preview"
-probe web POST /api/v1/invitations/lookup
-sleep 1
-gwlog="$(docker logs "$run-gw" 2>&1)"
-if grep -q "$invtok" <<<"$gwlog"; then
-	bad "an invitation token reached the access log"
-else
-	ok "no invitation token in the access log"
-fi
-if grep -q "/invitations/REDACTED" <<<"$gwlog" && grep -q "/api/v1/invitations/REDACTED/preview" <<<"$gwlog"; then
-	ok "token paths logged as REDACTED"
-else
-	bad "token paths not logged as REDACTED"
-fi
-if grep -q "/api/v1/invitations/lookup" <<<"$gwlog"; then
-	ok "body routes logged as is"
-else
-	bad "/api/v1/invitations/lookup missing from the access log"
-fi
-
 echo "== Client address is set by the gateway, not the client"
 body="$(docker run --rm --network "$net" curlimages/curl:latest -sk -m 5 \
 	--resolve "gateway.test:443:$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gw")" \
@@ -196,6 +171,31 @@ if header_present 'strict-transport-security: max-age=31536000'; then ok "HSTS";
 if header_present 'x-content-type-options: nosniff'; then ok "nosniff"; else bad "nosniff missing"; fi
 if header_present 'server:'; then bad "Server header present"; else ok "no Server header"; fi
 if header_present 'via:'; then bad "Via header present"; else ok "no Via header"; fi
+
+echo "== The access log never records an invitation token"
+# Links emailed before RFC-041 and the deprecated API aliases carry the token
+# in the path; the gateway's access log replaces it.
+invtok="Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8"
+probe web GET "/invitations/$invtok"
+probe web GET "/api/v1/invitations/$invtok/preview"
+probe web POST /api/v1/invitations/lookup
+sleep 1
+gwlog="$(docker logs "$run-gw" 2>&1)"
+if grep -q "$invtok" <<<"$gwlog"; then
+	bad "an invitation token reached the access log"
+else
+	ok "no invitation token in the access log"
+fi
+if grep -q "/invitations/REDACTED" <<<"$gwlog" && grep -q "/api/v1/invitations/REDACTED/preview" <<<"$gwlog"; then
+	ok "token paths logged as REDACTED"
+else
+	bad "token paths not logged as REDACTED"
+fi
+if grep -q "/api/v1/invitations/lookup" <<<"$gwlog"; then
+	ok "body routes logged as is"
+else
+	bad "/api/v1/invitations/lookup missing from the access log"
+fi
 
 echo "== Plain HTTP only redirects to HTTPS"
 gwip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gw")"
