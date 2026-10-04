@@ -68,7 +68,7 @@ func (s *AuthService) ResetMemberMFA(ctx context.Context, actx auditapp.AuditCon
 		return fmt.Errorf("%w: an acting user is required", shared.ErrForbidden)
 	}
 
-	target, err := s.tenantRepo.GetMembershipByID(ctx, mid)
+	target, err := s.tenantRepo.GetMembershipByID(ctx, tid, mid)
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			return shared.ErrNotFound
