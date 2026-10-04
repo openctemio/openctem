@@ -154,13 +154,6 @@ func (r *AuditRepository) CreateBatch(ctx context.Context, logs []*audit.AuditLo
 	return nil
 }
 
-// GetByID retrieves an audit log by ID.
-func (r *AuditRepository) GetByID(ctx context.Context, id shared.ID) (*audit.AuditLog, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanAuditLog(row, audit.AuditLogNotFoundError(id))
-}
-
 // GetByTenantAndID retrieves an audit log by tenant and ID (tenant-scoped).
 func (r *AuditRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*audit.AuditLog, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"

@@ -87,7 +87,8 @@ type Where struct {
 	Args []any
 	// OrderBy is "expr [DESC], ..., id" (without the ORDER BY keyword).
 	OrderBy string
-	// NextArg is the next free placeholder number.
+	// First is the first placeholder number; NextArg the next free one.
+	First   int
 	NextArg int
 }
 
@@ -139,7 +140,7 @@ func CompileFrom(spec *Spec, reg *Registry, actor Actor, first int) (*Where, err
 	if err := c.e.err(); err != nil {
 		return nil, err
 	}
-	return &Where{SQL: strings.Join(parts, " AND "), Args: c.args, OrderBy: order, NextArg: c.next}, nil
+	return &Where{SQL: strings.Join(parts, " AND "), Args: c.args, OrderBy: order, First: first, NextArg: c.next}, nil
 }
 
 // ScopeSQL is the data-scope predicate "assetExpr is in the user's scope",

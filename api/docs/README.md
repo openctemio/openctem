@@ -32,6 +32,7 @@
 - [Audit Hash Chain](architecture/audit-hash-chain.md) - Tamper-evident per-tenant SHA-256 chain over audit_logs: append, verify, the hourly verifier, and rebaselining (when it is allowed, what is archived in the same transaction, how to review overwritten hashes)
 - [Shift-Left CI Scanning](architecture/shift-left-ci-scanning.md) - Agent-first SAST/SCA/secrets in CI: structure + dataflow diagrams, branch-aware findings, risk-aware gate, PR decoration (RFC-008)
 - [Ticketing Integration (Jira)](architecture/ticketing-integration.md) - Per-tenant client resolver, create/link/webhook, Mobilization
+- [Tenable.sc sensor connector](architecture/tenable-sc-connector.md) - RFC-047 pull path: connector_sync commands, sensor-held keys, cursor, source-asserted resolve
 - [Tenable — User & Data Flow](architecture/tenable-user-and-data-flow.md) - How operators interact with Tenable on the UI + end-to-end data flow (agent/direct/upload)
 - [Data Sources](architecture/data-sources.md) - Multi-source asset tracking, collectors, scanners
 - [Global Catalog Trust](architecture/global-catalog-trust.md) - Who may write the CVE, component and license catalogs every tenant shares: trusted feeds only, tenant input creates but never changes, tenant views read the tenant's own observation first
@@ -79,6 +80,7 @@
 
 ### Deployment
 - [Safe Deploy & Migrations](deployment/safe-deploy-and-migrations.md) - Canonical safe-deploy sequence, expand-contract rules, schema-check semantics, dirty-migration recovery, rollback
+- [Least-privilege database roles](deployment/database-roles.md) - The API connects as `openctem_app` (DML only), migrations as `openctem_migrator` (schema owner); the bootstrap script, what the API needs at run time, compose/helm variables, and the upgrade runbook
 - [Rotating APP_ENCRYPTION_KEY](deployment/encryption-key-rotation.md) - What the key protects, `cmd/rekey` (dry run, apply, sweep), `APP_ENCRYPTION_KEY_PREVIOUS`, and the zero-downtime runbook
 - [Docker](deployment/docker.md) - Docker & Docker Compose (dev/prod)
 - [Kubernetes](deployment/kubernetes.md) - K8s manifests
