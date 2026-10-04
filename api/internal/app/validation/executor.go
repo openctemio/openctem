@@ -35,10 +35,13 @@ type TechniqueID string
 // Target identifies what we are validating against. The executor kind
 // determines which fields it uses.
 type Target struct {
-	AssetID  shared.ID
-	Type     string // "host" | "web_url" | "api_endpoint" | "cloud_resource"
-	Address  string // host:port, URL, ARN, etc.
-	Metadata map[string]any
+	AssetID shared.ID
+	Type    string // "host" | "web_url" | "api_endpoint" | "cloud_resource"
+	Address string // host:port, URL, ARN, etc.
+	// AssetName is the inventory name of the asset; a scope exclusion of it
+	// refuses the probe even when Address is a URL on the asset.
+	AssetName string
+	Metadata  map[string]any
 }
 
 // Evidence is everything a reviewer needs to judge whether the

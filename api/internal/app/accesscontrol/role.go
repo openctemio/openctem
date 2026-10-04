@@ -465,27 +465,31 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 		}
 	}
 
+	// A permission change must reach every holder of the role. Load the
+	// holders BEFORE writing: if they cannot be listed, the edit is refused
+	// instead of committing and leaving revoked permissions live in their
+	// caches until the TTL expires. Updating a role does not change who holds
+	// it, so the list taken here is the set to invalidate afterwards.
+	var holderIDs []string
+	tenantIDStr := ""
+	if input.Permissions != nil && r.TenantID() != nil {
+		tenantIDStr = r.TenantID().String()
+		members, err := s.roleRepo.ListRoleMembers(ctx, *r.TenantID(), id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list role members for permission invalidation: %w", err)
+		}
+		holderIDs = make([]string, len(members))
+		for i, m := range members {
+			holderIDs[i] = m.UserID.String()
+		}
+	}
+
 	if err := s.roleRepo.Update(ctx, r); err != nil {
 		return nil, fmt.Errorf("failed to update role: %w", err)
 	}
 
-	// If permissions changed, invalidate all users with this role
-	if input.Permissions != nil {
-		tenantIDStr := ""
-		if r.TenantID() != nil {
-			tenantIDStr = r.TenantID().String()
-		}
-		if tenantIDStr != "" {
-			// Get all users with this role
-			members, err := s.roleRepo.ListRoleMembers(ctx, *r.TenantID(), id)
-			if err == nil && len(members) > 0 {
-				userIDs := make([]string, len(members))
-				for i, m := range members {
-					userIDs[i] = m.UserID.String()
-				}
-				s.invalidateUsersPermissions(ctx, tenantIDStr, userIDs)
-			}
-		}
+	if len(holderIDs) > 0 {
+		s.invalidateUsersPermissions(ctx, tenantIDStr, holderIDs)
 	}
 
 	s.logger.Info("role updated", "id", roleID)
