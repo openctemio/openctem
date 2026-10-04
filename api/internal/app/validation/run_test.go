@@ -217,8 +217,12 @@ func TestIsNetworkAddressable_ReachableURLAndAppTypes(t *testing.T) {
 		want bool
 	}{
 		{asset.AssetTypeApplication, true},
-		{asset.AssetTypeHTTPService, true},
-		{asset.AssetTypeDiscoveredURL, true},
+		{asset.AssetTypeService, true},
+		{asset.AssetTypeEndpoint, true},
+		// legacy rows stored under an alias name read as their core type
+		{"http_service", true},
+		{"discovered_url", true},
+		{"website", true},
 		// Regression guards for the already-addressable and non-addressable sets.
 		{asset.AssetTypeDomain, true},
 		{asset.AssetTypeRepository, false},

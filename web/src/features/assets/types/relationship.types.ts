@@ -19,10 +19,7 @@
  */
 
 import type { AssetType } from './asset.types'
-import {
-  ASSET_RELATIONSHIP_NAMES,
-  ASSET_TYPE_ALIASES,
-} from '@/features/asset-types/registry.generated'
+import { assetMatchesTypeName, type AssetTypeRef } from '@/features/asset-types/type-match'
 import {
   type GeneratedRelationshipType,
   GENERATED_RELATIONSHIP_LABELS,
@@ -256,37 +253,14 @@ export const ALL_RELATIONSHIP_TYPES: RelationshipType[] = ALL_GENERATED_RELATION
 // Validation Helpers
 // ============================================
 
-/**
- * An asset as the constraint table sees it: its stored type and sub-type.
- * A plain string is a type with no sub-type.
- */
-export interface AssetTypeRef {
-  type: string
-  subType?: string
-}
-
-function toRef(ref: AssetTypeRef | string): AssetTypeRef {
-  const r = typeof ref === 'string' ? { type: ref } : ref
-  // A row still stored under a legacy alias name (before the RFC-042 §6.3.8
-  // data normalisation) reads as the pair the alias stands for.
-  const alias = ASSET_TYPE_ALIASES[r.type]
-  if (alias) return { type: alias.type, subType: r.subType || alias.subType }
-  return r
-}
+export type { AssetTypeRef }
 
 /**
  * Whether a constraint name (`website`, `k8s_cluster`, `host` ...) covers an
- * asset. The names resolve to stored (type, sub-type) pairs through the
- * registry, the same resolution the API enforces. A name without a sub-type
- * covers every asset of the type; an asset without a sub-type (its kind was
- * never recorded) is covered by every name of its type.
+ * asset, by the stored (type, sub-type) pair the name resolves to: the same
+ * resolution the API enforces.
  */
-export function constraintNameMatches(name: string, ref: AssetTypeRef | string): boolean {
-  const asset = toRef(ref)
-  const resolved = ASSET_RELATIONSHIP_NAMES[name] ?? { type: name }
-  if (resolved.type !== asset.type) return false
-  return !resolved.subType || !asset.subType || resolved.subType === asset.subType
-}
+export const constraintNameMatches = assetMatchesTypeName
 
 /**
  * Check if a relationship type is valid between two assets

@@ -132,3 +132,16 @@ func AllowedRelationshipTargets(rel RelationshipType, source TypeRef) []TypeRef 
 	}
 	return out
 }
+
+// WithLegacyNames returns the given core types plus every alias name that is
+// stored as one of them, for a type filter that must still find rows written
+// under an alias name before the data normalisation (RFC-042 §6.3.8 T3).
+func WithLegacyNames(types ...AssetType) []AssetType {
+	out := slices.Clone(types)
+	for _, d := range registryTypes {
+		if d.AliasOf != nil && slices.Contains(types, d.AliasOf.Type) && !slices.Contains(out, d.Type) {
+			out = append(out, d.Type)
+		}
+	}
+	return out
+}

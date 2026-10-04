@@ -142,9 +142,9 @@ func (s *AssetFilterService) PreviewCompatibility(
 		count := totalCounts[ref]
 		ok, decidable := compat.decide(ref)
 		switch {
-		case !decidable:
+		case ref.Type == asset.AssetTypeUnclassified:
 			unclassifiedCount += count
-		case ok:
+		case ok || !decidable:
 			compatibleCount += count
 			compatibleTypesList = append(compatibleTypesList, typeLabel(ref))
 		default:
@@ -187,8 +187,10 @@ func (s *AssetFilterService) PreviewCompatibility(
 }
 
 // FilterAssetsForScan reports, per stored (type, sub_type), which assets the
-// tool can scan. Assets whose compatibility cannot be decided (unclassified,
-// or a tool with no known target type) count as "unclassified".
+// tool can scan. Unclassified assets cannot be matched to a target type and
+// are skipped (counted in UnclassifiedAssets too); a tool that declares no
+// target type the platform knows scans everything, since nothing can be
+// decided for it.
 func (s *AssetFilterService) FilterAssetsForScan(
 	ctx context.Context,
 	toolTargets []string,
@@ -232,8 +234,16 @@ func (s *AssetFilterService) FilterAssetsForScan(
 		label := typeLabel(ref)
 		ok, decidable := compat.decide(ref)
 		switch {
-		case !decidable:
+		case ref.Type == asset.AssetTypeUnclassified:
 			result.UnclassifiedAssets += intCount
+			result.SkippedAssets += intCount
+			result.SkippedByType[label] += intCount
+			result.SkipReasons = append(result.SkipReasons, SkipReason{
+				AssetType: label,
+				Count:     intCount,
+				Reason:    "Unclassified assets cannot be matched to scanner targets",
+			})
+		case !decidable:
 			result.ScannedAssets += intCount
 			result.ScannedByType[label] += intCount
 		case ok:
