@@ -6,7 +6,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// The network columns of the findings table (migration 000337): the port,
+// The network columns of the findings table (migration 000353): the port,
 // transport and service a finding was observed on, from CTIS Finding.Network.
 // Ingest used the port only inside the network-VA fingerprint and dropped it,
 // so no stored finding knew its port.
