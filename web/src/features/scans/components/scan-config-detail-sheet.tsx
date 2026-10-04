@@ -42,6 +42,8 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { formatScanDate, scanSuccessRate } from '../lib/format'
 import { useScanTrigger } from '../hooks/use-scan-trigger'
+import { schedulePreviewRequestFromConfig } from '../lib/schedule-preview'
+import { SchedulePreview } from './schedule-preview'
 
 type Tab = 'overview' | 'config' | 'details'
 const TABS: DetailTab<Tab>[] = [
@@ -283,6 +285,12 @@ function Configuration({ config }: { config: ScanConfig }) {
           {config.schedule_time && <DetailField label="Time">{config.schedule_time}</DetailField>}
           <DetailField label="Timezone">{config.schedule_timezone}</DetailField>
         </DetailFieldGrid>
+        <div className="mt-4">
+          <SchedulePreview
+            request={schedulePreviewRequestFromConfig(config)}
+            paused={config.status !== 'active'}
+          />
+        </div>
       </DetailSection>
       {config.tags && config.tags.length > 0 && (
         <DetailSection title="Tags" count={config.tags.length}>

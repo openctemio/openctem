@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/select'
 import type { NewScanFormData, ScheduleFrequency } from '../../types'
 import { FREQUENCY_OPTIONS, DAY_OPTIONS, TIME_OPTIONS } from '../../types'
+import { schedulePreviewRequestFromForm } from '../../lib/schedule-preview'
+import { SchedulePreview } from '../schedule-preview'
 
 interface ScheduleStepProps {
   data: NewScanFormData
@@ -167,6 +169,11 @@ export function ScheduleStep({ data, onChange }: ScheduleStepProps) {
             )}
           </div>
         </RadioGroup>
+        {!data.schedule.runImmediately && (
+          <div className="mt-4 rounded-lg border p-4">
+            <SchedulePreview request={schedulePreviewRequestFromForm(data)} />
+          </div>
+        )}
       </div>
 
       {/* Notification / auto-create-task controls were removed here: the scan

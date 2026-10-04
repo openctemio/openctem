@@ -12332,6 +12332,38 @@ definitions:
       version:
         type: string
     type: object
+  internal_infra_http_handler.SchedulePreviewRequest:
+    properties:
+      count:
+        description: Count is how many occurrences to list, 1-10 (default 5).
+        type: integer
+      schedule_cron:
+        type: string
+      schedule_day:
+        type: integer
+      schedule_rrule:
+        type: string
+      schedule_time:
+        description: HH:MM
+        type: string
+      schedule_type:
+        type: string
+      timezone:
+        type: string
+    type: object
+  internal_infra_http_handler.SchedulePreviewResponse:
+    properties:
+      occurrences:
+        description: Occurrences are RFC 3339 timestamps with the timezone's offset,
+          in order.
+        items:
+          type: string
+        type: array
+      timezone:
+        description: Timezone the schedule is evaluated in (IANA; UTC when none was
+          given).
+        type: string
+    type: object
   internal_infra_http_handler.ScopeBulkOperationResponse:
     properties:
       affected_count:
@@ -31052,6 +31084,41 @@ paths:
       security:
       - BearerAuth: []
       summary: Import scan configuration
+      tags:
+      - Scans
+  /scans/schedule-preview:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Validates a schedule exactly as saving a scan would (cron or
+        RRULE, timezone, the 15-minute minimum) and lists its next
+        occurrences in its timezone. Reads and stores nothing.
+      parameters:
+      - description: Schedule
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SchedulePreviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SchedulePreviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Preview a scan schedule
       tags:
       - Scans
   /scans/stats:
