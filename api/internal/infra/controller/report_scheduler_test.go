@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -22,7 +23,7 @@ type fakeStore struct {
 func (f *fakeStore) ListDue(_ context.Context, _ time.Time) ([]*reportschedule.ReportSchedule, error) {
 	return f.due, nil
 }
-func (f *fakeStore) ClaimDue(_ context.Context, _ shared.ID, _ *time.Time, _ time.Time) (bool, error) {
+func (f *fakeStore) ClaimDue(_ context.Context, _, _ shared.ID, _ *time.Time, _ time.Time) (bool, error) {
 	return !f.lostClaims, nil
 }
 func (f *fakeStore) Update(_ context.Context, s *reportschedule.ReportSchedule) error {
@@ -40,7 +41,7 @@ func (fakeStats) GetStats(_ context.Context, _ shared.ID, _ *shared.ID, _ vulner
 	return st, nil
 }
 
-func (fakeStats) CountWindow(_ context.Context, _ shared.ID, _ int) (int64, int64, error) {
+func (fakeStats) CountWindow(_ context.Context, _ shared.ID, _ *shared.DataScope, _ int) (int64, int64, error) {
 	return 5, 2, nil // new, resolved
 }
 
@@ -264,5 +265,84 @@ func TestReportScheduler_LostClaimSkipsDelivery(t *testing.T) {
 	}
 	if n != 0 || len(em.sentTo) != 0 || len(store.updated) != 0 {
 		t.Fatalf("lost claim: processed=%d sent=%d updated=%d, want all 0", n, len(em.sentTo), len(store.updated))
+	}
+}
+
+// recordingStats records the scope each render asks for.
+type recordingStats struct {
+	user   *shared.ID
+	strict bool
+	scope  *shared.DataScope
+}
+
+func (r *recordingStats) GetStats(_ context.Context, _ shared.ID, u *shared.ID, f vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
+	r.user, r.strict = u, f.ScopeStrict
+	return vulnerability.NewFindingStats(), nil
+}
+
+func (r *recordingStats) CountWindow(_ context.Context, _ shared.ID, sc *shared.DataScope, _ int) (int64, int64, error) {
+	r.scope = sc
+	return 0, 0, nil
+}
+
+type fakeScope struct {
+	restricted map[shared.ID]bool
+	err        error
+}
+
+func (f fakeScope) ForUser(_ context.Context, tenantID, userID shared.ID) (*shared.DataScope, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.restricted[userID] {
+		return &shared.DataScope{TenantID: tenantID, UserID: userID}, nil
+	}
+	return nil, nil
+}
+
+// A report renders under its creator's data scope (owner decision D6): a
+// restricted creator's report counts only their assets; an unrestricted
+// creator's counts the organization; with no creator, or when the creator
+// cannot be resolved (left the organization), nothing is sent.
+func TestReportScheduler_RendersUnderCreatorScope(t *testing.T) {
+	run := func(s *reportschedule.ReportSchedule, sc fakeScope) (*recordingStats, *fakeEmailer, string) {
+		t.Helper()
+		stats := &recordingStats{}
+		store := &fakeStore{due: []*reportschedule.ReportSchedule{s}}
+		em := &fakeEmailer{configured: true}
+		c := NewReportScheduler(store, stats, em, nil, nil, ReportSchedulerConfig{}, logger.NewNop())
+		c.SetScopeResolver(sc)
+		if _, err := c.Reconcile(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		return stats, em, store.updated[0].LastStatus()
+	}
+
+	member, admin := shared.NewID(), shared.NewID()
+	s := newSchedule(t, "executive_summary", "0 9 * * 1", "ciso@acme.com")
+	s.SetCreatedBy(member)
+	stats, em, status := run(s, fakeScope{restricted: map[shared.ID]bool{member: true}})
+	if stats.user == nil || *stats.user != member || !stats.strict || stats.scope == nil || stats.scope.UserID != member {
+		t.Errorf("restricted creator: stats user=%v strict=%v window scope=%v, want the creator's strict scope", stats.user, stats.strict, stats.scope)
+	}
+	if status != "completed" || len(em.sentTo) != 1 {
+		t.Errorf("restricted creator: status %q, sent %v", status, em.sentTo)
+	}
+
+	s2 := newSchedule(t, "executive_summary", "0 9 * * 1", "ciso@acme.com")
+	s2.SetCreatedBy(admin)
+	if stats, _, _ := run(s2, fakeScope{}); stats.user != nil || stats.strict || stats.scope != nil {
+		t.Errorf("unrestricted creator rendered with a scope: %+v", stats)
+	}
+
+	s3 := newSchedule(t, "executive_summary", "0 9 * * 1", "ciso@acme.com")
+	if _, em, status := run(s3, fakeScope{}); status != "failed" || len(em.sentTo) != 0 {
+		t.Errorf("schedule without a creator: status %q, sent %v; want failed, nothing sent", status, em.sentTo)
+	}
+
+	s4 := newSchedule(t, "executive_summary", "0 9 * * 1", "ciso@acme.com")
+	s4.SetCreatedBy(member)
+	if _, em, status := run(s4, fakeScope{err: errors.New("not a member")}); status != "failed" || len(em.sentTo) != 0 {
+		t.Errorf("creator who cannot be resolved: status %q, sent %v; want failed, nothing sent", status, em.sentTo)
 	}
 }
