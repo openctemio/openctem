@@ -457,6 +457,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// tools and their tenant config, scanner templates) too (RFC-040 §5.11).
 	handlers.Scope.SetAuditService(svc.Audit)
 	handlers.Tool.SetAuditService(svc.Audit)
+	// Asset access grants change who sees an asset: audited.
+	handlers.AssetOwner.SetAuditService(svc.Audit)
 	handlers.ScannerTemplate.SetAuditService(svc.Audit)
 
 	if svc.SSO != nil {

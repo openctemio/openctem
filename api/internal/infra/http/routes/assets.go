@@ -73,9 +73,11 @@ func registerAssetRoutes(
 // registerAssetOwnerRoutes registers asset ownership endpoints.
 // Asset owners are nested under assets and tenant-scoped.
 // Permission model:
-// - Read (GET): assets:read permission
-// - Write (POST, PUT): assets:write permission
-// - Delete (DELETE): assets:delete permission
+//   - Read (GET): assets:read permission
+//   - Write (POST, PUT): assets:write permission
+//   - Delete (DELETE): assets:delete permission
+//   - A group owner (add/remove) also needs team:groups:write (checked in the
+//     handler): it is the group's data-scope assignment.
 func registerAssetOwnerRoutes(
 	router Router,
 	h *handler.AssetOwnerHandler,
@@ -90,6 +92,15 @@ func registerAssetOwnerRoutes(
 		r.POST("/", h.AddOwner, middleware.Require(permission.AssetsWrite))
 		r.PUT("/{ownerId}", h.UpdateOwner, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{ownerId}", h.RemoveOwner, middleware.Require(permission.AssetsDelete))
+	}, middlewares...)
+
+	// Explicit per-user data-scope grants. Being an owner gives no access
+	// (owner decision O1); these grants and group assignments do, so they are
+	// gated like group data scope (team:groups:*), not like asset edits.
+	router.Group("/api/v1/assets/{id}/access-grants", func(r Router) {
+		r.GET("/", h.ListAccessGrants, middleware.Require(permission.GroupsRead))
+		r.POST("/", h.CreateAccessGrant, middleware.Require(permission.GroupsWrite))
+		r.DELETE("/{grant_id}", h.DeleteAccessGrant, middleware.Require(permission.GroupsWrite))
 	}, middlewares...)
 }
 

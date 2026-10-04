@@ -2689,30 +2689,6 @@ func (r *AccessControlRepository) GetPrimaryOwnersByAssetIDs(ctx context.Context
 	return result, nil
 }
 
-// RefreshAccessForDirectOwnerAdd updates the user_accessible_assets materialized view
-// when a user is directly added as an asset owner.
-func (r *AccessControlRepository) RefreshAccessForDirectOwnerAdd(ctx context.Context, assetID, userID shared.ID, ownershipType string) error {
-	query := `SELECT refresh_access_for_direct_owner_add($1, $2, $3)`
-
-	_, err := r.db.ExecContext(ctx, query, assetID.String(), userID.String(), ownershipType)
-	if err != nil {
-		return fmt.Errorf("failed to refresh access for direct owner add: %w", err)
-	}
-	return nil
-}
-
-// RefreshAccessForDirectOwnerRemove updates the user_accessible_assets materialized view
-// when a user is removed as a direct asset owner.
-func (r *AccessControlRepository) RefreshAccessForDirectOwnerRemove(ctx context.Context, assetID, userID shared.ID) error {
-	query := `SELECT refresh_access_for_direct_owner_remove($1, $2)`
-
-	_, err := r.db.ExecContext(ctx, query, assetID.String(), userID.String())
-	if err != nil {
-		return fmt.Errorf("failed to refresh access for direct owner remove: %w", err)
-	}
-	return nil
-}
-
 // ListTenantsWithActiveScopeRules returns all tenants that have at least one active scope rule.
 func (r *AccessControlRepository) ListTenantsWithActiveScopeRules(ctx context.Context) ([]shared.ID, error) {
 	query := `SELECT DISTINCT tenant_id FROM group_asset_scope_rules WHERE is_active = true`

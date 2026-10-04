@@ -1044,6 +1044,13 @@ func (p *FindingProcessor) setFindingLocationFields(f *vulnerability.Finding, ct
 		}
 	}
 
+	// Network location (port, transport, service). Stored for display and
+	// service-level queries only; generateFindingFingerprint reads the port from the
+	// CTIS finding itself, so storing it changes no fingerprint.
+	if n := ctisFinding.Network; n != nil {
+		f.SetNetwork(vulnerability.NetworkLocation{Port: n.Port, Transport: n.Protocol, Service: n.Service})
+	}
+
 	// Set branch info from report metadata or finding location
 	if report.Metadata.Branch != nil {
 		f.SetBranchInfo(report.Metadata.Branch.Name, report.Metadata.Branch.CommitSHA)

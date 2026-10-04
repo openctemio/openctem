@@ -297,6 +297,10 @@ const (
 	ActionAssetUnassigned       Action = "asset.unassigned"
 	ActionAssetOwnershipUpdated Action = "asset.ownership_updated"
 
+	// Explicit per-user data-scope grants on an asset (asset_access_grants).
+	ActionAssetAccessGranted Action = "asset.access_granted"
+	ActionAssetAccessRevoked Action = "asset.access_revoked"
+
 	// Permission Set actions
 	ActionPermissionSetCreated    Action = "permission_set.created"
 	ActionPermissionSetUpdated    Action = "permission_set.updated"
@@ -497,6 +501,7 @@ func (a Action) IsValid() bool {
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
+		ActionAssetAccessGranted, ActionAssetAccessRevoked,
 		ActionPermissionSetCreated, ActionPermissionSetUpdated, ActionPermissionSetDeleted,
 		ActionPermissionSetAssigned, ActionPermissionSetUnassigned,
 		ActionPermissionGranted, ActionPermissionRevoked,

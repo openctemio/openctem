@@ -28,8 +28,11 @@ and single asset/finding fetches (a non-accessible id returns 404, not the row).
 1. **Create groups** for your teams (Settings → Access Control → Teams) and add
    members to them.
 2. **Assign assets** to those groups — directly, or with **Assignment Rules** that
-   route matching assets to a group. (You can also set a per-asset **primary
-   owner** on the asset's Owners tab; a user owner is granted access too.)
+   route matching assets to a group. For a single person and a single asset,
+   use **Grant access** in the *Direct access* section of the asset's Owners
+   tab. Naming someone an **owner** does **not** give them access: owners are
+   accountable and get the asset's findings assigned, but see the asset only
+   through a group or a grant.
 3. Confirm each member who needs broad visibility is in a group that covers the
    assets they need. **An analyst who should see everything needs a group holding
    all assets** — under fail-closed there is no implicit "see all".
