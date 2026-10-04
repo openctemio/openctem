@@ -36,7 +36,6 @@ import {
   generateSlug,
 } from '@/features/access-control'
 import { GroupDetailSheet } from '@/features/access-control/components/group-detail-sheet'
-import { NoTeamAccessCard } from '@/features/access-control/components/no-team-access-card'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
 
@@ -272,7 +271,12 @@ export function TeamsSection({ header }: SectionProps) {
             )}
           </div>
 
-          <NoTeamAccessCard className="mt-5" />
+          {/* Members in no team see nothing (owner decision D2); there is
+              no per-organization "see everything" switch. */}
+          <p className="mt-5 text-sm text-muted-foreground" data-testid="no-team-access-note">
+            Members who are in no team see no assets or findings until you add them to a team or
+            grant them an asset. Owners, admins and roles with full data access see everything.
+          </p>
         </>
       )}
 

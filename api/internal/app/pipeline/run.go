@@ -134,12 +134,25 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 		return nil, err
 	}
 
+	// The run's asset_id is stored on the run and copied into every step
+	// command's payload, so it must be a live asset of this tenant that the
+	// caller may see (pipeline_runs.asset_id references assets(id) without
+	// the tenant; research doc 21b, C4). A workflow trigger has no user in
+	// the context and gets the tenant check only. A malformed id is refused
+	// rather than silently dropped; a refused one answers like an unknown one.
 	var assetID *shared.ID
 	if input.AssetID != "" {
 		aid, err := shared.IDFromString(input.AssetID)
-		if err == nil {
-			assetID = &aid
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid asset id", shared.ErrValidation)
 		}
+		if s.assetRefChecker == nil {
+			return nil, ErrRunAssetNotFound
+		}
+		if err := s.assetRefChecker.AssertAssetRef(ctx, tenantID, aid); err != nil {
+			return nil, ErrRunAssetNotFound
+		}
+		assetID = &aid
 	}
 
 	triggerType := pipeline.TriggerType(input.TriggerType)
@@ -1157,6 +1170,33 @@ func (s *Service) GetRunTasks(ctx context.Context, run *pipeline.Run) (*RunTasks
 	return out, nil
 }
 
+// RunScanNames returns the name of the scan of each run in runs that belongs
+// to a scan of tenantID, keyed by scan id. Nil when the repository cannot
+// name scans. Every run must belong to tenantID; the read is scoped to it.
+func (s *Service) RunScanNames(ctx context.Context, tenantID string, runs []*pipeline.Run) (map[shared.ID]string, error) {
+	namer, ok := s.runRepo.(pipeline.RunScanNamer)
+	if !ok || len(runs) == 0 {
+		return nil, nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	seen := make(map[shared.ID]struct{}, len(runs))
+	ids := make([]shared.ID, 0, len(runs))
+	for _, r := range runs {
+		if r.ScanID == nil {
+			continue
+		}
+		if _, dup := seen[*r.ScanID]; dup {
+			continue
+		}
+		seen[*r.ScanID] = struct{}{}
+		ids = append(ids, *r.ScanID)
+	}
+	return namer.ScanNames(ctx, tid, ids)
+}
+
 // RunTaskSummaries returns the task summary of each run in runs that has
 // tasks, keyed by run id. Every run must belong to tenantID; the read is
 // scoped to it.
@@ -1182,8 +1222,11 @@ type ListRunsInput struct {
 	PipelineID string `json:"pipeline_id" validate:"omitempty,uuid"`
 	AssetID    string `json:"asset_id" validate:"omitempty,uuid"`
 	Status     string `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout"`
-	Page       int    `json:"page"`
-	PerPage    int    `json:"per_page"`
+	// Sort is one sort key, `field` or `-field` (pipeline.RunListSortFields);
+	// an unknown field is a validation error.
+	Sort    string `json:"sort"`
+	Page    int    `json:"page"`
+	PerPage int    `json:"per_page"`
 }
 
 // ListRuns lists pipeline runs with filters.
@@ -1193,8 +1236,14 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 		return pagination.Result[*pipeline.Run]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
+	sort, err := pipeline.ParseRunListSort(input.Sort)
+	if err != nil {
+		return pagination.Result[*pipeline.Run]{}, err
+	}
+
 	filter := pipeline.RunFilter{
 		TenantID: &tenantID,
+		Sort:     sort,
 	}
 
 	if input.PipelineID != "" {

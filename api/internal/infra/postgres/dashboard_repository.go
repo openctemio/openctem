@@ -105,7 +105,7 @@ func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID s
 	// Get count of repositories with findings
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON a.id = f.asset_id
+		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id
 		 WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository'`,
 		tenantID.String(),
 	).Scan(&stats.WithFindings)
@@ -216,7 +216,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			SELECT COUNT(*) AS cnt
 			FROM assets a
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository' AND `+aIn+`
-				AND EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id)
+				AND EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = a.tenant_id AND f.asset_id = a.id)
 		)
 		SELECT 'asset_total' AS grp, '' AS key, cnt, 0::float8 AS val FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
 		UNION ALL SELECT 'atype', asset_type, cnt, 0 FROM asset_agg WHERE g_type = 0
@@ -594,7 +594,7 @@ func (r *DashboardRepository) GetGlobalRepositoryStats(ctx context.Context) (app
 	// Get count of repositories with findings
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON a.id = f.asset_id
+		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id
 		 WHERE a.deleted_at IS NULL AND a.asset_type = 'repository'`,
 	).Scan(&stats.WithFindings)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -839,7 +839,7 @@ func (r *DashboardRepository) GetFilteredRepositoryStats(ctx context.Context, te
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON a.id = f.asset_id
+		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id
 		 WHERE a.deleted_at IS NULL AND a.tenant_id IN (`+placeholders+`) AND a.asset_type = 'repository'`,
 		args...,
 	).Scan(&stats.WithFindings)

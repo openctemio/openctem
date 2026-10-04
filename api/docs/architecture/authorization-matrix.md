@@ -933,6 +933,10 @@ and every by-id read answers 404. There is no per-organization switch back.
   `everything`) and `DataScopeStrict`/`ScopeStrict` are gone.
 - An unparseable acting user on the finding list or stats is refused instead
   of falling through to tenant-wide results.
+- The switch surface is gone: `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`,
+  the `GET /api/v1/organization/settings/data-scope/impact` pre-flight report,
+  the web console's "see everything" banner and the Settings → Teams card.
+  Settings → Teams states the rule instead.
 - The column itself is retired in steps: no reader for visibility (this
   change), then a migration that stores `nothing` everywhere and refuses
   `everything` (expand), and, after a release, dropping the column
@@ -1090,9 +1094,17 @@ the full graph on purpose (`GetExposureChains` stays unscoped).
 **Asset references a caller writes** go through `datascope.Enforcer.AssertAssetRef`:
 the asset must be a live asset of the tenant (checked for unrestricted callers
 too) **and** in the caller's scope; a foreign, unknown, deleted or out-of-scope
-id all answer 404. It fails closed when not wired. Used by
-`POST /pentest/campaigns/{id}/findings` (`asset_id`), whose
-`findings.asset_id` references `assets(id)` without the tenant (research doc 15, L-02).
+id all answer 404. It fails closed when not wired. The referencing columns
+point at `assets(id)` without the tenant, so this check is what keeps a
+foreign id out (research doc 15, L-02; research doc 21b, C1). Used by:
+
+- `POST /pentest/campaigns/{id}/findings` (`asset_id`);
+- `POST /findings` (`asset_id`; a `branch_id` must also be a branch of that
+  asset, which pins it to the tenant).
+
+Pre-delete counts are tenant-scoped: `DELETE /assets/{id}` counts only the
+tenant's own findings, so a row another tenant pointed at the asset neither
+blocks the delete nor has its count disclosed.
 
 Outside a request (WebSocket subscriptions, cross-organization dashboard) admin
 status is the team role from `v_user_effective_role` (owner/admin) — the same
