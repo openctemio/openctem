@@ -715,11 +715,11 @@ func (s *SourceService) ForceSync(ctx context.Context, tenantID, sourceID string
 	}
 
 	// Record metrics
-	metrics.TemplateSyncsTotal.WithLabelValues(tenantID, string(source.SourceType)).Inc()
+	metrics.TemplateSyncsTotal.WithLabelValues(string(source.SourceType)).Inc()
 	if result.Success {
-		metrics.TemplateSyncsSuccessTotal.WithLabelValues(tenantID).Inc()
+		metrics.TemplateSyncsSuccessTotal.WithLabelValues().Inc()
 	} else {
-		metrics.TemplateSyncsFailedTotal.WithLabelValues(tenantID).Inc()
+		metrics.TemplateSyncsFailedTotal.WithLabelValues().Inc()
 	}
 
 	s.logger.Info("force sync completed",
