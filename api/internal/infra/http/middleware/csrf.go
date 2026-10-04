@@ -126,7 +126,7 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 			// Get CSRF token from cookie
 			cookieToken, err := r.Cookie(CSRFTokenCookieName)
 			if err != nil || cookieToken.Value == "" {
-				cfg.Logger.Debug("CSRF token missing from cookie", "path", r.URL.Path)
+				cfg.Logger.Debug("CSRF token missing from cookie", "path", logSafe(RedactPath(r.URL.Path)))
 				metrics.CSRFRejectionsTotal.WithLabelValues("missing_cookie", r.Method).Inc()
 				apierror.Forbidden("CSRF token missing").WriteJSON(w)
 				return
@@ -135,7 +135,7 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 			// Get CSRF token from header
 			headerToken := r.Header.Get(CSRFHeaderName)
 			if headerToken == "" {
-				cfg.Logger.Debug("CSRF token missing from header", "path", r.URL.Path)
+				cfg.Logger.Debug("CSRF token missing from header", "path", logSafe(RedactPath(r.URL.Path)))
 				metrics.CSRFRejectionsTotal.WithLabelValues("missing_header", r.Method).Inc()
 				apierror.Forbidden("CSRF token missing from header").WriteJSON(w)
 				return
@@ -144,7 +144,7 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 			// Compare tokens using constant-time comparison to prevent timing attacks
 			if subtle.ConstantTimeCompare([]byte(cookieToken.Value), []byte(headerToken)) != 1 {
 				cfg.Logger.Warn("CSRF token mismatch",
-					"path", r.URL.Path,
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"ip", r.RemoteAddr,
 				)
 				metrics.CSRFRejectionsTotal.WithLabelValues("token_mismatch", r.Method).Inc()
@@ -265,11 +265,11 @@ func rejectCSRF(w http.ResponseWriter, r *http.Request, log *logger.Logger, reas
 	case csrfReasonMismatch:
 		msg = "Invalid CSRF token"
 		if log != nil {
-			log.Warn("CSRF token mismatch", "path", logSafe(r.URL.Path), "ip", logSafe(r.RemoteAddr))
+			log.Warn("CSRF token mismatch", "path", logSafe(RedactPath(r.URL.Path)), "ip", logSafe(r.RemoteAddr))
 		}
 	}
 	if reason != csrfReasonMismatch && log != nil {
-		log.Debug("CSRF check failed", "reason", reason, "path", logSafe(r.URL.Path))
+		log.Debug("CSRF check failed", "reason", reason, "path", logSafe(RedactPath(r.URL.Path)))
 	}
 	apierror.Forbidden(msg).WriteJSON(w)
 }
