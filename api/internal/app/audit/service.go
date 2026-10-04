@@ -814,14 +814,15 @@ func (s *AuditService) ListAuditLogs(ctx context.Context, input ListAuditLogsInp
 	return s.auditRepo.List(ctx, filter, page)
 }
 
-// GetAuditLog retrieves an audit log by ID.
-func (s *AuditService) GetAuditLog(ctx context.Context, auditLogID string) (*auditdom.AuditLog, error) {
+// GetAuditLog retrieves an audit log of the tenant. A system row (tenant_id
+// IS NULL) or another tenant's row is not found.
+func (s *AuditService) GetAuditLog(ctx context.Context, tenantID shared.ID, auditLogID string) (*auditdom.AuditLog, error) {
 	parsedID, err := shared.IDFromString(auditLogID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
-	return s.auditRepo.GetByID(ctx, parsedID)
+	return s.auditRepo.GetByTenantAndID(ctx, tenantID, parsedID)
 }
 
 // GetResourceHistory retrieves audit history for a specific resource within a tenant.

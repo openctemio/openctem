@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
@@ -99,7 +100,7 @@ func (h *RemediationGroupHandler) ResolveGroup(w http.ResponseWriter, r *http.Re
 		OperatorApproved:    req.Approved,
 	})
 	if err != nil {
-		apierror.FromError(err).WriteJSON(w)
+		writeGroupResolveError(w, err)
 		return
 	}
 
@@ -108,4 +109,24 @@ func (h *RemediationGroupHandler) ResolveGroup(w http.ResponseWriter, r *http.Re
 		"updated": result.Updated,
 		"failed":  result.Failed,
 	})
+}
+
+// writeGroupResolveError maps a group-resolve failure to its HTTP status:
+// a refused resolve (no findings:verify) is 403 and a bad request 400, not the
+// 500 a raw domain error would become.
+func writeGroupResolveError(w http.ResponseWriter, err error) {
+	if apiErr, ok := errors.AsType[*apierror.Error](err); ok {
+		apiErr.WriteJSON(w)
+		return
+	}
+	switch {
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("remediation group").WriteJSON(w)
+	default:
+		apierror.FromError(err).WriteJSON(w)
+	}
 }
