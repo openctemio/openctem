@@ -94,7 +94,7 @@ describe('Scoping rows', () => {
     }
   })
 
-  it('the header opens the Overview, which needs only assets:read', () => {
+  it('the Overview row (and rail flyout heading) opens /scoping, which needs only assets:read', () => {
     expect(group('Scoping').url).toBe('/scoping')
     const overview = row('Scoping', 'Overview')
     expect(overview.module).toBeUndefined()
