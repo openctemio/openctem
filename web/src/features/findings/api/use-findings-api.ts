@@ -98,6 +98,7 @@ export function buildFindingsEndpoint(filters?: FindingApiFilters): string {
   if (filters.finding_ids?.length) params.set('finding_ids', filters.finding_ids.join(','))
   if (filters.cve_ids?.length) params.set('cve_ids', filters.cve_ids.join(','))
   if (filters.finding_types?.length) params.set('finding_types', filters.finding_types.join(','))
+  if (filters.families?.length) params.set('family', filters.families.join(','))
   if (filters.sort) params.set('sort', filters.sort)
 
   const queryString = params.toString()
