@@ -3,6 +3,15 @@
 Design: [RFC-047](../rfcs/RFC-047-tenable-sc-sensor-connector.md). This page
 describes what is built and where it lives.
 
+## Switch
+
+Everything here is behind `integration.TenableConnectorEnabled` (owner
+decision D-14; `TENABLE_CONNECTOR_ENABLED` in the web). While it is false,
+Tenable integrations cannot be created (the connector validator is not
+wired), the sync and coverage controllers are not registered, and the page
+stays hidden. Flip it when a sensor release with the connector
+(openctemio/sensor#129, #131) is out.
+
 ## Shape
 
 ```
