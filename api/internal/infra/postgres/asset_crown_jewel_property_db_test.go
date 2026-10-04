@@ -122,7 +122,9 @@ func TestCrownJewelMigration_Backfill(t *testing.T) {
 		t.Fatal(err)
 	}
 	tenantID := seedTestTenant(ctx, t, db)
-	tx, err := db.BeginTx(ctx, nil)
+	// DDL (the down/up replay) needs the schema owner; the app role used
+	// by the least-privilege CI job may only read and write rows.
+	tx, err := testdb.OpenMigrator(t).BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
