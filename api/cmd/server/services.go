@@ -870,6 +870,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
+	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
 	s.Vulnerability.SetAssetRefChecker(s.DataScope) // POST /findings asset_id: tenant + caller scope
 	s.Vulnerability.SetBranchLookup(repos.Branch)   // a finding branch must belong to its asset
@@ -1200,6 +1201,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
 	// Creates, edits, status changes and deletes go to audit_logs.
 	s.RemediationCampaign.SetAuditLogger(s.Audit)
+	s.RemediationCampaign.SetAssigneeChecker(repos.AccessControl) // a campaign owner must be an active member (21b C2)
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
