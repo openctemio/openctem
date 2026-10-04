@@ -73,6 +73,12 @@ code keys on the class or on (type, sub_type), never on an alias.
   and the web scope, relationship and create-finding matchers. A row still
   stored under an alias name reads as its alias's pair until the data
   normalisation (T3).
+- Scanner compatibility is **enforcing** (O6): a scanner is handed only
+  the asset-group members whose stored (type, sub_type) its target types
+  can scan, at run dispatch and again at every workflow step's command
+  (`internal/app/scan/type_gate.go`). A run or step with nothing left is
+  refused (`NO_COMPATIBLE_TARGETS` / `INCOMPATIBLE_TARGETS`); assets whose
+  compatibility cannot be decided are dispatched.
 - Stored data is normalised (T3, migration 000467): every row holds a core
   type and a declared sub-type, enforced by `chk_assets_core_type`. Each
   move is ledgered and reversible, recorded as a `reclassified` history
