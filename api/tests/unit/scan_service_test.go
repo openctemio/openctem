@@ -550,8 +550,8 @@ func (m *mockCommandRepo) ClaimForSensor(_ context.Context, _, _ shared.ID, _ st
 func (m *mockCommandRepo) List(_ context.Context, _ commanddom.Filter, _ pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
 	return pagination.Result[*commanddom.Command]{}, nil
 }
-func (m *mockCommandRepo) Update(_ context.Context, _ *commanddom.Command) error { return nil }
-func (m *mockCommandRepo) Delete(_ context.Context, _ shared.ID, _ shared.ID) error           { return nil }
+func (m *mockCommandRepo) Update(_ context.Context, _ *commanddom.Command) error    { return nil }
+func (m *mockCommandRepo) Delete(_ context.Context, _ shared.ID, _ shared.ID) error { return nil }
 func (m *mockCommandRepo) FindExpired(_ context.Context) ([]*commanddom.Command, error) {
 	return nil, nil
 }

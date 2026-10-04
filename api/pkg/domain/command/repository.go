@@ -23,7 +23,6 @@ type Repository interface {
 	// Create creates a new command.
 	Create(ctx context.Context, cmd *Command) error
 
-
 	// GetByTenantAndID retrieves a command by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Command, error)
 

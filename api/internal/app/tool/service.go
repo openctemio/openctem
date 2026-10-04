@@ -1287,7 +1287,7 @@ func (s *Service) GetToolWithConfig(ctx context.Context, tenantID, toolID string
 
 // RecordToolExecutionInput represents the input for recording a tool execution.
 type RecordToolExecutionInput struct {
-	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
+	TenantID      string         `json:"-" validate:"required,uuid"`
 	ToolID        string         `json:"tool_id" validate:"required,uuid"`
 	SensorID      string         `json:"sensor_id" validate:"omitempty,uuid"`
 	PipelineRunID string         `json:"pipeline_run_id" validate:"omitempty,uuid"`
@@ -1345,7 +1345,7 @@ func (s *Service) RecordToolExecution(ctx context.Context, input RecordToolExecu
 
 // CompleteToolExecutionInput represents the input for completing a tool execution.
 type CompleteToolExecutionInput struct {
-	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
+	TenantID      string         `json:"-" validate:"required,uuid"`
 	ExecutionID   string         `json:"execution_id" validate:"required,uuid"`
 	FindingsCount int            `json:"findings_count"`
 	OutputSummary map[string]any `json:"output_summary"`
@@ -1380,7 +1380,7 @@ func (s *Service) CompleteToolExecution(ctx context.Context, input CompleteToolE
 
 // FailToolExecutionInput represents the input for failing a tool execution.
 type FailToolExecutionInput struct {
-	TenantID     string `json:"tenant_id" validate:"required,uuid"`
+	TenantID     string `json:"-" validate:"required,uuid"`
 	ExecutionID  string `json:"execution_id" validate:"required,uuid"`
 	ErrorMessage string `json:"error_message" validate:"required,max=2000"`
 }

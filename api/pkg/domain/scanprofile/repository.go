@@ -21,7 +21,6 @@ type Repository interface {
 	// Create creates a new scan profile.
 	Create(ctx context.Context, profile *ScanProfile) error
 
-
 	// GetByTenantAndID retrieves a scan profile by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*ScanProfile, error)
 
