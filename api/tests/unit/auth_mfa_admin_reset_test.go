@@ -31,9 +31,9 @@ func (r *resetTenantRepo) GetMembership(_ context.Context, userID, tenantID shar
 	return nil, shared.ErrNotFound
 }
 
-func (r *resetTenantRepo) GetMembershipByID(_ context.Context, id shared.ID) (*tenant.Membership, error) {
+func (r *resetTenantRepo) GetMembershipByID(_ context.Context, tenantID, id shared.ID) (*tenant.Membership, error) {
 	for _, m := range r.ms {
-		if m.ID() == id {
+		if m.ID() == id && m.TenantID() == tenantID {
 			return m, nil
 		}
 	}
