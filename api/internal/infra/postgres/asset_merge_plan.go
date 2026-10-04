@@ -77,6 +77,10 @@ var assetMergeRefs = []mergeRef{
 		keys: []mergeKey{{cols: []string{"user_id"}}, {cols: []string{"group_id"}}}},
 	{table: "user_accessible_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"user_id"}}}},
+	// Explicit data-scope grants follow the asset: whoever could see a merged
+	// asset by a grant sees the kept one.
+	{table: "asset_access_grants", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"user_id"}}}},
 	{table: "asset_sources", column: "asset_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"source_type", "source_id"}}}},
 	{table: "business_service_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
