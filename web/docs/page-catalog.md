@@ -23,7 +23,7 @@ Grouped by CTEM stage in `src/config/sidebar-data.ts`:
 
 - **Dashboard** — `/`
 - **Scoping** (docs/ui/scoping-ia-2026-10.md) — Overview (`/scoping`, the
-  readiness hub; the section header opens it), Cycles (`/cycles`, detail
+  readiness hub, its first row; the section header only expands), Cycles (`/cycles`, detail
   `/cycles/[id]`), Business context (tabs Crown jewels · Services · Units),
   Boundaries (`/scope-config`: Targets · Exclusions), Threat model (tabs
   Threats · Attacker profiles).
