@@ -15,8 +15,9 @@ import (
 // validation job for the sensor that most recently produced its
 // original validation evidence. Outcomes:
 //
-//   - OutcomeNotDetected → exposure gone → transition finding to
-//     resolved.
+//   - OutcomeNotDetected → exposure no longer observed → the verdict is
+//     stamped but the finding is NOT resolved: the run's reachability is
+//     asserted by the sensor itself, so a retest or a person closes it.
 //   - OutcomeDetected    → fix did not hold → revert to in_progress
 //     AND notify the assignee.
 //   - Otherwise → no state change; evidence stays visible for
@@ -169,7 +170,8 @@ type reconcileResult struct {
 // single source of truth. The verdict table (RFC-011.2 §3):
 //
 //	outcome not_detected  (== VerdictNotReproducible, "exposure gone"):
-//	    - fix_applied            → resolved (verified proof-of-fix)   Stood=true
+//	    - fix_applied            → hold (verdict stamped; reachability is
+//	                               sensor-asserted, so never a close)
 //	    - new/confirmed/in_prog. → validated_fixed (DOWNGRADE)        Downgraded=true
 //	    - already validated_fixed→ hold (re-stamp verdict only)
 //	outcome detected      (== VerdictReproducible, "still exploitable"):
@@ -217,14 +219,14 @@ func applyOutcomeToFinding(
 	case VerdictNotReproducible:
 		switch f.Status() {
 		case vulnerability.FindingStatusFixApplied:
-			// Proof-of-fix confirmed — verified close, NOT a downgrade.
-			if err := f.TransitionStatus(vulnerability.FindingStatusResolved, "proof-of-fix: exposure no longer detected", nil); err != nil {
-				return reconcileResult{}, fmt.Errorf("transition to resolved: %w", err)
-			}
-			if err := finding.Update(ctx, f); err != nil {
-				return reconcileResult{}, err
-			}
-			res.Stood = true
+			// Not a close (research 18 F6, RFC-040 mutual distrust): the only
+			// proof that the target answered is raw_meta.reachable, which the
+			// sensor asserts about its own run. A hostile or broken sensor
+			// could close any fix_applied finding by reporting "not detected,
+			// reachable". The finding stays fix_applied with the verdict
+			// stamped; a retest (RFC-039, whose reachability comes from a
+			// probe the platform dispatches) or a findings:verify holder
+			// closes it.
 		case vulnerability.FindingStatusNew,
 			vulnerability.FindingStatusConfirmed,
 			vulnerability.FindingStatusInProgress:

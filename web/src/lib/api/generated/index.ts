@@ -163,3 +163,13 @@ export type AuditChainClass =
 /** GET /api/v1/easm/summary — the EASM overview (RFC-036). */
 export type EASMSummary = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Summary']
 export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
+/** GET /api/v1/easm/candidates — the attribution review queue. */
+export type EASMReviewPage =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']
+export type EASMReviewItem =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewItem']
+export type EASMReviewEvidence =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence']
+/** POST /api/v1/easm/candidates/decisions */
+export type EASMDecisionResult =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.DecisionResult']
