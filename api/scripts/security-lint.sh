@@ -105,6 +105,12 @@ check_http_client() {
         # inline (validateURL + safeDialer + CheckRedirect). Functionally
         # equivalent to SafeHTTPClient; consolidation is a follow-up.
         'api/internal/app/workflow/handlers.go'
+        # Sensor Tenable.sc connector: its dialer resolves the host, rejects
+        # loopback, link-local, metadata and CGNAT addresses with
+        # httpsec.IsIPBlockedWith, dials the checked IP (no DNS rebinding),
+        # refuses redirects and supports CA and SPKI pinning. Private ranges
+        # are allowed on purpose: the appliance is internal.
+        'agent/internal/connector/tenablesc/client.go'
     )
 
     local hits
@@ -136,7 +142,7 @@ check_http_client() {
         printf '%s' "$filtered" | sed 's/^/       /'
         return
     fi
-    say_pass "Rule 1: no raw &http.Client{} outside pkg/httpsec (api/, agent/; 5 documented exceptions)"
+    say_pass "Rule 1: no raw &http.Client{} outside pkg/httpsec (api/, agent/; documented exceptions)"
 }
 
 # ---------------------------------------------------------------------------
