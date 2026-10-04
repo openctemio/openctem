@@ -8744,9 +8744,17 @@ definitions:
         type: string
       cve_id:
         type: string
+      cve_ids:
+        description: Every CVE the scanner named, primary first
+        items:
+          type: string
+        type: array
       cvss_score:
         type: number
       cvss_vector:
+        type: string
+      cvss_version:
+        description: Version of cvss_score (2.0, 3.x, 3.1, 4.0)
         type: string
       cwe_ids:
         items:
@@ -8775,8 +8783,14 @@ definitions:
         type: number
       estimated_fix_time:
         type: integer
+      exploit_available:
+        description: The scanner reported a public exploit
+        type: boolean
       exposure_vector:
         description: CTEM Fields
+        type: string
+      family:
+        description: Scanner details kept since research 17 R2 (not priority inputs).
         type: string
       file_path:
         type: string
@@ -8876,6 +8890,9 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      patch_published_at:
+        description: When the vendor published the fix
+        type: string
       priority_class:
         description: Priority Classification (RFC-004)
         type: string
@@ -8994,6 +9011,9 @@ definitions:
         type: string
       verified_by:
         type: string
+      vpr_score:
+        description: Tenable VPR 0.1-10, display only
+        type: number
       vulnerability:
         allOf:
         - $ref: '#/definitions/internal_infra_http_handler.FindingVulnerabilityInfo'
