@@ -432,7 +432,7 @@ func (m *mockAccessControlRepoForPermission) CountAssetOwners(_ context.Context,
 func (m *mockAccessControlRepoForPermission) CountAssetsByGroups(_ context.Context, _ []shared.ID) (map[shared.ID]int, error) {
 	return nil, nil
 }
-func (m *mockAccessControlRepoForPermission) ListAssetOwnersByGroupWithDetails(_ context.Context, _ shared.ID, _, _ int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
+func (m *mockAccessControlRepoForPermission) ListAssetOwnersByGroupWithDetails(_ context.Context, _ shared.ID, _ *shared.DataScope, _, _ int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
 	return nil, 0, nil
 }
 func (m *mockAccessControlRepoForPermission) HasPrimaryOwner(_ context.Context, _ shared.ID) (bool, error) {

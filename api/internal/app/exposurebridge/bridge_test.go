@@ -72,7 +72,7 @@ func (r *fakeExposureRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) 
 	return r.GetByID(context.Background(), id)
 }
 
-func (r *fakeExposureRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
+func (r *fakeExposureRepo) Delete(_ context.Context, _, _ shared.ID) error { return nil }
 
 func (r *fakeExposureRepo) List(_ context.Context, _ exposure.Filter, _ exposure.ListOptions, _ pagination.Pagination) (pagination.Result[*exposure.ExposureEvent], error) {
 	return pagination.Result[*exposure.ExposureEvent]{}, nil
