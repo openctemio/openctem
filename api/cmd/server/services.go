@@ -1166,10 +1166,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Producer side: dispatch a safe-check validation job for a finding. The
 	// sensor runs the probe and reports back; the command-completion hook maps
 	// the result into evidence via ValidationEvidence above.
+	// One dispatcher, the only producer of validate commands, for every
+	// re-check, retest and simulation probe. Each job passes the active-probe
+	// gate (scope exclusions, private-range policy, attribution, scan zones)
+	// of the scan service, set below once it exists; until then it refuses.
+	probeGate := &lateTargetGate{}
+	validationDispatcher := validation.NewCommandDispatcher(repos.Command, probeGate, log)
 	s.ValidationRun = validation.NewRunService(
 		repos.Finding,
 		repos.Asset,
-		validation.NewCommandDispatcher(repos.Command, log),
+		validationDispatcher,
 		validation.DefaultSelector{},
 		[]validation.ExecutorKind{validation.KindSafeCheck},
 		log,
@@ -1200,19 +1206,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Simulation.SetSafeCheckDispatcher(s.ValidationRun)
 
 	// Continuous retest (RFC-039): re-run a finding's own nuclei template plus a
-	// reachability probe through the same validate-command transport, gated by
-	// the fail-closed scope exclusions (the #835 attribution gate plugs into the
-	// same TargetGate list). Evidence is recorded advisory-only; the retest
-	// service settles the finding (fixed / still present / unknown).
+	// reachability probe through the same validate-command dispatcher, so the
+	// same fail-closed active-probe gate applies (exclusions, zones,
+	// attribution). Evidence is recorded advisory-only; the retest service
+	// settles the finding (fixed / still present / unknown).
 	s.Retest = retestapp.NewService(
 		repos.FindingRetest,
 		repos.Finding,
 		repos.Asset,
 		repos.Command,
-		validation.NewCommandDispatcher(repos.Command, log),
+		validationDispatcher,
 		validationSensorAvailability{sensors: repos.Sensor},
 		log,
-		retestapp.ScopeExclusionGate{Scope: s.Scope},
 	)
 	s.Retest.SetAuditLogger(s.Audit)
 
@@ -1582,6 +1587,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
+	// The validate-command dispatcher gates every probe through the scan
+	// service from here on.
+	probeGate.set(s.Scan)
 
 	// Closed-loop CTEM: auto-queue a proof-of-fix safe-check re-check when
 	// findings transition to fix_applied, so a "fixed" claim is verified rather
