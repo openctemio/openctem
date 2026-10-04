@@ -67,10 +67,15 @@ import { toast } from 'sonner'
 import { mutate } from 'swr'
 import { SafeExternalLink } from '@/components/safe-external-link'
 
-// Finding statuses a Jira webhook may set inbound. false_positive/accepted need
-// approval and resolved needs verification, so they're excluded (the backend
-// rejects them anyway; "done"-like Jira statuses should map to fix_applied).
-const INBOUND_FINDING_STATUSES = ['confirmed', 'in_progress', 'fix_applied', 'duplicate'] as const
+// Finding statuses a Jira webhook may set inbound (the API refuses any other on
+// save). false_positive/accepted need an approval, resolved needs findings:verify
+// and duplicate is a triage decision naming the surviving finding, so a ticket
+// can only report work state; "done"-like Jira statuses map to fix_applied.
+const INBOUND_FINDING_STATUSES = ['confirmed', 'in_progress', 'fix_applied'] as const
+
+function isInboundFindingStatus(s: string): boolean {
+  return (INBOUND_FINDING_STATUSES as readonly string[]).includes(s)
+}
 
 // ─────────────────────────────────────────────────────────
 // Provider helpers
@@ -433,6 +438,11 @@ function ConfigureTicketingDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                {row.finding && !isInboundFindingStatus(row.finding) && (
+                  <span className="text-destructive text-xs" role="alert">
+                    A ticket cannot set {row.finding.replace('_', ' ')}
+                  </span>
+                )}
                 <Button
                   type="button"
                   variant="ghost"

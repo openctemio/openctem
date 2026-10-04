@@ -69,6 +69,8 @@ export interface FindingGroupsFilters {
   assigned_to_me?: boolean
   page?: number
   per_page?: number
+  /** A saved view the groups run (its filter, with these filters on top). */
+  view?: string
 }
 
 // ============================================
@@ -86,6 +88,7 @@ export function buildGroupsUrl(filters: FindingGroupsFilters): string {
   if (filters.cve_ids) params.set('cve_id', filters.cve_ids)
   if (filters.asset_tags) params.set('asset_tag', filters.asset_tags)
   if (filters.assigned_to_me) params.set('related_to', 'me')
+  if (filters.view) params.set('view', filters.view)
   if (filters.page) params.set('page', String(filters.page))
   if (filters.per_page) params.set('per_page', String(filters.per_page))
   return `/api/v1/findings/groups?${params.toString()}`

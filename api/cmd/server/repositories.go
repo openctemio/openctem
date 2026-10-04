@@ -198,6 +198,7 @@ type Repositories struct {
 
 	// Per-user customizable dashboards (RFC-021, migration 000218)
 	UserDashboard *postgres.UserDashboardRepository
+	SavedView     *postgres.SavedViewRepository
 
 	// Asset Dedup (RFC-001)
 	AssetDedup *postgres.AssetDedupRepository
@@ -428,6 +429,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// Per-user customizable dashboards (RFC-021)
 		UserDashboard: postgres.NewUserDashboardRepository(db),
+		SavedView:     postgres.NewSavedViewRepository(db),
 
 		// Asset Dedup (RFC-001)
 		AssetDedup: postgres.NewAssetDedupRepository(db),

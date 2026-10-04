@@ -11860,6 +11860,72 @@ definitions:
     required:
     - name
     type: object
+  internal_infra_http_handler.SavedViewRequest:
+    properties:
+      columns:
+        items:
+          type: string
+        type: array
+      density:
+        type: string
+      description:
+        type: string
+      filter:
+        type: object
+      from_view_id:
+        description: |-
+          FromViewID duplicates a view the caller can see into a new personal
+          view (how a team member changes a shared view, decision A1); the
+          other fields are ignored then, except name.
+        type: string
+      group_by:
+        type: string
+      group_id:
+        type: string
+      name:
+        type: string
+      page:
+        type: string
+      query:
+        type: string
+    type: object
+  internal_infra_http_handler.SavedViewResponse:
+    properties:
+      columns:
+        items:
+          type: string
+        type: array
+      created_at:
+        type: string
+      density:
+        type: string
+      description:
+        type: string
+      filter:
+        type: object
+      group_by:
+        type: string
+      group_id:
+        type: string
+      group_name:
+        type: string
+      id:
+        type: string
+      is_owner:
+        description: IsOwner says whether the caller may edit or delete it (decision
+          A1).
+        type: boolean
+      name:
+        type: string
+      owner_id:
+        type: string
+      owner_name:
+        type: string
+      page:
+        type: string
+      updated_at:
+        type: string
+    type: object
   internal_infra_http_handler.ScanDetailResponse:
     properties:
       ad_hoc:
@@ -22967,6 +23033,11 @@ paths:
         in: query
         name: updated_at_lt
         type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
+        type: string
       - description: Free text over title, description and file path
         in: query
         name: q
@@ -24387,6 +24458,11 @@ paths:
         in: query
         name: updated_at_lt
         type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
+        type: string
       - description: Free text
         in: query
         name: q
@@ -25060,6 +25136,11 @@ paths:
         in: query
         name: updated_at_lt
         type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
+        type: string
       - description: Free text
         in: query
         name: q
@@ -25093,6 +25174,633 @@ paths:
       security:
       - BearerAuth: []
       summary: Group findings
+      tags:
+      - Findings
+  /findings/related-cves/{cveId}:
+    get:
+      description: |-
+        CVEs sharing a component with the given CVE, among the open findings the filter selects
+        (the params of GET /findings, RFC-048). The source CVE's components come only from findings
+        the caller may see.
+      parameters:
+      - description: CVE id
+        in: path
+        name: cveId
+        required: true
+        type: string
+      - collectionFormat: csv
+        description: 'id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: 'id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'open on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: open_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'fixed on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: fixed_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'severity: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: 'severity: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity_not
+        type: array
+      - collectionFormat: csv
+        description: 'status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: 'status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status_not
+        type: array
+      - collectionFormat: csv
+        description: 'source: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: 'source: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source_not
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status_not
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class_not
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type_not
+        type: array
+      - description: is in kev equals
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: is reachable equals
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: epss score at least
+        in: query
+        name: epss_score_gte
+        type: number
+      - description: epss score at most
+        in: query
+        name: epss_score_lte
+        type: number
+      - description: epss score greater than
+        in: query
+        name: epss_score_gt
+        type: number
+      - description: epss score less than
+        in: query
+        name: epss_score_lt
+        type: number
+      - collectionFormat: csv
+        description: 'tool name: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: 'tool name: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name_not
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id_not
+        type: array
+      - description: file path contains
+        in: query
+        name: file_path
+        type: string
+      - description: file path contains
+        in: query
+        name: file_path_contains
+        type: string
+      - collectionFormat: csv
+        description: 'asset tag: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - collectionFormat: csv
+        description: 'asset tag: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag_not
+        type: array
+      - description: related to equals
+        enum:
+        - me
+        in: query
+        name: related_to
+        type: string
+      - description: cvss score at least
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: cvss score at most
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: cvss score greater than
+        in: query
+        name: cvss_score_gt
+        type: number
+      - description: cvss score less than
+        in: query
+        name: cvss_score_lt
+        type: number
+      - description: first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lte
+        type: string
+      - description: first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gt
+        type: string
+      - description: first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lt
+        type: string
+      - description: last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lte
+        type: string
+      - description: last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gt
+        type: string
+      - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - collectionFormat: csv
+        description: 'network port: any of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: 'network port: none of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port_not
+        type: array
+      - description: network port at least
+        in: query
+        name: network_port_gte
+        type: integer
+      - description: network port at most
+        in: query
+        name: network_port_lte
+        type: integer
+      - collectionFormat: csv
+        description: 'network transport: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: 'network transport: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport_not
+        type: array
+      - collectionFormat: csv
+        description: 'network service: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: 'network service: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service_not
+        type: array
+      - collectionFormat: csv
+        description: 'assigned to: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: assigned to is unset (true) or set (false)
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: 'assigned to: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality_not
+        type: array
+      - description: exploit available equals
+        in: query
+        name: exploit_available
+        type: boolean
+      - description: created at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: created at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lte
+        type: string
+      - description: created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gt
+        type: string
+      - description: created at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lt
+        type: string
+      - description: updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gte
+        type: string
+      - description: updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lte
+        type: string
+      - description: updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gt
+        type: string
+      - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lt
+        type: string
+      - description: Free text
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: INVALID_FILTER
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Related CVEs
       tags:
       - Findings
   /findings/remediation-groups:
@@ -25770,6 +26478,11 @@ paths:
       - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: updated_at_lt
+        type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
         type: string
       - description: Free text
         in: query
@@ -35489,6 +36202,156 @@ paths:
       summary: API version
       tags:
       - System
+  /views:
+    get:
+      description: The caller's saved views of a page and the ones shared with their
+        groups.
+      parameters:
+      - description: Page
+        enum:
+        - findings
+        in: query
+        name: page
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List saved views
+      tags:
+      - Saved views
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Saves a filter (a FilterDocument, or the page's flat query) and page state. Validated against
+        the page's filter fields (400 INVALID_FILTER). group_id shares it with one of the caller's groups.
+        from_view_id instead copies a view the caller can see into a new personal view (A1).
+      parameters:
+      - description: View
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SavedViewRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SavedViewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Limit reached
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save a view
+      tags:
+      - Saved views
+  /views/{id}:
+    delete:
+      parameters:
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a saved view
+      tags:
+      - Saved views
+    get:
+      parameters:
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SavedViewResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a saved view
+      tags:
+      - Saved views
+    put:
+      consumes:
+      - application/json
+      description: Only the owner may change a view (403 for a shared view of someone
+        else; duplicate it instead).
+      parameters:
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: View
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SavedViewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SavedViewResponse'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a saved view
+      tags:
+      - Saved views
   /vulnerabilities:
     get:
       description: Retrieves a paginated list of CVE vulnerabilities

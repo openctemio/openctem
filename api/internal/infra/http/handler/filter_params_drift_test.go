@@ -23,10 +23,11 @@ var filterOperations = []struct {
 	path, method, registry string
 	extra                  []string
 }{
-	{"/findings", "get", "findings", []string{"q", "sort", "page", "per_page"}},
-	{"/findings/stats", "get", "findings", []string{"q"}},
-	{"/findings/groups", "get", "findings", []string{"q", "sort", "page", "per_page", "group_by"}},
-	{"/findings/export", "get", "findings", []string{"q", "format"}},
+	{"/findings", "get", "findings", []string{"q", "sort", "page", "per_page", "view"}},
+	{"/findings/stats", "get", "findings", []string{"q", "view"}},
+	{"/findings/groups", "get", "findings", []string{"q", "sort", "page", "per_page", "group_by", "view"}},
+	{"/findings/export", "get", "findings", []string{"q", "format", "view"}},
+	{"/findings/related-cves/{cveId}", "get", "findings", []string{"q"}},
 }
 
 func TestFilterParamBlocksAreGenerated(t *testing.T) {

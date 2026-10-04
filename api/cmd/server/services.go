@@ -24,6 +24,7 @@ import (
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
+	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/internal/app/tool"
@@ -69,6 +70,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -596,6 +599,7 @@ type Services struct {
 
 	// Per-user customizable dashboards (RFC-021)
 	UserDashboard *dashboardapp.Service
+	SavedView     *savedviewapp.Service
 
 	// Integrations & Notifications
 	Integration    *app.IntegrationService
@@ -915,6 +919,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ReportSchedule = app.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
+	// Saved list views (D15): one page config per page that has views.
+	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
+		savedview.PageFindings: {
+			Registry:   vulnerability.FindingFields,
+			Permission: permission.FindingsRead.String(),
+			GroupBy:    vulnerability.FindingGroupDimensions(),
+			Extra:      []string{"branch_status"},
+		},
+	}, log)
+	s.SavedView.SetAuditService(s.Audit)
 	s.Branch = app.NewBranchService(repos.Branch, log)
 
 	// Initialize vulnerability & exposure services
@@ -983,6 +997,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize dashboard service
 	s.Dashboard = app.NewDashboardService(repos.Dashboard, log)
 	s.Dashboard.SetDataScope(s.DataScope)
+	// D6: a restricted viewer holding dashboard:aggregate sees organization
+	// totals (k-floor on breakdowns); others see their own scope.
+	s.Dashboard.SetAggregateCheck(func(ctx context.Context) bool {
+		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
+	})
 
 	// Initialize SLA service
 	s.SLA = sla.NewService(repos.SLA, log)
@@ -1347,6 +1366,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Routing rules can match on a finding's asset scope/criticality — resolve
 	// that context from the asset repository.
 	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
+	// Inbound status changes are recorded with the integration as the actor.
+	s.JiraSync.SetActivityRecorder(s.FindingActivity)
 	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
 	// persistence; JiraSync provides the per-tenant epic create. Both deps set
 	// here (JiraSync is created after the campaign service above).
@@ -1359,6 +1380,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
 	// request); resolves the tenant's GitHub integration credentials on demand.
 	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
+	s.GitHubTicket.SetActivityRecorder(s.FindingActivity)
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
@@ -1501,6 +1523,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// built before ingest.
 	if s.CertMonitor != nil {
 		s.CertMonitor.SetPromotion(s.Ingest, repos.Asset, repos.Attribution)
+		s.CertMonitor.SetTombstones(repos.Attribution)
 	}
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings

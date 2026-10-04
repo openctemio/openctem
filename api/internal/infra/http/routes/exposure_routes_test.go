@@ -46,8 +46,16 @@ func TestExposureRoutes_DispositionsNeedApprover(t *testing.T) {
 		return rec.Code, false
 	}
 
-	member := []string{permission.FindingsRead.String(), permission.FindingsWrite.String()}
+	member := []string{permission.FindingsRead.String(), permission.FindingsWrite.String(), permission.ExposuresTriage.String()}
 	approver := append([]string{permission.FindingsApprove.String()}, member...)
+	// findings:write / findings:approve without findings:exposures:triage: the
+	// exposure dispositions are refused (D-4).
+	noTriage := []string{permission.FindingsRead.String(), permission.FindingsWrite.String(), permission.FindingsApprove.String()}
+	for _, action := range []string{"/accept", "/false-positive", "/resolve", "/reactivate"} {
+		if code, reached := serve(noTriage, http.MethodPost, exposurePath+action); reached || code != http.StatusForbidden {
+			t.Errorf("without findings:exposures:triage, POST %s: code=%d reached=%v, want 403", action, code, reached)
+		}
+	}
 
 	for _, action := range []string{"/accept", "/false-positive"} {
 		if code, reached := serve(member, http.MethodPost, exposurePath+action); reached || code != http.StatusForbidden {

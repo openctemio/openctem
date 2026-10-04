@@ -242,8 +242,13 @@ func (r *AttributionRepository) SaveDecision(ctx context.Context, tenantID share
 	if id, err := shared.IDFromString(decidedBy); err == nil {
 		by = id.String()
 	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("save attribution decision: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
 	var got string
-	err := r.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, reason, decided_by, decided_at)
 		SELECT a.id, a.tenant_id, $3, 0, '', (SELECT u.id FROM users u WHERE u.id = $4::uuid), now()
 		FROM assets a WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
@@ -258,6 +263,12 @@ func (r *AttributionRepository) SaveDecision(ctx context.Context, tenantID share
 		return false, nil
 	}
 	if err != nil {
+		return false, fmt.Errorf("save attribution decision: %w", err)
+	}
+	if err := syncTombstones(ctx, tx, tenantID, []string{got}, state, by); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
 		return false, fmt.Errorf("save attribution decision: %w", err)
 	}
 	return true, nil

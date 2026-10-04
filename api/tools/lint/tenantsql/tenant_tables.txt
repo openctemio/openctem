@@ -44,6 +44,7 @@ data_sources
 easm_dns_check_state
 easm_evidence
 easm_seeds
+easm_tombstones
 exposure_events
 exposures
 finding_activities
@@ -92,6 +93,7 @@ rule_sources
 rules
 runtime_telemetry_events
 saml_providers
+saved_views
 scan_coverage_state
 scan_profiles
 scan_schedules

@@ -96,7 +96,7 @@ func (m *mockDashboardRepo) GetRecentActivity(_ context.Context, tenantID shared
 	return m.recentActivity, nil
 }
 
-func (m *mockDashboardRepo) GetFindingTrend(_ context.Context, tenantID shared.ID, months int) ([]app.FindingTrendPoint, error) {
+func (m *mockDashboardRepo) GetFindingTrend(_ context.Context, tenantID shared.ID, _ *shared.DataScope, months int) ([]app.FindingTrendPoint, error) {
 	m.getFindingTrendCalls++
 	m.lastTenantID = tenantID
 	m.lastMonths = months
@@ -106,7 +106,7 @@ func (m *mockDashboardRepo) GetFindingTrend(_ context.Context, tenantID shared.I
 	return m.findingTrend, nil
 }
 
-func (m *mockDashboardRepo) GetAllStats(_ context.Context, tenantID shared.ID) (*app.DashboardAllStats, error) {
+func (m *mockDashboardRepo) GetAllStats(_ context.Context, tenantID shared.ID, _ *shared.DataScope) (*app.DashboardAllStats, error) {
 	m.getAllStatsCalls++
 	m.lastTenantID = tenantID
 	if m.getAllStatsErr != nil {
