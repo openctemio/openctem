@@ -237,6 +237,19 @@ func (t *Tool) IsCollector() bool {
 	return k == KindCollector
 }
 
+// KindConnector is the catalog's metadata.kind of a connector: a tool the
+// sensor runs against another product's API (e.g. "tenable_sc", RFC-047) on
+// connector commands, never on a dispatched scan.
+const KindConnector = "connector"
+
+// IsConnector reports whether the tool is a connector (metadata.kind =
+// "connector"). Scans refuse it: connector commands are created by the
+// integration that owns them.
+func (t *Tool) IsConnector() bool {
+	k, _ := t.Metadata["kind"].(string)
+	return k == KindConnector
+}
+
 // IsPlatformTool returns true if this is a platform-provided tool.
 func (t *Tool) IsPlatformTool() bool {
 	return t.TenantID == nil

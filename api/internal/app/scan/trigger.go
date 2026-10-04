@@ -50,8 +50,7 @@ type TriggerScanExecInput struct {
 
 // ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
 // the scan's previous run still active.
-var ErrScanRunInProgress = shared.NewDomainError("SCAN_RUN_IN_PROGRESS",
-	"the scan's previous run is still active", shared.ErrConflict)
+var ErrScanRunInProgress = pipeline.ErrScanRunActive
 
 // TriggerScan triggers a scan execution.
 func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (*pipeline.Run, error) {
@@ -78,6 +77,9 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// NOTE: Concurrent run limits are now checked atomically in CreateRunIfUnderLimit
 	// to prevent race conditions where multiple triggers bypass the limit.
+	// This early check only saves the work of resolving targets for an
+	// occurrence that will be skipped; the guarantee is the same check in
+	// CreateRunIfUnderLimit, under the scan row lock, for every scheduled run.
 	if input.SkipIfRunning {
 		active, err := s.runRepo.CountActiveByScanID(ctx, sc.ID)
 		if err != nil {
@@ -835,16 +837,16 @@ func (s *Service) lazySyncTemplatesIfNeeded(ctx context.Context, tenantID shared
 		}
 
 		// Record metrics
-		metrics.TemplateSyncsTotal.WithLabelValues(tenantID.String(), string(source.SourceType)).Inc()
+		metrics.TemplateSyncsTotal.WithLabelValues(string(source.SourceType)).Inc()
 		if result.Success {
-			metrics.TemplateSyncsSuccessTotal.WithLabelValues(tenantID.String()).Inc()
+			metrics.TemplateSyncsSuccessTotal.WithLabelValues().Inc()
 			s.logger.Info("template source synced",
 				"source_id", source.ID.String(),
 				"source_name", source.Name,
 				"templates_found", result.TemplatesFound,
 				"templates_added", result.TemplatesAdded)
 		} else {
-			metrics.TemplateSyncsFailedTotal.WithLabelValues(tenantID.String()).Inc()
+			metrics.TemplateSyncsFailedTotal.WithLabelValues().Inc()
 		}
 	}
 
@@ -1035,6 +1037,13 @@ func (s *Service) validateSingleScanTool(ctx context.Context, scannerName string
 			shared.ErrValidation,
 		)
 	}
+	if tool.IsConnector() {
+		return shared.NewDomainError(
+			"TOOL_NOT_SCANNER",
+			fmt.Sprintf("'%s' is a connector, not a scanner: it runs on its integration's connector commands. Use a scanner.", scannerName),
+			shared.ErrValidation,
+		)
+	}
 
 	return nil
 }
@@ -1086,6 +1095,13 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 			return shared.NewDomainError(
 				"TOOL_NOT_SCANNER",
 				fmt.Sprintf("'%s' used by step '%s' is an asset collector, not a scanner: it runs on its collector sensor's own schedule. Use a scanner.", step.Tool, step.StepKey),
+				shared.ErrValidation,
+			)
+		}
+		if tool.IsConnector() {
+			return shared.NewDomainError(
+				"TOOL_NOT_SCANNER",
+				fmt.Sprintf("'%s' used by step '%s' is a connector, not a scanner: it runs on its integration's connector commands. Use a scanner.", step.Tool, step.StepKey),
 				shared.ErrValidation,
 			)
 		}

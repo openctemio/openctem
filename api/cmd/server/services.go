@@ -12,6 +12,7 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
+	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -67,6 +68,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -249,7 +251,11 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 // httpDataScopeCaller reads the acting user and the admin decision from the
 // HTTP auth context for the Layer 2 data-scope enforcer.
 func httpDataScopeCaller(ctx context.Context) datascope.Caller {
-	return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
+	return datascope.Caller{
+		UserID:  middleware.GetUserID(ctx),
+		IsAdmin: middleware.IsAdmin(ctx),
+		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
+	}
 }
 
 // membershipAdminLookup decides admin status outside a request (WebSocket
@@ -603,6 +609,8 @@ type Services struct {
 	Command  *command.Service
 	// SensorContent is the scanner content policy and refresh (RFC-031).
 	SensorContent *sensorapp.ContentService
+	// TenableSC queues and follows Tenable.sc connector syncs (RFC-047).
+	TenableSC *tenablesc.Service
 	// SensorPlatformHealth is the platform-health guard (RFC-035 D3): the
 	// heartbeat handlers feed it their latency, the sensor health controller
 	// holds offline convictions while it reports the platform degraded.
@@ -884,6 +892,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ThreatModel = threatmodel.NewService(
 		repos.ThreatModel, s.AttackSurface, repos.Asset, repos.AssetRelationship,
 		repos.AttackerProfileReader, repos.Finding, log)
+	s.ThreatModel.SetDataScope(s.DataScope)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.AssetRelationship.SetDataScope(s.DataScope)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
@@ -963,6 +972,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 	}
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
+	s.CredentialImport.SetDataScope(s.DataScope)
 	// Leaked-credential secrets are sealed with the platform credential key
 	// on every write path, and the fingerprint HMAC is keyed from it.
 	s.CredentialSecrets = credential.NewSecretProtector(s.Encryptor, []byte(cfg.Encryption.Key))
@@ -999,6 +1009,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// for tenants that enabled the floor.
 	s.PriorityClassification.SetAssetOwnerLookup(postgres.NewAssetOwnershipLookupRepo(deps.DB))
 	s.PriorityClassification.SetOwnershipFloorPolicy(app.NewTenantOwnershipFloorPolicy(repos.Tenant))
+	// RFC-036 §6.8: findings on assets whose attribution is not confirmed
+	// (needs_review, candidate, rejected) are capped at P2.
+	if repos.Attribution != nil {
+		s.PriorityClassification.SetAttributionLookup(repos.Attribution)
+	}
 
 	// anti-flap priority flood guard. Caps per-tenant top-class
 	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
@@ -1237,6 +1252,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
 	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
+	s.BusinessUnit.SetDataScope(s.DataScope)
 
 	s.Compliance = app.NewComplianceService(
 		repos.ComplianceFramework, repos.ComplianceControl,
@@ -1449,6 +1465,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
+	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
+	// the integration's sensor, followed to keep the sync cursor.
+	s.TenableSC = tenablesc.NewService(repos.Integration, repos.Sensor, repos.Command, repos.Finding, s.Audit, log)
+	s.TenableSC.SetSyncClaimer(repos.Integration)
+	// Tenable integrations can be created only once the connector ships
+	// (integrationdom.TenableConnectorEnabled, owner decision D-14): without
+	// the validator the integration service refuses them.
+	if integrationdom.TenableConnectorEnabled {
+		s.Integration.SetTenableConnector(s.TenableSC)
+	}
 	s.SensorPlatformHealth = sensorapp.NewPlatformHealth(sensorapp.PlatformHealthConfig{
 		SlowHeartbeat: cfg.SensorConfig.HealthSlowHeartbeat,
 		StartupGrace:  cfg.SensorConfig.HealthStartupGrace,
@@ -1463,6 +1489,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// attribution evidence (RFC-036 O8).
 	if repos.Attribution != nil {
 		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution))
+	}
+	// A nuclei takeover-template match from a tenant scan confirms an open
+	// dangling_cname as subdomain_takeover (RFC-036 P1).
+	if repos.EASMDNS != nil && repos.Exposure != nil {
+		s.Ingest.SetTakeoverConfirmer(easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, repos.Exposure, log))
 	}
 	// CT names become inventory assets through this same ingest path, with
 	// attribution evidence (RFC-036 P0). Wired here because the CT monitor is
@@ -1483,6 +1514,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
 		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
 	})
+	// Source-asserted resolve (Tenable.sc mitigated rows, RFC-047; default dry_run).
+	s.Ingest.SetSourceResolveMode(ingest.ParseSourceResolveMode(cfg.Ingest.SourceResolve))
 	// Ingest audit events are tenant-scoped, so they must go through the SAME
 	// audit service instance as every other tenant-scoped event: LogEvent also
 	// extends the per-tenant tamper-evident hash chain, and its chainMu is what
@@ -1777,6 +1810,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithGroupAuditService(s.Audit),
 		app.WithPermissionSetRepository(repos.PermissionSet),
 		app.WithAccessControlRepository(repos.AccessControl),
+		app.WithGroupDataScope(s.DataScope),
 	)
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)

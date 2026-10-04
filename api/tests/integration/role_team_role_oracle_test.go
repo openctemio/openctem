@@ -131,7 +131,7 @@ func (f *roleFixture) teamRole(uid string) string {
 	if err != nil {
 		f.t.Fatalf("GetMembership: %v", err)
 	}
-	byID, err := f.tenants.GetMembershipByID(f.ctx, m.ID())
+	byID, err := f.tenants.GetMembershipByID(f.ctx, tid, m.ID())
 	if err != nil {
 		f.t.Fatalf("GetMembershipByID: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestTeamRoleOracle_MigrationRepairsExistingRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read migration: %v", err)
 	}
-	tx, err := f.db.BeginTx(f.ctx, nil)
+	tx, err := testdb.OpenMigrator(t).BeginTx(f.ctx, nil) // the migration is DDL: schema owner
 	if err != nil {
 		t.Fatal(err)
 	}

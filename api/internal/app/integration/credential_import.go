@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -22,7 +23,45 @@ type CredentialImportService struct {
 	// audited reveal. Never nil: the constructor installs a development
 	// (no-key) protector that SetSecretProtector replaces.
 	secrets *credential.SecretProtector
-	logger  *logger.Logger
+	// dataScope narrows every read and state change to leaks on assets in
+	// the caller's data scope (Layer 2). A leak with no asset is in nobody's
+	// asset scope, so only unrestricted callers see it. Nil: unrestricted.
+	dataScope *datascope.Enforcer
+	logger    *logger.Logger
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer.
+func (s *CredentialImportService) SetDataScope(e *datascope.Enforcer) { s.dataScope = e }
+
+// scoped applies the caller's data scope to a credential filter.
+func (s *CredentialImportService) scoped(ctx context.Context, tenantID string, filter exposure.Filter) (exposure.Filter, error) {
+	if s.dataScope == nil {
+		return filter, nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return filter, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	scope, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return filter, fmt.Errorf("resolve data scope: %w", err)
+	}
+	filter.DataScope = scope
+	return filter, nil
+}
+
+// assertInScope returns shared.ErrNotFound unless the caller may see the
+// leak's asset (an asset-less leak: unrestricted callers only), the same
+// rule as /exposures/{id} for the same row.
+func (s *CredentialImportService) assertInScope(ctx context.Context, event *exposure.ExposureEvent) error {
+	if s.dataScope == nil {
+		return nil
+	}
+	var assetID shared.ID
+	if event.AssetID() != nil {
+		assetID = *event.AssetID()
+	}
+	return s.dataScope.AssertAsset(ctx, event.TenantID(), assetID)
 }
 
 // NewCredentialImportService creates a new CredentialImportService.
@@ -759,6 +798,11 @@ func (s *CredentialImportService) List(
 		listOpts = listOpts.WithSort(sortOpt)
 	}
 
+	filter, err := s.scoped(ctx, tenantID, filter)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create pagination
 	pag := pagination.New(page, pageSize)
 
@@ -795,7 +839,11 @@ func (s *CredentialImportService) GetByID(ctx context.Context, tenantID, id stri
 		return nil, fmt.Errorf("%w: invalid credential ID", shared.ErrValidation)
 	}
 
-	event, err := s.exposureRepo.GetByID(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	event, err := s.exposureRepo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -807,6 +855,9 @@ func (s *CredentialImportService) GetByID(ctx context.Context, tenantID, id stri
 
 	// Verify event type
 	if event.EventType() != exposure.EventTypeCredentialLeaked {
+		return nil, exposure.NewExposureEventNotFoundError(id)
+	}
+	if err := s.assertInScope(ctx, event); err != nil {
 		return nil, exposure.NewExposureEventNotFoundError(id)
 	}
 
@@ -866,6 +917,9 @@ func (s *CredentialImportService) RevealSecret(ctx context.Context, tenantID, id
 		return "", err
 	}
 	if event == nil || event.TenantID() != parsedTenant || event.EventType() != exposure.EventTypeCredentialLeaked {
+		return "", exposure.NewExposureEventNotFoundError(id)
+	}
+	if err := s.assertInScope(ctx, event); err != nil {
 		return "", exposure.NewExposureEventNotFoundError(id)
 	}
 	secret, ok, err := s.secrets.Open(event.Details())
@@ -930,6 +984,11 @@ func (s *CredentialImportService) ListByIdentity(
 
 	if opts.Search != "" {
 		filter = filter.WithSearch(opts.Search)
+	}
+
+	filter, err := s.scoped(ctx, tenantID, filter)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get all matching credentials (limit to reasonable number for grouping)
@@ -1046,6 +1105,11 @@ func (s *CredentialImportService) GetRelatedCredentials(
 		WithEventTypes(exposure.EventTypeCredentialLeaked).
 		WithSearch(identity)
 
+	filter, err = s.scoped(ctx, tenantID, filter)
+	if err != nil {
+		return nil, err
+	}
+
 	listOpts := exposure.NewListOptions()
 	pag := pagination.New(1, 100) // Limit to 100 related items
 
@@ -1111,6 +1175,11 @@ func (s *CredentialImportService) GetExposuresForIdentity(
 	filter := exposure.NewFilter().
 		WithTenantID(tenantID).
 		WithEventTypes(exposure.EventTypeCredentialLeaked)
+
+	filter, err := s.scoped(ctx, tenantID, filter)
+	if err != nil {
+		return nil, err
+	}
 
 	// Fetch more records to filter client-side
 	events, err := s.listCredentialEvents(ctx, filter, maxCredentialsForGrouping)
@@ -1215,32 +1284,41 @@ func (s *CredentialImportService) GetCredentialStats(ctx context.Context, tenant
 		WithTenantID(tenantID).
 		WithEventTypes(exposure.EventTypeCredentialLeaked)
 
+	filter, err = s.scoped(ctx, parsedTenantID.String(), filter)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get total count
 	total, err := s.exposureRepo.Count(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count credentials: %w", err)
 	}
 
-	// Get counts by state
-	byState, err := s.exposureRepo.CountByState(ctx, parsedTenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get state counts: %w", err)
-	}
-
-	// Get counts by severity
-	bySeverity, err := s.exposureRepo.CountBySeverity(ctx, parsedTenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get severity counts: %w", err)
-	}
-
+	// Counts by state and severity over the same (credential, in-scope)
+	// filter. CountByState/CountBySeverity count every exposure type of the
+	// tenant regardless of scope, which is neither this view nor the
+	// caller's data.
 	stateMap := make(map[string]int64)
-	for k, v := range byState {
-		stateMap[k.String()] = v
+	for _, st := range exposure.AllStates() {
+		n, err := s.exposureRepo.Count(ctx, filter.WithStates(st))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get state counts: %w", err)
+		}
+		if n > 0 {
+			stateMap[st.String()] = n
+		}
 	}
 
 	severityMap := make(map[string]int64)
-	for k, v := range bySeverity {
-		severityMap[k.String()] = v
+	for _, sev := range exposure.AllSeverities() {
+		n, err := s.exposureRepo.Count(ctx, filter.WithSeverities(sev))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get severity counts: %w", err)
+		}
+		if n > 0 {
+			severityMap[sev.String()] = n
+		}
 	}
 
 	return map[string]any{
@@ -1272,13 +1350,20 @@ func (s *CredentialImportService) ReactivateCredential(ctx context.Context, tena
 		return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
 	}
 
-	event, err := s.exposureRepo.GetByID(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	event, err := s.exposureRepo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Verify tenant ownership
-	if event.TenantID().String() != tenantID {
+	// Verify tenant ownership, type and the caller's data scope
+	if event.TenantID().String() != tenantID || event.EventType() != exposure.EventTypeCredentialLeaked {
+		return nil, shared.ErrNotFound
+	}
+	if err := s.assertInScope(ctx, event); err != nil {
 		return nil, shared.ErrNotFound
 	}
 
@@ -1320,13 +1405,20 @@ func (s *CredentialImportService) changeCredentialState(ctx context.Context, ten
 		return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
 	}
 
-	event, err := s.exposureRepo.GetByID(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	event, err := s.exposureRepo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Verify tenant ownership
-	if event.TenantID().String() != tenantID {
+	// Verify tenant ownership, type and the caller's data scope
+	if event.TenantID().String() != tenantID || event.EventType() != exposure.EventTypeCredentialLeaked {
+		return nil, shared.ErrNotFound
+	}
+	if err := s.assertInScope(ctx, event); err != nil {
 		return nil, shared.ErrNotFound
 	}
 

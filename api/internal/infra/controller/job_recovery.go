@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
+
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -200,6 +202,7 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 		if err != nil {
 			c.logger.Error("failed to re-queue commands with an expired lease", "error", err)
 		} else if len(requeued) > 0 {
+			metrics.CommandLeasesExpiredTotal.Add(float64(len(requeued)))
 			for _, rq := range requeued {
 				holder := ""
 				if rq.SensorID != nil {

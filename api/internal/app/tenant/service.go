@@ -314,6 +314,36 @@ func (s *TenantService) bumpPermissionVersion(ctx context.Context, tenantID, use
 type DataScopePolicyStore interface {
 	GetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID) (string, error)
 	SetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID, value string) error
+	ListMembersWithoutDataScope(ctx context.Context, tenantID shared.ID, limit int) ([]tenantdom.ScopeImpactMember, int, error)
+}
+
+// maxScopeImpactMembers bounds the members listed in the impact report (the
+// total is always exact).
+const maxScopeImpactMembers = 500
+
+// DataScopeImpact is the pre-flight report for switching an organization to
+// "members without a team see nothing" (owner decision D2).
+type DataScopeImpact struct {
+	Policy     string
+	Members    []tenantdom.ScopeImpactMember
+	TotalCount int
+}
+
+// GetDataScopeImpact lists the members who see everything today only
+// because the organization shows everything to members without a team, and
+// so would see nothing after the switch. For a fail-closed organization the
+// same members already see nothing.
+func (s *TenantService) GetDataScopeImpact(ctx context.Context, tenantID string) (*DataScopeImpact, error) {
+	policy, err := s.GetDataScopePolicy(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	tid, _ := shared.IDFromString(tenantID) // validated by GetDataScopePolicy
+	members, total, err := s.dataScopePolicy.ListMembersWithoutDataScope(ctx, tid, maxScopeImpactMembers)
+	if err != nil {
+		return nil, err
+	}
+	return &DataScopeImpact{Policy: policy, Members: members, TotalCount: total}, nil
 }
 
 // SetDataScopePolicyStore wires the data-scope policy store. Without it the
@@ -348,6 +378,12 @@ func (s *TenantService) UpdateDataScopePolicy(ctx context.Context, tenantID, val
 	}
 	if old == value {
 		return value, nil
+	}
+	// "Everything" is being retired (D2): an organization only ever moves to
+	// "nothing". The setting is never flipped by a migration; each
+	// organization's owner switches it after reviewing the impact report.
+	if value == tenantdom.MembersWithoutGroupSeeEverything {
+		return "", tenantdom.ErrSeeEverythingRetired
 	}
 	tid, _ := shared.IDFromString(tenantID) // validated by GetDataScopePolicy
 	if err := s.dataScopePolicy.SetMembersWithoutGroupSee(ctx, tid, value); err != nil {
@@ -671,14 +707,11 @@ func (s *TenantService) getOwnMembership(ctx context.Context, membershipID, call
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
 	}
-	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
-	if err != nil {
-		return nil, err
-	}
-	if callerTenantID == "" || membership.TenantID().String() != callerTenantID {
+	tid, err := shared.IDFromString(callerTenantID)
+	if err != nil || tid.IsZero() {
 		return nil, shared.ErrNotFound
 	}
-	return membership, nil
+	return s.repo.GetMembershipByID(ctx, tid, parsedID)
 }
 
 func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID string, input UpdateMemberRoleInput, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
@@ -753,7 +786,7 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 	tenantID := membership.TenantID().String()
 	userID := membership.UserID().String()
 
-	if err := s.repo.DeleteMembership(ctx, membership.ID()); err != nil {
+	if err := s.repo.DeleteMembership(ctx, membership.TenantID(), membership.ID()); err != nil {
 		return err
 	}
 
@@ -1325,15 +1358,11 @@ func (s *TenantService) DeleteInvitation(ctx context.Context, tenantID, invitati
 	// ResendInvitation). Without this any team-admin could cancel another
 	// tenant's pending invitations by guessing IDs. Not-found on mismatch to
 	// avoid existence disclosure.
-	inv, err := s.repo.GetInvitationByID(ctx, parsedID)
-	if err != nil {
+	if _, err := s.repo.GetInvitationByID(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
-	if inv.TenantID().String() != parsedTenantID.String() {
-		return shared.ErrNotFound
-	}
 
-	if err := s.repo.DeleteInvitation(ctx, parsedID); err != nil {
+	if err := s.repo.DeleteInvitation(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
 
@@ -1376,7 +1405,7 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 		return fmt.Errorf("%w: invalid invitation id format", shared.ErrValidation)
 	}
 
-	inv, err := s.repo.GetInvitationByID(ctx, parsedInvID)
+	inv, err := s.repo.GetInvitationByID(ctx, parsedTenantID, parsedInvID)
 	if err != nil {
 		return err
 	}

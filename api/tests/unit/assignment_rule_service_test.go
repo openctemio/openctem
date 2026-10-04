@@ -128,6 +128,7 @@ func (m *mockGroupRepoForRules) GetByID(_ context.Context, _ shared.ID) (*group.
 }
 
 func (m *mockGroupRepoForRules) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*group.Group, error) {
+	m.getByIDCalls++
 	return m.getByIDResult, m.getByIDErr
 }
 
@@ -136,8 +137,8 @@ func (m *mockGroupRepoForRules) Create(_ context.Context, _ *group.Group) error 
 func (m *mockGroupRepoForRules) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForRules) Update(_ context.Context, _ *group.Group) error { return nil }
-func (m *mockGroupRepoForRules) Delete(_ context.Context, _ shared.ID) error    { return nil }
+func (m *mockGroupRepoForRules) Update(_ context.Context, _ *group.Group) error           { return nil }
+func (m *mockGroupRepoForRules) Delete(_ context.Context, _ shared.ID, _ shared.ID) error { return nil }
 func (m *mockGroupRepoForRules) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }
@@ -1477,7 +1478,7 @@ func (m *mockFindingRepoForRules) ListFindingGroups(_ context.Context, _ shared.
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *mockFindingRepoForRules) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *mockFindingRepoForRules) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 
