@@ -372,6 +372,13 @@ func TestInferAssetExposure(t *testing.T) {
 		}
 		return a
 	}
+	mkSub := func(name string, typ asset.AssetType, sub string) *asset.Asset {
+		a, err := asset.NewAssetWithSubType(name, typ, sub, asset.CriticalityMedium)
+		if err != nil {
+			t.Fatalf("NewAssetWithSubType: %v", err)
+		}
+		return a
+	}
 	cases := []struct {
 		name string
 		a    *asset.Asset
@@ -389,6 +396,13 @@ func TestInferAssetExposure(t *testing.T) {
 		{"host with no IP stays unknown", mk("worker-1", asset.AssetTypeHost, nil), asset.ExposureUnknown},
 		{"ip_address (public) via name", mk("203.0.113.9", asset.AssetTypeIPAddress, nil), asset.ExposurePublic},
 		{"ip_address (private) via name", mk("192.168.1.10", asset.AssetTypeIPAddress, nil), asset.ExposureUnknown},
+		// RFC-042 §6.3.8: web applications and APIs are stored as
+		// (application, sub_type); exposure used to be keyed on the alias
+		// names website/api, which are never stored, so these stayed unknown.
+		{"stored web application", mkSub("https://app.example.com", asset.AssetTypeApplication, "website"), asset.ExposurePublic},
+		{"stored api", mkSub("https://api.example.com", asset.AssetTypeApplication, "api"), asset.ExposurePublic},
+		{"stored mobile app has no default", mkSub("com.example.app", asset.AssetTypeApplication, "mobile_app"), asset.ExposureUnknown},
+		{"certificate is internet-facing", mk("example.com", asset.AssetTypeCertificate, nil), asset.ExposurePublic},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
