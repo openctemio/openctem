@@ -141,7 +141,7 @@ func (s *stubFindingRepo) UpdateSnippetBatchByFingerprints(_ context.Context, _ 
 func (s *stubFindingRepo) BatchCountByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]int64, error) {
 	return nil, nil
 }
-func (s *stubFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID) error {
+func (s *stubFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
 	return nil
 }
 func (s *stubFindingRepo) DeleteByAssetID(_ context.Context, _, _ shared.ID) error { return nil }

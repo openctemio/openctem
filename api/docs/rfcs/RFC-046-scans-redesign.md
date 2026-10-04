@@ -368,7 +368,10 @@ the run again. Remaining (P1.10):
 - sdk-go honours cancels without the doorbell (today a sensor started with
   `-disable-doorbell` runs canceled work to the end);
 - `POST /commands/{id}/cancel` on a `scan` command needs `scans:write` too;
-- Automation-run cancel stops its pending steps, not just the row;
+- ~~Automation-run cancel stops its pending steps, not just the row~~
+  (shipped: the cancel skips the run's open steps, tenant-scoped; the
+  executor stops before its next step; a finished run or step is never
+  rewritten, so the executor finishing cannot overwrite the cancel);
 - the cancel is audited with the actor and the run; latency ≤ one heartbeat
   (≤ 60 s) is documented, with the long-poll doorbell as the fast path.
 
@@ -388,7 +391,18 @@ Plan:
    resolution is an audit entry (`ingest.coverage_auto_resolve.dry_run`).
 2. Review: sample false positives by tool; publish the counts in the run's
    coverage summary.
-3. Switch `INGEST_COVERAGE_AUTO_RESOLVE=enforce`. Per tenant override stays.
+3. ~~Switch `INGEST_COVERAGE_AUTO_RESOLVE=enforce` after the review window
+   (~2026-10-16).~~ **Postponed (owner decision D-22 / O1, 2026-10-04,
+   research 18).** The mode stays `dry_run`. This path proves coverage per
+   tool, profile and asset, but not per check, port or authentication, so a
+   template-pack update or a removed template would read as "fixed".
+   Enforcement waits for the **closure evaluator** (research 18 P2: per-check
+   coverage records, a detector-set digest, `metadata.execution`), and at
+   minimum for an explicit `coverage_type` (absent is not full) and the nuclei
+   exit-code fix. P2-4 (the owner reviews the evaluator's dry-run counts, then
+   enforces per tenant) replaces this step. No code, config or schedule
+   switches it; `INGEST_COVERAGE_AUTO_RESOLVE` defaults to `dry_run` and is
+   unset on live.
 4. Key on `last_seen_tool` (RFC-043 sightings later) instead of `tool_name`.
 5. With `partial` (P1.2): a test proves a partial run's failed tasks never
    resolve and its completed tasks resolve only their own targets (§3.3).
@@ -572,9 +586,9 @@ means a test against a migrated Postgres (skips without `DATABASE_URL`).
 | **P1.6** | *(Shipped: the skip is checked in `CreateRunIfUnderLimit` under the scan row lock for every scheduled run.)* Overlap check and run insert in one transaction | Race test: manual trigger and scheduler for the same scan concurrently → one active run |
 | **P1.7** | *(Shipped for tenant sensors: v2 `capacity` feature, fair order by class with aging then round-robin per run; platform-sensor tenant fair share in #991.)* **Claim-N** with `FOR UPDATE SKIP LOCKED`, server capacity, priority classes with ageing, per-run round-robin | DB: two sensors × N polls never claim the same command; capacity respected; class order; round-robin across two runs; tenant/zone predicates hold |
 | **P1.8** | **`controller_leases`** + non-idempotent sweeps converted; remove the two session advisory locks | DB: two holders, one wins, epoch increments, expiry hands over; each converted sweep runs once with two instances |
-| **P1.9** | Observability: `tenant_id` out of metric labels, inert metrics written or deleted, `traceparent` in payloads, `run_id` log key, `/runs/{id}/explain` | Metric label test; explain route tests incl. cross-tenant; trace propagation unit test |
+| **P1.9** | *(Started: no id labels on any metric, test-enforced; 17 never-written metrics deleted; `command_claims_total`, `command_leases_expired_total`, `scan_runs_reaped_total` added. `traceparent`, `run_id` log key and `/runs/{id}/explain` remain.)* Observability: `tenant_id` out of metric labels, inert metrics written or deleted, `traceparent` in payloads, `run_id` log key, `/runs/{id}/explain` | Metric label test; explain route tests incl. cross-tenant; trace propagation unit test |
 | **P1.10** | Cancel completeness: sdk-go cancel without doorbell; command cancel on scan commands needs `scans:write`; automation cancel stops steps; cancel audited | sdk-go conformance test; route permission test; DB test that automation cancel stops pending steps |
-| **P1.11** | Two-replica race suite in CI; lift B4 in helm-charts | CI job with two API processes against one DB: scheduler, claim, audit chain, leases |
+| **P1.11** | *(Started: `tests/integration/two_replica_race_test.go` races two connection pools on one database — scheduler claim + occurrence key, command claim, audit chain — in the API CI test job; controller leases have their own race test with P1.8. A CI job with two API processes and the helm-charts B4 lift remain.)* Two-replica race suite in CI; lift B4 in helm-charts | CI job with two API processes against one DB: scheduler, claim, audit chain, leases |
 
 ### P2 — engines and the event backbone
 

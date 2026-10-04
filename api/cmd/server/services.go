@@ -249,7 +249,11 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 // httpDataScopeCaller reads the acting user and the admin decision from the
 // HTTP auth context for the Layer 2 data-scope enforcer.
 func httpDataScopeCaller(ctx context.Context) datascope.Caller {
-	return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
+	return datascope.Caller{
+		UserID:  middleware.GetUserID(ctx),
+		IsAdmin: middleware.IsAdmin(ctx),
+		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
+	}
 }
 
 // membershipAdminLookup decides admin status outside a request (WebSocket
@@ -1470,6 +1474,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// attribution evidence (RFC-036 O8).
 	if repos.Attribution != nil {
 		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution))
+	}
+	// A nuclei takeover-template match from a tenant scan confirms an open
+	// dangling_cname as subdomain_takeover (RFC-036 P1).
+	if repos.EASMDNS != nil && repos.Exposure != nil {
+		s.Ingest.SetTakeoverConfirmer(easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, repos.Exposure, log))
 	}
 	// CT names become inventory assets through this same ingest path, with
 	// attribution evidence (RFC-036 P0). Wired here because the CT monitor is
