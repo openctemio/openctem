@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Two-factor authentication endpoints: the second login step under
@@ -374,4 +378,60 @@ func writeNoStoreJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// ResetMemberMFA turns off a member's two-factor authentication.
+// @Summary      Reset a member's two-factor authentication
+// @Description  An owner or administrator turns off the second factor of a member of their organization who lost their authenticator and recovery codes. The member is signed out everywhere and e-mailed. An owner or administrator target needs the owner; a member who also belongs to another organization needs the same authority there; nobody resets their own factor here.
+// @Tags         Tenants
+// @Produce      json
+// @Param        member_id  path  string  true  "Membership ID"
+// @Success      200  {object}  map[string]string
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/members/{member_id}/mfa [delete]
+func (h *LocalAuthHandler) ResetMemberMFA(w http.ResponseWriter, r *http.Request) {
+	membershipID := chi.URLParam(r, "member_id")
+	tenantID := middleware.GetTenantID(r.Context())
+	if membershipID == "" || tenantID == "" {
+		apierror.BadRequest("Member ID is required").WriteJSON(w)
+		return
+	}
+	actx := app.AuditContext{
+		ActorIP:   getClientIP(r),
+		UserAgent: r.UserAgent(),
+		RequestID: r.Header.Get("X-Request-ID"),
+		TenantID:  tenantID,
+	}
+	if u := middleware.GetLocalUser(r.Context()); u != nil {
+		actx.ActorID = u.ID().String()
+		actx.ActorEmail = u.Email()
+	}
+	if actx.ActorID == "" {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
+	if err := h.authService.ResetMemberMFA(r.Context(), actx, tenantID, membershipID); err != nil {
+		switch {
+		case errors.Is(err, shared.ErrNotFound):
+			apierror.NotFound("Member").WriteJSON(w)
+		case errors.Is(err, shared.ErrForbidden), errors.Is(err, shared.ErrValidation):
+			msg := err.Error()
+			if i := strings.Index(msg, ": "); i != -1 {
+				msg = msg[i+2:]
+			}
+			if errors.Is(err, shared.ErrForbidden) {
+				apierror.Forbidden(msg).WriteJSON(w)
+			} else {
+				apierror.BadRequest(msg).WriteJSON(w)
+			}
+		default:
+			h.handleAuthError(w, err)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Two-factor authentication reset"})
 }

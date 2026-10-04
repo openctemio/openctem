@@ -132,7 +132,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	// ran (a pause, a config change), and never stored the run status anyway
 	// (the generic Update does not carry the run columns). The run is counted
 	// when it finishes (RecordRun / the timeout reaper).
-	if err := s.scanRepo.RecordRunStarted(ctx, sc.ID, run.ID); err != nil {
+	if err := s.scanRepo.RecordRunStarted(ctx, sc.TenantID, sc.ID, run.ID); err != nil {
 		s.logger.Warn("failed to record run in scan", "error", err)
 	}
 
@@ -843,16 +843,16 @@ func (s *Service) lazySyncTemplatesIfNeeded(ctx context.Context, tenantID shared
 		}
 
 		// Record metrics
-		metrics.TemplateSyncsTotal.WithLabelValues(tenantID.String(), string(source.SourceType)).Inc()
+		metrics.TemplateSyncsTotal.WithLabelValues(string(source.SourceType)).Inc()
 		if result.Success {
-			metrics.TemplateSyncsSuccessTotal.WithLabelValues(tenantID.String()).Inc()
+			metrics.TemplateSyncsSuccessTotal.WithLabelValues().Inc()
 			s.logger.Info("template source synced",
 				"source_id", source.ID.String(),
 				"source_name", source.Name,
 				"templates_found", result.TemplatesFound,
 				"templates_added", result.TemplatesAdded)
 		} else {
-			metrics.TemplateSyncsFailedTotal.WithLabelValues(tenantID.String()).Inc()
+			metrics.TemplateSyncsFailedTotal.WithLabelValues().Inc()
 		}
 	}
 
