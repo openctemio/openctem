@@ -89,6 +89,7 @@ type mergeFinding struct {
 	ruleID, filePath, message      string
 	startLine                      int
 	createdAt                      time.Time
+	identityKey                    []byte // versioned identity tuple, nil for version 1
 }
 
 // rekeyMergedFindings re-keys the findings of the merged assets for the kept
@@ -113,7 +114,7 @@ func listMergedFindings(ctx context.Context, tx *sql.Tx, tenantID string, mergeI
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, asset_id, fingerprint, COALESCE(partial_fingerprints->>$3, ''),
 		       COALESCE(rule_id, ''), COALESCE(file_path, ''), COALESCE(message, ''),
-		       COALESCE(start_line, 0), created_at
+		       COALESCE(start_line, 0), created_at, identity_key
 		FROM findings
 		WHERE tenant_id = $1 AND asset_id = ANY($2) AND status <> 'duplicate'
 		ORDER BY created_at, id
@@ -126,7 +127,7 @@ func listMergedFindings(ctx context.Context, tx *sql.Tx, tenantID string, mergeI
 	for rows.Next() {
 		var f mergeFinding
 		if err := rows.Scan(&f.id, &f.assetID, &f.fingerprint, &f.base, &f.ruleID, &f.filePath,
-			&f.message, &f.startLine, &f.createdAt); err != nil {
+			&f.message, &f.startLine, &f.createdAt, &f.identityKey); err != nil {
 			return nil, fmt.Errorf("scan merged finding: %w", err)
 		}
 		moved = append(moved, f)
@@ -138,7 +139,7 @@ func listMergedFindings(ctx context.Context, tx *sql.Tx, tenantID string, mergeI
 }
 
 func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string, f mergeFinding) error {
-	newFP := mergedFindingFingerprint(f, keepID)
+	newFP, newKey := mergedFindingFingerprint(f, keepID)
 	if newFP == "" || newFP == f.fingerprint {
 		return nil
 	}
@@ -154,8 +155,8 @@ func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE findings SET fingerprint = $1 WHERE id = $2 AND tenant_id = $3`,
-			newFP, f.id, tenantID); err != nil {
+			`UPDATE findings SET fingerprint = $1, identity_key = COALESCE($4::jsonb, identity_key) WHERE id = $2 AND tenant_id = $3`,
+			newFP, f.id, tenantID, nullJSON(newKey)); err != nil {
 			return fmt.Errorf("re-key merged finding: %w", err)
 		}
 		return nil
@@ -170,16 +171,18 @@ func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE findings SET fingerprint = $1 WHERE id = $2 AND tenant_id = $3`,
-			newFP, f.id, tenantID); err != nil {
+			`UPDATE findings SET fingerprint = $1, identity_key = COALESCE($4::jsonb, identity_key) WHERE id = $2 AND tenant_id = $3`,
+			newFP, f.id, tenantID, nullJSON(newKey)); err != nil {
 			return fmt.Errorf("re-key surviving finding: %w", err)
 		}
 		return nil
 	}
 }
 
-// mergedFindingFingerprint is f's fingerprint on the kept asset, or "" when it
-// cannot be recomputed safely.
+// mergedFindingFingerprint is f's fingerprint on the kept asset (and, for a
+// versioned key, the rewritten identity tuple), or "" when it cannot be
+// recomputed safely.
+//   - Versioned findings (RFC-043 §6): the identity tuple with the kept asset.
 //   - Ingested findings: CompositeFingerprint(keep, base) from the stored base.
 //   - Manual findings (32 characters): ManualFingerprint over the stored
 //     columns, but only when those columns still reproduce the stored value on
@@ -187,15 +190,29 @@ func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string
 //     re-keying it could fold it into an unrelated finding.
 //   - Anything else (legacy composite without a base, pentest keys, which do
 //     not contain the asset): left as it is.
-func mergedFindingFingerprint(f mergeFinding, keepID string) string {
+func mergedFindingFingerprint(f mergeFinding, keepID string) (string, []byte) {
+	if len(f.identityKey) > 0 {
+		k, err := vulnerability.ParseIdentityKey(f.identityKey)
+		// Only a tuple scoped to this finding's asset, and that still
+		// reproduces the stored key, is safe to rewrite.
+		if err != nil || k.Field(vulnerability.IdentityFieldAsset) != f.assetID || k.Fingerprint() != f.fingerprint {
+			return "", nil
+		}
+		moved := k.WithField(vulnerability.IdentityFieldAsset, keepID)
+		raw, err := vulnerability.MarshalIdentityKey(moved)
+		if err != nil {
+			return "", nil
+		}
+		return moved.Fingerprint(), raw
+	}
 	if f.base != "" {
-		return vulnerability.CompositeFingerprint(keepID, f.base)
+		return vulnerability.CompositeFingerprint(keepID, f.base), nil
 	}
 	if len(f.fingerprint) == 32 &&
 		vulnerability.ManualFingerprint(f.assetID, f.ruleID, f.filePath, f.startLine, f.message) == f.fingerprint {
-		return vulnerability.ManualFingerprint(keepID, f.ruleID, f.filePath, f.startLine, f.message)
+		return vulnerability.ManualFingerprint(keepID, f.ruleID, f.filePath, f.startLine, f.message), nil
 	}
-	return ""
+	return "", nil
 }
 
 // findingStatusRank orders statuses for a merge: the more deliberate decision
