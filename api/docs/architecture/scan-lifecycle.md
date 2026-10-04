@@ -74,7 +74,7 @@ cannot reopen one, recount its findings or record its outcome twice.
 | Retry classes | done (run-level) | `api/pkg/domain/pipeline/failure.go`, `pipeline_run_repository.go` (`ListPendingRetries`) |
 | Coverage auto-resolve | done, dry-run by default | `api/internal/app/ingest/coverage_autoresolve.go`, `INGEST_COVERAGE_AUTO_RESOLVE` |
 | Stage chaining | not yet (every step scans the seed targets) | RFC-046 §5.2 |
-| Automations | in-process executor fed by callbacks; outbox planned (P2) | `api/internal/app/workflow/` |
+| Automations | in-process executor fed by callbacks; outbox planned (P2). Cancel skips open steps and the executor stops before its next step; finished runs and steps are never rewritten | `api/internal/app/workflow/` |
 | `scan_sessions` | written by nothing; retired in P2 | `api/internal/app/scan/session.go` |
 
 ## 3. Things that are deliberately not wired

@@ -368,7 +368,10 @@ the run again. Remaining (P1.10):
 - sdk-go honours cancels without the doorbell (today a sensor started with
   `-disable-doorbell` runs canceled work to the end);
 - `POST /commands/{id}/cancel` on a `scan` command needs `scans:write` too;
-- Automation-run cancel stops its pending steps, not just the row;
+- ~~Automation-run cancel stops its pending steps, not just the row~~
+  (shipped: the cancel skips the run's open steps, tenant-scoped; the
+  executor stops before its next step; a finished run or step is never
+  rewritten, so the executor finishing cannot overwrite the cancel);
 - the cancel is audited with the actor and the run; latency ≤ one heartbeat
   (≤ 60 s) is documented, with the long-poll doorbell as the fast path.
 
