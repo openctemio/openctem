@@ -27,18 +27,36 @@ tenant predicate and, for a restricted caller, the data-scope predicate.
    - `SQL`: a constant column or expression. Never build it from input;
    - `Indexed`: true only when an index backs range or `in` filters;
    - `Permission` when the field is not visible to every reader.
-2. If the field is computed from another table, its SQL is a subquery that
-   carries `tenant_id = <outer>.tenant_id` itself.
+2. If the field is computed from another table, its SQL is a template whose
+   subquery carries the tenant itself (`a.tenant_id = {tenant}`); `{user}`
+   binds the acting user. A boolean predicate that a partial index can serve
+   is a `BoolTemplate`.
 3. Add an index in the same PR if the table is large, with an `EXPLAIN` in the
-   PR description.
-4. The registry test fails on suffix-ending names, missing enums or ops the
+   PR description (one `CREATE INDEX CONCURRENTLY` per migration file).
+4. Run `go run ./tools/gen/filterparams` and `make swagger` from `api/`: the
+   `@Param` lines between `// filterspec-params:` markers are generated from
+   the registry, and `TestOpenAPIDocumentsFilterParams` fails when the spec
+   and the parser disagree.
+5. The registry test fails on suffix-ending names, missing enums or ops the
    type cannot support.
+
+## Findings (the first migrated resource)
+
+| Endpoint | Notes |
+|---|---|
+| `GET /findings` | `vulnerability.FindingFields`; old names (`severities`, `search`, ...) are aliases |
+| `GET /findings/stats`, `GET /findings/groups` | the same params and the same compiled WHERE, so their counts match the list |
+| `POST /findings/search` | the FilterDocument form: OR, nesting, up to 500 ids |
+| `GET /meta/filters/findings` | the machine-readable contract and the document JSON Schema |
+
+The registry also carries the findings visibility rule every non-admin
+caller gets: pentest findings only for members of their campaign.
 
 ## Actors
 
 | Constructor | When | Effect |
 |---|---|---|
-| `filterspec.UserActor(tenantID, scope)` | any request; `scope` comes from `datascope.Enforcer.Resolve` | tenant + data scope (nil scope = unrestricted caller) |
+| `filterspec.UserActor(UserActorInput{...})` | any request; `Scope` comes from `datascope.Enforcer.Resolve` | tenant + data scope (nil scope = unrestricted caller) + the registry's member visibility rule for non-admins |
 | `filterspec.SystemActor(tenantID, reason)` | background jobs that produce admin-only output | tenant only; call sites are allowlisted |
 
 There is no constructor without a tenant.

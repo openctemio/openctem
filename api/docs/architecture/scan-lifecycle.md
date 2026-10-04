@@ -61,7 +61,7 @@ cannot reopen one, recount its findings or record its outcome twice.
 
 | Part | State | Where |
 |---|---|---|
-| Runs and tasks | `pipeline_runs`, `step_runs`, `commands` | `api/internal/app/pipeline/run.go`, `api/internal/app/scan/trigger.go`, `zones.go` |
+| Runs and tasks | `pipeline_runs`, `step_runs`, `commands`; a run's tasks are its commands (by `payload.pipeline_run_id`, index `idx_commands_pipeline_run`), read with `CommandRepository.ListRunTasks` / `TaskSummaries` and returned as `task_summary` (run list) and `tasks` (run, first 200; targets counted, never listed; a platform sensor is never named) | `api/internal/app/pipeline/run.go`, `api/internal/app/scan/trigger.go`, `zones.go` |
 | Run terminal guard | done | `api/internal/infra/postgres/pipeline_run_repository.go` (`terminalRunStatusesSQL`) |
 | Step terminal guard | RFC-046 P1.1 (first implementation PR) | same file |
 | `partial` | done: settle matrix (P1.2) and deadline → `partial` (P1.3) | `api/internal/app/pipeline/run.go`, `pipeline_run_repository.go` (`MarkTimedOutRuns`) |

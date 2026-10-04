@@ -34,6 +34,7 @@ import { usePipelineRuns, useScanManagementStats } from '@/lib/api/pipeline-hook
 import type { PipelineRun, PipelineRunListFilters } from '@/lib/api/pipeline-types'
 import { useScanConfigs } from '@/lib/api/scan-hooks'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
+import { elapsedMs, runTaskProgress } from '@/features/scans/lib/run-display'
 import { RunDetailSheet } from './run-detail-sheet'
 
 /** Run statuses as the API stores them (pipeline.RunStatus). */
@@ -51,13 +52,6 @@ export const RUN_STATUS_FILTERS = [
 type RunStatusFilterValue = (typeof RUN_STATUS_FILTERS)[number]['value']
 
 export const RUNS_PAGE_SIZE = 25
-
-/** Duration of a finished run in ms, or undefined while it runs. */
-export function runDurationMs(run: Pick<PipelineRun, 'started_at' | 'completed_at'>) {
-  if (!run.started_at || !run.completed_at) return undefined
-  const ms = Date.parse(run.completed_at) - Date.parse(run.started_at)
-  return Number.isFinite(ms) && ms >= 0 ? ms : undefined
-}
 
 export function ScanRunsTab() {
   return (
@@ -159,18 +153,37 @@ function ScanRunsTable() {
         ),
       },
       {
-        id: 'steps',
-        header: 'Steps',
+        id: 'tasks',
+        header: 'Tasks',
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original
+          const progress = runTaskProgress(r.task_summary)
+          if (!progress) {
+            // No task summary (nothing dispatched yet, or an older API): steps.
+            return (
+              <span className="text-sm tabular-nums">
+                {r.completed_steps}/{r.total_steps} steps
+                {r.failed_steps > 0 && (
+                  <span className="ms-1 text-destructive">({r.failed_steps} failed)</span>
+                )}
+              </span>
+            )
+          }
           return (
-            <span className="text-sm tabular-nums">
-              {r.completed_steps}/{r.total_steps}
-              {r.failed_steps > 0 && (
-                <span className="ms-1 text-destructive">({r.failed_steps} failed)</span>
+            <div className="space-y-0.5">
+              <span className="text-sm tabular-nums">{progress.label}</span>
+              {progress.details.length > 0 && (
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  {progress.details.map((d, i) => (
+                    <span key={d.key} className={d.key === 'failed' ? 'text-destructive' : ''}>
+                      {i > 0 && ' · '}
+                      {d.count} {d.key}
+                    </span>
+                  ))}
+                </p>
               )}
-            </span>
+            </div>
           )
         },
       },
@@ -190,18 +203,21 @@ function ScanRunsTable() {
         header: 'Duration',
         enableSorting: false,
         cell: ({ row }) => {
-          const ms = runDurationMs(row.original)
+          const r = row.original
+          const finished = !!r.completed_at
+          const ms = elapsedMs(r)
           if (ms === undefined) {
             return (
               <span className="text-xs text-muted-foreground">
-                {row.original.status === 'running' ? 'Running…' : '-'}
+                {r.status === 'pending' ? 'Not started' : '-'}
               </span>
             )
           }
-          return (
-            <span className="text-sm tabular-nums">
-              {ms < 1000 ? '<1s' : formatScanDuration(ms)}
-            </span>
+          const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
+          return finished ? (
+            <span className="text-sm tabular-nums">{label}</span>
+          ) : (
+            <span className="text-sm text-muted-foreground tabular-nums">{label} so far</span>
           )
         },
       },
@@ -257,6 +273,13 @@ function ScanRunsTable() {
       value: counts?.completed ?? 0,
       onClick: () => toggleStatus('completed'),
       active: statusFilter === 'completed',
+    },
+    {
+      key: 'partial',
+      label: 'Partial',
+      value: counts?.partial ?? 0,
+      onClick: () => toggleStatus('partial'),
+      active: statusFilter === 'partial',
     },
     // The API counts timed-out runs as failed here; the status filter keeps
     // them apart, so this tile does not filter.
