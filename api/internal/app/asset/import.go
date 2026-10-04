@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
-	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +13,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	nessusparser "github.com/openctemio/openctem/api/pkg/parsers/nessus"
 )
 
 // AssetImportService handles bulk asset import from various formats.
@@ -152,28 +153,8 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 // Nessus XML Import
 // =============================================================================
 
-type nessusReport struct {
-	XMLName xml.Name       `xml:"NessusClientData_v2"`
-	Reports []nessusTarget `xml:"Report>ReportHost"`
-}
-
-type nessusTarget struct {
-	Name       string             `xml:"name,attr"`
-	Properties []nessusHostProp   `xml:"HostProperties>tag"`
-	Items      []nessusReportItem `xml:"ReportItem"`
-}
-
-type nessusHostProp struct {
-	Name  string `xml:"name,attr"`
-	Value string `xml:",chardata"`
-}
-
-type nessusReportItem struct {
-	Port       int    `xml:"port,attr"`
-	Protocol   string `xml:"protocol,attr"`
-	PluginName string `xml:"pluginName,attr"`
-	Severity   int    `xml:"severity,attr"`
-}
+// maxNessusImportSize bounds a host-only Nessus import.
+const maxNessusImportSize = 100 * 1024 * 1024
 
 // ImportNessus imports hosts from Nessus XML export.
 func (s *AssetImportService) ImportNessus(ctx context.Context, tenantID string, reader io.Reader) (*AssetImportResult, error) {
@@ -182,19 +163,21 @@ func (s *AssetImportService) ImportNessus(ctx context.Context, tenantID string, 
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	data, err := io.ReadAll(io.LimitReader(reader, 100*1024*1024))
+	// The one Nessus parser, shared with the findings converter.
+	report, err := nessusparser.Parse(reader, maxNessusImportSize)
 	if err != nil {
+		if errors.Is(err, nessusparser.ErrTooLarge) {
+			return nil, fmt.Errorf("%w: Nessus export larger than 100 MB", shared.ErrValidation)
+		}
+		if errors.Is(err, nessusparser.ErrInvalid) {
+			return nil, fmt.Errorf("%w: invalid Nessus XML format", shared.ErrValidation)
+		}
 		return nil, fmt.Errorf("failed to read nessus data: %w", err)
-	}
-
-	var report nessusReport
-	if err := xml.Unmarshal(data, &report); err != nil {
-		return nil, fmt.Errorf("%w: invalid Nessus XML format", shared.ErrValidation)
 	}
 
 	result := &AssetImportResult{}
 
-	for _, host := range report.Reports {
+	for _, host := range report.Hosts {
 		hostname := host.Name
 		props := make(map[string]any)
 		var os string
