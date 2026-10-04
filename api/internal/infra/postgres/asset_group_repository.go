@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -992,14 +993,16 @@ func (r *AssetGroupRepository) GetDistinctAssetTypesMultiple(ctx context.Context
 	return types, nil
 }
 
-// CountAssetsByType returns count of assets per type in a group.
-func (r *AssetGroupRepository) CountAssetsByType(ctx context.Context, groupID shared.ID) (map[string]int64, error) {
+// CountAssetsByType returns the count of assets per stored (type, sub_type)
+// pair in a group. Scanner compatibility depends on the sub-type too
+// (RFC-042 §6.3.8): an API and a mobile app are both `application`.
+func (r *AssetGroupRepository) CountAssetsByType(ctx context.Context, groupID shared.ID) (map[asset.TypeRef]int64, error) {
 	query := `
-		SELECT a.asset_type, COUNT(*) as count
+		SELECT a.asset_type, COALESCE(a.sub_type, ''), COUNT(*) as count
 		FROM asset_group_members agm
 		INNER JOIN assets a ON a.id = agm.asset_id
 		WHERE agm.asset_group_id = $1
-		GROUP BY a.asset_type
+		GROUP BY a.asset_type, COALESCE(a.sub_type, '')
 		ORDER BY a.asset_type
 	`
 
@@ -1009,14 +1012,14 @@ func (r *AssetGroupRepository) CountAssetsByType(ctx context.Context, groupID sh
 	}
 	defer rows.Close()
 
-	counts := make(map[string]int64)
+	counts := make(map[asset.TypeRef]int64)
 	for rows.Next() {
-		var assetType string
+		var assetType, subType string
 		var count int64
-		if err := rows.Scan(&assetType, &count); err != nil {
-			continue
+		if err := rows.Scan(&assetType, &subType, &count); err != nil {
+			return nil, fmt.Errorf("scan asset type count: %w", err)
 		}
-		counts[assetType] = count
+		counts[asset.TypeRef{Type: asset.AssetType(assetType), SubType: subType}] = count
 	}
 
 	if err := rows.Err(); err != nil {
