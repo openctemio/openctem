@@ -1,6 +1,7 @@
 # RFC-043 — Deduplication and identity
 
 > Status: **Accepted — decisions D1–D15 approved** (owner, 2026-10-03; #892).
+> Progress: P0 merged; P1 item 10 implemented (see §12).
 > Scope: api (ingest, finding and asset repositories, merge, tickets,
 > notifications, migrations) + sensor/sdk-go (fingerprint hints only) + web
 > (duplicate link, correlation group view). No change to the CTIS wire format is
@@ -417,6 +418,9 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
 
 10. `fingerprint_version`, `identity_key`, `finding_fingerprints` alias table;
    ingest looks up by alias.
+   **Done** (migrations 000370–000371): alias table with a tenant-bound foreign
+   key, maintained by triggers on `findings`; merges keep and re-point aliases;
+   ingest and the sensor fingerprint check resolve former keys.
 11. v2 recipes for SAST (snippet/logical location; SARIF partialFingerprints in
    sdk-go `FromSARIF`), secrets (HMAC from #849, no line), SCA (no version),
    DAST, network VA (one finding per CVE). Re-fingerprint migration with dry run.

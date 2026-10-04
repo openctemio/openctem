@@ -17,13 +17,10 @@ type (
 	OAuthService            = auth.OAuthService
 	SessionService          = auth.SessionService
 	EmailService            = auth.EmailService
-	WSTicketService         = auth.WSTicketService
 	IntegrationSMTPResolver = auth.IntegrationSMTPResolver
 	TenantSMTPResolver      = auth.TenantSMTPResolver
 	SettingsStorageResolver = auth.SettingsStorageResolver
 
-	WSTicketClaims           = auth.WSTicketClaims
-	WSTicketStore            = auth.WSTicketStore
 	SMTPAvailabilityCheck    = auth.SMTPAvailabilityCheck
 	TenantMemberCreator      = auth.TenantMemberCreator
 	TenantMembershipInfo     = auth.TenantMembershipInfo
@@ -84,13 +81,11 @@ var (
 	NewOAuthService               = auth.NewOAuthService
 	NewSessionService             = auth.NewSessionService
 	NewEmailService               = auth.NewEmailService
-	NewWSTicketService            = auth.NewWSTicketService
 	NewIntegrationSMTPResolver    = auth.NewIntegrationSMTPResolver
 	NewSettingsStorageResolver    = auth.NewSettingsStorageResolver
 	SMTPConfigFromIntegrationMeta = auth.SMTPConfigFromIntegrationMeta
 
 	// Sentinel errors.
-	ErrTicketNotFound                  = auth.ErrTicketNotFound
 	ErrAccountLocked                   = auth.ErrAccountLocked
 	ErrAccountSuspended                = auth.ErrAccountSuspended
 	ErrEmailAlreadyExists              = auth.ErrEmailAlreadyExists
