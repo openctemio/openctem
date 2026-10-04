@@ -13,7 +13,7 @@ import (
 )
 
 // ListFindingGroups returns findings grouped by a dimension.
-// Supported dimensions: cve_id, rule_id, asset_id, owner_id, component_id, severity, source, finding_type.
+// Supported dimensions: cve_id, rule_id, asset_id, owner_id, component_id, severity, source, finding_type, family.
 func (r *FindingRepository) ListFindingGroups(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -38,6 +38,8 @@ func (r *FindingRepository) ListFindingGroups(
 		return r.groupByField(ctx, tenantID, "source", filter, page)
 	case "finding_type":
 		return r.groupByField(ctx, tenantID, "finding_type", filter, page)
+	case "family":
+		return r.groupByField(ctx, tenantID, "family", filter, page)
 	default:
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("unsupported group_by: %s", groupBy)
 	}
@@ -696,7 +698,7 @@ func (r *FindingRepository) groupByField(
 	field string, filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	// Whitelist field names to prevent SQL injection
-	allowedFields := map[string]bool{"severity": true, "source": true, "finding_type": true}
+	allowedFields := map[string]bool{"severity": true, "source": true, "finding_type": true, "family": true}
 	if !allowedFields[field] {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("invalid group field: %s", field)
 	}
@@ -705,6 +707,10 @@ func (r *FindingRepository) groupByField(
 	extraWhere := ""
 	if filterWhere != "" {
 		extraWhere = "AND " + filterWhere
+	}
+	if field == "family" {
+		// Findings without a family form no group (like rule_id and cve_id).
+		extraWhere += " AND f.family IS NOT NULL AND f.family <> ''"
 	}
 
 	countQuery := fmt.Sprintf(`

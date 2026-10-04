@@ -13102,6 +13102,10 @@ export interface paths {
           cve_id?: string[]
           /** @description cve id: none of (comma list) */
           cve_id_not?: string[]
+          /** @description family: any of (comma list) */
+          family?: string[]
+          /** @description family: none of (comma list) */
+          family_not?: string[]
           /** @description finding type: any of (comma list) */
           finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
           /** @description finding type: none of (comma list) */
@@ -14722,6 +14726,10 @@ export interface paths {
           cve_id?: string[]
           /** @description cve id: none of (comma list) */
           cve_id_not?: string[]
+          /** @description family: any of (comma list) */
+          family?: string[]
+          /** @description family: none of (comma list) */
+          family_not?: string[]
           /** @description finding type: any of (comma list) */
           finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
           /** @description finding type: none of (comma list) */
@@ -14957,7 +14965,7 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type */
+          /** @description cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type, family */
           group_by?: string
           /** @description id: any of (comma list) */
           id?: string[]
@@ -15083,6 +15091,10 @@ export interface paths {
           cve_id?: string[]
           /** @description cve id: none of (comma list) */
           cve_id_not?: string[]
+          /** @description family: any of (comma list) */
+          family?: string[]
+          /** @description family: none of (comma list) */
+          family_not?: string[]
           /** @description finding type: any of (comma list) */
           finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
           /** @description finding type: none of (comma list) */
@@ -15525,6 +15537,10 @@ export interface paths {
           cve_id?: string[]
           /** @description cve id: none of (comma list) */
           cve_id_not?: string[]
+          /** @description family: any of (comma list) */
+          family?: string[]
+          /** @description family: none of (comma list) */
+          family_not?: string[]
           /** @description finding type: any of (comma list) */
           finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
           /** @description finding type: none of (comma list) */
