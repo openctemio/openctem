@@ -187,8 +187,8 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 	}
 
 	// Record metrics
-	metrics.PipelineRunsTotal.WithLabelValues(tenantID.String(), "running").Inc()
-	metrics.PipelineRunsInProgress.WithLabelValues(tenantID.String()).Inc()
+	metrics.PipelineRunsTotal.WithLabelValues("running").Inc()
+	metrics.PipelineRunsInProgress.WithLabelValues().Inc()
 
 	// Schedule initial runnable steps (no dependencies)
 	// This creates commands that sensors will poll and execute
@@ -527,7 +527,7 @@ func (s *Service) recordScanRun(ctx context.Context, run *pipeline.Run, status s
 	if s.scanRunRecorder == nil || run == nil || run.ScanID == nil {
 		return
 	}
-	if err := s.scanRunRecorder.RecordRun(ctx, *run.ScanID, run.ID, status); err != nil {
+	if err := s.scanRunRecorder.RecordRun(ctx, run.TenantID, *run.ScanID, run.ID, status); err != nil {
 		s.logger.Warn("failed to record run outcome on scan",
 			"scan_id", run.ScanID.String(), "run_id", run.ID.String(), "status", status, "error", err)
 	}
@@ -549,8 +549,8 @@ func (s *Service) finishRun(ctx context.Context, run *pipeline.Run, status pipel
 		s.logger.Error("failed to update run status", "run_id", run.ID.String(), "status", string(status), "error", err)
 		return false
 	}
-	metrics.PipelineRunsInProgress.WithLabelValues(run.TenantID.String()).Dec()
-	metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), string(status)).Inc()
+	metrics.PipelineRunsInProgress.WithLabelValues().Dec()
+	metrics.PipelineRunsTotal.WithLabelValues(string(status)).Inc()
 	s.recordScanRun(ctx, run, string(status))
 	return true
 }
@@ -628,7 +628,7 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 			s.logger.Error("failed to update step run status", "step_key", stepKey, "error", err)
 		}
 		// Record step metric
-		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepKey, "completed").Inc()
+		metrics.StepRunsTotal.WithLabelValues(stepKey, "completed").Inc()
 	}
 
 	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
@@ -708,7 +708,7 @@ func (s *Service) settleBatchedStep(ctx context.Context, run *pipeline.Run, step
 		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
 			s.logger.Error("failed to record partial step run", "step_key", stepRun.StepKey, "error", err)
 		}
-		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepRun.StepKey, "partial").Inc()
+		metrics.StepRunsTotal.WithLabelValues(stepRun.StepKey, "partial").Inc()
 	}
 	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
 	if err != nil {
@@ -734,7 +734,7 @@ func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipe
 			s.logger.Error("failed to update step run status to failed", "step_key", stepRun.StepKey, "error", err)
 		}
 		// Record failed step metric
-		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepRun.StepKey, "failed").Inc()
+		metrics.StepRunsTotal.WithLabelValues(stepRun.StepKey, "failed").Inc()
 	}
 
 	// Get template to check fail_fast setting
@@ -959,7 +959,7 @@ func (s *Service) evaluateQualityGate(ctx context.Context, run *pipeline.Run) *s
 	}
 
 	// Get the scan profile
-	profile, err := s.scanProfileRepo.GetByID(ctx, *run.ScanProfileID)
+	profile, err := s.scanProfileRepo.GetByTenantAndID(ctx, run.TenantID, *run.ScanProfileID)
 	if err != nil {
 		s.logger.Warn("failed to get scan profile for quality gate evaluation",
 			"error", err,
@@ -1151,8 +1151,8 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 		return err
 	}
 	run.Cancel()
-	metrics.PipelineRunsInProgress.WithLabelValues(run.TenantID.String()).Dec()
-	metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), string(pipeline.RunStatusCanceled)).Inc()
+	metrics.PipelineRunsInProgress.WithLabelValues().Dec()
+	metrics.PipelineRunsTotal.WithLabelValues(string(pipeline.RunStatusCanceled)).Inc()
 	s.recordScanRun(ctx, run, string(pipeline.RunStatusCanceled))
 
 	closure := s.closeCanceledRun(ctx, run)

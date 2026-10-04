@@ -117,7 +117,7 @@ func TestAssetTypeRegistry_SchemaMatchesRegistry(t *testing.T) {
 func storedPairs() []asset.TypeRef {
 	var pairs []asset.TypeRef
 	for _, d := range asset.RegistryDocument().Types {
-		// Only core types are stored (chk_assets_core_type, 000490): an
+		// Only core types are stored (chk_assets_core_type, 000684): an
 		// alias appears as the pair it stands for.
 		if d.AliasOf != nil {
 			pairs = append(pairs, *d.AliasOf)
@@ -198,7 +198,9 @@ func TestAssetTypeRegistry_BackfillRepairsRows(t *testing.T) {
 		}
 	}
 
-	tx, err := db.BeginTx(ctx, nil)
+	// Breaking rows with triggers off needs a superuser
+	// (session_replication_role); the app role cannot, by design (D-6).
+	tx, err := testdb.OpenAdmin(t).BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +449,7 @@ func TestAssetTypeNormalise_Batch(t *testing.T) {
 	moved := 0
 	for {
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 3, 490)`, cursor).Scan(&cursor, &n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 3, 684)`, cursor).Scan(&cursor, &n); err != nil {
 			t.Fatalf("normalise: %v", err)
 		}
 		if !cursor.Valid {
@@ -488,7 +490,7 @@ func TestAssetTypeNormalise_Batch(t *testing.T) {
 	total := 0
 	for {
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500, 490)`, again).Scan(&again, &n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500, 684)`, again).Scan(&again, &n); err != nil {
 			t.Fatal(err)
 		}
 		if !again.Valid {
@@ -501,7 +503,7 @@ func TestAssetTypeNormalise_Batch(t *testing.T) {
 	}
 }
 
-// O3 (RFC-042 §6.3.8, migration 000491): one web sub-type. No asset and no
+// O3 (RFC-042 §6.3.8, migration 000685): one web sub-type. No asset and no
 // threat-model row is keyed by (application, web_application) any more, and
 // a row an old pod still writes that way is moved by the normalise batch.
 func TestAssetTypeRegistry_OneWebSubType(t *testing.T) {
@@ -530,7 +532,7 @@ func TestAssetTypeRegistry_OneWebSubType(t *testing.T) {
 	var cursor sql.NullString
 	for {
 		var moved int
-		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500, 491)`, cursor).Scan(&cursor, &moved); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500, 685)`, cursor).Scan(&cursor, &moved); err != nil {
 			t.Fatal(err)
 		}
 		if !cursor.Valid {
@@ -540,7 +542,7 @@ func TestAssetTypeRegistry_OneWebSubType(t *testing.T) {
 	var sub string
 	var ledger int
 	_ = tx.QueryRowContext(ctx, `SELECT COALESCE(sub_type, '') FROM assets WHERE id = $1`, id).Scan(&sub)
-	_ = tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_type_reclassifications WHERE asset_id = $1 AND migration = 491 AND tenant_id = $2`, id, tenantID.String()).Scan(&ledger)
+	_ = tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_type_reclassifications WHERE asset_id = $1 AND migration = 685 AND tenant_id = $2`, id, tenantID.String()).Scan(&ledger)
 	if sub != "website" || ledger != 1 {
 		t.Errorf("application/web_application -> sub_type %q with %d ledger row(s); want website, 1", sub, ledger)
 	}
