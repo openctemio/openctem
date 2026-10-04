@@ -1310,7 +1310,7 @@ func sqlArray(items []string) string {
 // row per registry type, `other` for every legacy code, the backfill of
 // assets.asset_class / asset_lens (asset_registry_backfill, created by the
 // migration that introduced the columns) and the CHECK that assets store only
-// core types (added by the data normalisation, migration 000402: a block may
+// core types (added by the data normalisation, migration 000458: a block may
 // only be emitted after every stored row is a core type).
 func renderSQL(m *model) string {
 	var b strings.Builder

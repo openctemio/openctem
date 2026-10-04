@@ -117,7 +117,7 @@ func TestAssetTypeRegistry_SchemaMatchesRegistry(t *testing.T) {
 func storedPairs() []asset.TypeRef {
 	var pairs []asset.TypeRef
 	for _, d := range asset.RegistryDocument().Types {
-		// Only core types are stored (chk_assets_core_type, 000402): an
+		// Only core types are stored (chk_assets_core_type, 000458): an
 		// alias appears as the pair it stands for.
 		if d.AliasOf != nil {
 			pairs = append(pairs, *d.AliasOf)
