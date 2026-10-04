@@ -145,6 +145,17 @@ the inventory changed meaning.
 | Scan gate: asset-group members that are not confirmed are skipped; a group of only unconfirmed assets is refused; a failed lookup stops the dispatch | `internal/app/scan/targets.go` (`WithAttributionGate`) |
 | `GET /api/v1/assets/{id}/attribution` (assets:read) and `PUT` (assets:write, audited `asset.attribution_decided`) | `internal/infra/http/handler/asset_attribution_handler.go` |
 
+**Rejection tombstones (P2, migration 000487).** When a person marks a
+domain or subdomain as not the tenant's (asset page or review queue), the
+lowercased name and the rules that supported it are kept in
+`easm_tombstones`, in the same transaction as the decision. CT promotion does
+not propose that name again, even after the asset is deleted, unless it is now
+supported by a rule that was not there at rejection (for example the domain
+was verified since). Reversing the rejection removes the tombstone; tombstones
+expire after 12 months (O7) and each CT sweep purges the tenant's expired
+rows. A failed tombstone lookup promotes nothing. All statements are
+tenant-scoped (`internal/infra/postgres/easm_tombstone_repository.go`).
+
 **Asset merges** (dedup review, RFC-028) keep attribution: the kept asset
 takes the most recent human decision of any merged asset (older decisions stay
 in the audit log); without one it keeps its own record, and merged assets'
