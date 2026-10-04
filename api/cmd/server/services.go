@@ -968,6 +968,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 	}
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
+	s.CredentialImport.SetDataScope(s.DataScope)
 	// Leaked-credential secrets are sealed with the platform credential key
 	// on every write path, and the fingerprint HMAC is keyed from it.
 	s.CredentialSecrets = credential.NewSecretProtector(s.Encryptor, []byte(cfg.Encryption.Key))
@@ -1793,6 +1794,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithGroupAuditService(s.Audit),
 		app.WithPermissionSetRepository(repos.PermissionSet),
 		app.WithAccessControlRepository(repos.AccessControl),
+		app.WithGroupDataScope(s.DataScope),
 		app.WithScopeDelegationCap(s.DataScope),
 	)
 
