@@ -168,11 +168,28 @@ export const LEGACY_DISCOVERY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   { source: '/attack-surface/cloud', destination: '/assets?types=cloud_account', permanent: true },
 ]
 
+/**
+ * Orphaned dashboard-total pages, deleted (owner decision D-31). Nothing linked
+ * to them; each rendered the shared dashboard totals under its own heading, so
+ * it looked like a feature without being one. An old bookmark lands on the
+ * real page for the same question.
+ */
+export const LEGACY_ORPHAN_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
+  // Finding trends and MTTR are on the executive summary.
+  { source: '/trending', destination: '/insights/executive', permanent: true },
+  { source: '/insights/analytics/mttr', destination: '/insights/executive', permanent: true },
+  // Remediation progress is the remediation list.
+  { source: '/progress', destination: '/remediation', permanent: true },
+  // "Scenarios" derived coverage from findings; simulations live here.
+  { source: '/simulation/scenarios', destination: '/attack-simulation', permanent: true },
+]
+
 export const LEGACY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   ...LEGACY_SENSOR_ROUTE_REDIRECTS,
   ...LEGACY_SETTINGS_ROUTE_REDIRECTS,
   ...LEGACY_VALIDATION_ROUTE_REDIRECTS,
   ...LEGACY_DISCOVERY_ROUTE_REDIRECTS,
+  ...LEGACY_ORPHAN_ROUTE_REDIRECTS,
 ]
 
 /**

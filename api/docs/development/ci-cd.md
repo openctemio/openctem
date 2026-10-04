@@ -112,8 +112,8 @@ used: this is a public repository, and a fork PR would run code on the host.
 
 | Tier | Events | API CI | Web CI | All-in-one CI | CodeQL |
 |------|--------|--------|--------|---------------|--------|
-| Fast | `pull_request` | `API static checks` + `Unit tests` (`go test -race`, no database: DB-backed tests skip themselves without `DATABASE_URL`) | `Web checks` | build skipped | changed language(s) |
-| Full | `merge_group`, push to `develop`/`main` | `API static checks` + `Tests (Postgres + Redis)` + `Protocol v1 Compatibility` (+ release binaries); Docker build on `main` | `Web checks`; `next build` on push | images built and smoke-tested | queue: none (the PR head was analysed); push: both |
+| Fast | `pull_request` | `API static checks` + `Tests (Postgres + Redis)` (the whole suite with `-race` against Postgres and Redis, so isolation tests fail on the PR; owner decision D-30) | `Web checks` | build skipped | changed language(s) |
+| Full | `merge_group`, push to `develop`/`main` | the fast tier + `Protocol v1 Compatibility` (+ release binaries); Docker build on `main` | `Web checks`; `next build` on push | images built and smoke-tested | queue: none (the PR head was analysed); push: both |
 
 The `… OK` aggregators pass when a job was skipped because its area did not
 change, but when the area did change they also require that **this event's
@@ -141,6 +141,25 @@ the queue (no required check; the PR and the push scan the change).
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
 
+### Workflow security
+
+- **Every action is pinned to a full commit SHA** with a `# vX.Y.Z` comment
+  (`uses: actions/checkout@<40-hex> # v7.0.1`). A tag or branch ref can be moved
+  by whoever controls the action's repository, and the new code would run with
+  the job's token and secrets; a SHA cannot. Workflow Lint runs
+  `.github/scripts/check-action-pins.sh`, which fails on any unpinned `uses:`.
+  Dependabot (`github-actions`, weekly, minor/patch grouped) bumps the SHA and
+  the comment together. To add an action, resolve the release tag to its commit
+  (`gh api repos/<owner>/<repo>/commits/<tag> -q .sha`) and pin that.
+- **Least-privilege tokens.** Each workflow sets `permissions: contents: read`
+  at the top; a job that needs more asks for it itself (for example
+  `security-events: write` only on the jobs that upload SARIF, `contents: write`
+  only on the job that publishes a release). The repository default for
+  `GITHUB_TOKEN` is read-only as well.
+- **No `pull_request_target`.** PR workflows run with the PR's read-only token
+  and no secrets for fork PRs; nothing checks out a PR head with a write token.
+- Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint).
+
 ### The API ↔ web contract
 
 `api/api/openapi/swagger.yaml` is generated from the Go handler annotations.
@@ -166,10 +185,9 @@ make check            # both contract checks, as CI runs them
 | SQL Schema Drift | `api/scripts/check-sql-schema.sh`: prepares every SQL statement against a migrations-only database. |
 | Security Gates | `api/scripts/security-lint.sh` (checks out `sensor` and `sdk-go` alongside), tenant-scope analyzer, sensor vocabulary guard. |
 | OpenAPI Contract | See above. |
-| Gateway Routing | `api/deploy/gateway/smoke-test.sh` + renders the production compose files. |
+| Gateway Routing | `api/deploy/gateway/smoke-test.sh` (every plane's routing against stub upstreams) + renders the production compose files. That `planes.caddy` matches the plane table is a unit test (`routes/plane` `TestGatewayPlanesFile`). |
 | Lint | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
-| Unit tests | PRs. `go test -race -timeout 20m ./...` with no database (DB-backed tests skip). |
-| Tests (Postgres + Redis) | Merge queue and pushes. The same suite against Postgres 17 + Redis 7 service containers. |
+| Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -race -timeout 20m ./...` against Postgres 17 + Redis 7 service containers, with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
 | Protocol v1 Compatibility | Merge queue and pushes. Runs the pinned, last-released sdk-go against a freshly built server (`api/scripts/compat-v1.sh`), then builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
 | Docker Build | Pushes to `main` only; builds the image, does not push it. |
 
