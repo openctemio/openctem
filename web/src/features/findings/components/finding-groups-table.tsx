@@ -38,7 +38,8 @@ export const GROUP_BY_DIMENSIONS: GroupByDimension[] = [
 ]
 
 /** Statuses the grouped view counts when no status filter is set. */
-export const GROUPED_DEFAULT_STATUSES = 'new,confirmed,in_progress,fix_applied,resolved'
+export const GROUPED_DEFAULT_STATUSES =
+  'new,confirmed,in_progress,fix_applied,not_observed,resolved'
 /** Rows a group shows when it opens, and how many "Show more" adds. */
 const FIRST_ROWS = 5
 const MORE_ROWS = 20
