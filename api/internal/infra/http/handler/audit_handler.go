@@ -379,16 +379,10 @@ func (h *AuditHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log, err := h.service.GetAuditLog(r.Context(), auditLogID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	// Verify tenant access. This is the tenant-facing getter, so it must
-	// never expose a system row (tenant_id IS NULL) or another tenant's row —
-	// GetAuditLog resolves by id alone (WHERE id = $1), so the tenant check
-	// here is the only guard. Fail closed on a nil or mismatched tenant.
+	// This is the tenant-facing getter: it never exposes a system row
+	// (tenant_id IS NULL) or another tenant's row. The lookup is scoped to
+	// the caller's tenant, so either one is a 404. Fail closed on a missing
+	// tenant.
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == "" {
 		apierror.Unauthorized("tenant context required").WriteJSON(w)
@@ -399,8 +393,10 @@ func (h *AuditHandler) Get(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("Invalid tenant token").WriteJSON(w)
 		return
 	}
-	if log.TenantID() == nil || *log.TenantID() != tid {
-		apierror.Forbidden("Access denied to this audit log").WriteJSON(w)
+
+	log, err := h.service.GetAuditLog(r.Context(), tid, auditLogID)
+	if err != nil {
+		h.handleServiceError(w, err)
 		return
 	}
 

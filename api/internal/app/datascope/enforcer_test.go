@@ -12,7 +12,15 @@ type fakeRepo struct {
 	rows     map[shared.ID]map[shared.ID]bool // user -> asset -> in scope
 	findings map[shared.ID]shared.ID          // finding -> asset
 	tenant   map[shared.ID]shared.ID          // asset -> tenant (live assets)
+	fullData map[shared.ID]bool               // user -> holds a full-data role
 	err      error
+}
+
+func (f *fakeRepo) HasFullDataRole(_ context.Context, _, userID shared.ID) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	return f.fullData[userID], nil
 }
 
 func (f *fakeRepo) AssetIDsInTenant(_ context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
@@ -290,5 +298,56 @@ func TestEnforcer_AssertAssetRef(t *testing.T) {
 	repo.err = errors.New("db down")
 	if err := New(repo, policy(false), ctxCaller, nil).AssertAssetRef(withCaller(admin), tenant, inScope); !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("a lookup error must fail closed, got %v", err)
+	}
+}
+
+// A has_full_data_access role is the Layer 2 bypass (owner decision D3),
+// except through an API key; a lookup error restricts.
+func TestEnforcer_FullDataRole(t *testing.T) {
+	tenant := shared.NewID()
+	reader, member := shared.NewID(), shared.NewID()
+	asset := shared.NewID()
+	repo := &fakeRepo{
+		rows:     map[shared.ID]map[shared.ID]bool{reader: {}, member: {shared.NewID(): true}},
+		fullData: map[shared.ID]bool{reader: true},
+	}
+	cases := []struct {
+		name       string
+		strict     bool
+		caller     Caller
+		wantScoped bool
+	}{
+		{"full-data role, fail-closed tenant", true, Caller{UserID: reader.String()}, false},
+		{"full-data role with group rows", false, Caller{UserID: reader.String()}, false},
+		{"full-data role through an API key", true, Caller{UserID: reader.String(), APIKey: true}, true},
+		{"member without the role", false, Caller{UserID: member.String()}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := New(repo, policy(tc.strict), ctxCaller, nil)
+			scope, err := e.ResolveFor(context.Background(), tenant, tc.caller)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (scope != nil) != tc.wantScoped {
+				t.Fatalf("scope = %v, want scoped=%v", scope, tc.wantScoped)
+			}
+			full, err := e.FullData(withCaller(tc.caller), tenant, tc.caller.UserID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if full == tc.wantScoped {
+				t.Errorf("FullData = %v, want %v", full, !tc.wantScoped)
+			}
+			if !tc.wantScoped {
+				if err := e.AssertAsset(withCaller(tc.caller), tenant, asset); err != nil {
+					t.Errorf("full-data caller refused an asset: %v", err)
+				}
+			}
+		})
+	}
+	repo.err = errors.New("db down")
+	if _, err := New(repo, policy(false), ctxCaller, nil).ResolveFor(context.Background(), tenant, Caller{UserID: reader.String()}); err == nil {
+		t.Error("a failed full-data lookup must not resolve to unrestricted")
 	}
 }
