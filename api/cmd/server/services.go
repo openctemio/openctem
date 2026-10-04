@@ -69,6 +69,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -983,6 +984,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize dashboard service
 	s.Dashboard = app.NewDashboardService(repos.Dashboard, log)
 	s.Dashboard.SetDataScope(s.DataScope)
+	// D6: a restricted viewer holding dashboard:aggregate sees organization
+	// totals (k-floor on breakdowns); others see their own scope.
+	s.Dashboard.SetAggregateCheck(func(ctx context.Context) bool {
+		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
+	})
 
 	// Initialize SLA service
 	s.SLA = sla.NewService(repos.SLA, log)

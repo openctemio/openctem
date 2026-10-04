@@ -34,6 +34,7 @@ var permSeedMigrations = []string{
 	"000231_scan_zones.up.sql",                    // sensors:zones:* (RFC-023 D16)
 	"000232_credentials_reveal_permission.up.sql", // findings:credentials:reveal
 	"000267_scope_exclusion_approval.up.sql",      // attack_surface:scope:exclusions:approve
+	"000774_dashboard_aggregate_permission.up.sql", // dashboard:aggregate (D6)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
