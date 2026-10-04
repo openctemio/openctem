@@ -21,9 +21,9 @@
  *   3. The reverse: a "Soon" badge must point at a `ComingSoonPage`. SIEM kept
  *      its badge for months after Splunk HEC shipped because only rule 2
  *      existed. The Integrations overview cards follow the same two rules.
- *   4. Every `ComingSoonPage` in src/app is linked from the nav (main sidebar or
- *      settings rail) or a card with a "Soon" badge, so a placeholder can be
- *      neither unlabelled nor orphaned.
+ *   4. No `ComingSoonPage` and no "Soon" badge exists at all (owner decision
+ *      D-31, 2026-10-04): an unbuilt feature is hidden, not advertised. Rules 2
+ *      and 3 stay as guards if one is ever re-added.
  *
  * Rule 1 deliberately keys on the `useDashboardStats` import rather than on
  * "has a domain-scoped hook". The looser form is unreliable here: most real pages
@@ -212,22 +212,21 @@ describe('"Soon" badges and placeholder pages match both ways', () => {
     })
   }
 
-  it('every ComingSoonPage is linked somewhere with a "Soon" badge', () => {
-    const badged = new Set([
+  it('no placeholder page and no "Soon" badge exists (owner decision D-31)', () => {
+    const badged = [
       ...collectLeaves()
         .filter((l) => l.badge === 'Soon')
         .map((l) => l.url),
       ...INTEGRATION_CATEGORIES.filter((c) => c.badge === 'Soon').map((c) => c.href),
       ...settingsNavItems.filter((i) => i.badge === 'Soon').map((i) => i.url),
-    ])
+    ]
     const placeholders = allPages()
       .filter((p) => readFileSync(p.file, 'utf8').includes('ComingSoonPage'))
       .map((p) => p.url)
-    expect(placeholders.length).toBeGreaterThan(0)
     expect(
-      placeholders.filter((url) => !badged.has(url)),
-      'ComingSoonPage routes with no "Soon"-badged link. Link them with a badge, or ' +
-        'delete the placeholder (an orphan placeholder is dead code).'
+      [...placeholders, ...badged],
+      'Unbuilt features are hidden, not shown as placeholders. Delete the page and ' +
+        'the badge, and list the feature in the build-later issue.'
     ).toEqual([])
   })
 })

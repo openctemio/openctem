@@ -94,6 +94,35 @@ func (r *DataScopeRepository) FindingIDsInScope(ctx context.Context, tenantID, u
 	return out, rows.Err()
 }
 
+// AssetIDsInTenant returns the subset of assetIDs that are live assets of
+// the tenant.
+func (r *DataScopeRepository) AssetIDsInTenant(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) ([]shared.ID, error) {
+	if len(assetIDs) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, len(assetIDs))
+	for i, id := range assetIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id FROM assets
+		 WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL`,
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("list tenant assets: %w", err)
+	}
+	defer rows.Close()
+	out := make([]shared.ID, 0, len(assetIDs))
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan tenant asset: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // FindingAssetID returns the asset of a finding in the tenant.
 func (r *DataScopeRepository) FindingAssetID(ctx context.Context, tenantID, findingID shared.ID) (shared.ID, error) {
 	var assetID sql.NullString

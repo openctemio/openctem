@@ -104,6 +104,12 @@ import type {
   CreateNodeRequest,
   CreateEdgeRequest,
   WorkflowNodeType,
+  WorkflowTriggerType,
+} from '@/lib/api/workflow-types'
+import {
+  WORKFLOW_TRIGGER_LABELS,
+  getUnsupportedWorkflowFeatures,
+  formatUnsupportedWorkflowFeature,
 } from '@/lib/api/workflow-types'
 
 // Custom Node Components
@@ -293,17 +299,22 @@ function getTriggerDisplay(workflow: Workflow): string {
   if (!triggerNode) return 'No trigger configured'
   const triggerType = triggerNode.config?.trigger_type
   if (!triggerType) return triggerNode.name
-  const typeLabels: Record<string, string> = {
-    manual: 'Manual',
-    schedule: 'Scheduled',
-    finding_created: 'Finding Created',
-    finding_updated: 'Finding Updated',
-    finding_age: 'Finding Age',
-    asset_discovered: 'Asset Discovered',
-    scan_completed: 'Scan Completed',
-    webhook: 'Webhook',
-  }
-  return typeLabels[triggerType] || triggerType
+  return WORKFLOW_TRIGGER_LABELS[triggerType as WorkflowTriggerType] || triggerType
+}
+
+// Flag for a stored workflow that uses a trigger/action the platform does not
+// run. The API refuses to activate or save it as is.
+function UnsupportedBadge({ features }: { features: string[] }) {
+  if (features.length === 0) return null
+  return (
+    <Badge
+      variant="outline"
+      className="border-warning/30 bg-warning/10 text-warning text-xs"
+      title={`Not supported: ${features.map(formatUnsupportedWorkflowFeature).join(', ')}`}
+    >
+      Unsupported
+    </Badge>
+  )
 }
 
 // Helper to get action names from workflow
@@ -755,7 +766,10 @@ export default function WorkflowsPage() {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Workflow" />,
       cell: ({ row }) => (
         <div className="min-w-0 max-w-[360px]">
-          <p className="truncate text-sm font-medium">{row.original.name}</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate text-sm font-medium">{row.original.name}</p>
+            <UnsupportedBadge features={getUnsupportedWorkflowFeatures(row.original)} />
+          </div>
           {row.original.description && (
             <p className="truncate text-xs text-muted-foreground">{row.original.description}</p>
           )}
@@ -834,15 +848,22 @@ export default function WorkflowsPage() {
       id: 'enabled',
       enableSorting: false,
       header: 'Enabled',
-      cell: ({ row }) => (
-        <div onClick={(e) => e.stopPropagation()}>
-          <Switch
-            checked={row.original.is_active}
-            onCheckedChange={(checked) => handleToggleWorkflow(row.original, checked)}
-            aria-label={row.original.is_active ? 'Deactivate workflow' : 'Activate workflow'}
-          />
-        </div>
-      ),
+      cell: ({ row }) => {
+        // An unsupported workflow can be switched off, never on (API 400).
+        const blocked =
+          !row.original.is_active && getUnsupportedWorkflowFeatures(row.original).length > 0
+        return (
+          <div onClick={(e) => e.stopPropagation()}>
+            <Switch
+              checked={row.original.is_active}
+              disabled={blocked}
+              title={blocked ? 'Uses an unsupported trigger or action' : undefined}
+              onCheckedChange={(checked) => handleToggleWorkflow(row.original, checked)}
+              aria-label={row.original.is_active ? 'Deactivate workflow' : 'Activate workflow'}
+            />
+          </div>
+        )
+      },
     },
     {
       id: 'actions',
@@ -1201,6 +1222,7 @@ export default function WorkflowsPage() {
           const successRate =
             wf.total_runs > 0 ? Math.round((wf.successful_runs / wf.total_runs) * 100) : 0
           const actions = getActionNames(wf)
+          const unsupported = getUnsupportedWorkflowFeatures(wf)
           return (
             <DetailSheet
               open
@@ -1210,15 +1232,18 @@ export default function WorkflowsPage() {
                 <DetailHeader
                   title={wf.name}
                   badges={
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        'text-xs',
-                        wf.is_active && 'border-success/30 bg-success/10 text-success'
-                      )}
-                    >
-                      {wf.is_active ? 'Active' : 'Inactive'}
-                    </Badge>
+                    <>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'text-xs',
+                          wf.is_active && 'border-success/30 bg-success/10 text-success'
+                        )}
+                      >
+                        {wf.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
+                      <UnsupportedBadge features={unsupported} />
+                    </>
                   }
                   meta={[getTriggerDisplay(wf)]}
                   actions={
@@ -1237,6 +1262,17 @@ export default function WorkflowsPage() {
               }
             >
               <div className="space-y-5">
+                {unsupported.length > 0 && (
+                  <Alert variant="destructive">
+                    <AlertTitle>Uses an unsupported step</AlertTitle>
+                    <AlertDescription>
+                      {unsupported.map(formatUnsupportedWorkflowFeature).join(', ')}{' '}
+                      {unsupported.length === 1 ? 'is' : 'are'} not run by the platform. Remove{' '}
+                      {unsupported.length === 1 ? 'it' : 'them'} before activating or saving this
+                      workflow.
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <DetailStatGrid aria-label="Runs">
                   <DetailStat label="Total runs" value={wf.total_runs} />
                   <DetailStat

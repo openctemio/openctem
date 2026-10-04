@@ -203,7 +203,8 @@ export function SensorInstallSnippets({
                 <span>
                   The owner of the network this sensor scans reviews this policy and installs it
                   read-only on the sensor host (the install commands mount it). The sensor refuses
-                  every job outside it; the platform cannot change it.
+                  every job outside it; the platform cannot change it. Needs a sensor release later
+                  than v0.8.0: v0.8.0 and older ignore the policy and scan without it.
                 </span>
               </p>
             )}

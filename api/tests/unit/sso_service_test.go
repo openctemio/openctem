@@ -1313,8 +1313,9 @@ func TestSSOService_CreateProvider_ScopesValidation(t *testing.T) {
 		{"empty scopes allowed", nil, false},
 		{"too many scopes", makeScopesList(21), true},
 		{"scope too long", []string{strings.Repeat("a", 129)}, true},
-		{"max scopes allowed", makeScopesList(20), false},
-		{"max length scope allowed", []string{strings.Repeat("a", 128)}, false},
+		{"max scopes allowed", append([]string{"openid"}, makeScopesList(19)...), false},
+		{"max length scope allowed", []string{"openid", strings.Repeat("a", 128)}, false},
+		{"scopes without openid rejected", []string{"email", "profile"}, true},
 	}
 
 	for _, tt := range tests {

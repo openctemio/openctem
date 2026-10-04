@@ -260,6 +260,110 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	return s.signTemplates(input.SensorID, cmds), nil
 }
 
+// ClaimInput is a claim-N poll: the sensor takes its work in one request.
+type ClaimInput struct {
+	TenantID     string
+	SensorID     string
+	Capabilities []string
+	// Limit caps the commands returned (1..100, default 10).
+	Limit int
+	// MaxJobs is the sensor's effective job limit; the scan commands
+	// claimed never exceed MaxJobs minus the scans it already holds, counted
+	// from the commands themselves rather than from its last heartbeat.
+	MaxJobs int
+	// ReportedFree, when set, is the free slots the sensor last reported;
+	// the claim takes the smaller of the two.
+	ReportedFree *int
+}
+
+// Claim is the claim-N poll (RFC-046 §11, RFC-030 §5.3): it selects what the
+// sensor may run in the fair dispatch order (priority class with aging,
+// round-robin across runs), keeps private targets from a sensor without a
+// local policy, caps scans at the sensor's free slots, and claims the lot in
+// one statement. The commands returned are already acknowledged to the
+// sensor with a lease; its later claim of each is a replay. Commands another
+// sensor took in the meantime are simply not returned.
+//
+// Falls back to Poll (nothing claimed) when the repository cannot claim in
+// batch.
+func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Command, error) {
+	claimer, ok := s.repo.(commanddom.BatchClaimer)
+	if !ok || input.SensorID == "" {
+		return s.Poll(ctx, PollInput{TenantID: input.TenantID, SensorID: input.SensorID,
+			Capabilities: input.Capabilities, Limit: input.Limit, MaxScanCommands: input.ReportedFree})
+	}
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	sensorID, err := shared.IDFromString(input.SensorID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
+	}
+
+	held, err := claimer.CountHeldScans(ctx, tenantID, sensorID)
+	if err != nil {
+		return nil, err
+	}
+	slots := freeScanSlots(input.MaxJobs, held, input.ReportedFree)
+
+	limit := input.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	limit = min(limit, 100)
+	cands, err := s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, input.Capabilities, limit)
+	if err != nil {
+		return nil, err
+	}
+	if anyPrivateTarget(cands) && s.withholdPrivate(ctx, tenantID, &sensorID) {
+		cands = withoutPrivateTargets(cands)
+	}
+	cands = capScanCommands(cands, slots)
+	if len(cands) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]shared.ID, len(cands))
+	for i, c := range cands {
+		ids[i] = c.ID
+	}
+	claimed, err := claimer.ClaimManyForSensor(ctx, tenantID, sensorID, input.Capabilities, ids)
+	if err != nil {
+		return nil, err
+	}
+	won := make(map[shared.ID]bool, len(claimed))
+	for _, id := range claimed {
+		won[id] = true
+	}
+	out := make([]*commanddom.Command, 0, len(claimed))
+	for _, c := range cands {
+		if !won[c.ID] {
+			continue
+		}
+		// Re-read: the claim set the sensor, the lease and its epoch.
+		cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, c.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, cmd)
+	}
+	return s.signTemplates(input.SensorID, out), nil
+}
+
+// freeScanSlots is how many more scans a sensor may take: its job limit
+// (at least 1) minus what it holds, and no more than it reported free.
+func freeScanSlots(maxJobs, held int, reportedFree *int) int {
+	if maxJobs <= 0 {
+		maxJobs = 1
+	}
+	free := maxJobs - held
+	if reportedFree != nil {
+		free = min(free, *reportedFree)
+	}
+	return max(free, 0)
+}
+
 // signTemplates signs the custom templates of each command for sensorID, on
 // a copy: the stored command is never changed, and every delivery is
 // signed afresh (a new issue and expiry time, the polling sensor's id).

@@ -6,16 +6,17 @@ name: API CI
 # for api/ and shared files only (rules: .github/scripts/changed.sh), so a
 # web-only change costs this workflow two ~10 s jobs and nothing else.
 #
-# Two tiers, to fit the free plan's ~20 concurrent jobs now that every PR is
-# tested twice (on the PR, then in the merge queue):
-#   pull_request    FAST: `API static checks` (one job, every short gate as a
-#                   step) + `Unit tests` (go test -race, no database: the
-#                   DB-backed tests skip themselves without DATABASE_URL).
-#   merge_group,    FULL: the fast tier, plus `Tests (Postgres + Redis)` in
-#   push            place of the unit run, `Protocol v1 Compatibility` (+ the
-#                   release binaries), and on main the Docker build.
-# `API CI OK` passes on a PR with the fast tier; in the merge queue it needs the
-# full tier, so nothing reaches develop/main without the integration tests.
+# Two tiers:
+#   pull_request    `API static checks` (one job, every short gate as a step) +
+#                   `Tests (Postgres + Redis)`: the whole suite with -race
+#                   against real Postgres and Redis, so the tenant-isolation and
+#                   other DB-backed tests fail on the PR, not first in the merge
+#                   queue (owner decision D-30). PR runs are cancelled by a newer
+#                   push to the same PR (concurrency below).
+#   merge_group,    the same, plus `Protocol v1 Compatibility` (+ the release
+#   push            binaries), and on main the Docker build.
+# `API CI OK` needs the DB-backed tests on every event, so nothing reaches
+# develop/main without them, and they ran on the PR already.
 # Job bodies are carried over from openctemio/api's ci.yml; see git log for the
 # reasoning behind each gate.
 
@@ -54,7 +55,7 @@ jobs:
     outputs:
       api: ${{ steps.f.outputs.api }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: f
@@ -75,26 +76,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # base branch for the migration diff and golangci --new-from-rev
 
       # security-lint.sh expects <root>/{api,agent,sdk-go}. The monorepo root
       # already has api/; the two siblings are checked out next to it.
       - name: Checkout sensor (as agent/)
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openctemio/sensor
           path: agent
 
       - name: Checkout sdk-go
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openctemio/sdk-go
           path: sdk-go
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
           cache: true
@@ -209,35 +210,12 @@ jobs:
           base="$(bash ../.github/scripts/effective-base.sh api "origin/${{ github.base_ref }}")"
           make lint-new BASE_REF="$base"
 
-  # FAST tier (PRs): the whole suite with -race and no database. Every
-  # DB-backed test skips itself when DATABASE_URL is unset.
-  unit:
-    name: Unit tests
-    needs: changes
-    if: needs.changes.outputs.api == 'true' && github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: api/go.mod
-          cache: true
-          cache-dependency-path: api/go.sum
-
-      # Explicit -timeout: the default 10m per package binary is too tight for
-      # the -race suite on a slow or busy runner (it takes ~5m normally).
-      - name: Run unit tests
-        run: go test -race -timeout 20m ./...
-
-  # FULL tier (merge queue, pushes): the same suite against real Postgres and
+  # Every event (PRs included): the whole suite against real Postgres and
   # Redis, so the DB-backed tests run too.
   test:
     name: Tests (Postgres + Redis)
     needs: changes
-    if: needs.changes.outputs.api == 'true' && github.event_name != 'pull_request'
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -266,10 +244,10 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
           cache: true
@@ -285,25 +263,41 @@ jobs:
 
       # Explicit -timeout: the default 10m per package binary is too tight for
       # the -race suite on a slow or busy runner (it takes ~5m normally).
+      # OPENCTEM_TEST_DB_REQUIRED: testdb fails instead of skipping when the
+      # database is missing or unreachable. -json feeds the skip check below;
+      # the jq filter prints the same log that -v would.
       - name: Run tests
-        run: go test -v -race -timeout 20m -coverprofile=coverage.out -covermode=atomic ./...
+        run: |
+          go test -json -race -timeout 20m -coverprofile=coverage.out -covermode=atomic ./... \
+            | tee test.json \
+            | jq -Rrj '. as $l | (try fromjson catch null) as $e
+                | if $e == null then $l + "\n"
+                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
+                  else empty end'
         env:
           DB_HOST: localhost
           DB_PORT: 5432
           DB_USER: openctem
           DB_NAME: app_test
           DATABASE_URL: postgres://openctem@localhost:5432/app_test?sslmode=disable
+          OPENCTEM_TEST_DB_REQUIRED: "1"
           REDIS_HOST: localhost
           REDIS_PORT: 6379
 
+      # A test that skips itself on a failed ping (t.Skipf) would otherwise let
+      # this job go green without running its DB checks.
+      - name: No DB-backed test was skipped
+        if: ${{ !cancelled() }}
+        run: bash ../.github/scripts/check-db-test-skips.sh test.json
+
       - name: Upload coverage
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./api/coverage.out
           flags: api
           fail_ci_if_error: false
 
-  # FULL tier. Also builds and uploads the release-style static binaries (the
+  # Merge queue and pushes only. Also builds and uploads the release-style static binaries (the
   # former separate `Build` job).
   compat-v1:
     name: Protocol v1 Compatibility
@@ -350,10 +344,10 @@ jobs:
       AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
           cache: true
@@ -401,13 +395,13 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/bootstrap-admin ./cmd/bootstrap-admin
 
       - name: Upload API artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: api-linux-amd64
           path: api/dist/openctem
 
       - name: Upload Bootstrap Admin artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bootstrap-admin-linux-amd64
           path: api/dist/bootstrap-admin
@@ -419,13 +413,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build Docker image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: api
           push: false
@@ -439,7 +433,7 @@ jobs:
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, static, unit, test, compat-v1, docker]
+    needs: [changes, static, test, compat-v1, docker]
     runs-on: ubuntu-latest
     steps:
       - name: All API jobs passed or were skipped; the event's tier actually ran
@@ -457,7 +451,7 @@ jobs:
           # the tier for this event must have RUN and passed, so a mistyped
           # condition cannot wave a queued PR through without its tests.
           if [ "$API" = true ]; then
-            if [ "$EVENT" = pull_request ]; then required="changes static unit"; else required="changes static test compat-v1"; fi
+            if [ "$EVENT" = pull_request ]; then required="changes static test"; else required="changes static test compat-v1"; fi
             for j in $required; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
               if [ "$r" != success ]; then echo "::error::$j must run and pass for $EVENT, got: $r"; exit 1; fi
