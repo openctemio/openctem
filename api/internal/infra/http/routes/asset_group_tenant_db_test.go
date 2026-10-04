@@ -78,7 +78,7 @@ func newAGTHarness(t *testing.T) *agtHarness {
 
 	db := &postgres.DB{DB: sqldb}
 	log := logger.NewNop()
-	enforcer := datascope.New(postgres.NewDataScopeRepository(db), nil,
+	enforcer := datascope.New(postgres.NewDataScopeRepository(db),
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, log)

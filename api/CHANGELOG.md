@@ -5,6 +5,23 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
+### Security: members without a scope row see nothing, in every organization
+
+- **The "see everything" mode is retired** (research doc 15 L-04, owner
+  decision D2; owner signoff 2026-10-04). A member who is in no access group,
+  holds no explicit grant and no `has_full_data_access` role sees no asset or
+  finding anywhere (lists, search, stats, exports, dashboards, reports,
+  notifications, WebSocket channels); by-id reads answer 404. Before, every
+  organization created before migration 000247 showed such members the whole
+  tenant, and a member who lost their last scope row silently widened to it.
+  Owners, admins and full-data roles (for example a "Global Reader") are
+  unchanged.
+- `tenants.members_without_group_see` is no longer read; the per-tenant policy
+  cache (which treated a read failure as "everything") is gone, and the asset,
+  finding and finding-group SQL has no `NOT EXISTS … OR` bypass left.
+- Real-time finding/asset pushes now also reach full-data roles, and no
+  longer reach members without a scope row.
+
 ### Behaviour change: only a proven scan run closes repository findings
 
 - **Default-branch auto-resolve needs a clean, bound run** (research 18 F3,
@@ -232,6 +249,21 @@ published at https://docs.openctem.io (operations/release-notes-*).
   queues it, with the reason.
 
 ### Changed (behaviour change)
+
+- **The crown-jewel flag is the `assets.is_crown_jewel` column** (owner
+  decision O5). It was written into `properties.is_crown_jewel`, while the
+  scoping summary read the column, so the two disagreed. Migration 000778
+  backfills the column from the property (JSON `true` or the string `"true"`,
+  any case; anything else reads as false), removes the key from properties
+  and makes the column `NOT NULL DEFAULT FALSE`. Priority classification, the
+  attack-path graph, exposure chains, threat models, the executive
+  dashboard, the crown-jewel filter and dedup merge (a merged crown jewel
+  keeps the flag) read the column; asset responses carry `is_crown_jewel`.
+  Only `PATCH /assets/{id}/crown-jewel` writes it: assets:write, the asset in
+  the caller's data scope (404 otherwise), audited. `is_crown_jewel` stays a
+  reserved key, so a create, update, import or sensor report cannot set it
+  through properties. **Upgrade note:** a crown jewel marked by a pod of the
+  previous release while the migration runs must be marked again.
 
 - **`POST /api/v1/assets` for an asset that already exists is a 409** (owner
   decision O4). A name, or an address the name correlates to (IP/hostname),

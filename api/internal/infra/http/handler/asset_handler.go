@@ -315,6 +315,8 @@ type AssetResponse struct {
 	Tags                  []string                 `json:"tags,omitempty"`
 	Properties            map[string]any           `json:"properties,omitempty"`
 	PrimaryOwner          *OwnerBriefResponse      `json:"primary_owner,omitempty"`
+	// IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel.
+	IsCrownJewel bool `json:"is_crown_jewel"`
 
 	// Discovery
 	DiscoverySource string     `json:"discovery_source,omitempty"`
@@ -439,6 +441,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		Description:  a.Description(),
 		Tags:         a.Tags(),
 		Properties:   a.Properties(),
+		IsCrownJewel: a.IsCrownJewel(),
 
 		// Discovery
 		DiscoverySource: a.DiscoverySource(),
@@ -2148,41 +2151,35 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	a, err := h.service.GetAsset(r.Context(), tenantID, assetID)
+	// The previous state, for the audit event. The route's data-scope guard
+	// has already refused an asset outside the caller's scope.
+	before, err := h.service.GetAsset(r.Context(), tenantID, assetID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Store crown jewel data in properties (DB columns added by migration 000126)
-	props := a.Properties()
-	if props == nil {
-		props = make(map[string]any)
-	}
-	before := map[string]any{}
-	for _, k := range []string{"is_crown_jewel", "business_impact_score", "business_impact_notes"} {
-		if v, ok := props[k]; ok {
-			before[k] = v
-		}
-	}
-	props["is_crown_jewel"] = req.IsCrownJewel
-	props["business_impact_score"] = req.BusinessImpactScore
-	props["business_impact_notes"] = req.BusinessImpactNotes
-	a.SetProperties(props)
-
-	if err := h.service.SaveAsset(r.Context(), a); err != nil {
+	// The flag is the assets.is_crown_jewel column; business impact stays in
+	// properties. One statement writes both.
+	a, err := h.service.UpdateCrownJewel(r.Context(), tenantID, assetID,
+		req.IsCrownJewel, req.BusinessImpactScore, req.BusinessImpactNotes)
+	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+
 	changed := []string{}
-	for _, k := range changedPropertyKeys(before, map[string]any{
-		"is_crown_jewel": req.IsCrownJewel, "business_impact_score": req.BusinessImpactScore,
-		"business_impact_notes": req.BusinessImpactNotes,
-	}) {
+	if before.IsCrownJewel() != a.IsCrownJewel() {
+		changed = append(changed, "is_crown_jewel")
+	}
+	for _, k := range changedPropertyKeys(
+		pickProperties(before.Properties(), asset.PropKeyBusinessImpactScore, asset.PropKeyBusinessImpactNotes),
+		pickProperties(a.Properties(), asset.PropKeyBusinessImpactScore, asset.PropKeyBusinessImpactNotes),
+	) {
 		changed = append(changed, k[len("properties."):])
 	}
 	h.auditAsset(r, auditdom.ActionAssetCrownJewelChanged, a.ID().String(), a.Name(), "Crown-jewel designation changed",
-		map[string]any{"is_crown_jewel": req.IsCrownJewel, "changed_fields": changed})
+		map[string]any{"is_crown_jewel": a.IsCrownJewel(), "changed_fields": changed})
 
 	writeJSON(w, http.StatusOK, toAssetResponse(a))
 }

@@ -24,8 +24,9 @@ import { get } from '@/lib/api/client'
 import { pipelineRunEndpoints } from '@/lib/api/endpoints'
 import type { PipelineRun } from '@/lib/api/scan-types'
 import { copyToClipboard } from '@/lib/clipboard'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { formatScanDuration } from '@/features/scans/lib/format'
-import { elapsedMs, runTaskProgress } from '@/features/scans/lib/run-display'
+import { elapsedMs, runRefreshInterval, runTaskProgress } from '@/features/scans/lib/run-display'
 import { RunTasksTable } from './run-tasks-table'
 
 interface RunDetailSheetProps {
@@ -79,7 +80,12 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
   } = useSWR<PipelineRun>(
     runId ? pipelineRunEndpoints.get(runId) : null,
     (url: string) => get<PipelineRun>(url),
-    { revalidateOnFocus: false }
+    {
+      revalidateOnFocus: false,
+      // Live while the run is: status, task counts and duration refresh every
+      // 5 s until it settles, then polling stops (a finished run never moves).
+      refreshInterval: runRefreshInterval,
+    }
   )
   const duration = run ? durationOf(run) : null
   const progress = run ? runTaskProgress(run.task_summary) : null
@@ -126,7 +132,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               icon={CircleAlert}
               title={runOutcomeCallout(run.status).title}
             >
-              {run.error_message}
+              {/* Sensor and tool output can shape this text: control and
+                  direction characters are shown as escapes, never applied. */}
+              <span dir="auto" className="break-words [unicode-bidi:isolate]">
+                {toDisplayText(run.error_message)}
+              </span>
             </DetailCallout>
           )}
 
@@ -140,9 +150,10 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             <DetailSection title="Tasks" count={run.task_summary?.total}>
               {run.tasks && run.tasks.length > 0 ? (
                 <RunTasksTable
+                  runId={run.id}
                   tasks={run.tasks}
-                  truncated={!!run.tasks_truncated}
                   total={run.task_summary?.total ?? run.tasks.length}
+                  nextCursor={run.tasks_truncated ? run.tasks_next_cursor : undefined}
                 />
               ) : (
                 <p className="text-sm text-muted-foreground">

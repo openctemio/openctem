@@ -20,11 +20,6 @@ import (
 
 // mockAccessControlRepo implements accesscontrol.Repository for testing data scope.
 type mockAccessControlRepo struct {
-	// HasAnyScopeAssignment behavior
-	hasAnyScopeResult bool
-	hasAnyScopeErr    error
-	hasAnyScopeCalls  int
-
 	// CanAccessAsset behavior
 	canAccessResult bool
 	canAccessErr    error
@@ -33,12 +28,6 @@ type mockAccessControlRepo struct {
 	// Track call parameters
 	lastUserID  shared.ID
 	lastAssetID shared.ID
-}
-
-func (m *mockAccessControlRepo) HasAnyScopeAssignment(_ context.Context, _, userID shared.ID) (bool, error) {
-	m.hasAnyScopeCalls++
-	m.lastUserID = userID
-	return m.hasAnyScopeResult, m.hasAnyScopeErr
 }
 
 func (m *mockAccessControlRepo) CanAccessAsset(_ context.Context, userID, assetID shared.ID) (bool, error) {
@@ -307,39 +296,27 @@ func TestGetAssetWithScope_AdminBypass(t *testing.T) {
 	}
 
 	// Verify no access control calls were made
-	if acRepo.hasAnyScopeCalls != 0 {
-		t.Errorf("expected 0 HasAnyScopeAssignment calls for admin, got %d", acRepo.hasAnyScopeCalls)
-	}
 	if acRepo.canAccessCalls != 0 {
 		t.Errorf("expected 0 CanAccessAsset calls for admin, got %d", acRepo.canAccessCalls)
 	}
 }
 
-func TestGetAssetWithScope_NonAdmin_NoScopeAssignment(t *testing.T) {
+// A member with no scope row sees nothing (owner decision D2, research doc
+// 15 L-04): there is no "see everything" mode, whatever the organization.
+func TestGetAssetWithScope_NonAdmin_NoScopeRow_NotFound(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := shared.NewID().String()
 	assetID, _ := createTestAsset(t, svc, tenantID)
 
-	acRepo := &mockAccessControlRepo{
-		hasAnyScopeResult: false, // user has no group assignments
-	}
+	acRepo := &mockAccessControlRepo{canAccessResult: false} // no scope row at all
 	svc.SetAccessControlRepository(acRepo)
 
-	// Non-admin without scope assignments → backward compat → sees all
-	a, err := svc.GetAssetWithScope(context.Background(), tenantID, assetID, shared.NewID().String(), false)
-	if err != nil {
-		t.Fatalf("non-admin without scope should access asset, got error: %v", err)
+	_, err := svc.GetAssetWithScope(context.Background(), tenantID, assetID, shared.NewID().String(), false)
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("member without scope row: err = %v, want ErrNotFound (404, never 403)", err)
 	}
-	if a == nil {
-		t.Fatal("expected asset, got nil")
-	}
-
-	if acRepo.hasAnyScopeCalls != 1 {
-		t.Errorf("expected 1 HasAnyScopeAssignment call, got %d", acRepo.hasAnyScopeCalls)
-	}
-	// CanAccessAsset should NOT be called (no scope → all visible)
-	if acRepo.canAccessCalls != 0 {
-		t.Errorf("expected 0 CanAccessAsset calls, got %d", acRepo.canAccessCalls)
+	if acRepo.canAccessCalls != 1 {
+		t.Errorf("expected 1 CanAccessAsset call, got %d", acRepo.canAccessCalls)
 	}
 }
 
@@ -349,8 +326,7 @@ func TestGetAssetWithScope_NonAdmin_HasScope_CanAccess(t *testing.T) {
 	assetID, _ := createTestAsset(t, svc, tenantID)
 
 	acRepo := &mockAccessControlRepo{
-		hasAnyScopeResult: true,
-		canAccessResult:   true,
+		canAccessResult: true,
 	}
 	svc.SetAccessControlRepository(acRepo)
 
@@ -362,9 +338,6 @@ func TestGetAssetWithScope_NonAdmin_HasScope_CanAccess(t *testing.T) {
 		t.Fatal("expected asset, got nil")
 	}
 
-	if acRepo.hasAnyScopeCalls != 1 {
-		t.Errorf("expected 1 HasAnyScopeAssignment call, got %d", acRepo.hasAnyScopeCalls)
-	}
 	if acRepo.canAccessCalls != 1 {
 		t.Errorf("expected 1 CanAccessAsset call, got %d", acRepo.canAccessCalls)
 	}
@@ -376,8 +349,7 @@ func TestGetAssetWithScope_NonAdmin_HasScope_Denied(t *testing.T) {
 	assetID, _ := createTestAsset(t, svc, tenantID)
 
 	acRepo := &mockAccessControlRepo{
-		hasAnyScopeResult: true,
-		canAccessResult:   false, // access denied
+		canAccessResult: false, // access denied
 	}
 	svc.SetAccessControlRepository(acRepo)
 
@@ -391,33 +363,13 @@ func TestGetAssetWithScope_NonAdmin_HasScope_Denied(t *testing.T) {
 	}
 }
 
-func TestGetAssetWithScope_NonAdmin_HasScopeError_FailClosed(t *testing.T) {
-	svc, _ := newTestService()
-	tenantID := shared.NewID().String()
-	assetID, _ := createTestAsset(t, svc, tenantID)
-
-	acRepo := &mockAccessControlRepo{
-		hasAnyScopeErr: errors.New("db connection failed"),
-	}
-	svc.SetAccessControlRepository(acRepo)
-
-	_, err := svc.GetAssetWithScope(context.Background(), tenantID, assetID, shared.NewID().String(), false)
-	if err == nil {
-		t.Fatal("expected error when HasAnyScopeAssignment fails (fail-closed)")
-	}
-	if !errors.Is(err, shared.ErrNotFound) {
-		t.Errorf("expected ErrNotFound on scope check error, got %v", err)
-	}
-}
-
 func TestGetAssetWithScope_NonAdmin_CanAccessError_FailClosed(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := shared.NewID().String()
 	assetID, _ := createTestAsset(t, svc, tenantID)
 
 	acRepo := &mockAccessControlRepo{
-		hasAnyScopeResult: true,
-		canAccessErr:      errors.New("db connection failed"),
+		canAccessErr: errors.New("db connection failed"),
 	}
 	svc.SetAccessControlRepository(acRepo)
 
@@ -448,8 +400,8 @@ func TestGetAssetWithScope_NonAdmin_InvalidUserID_FailClosed(t *testing.T) {
 	}
 
 	// No access control calls should be made
-	if acRepo.hasAnyScopeCalls != 0 {
-		t.Errorf("expected 0 HasAnyScopeAssignment calls for invalid user ID, got %d", acRepo.hasAnyScopeCalls)
+	if acRepo.canAccessCalls != 0 {
+		t.Errorf("expected 0 CanAccessAsset calls for invalid user ID, got %d", acRepo.canAccessCalls)
 	}
 }
 
@@ -470,8 +422,8 @@ func TestGetAssetWithScope_NonAdmin_EmptyUserID_NoScopeCheck(t *testing.T) {
 		t.Fatal("expected asset, got nil")
 	}
 
-	if acRepo.hasAnyScopeCalls != 0 {
-		t.Errorf("expected 0 scope calls for empty user ID, got %d", acRepo.hasAnyScopeCalls)
+	if acRepo.canAccessCalls != 0 {
+		t.Errorf("expected 0 scope calls for empty user ID, got %d", acRepo.canAccessCalls)
 	}
 }
 
@@ -503,8 +455,8 @@ func TestGetAssetWithScope_AssetNotFound(t *testing.T) {
 	}
 
 	// No scope checks if asset doesn't exist
-	if acRepo.hasAnyScopeCalls != 0 {
-		t.Errorf("expected 0 scope calls for non-existent asset, got %d", acRepo.hasAnyScopeCalls)
+	if acRepo.canAccessCalls != 0 {
+		t.Errorf("expected 0 scope calls for non-existent asset, got %d", acRepo.canAccessCalls)
 	}
 }
 
@@ -626,12 +578,13 @@ func TestGetFindingWithScope_AdminBypass(t *testing.T) {
 		t.Fatal("expected finding, got nil")
 	}
 
-	if acRepo.hasAnyScopeCalls != 0 {
-		t.Errorf("expected 0 scope calls for admin, got %d", acRepo.hasAnyScopeCalls)
+	if acRepo.canAccessCalls != 0 {
+		t.Errorf("expected 0 scope calls for admin, got %d", acRepo.canAccessCalls)
 	}
 }
 
-func TestGetFindingWithScope_NonAdmin_NoScope_BackwardCompat(t *testing.T) {
+// No scope row means no finding (owner decision D2): 404, never 403.
+func TestGetFindingWithScope_NonAdmin_NoScopeRow_NotFound(t *testing.T) {
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
 	findingID := shared.NewID()
@@ -641,21 +594,15 @@ func TestGetFindingWithScope_NonAdmin_NoScope_BackwardCompat(t *testing.T) {
 	findingRepo := &mockFindingRepoForScope{findingByID: finding}
 	svc := newTestVulnService(findingRepo)
 
-	acRepo := &mockAccessControlRepo{
-		hasAnyScopeResult: false, // no group assignments
-	}
+	acRepo := &mockAccessControlRepo{canAccessResult: false} // no scope row at all
 	svc.SetAccessControlRepository(acRepo)
 
-	f, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
-	if err != nil {
-		t.Fatalf("non-admin without scope should access finding, got error: %v", err)
+	_, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("member without scope row: err = %v, want ErrNotFound", err)
 	}
-	if f == nil {
-		t.Fatal("expected finding, got nil")
-	}
-
-	if acRepo.canAccessCalls != 0 {
-		t.Errorf("expected 0 CanAccessAsset calls for backward compat, got %d", acRepo.canAccessCalls)
+	if acRepo.canAccessCalls != 1 {
+		t.Errorf("expected 1 CanAccessAsset call, got %d", acRepo.canAccessCalls)
 	}
 }
 
@@ -670,8 +617,7 @@ func TestGetFindingWithScope_NonAdmin_HasScope_CanAccess(t *testing.T) {
 	svc := newTestVulnService(findingRepo)
 
 	acRepo := &mockAccessControlRepo{
-		hasAnyScopeResult: true,
-		canAccessResult:   true, // user can access this asset
+		canAccessResult: true, // user can access this asset
 	}
 	svc.SetAccessControlRepository(acRepo)
 
@@ -695,8 +641,7 @@ func TestGetFindingWithScope_NonAdmin_HasScope_Denied(t *testing.T) {
 	svc := newTestVulnService(findingRepo)
 
 	acRepo := &mockAccessControlRepo{
-		hasAnyScopeResult: true,
-		canAccessResult:   false, // access denied
+		canAccessResult: false, // access denied
 	}
 	svc.SetAccessControlRepository(acRepo)
 
@@ -706,30 +651,6 @@ func TestGetFindingWithScope_NonAdmin_HasScope_Denied(t *testing.T) {
 	}
 	if !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
-	}
-}
-
-func TestGetFindingWithScope_NonAdmin_ScopeCheckError_FailClosed(t *testing.T) {
-	tenantID := shared.NewID()
-	assetID := shared.NewID()
-	findingID := shared.NewID()
-
-	finding, _ := vulnerability.NewFinding(tenantID, assetID, vulnerability.FindingSourceSAST, "test-tool", vulnerability.SeverityHigh, "Test finding")
-
-	findingRepo := &mockFindingRepoForScope{findingByID: finding}
-	svc := newTestVulnService(findingRepo)
-
-	acRepo := &mockAccessControlRepo{
-		hasAnyScopeErr: errors.New("db error"),
-	}
-	svc.SetAccessControlRepository(acRepo)
-
-	_, err := svc.GetFindingWithScope(context.Background(), tenantID.String(), findingID.String(), shared.NewID().String(), false)
-	if err == nil {
-		t.Fatal("expected error on scope check failure (fail-closed)")
-	}
-	if !errors.Is(err, shared.ErrNotFound) {
-		t.Errorf("expected ErrNotFound on scope error, got %v", err)
 	}
 }
 
@@ -744,8 +665,7 @@ func TestGetFindingWithScope_NonAdmin_AccessCheckError_FailClosed(t *testing.T) 
 	svc := newTestVulnService(findingRepo)
 
 	acRepo := &mockAccessControlRepo{
-		hasAnyScopeResult: true,
-		canAccessErr:      errors.New("db error"),
+		canAccessErr: errors.New("db error"),
 	}
 	svc.SetAccessControlRepository(acRepo)
 
@@ -836,27 +756,33 @@ func TestGetFindingStatsWithScope_NonAdmin_EmptyUserID(t *testing.T) {
 	}
 }
 
-// strictScopePolicy: every organization runs "members without a group see nothing".
-type strictScopePolicy struct{}
-
-func (strictScopePolicy) RestrictedDataScope(context.Context, string) bool { return true }
-
-// Under the "nothing" policy a failed scope lookup must not fall through to
-// the tenant-wide counts.
-func TestGetFindingStatsWithScope_StrictPolicy_ScopeLookupError_FailClosed(t *testing.T) {
+// A member's stats are always counted under their scope (a member with no
+// scope row counts nothing in SQL), and an acting user that does not parse
+// is refused instead of falling through to the tenant-wide counts.
+func TestGetFindingStatsWithScope_Member_AlwaysScoped(t *testing.T) {
 	stats := vulnerability.NewFindingStats()
 	stats.Total = 42
 	findingRepo := &mockFindingRepoForScope{statsResult: stats}
 	svc := newTestVulnService(findingRepo)
-	svc.SetAccessControlRepository(&mockAccessControlRepo{hasAnyScopeErr: errors.New("db error")})
-	svc.SetDataScopePolicy(strictScopePolicy{})
+	user := shared.NewID()
 
+	if _, err := svc.GetFindingStatsWithScope(context.Background(), app.GetFindingStatsInput{
+		TenantID:     shared.NewID().String(),
+		ActingUserID: user.String(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if findingRepo.getStatsDataScopeUser == nil || *findingRepo.getStatsDataScopeUser != user {
+		t.Fatalf("member stats ran unscoped: dataScopeUserID = %v, want %s", findingRepo.getStatsDataScopeUser, user)
+	}
+
+	findingRepo.getStatsDataScopeUser = nil
 	result, err := svc.GetFindingStatsWithScope(context.Background(), app.GetFindingStatsInput{
 		TenantID:     shared.NewID().String(),
-		ActingUserID: shared.NewID().String(),
+		ActingUserID: "not-a-uuid",
 	})
 	if err == nil {
-		t.Fatalf("expected an error, got stats total %d", result.Total)
+		t.Fatalf("unparseable acting user: expected an error, got stats total %d", result.Total)
 	}
 }
 

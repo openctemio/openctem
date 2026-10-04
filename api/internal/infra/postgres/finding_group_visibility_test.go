@@ -34,11 +34,13 @@ func TestBuildFilterWhere_VisibilityRules(t *testing.T) {
 		t.Errorf("args = %v", args)
 	}
 
-	// The legacy non-strict form keeps the list's fail-open bypass.
-	legacy := vulnerability.NewFindingFilter().WithDataScopeUserID(uid)
-	legacy.TenantID = &tid
-	if where, _ := buildFilterWhere(legacy, 2); !strings.Contains(where, "NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $3)") {
-		t.Errorf("non-strict scope:\n%s", where)
+	// A bare user scope is strict too: there is no fail-open bypass for a
+	// user with no scope row (owner decision D2).
+	bare := vulnerability.NewFindingFilter().WithDataScopeUserID(uid)
+	bare.TenantID = &tid
+	if where, _ := buildFilterWhere(bare, 2); strings.Contains(where, "NOT EXISTS") ||
+		!strings.Contains(where, "f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $2 AND uaa.tenant_id = $3)") {
+		t.Errorf("bare user scope must be strict:\n%s", where)
 	}
 
 	// A visibility rule without a tenant cannot be resolved: match nothing.

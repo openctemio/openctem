@@ -1081,6 +1081,61 @@ type RunTasks struct {
 	Items   []pipeline.Task
 	// Truncated is true when the run has more tasks than Items holds.
 	Truncated bool
+	// NextCursor continues after Items (GET /pipeline-runs/{id}/tasks) when
+	// Truncated; empty otherwise.
+	NextCursor string
+}
+
+// DefaultRunTaskPageSize is the page size of a run's task list.
+const DefaultRunTaskPageSize = 50
+
+// RunTaskPage is one page of a run's tasks.
+type RunTaskPage struct {
+	Items []pipeline.Task
+	// NextCursor continues after Items; empty on the last page.
+	NextCursor string
+}
+
+// ListRunTasksPage returns one page of the tasks of run runID of tenantID, in
+// dispatch order, after cursor (from the first task when empty). A run of
+// another tenant is not found; a malformed cursor or a page size outside
+// 1..pipeline.MaxRunTasks is a validation error.
+func (s *Service) ListRunTasksPage(ctx context.Context, tenantID, runID, cursor string, limit int) (*RunTaskPage, error) {
+	if limit == 0 {
+		limit = DefaultRunTaskPageSize
+	}
+	if limit < 1 || limit > pipeline.MaxRunTasks {
+		return nil, fmt.Errorf("%w: per_page must be between 1 and %d", shared.ErrValidation, pipeline.MaxRunTasks)
+	}
+	var after *pipeline.TaskCursor
+	if cursor != "" {
+		c, err := pipeline.DecodeTaskCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		after = &c
+	}
+	// The run is read for the caller's tenant first: another tenant's run id
+	// answers not found, exactly like GET /pipeline-runs/{id}.
+	run, err := s.GetRun(ctx, tenantID, runID)
+	if err != nil {
+		return nil, err
+	}
+	pager, ok := s.commandRepo.(pipeline.TaskPager)
+	if !ok {
+		return &RunTaskPage{}, nil
+	}
+	// One extra row says whether another page follows.
+	items, err := pager.ListRunTasksAfter(ctx, run.TenantID, run.ID, after, limit+1)
+	if err != nil {
+		return nil, err
+	}
+	page := &RunTaskPage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		page.NextCursor = pipeline.TaskCursorAfter(page.Items[limit-1]).Encode()
+	}
+	return page, nil
 }
 
 // GetRunTasks returns up to pipeline.MaxRunTasks tasks of a run of tenantID
@@ -1095,7 +1150,38 @@ func (s *Service) GetRunTasks(ctx context.Context, run *pipeline.Run) (*RunTasks
 	if err != nil {
 		return nil, err
 	}
-	return &RunTasks{Summary: sum, Items: items, Truncated: sum.Total > len(items)}, nil
+	out := &RunTasks{Summary: sum, Items: items, Truncated: sum.Total > len(items)}
+	if out.Truncated && len(items) > 0 {
+		out.NextCursor = pipeline.TaskCursorAfter(items[len(items)-1]).Encode()
+	}
+	return out, nil
+}
+
+// RunScanNames returns the name of the scan of each run in runs that belongs
+// to a scan of tenantID, keyed by scan id. Nil when the repository cannot
+// name scans. Every run must belong to tenantID; the read is scoped to it.
+func (s *Service) RunScanNames(ctx context.Context, tenantID string, runs []*pipeline.Run) (map[shared.ID]string, error) {
+	namer, ok := s.runRepo.(pipeline.RunScanNamer)
+	if !ok || len(runs) == 0 {
+		return nil, nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	seen := make(map[shared.ID]struct{}, len(runs))
+	ids := make([]shared.ID, 0, len(runs))
+	for _, r := range runs {
+		if r.ScanID == nil {
+			continue
+		}
+		if _, dup := seen[*r.ScanID]; dup {
+			continue
+		}
+		seen[*r.ScanID] = struct{}{}
+		ids = append(ids, *r.ScanID)
+	}
+	return namer.ScanNames(ctx, tid, ids)
 }
 
 // RunTaskSummaries returns the task summary of each run in runs that has
@@ -1123,8 +1209,11 @@ type ListRunsInput struct {
 	PipelineID string `json:"pipeline_id" validate:"omitempty,uuid"`
 	AssetID    string `json:"asset_id" validate:"omitempty,uuid"`
 	Status     string `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout"`
-	Page       int    `json:"page"`
-	PerPage    int    `json:"per_page"`
+	// Sort is one sort key, `field` or `-field` (pipeline.RunListSortFields);
+	// an unknown field is a validation error.
+	Sort    string `json:"sort"`
+	Page    int    `json:"page"`
+	PerPage int    `json:"per_page"`
 }
 
 // ListRuns lists pipeline runs with filters.
@@ -1134,8 +1223,14 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 		return pagination.Result[*pipeline.Run]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
+	sort, err := pipeline.ParseRunListSort(input.Sort)
+	if err != nil {
+		return pagination.Result[*pipeline.Run]{}, err
+	}
+
 	filter := pipeline.RunFilter{
 		TenantID: &tenantID,
+		Sort:     sort,
 	}
 
 	if input.PipelineID != "" {

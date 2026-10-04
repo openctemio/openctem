@@ -1678,6 +1678,18 @@ export const pipelineRunEndpoints = {
    * Cancel a running pipeline
    */
   cancel: (runId: string) => `/api/v1/pipeline-runs/${runId}/cancel`,
+
+  /**
+   * One cursor page of a run's tasks (the run read embeds the first page and
+   * its tasks_next_cursor).
+   */
+  tasks: (runId: string, cursor?: string, perPage?: number) => {
+    const params = new URLSearchParams()
+    if (cursor) params.set('cursor', cursor)
+    if (perPage) params.set('per_page', String(perPage))
+    const qs = params.toString()
+    return `/api/v1/pipeline-runs/${encodeURIComponent(runId)}/tasks${qs ? `?${qs}` : ''}`
+  },
 } as const
 
 /**

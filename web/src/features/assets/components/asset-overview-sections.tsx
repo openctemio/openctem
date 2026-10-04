@@ -180,6 +180,7 @@ export function ExposureSection({ asset, isControlPlane }: ExposureSectionProps)
         <DetailField label="Control plane">
           {isControlPlane ? 'Yes, other assets depend on it for security' : undefined}
         </DetailField>
+        <DetailField label="Crown jewel">{asset.isCrownJewel ? 'Yes' : undefined}</DetailField>
         <DetailField label="Data classification">
           {asset.dataClassification ? humanize(asset.dataClassification) : undefined}
         </DetailField>
