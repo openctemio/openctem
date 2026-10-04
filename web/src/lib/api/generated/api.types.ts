@@ -33161,6 +33161,11 @@ export interface components {
     'github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule': {
       peers?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef'][]
       relationship?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType']
+      /**
+       * @description SubType restricts the rule to the type's assets of one sub-type
+       *     ("" = any sub-type).
+       */
+      sub_type?: string
     }
     /** @enum {string} */
     'github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType':
@@ -33192,6 +33197,8 @@ export interface components {
       card?: string
       class?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Class']
       columns?: string[]
+      /** @description ExposureDefault is the exposure the type has by nature ("" = none). */
+      exposure_default?: string
       facets?: string[]
       group_by?: string[]
       icon?: string
@@ -33201,6 +33208,11 @@ export interface components {
       lens?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Lens']
       plural?: string
       relationships?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships']
+      /**
+       * @description ScannableBy lists the tool target types (supported_targets) that can
+       *     scan the type (RFC-042 §6.3.8 R5).
+       */
+      scannable_by?: string[]
       sections?: string[]
       storage?: string
       sub_types?: string[]
