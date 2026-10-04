@@ -922,10 +922,10 @@ legacy data (never on live).
 |---|---|---|---|
 | **T0** | docs | This section, the rfcs README row, `architecture/asset-inventory-v2.md`, `development/asset-type-registry.md` | this PR |
 | **T1** Close the writers | api + web | `ResolveInputType` / `StoredAssetTypes` / closed sub-types generated from the YAML; `POST`/`PATCH /assets`, CSV import, the Nessus and Kubernetes importers, ingest, connectors and seeds resolve aliases and validate the sub-type; fix the `properties.type` override (a non-alias value overwrote the type); typed web pages send `sub_type`; the CTIS mapper reads `properties.kind` for `kubernetes` | #948 |
-| **T2** Re-key consumers | api + web | Exposure inference from the registry's `exposure_default`; asset-group counters by class; scan coverage by (type, sub_type); threat-model applicability keyed by (type, sub_type) with a migration rewriting the alias rows; relationship constraints resolved to (core, sub_type) and enforced for human writes; scanner compatibility from `scannable_by` (advisory); assignment-rule type conditions resolved through the registry; web option lists from the registry; a test that fails on alias names in feature code. Each fix has a probe test that fails on `develop` before it | in review |
-| **T3** Normalise data | api migration | §6.3.8.1. Stored aliases → (core, sub_type); undeclared sub-types → the closed list or attributes; delete the 14 legacy `asset_types` rows; drop the unread `asset_types.module_id`; `CHECK` on `assets.asset_type` | planned |
-| **O6** Enforce compatibility | api | A single-scanner run leaves out the asset-group members whose stored (type, sub_type) its scanner's target types cannot scan (registry `scannable_by` plus active admin target mappings), records the count and a reason per type, and is refused with `NO_COMPATIBLE_TARGETS` (400) when nothing is left; every workflow step is gated again for its own tool when its sensor command is built (both step dispatchers), a step left with nothing fails with `INCOMPATIBLE_TARGETS` and never reaches a sensor. Undecidable assets (unclassified, a type the registry does not know, a tool without platform target types) are dispatched; direct targets typed by the tenant have no stored type and keep their existing checks | in review |
-| **T4a** Boundary fixes | api + registry + migration | `endpoint` → `(host, workstation)`; core types `function`, `artifact_registry`, `web_endpoint`; network identity flags (O2); `web_application` → `(application, website)` (O3); `subdomain` → `(domain, subdomain)` with the PSL-derived sub-type (O1) | next |
+| **T2** Re-key consumers | api + web | Exposure inference from the registry's `exposure_default`; asset-group counters by class; scan coverage by (type, sub_type); threat-model applicability keyed by (type, sub_type) with a migration rewriting the alias rows; relationship constraints resolved to (core, sub_type) and enforced for human writes; scanner compatibility from `scannable_by` (advisory); assignment-rule type conditions resolved through the registry; web option lists from the registry; a test that fails on alias names in feature code. Each fix has a probe test that fails on `develop` before it | #978 |
+| **T3** Normalise data | api migration | §6.3.8.1. Stored aliases → (core, sub_type); undeclared sub-types → the closed list or attributes; the 14 legacy codes → a stored pair with the code kept in `x_native_type`; delete the 14 legacy `asset_types` rows; `CHECK` on `assets.asset_type` (migration 000684). Dropping the unread `asset_types.module_id` is left to a later contract step | in review |
+| **O6** Enforce compatibility | api | A single-scanner run leaves out the asset-group members whose stored (type, sub_type) its scanner's target types cannot scan (registry `scannable_by` plus active admin target mappings), records the count and a reason per type, and is refused with `NO_COMPATIBLE_TARGETS` (400) when nothing is left; every workflow step is gated again for its own tool when its sensor command is built (both step dispatchers), a step left with nothing fails with `INCOMPATIBLE_TARGETS` and never reaches a sensor. Undecidable assets (unclassified, a type the registry does not know, a tool without platform target types) are dispatched; direct targets typed by the tenant have no stored type and keep their existing checks | #992 |
+| **T4a** Boundary fixes | api + registry + migration | `endpoint` → `(host, workstation)`; core types `function`, `artifact_registry`, `web_endpoint`; network identity flags (O2); `web_application` → `(application, website)` (O3); `subdomain` → `(domain, subdomain)` with the PSL-derived sub-type (O1) | O3 in review (migration 000685); the rest next, one PR each |
 | **T4b** `container_image` | api + registry + sensor + ctis/sdk-go | New core type and class `image`; trivy `container_image` → `container_image`; move `container/image` rows; identity = digest; `built_from`/`deployed_to` edges | next |
 | **T5** Executable registry | api | Attribute validation and `x_*` quarantine on every write (warn-only on ingest for one release); identity family / hardware flags / `attr.*` keys read by the correlator (RFC-043 P3 #18); per-type `schema_version`; `x_native_type` kept on `unclassified` | next |
 | **T6** Web from the registry | web | Delete the hand-written type maps, alias branches and slug maps; the asset-group add dialog reads the registry | with RFC-042 slice 6 |
@@ -940,16 +940,24 @@ first; T1 touches the same `POST /assets` path.
 
 1. **Ledger.** `asset_type_reclassifications` records, per moved asset
    and migration, the old (type, sub_type, provider) and the exact
-   property keys it added. It is written in the same statement as each
-   update (`WITH moved AS (UPDATE … RETURNING …) INSERT …`). The down
-   migration replays it in reverse for its own migration only, so it
-   restores exactly even after later edits to other fields.
+   properties it added. It is written in the same transaction as each
+   update (`asset_type_normalise_batch`). The down migration replays it
+   for its own migration only: it restores an asset only while its type
+   is still the one the migration set, removes a property only while it
+   still has the migration's value, and leaves the append-only
+   `reclassified` history rows.
 2. **Mapping from the YAML.** The generated block seeds
    `asset_type_input_map` (old type, old sub-type → new type, new
    sub-type, provider, attributes) and each type's closed `sub_types`
-   into `asset_types`. Nothing is hand-mapped in SQL. An attribute that
-   already has a value is never overwritten; an undeclared sub-type with
-   no mapping moves to `properties.x_native_sub_type`.
+   into `asset_types`. The only hand-written mapping is
+   `asset_type_legacy_codes`, for the 14 codes that are not registry
+   types (`ip` → `ip_address`, `server` → `host`, `credential` →
+   `unclassified` …); a DB test checks that each target is a stored pair,
+   and the code is kept in `properties.x_native_type`. An attribute or a
+   provider that already has a value is never overwritten (a provider
+   implied by a vendor sub-type that contradicts the asset's own provider
+   is dropped and the sub-type kept as `x_native_sub_type`); an undeclared
+   sub-type with no mapping moves to `properties.x_native_sub_type`.
 3. **Batches** of 5,000 by id, idempotent and re-runnable; only rows
    whose (type, sub_type) need a change are touched; `updated_at` is not
    bumped; the class/lens trigger re-derives in the same update.

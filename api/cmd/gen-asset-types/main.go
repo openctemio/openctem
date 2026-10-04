@@ -167,7 +167,11 @@ type config struct {
 	CoreFields       []string     `yaml:"core_fields"`
 	IdentityKinds    []string     `yaml:"identity_kinds"`
 	VirtualTypes     []virtualCfg `yaml:"virtual_types"`
-	Types            []typeCfg    `yaml:"types"`
+	// TypeInputs maps a legacy type name that is still accepted on input,
+	// but is no type of its own, to what it is stored as (RFC-042 §6.3.8:
+	// web_application is stored as (application, website), O3).
+	TypeInputs map[string]inputCfg `yaml:"type_inputs"`
+	Types      []typeCfg           `yaml:"types"`
 }
 
 type idLabel struct {
@@ -862,6 +866,21 @@ func checkTarget(where string, to inputCfg, byType map[string]*typeCfg) error {
 	return nil
 }
 
+// typeInputNames are the `type_inputs` names, in input order.
+func typeInputNames(m *model) []string {
+	isType := make(map[string]bool, len(m.Types))
+	for _, t := range m.Types {
+		isType[t.Type] = true
+	}
+	var out []string
+	for _, in := range m.Inputs {
+		if in.From.SubType == "" && !isType[in.From.Type] {
+			out = append(out, in.From.Type)
+		}
+	}
+	return out
+}
+
 // resolveInputs lists every accepted input that is not stored as such:
 // each alias (keyed by its name, sub_type "") and each legacy sub-type of a
 // core type, in registry order with the sub-type inputs sorted.
@@ -890,6 +909,20 @@ func resolveInputs(cfg *config, byType map[string]*typeCfg) ([]inputOut, error) 
 			}
 			out = append(out, inputOut{From: typeRef{Type: t.Type, SubType: legacy}, To: to})
 		}
+	}
+	for _, name := range sortedKeys(cfg.TypeInputs) {
+		to := cfg.TypeInputs[name]
+		where := fmt.Sprintf("type_inputs %q", name)
+		if _, isType := byType[name]; isType {
+			return nil, fmt.Errorf("%s: is a registry type; a type input names a type that is not one", where)
+		}
+		if to.Type == "" {
+			return nil, fmt.Errorf("%s: needs a type", where)
+		}
+		if err := checkTarget(where, to, byType); err != nil {
+			return nil, err
+		}
+		out = append(out, inputOut{From: typeRef{Type: name}, To: to})
 	}
 	return out, nil
 }
@@ -1059,12 +1092,25 @@ func renderGo(m *model) ([]byte, error) {
 	}
 	w("}\n\n")
 	w("// TypeAliases maps legacy types to their consolidated core type + sub_type,\n")
-	w("// from the `alias_of` entries of the registry. Used by ingest to normalize\n// incoming data.\n")
+	w("// from the `alias_of` entries and the `type_inputs` of the registry. Used by\n// ingest to normalize incoming data.\n")
 	w("var TypeAliases = map[AssetType]struct {\nCoreType AssetType\nSubType  string\n}{\n")
 	for _, t := range m.Types {
 		if t.AliasOf != nil {
 			w("%q: {CoreType: %q, SubType: %q},\n", t.Type, t.AliasOf.Type, t.AliasOf.SubType)
 		}
+	}
+	for _, name := range typeInputNames(m) {
+		for _, in := range m.Inputs {
+			if in.From.Type == name && in.From.SubType == "" {
+				w("%q: {CoreType: %q, SubType: %q},\n", name, in.To.Type, in.To.SubType)
+			}
+		}
+	}
+	w("}\n\n")
+	w("// registryTypeInputs are the legacy type names accepted on input that are no\n")
+	w("// type of their own (`type_inputs`).\nvar registryTypeInputs = []AssetType{")
+	for _, name := range typeInputNames(m) {
+		w("%q, ", name)
 	}
 	w("}\n\n")
 
@@ -1271,6 +1317,20 @@ func renderTS(m *model) string {
 		}
 		w("  %s: { type: '%s', subType: '%s' },\n", t.Type, t.AliasOf.Type, t.AliasOf.SubType)
 	}
+	isType := make(map[string]bool, len(m.Types))
+	for _, t := range m.Types {
+		isType[t.Type] = true
+	}
+	for _, in := range m.Inputs {
+		if in.From.SubType != "" || isType[in.From.Type] {
+			continue // a sub-type input, or an alias written above
+		}
+		if in.To.SubType == "" {
+			w("  %s: { type: '%s' },\n", in.From.Type, in.To.Type)
+			continue
+		}
+		w("  %s: { type: '%s', subType: '%s' },\n", in.From.Type, in.To.Type, in.To.SubType)
+	}
 	w("}\n")
 	return b.String()
 }
@@ -1307,9 +1367,11 @@ func sqlArray(items []string) string {
 }
 
 // renderSQL is the migration block: the class and lens CHECKs, one upsert
-// row per registry type, `other` for every legacy code, and the backfill of
+// row per registry type, `other` for every legacy code, the backfill of
 // assets.asset_class / asset_lens (asset_registry_backfill, created by the
-// migration that introduced the columns).
+// migration that introduced the columns) and the CHECK that assets store only
+// core types (added by the data normalisation, migration 000684: a block may
+// only be emitted after every stored row is a core type).
 func renderSQL(m *model) string {
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format, args...) }
@@ -1376,7 +1438,18 @@ func renderSQL(m *model) string {
 	w("DO $$\nDECLARE\n    cursor_id uuid := NULL;\nBEGIN\n    LOOP\n")
 	w("        SELECT b.last_id INTO cursor_id FROM asset_registry_backfill(cursor_id, 5000) b;\n")
 	w("        EXIT WHEN cursor_id IS NULL;\n    END LOOP;\nEND $$;\n")
-	w("ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;\n")
+	w("ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;\n\n")
+	stored := make([]string, 0, len(m.Types))
+	for _, t := range m.Types {
+		if t.AliasOf == nil {
+			stored = append(stored, t.Type)
+		}
+	}
+	w("-- Only core types are stored (RFC-042 §6.3.8). VALIDATE takes a SHARE\n")
+	w("-- UPDATE EXCLUSIVE lock: writers keep running.\n")
+	w("ALTER TABLE assets DROP CONSTRAINT IF EXISTS chk_assets_core_type;\n")
+	w("ALTER TABLE assets ADD CONSTRAINT chk_assets_core_type CHECK (asset_type IN (%s)) NOT VALID;\n", sqlList(stored))
+	w("ALTER TABLE assets VALIDATE CONSTRAINT chk_assets_core_type;\n")
 	w("%s\n", sqlEndMarker)
 	return b.String()
 }

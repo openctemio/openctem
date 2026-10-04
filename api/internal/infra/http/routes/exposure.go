@@ -238,6 +238,10 @@ func registerVulnerabilityRoutes(
 		// Stats endpoint (must be before /{id} to avoid route conflicts)
 		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead))
 
+		// The FilterDocument form of the list (RFC-048): read-only, same
+		// permission and scope as GET /findings.
+		r.POST("/search", h.SearchFindings, middleware.Require(permission.FindingsRead))
+
 		// Groups + Related CVEs (must be before /{id})
 		if findingActionsHandler != nil {
 			r.GET("/groups", findingActionsHandler.ListFindingGroups, middleware.Require(permission.FindingsRead))
@@ -323,6 +327,11 @@ func registerVulnerabilityRoutes(
 
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete))
+	}, tenantMiddlewares...)
+
+	// The findings filter contract (RFC-048): fields, operators, limits.
+	router.Group("/api/v1/meta/filters", func(r Router) {
+		r.GET("/findings", h.FindingFilterMeta, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 
 	// Asset-scoped finding routes

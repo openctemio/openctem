@@ -130,14 +130,10 @@ export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = 
     description: 'Web, mobile, and API applications',
     types: ['application'],
     items: [
-      { key: 'website', label: 'Websites', url: '/assets/websites', countKey: 'website' },
+      // One web sub-type (RFC-042 §6.3.8 O3): stored as `website`,
+      // labelled "Web applications".
+      { key: 'website', label: 'Web applications', url: '/assets/websites', countKey: 'website' },
       { key: 'api', label: 'APIs', url: '/assets/apis', countKey: 'api' },
-      {
-        key: 'web_application',
-        label: 'Web Applications',
-        url: '/assets/websites?sub_type=web_application',
-        countKey: 'web_application',
-      },
       { key: 'mobile_app', label: 'Mobile Apps', url: '/assets/mobile', countKey: 'mobile_app' },
     ],
   },
