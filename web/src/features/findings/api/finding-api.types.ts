@@ -479,7 +479,6 @@ export interface FindingApiFilters {
   severities?: Severity[]
   statuses?: FindingStatus[]
   sources?: FindingSource[]
-  source_id?: string // Sensor/Source ID that created the finding
   tool_name?: string
   rule_id?: string
   scan_id?: string

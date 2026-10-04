@@ -50,9 +50,9 @@ describe('ExposuresTabs', () => {
 })
 
 describe('findingsHrefForSources', () => {
-  it('uses the sources param /findings reads', () => {
-    expect(findingsHrefForSources(['secret'])).toBe('/findings?sources=secret')
-    expect(findingsHrefForSources(['sca', 'dast'])).toBe('/findings?sources=sca,dast')
+  it('uses the source param /findings reads (the API name)', () => {
+    expect(findingsHrefForSources(['secret'])).toBe('/findings?source=secret')
+    expect(findingsHrefForSources(['sca', 'dast'])).toBe('/findings?source=sca,dast')
   })
 })
 
@@ -81,7 +81,7 @@ describe('ViewFindingsButton', () => {
       />
     )
     const link = screen.getByRole('link', { name: 'View 11 findings' })
-    expect(link).toHaveAttribute('href', '/findings?sources=sast')
+    expect(link).toHaveAttribute('href', '/findings?source=sast')
   })
 
   it('uses the singular for one finding', () => {
