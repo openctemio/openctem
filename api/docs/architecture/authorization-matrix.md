@@ -838,6 +838,17 @@ materialize assets of the group's tenant. Trigger `asset_owners_same_tenant`
 (migration `000455`) refuses a cross-tenant group row from any writer, and the
 same migration removed any such row written before (research doc 15, L-01).
 
+**Every route has a data-scope class** (research doc 15 P1-3,
+`tests/unit/route_scope_classification_test.go`). `dataSurfaceRegistry`
+classifies each route by its longest path prefix: `scoped` (asset-derived rows
+limited to the caller's scope), `partial` (rows scoped, some counts
+tenant-wide), `gap` (asset-derived and not yet scoped; the note cites the
+research finding that tracks it), `separate` (another access model, e.g.
+pentest membership), `config` or `system`. A new route without a class, a
+stale entry, or a gap without a tracking reference fails CI. When you add a
+route, classify it there in the same PR; when you close a gap, move its entry
+to `scoped`.
+
 **Who is restricted:**
 
 | Caller | Sees |
