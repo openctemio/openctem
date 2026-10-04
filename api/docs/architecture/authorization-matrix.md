@@ -131,7 +131,7 @@ Details: [api-keys.md](./api-keys.md).
 |----------|---------------------|
 | `GET /api/v1/assets` | `assets:read` |
 | `GET /api/v1/assets/{id}` | `assets:read` |
-| `POST /api/v1/assets` | `assets:write` |
+| `POST /api/v1/assets` | `assets:write`. A name (or correlated address) that already exists in the organization is a 409 and changes nothing; `details.existing_asset_id` is set only when that asset is in the caller's data scope, otherwise the conflict is generic. Another organization's assets never match. Ingest keeps its own merge path. |
 | `PUT /api/v1/assets/{id}` | `assets:write` |
 | `DELETE /api/v1/assets/{id}` | `assets:delete` + data scope. Refused with 409 (`asset_has_findings`) while the asset has any finding (archive it instead); otherwise a soft delete, audited `asset.deleted` (see [asset-deletion.md](asset-deletion.md)) |
 
