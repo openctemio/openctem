@@ -1,4 +1,4 @@
--- Reverts 000543: endpoint is a core type again. Assets the migration moved
+-- Reverts 000565: endpoint is a core type again. Assets the migration moved
 -- go back to endpoint while they still hold (host, workstation); the
 -- reclassified history rows stay (append-only).
 
@@ -12,13 +12,13 @@ UPDATE assets a
            SELECT e.key FROM jsonb_each(l.added) e WHERE a.properties -> e.key = e.value
        )
   FROM asset_type_reclassifications l
- WHERE l.migration = 543
+ WHERE l.migration = 565
    AND a.id = l.asset_id
    AND a.tenant_id = l.tenant_id
    AND a.asset_type = l.new_type
    AND a.sub_type IS NOT DISTINCT FROM l.new_sub_type;
 ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;
-DELETE FROM asset_type_reclassifications WHERE migration = 543;
+DELETE FROM asset_type_reclassifications WHERE migration = 565;
 
 UPDATE asset_types SET sub_types = array_remove(sub_types, $q$workstation$q$) WHERE code = $q$host$q$;
 UPDATE asset_types SET alias_of = NULL, alias_sub_type = NULL, is_storable = true, class = $q$host$q$, lens = $q$cloud_infra$q$

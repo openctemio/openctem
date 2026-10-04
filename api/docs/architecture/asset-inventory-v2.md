@@ -79,7 +79,7 @@ code keys on the class or on (type, sub_type), never on an alias.
   (`internal/app/scan/type_gate.go`). A run or step with nothing left is
   refused (`NO_COMPATIBLE_TARGETS` / `INCOMPATIBLE_TARGETS`); assets whose
   compatibility cannot be decided are dispatched.
-- An endpoint is a host (migration 000543): `endpoint` is an input alias
+- An endpoint is a host (migration 000565): `endpoint` is an input alias
   of `(host, workstation)`, so a laptop seen by a network scan and by EDR
   is one host family for identity matching; 16 core types.
 - One web sub-type (O3, migration 000491): a web application is stored as

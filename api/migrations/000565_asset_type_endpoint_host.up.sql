@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 000543: an endpoint is a host (RFC-042 §6.3.8 T4a)
+-- Migration 000565: an endpoint is a host (RFC-042 §6.3.8 T4a)
 -- =============================================================================
 -- docs/rfcs/RFC-042-asset-inventory-v2.md. A laptop seen by a network scan
 -- (host) and by EDR (endpoint) could not be matched: identity families keep
@@ -10,7 +10,7 @@
 --    `endpoint` an input alias of (host, workstation) and re-adds
 --    chk_assets_core_type NOT VALID without `endpoint`.
 -- 2. asset_type_normalise_batch (000490) moves every asset stored as
---    `endpoint` to (host, workstation): ledgered (migration 543), one
+--    `endpoint` to (host, workstation): ledgered (migration 565), one
 --    `reclassified` history row each, nothing overwritten, names and ids
 --    unchanged.
 -- 3. The CHECK is validated once no row holds `endpoint`.
@@ -191,12 +191,12 @@ DECLARE
     b         record;
 BEGIN
     LOOP
-        SELECT * INTO b FROM asset_type_normalise_batch(cursor_id, 5000, 543);
+        SELECT * INTO b FROM asset_type_normalise_batch(cursor_id, 5000, 565);
         EXIT WHEN b.last_id IS NULL;
         total := total + b.moved;
         cursor_id := b.last_id;
     END LOOP;
-    RAISE NOTICE '000543: % asset row(s) moved to the stored pairs', total;
+    RAISE NOTICE '000565: % asset row(s) moved to the stored pairs', total;
 END $$;
 ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;
 
