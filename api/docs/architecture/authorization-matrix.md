@@ -937,6 +937,9 @@ results an out-of-scope id is reported exactly like an unknown id.
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
 | `GET /notification-outbox` (+ `/stats`, `/{id}`, retry, delete), `GET /integrations/{id}/notification-events` | **bypass (every finding/asset event, owner emails) to members and viewers via `notifications:read` / `integrations:read`** | channel managers only: `integrations:manage` in addition (owner/admin by default); not scoped, because a channel manager already routes the whole stream (L-03) |
 | `POST /assets/import/nessus-findings` | **bypass (write)**: ran as a trusted server-side sensor, so a member added findings to any host and auto-resolved any tool's findings on it (`?tool=`) | runs with the uploader's rights (`ingest.Options.Actor`): a restricted uploader only adds findings to existing in-scope assets, creates no asset, never auto-resolves; hidden and unknown hosts both count as `assets_skipped_out_of_scope`. An unrestricted uploader auto-resolves only with the default `tenable` tool (any other `?tool=` = partial coverage). Audited `asset.imported` (L-05) |
+| `/credentials/**` (list, identities, identity exposures, related, stats, get, reveal, resolve, accept, false-positive, reactivate) | **bypass**: every leak of the tenant, incl. reveal and state changes, while `/exposures/{id}` hid the same row | leaks on in-scope assets only (`dataScopeCond`); an asset-less leak is in nobody's asset scope (unrestricted callers only); by id: 404. Stats count only those (and only credentials) (L-10) |
+| `GET /vulnerabilities/active`, `/active/stats`, MCP `list_active_cves` | bypass (CVE ids, affected counts) | aggregated only over findings on in-scope assets (L-10) |
+| `GET /groups/{g}/assets` (`groups:read`, a member default) | **bypass** (any team's asset names) | only the group's assets in the caller's scope are listed and counted (L-10) |
 
 ### Deliberately tenant-wide (counts only, no row data)
 
@@ -952,7 +955,7 @@ query; none exposes a row, name, title or id of an out-of-scope object.
 | `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
 | `GET /exposures/stats` | counts by state/severity, MTTR |
-| `GET /findings/analytics/sources`, `/vulnerabilities/active`, `/active/stats` | counts per tool / per CVE |
+| `GET /findings/analytics/sources` | counts per tool |
 | `GET /approvals` `total` | the page is filtered; the total is the tenant's pending count |
 
 **Not covered by data scope** (separate access models): pentest findings and
