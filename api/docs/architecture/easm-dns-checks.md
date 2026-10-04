@@ -108,7 +108,7 @@ A name that stays `unknown` run after run is visible in
 - Per tenant and check: names checked longest ago first, at most
   `EASM_DNS_MAX_NAMES_PER_RUN` (500) per run, a 30-minute budget, a name
   checked within 5/6 of the interval is not due (restarts do not re-check),
-  and a per-tenant advisory lock so two API replicas never run the same
+  and a per-tenant controller lease (`easm_dns:<tenant>:<kind>`, RFC-046 P1.8) so two API replicas never run the same
   tenant's check at once. State: `easm_dns_check_state`.
 
 ## Configuration
