@@ -87,22 +87,51 @@ func (c *SLAEscalationController) SetWarningPublisher(p SLAWarningPublisher) {
 //
 // Status exclusion mirrors the dashboard's closed-category set so an
 // accepted-risk / accepted / duplicate finding is never marked overdue.
+//
+// The status always changes; whether anyone is told is the governing policy's
+// escalation_enabled (column `notify`). The UPDATE repeats the status guard so
+// a row another replica already moved is not returned twice.
 const breachSelectUpdateQuery = `
+	WITH due AS (
+		SELECT f.id, COALESCE(pol.escalation_enabled, TRUE) AS notify
+		FROM findings f` + effectivePolicyJoin + `
+		WHERE f.sla_deadline < NOW()
+		  AND f.sla_deadline IS NOT NULL
+		  AND (f.sla_status IS NULL OR f.sla_status NOT IN ('overdue', 'exceeded', 'not_applicable'))
+		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+	)
 	UPDATE findings SET
 		sla_status = 'overdue',
 		updated_at = NOW()
-	WHERE sla_deadline < NOW()
-	  AND sla_deadline IS NOT NULL
-	  AND (sla_status IS NULL OR sla_status NOT IN ('overdue', 'exceeded', 'not_applicable'))
-	  AND status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
-	RETURNING tenant_id, id, sla_deadline, severity
+	FROM due
+	WHERE findings.id = due.id
+	  AND (findings.sla_status IS NULL OR findings.sla_status NOT IN ('overdue', 'exceeded', 'not_applicable'))
+	RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity, due.notify
 `
+
+// effectivePolicyJoin resolves, per finding, the SLA policy that governs it:
+// the asset's own active policy, else the tenant's active default — the same
+// choice SLA deadline calculation makes (sla_repository.GetByAsset). A finding
+// with no policy keeps the platform defaults (80 % warning, the domain default
+// for a new policy; escalation on).
+const effectivePolicyJoin = `
+		LEFT JOIN LATERAL (
+			SELECT p.warning_threshold_percent, p.escalation_enabled
+			FROM sla_policies p
+			WHERE p.tenant_id = f.tenant_id
+			  AND p.is_active
+			  AND (p.asset_id = f.asset_id OR (p.asset_id IS NULL AND p.is_default))
+			ORDER BY p.asset_id NULLS LAST, p.created_at ASC
+			LIMIT 1
+		) pol ON TRUE`
 
 type breachRow struct {
 	tenantID    string
 	findingID   string
 	slaDeadline time.Time
 	severity    string
+	// notify is the governing policy's escalation_enabled (true without one).
+	notify bool
 }
 
 // SLAEscalationController periodically checks for overdue findings
@@ -196,6 +225,9 @@ func (c *SLAEscalationController) markBreachedTx(ctx context.Context, txPub SLAB
 
 	now := time.Now().UTC()
 	for _, br := range breaches {
+		if !br.notify {
+			continue // escalation is off for this finding's policy
+		}
 		ev, ok := breachEvent(br, now)
 		if !ok {
 			continue
@@ -230,6 +262,9 @@ func (c *SLAEscalationController) markBreachedLegacy(ctx context.Context) (int, 
 	if c.publisher != nil {
 		now := time.Now().UTC()
 		for _, br := range breaches {
+			if !br.notify {
+				continue // escalation is off for this finding's policy
+			}
 			ev, ok := breachEvent(br, now)
 			if !ok {
 				continue
@@ -248,7 +283,7 @@ func (c *SLAEscalationController) scanBreaches(rows *sql.Rows) ([]breachRow, err
 	for rows.Next() {
 		var br breachRow
 		var sev sql.NullString
-		if err := rows.Scan(&br.tenantID, &br.findingID, &br.slaDeadline, &sev); err != nil {
+		if err := rows.Scan(&br.tenantID, &br.findingID, &br.slaDeadline, &sev, &br.notify); err != nil {
 			return nil, fmt.Errorf("scan breach row: %w", err)
 		}
 		br.severity = sev.String
@@ -290,27 +325,38 @@ func breachEvent(br breachRow, now time.Time) (SLABreachEvent, bool) {
 	}, true
 }
 
-// markWarning flags findings approaching their deadline (within 3 days). It is
-// idempotent and advisory — errors are logged, never returned.
-func (c *SLAEscalationController) markWarning(ctx context.Context) {
-	// Mark findings approaching deadline (within 3 days) as warning, RETURNING
-	// the rows that actually transitioned so we can notify once per finding. The
-	// `sla_status IS NULL OR = 'on_track'` guard makes the transition happen
-	// exactly once (a row already in `warning` isn't re-selected), so publishing
-	// per returned row can't duplicate on the next tick.
-	warningQuery := `
-		UPDATE findings SET
-			sla_status = 'warning',
-			updated_at = NOW()
-		WHERE sla_deadline IS NOT NULL
-		  AND sla_deadline > NOW()
-		  AND sla_deadline < NOW() + INTERVAL '3 days'
-		  AND (sla_status IS NULL OR sla_status = 'on_track')
-		  AND status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
-		RETURNING tenant_id, id, sla_deadline, severity
-	`
+// warningSelectUpdateQuery flags open findings once the governing policy's
+// warning_threshold_percent of their remediation window has elapsed, RETURNING
+// the rows that actually transitioned so each is notified once. The window
+// starts at first_detected_at (created_at when unset); for a regression whose
+// deadline was restarted at reopen this makes the window look longer, so the
+// warning comes earlier, never later. The `sla_status IS NULL OR = 'on_track'`
+// guard makes the transition happen exactly once.
+const warningSelectUpdateQuery = `
+	WITH due AS (
+		SELECT f.id, COALESCE(pol.escalation_enabled, TRUE) AS notify
+		FROM findings f` + effectivePolicyJoin + `
+		WHERE f.sla_deadline IS NOT NULL
+		  AND f.sla_deadline > NOW()
+		  AND (f.sla_status IS NULL OR f.sla_status = 'on_track')
+		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+		  AND NOW() >= COALESCE(f.first_detected_at, f.created_at)
+		      + (f.sla_deadline - COALESCE(f.first_detected_at, f.created_at))
+		        * (COALESCE(pol.warning_threshold_percent, 80)::float8 / 100.0)
+	)
+	UPDATE findings SET
+		sla_status = 'warning',
+		updated_at = NOW()
+	FROM due
+	WHERE findings.id = due.id
+	  AND (findings.sla_status IS NULL OR findings.sla_status = 'on_track')
+	RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity, due.notify
+`
 
-	rows, err := c.db.QueryContext(ctx, warningQuery)
+// markWarning flags findings that crossed their policy's warning threshold. It
+// is idempotent and advisory — errors are logged, never returned.
+func (c *SLAEscalationController) markWarning(ctx context.Context) {
+	rows, err := c.db.QueryContext(ctx, warningSelectUpdateQuery)
 	if err != nil {
 		c.logger.Warn("sla warning update failed", "error", err)
 		return
@@ -331,6 +377,9 @@ func (c *SLAEscalationController) markWarning(ctx context.Context) {
 	}
 	now := time.Now()
 	for _, w := range warned {
+		if !w.notify {
+			continue // escalation is off for this finding's policy
+		}
 		ev, ok := warningEvent(w, now)
 		if !ok {
 			continue
