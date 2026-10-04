@@ -58,7 +58,40 @@ integration metadata.tenable_sync (cursor, counts, license), status connected
 - Absence never resolves: sync reports are `incremental` and their command type
   is not `scan`.
 
+## Scan launch (P1)
+
+A scan whose `scanner_name` is `tenable_sc` is an ordinary OpenCTEM scan
+(Scan → Run, schedules, retries, run history), with `scanner_config`
+`{integration_id, policy_id, repository_id, zone_id?, max_scan_seconds?}`.
+
+- **Create/update** (`scan.Service` + `tenablesc.Service.ValidateScanConfig`):
+  the integration must be the tenant's own enabled connector on one of the
+  tenant's own sensors; when the sensor reported a catalog (the
+  `connector_sync` result), the policy, scan repository and zone must be in
+  it. The sensor's allow-list is enforced again on the sensor.
+- **Run** (`scan.Service.triggerConnectorScan`): targets are resolved as for
+  any scan (group members, exclusions, attribution, the actor's act scope;
+  a scheduled run acts as the scan's creator), then pass the active-probe
+  gate once more (`ResolveDispatchTargets`, act scope on). One
+  `connector_scan` command, pinned to the connector's sensor, carries the
+  allowed targets and the run's pipeline keys, so the run completes or fails
+  with the command like any single scan. Expiry: `max_scan_seconds` + 2 h.
+- **Results**: bound to the command and its targets; `coverage_type: full`
+  only when the Tenable.sc scan completed and imported. Coverage-scoped
+  auto-resolve treats a completed full `connector_scan` like a scan command
+  (same tool, covered assets only); a `connector_sync` never resolves by
+  absence.
+- **Sensor**: openctemio/sensor#131 creates the scan definition, launches it,
+  polls `scanResult`, stops it on cancel or timeout, pulls the individual
+  result and deletes the definition it created.
+
+## Audit
+
+Source-asserted resolve writes one audit entry per report:
+`ingest.source_resolved` (enforce) or `ingest.source_resolve_dry_run`
+(dry run), with the command id, the count and up to 200 finding ids.
+
 ## Not built yet
 
-`connector_scan` (RFC-047 P1), coverage on the connector (P2), and the web
-integration page (still hidden until the connector ships end to end).
+Coverage on the connector (P2) and the web integration page (still hidden
+until the connector ships end to end).
