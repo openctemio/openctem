@@ -157,12 +157,15 @@ type SuggestionRepository interface {
 	Create(ctx context.Context, s *Suggestion) error
 	CreateBatch(ctx context.Context, suggestions []*Suggestion) (int, error)
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*Suggestion, error)
-	ListPending(ctx context.Context, tenantID shared.ID, search string, page pagination.Pagination) (pagination.Result[*Suggestion], error)
+	// ListPending, CountPending and ApproveAll take the caller's data scope:
+	// a non-nil scope keeps only suggestions whose source AND target asset
+	// are in it (nil = every suggestion of the tenant).
+	ListPending(ctx context.Context, tenantID shared.ID, search string, page pagination.Pagination, scope *shared.DataScope) (pagination.Result[*Suggestion], error)
 	UpdateStatus(ctx context.Context, s *Suggestion) error
-	CountPending(ctx context.Context, tenantID shared.ID) (int64, error)
+	CountPending(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error)
 	DeleteByAssetID(ctx context.Context, tenantID, assetID shared.ID) error
 	DeletePending(ctx context.Context, tenantID shared.ID) error
-	ApproveAll(ctx context.Context, tenantID, reviewerID shared.ID) ([]*Suggestion, error)
+	ApproveAll(ctx context.Context, tenantID, reviewerID shared.ID, scope *shared.DataScope) ([]*Suggestion, error)
 	UpdateRelationshipType(ctx context.Context, tenantID, id shared.ID, relType string) error
 }
 

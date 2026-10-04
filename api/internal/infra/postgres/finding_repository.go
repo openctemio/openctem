@@ -3197,7 +3197,8 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	}
 
 	// RelatedToUserID: "assigned to / owned by me" — a finding is the user's when
-	// they are the direct assignee, OR they own its asset (assets.owner_id), OR
+	// they are the direct assignee, OR they are a primary or secondary owner of
+	// its asset (asset_owners, the one owner model), OR
 	// they are a member of a group the finding is assigned to. Same relatedness
 	// predicate the finding-groups endpoint uses (finding_group_repository), now
 	// available on the flat list so a scoped user can pull up "my work". Tenant
@@ -3210,7 +3211,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		argIndex += 2
 		conditions = append(conditions, fmt.Sprintf(`(
 			assigned_to = $%[1]d
-			OR asset_id IN (SELECT id FROM assets WHERE tenant_id = $%[2]d AND owner_id = $%[1]d)
+			OR asset_id IN `+assetsOwnedByUserSQL("$%[1]d", "$%[2]d")+`
 			OR id IN (
 				SELECT fga.finding_id
 				FROM finding_group_assignments fga

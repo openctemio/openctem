@@ -11555,6 +11555,10 @@ definitions:
         type: string
       next_run_at:
         type: string
+      partial_runs:
+        description: 'PartialRuns: runs that kept results but lost some work (RFC-046
+          D5).'
+        type: integer
       pipeline_id:
         type: string
       profile_id:
