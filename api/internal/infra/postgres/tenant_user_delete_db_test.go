@@ -44,6 +44,7 @@ var auditTables = map[string]bool{
 	"asset_state_history":      true,
 	"exposure_state_history":   true,
 	"finding_activities":       true,
+	"permission_set_versions":  true,
 	"suppression_rule_audit":   true,
 	"finding_status_approvals": true,
 }

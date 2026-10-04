@@ -1154,11 +1154,13 @@ Tenable.sc's RBAC.
 
    Groups (teams) carry **only data scope** (which assets their members see),
    never permissions. Group permission sets and per-group permission overrides
-   were removed (migration 000465): they were never read by enforcement, yet
-   the UI said members inherit them. Their rows were archived in
-   `access_control_removed_archive` (restored by the down migration), the
-   `/api/v1/permission-sets` and `/api/v1/groups/{id}/permission-sets` routes
-   are gone, and `team:permission_sets:*` left the catalog.
+   were removed: they were never read by enforcement, yet the UI said members
+   inherit them. The `/api/v1/permission-sets` and
+   `/api/v1/groups/{id}/permission-sets` routes are gone, no code reads or
+   writes their tables, and `team:permission_sets:*` left the catalog
+   (migration 000465 archives those catalog rows and role grants in
+   `access_control_removed_archive`). The tables themselves are dropped by a
+   later contract migration, after a release (expand-contract).
    `GET /api/v1/me/permissions` now returns the caller's role-derived
    permissions (it used to return the group-derived set).
 
