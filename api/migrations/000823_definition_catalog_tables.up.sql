@@ -70,6 +70,29 @@ CREATE INDEX IF NOT EXISTS idx_definition_identifiers_definition
 COMMENT ON TABLE definition_identifiers IS
     'Every identifier of a definition (RFC-044 §5.2; RFC-043 vulnerability_aliases). tenant_id NULL = global identifier.';
 
+-- Every definition owns its primary identifier from the moment it exists,
+-- whichever code inserts it (the deployed ingest writes catalog rows without
+-- knowing this table exists). Once per statement: a batch insert of 500 CVEs
+-- is one INSERT here. Existing rows are backfilled by 000824.
+CREATE OR REPLACE FUNCTION vulnerabilities_primary_identifier() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO definition_identifiers
+        (namespace, external_id, tenant_id, scope_tenant_id, definition_id, is_primary, asserted_by)
+    SELECT n.namespace, n.external_id, n.tenant_id, n.scope_tenant_id, n.id, TRUE, n.origin
+    FROM new_definitions n
+    WHERE n.external_id IS NOT NULL
+    ON CONFLICT DO NOTHING;
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trigger_vulnerabilities_primary_identifier ON vulnerabilities;
+CREATE TRIGGER trigger_vulnerabilities_primary_identifier
+    AFTER INSERT ON vulnerabilities
+    REFERENCING NEW TABLE AS new_definitions
+    FOR EACH STATEMENT EXECUTE FUNCTION vulnerabilities_primary_identifier();
+
 -- §5.3: different issues that are connected. upstream (a distro advisory
 -- bundles a library CVE), related, detects (a rule/plugin/template detects a
 -- vulnerability). tenant_id NULL = a shared edge between global definitions;

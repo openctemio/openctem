@@ -244,6 +244,38 @@ func TestDefinitionSchema_LegacyCVEInsertIsACompleteDefinition(t *testing.T) {
 		scope != nilScope || tenant.Valid {
 		t.Errorf("legacy insert: %s/%s kind=%s origin=%s lifecycle=%s scope=%s tenant=%v", ns, ext, kind, origin, lifecycle, scope, tenant)
 	}
+
+	// It owns its primary identifier, global, asserted by its origin.
+	var identNS, identExt, assertedBy string
+	var identTenant sql.NullString
+	if err := db.QueryRowContext(ctx, `
+		SELECT di.namespace, di.external_id, di.tenant_id, di.asserted_by
+		FROM definition_identifiers di JOIN vulnerabilities v ON v.id = di.definition_id
+		WHERE v.cve_id = $1 AND di.is_primary`, cve).Scan(&identNS, &identExt, &identTenant, &assertedBy); err != nil {
+		t.Fatalf("primary identifier of a legacy insert: %v", err)
+	}
+	if identNS != "CVE" || identExt != cve || identTenant.Valid || assertedBy != "report" {
+		t.Errorf("primary identifier %s/%s tenant=%v asserted_by=%s", identNS, identExt, identTenant, assertedBy)
+	}
+}
+
+func TestDefinitionSchema_TenantDefinitionOwnsATenantIdentifier(t *testing.T) {
+	db := catalogTestDB(t)
+	ctx := context.Background()
+	tA := seedTestTenant(ctx, t, db)
+	def := seedTenantDefinition(ctx, t, db, tA, "a-panel")
+
+	var tenant sql.NullString
+	var n int
+	if err := db.QueryRowContext(ctx, `
+		SELECT max(tenant_id::text), count(*) FROM definition_identifiers
+		WHERE definition_id = $1 AND is_primary AND namespace = 'NUCLEI' AND external_id = 'a-panel'`, def).
+		Scan(&tenant, &n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || tenant.String != tA.String() {
+		t.Errorf("tenant definition: %d primary identifiers, tenant %v; want 1 in %s", n, tenant, tA)
+	}
 }
 
 func TestDefinitionSchema_ReportsCannotWriteSharedContent(t *testing.T) {
