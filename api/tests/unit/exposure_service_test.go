@@ -362,6 +362,7 @@ func TestExposureService_CreateExposure_WithAssetID(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
+	svc.SetDataScope(tenantAssetEnforcer(tenantAssets{assetID: tenantID}))
 
 	input := validCreateExposureInput(tenantID.String())
 	input.AssetID = assetID.String()
@@ -802,6 +803,7 @@ func TestExposureService_IngestExposure_WithAssetID(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
+	svc.SetDataScope(tenantAssetEnforcer(tenantAssets{assetID: tenantID}))
 
 	input := validCreateExposureInput(tenantID.String())
 	input.AssetID = assetID.String()
@@ -1068,6 +1070,77 @@ func TestExposureService_BulkIngestExposures_WithInvalidAssetID(t *testing.T) {
 	if len(events) != 1 {
 		t.Errorf("expected 1 valid event, got %d", len(events))
 	}
+}
+
+// An exposure asset_id must be a live asset of the tenant (research doc 21b,
+// C3): another tenant's or an unknown id is refused with one generic error on
+// create and ingest, and dropped with one generic reason in a bulk ingest.
+// Nothing is written for a refused id; without an enforcer every asset id is
+// refused (fail closed).
+func TestExposureService_AssetRefRefused(t *testing.T) {
+	tenantA, tenantB := shared.NewID(), shared.NewID()
+	own, foreign := shared.NewID(), shared.NewID()
+	owners := tenantAssets{own: tenantA, foreign: tenantB}
+
+	for name, assetID := range map[string]shared.ID{"foreign": foreign, "unknown": shared.NewID()} {
+		t.Run("create "+name, func(t *testing.T) {
+			svc, repo, _ := newExposureTestService()
+			svc.SetDataScope(tenantAssetEnforcer(owners))
+			in := validCreateExposureInput(tenantA.String())
+			in.AssetID = assetID.String()
+			if _, err := svc.CreateExposure(context.Background(), in); !errors.Is(err, app.ErrExposureAssetNotFound) {
+				t.Fatalf("err = %v, want ErrExposureAssetNotFound", err)
+			}
+			if _, err := svc.IngestExposure(context.Background(), in); !errors.Is(err, app.ErrExposureAssetNotFound) {
+				t.Fatalf("ingest err = %v, want ErrExposureAssetNotFound", err)
+			}
+			if repo.createCalls != 0 || repo.upsertCalls != 0 {
+				t.Errorf("writes: create=%d upsert=%d, want none", repo.createCalls, repo.upsertCalls)
+			}
+		})
+	}
+
+	t.Run("no enforcer", func(t *testing.T) {
+		svc, repo, _ := newExposureTestService()
+		in := validCreateExposureInput(tenantA.String())
+		in.AssetID = own.String()
+		if _, err := svc.CreateExposure(context.Background(), in); !errors.Is(err, app.ErrExposureAssetNotFound) {
+			t.Fatalf("err = %v, want ErrExposureAssetNotFound", err)
+		}
+		if repo.createCalls != 0 {
+			t.Errorf("%d create calls, want 0", repo.createCalls)
+		}
+	})
+
+	t.Run("bulk", func(t *testing.T) {
+		svc, _, _ := newExposureTestService()
+		svc.SetDataScope(tenantAssetEnforcer(owners))
+		mk := func(asset shared.ID, title string) app.CreateExposureInput {
+			in := validCreateExposureInput(tenantA.String())
+			in.Title = title
+			if !asset.IsZero() {
+				in.AssetID = asset.String()
+			}
+			return in
+		}
+		res, err := svc.BulkIngestExposuresReport(context.Background(), []app.CreateExposureInput{
+			mk(own, "own"), mk(foreign, "foreign"), mk(shared.NewID(), "unknown"), mk(shared.ID{}, "asset-less"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Events) != 2 {
+			t.Errorf("%d events ingested, want 2 (own asset, asset-less)", len(res.Events))
+		}
+		if len(res.Failures) != 2 {
+			t.Fatalf("failures = %+v, want 2", res.Failures)
+		}
+		for _, f := range res.Failures {
+			if f.Reason != "asset not found" {
+				t.Errorf("failure %d reason %q, want the generic %q", f.Index, f.Reason, "asset not found")
+			}
+		}
+	})
 }
 
 // =============================================================================
