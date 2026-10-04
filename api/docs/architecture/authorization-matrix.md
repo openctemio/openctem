@@ -467,6 +467,7 @@ These routes require the tenant ID in the URL path and use database-based member
 | `PATCH /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
 | `POST /api/v1/tenants/{tenant}/members/{id}/suspend` · `/reactivate` | Team admin+; **owner only when the target is an administrator** |
 | `DELETE /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
+| `POST /api/v1/tenants/{tenant}/members/{id}/reset-2fa` | Team admin+; **owner only when the target is an owner or administrator**; never the caller themself; the caller needs the same authority in **every other organization** the target belongs to (the factor is account-wide). See `user-two-factor-authentication.md` › Recovery |
 | `POST /api/v1/tenants/{tenant}/invitations` | Team admin+ |
 | `DELETE /api/v1/tenants/{tenant}/invitations/{id}` | Team admin+ |
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
@@ -998,6 +999,17 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `/credentials/**` (list, identities, identity exposures, related, stats, get, reveal, resolve, accept, false-positive, reactivate) | **bypass**: every leak of the tenant, incl. reveal and state changes, while `/exposures/{id}` hid the same row | leaks on in-scope assets only (`dataScopeCond`); an asset-less leak is in nobody's asset scope (unrestricted callers only); by id: 404. Stats count only those (and only credentials) (L-10) |
 | `GET /vulnerabilities/active`, `/active/stats`, MCP `list_active_cves` | bypass (CVE ids, affected counts) | aggregated only over findings on in-scope assets (L-10) |
 | `GET /groups/{g}/assets` (`groups:read`, a member default) | **bypass** (any team's asset names) | only the group's assets in the caller's scope are listed and counted (L-10) |
+
+### Scheduled reports render under their creator's scope
+
+Owner decision D6 (research doc 15 P1-4): a scheduled report shows what its
+creator can see, decided at each run (`datascope.Enforcer.ForUser`, the same
+admin, full-data and policy rules as a request). A restricted creator's report
+counts only their in-scope assets and findings (`FindingStatsFilter.ScopeStrict`
+drops the fail-open "no scope row means everything", and the trend window takes
+the same scope). A schedule with no recorded creator, or whose creator can no
+longer be resolved (left the organization), is not rendered or sent
+(`failed`).
 
 ### Deliberately tenant-wide (counts only, no row data)
 

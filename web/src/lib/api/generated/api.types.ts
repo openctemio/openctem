@@ -12794,6 +12794,30 @@ export interface paths {
           file_path?: string
           /** @description me: assigned to, owned by or group-assigned to the caller */
           related_to?: string
+          /** @description Minimum CVSS score */
+          cvss_score_gte?: number
+          /** @description Maximum CVSS score */
+          cvss_score_lte?: number
+          /** @description First seen at or after (RFC 3339, YYYY-MM-DD or -P30D) */
+          first_detected_at_gte?: string
+          /** @description Last seen at or after (RFC 3339, YYYY-MM-DD or -P30D) */
+          last_seen_at_gte?: string
+          /** @description Last seen before */
+          last_seen_at_lt?: string
+          /** @description Ports the finding was observed on */
+          network_port?: number[]
+          /** @description tcp, udp, sctp */
+          network_transport?: string[]
+          /** @description Services on the port (https, ssh, ...) */
+          network_service?: string[]
+          /** @description Assignee user IDs */
+          assigned_to?: string[]
+          /** @description true: unassigned; false: assigned */
+          assigned_to_null?: boolean
+          /** @description The asset's own criticality (critical, high, medium, low) */
+          asset_criticality?: string[]
+          /** @description A public exploit is known (scanner or CVE catalog) */
+          exploit_available?: boolean
           /** @description Created at or after (RFC 3339, YYYY-MM-DD or -P30D) */
           created_at_gte?: string
           /** @description Free text over title, description and file path */
@@ -17925,6 +17949,77 @@ export interface paths {
     put?: never
     post?: never
     delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/members/{member_id}/mfa': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Reset a member's two-factor authentication
+     * @description An owner or administrator turns off the second factor of a member of their organization who lost their authenticator and recovery codes. The member is signed out everywhere and e-mailed. An owner or administrator target needs the owner; a member who also belongs to another organization needs the same authority there; nobody resets their own factor here.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Membership ID */
+          member_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     options?: never
     head?: never
     patch?: never
@@ -35391,9 +35486,14 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      /**
+       * @description ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+       *     evaluated in timezone; at most every 15 minutes.
+       */
+      schedule_rrule?: string
       schedule_time?: string
       /** @enum {string} */
-      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab'
+      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab' | 'rrule'
       /** @enum {string} */
       sensor_preference?: 'auto' | 'tenant' | 'platform'
       tags?: string[]
@@ -37570,6 +37670,7 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      schedule_rrule?: string
       schedule_time?: string
       schedule_timezone?: string
       schedule_type?: string
@@ -38947,9 +39048,14 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      /**
+       * @description ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+       *     evaluated in timezone; at most every 15 minutes.
+       */
+      schedule_rrule?: string
       schedule_time?: string
       /** @enum {string} */
-      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab'
+      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab' | 'rrule'
       /** @enum {string} */
       sensor_preference?: 'auto' | 'tenant' | 'platform'
       tags?: string[]
