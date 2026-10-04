@@ -230,17 +230,121 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // --- Related CVEs ---
 
 // GetRelatedCVEs handles GET /api/v1/findings/related-cves/{cveId}
+// @Summary      Related CVEs
+// @Description  CVEs sharing a component with the given CVE, among the open findings the filter selects
+// @Description  (the params of GET /findings, RFC-048). The source CVE's components come only from findings
+// @Description  the caller may see.
+// @Tags         Findings
+// @Produce      json
+// @Security     BearerAuth
+// @Param        cveId  path  string  true  "CVE id"
+// filterspec-params: findings GET /findings/related-cves/{cveId}
+// @Param  id  query  []string  false  "id: any of (comma list)"  collectionFormat(csv)
+// @Param  id_not  query  []string  false  "id: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_id  query  []string  false  "asset id: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_id_not  query  []string  false  "asset id: none of (comma list)"  collectionFormat(csv)
+// @Param  branch_id  query  []string  false  "branch id: any of (comma list)"  collectionFormat(csv)
+// @Param  open_on_branch_id  query  []string  false  "open on branch id: any of (comma list)"  collectionFormat(csv)
+// @Param  fixed_on_branch_id  query  []string  false  "fixed on branch id: any of (comma list)"  collectionFormat(csv)
+// @Param  component_id  query  []string  false  "component id: any of (comma list)"  collectionFormat(csv)
+// @Param  component_id_not  query  []string  false  "component id: none of (comma list)"  collectionFormat(csv)
+// @Param  vulnerability_id  query  []string  false  "vulnerability id: any of (comma list)"  collectionFormat(csv)
+// @Param  vulnerability_id_not  query  []string  false  "vulnerability id: none of (comma list)"  collectionFormat(csv)
+// @Param  severity  query  []string  false  "severity: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, validated_fixed, resolved, false_positive, accepted, duplicate, draft, in_review, remediation, retest, verified, accepted_risk)
+// @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, validated_fixed, resolved, false_positive, accepted, duplicate, draft, in_review, remediation, retest, verified, accepted_risk)
+// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(sast, dast, sca, secret, iac, container, cspm, easm, va, rasp, waf, siem, manual, pentest, bug_bounty, red_team, external, threat_intel, vendor, sarif, sca_tool)
+// @Param  source_not  query  []string  false  "source: none of (comma list)"  collectionFormat(csv)  Enums(sast, dast, sca, secret, iac, container, cspm, easm, va, rasp, waf, siem, manual, pentest, bug_bounty, red_team, external, threat_intel, vendor, sarif, sca_tool)
+// @Param  sla_status  query  []string  false  "sla status: any of (comma list)"  collectionFormat(csv)  Enums(on_track, warning, overdue, exceeded, not_applicable)
+// @Param  sla_status_not  query  []string  false  "sla status: none of (comma list)"  collectionFormat(csv)  Enums(on_track, warning, overdue, exceeded, not_applicable)
+// @Param  priority_class  query  []string  false  "priority class: any of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
+// @Param  priority_class_not  query  []string  false  "priority class: none of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
+// @Param  cve_id  query  []string  false  "cve id: any of (comma list)"  collectionFormat(csv)
+// @Param  cve_id_not  query  []string  false  "cve id: none of (comma list)"  collectionFormat(csv)
+// @Param  family  query  []string  false  "family: any of (comma list)"  collectionFormat(csv)
+// @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
+// @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3)
+// @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3)
+// @Param  is_in_kev  query  boolean  false  "is in kev equals"
+// @Param  is_reachable  query  boolean  false  "is reachable equals"
+// @Param  epss_score_gte  query  number  false  "epss score at least"
+// @Param  epss_score_lte  query  number  false  "epss score at most"
+// @Param  epss_score_gt  query  number  false  "epss score greater than"
+// @Param  epss_score_lt  query  number  false  "epss score less than"
+// @Param  tool_name  query  []string  false  "tool name: any of (comma list)"  collectionFormat(csv)
+// @Param  tool_name_not  query  []string  false  "tool name: none of (comma list)"  collectionFormat(csv)
+// @Param  rule_id  query  []string  false  "rule id: any of (comma list)"  collectionFormat(csv)
+// @Param  rule_id_not  query  []string  false  "rule id: none of (comma list)"  collectionFormat(csv)
+// @Param  scan_id  query  []string  false  "scan id: any of (comma list)"  collectionFormat(csv)
+// @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
+// @Param  file_path  query  string  false  "file path contains"
+// @Param  file_path_contains  query  string  false  "file path contains"
+// @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
+// @Param  related_to  query  string  false  "related to equals"  Enums(me)
+// @Param  cvss_score_gte  query  number  false  "cvss score at least"
+// @Param  cvss_score_lte  query  number  false  "cvss score at most"
+// @Param  cvss_score_gt  query  number  false  "cvss score greater than"
+// @Param  cvss_score_lt  query  number  false  "cvss score less than"
+// @Param  first_detected_at_gte  query  string  false  "first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  first_detected_at_lte  query  string  false  "first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  first_detected_at_gt  query  string  false  "first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  first_detected_at_lt  query  string  false  "first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  last_seen_at_gte  query  string  false  "last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  last_seen_at_lte  query  string  false  "last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  last_seen_at_gt  query  string  false  "last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  last_seen_at_lt  query  string  false  "last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  network_port  query  []integer  false  "network port: any of (comma list)"  collectionFormat(csv)
+// @Param  network_port_not  query  []integer  false  "network port: none of (comma list)"  collectionFormat(csv)
+// @Param  network_port_gte  query  integer  false  "network port at least"
+// @Param  network_port_lte  query  integer  false  "network port at most"
+// @Param  network_transport  query  []string  false  "network transport: any of (comma list)"  collectionFormat(csv)  Enums(tcp, udp, sctp)
+// @Param  network_transport_not  query  []string  false  "network transport: none of (comma list)"  collectionFormat(csv)  Enums(tcp, udp, sctp)
+// @Param  network_service  query  []string  false  "network service: any of (comma list)"  collectionFormat(csv)
+// @Param  network_service_not  query  []string  false  "network service: none of (comma list)"  collectionFormat(csv)
+// @Param  assigned_to  query  []string  false  "assigned to: any of (comma list)"  collectionFormat(csv)
+// @Param  assigned_to_null  query  boolean  false  "assigned to is unset (true) or set (false)"
+// @Param  assigned_to_not  query  []string  false  "assigned to: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
+// @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
+// @Param  exploit_available  query  boolean  false  "exploit available equals"
+// @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  created_at_gt  query  string  false  "created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  created_at_lt  query  string  false  "created at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  updated_at_gte  query  string  false  "updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  updated_at_lte  query  string  false  "updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// end filterspec-params
+// @Param        q      query  string  false  "Free text"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  map[string]interface{}  "INVALID_FILTER"
+// @Router       /findings/related-cves/{cveId} [get]
 func (h *FindingActionsHandler) GetRelatedCVEs(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
 	cveID := chi.URLParam(r, "cveId")
 	if cveID == "" {
 		apierror.BadRequest("cveId is required").WriteJSON(w)
 		return
 	}
-
-	filter := h.buildFilter(r)
-	result, err := h.service.GetRelatedCVEs(r.Context(), tenantID, cveID, filter)
+	route := h.findingGroupsRoute()
+	route.Name = "GET /findings/related-cves"
+	route.Options.Extra = nil
+	q := r.URL.Query()
+	if !rewriteBranchStatus(w, q) {
+		return
+	}
+	spec, ok := route.ParseValues(w, r, q)
+	if !ok {
+		return
+	}
+	result, err := h.service.GetRelatedCVEsBySpec(r.Context(), filterCaller(r), cveID, spec)
 	if err != nil {
+		if _, isFilter := filterspec.AsError(err); isFilter {
+			filterquery.WriteError(w, err)
+			return
+		}
 		h.handleError(w, err)
 		return
 	}
@@ -555,67 +659,6 @@ func (h *FindingActionsHandler) AssignToOwners(w http.ResponseWriter, r *http.Re
 }
 
 // --- Helpers ---
-
-func (h *FindingActionsHandler) buildFilter(r *http.Request) vulnerability.FindingFilter {
-	filter := vulnerability.NewFindingFilter()
-	q := r.URL.Query()
-
-	if sevs := q.Get("severities"); sevs != "" {
-		for _, s := range splitCSV(sevs) {
-			sev, err := vulnerability.ParseSeverity(s)
-			if err == nil {
-				filter.Severities = append(filter.Severities, sev)
-			}
-		}
-	}
-
-	if stats := q.Get("statuses"); stats != "" {
-		for _, s := range splitCSV(stats) {
-			st, err := vulnerability.ParseFindingStatus(s)
-			if err == nil {
-				filter.Statuses = append(filter.Statuses, st)
-			}
-		}
-	}
-
-	if sources := q.Get("sources"); sources != "" {
-		for _, s := range splitCSV(sources) {
-			src, err := vulnerability.ParseFindingSource(s)
-			if err == nil {
-				filter.Sources = append(filter.Sources, src)
-			}
-		}
-	}
-
-	if cves := q.Get("cve_ids"); cves != "" {
-		cveList := splitCSV(cves)
-		if len(cveList) > 100 {
-			cveList = cveList[:100] // Silently cap at 100
-		}
-		filter.CVEIDs = cveList
-	}
-
-	if tags := q.Get("asset_tags"); tags != "" {
-		tagList := splitCSV(tags)
-		if len(tagList) > 100 {
-			tagList = tagList[:100]
-		}
-		filter.AssetTags = tagList
-	}
-
-	// "Show only mine": restrict groups to findings related to the current user
-	// (direct assignee, member of an assigned group, or asset owner). Resolve the
-	// authenticated local user from context; skip silently if unresolved so an
-	// unauthenticated/absent user never widens the result set.
-	if mine := parseQueryBoolPtr(q.Get("assigned_to_me")); mine != nil && *mine {
-		if uid := middleware.GetLocalUserID(r.Context()); !uid.IsZero() {
-			userID := uid
-			filter.RelatedToUserID = &userID
-		}
-	}
-
-	return filter
-}
 
 func (h *FindingActionsHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
