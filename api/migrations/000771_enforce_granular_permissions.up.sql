@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS granular_permission_backfill (
     PRIMARY KEY (role_id, permission_id)
 );
 COMMENT ON TABLE granular_permission_backfill IS
-    'Role grants added by migration 000677; its down migration removes exactly these';
+    'Role grants added by migration 000771; its down migration removes exactly these';
 
 WITH ins AS (
     INSERT INTO role_permissions (role_id, permission_id)
