@@ -12,7 +12,8 @@
  */
 
 import { useState } from 'react'
-import { Activity, Building2, ChevronRight, Gavel, Globe } from 'lucide-react'
+import Link from 'next/link'
+import { Activity, Building2, ChevronRight, Gavel, Globe, ShieldQuestion } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -21,6 +22,18 @@ import { ScoreBreakdown } from './priority-explanation-card'
 import { useFindingPriorityExplanation } from '../../api/use-finding-priority-explanation'
 import { PRIORITY_CLASS_CONFIG, type FindingDetail } from '../../types'
 import { riskSignals, type RiskSignal, type SignalGroup } from '../../lib/finding-signals'
+import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
+
+/**
+ * The API caps a finding at P2 while its asset's attribution is not
+ * confirmed (RFC-036 §6.8) and says so in the reason with this phrase
+ * (vulnerability.AttributionCapReason).
+ */
+export const ATTRIBUTION_CAP_PHRASE = 'capped at P2 until ownership is confirmed'
+
+export function isAttributionCapped(reason: string | null | undefined): boolean {
+  return !!reason && reason.includes(ATTRIBUTION_CAP_PHRASE)
+}
 
 const GROUPS: { key: SignalGroup; label: string; icon: React.ElementType }[] = [
   { key: 'exploitation', label: 'Exploitation', icon: Activity },
@@ -124,6 +137,27 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
         </div>
       )}
       {reason && <p className="mt-1.5 text-sm text-muted-foreground">{sentence(reason)}.</p>}
+      {isAttributionCapped(reason) && (
+        <div
+          role="note"
+          aria-label="Ownership not confirmed"
+          className="mt-2 flex flex-wrap items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-sm"
+        >
+          <ShieldQuestion className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+          <span className="min-w-0 flex-1">
+            This asset has not been confirmed as your organisation&apos;s, so the finding is held at
+            P2.
+          </span>
+          {isLinkableAssetId(finding.assets[0]?.id) && (
+            <Link
+              href={assetDetailHref(finding.assets[0].id)}
+              className="font-medium underline underline-offset-2"
+            >
+              Verify ownership
+            </Link>
+          )}
+        </div>
+      )}
 
       {signals.length > 0 &&
         (compact ? (
