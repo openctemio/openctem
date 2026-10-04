@@ -386,6 +386,25 @@ func registerEASMRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerEASMSeedRoutes registers the EASM seeds (RFC-036 §6.3, §6.10):
+// scope permissions, like the other boundary settings, behind the
+// attack_surface module.
+func registerEASMSeedRoutes(
+	router Router,
+	h *handler.EASMSeedHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/seeds", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
+		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.ScopeWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
+	}, tenantMiddlewares...)
+}
+
 // registerBranchRoutes registers branch management endpoints.
 // Branches are repository-scoped, tenant from JWT token.
 func registerBranchRoutes(
