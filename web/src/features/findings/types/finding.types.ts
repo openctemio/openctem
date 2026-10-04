@@ -88,9 +88,9 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
   not_observed: {
     label: 'Not Observed',
-    color: 'border-zinc-500/50',
-    bgColor: 'bg-zinc-500/20',
-    textColor: 'text-zinc-400',
+    color: 'border-zinc-500/50', // palette-ok: status scheme, like every status here
+    bgColor: 'bg-zinc-500/20', // palette-ok: status scheme
+    textColor: 'text-zinc-400', // palette-ok: status scheme
     icon: 'eye-off',
     category: 'in_progress',
   },
