@@ -84,7 +84,7 @@ func (m *mockAccessControlRepo) CountAssetOwners(_ context.Context, _ shared.ID)
 func (m *mockAccessControlRepo) CountAssetsByGroups(_ context.Context, _ []shared.ID) (map[shared.ID]int, error) {
 	return nil, nil
 }
-func (m *mockAccessControlRepo) ListAssetOwnersByGroupWithDetails(_ context.Context, _ shared.ID, _, _ int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
+func (m *mockAccessControlRepo) ListAssetOwnersByGroupWithDetails(_ context.Context, _ shared.ID, _ *shared.DataScope, _, _ int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
 	return nil, 0, nil
 }
 func (m *mockAccessControlRepo) HasPrimaryOwner(_ context.Context, _ shared.ID) (bool, error) {
@@ -950,7 +950,7 @@ func (m *mockFindingRepoForScope) ListFindingGroups(_ context.Context, _ shared.
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *mockFindingRepoForScope) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *mockFindingRepoForScope) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 
@@ -978,7 +978,7 @@ func (m *mockFindingRepoForScope) ListActiveCVEsByTenant(_ context.Context, _ sh
 	return pagination.Result[vulnerability.ActiveCVE]{}, nil
 }
 
-func (m *mockFindingRepoForScope) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+func (m *mockFindingRepoForScope) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 
