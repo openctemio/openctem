@@ -119,14 +119,22 @@ func (m *mockAuditRepo) GetByID(_ context.Context, id shared.ID) (*audit.AuditLo
 	return log, nil
 }
 
-func (m *mockAuditRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*audit.AuditLog, error) {
+func (m *mockAuditRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*audit.AuditLog, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.chainLogs == nil {
-		return nil, nil
+	if m.chainLogs != nil {
+		log, ok := m.chainLogs[id]
+		if !ok {
+			return nil, shared.ErrNotFound
+		}
+		return log, nil
 	}
-	log, ok := m.chainLogs[id]
-	if !ok {
+	m.getByIDCalls++
+	if m.getByIDErr != nil {
+		return nil, m.getByIDErr
+	}
+	log, ok := m.logs[id]
+	if !ok || log.TenantID() == nil || *log.TenantID() != tenantID {
 		return nil, shared.ErrNotFound
 	}
 	return log, nil
@@ -470,9 +478,11 @@ func TestAuditService_GetAuditLog_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit log: %v", err)
 	}
+	tenantID := shared.NewID()
+	log.WithTenantID(tenantID)
 	repo.logs[log.ID()] = log
 
-	result, err := svc.GetAuditLog(ctx, log.ID().String())
+	result, err := svc.GetAuditLog(ctx, tenantID, log.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -491,7 +501,7 @@ func TestAuditService_GetAuditLog_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	id := shared.NewID()
-	_, err := svc.GetAuditLog(ctx, id.String())
+	_, err := svc.GetAuditLog(ctx, shared.NewID(), id.String())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -505,11 +515,38 @@ func TestAuditService_GetAuditLog_NotFound(t *testing.T) {
 	}
 }
 
+// Another tenant's log, or a system log (tenant_id IS NULL), is not found by
+// the tenant-facing getter.
+func TestAuditService_GetAuditLog_OtherTenantOrSystemNotFound(t *testing.T) {
+	svc, repo := newTestAuditService()
+	ctx := context.Background()
+
+	other, err := audit.NewAuditLog(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1", audit.ResultSuccess)
+	if err != nil {
+		t.Fatalf("failed to create audit log: %v", err)
+	}
+	other.WithTenantID(shared.NewID())
+	repo.logs[other.ID()] = other
+
+	system, err := audit.NewAuditLog(audit.ActionUserCreated, audit.ResourceTypeUser, "user-2", audit.ResultSuccess)
+	if err != nil {
+		t.Fatalf("failed to create audit log: %v", err)
+	}
+	repo.logs[system.ID()] = system
+
+	caller := shared.NewID()
+	for _, id := range []shared.ID{other.ID(), system.ID()} {
+		if _, err := svc.GetAuditLog(ctx, caller, id.String()); !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("GetAuditLog(%s) = %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
 func TestAuditService_GetAuditLog_InvalidID(t *testing.T) {
 	svc, _ := newTestAuditService()
 	ctx := context.Background()
 
-	_, err := svc.GetAuditLog(ctx, "not-a-uuid")
+	_, err := svc.GetAuditLog(ctx, shared.NewID(), "not-a-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid id, got nil")
 	}
