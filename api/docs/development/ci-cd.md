@@ -112,8 +112,8 @@ used: this is a public repository, and a fork PR would run code on the host.
 
 | Tier | Events | API CI | Web CI | All-in-one CI | CodeQL |
 |------|--------|--------|--------|---------------|--------|
-| Fast | `pull_request` | `API static checks` + `Unit tests` (`go test -race`, no database: DB-backed tests skip themselves without `DATABASE_URL`) | `Web checks` | build skipped | changed language(s) |
-| Full | `merge_group`, push to `develop`/`main` | `API static checks` + `Tests (Postgres + Redis)` + `Protocol v1 Compatibility` (+ release binaries); Docker build on `main` | `Web checks`; `next build` on push | images built and smoke-tested | queue: none (the PR head was analysed); push: both |
+| Fast | `pull_request` | `API static checks` + `Unit tests` (`go test -race`, no database: DB-backed tests skip themselves without `DATABASE_URL`) + `Tests (least-privilege DB role)` | `Web checks` | build skipped | changed language(s) |
+| Full | `merge_group`, push to `develop`/`main` | `API static checks` + `Tests (Postgres + Redis)` + `Tests (least-privilege DB role)` + `Protocol v1 Compatibility` (+ release binaries); Docker build on `main` | `Web checks`; `next build` on push | images built and smoke-tested | queue: none (the PR head was analysed); push: both |
 
 The `… OK` aggregators pass when a job was skipped because its area did not
 change, but when the area did change they also require that **this event's
@@ -170,6 +170,7 @@ make check            # both contract checks, as CI runs them
 | Lint | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
 | Unit tests | PRs. `go test -race -timeout 20m ./...` with no database (DB-backed tests skip). |
 | Tests (Postgres + Redis) | Merge queue and pushes. The same suite against Postgres 17 + Redis 7 service containers. |
+| Tests (least-privilege DB role) | Both tiers. Bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, then runs the DB-backed suite as `openctem_app` (DML only). It fails if a migration needs a superuser or the API needs more than DML. See `api/docs/deployment/database-roles.md`. |
 | Protocol v1 Compatibility | Merge queue and pushes. Runs the pinned, last-released sdk-go against a freshly built server (`api/scripts/compat-v1.sh`), then builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
 | Docker Build | Pushes to `main` only; builds the image, does not push it. |
 

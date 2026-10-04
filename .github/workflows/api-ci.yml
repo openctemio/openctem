@@ -10,7 +10,8 @@ name: API CI
 # tested twice (on the PR, then in the merge queue):
 #   pull_request    FAST: `API static checks` (one job, every short gate as a
 #                   step) + `Unit tests` (go test -race, no database: the
-#                   DB-backed tests skip themselves without DATABASE_URL).
+#                   DB-backed tests skip themselves without DATABASE_URL) +
+#                   `Tests (least-privilege DB role)` (D-6, both tiers).
 #   merge_group,    FULL: the fast tier, plus `Tests (Postgres + Redis)` in
 #   push            place of the unit run, `Protocol v1 Compatibility` (+ the
 #                   release binaries), and on main the Docker build.
@@ -297,6 +298,82 @@ jobs:
           flags: api
           fail_ci_if_error: false
 
+  # D-6: the API connects as a least-privilege role (docs/deployment/database-roles.md).
+  # Both tiers: bootstrap a fresh database with deploy/postgres/least-privilege-roles.sql,
+  # apply every migration AS THE MIGRATOR (no migration may need a superuser),
+  # re-run the script (idempotent), then run the DB-backed suite AS THE APP ROLE.
+  # Tests that replay a migration use DATABASE_MIGRATE_URL (testdb.MigratorURL).
+  # Any runtime statement the app role may not run fails here with 42501.
+  least-privilege:
+    name: Tests (least-privilege DB role)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          # Job-scoped throwaway database, trust auth on the service network:
+          # no credential literal in the repo. Role separation is what is
+          # under test, not passwords.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: lp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SUPER_URL: postgres://postgres@localhost:5432/lp_test?sslmode=disable
+      MIGRATOR_URL: postgres://openctem_migrator@localhost:5432/lp_test?sslmode=disable
+      APP_URL: postgres://openctem_app@localhost:5432/lp_test?sslmode=disable
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Install golang-migrate
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
+      - name: Bootstrap the roles on a fresh database
+        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
+
+      - name: Apply every migration as the migrator (not a superuser)
+        run: migrate -path migrations -database "$MIGRATOR_URL" up
+
+      - name: Re-run the bootstrap (idempotent; verifies grants on the migrated schema)
+        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
+
+      - name: Run the DB-backed suite as the app role
+        run: go test -timeout 30m ./...
+        env:
+          DATABASE_URL: ${{ env.APP_URL }}
+          DATABASE_MIGRATE_URL: ${{ env.MIGRATOR_URL }}
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: openctem_app
+          DB_NAME: lp_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+
   # FULL tier. Also builds and uploads the release-style static binaries (the
   # former separate `Build` job).
   compat-v1:
@@ -433,7 +510,7 @@ jobs:
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, static, unit, test, compat-v1, docker]
+    needs: [changes, static, unit, test, least-privilege, compat-v1, docker]
     runs-on: ubuntu-latest
     steps:
       - name: All API jobs passed or were skipped; the event's tier actually ran
@@ -451,7 +528,7 @@ jobs:
           # the tier for this event must have RUN and passed, so a mistyped
           # condition cannot wave a queued PR through without its tests.
           if [ "$API" = true ]; then
-            if [ "$EVENT" = pull_request ]; then required="changes static unit"; else required="changes static test compat-v1"; fi
+            if [ "$EVENT" = pull_request ]; then required="changes static unit least-privilege"; else required="changes static test least-privilege compat-v1"; fi
             for j in $required; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
               if [ "$r" != success ]; then echo "::error::$j must run and pass for $EVENT, got: $r"; exit 1; fi

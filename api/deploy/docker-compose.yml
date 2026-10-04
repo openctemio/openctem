@@ -105,18 +105,70 @@ services:
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
-  # Database migrations (one-shot, before the API)
+  # Least-privilege roles (D-6, docs/deployment/database-roles.md). When
+  # DB_MIGRATE_USER is set, this one-shot job connects as the Postgres
+  # superuser and (re)applies postgres/least-privilege-roles.sql: the migrator
+  # (DB_MIGRATE_USER) owns the schema, the API's DB_USER gets DML only. It is
+  # idempotent and runs on every `up`. Without DB_MIGRATE_USER it does nothing
+  # and everything connects as DB_USER, as before.
+  db-roles:
+    image: postgres:${POSTGRES_VERSION:-17}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        if [ -z "$${DB_MIGRATE_USER:-}" ]; then
+          echo "db-roles: DB_MIGRATE_USER is not set; single-role mode, nothing to do"
+          exit 0
+        fi
+        if [ -z "$${DB_MIGRATE_PASSWORD:-}" ]; then
+          echo "db-roles: DB_MIGRATE_USER is set but DB_MIGRATE_PASSWORD is empty" >&2; exit 1
+        fi
+        if [ "$$PGPASSWORD" = "$$DB_PASSWORD" ] || [ "$$DB_MIGRATE_PASSWORD" = "$$DB_PASSWORD" ]; then
+          echo "db-roles: the superuser, migrator and app (DB_PASSWORD) need different passwords; set DB_SUPERUSER_PASSWORD and DB_MIGRATE_PASSWORD" >&2; exit 1
+        fi
+        exec psql -X -v ON_ERROR_STOP=1 \
+          -v app_user="$$DB_USER" -v app_password="$$DB_PASSWORD" \
+          -v migrator_user="$$DB_MIGRATE_USER" -v migrator_password="$$DB_MIGRATE_PASSWORD" \
+          -f /bootstrap/least-privilege-roles.sql
+    environment:
+      PGHOST: ${DB_HOST:-postgres}
+      PGPORT: ${DB_PORT:-5432}
+      PGDATABASE: ${DB_NAME:-openctem}
+      PGSSLMODE: ${DB_SSLMODE:-require}
+      PGUSER: ${DB_SUPERUSER:-${DB_USER:-openctem}}
+      PGPASSWORD: ${DB_SUPERUSER_PASSWORD:-${DB_PASSWORD}}
+      DB_USER: ${DB_USER:-openctem}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_MIGRATE_USER: ${DB_MIGRATE_USER:-}
+      DB_MIGRATE_PASSWORD: ${DB_MIGRATE_PASSWORD:-}
+    volumes:
+      - ./postgres:/bootstrap:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - openctem
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # Database migrations (one-shot, before the API), as the schema owner
   # ---------------------------------------------------------------------------
   migrate:
     image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION}}
     command:
       - "-path=/migrations"
       - "-database"
-      - "postgres://${DB_USER:-openctem}:${DB_PASSWORD:?DB_PASSWORD is required}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-openctem}?sslmode=${DB_SSLMODE:-require}"
+      - "postgres://${DB_MIGRATE_USER:-${DB_USER:-openctem}}:${DB_MIGRATE_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD is required}}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-openctem}?sslmode=${DB_SSLMODE:-require}"
       - "up"
     depends_on:
       postgres:
         condition: service_healthy
+      db-roles:
+        condition: service_completed_successfully
     networks:
       - openctem
     restart: "no"
@@ -266,8 +318,11 @@ services:
       - -c
       - ssl_key_file=/tls/postgres.key
     environment:
-      POSTGRES_USER: ${DB_USER:-openctem}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      # The superuser exists for initdb and the db-roles job. With
+      # least-privilege roles it is DB_SUPERUSER, separate from the API's
+      # DB_USER; it defaults to DB_USER (the single-role layout).
+      POSTGRES_USER: ${DB_SUPERUSER:-${DB_USER:-openctem}}
+      POSTGRES_PASSWORD: ${DB_SUPERUSER_PASSWORD:-${DB_PASSWORD}}
       POSTGRES_DB: ${DB_NAME:-openctem}
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -276,7 +331,7 @@ services:
       datastore-tls:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-openctem} -d ${DB_NAME:-openctem}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_SUPERUSER:-${DB_USER:-openctem}} -d ${DB_NAME:-openctem}"]
       interval: 10s
       timeout: 5s
       retries: 5
