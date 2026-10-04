@@ -4734,7 +4734,7 @@ export interface paths {
     put?: never
     /**
      * Create asset
-     * @description Creates a new asset for the current tenant
+     * @description Creates a new asset for the current tenant. A name (or a correlated address) that matches an existing asset is a 409 and nothing is changed; details.existing_asset_id names the existing asset only when it is in the caller's data scope.
      */
     post: {
       parameters: {
