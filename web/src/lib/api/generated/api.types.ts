@@ -12783,6 +12783,7 @@ export interface paths {
             | 'in_progress'
             | 'fix_applied'
             | 'validated_fixed'
+            | 'not_observed'
             | 'resolved'
             | 'false_positive'
             | 'accepted'
@@ -12801,6 +12802,7 @@ export interface paths {
             | 'in_progress'
             | 'fix_applied'
             | 'validated_fixed'
+            | 'not_observed'
             | 'resolved'
             | 'false_positive'
             | 'accepted'
@@ -14361,7 +14363,7 @@ export interface paths {
      * @description Streams every finding the list's filter selects as CSV (default) or NDJSON (`format=ndjson`),
      *     in id order, at most 100,000 rows; the X-Export-Truncated trailer says whether rows were left
      *     out. Same scope as GET /findings. Needs findings:export. One export per user at a time (429
-     *     otherwise). Audit-logged without filter values. CSV formula cells are neutralised.
+     *     otherwise). Audit-logged without filter values. CSV formula cells are neutralized.
      */
     get: {
       parameters: {
@@ -14401,6 +14403,7 @@ export interface paths {
             | 'in_progress'
             | 'fix_applied'
             | 'validated_fixed'
+            | 'not_observed'
             | 'resolved'
             | 'false_positive'
             | 'accepted'
@@ -14419,6 +14422,7 @@ export interface paths {
             | 'in_progress'
             | 'fix_applied'
             | 'validated_fixed'
+            | 'not_observed'
             | 'resolved'
             | 'false_positive'
             | 'accepted'
@@ -14760,6 +14764,7 @@ export interface paths {
             | 'in_progress'
             | 'fix_applied'
             | 'validated_fixed'
+            | 'not_observed'
             | 'resolved'
             | 'false_positive'
             | 'accepted'
@@ -14778,6 +14783,7 @@ export interface paths {
             | 'in_progress'
             | 'fix_applied'
             | 'validated_fixed'
+            | 'not_observed'
             | 'resolved'
             | 'false_positive'
             | 'accepted'
@@ -15200,6 +15206,7 @@ export interface paths {
             | 'in_progress'
             | 'fix_applied'
             | 'validated_fixed'
+            | 'not_observed'
             | 'resolved'
             | 'false_positive'
             | 'accepted'
@@ -15218,6 +15225,7 @@ export interface paths {
             | 'in_progress'
             | 'fix_applied'
             | 'validated_fixed'
+            | 'not_observed'
             | 'resolved'
             | 'false_positive'
             | 'accepted'
