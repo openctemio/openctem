@@ -316,7 +316,7 @@ func (p *FindingProcessor) processBatch(
 				} else {
 					p.logger.Debug("finding AssetRef not found in assetMap",
 						"finding_index", i,
-						"asset_ref", ctisFinding.AssetRef,
+						"asset_ref", logValue(ctisFinding.AssetRef),
 					)
 				}
 			}
@@ -328,7 +328,7 @@ func (p *FindingProcessor) processBatch(
 			if targetAssetID.IsZero() {
 				p.logger.Warn("finding skipped: no target asset",
 					"finding_index", i,
-					"asset_ref", ctisFinding.AssetRef,
+					"asset_ref", logValue(ctisFinding.AssetRef),
 					"default_asset_available", !defaultAssetID.IsZero(),
 					"asset_map_size", len(assetMap),
 				)
