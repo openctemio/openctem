@@ -84,6 +84,9 @@ import planes.caddy
 	# URL fragment (never sent to a server), but the deprecated API aliases and
 	# links emailed before RFC-041 still carry one in the path
 	# (/api/v1/invitations/{token}/..., /invitations/{token}): it is replaced.
+	# So is a WebSocket `?ticket=`: the API no longer issues one (RFC-045), but
+	# this file is also the Helm chart's gateway, which can front an older API.
+	# One regexp, because a log field takes one filter.
 	log {
 		output stdout
 		format filter {
@@ -94,7 +97,7 @@ import planes.caddy
 				request>headers>X-Api-Key delete
 				request>headers>X-Sensor-Api-Key delete
 				request>headers>X-Csrf-Token delete
-				request>uri regexp "^(/api/v1/invitations/|/invitations/)[A-Za-z0-9_-]{20,}" "${1}REDACTED"
+				request>uri regexp "^(/api/v1/invitations/|/invitations/)[A-Za-z0-9_-]{20,}|([?&]ticket=)[^&]*" "${1}${2}REDACTED"
 			}
 		}
 	}
