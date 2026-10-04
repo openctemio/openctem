@@ -344,7 +344,7 @@ Shared platform sensors (`is_platform_sensor`) are in neither; their capacity
 is `GET /api/v1/platform/stats`, shown on its own page. Their queue
 (`get_next_platform_job`) is shared fairly across tenants: within a priority
 class, the tenant with the fewest platform jobs in flight goes first
-(migration 000432, RFC-030 §5.7). The stats also add `by_state` (every state, zeros included), `by_version_status`,
+(migration 000461, RFC-030 §5.7). The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
 
 ## Build information
