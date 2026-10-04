@@ -1030,7 +1030,7 @@ type UpdateAssetInput struct {
 	OwnerRef    *string  `validate:"omitempty,max=500"` // Free-text owner reference
 	Tags        []string `validate:"omitempty,max=20,dive,max=50"`
 	// Properties patches per-type metadata. Merged (not replaced) into the
-	// asset's existing properties so keys like is_crown_jewel are preserved.
+	// asset's existing properties so keys like business_impact_score are preserved.
 	Properties map[string]any
 	// CIA impact rating (CTEM Scoping critical-asset register). Each is
 	// low | moderate | high; an empty string clears the rating. Nil = leave
@@ -1159,7 +1159,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	}
 
 	// Patch per-type metadata. Merge into existing properties (don't replace)
-	// so keys written elsewhere — e.g. is_crown_jewel — are not wiped.
+	// so keys written elsewhere — e.g. business_impact_score — are not wiped.
 	if input.Properties != nil {
 		merged := a.Properties()
 		if merged == nil {

@@ -19,8 +19,10 @@ const (
 // Property keys the platform owns. They record decisions made by people or by
 // the platform itself, and the platform reads them as such:
 //
-//   - is_crown_jewel drives the P0 priority rules (priority classification,
-//     the crown-jewel filter, dashboards);
+//   - is_crown_jewel is not a property at all: the flag is the
+//     assets.is_crown_jewel column (migration 000390), written only by
+//     PATCH /assets/{id}/crown-jewel. The key stays reserved so a client or a
+//     sensor cannot plant a look-alike value in properties;
 //   - business_impact_score / business_impact_notes are set on the asset's
 //     business-impact form and feed risk scoring;
 //   - aliases holds the asset's former names, written by asset identity

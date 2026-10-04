@@ -70,7 +70,7 @@ export interface AssetSearchFilters {
   // Has findings filter
   hasFindings?: boolean
 
-  // Crown jewel filter (properties->>'is_crown_jewel')
+  // Crown jewel filter (the assets.is_crown_jewel column)
   isCrownJewel?: boolean
 
   // CTEM inventory filter dimensions (api: all-assets-inventory).
@@ -115,6 +115,7 @@ interface BackendAsset {
   impact_integrity?: string
   impact_availability?: string
   is_control_plane?: boolean // CTEM Scoping: asset governs other assets (api #467)
+  is_crown_jewel?: boolean // the assets.is_crown_jewel column
   risk_score: number // 0-100
   finding_count: number
   finding_severity_counts?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
@@ -166,6 +167,7 @@ function transformAsset(backend: BackendAsset): Asset {
     impactIntegrity: (backend.impact_integrity as ImpactRating) || undefined,
     impactAvailability: (backend.impact_availability as ImpactRating) || undefined,
     isControlPlane: backend.is_control_plane ?? undefined,
+    isCrownJewel: backend.is_crown_jewel ?? undefined,
     riskScore: backend.risk_score,
     findingCount: backend.finding_count,
     // Detail fields the API always sent but the transform used to drop, so the
@@ -637,7 +639,7 @@ export async function updateAsset(assetId: string, input: UpdateAssetInput): Pro
     owner_ref: input.ownerRef,
     tags: input.tags,
     // Per-type form fields live in `metadata`; backend merges them into
-    // `properties` (preserving keys like is_crown_jewel). API-owned keys are
+    // `properties` (preserving the keys it does not send). API-owned keys are
     // left out: a stale copy of them would be refused.
     properties: editableProperties(input.metadata),
   })

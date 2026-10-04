@@ -1018,6 +1018,11 @@ export interface Asset {
    * "unknown/not flagged" (api #467, backend `is_control_plane`).
    */
   isControlPlane?: boolean
+  /**
+   * Crown jewel (backend `is_crown_jewel`, the assets column). Set only
+   * through PATCH /assets/{id}/crown-jewel, never through properties.
+   */
+  isCrownJewel?: boolean
   riskScore: number // 0-100, calculated from criticality, exposure, and findings
   findingCount: number
   /** Open findings per severity (assets.finding_severity_counts). */
