@@ -1929,9 +1929,12 @@ function FindingsContent() {
                   In Progress
                 </DropdownMenuItem>
 
-                <DropdownMenuItem onClick={() => handleBulkStatusChange('resolved')}>
-                  Resolved
-                </DropdownMenuItem>
+                {/* Resolving needs findings:verify; the API refuses it otherwise. */}
+                {hasPermission(Permission.FindingsVerify) && (
+                  <DropdownMenuItem onClick={() => handleBulkStatusChange('resolved')}>
+                    Resolved
+                  </DropdownMenuItem>
+                )}
 
                 {/* false_positive requires the per-finding approval flow, so it is
 

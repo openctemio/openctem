@@ -884,6 +884,19 @@ func (s *AssetService) checkNotDuplicate(ctx context.Context, tenantID shared.ID
 	return &DuplicateAssetError{ExistingID: existing.ID()}
 }
 
+// fullDataCaller reports whether the acting user is unrestricted through a
+// has_full_data_access role, decided by the one enforcer (false without it).
+func (s *AssetService) fullDataCaller(ctx context.Context, tenantID, actingUserID string) (bool, error) {
+	if s.dataScope == nil {
+		return false, nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.dataScope.FullData(ctx, tid, actingUserID)
+}
+
 // SetDataScope wires the Layer 2 data-scope enforcer used on bulk-by-id
 // writes. By-id routes are guarded at the HTTP layer (DataScopeGuard).
 func (s *AssetService) SetDataScope(e *datascope.Enforcer) {
@@ -931,6 +944,16 @@ func (s *AssetService) GetAssetWithScope(ctx context.Context, tenantID, assetID,
 	a, err := s.repo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
+	}
+
+	// A role with has_full_data_access bypasses Layer 2 like an admin.
+	if !isAdmin && actingUserID != "" {
+		full, ferr := s.fullDataCaller(ctx, tenantID, actingUserID)
+		if ferr != nil {
+			s.logger.Error("failed to check full data access", "error", ferr)
+			return nil, shared.ErrNotFound // fail-closed
+		}
+		isAdmin = full
 	}
 
 	// Layer 2: Data Scope check for non-admin users
@@ -1509,6 +1532,11 @@ func (s *AssetService) listAccessScope(ctx context.Context, tenantID, actingUser
 	userID, err := shared.IDFromString(actingUserID)
 	if err != nil {
 		return assetdom.AccessScope{}, fmt.Errorf("%w: invalid acting user id", shared.ErrForbidden)
+	}
+	if full, ferr := s.fullDataCaller(ctx, tenantID, actingUserID); ferr != nil {
+		return assetdom.AccessScope{}, ferr
+	} else if full {
+		return assetdom.AccessScope{}, nil
 	}
 	return assetdom.AccessScope{
 		DataScopeUserID: &userID,
