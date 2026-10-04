@@ -426,7 +426,7 @@ func (r *Registry) Params() []string {
 	out := []string{"q", "sort", "page", "per_page"}
 	for _, n := range r.order {
 		f := r.fields[n]
-		if f.allows(OpIn) || f.allows(OpEq) {
+		if f.allows(OpIn) || f.allows(OpEq) || f.allows(OpContains) {
 			out = append(out, f.Name)
 		}
 		for _, s := range suffixOps {
@@ -473,4 +473,75 @@ func (r *Registry) resolveParam(name string) (*Field, Op, error) {
 		return f, op, nil
 	}
 	return nil, "", errUnknownParam
+}
+
+// FieldDescription is one field of a registry as clients see it
+// (GET /api/v1/meta/filters/{resource}).
+type FieldDescription struct {
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	Ops      []Op     `json:"ops"`
+	Params   []string `json:"params"`
+	Enum     []string `json:"enum,omitempty"`
+	Sortable bool     `json:"sortable"`
+	Nullable bool     `json:"nullable,omitempty"`
+}
+
+// Description is the machine-readable filter contract of one resource.
+type Description struct {
+	Resource    string             `json:"resource"`
+	Fields      []FieldDescription `json:"fields"`
+	Reserved    []string           `json:"reserved"`
+	Aliases     map[string]string  `json:"aliases,omitempty"`
+	DefaultSort []string           `json:"default_sort"`
+	Search      bool               `json:"search"`
+	Limits      map[string]int     `json:"limits"`
+}
+
+// Describe returns the registry's contract as seen by a caller: fields that
+// need a permission the caller lacks (has returns false, or has is nil) are
+// left out, exactly as the compiler treats them as unknown.
+func (r *Registry) Describe(has func(permission string) bool) Description {
+	d := Description{
+		Resource: r.Name,
+		Reserved: []string{"q", "sort", "page", "per_page"},
+		Search:   r.Search != nil,
+		Limits: map[string]int{
+			"leaves": MaxLeaves, "depth": MaxDepth, "values": MaxValues,
+			"values_document": MaxValuesDocument, "value_length": MaxValueLen,
+			"q_length": MaxQLen, "body_bytes": MaxBodyBytes, "sort_keys": MaxSortKeys,
+			"max_offset": DefaultMaxOffset,
+		},
+	}
+	for _, n := range r.order {
+		f := r.fields[n]
+		if f.Permission != "" && (has == nil || !has(f.Permission)) {
+			continue
+		}
+		fd := FieldDescription{Name: f.Name, Type: f.Type.String(), Ops: append([]Op(nil), f.Ops...),
+			Enum: append([]string(nil), f.Enum...), Sortable: f.Sortable, Nullable: f.Nullable}
+		if f.allows(OpIn) || f.allows(OpEq) || f.allows(OpContains) {
+			fd.Params = append(fd.Params, f.Name)
+		}
+		for _, s := range suffixOps {
+			if f.allows(s.op) || (s.op == OpNotIn && f.allows(OpNe)) {
+				fd.Params = append(fd.Params, f.Name+s.suffix)
+			}
+		}
+		d.Fields = append(d.Fields, fd)
+	}
+	for _, k := range r.DefaultSort {
+		if k.Desc {
+			d.DefaultSort = append(d.DefaultSort, "-"+k.Field)
+		} else {
+			d.DefaultSort = append(d.DefaultSort, k.Field)
+		}
+	}
+	if len(r.Aliases) > 0 {
+		d.Aliases = make(map[string]string, len(r.Aliases))
+		for old, a := range r.Aliases {
+			d.Aliases[old] = a.To
+		}
+	}
+	return d
 }

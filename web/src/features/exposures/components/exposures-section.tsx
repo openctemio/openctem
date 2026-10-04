@@ -29,7 +29,7 @@ export function ExposuresTabs() {
  * comma-separated `sources` param (useUrlFilterList('sources')).
  */
 export function findingsHrefForSources(sources: readonly string[]): string {
-  return `/findings?sources=${sources.map(encodeURIComponent).join(',')}`
+  return `/findings?source=${sources.map(encodeURIComponent).join(',')}`
 }
 
 /**
