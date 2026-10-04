@@ -8,6 +8,13 @@
 // Every query is rate-limited (one limiter per client, shared by all tenants),
 // bounded in time, retried once over TCP when the UDP answer is truncated, and
 // never follows anything by itself: callers decide which name to ask next.
+//
+// QueryServer asks one authoritative server directly, without recursion, to
+// see a referral (the lame-delegation check). The server address comes from
+// DNS data, so it must be a public IP literal: loopback, private, link-local
+// and metadata ranges are refused under the platform's SSRF policy
+// (httpsec.IsIPBlocked), the port is always 53, and the same rate limiter and
+// time bound apply.
 package dnsprobe
 
 import (
@@ -24,6 +31,8 @@ import (
 
 	"golang.org/x/net/dns/dnsmessage"
 	"golang.org/x/time/rate"
+
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // RCode is a DNS response code.
@@ -48,6 +57,7 @@ const (
 	TypeNS    = dnsmessage.TypeNS
 	TypeTXT   = dnsmessage.TypeTXT
 	TypeMX    = dnsmessage.TypeMX
+	TypeSOA   = dnsmessage.TypeSOA
 )
 
 // Record is one answer record, reduced to what the checks read.
@@ -62,6 +72,11 @@ type Record struct {
 type Answer struct {
 	RCode   RCode
 	Records []Record
+	// Authoritative is the AA bit: the server answered for its own zone.
+	Authoritative bool
+	// Authority holds the NS records of the authority section (a referral
+	// from a parent zone's server lists the child zone's name servers here).
+	Authority []Record
 }
 
 // Has reports whether the answer has a record of type t.
@@ -94,6 +109,9 @@ type Client struct {
 	limiter *rate.Limiter
 	timeout time.Duration
 	dial    func(ctx context.Context, network, addr string) (net.Conn, error)
+	// authPort and ipAllowed govern QueryServer; tests override them.
+	authPort  string
+	ipAllowed func(net.IP) bool
 }
 
 // New builds a client. It fails only when no resolver can be determined.
@@ -123,6 +141,9 @@ func New(cfg Config) (*Client, error) {
 		limiter: rate.NewLimiter(rate.Limit(qps), max(1, int(qps))),
 		timeout: timeout,
 		dial:    d.DialContext,
+
+		authPort:  "53",
+		ipAllowed: func(ip net.IP) bool { return !httpsec.IsIPBlocked(ip) },
 	}, nil
 }
 
@@ -150,18 +171,44 @@ func (c *Client) Query(ctx context.Context, name string, t Type) (Answer, error)
 	if err := c.limiter.Wait(ctx); err != nil {
 		return Answer{}, err
 	}
-	q, id, err := buildQuery(name, t)
+	q, id, err := buildQuery(name, t, true)
 	if err != nil {
 		return Answer{}, err
 	}
-	ans, truncated, err := c.exchange(ctx, "udp", q, id)
+	return c.roundTrip(ctx, c.server, q, id)
+}
+
+// ErrServerNotAllowed is returned by QueryServer for an address outside the
+// SSRF policy (not a public IP literal).
+var ErrServerNotAllowed = errors.New("dns: server address not allowed")
+
+// QueryServer asks the authoritative server at ip one question without
+// recursion (RD=0), on port 53. ip must be a public IP literal; anything else
+// is ErrServerNotAllowed and nothing is sent.
+func (c *Client) QueryServer(ctx context.Context, ip, name string, t Type) (Answer, error) {
+	addr := net.ParseIP(strings.TrimSpace(ip))
+	if addr == nil || c.ipAllowed == nil || !c.ipAllowed(addr) {
+		return Answer{}, ErrServerNotAllowed
+	}
+	if err := c.limiter.Wait(ctx); err != nil {
+		return Answer{}, err
+	}
+	q, id, err := buildQuery(name, t, false)
+	if err != nil {
+		return Answer{}, err
+	}
+	return c.roundTrip(ctx, net.JoinHostPort(addr.String(), c.authPort), q, id)
+}
+
+func (c *Client) roundTrip(ctx context.Context, server string, q []byte, id uint16) (Answer, error) {
+	ans, truncated, err := c.exchange(ctx, "udp", server, q, id)
 	if err == nil && truncated {
-		ans, _, err = c.exchange(ctx, "tcp", q, id)
+		ans, _, err = c.exchange(ctx, "tcp", server, q, id)
 	}
 	return ans, err
 }
 
-func buildQuery(name string, t Type) ([]byte, uint16, error) {
+func buildQuery(name string, t Type, recursive bool) ([]byte, uint16, error) {
 	fqdn := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".") + "."
 	n, err := dnsmessage.NewName(fqdn)
 	if err != nil {
@@ -173,19 +220,19 @@ func buildQuery(name string, t Type) ([]byte, uint16, error) {
 	}
 	id := binary.BigEndian.Uint16(idb[:])
 	msg := dnsmessage.Message{
-		Header:    dnsmessage.Header{ID: id, RecursionDesired: true},
+		Header:    dnsmessage.Header{ID: id, RecursionDesired: recursive},
 		Questions: []dnsmessage.Question{{Name: n, Type: t, Class: dnsmessage.ClassINET}},
 	}
 	b, err := msg.Pack()
 	return b, id, err
 }
 
-func (c *Client) exchange(ctx context.Context, network string, q []byte, id uint16) (Answer, bool, error) {
+func (c *Client) exchange(ctx context.Context, network, server string, q []byte, id uint16) (Answer, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	conn, err := c.dial(ctx, network, c.server)
+	conn, err := c.dial(ctx, network, server)
 	if err != nil {
-		return Answer{}, false, fmt.Errorf("dns: dial %s: %w", c.server, err)
+		return Answer{}, false, fmt.Errorf("dns: dial %s: %w", server, err)
 	}
 	defer func() { _ = conn.Close() }()
 	if dl, ok := ctx.Deadline(); ok {
@@ -254,7 +301,7 @@ func parse(b []byte, id uint16) (Answer, bool, error) {
 	if err := p.SkipAllQuestions(); err != nil {
 		return Answer{}, false, fmt.Errorf("dns: malformed answer: %w", err)
 	}
-	ans := Answer{RCode: h.RCode}
+	ans := Answer{RCode: h.RCode, Authoritative: h.Authoritative}
 	for i := 0; i < maxRecords; i++ {
 		rh, err := p.AnswerHeader()
 		if errors.Is(err, dnsmessage.ErrSectionDone) {
@@ -308,6 +355,29 @@ func parse(b []byte, id uint16) (Answer, bool, error) {
 			continue
 		}
 		ans.Records = append(ans.Records, rec)
+	}
+	if err := p.SkipAllAnswers(); err != nil {
+		return Answer{}, false, fmt.Errorf("dns: malformed answer: %w", err)
+	}
+	for i := 0; i < maxRecords; i++ {
+		rh, err := p.AuthorityHeader()
+		if errors.Is(err, dnsmessage.ErrSectionDone) {
+			break
+		}
+		if err != nil {
+			return Answer{}, false, fmt.Errorf("dns: malformed answer: %w", err)
+		}
+		if rh.Type != dnsmessage.TypeNS {
+			if err := p.SkipAuthority(); err != nil {
+				return Answer{}, false, err
+			}
+			continue
+		}
+		r, err := p.NSResource()
+		if err != nil {
+			return Answer{}, false, err
+		}
+		ans.Authority = append(ans.Authority, Record{Name: clean(rh.Name.String()), Type: rh.Type, Value: clean(r.NS.String())})
 	}
 	return ans, false, nil
 }
