@@ -103,6 +103,7 @@ import { type FindingGroup } from '@/features/findings/api/use-finding-groups'
 import {
   useFindingsApi,
   useFindingStatsApi,
+  buildFindingsExportUrl,
   invalidateFindingsCache,
 } from '@/features/findings/api/use-findings-api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -117,6 +118,7 @@ import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
+import { FINDINGS_LEGACY_URL_ALIASES, migrateLegacyParams } from '@/lib/filters/url-codec'
 import {
   FINDINGS_LIST_HIDDEN_STATUSES,
   FINDINGS_OPEN_STATUSES,
@@ -350,10 +352,17 @@ const SORTABLE_COLUMNS: Record<string, { api: string; invert?: boolean }> = {
   createdAt: { api: 'created_at' },
 }
 
-/** `?sort=severity.desc` → table sorting state. */
+/** The URL's API sort (`-created_at`, `severity,-created_at`) → table sorting state. */
 function parseSortParam(value: string): SortingState {
-  const [id, dir] = value.split('.')
-  return id && SORTABLE_COLUMNS[id] ? [{ id, desc: dir !== 'asc' }] : []
+  const first = value.split(',')[0]?.trim()
+  if (!first) return []
+  const descending = first.startsWith('-')
+  const key = first.replace(/^[-+]/, '')
+  const entry = Object.entries(SORTABLE_COLUMNS).find(([, col]) => col.api === key)
+  if (!entry) return []
+  const [id, col] = entry
+  // invert: the API ranks critical / P0 first ascending; the table calls that descending.
+  return [{ id, desc: col.invert ? !descending : descending }]
 }
 
 /** Table sorting → API `sort` (newest first as the tie-breaker). */
@@ -373,8 +382,9 @@ export default function FindingsPage() {
 function FindingsContent() {
   const searchParams = useUrlParams()
   const router = useRouter()
-  const assetIdFilter = searchParams.get('assetId')
-  const sourceIdFilter = searchParams.get('source')
+  // The page URL uses the API's own filter params (RFC-048), so a page link and
+  // the API query are the same words. Old page links are rewritten once below.
+  const assetIdFilter = searchParams.get('asset_id')
   const scanIdFilter = searchParams.get('scan_id')
 
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
@@ -404,7 +414,7 @@ function FindingsContent() {
   const [statusParam, setStatusParam] = useUrlFilterList('status')
   // Multiple sources at once: "everything from code scanning" is one question,
   // and it spans sast and secret. Comma-separated, matching what the API takes.
-  const [sourceFilter, setSourceFilter] = useUrlFilterList('sources')
+  const [sourceFilter, setSourceFilter] = useUrlFilterList('source')
   // CTEM signals are independent, stackable filters — each lives in its own URL
   // param so "P0 AND reachable AND KEV" is one link, not three mutually-exclusive
   // choices. The backend FindingFilter ANDs priority_classes + is_in_kev +
@@ -413,23 +423,35 @@ function FindingsContent() {
   //  - `kev`      : boolean flag → is_in_kev
   //  - `reachable`: boolean flag → is_reachable
   //  - `sla_status`: multi-select list → sla_status
-  const [priorityParam, setPriorityParam] = useUrlFilterList('priority')
-  const [kevFilter, setKevFilter] = useUrlFilter('kev', 'false')
-  const [reachableFilter, setReachableFilter] = useUrlFilter('reachable', 'false')
+  const [priorityParam, setPriorityParam] = useUrlFilterList('priority_class')
+  const [kevFilter, setKevFilter] = useUrlFilter('is_in_kev', 'false')
+  const [reachableFilter, setReachableFilter] = useUrlFilter('is_reachable', 'false')
   const [slaFilter, setSlaFilter] = useUrlFilterList('sla_status')
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
   // "Assigned to me" / My Work: findings the current user is the assignee of,
   // owns the asset of, or is a member of an assigned group. Independent, stackable
   // with the CTEM signals; the backend resolves the user from the token.
-  const [mineFilter, setMineFilter] = useUrlFilter('mine', 'false')
-  const mineActive = mineFilter === 'true'
+  const [relatedToFilter, setRelatedToFilter] = useUrlFilter('related_to', '')
+  const mineActive = relatedToFilter === 'me'
+  const setMineFilter = useCallback(
+    (on: string) => setRelatedToFilter(on === 'true' ? 'me' : ''),
+    [setRelatedToFilter]
+  )
 
-  // Backward-compat: legacy deep links modelled KEV / reachable as *values* of the
-  // single `priority` param (e.g. /findings?priority=kev). Treat those as the new
-  // boolean flags on read so old links keep working, and migrate the URL to the
-  // new param shape once so every subsequent interaction is clean.
-  const kevActive = kevFilter === 'true' || priorityParam.includes('kev')
-  const reachableActive = reachableFilter === 'true' || priorityParam.includes('reachable')
+  // Old page links (assetId, sources, priority, kev, reachable, mine, cve,
+  // rule, a table-format sort) are rewritten to the API names once, in place.
+  useEffect(() => {
+    const migrated = migrateLegacyParams(
+      new URLSearchParams(window.location.search),
+      FINDINGS_LEGACY_URL_ALIASES,
+      SORTABLE_COLUMNS
+    )
+    if (!migrated) return
+    const qs = migrated.toString()
+    router.replace(`${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`)
+  }, [router])
+  const kevActive = kevFilter === 'true'
+  const reachableActive = reachableFilter === 'true'
   const severities = useMemo(
     () =>
       severityParam.filter((v): v is FacetSeverity =>
@@ -443,13 +465,6 @@ function FindingsContent() {
     [priorityParam]
   )
 
-  useEffect(() => {
-    if (priorityParam.includes('kev')) setKevFilter('true')
-    if (priorityParam.includes('reachable')) setReachableFilter('true')
-    if (priorityParam.includes('kev') || priorityParam.includes('reachable')) {
-      setPriorityParam((prev) => prev.filter((v) => v !== 'kev' && v !== 'reachable'))
-    }
-  }, [priorityParam, setKevFilter, setReachableFilter, setPriorityParam])
   // Debounce so typing doesn't fire a backend list request per keystroke.
   const debouncedSearch = useDebounce(searchQuery, 300)
   // Server-side pagination state. The list is fetched one page at a time from
@@ -487,26 +502,22 @@ function FindingsContent() {
     ? (groupParam as GroupByDimension)
     : null
   const verifyView = viewParam === 'verify'
-  const [, setAssetParam] = useUrlFilter('assetId', '')
+  const [, setAssetParam] = useUrlFilter('asset_id', '')
   // A CVE group's "View": the list narrowed to that CVE (search does not match
   // the CVE id, so it cannot stand in for this).
-  const [cveParam, setCveParam] = useUrlFilter('cve', '')
+  const [cveParam, setCveParam] = useUrlFilter('cve_id', '')
   // A rule group's "View": the list narrowed to that scanner rule (nuclei
   // template, semgrep rule, misconfiguration check, secret rule).
-  const [ruleParam, setRuleParam] = useUrlFilter('rule', '')
+  const [ruleParam, setRuleParam] = useUrlFilter('rule_id', '')
   // Bumped after a change, so the grouped view reloads its groups and rows.
   const [groupsReloadKey, setGroupsReloadKey] = useState(0)
   const [autoAssignOpen, setAutoAssignOpen] = useState(false)
   const [hasUnassignedGroup, setHasUnassignedGroup] = useState(false)
   const [sortParam, setSortParam] = useUrlFilter('sort', '')
   const sorting = useMemo<SortingState>(() => parseSortParam(sortParam), [sortParam])
+  // The URL holds the API sort (e.g. `-created_at` or `severity,-created_at`).
   const handleSortingChange = useCallback(
-    (next: SortingState) => {
-      const first = next[0]
-      setSortParam(
-        first && SORTABLE_COLUMNS[first.id] ? `${first.id}.${first.desc ? 'desc' : 'asc'}` : ''
-      )
-    },
+    (next: SortingState) => setSortParam(toApiSort(next) ?? ''),
     [setSortParam]
   )
   // Filter panel: closed by default so the table gets the width; the viewer's
@@ -592,7 +603,6 @@ function FindingsContent() {
       per_page: pagination.pageSize,
     }
     if (assetIdFilter) filters.asset_id = assetIdFilter
-    if (sourceIdFilter) filters.source_id = sourceIdFilter
     if (scanIdFilter) filters.scan_id = scanIdFilter
     if (cveParam) filters.cve_ids = [cveParam]
     if (ruleParam) filters.rule_id = ruleParam
@@ -613,8 +623,7 @@ function FindingsContent() {
     // applies together (AND), mirroring how the backend FindingFilter combines
     // PriorityClasses + IsInKEV + IsReachable + SLAStatuses.
     if (priorityClasses.length > 0) filters.priority_classes = priorityClasses
-    const apiSort = toApiSort(sorting)
-    if (apiSort) filters.sort = apiSort
+    if (sortParam) filters.sort = sortParam
     if (kevActive) filters.is_in_kev = true
     if (reachableActive) filters.is_reachable = true
     if (mineActive) filters.assigned_to_me = true
@@ -622,7 +631,6 @@ function FindingsContent() {
     return filters
   }, [
     assetIdFilter,
-    sourceIdFilter,
     scanIdFilter,
     cveParam,
     ruleParam,
@@ -637,8 +645,24 @@ function FindingsContent() {
     debouncedSearch,
     HIDDEN_STATUSES,
     pagination,
-    sorting,
+    sortParam,
   ])
+
+  // The metric strip counts what the table shows (RFC-048: stats take the
+  // list's filter), except severity and status, which are the dimensions the
+  // strip itself breaks down.
+  const statsFilters = useMemo(() => {
+    const {
+      page: _page,
+      per_page: _perPage,
+      sort: _sort,
+      severities: _sev,
+      statuses: _st,
+      exclude_statuses: _ex,
+      ...rest
+    } = apiFilters
+    return rest
+  }, [apiFilters])
 
   // Any filter change resets to the first page — otherwise a user on page 8 of
   // "All" who picks a filter with only 2 pages would sit on an empty page.
@@ -646,7 +670,6 @@ function FindingsContent() {
   // with ?page=3) is not reset — only a later filter change is.
   const filterKey = [
     assetIdFilter,
-    sourceIdFilter,
     scanIdFilter,
     cveParam,
     ruleParam,
@@ -680,9 +703,7 @@ function FindingsContent() {
     data: findingStats,
     isLoading: statsLoading,
     mutate: mutateStats,
-  } = useFindingStatsApi({
-    assetId: assetIdFilter ?? undefined,
-  })
+  } = useFindingStatsApi(statsFilters)
 
   // Fetch findings from API (filtered by severity tab)
   const {
@@ -762,7 +783,18 @@ function FindingsContent() {
     toast.success('Findings refreshed')
   }
 
+  const canServerExport = hasPermission(Permission.FindingsExport)
   const handleExport = (format: string) => {
+    // With findings:export the server streams every matching finding (up to
+    // 100,000, scoped and audit-logged); without it, the current page only.
+    if (canServerExport) {
+      const a = document.createElement('a')
+      a.href = buildFindingsExportUrl(apiFilters, format === 'JSON' ? 'ndjson' : 'csv')
+      a.rel = 'noopener'
+      a.click()
+      toast.success('Export started')
+      return
+    }
     if (!findings.length) {
       toast.error('No findings to export')
       return
@@ -1726,7 +1758,6 @@ function FindingsContent() {
   // not facets — always shown. Facet chips only when the panel is not visible.
   const contextChips = [
     assetIdFilter && { key: 'asset', label: `Asset ${assetIdFilter.slice(0, 8)}…` },
-    sourceIdFilter && { key: 'source', label: `Source ${sourceIdFilter.slice(0, 8)}…` },
     scanIdFilter && { key: 'scan', label: `Scan ${scanIdFilter.slice(0, 8)}…` },
     cveParam && { key: 'cve', label: cveParam },
     ruleParam && { key: 'rule', label: `Rule ${ruleParam}` },
