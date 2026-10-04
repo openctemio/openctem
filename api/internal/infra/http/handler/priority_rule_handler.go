@@ -10,10 +10,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	appfinding "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -33,6 +35,44 @@ type PriorityRuleHandler struct {
 	// the real classification engine (POST /priority-rules/dry-run). Nil = the
 	// dry-run endpoint returns 503 (no classifier wired, e.g. no database).
 	dryRunner priorityRuleDryRunner
+	audit     *auditapp.AuditService
+}
+
+// SetAuditService wires the audit log for priority rule changes. A rule can
+// re-classify every finding (and so stretch SLA deadlines): changes are High.
+func (h *PriorityRuleHandler) SetAuditService(a *auditapp.AuditService) { h.audit = a }
+
+// ruleAuditView loads a rule as recorded in audit diffs (nil when missing).
+func (h *PriorityRuleHandler) ruleAuditView(ctx context.Context, tenantID, id string) *priorityRuleResponse {
+	var resp priorityRuleResponse
+	var createdAt, updatedAt time.Time
+	err := h.db.QueryRowContext(ctx, `
+		SELECT id, name, COALESCE(description,''), priority_class, conditions,
+			is_active, evaluation_order, created_at, updated_at
+		FROM priority_override_rules
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id).Scan(&resp.ID, &resp.Name, &resp.Description, &resp.PriorityClass,
+		&resp.Conditions, &resp.IsActive, &resp.EvaluationOrder, &createdAt, &updatedAt)
+	if err != nil {
+		return nil
+	}
+	return &resp
+}
+
+func (h *PriorityRuleHandler) auditRule(r *http.Request, action auditdom.Action, id string, before, after *priorityRuleResponse, message string) {
+	name := ""
+	var b, a any
+	if before != nil {
+		name, b = before.Name, before
+	}
+	if after != nil {
+		name, a = after.Name, after
+	}
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r),
+		auditapp.NewChangeEvent(action, auditdom.ResourceTypePriorityRule, id, b, a).
+			WithResourceName(name).
+			WithSeverity(auditdom.SeverityHigh).
+			WithMessage(message))
 }
 
 // priorityRuleDryRunner is the read-only slice of the priority-classification
@@ -207,6 +247,7 @@ func (h *PriorityRuleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if tid, perr := shared.IDFromString(tenantID); perr == nil {
 		h.enqueueReclassifyForTenant(r.Context(), tid, "priority rule created")
 	}
+	h.auditRule(r, auditdom.ActionPriorityRuleCreated, id, nil, h.ruleAuditView(r.Context(), tenantID, id), "Priority rule created")
 
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
@@ -238,6 +279,7 @@ func (h *PriorityRuleHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	before := h.ruleAuditView(r.Context(), tenantID, id)
 	result, err := h.db.ExecContext(r.Context(), `
 		UPDATE priority_override_rules SET
 			name = COALESCE($3, name),
@@ -266,6 +308,7 @@ func (h *PriorityRuleHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if tid, perr := shared.IDFromString(tenantID); perr == nil {
 		h.enqueueReclassifyForTenant(r.Context(), tid, "priority rule updated")
 	}
+	h.auditRule(r, auditdom.ActionPriorityRuleUpdated, id, before, h.ruleAuditView(r.Context(), tenantID, id), "Priority rule updated")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -275,6 +318,7 @@ func (h *PriorityRuleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
+	beforeDelete := h.ruleAuditView(r.Context(), tenantID, id)
 	result, err := h.db.ExecContext(r.Context(),
 		"DELETE FROM priority_override_rules WHERE tenant_id = $1 AND id = $2",
 		tenantID, id,
@@ -294,6 +338,7 @@ func (h *PriorityRuleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if tid, perr := shared.IDFromString(tenantID); perr == nil {
 		h.enqueueReclassifyForTenant(r.Context(), tid, "priority rule deleted")
 	}
+	h.auditRule(r, auditdom.ActionPriorityRuleDeleted, id, beforeDelete, nil, "Priority rule deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }

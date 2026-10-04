@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -22,6 +23,7 @@ import (
 
 // AssignmentRuleHandler handles assignment rule HTTP requests.
 type AssignmentRuleHandler struct {
+	configAuditor
 	service   *assignment.RuleService
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -253,6 +255,9 @@ func (h *AssignmentRuleHandler) CreateRule(w http.ResponseWriter, r *http.Reques
 		h.handleServiceError(w, err)
 		return
 	}
+	created := toAssignmentRuleResponse(rule)
+	h.recordChange(r, h.logger, auditdom.ActionAssignmentRuleCreated, auditdom.ResourceTypeAssignmentRule, created.ID, created.Name,
+		nil, created, auditdom.SeverityMedium, "Assignment rule created")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -302,11 +307,18 @@ func (h *AssignmentRuleHandler) UpdateRule(w http.ResponseWriter, r *http.Reques
 		Options:       req.Options,
 	}
 
+	var before any
+	if prev, gerr := h.service.GetRule(ctx, tenantID, ruleID); gerr == nil {
+		before = toAssignmentRuleResponse(prev)
+	}
 	rule, err := h.service.UpdateRule(ctx, tenantID, ruleID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	updated := toAssignmentRuleResponse(rule)
+	h.recordChange(r, h.logger, auditdom.ActionAssignmentRuleUpdated, auditdom.ResourceTypeAssignmentRule, updated.ID, updated.Name,
+		before, updated, auditdom.SeverityMedium, "Assignment rule updated")
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toAssignmentRuleResponse(rule))
@@ -317,10 +329,18 @@ func (h *AssignmentRuleHandler) DeleteRule(w http.ResponseWriter, r *http.Reques
 	tenantID := middleware.MustGetTenantID(r.Context())
 	ruleID := chi.URLParam(r, "id")
 
+	var before any
+	name := ""
+	if prev, gerr := h.service.GetRule(r.Context(), tenantID, ruleID); gerr == nil {
+		view := toAssignmentRuleResponse(prev)
+		before, name = view, view.Name
+	}
 	if err := h.service.DeleteRule(r.Context(), tenantID, ruleID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordChange(r, h.logger, auditdom.ActionAssignmentRuleDeleted, auditdom.ResourceTypeAssignmentRule, ruleID, name,
+		before, nil, auditdom.SeverityMedium, "Assignment rule deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }
