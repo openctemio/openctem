@@ -1,6 +1,6 @@
 # RFC-006: Ticketing — Provider Abstraction + Configurable Mapping
 
-- **Status**: Proposed
+- **Status**: Proposed. Shipped (checked 2026-10-04): Phase 0 per-tenant client resolver (#137); Phase 1 `MappingConfig` with defaults (#142); Phase 2 on the create path, with routing rules and the mapping editor (#207, #212); Phase 3a/3c/3d client transitions, outbound status push and outbound map (#167, #171, #168); a GitHub Issues provider (#189, #190, #193). Not shipped: inbound Jira webhooks still use the default map (`mapJiraStatusToFinding`), `ticket_links` (3b), `remediation_task` (3e), a shared `TicketProvider` across Jira and GitHub, ServiceNow.
 - **Created**: 2026-06-04
 - **Owner**: Platform / Mobilization
 - **Problem**: The Jira integration hardcodes status/severity mappings to one vendor's default workflow, only syncs status *inbound* (Jira→finding), and is Jira-only. Real customers run customized Jira workflows (different status names/transitions), want findings to push status *outbound*, and some use ServiceNow / GitHub Issues / GitLab. Ticketing is the CTEM **Mobilization** pillar; it needs to be configurable and provider-agnostic.

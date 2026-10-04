@@ -170,6 +170,7 @@ type AssetNode struct {
 	ID           string
 	Name         string
 	AssetType    string
+	SubType      string
 	Exposure     string
 	Criticality  string
 	RiskScore    int
