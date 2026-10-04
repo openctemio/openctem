@@ -128,7 +128,23 @@ now drives the connector; the old runner dispatcher is gone.
 - **Results** auto-resolve by coverage only for the batch's covered assets,
   only from a completed, `full` scan (RFC-007's batch invariant).
 
-## Not built yet
+## Web
 
-The web integration page and the Coverage panel (hidden until the connector
-ships end to end).
+Behind `TENABLE_CONNECTOR_ENABLED` (`web/src/features/integrations/config/feature-gates.ts`):
+
+- **Settings > Integrations > Vulnerability scanners**
+  (`features/integrations/components/scanners/tenable-connector-*`): connect a
+  connector on one of the tenant's own active sensors (platform sensors are not
+  offered; sensors not reporting `tenable_sc` are marked), instance name,
+  minimum severity, full-sync interval, rolling coverage with policy and
+  repository picked from the sensor's catalog. Each connector shows its sync
+  state and cursor, counts, Tenable.sc version, the allow-list the sensor
+  reported, the sync error, and Sync now / Edit / Remove for
+  `integrations:manage` only. Older Tenable rows are listed as paused.
+- **Coverage panel**: license used / limit (`Meter`), the current batch, the
+  next batch's headroom computed as the API does, scan freshness; numbers
+  that need a sync say "Not enough data".
+- **Scan wizard**: `tenable_sc` is offered as a scanner only in New/Edit scan
+  while the flag is on (`scannerOptions(..., allowConnectors)`), with the
+  connector, policy, repository and zone pickers (`TenableScanFields`,
+  `CatalogSelect`); Quick scan never offers it.
