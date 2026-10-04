@@ -744,18 +744,24 @@ func TestAssetService_CreateAsset_GetByNameError(t *testing.T) {
 	}
 }
 
+// Every input name is accepted, and only the core type is stored: an alias
+// becomes (core type, sub_type) (RFC-042 §6.3.8 R1).
 func TestAssetService_CreateAsset_AllAssetTypes(t *testing.T) {
-	assetTypes := []string{
-		"domain", "subdomain", "ip_address", "website", "web_application",
-		"api", "repository", "host", "container", "database", "network",
-		"cloud_account", "compute", "storage", "unclassified",
+	stored := map[string][2]string{
+		"domain": {"domain", ""}, "subdomain": {"subdomain", ""}, "ip_address": {"ip_address", ""},
+		"website": {"application", "website"}, "web_application": {"application", "web_application"},
+		"api": {"application", "api"}, "repository": {"repository", ""}, "host": {"host", ""},
+		"container": {"container", ""}, "database": {"database", ""}, "network": {"network", ""},
+		"cloud_account": {"cloud_account", ""}, "compute": {"host", "compute"}, "storage": {"storage", ""},
+		"unclassified": {"unclassified", ""}, "s3_bucket": {"storage", "bucket"},
+		"firewall": {"network", "firewall"}, "kubernetes_cluster": {"kubernetes", "cluster"},
 	}
 
-	for _, at := range assetTypes {
+	for at, want := range stored {
 		t.Run(at, func(t *testing.T) {
 			svc, _ := newTestService()
 			input := app.CreateAssetInput{
-				Name:        "Test " + at,
+				Name:        "test-" + at,
 				Type:        at,
 				Criticality: "medium",
 			}
@@ -763,8 +769,11 @@ func TestAssetService_CreateAsset_AllAssetTypes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create asset with type %s: %v", at, err)
 			}
-			if a.Type().String() != at {
-				t.Errorf("expected type %s, got %s", at, a.Type().String())
+			if a.Type().String() != want[0] || a.SubType() != want[1] {
+				t.Errorf("input %s stored as (%s, %q), want (%s, %q)", at, a.Type(), a.SubType(), want[0], want[1])
+			}
+			if !a.Type().IsStored() {
+				t.Errorf("stored type %s is not a core type", a.Type())
 			}
 		})
 	}

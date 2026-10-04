@@ -606,7 +606,7 @@ func TestRiskScoringHandler_Preview_ReturnsDeltas(t *testing.T) {
 	// Add some assets
 	legacyCfg := asset.LegacyRiskScoringConfig()
 	for i := range 3 {
-		a, _ := asset.NewAsset(fmt.Sprintf("asset-%d", i), asset.AssetTypeWebsite, asset.CriticalityCritical)
+		a, _ := asset.NewAssetWithSubType(fmt.Sprintf("asset-%d", i), asset.AssetTypeApplication, "website", asset.CriticalityCritical)
 		_ = a.UpdateExposure(asset.ExposurePublic)
 		a.UpdateFindingCount(i * 2)
 		a.SetTenantID(tenantID)
@@ -666,7 +666,7 @@ func TestRiskScoringHandler_Recalculate_ReturnsUpdatedCount(t *testing.T) {
 
 	// Add assets
 	for i := range 5 {
-		a, _ := asset.NewAsset(fmt.Sprintf("recalc-asset-%d", i), asset.AssetTypeWebsite, asset.CriticalityHigh)
+		a, _ := asset.NewAssetWithSubType(fmt.Sprintf("recalc-asset-%d", i), asset.AssetTypeApplication, "website", asset.CriticalityHigh)
 		_ = a.UpdateExposure(asset.ExposurePublic)
 		a.UpdateFindingCount(i)
 		a.SetTenantID(tenantID)

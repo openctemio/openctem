@@ -203,19 +203,34 @@ virtual_types:
   - { name: k8s_cluster, type: kubernetes, sub_type: cluster }
   - { name: k8s_workload, type: kubernetes, sub_type: workload }
   - { name: container_image, type: container, sub_type: image }
-  - { name: api_collection, type: application, sub_type: api_collection }
+  - { name: api_collection, type: application, sub_type: api }
   - { name: api_endpoint, type: discovered_url }
   - { name: identity_provider, type: identity, sub_type: identity_provider }
-  - { name: credential, type: identity, sub_type: credential }
+  # A credential is a secret, not an identity; secrets become a type of
+  # their own (RFC-042 §6.3.8 O4). Until then its constraints are skipped.
+  - { name: credential, unmodelled: true }
   - { name: mobile, type: mobile_app }
 
 # Attribute types: string, int, number, bool, time, enum (needs values),
 # list (of strings) and object (opaque). Only string, int, enum and bool
 # attributes can be facets or group-by fields.
 #
-# Each type: `alias_of` marks a legacy type that ingest stores as
-# (core type, sub_type) (pkg/domain/asset TypeAliases). An alias keeps its
-# own class: a `host` row with sub_type `serverless` is class `function`.
+# Core types and aliases (RFC-042 §6.3.8, docs/rfcs/RFC-042-asset-inventory-v2.md):
+#
+#   - A type without `alias_of` is a core type: the only values
+#     assets.asset_type holds.
+#   - `alias_of` marks an input name. Every write path (REST, import,
+#     ingest, connectors, seeds) resolves it to (core type, sub_type) and,
+#     optionally, a `provider` and `attributes`; it is never stored. An
+#     alias keeps its own class: a `host` row with sub_type `serverless` is
+#     class `function`. Its sub_type must be in the core type's sub_types;
+#     it may be empty only when the alias has the core type's class.
+#   - `sub_types` is the closed list of kinds of a core type (a sub-type is
+#     a kind, never a vendor or an engine). REST and import reject any other
+#     value; ingest keeps it in properties.x_native_sub_type.
+#   - `sub_type_inputs` maps a legacy sub-type value that is still accepted
+#     on input to { type, sub_type, provider, attributes }. Provider and
+#     attributes are set only when the asset has none.
 types:
   # ---------------------------------------------------------------------------
   # External surface
@@ -261,6 +276,8 @@ types:
     icon: network
     class: ip_address
     legacy_category: external_surface
+    sub_type_inputs:
+      ip: {}
     identity_keys: [ip, name]
     attributes:
       - { name: version, type: enum, values: ["4", "6"], facet: true }
@@ -284,6 +301,9 @@ types:
     icon: shield-check
     class: certificate
     legacy_category: external_surface
+    sub_type_inputs:
+      ssl: {}
+      tls: {}
     identity_keys: [attr.fingerprint_sha256, name]
     attributes:
       - { name: serial_number, type: string }
@@ -310,7 +330,9 @@ types:
     icon: server
     class: service
     legacy_category: network
-    sub_types: [http, open_port, discovered_url, port]
+    sub_types: [http, open_port, discovered_url]
+    sub_type_inputs:
+      port: { sub_type: open_port }
     identity_keys: [name]
     attributes:
       - { name: port, type: int, facet: true, group: true }
@@ -410,7 +432,7 @@ types:
     icon: app-window
     class: application
     legacy_category: application
-    sub_types: [website, web_application, api, mobile_app, api_collection]
+    sub_types: [website, web_application, api, mobile_app]
     identity_keys: [name]
     attributes:
       - { name: url, type: string }
@@ -517,7 +539,14 @@ types:
     icon: server
     class: host
     legacy_category: infrastructure
-    sub_types: [compute, serverless, server]
+    sub_types: [compute, serverless]
+    sub_type_inputs:
+      server: {}
+      linux: { attributes: { os_family: linux } }
+      windows: { attributes: { os_family: windows } }
+      macos: { attributes: { os_family: macos } }
+      bsd: { attributes: { os_family: bsd } }
+      kubernetes_cluster: { type: kubernetes, sub_type: cluster }
     identity_keys: [host_id, cloud_id, bios_uuid, serial_number, mac, fqdn, hostname, ip, name]
     attributes:
       - { name: hostname, type: string }
@@ -608,6 +637,13 @@ types:
     icon: cloud
     class: cloud_account
     legacy_category: cloud
+    sub_types: [account, project, subscription, organization]
+    # Vendors were stored as sub-types; the vendor is the provider.
+    sub_type_inputs:
+      aws: { provider: aws, attributes: { provider: aws } }
+      gcp: { provider: gcp, attributes: { provider: gcp } }
+      azure: { provider: azure, attributes: { provider: azure } }
+      digitalocean: { attributes: { provider: digitalocean } }
     identity_keys: [cloud_id, attr.account_id, name]
     attributes:
       - { name: provider, type: enum, values: [aws, gcp, azure, digitalocean, other], facet: true, group: true }
@@ -630,6 +666,15 @@ types:
     class: container
     legacy_category: infrastructure
     sub_types: [image]
+    # The Kubernetes importer stored workloads as containers of their kind.
+    sub_type_inputs:
+      cronjob: { type: kubernetes, sub_type: workload, attributes: { workload_kind: cronjob } }
+      daemonset: { type: kubernetes, sub_type: workload, attributes: { workload_kind: daemonset } }
+      deployment: { type: kubernetes, sub_type: workload, attributes: { workload_kind: deployment } }
+      job: { type: kubernetes, sub_type: workload, attributes: { workload_kind: job } }
+      pod: { type: kubernetes, sub_type: workload, attributes: { workload_kind: pod } }
+      replicaset: { type: kubernetes, sub_type: workload, attributes: { workload_kind: replicaset } }
+      statefulset: { type: kubernetes, sub_type: workload, attributes: { workload_kind: statefulset } }
     identity_keys: [attr.container_id, name]
     attributes:
       - { name: container_id, type: string }
@@ -658,6 +703,7 @@ types:
       - { name: region, type: string, facet: true }
       - { name: cluster_name, type: string, group: true }
       - { name: namespace, type: string, group: true }
+      - { name: workload_kind, type: string, facet: true, group: true }
       - { name: node_count, type: int }
       - { name: rbac_enabled, type: bool, facet: true }
     columns: [name, sub_type, provider, version, findings.open, last_seen]
@@ -735,7 +781,12 @@ types:
     icon: git-branch
     class: code_repo
     legacy_category: code
-    sub_types: [github, gitlab, bitbucket, azure_devops]
+    # The SCM is the provider, not a sub-type.
+    sub_type_inputs:
+      github: { provider: github, attributes: { provider: github } }
+      gitlab: { provider: gitlab, attributes: { provider: gitlab } }
+      bitbucket: { provider: bitbucket, attributes: { provider: bitbucket } }
+      azure_devops: { provider: azure_devops, attributes: { provider: azure_devops } }
     storage: asset_repositories
     identity_keys: [scm_repo_id, attr.canonical_url, name]
     attributes:
@@ -759,7 +810,7 @@ types:
     icon: user
     class: identity
     legacy_category: identity
-    sub_types: [iam_user, iam_role, &service_account service_account, identity_provider, credential]
+    sub_types: [iam_user, iam_role, &service_account service_account, identity_provider]
     identity_keys: [cloud_id, attr.principal_id, name]
     attributes:
       - { name: provider, type: enum, values: [aws, gcp, azure, entra, okta, kubernetes, other], facet: true, group: true }
@@ -847,7 +898,30 @@ types:
     icon: database
     class: data_store
     legacy_category: data
-    sub_types: [data_store]
+    # The kind of database; the engine is the `engine` attribute.
+    sub_types: [relational, document, key_value, graph, warehouse, vector]
+    sub_type_inputs:
+      data_store: {}
+      postgresql: { sub_type: relational, attributes: { engine: postgresql } }
+      postgres: { sub_type: relational, attributes: { engine: postgresql } }
+      mysql: { sub_type: relational, attributes: { engine: mysql } }
+      mariadb: { sub_type: relational, attributes: { engine: mariadb } }
+      mssql: { sub_type: relational, attributes: { engine: mssql } }
+      sqlserver: { sub_type: relational, attributes: { engine: mssql } }
+      oracle: { sub_type: relational, attributes: { engine: oracle } }
+      sqlite: { sub_type: relational, attributes: { engine: sqlite } }
+      mongodb: { sub_type: document, attributes: { engine: mongodb } }
+      couchdb: { sub_type: document, attributes: { engine: couchdb } }
+      elasticsearch: { sub_type: document, attributes: { engine: elasticsearch } }
+      opensearch: { sub_type: document, attributes: { engine: opensearch } }
+      redis: { sub_type: key_value, attributes: { engine: redis } }
+      memcached: { sub_type: key_value, attributes: { engine: memcached } }
+      dynamodb: { sub_type: key_value, attributes: { engine: dynamodb } }
+      cassandra: { sub_type: key_value, attributes: { engine: cassandra } }
+      neo4j: { sub_type: graph, attributes: { engine: neo4j } }
+      snowflake: { sub_type: warehouse, attributes: { engine: snowflake } }
+      bigquery: { sub_type: warehouse, attributes: { engine: bigquery } }
+      redshift: { sub_type: warehouse, attributes: { engine: redshift } }
     identity_keys: [cloud_id, name]
     attributes:
       - { name: engine, type: string, facet: true, group: true }
@@ -868,7 +942,7 @@ types:
     plural: Data Stores
     icon: hard-drive
     class: data_store
-    alias_of: { type: database, sub_type: data_store }
+    alias_of: { type: database }
     legacy_category: data
     identity_keys: [cloud_id, name]
     attributes:
@@ -886,7 +960,10 @@ types:
     icon: archive
     class: data_store
     legacy_category: cloud
-    sub_types: [s3_bucket, container_registry]
+    sub_types: [bucket, file_share, disk, container_registry]
+    sub_type_inputs:
+      s3_bucket: { sub_type: bucket, provider: aws, attributes: { provider: aws } }
+      s3: { sub_type: bucket, provider: aws, attributes: { provider: aws } }
     identity_keys: [cloud_id, attr.arn, name]
     attributes:
       - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
@@ -907,7 +984,7 @@ types:
     plural: S3 Buckets
     icon: archive
     class: data_store
-    alias_of: { type: storage, sub_type: s3_bucket }
+    alias_of: { type: storage, sub_type: bucket, provider: aws, attributes: { provider: aws } }
     legacy_category: data
     identity_keys: [cloud_id, attr.arn, name]
     attributes:
@@ -930,7 +1007,14 @@ types:
     icon: network
     class: network
     legacy_category: network
-    sub_types: [vpc, subnet, firewall, load_balancer, router, switch]
+    # Two families (RFC-042 §6.3.8 O2): segments, then devices.
+    sub_types: [vpc, subnet, ip_block, vlan, security_group, firewall, router, switch, load_balancer, vpn_gateway, wireless_controller, access_point, ids_ips]
+    sub_type_inputs:
+      wireless_ap: { sub_type: access_point }
+      ids: { sub_type: ids_ips }
+      ips: { sub_type: ids_ips }
+      core_switch: { sub_type: switch }
+      access_switch: { sub_type: switch }
     identity_keys: [cloud_id, name]
     attributes:
       - { name: cidr, type: string }
