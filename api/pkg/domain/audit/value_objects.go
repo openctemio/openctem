@@ -41,6 +41,10 @@ const (
 	// ActionAssetAttributionDecided: a person set whether an asset is the
 	// organization's (RFC-036 attribution review).
 	ActionAssetAttributionDecided Action = "asset.attribution_decided"
+	// ActionAssetCreateMerged: a create request matched an existing asset by
+	// name or address and updated it instead of creating a new one.
+	// Metadata lists the changed field names.
+	ActionAssetCreateMerged Action = "asset.create_merged"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -430,6 +434,7 @@ func (a Action) IsValid() bool {
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
+		ActionAssetCreateMerged,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
@@ -777,6 +782,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
+		ActionAssetCreateMerged,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,

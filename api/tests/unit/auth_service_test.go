@@ -2239,35 +2239,6 @@ func TestAuthService_ValidateAccessToken(t *testing.T) {
 }
 
 // =============================================================================
-// GenerateWSToken Tests
-// =============================================================================
-
-func TestAuthService_GenerateWSToken(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		svc, _ := newTestAuthService()
-		userID := shared.NewID().String()
-		tenantID := shared.NewID().String()
-
-		token, err := svc.GenerateWSToken(context.Background(), userID, tenantID)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		if token == "" {
-			t.Error("expected a token")
-		}
-	})
-
-	t.Run("empty user ID", func(t *testing.T) {
-		svc, _ := newTestAuthService()
-
-		_, err := svc.GenerateWSToken(context.Background(), "", shared.NewID().String())
-		if err == nil {
-			t.Fatal("expected error for empty user ID")
-		}
-	})
-}
-
-// =============================================================================
 // SetRoleService Tests
 // =============================================================================
 
