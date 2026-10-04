@@ -66,7 +66,7 @@ interface AssetRelationshipsTabProps {
   assetId: string
   /** The current asset is the source for any new relationship. We need its
    *  name and type for the dialog header and constraint validation. */
-  sourceAsset: Pick<Asset, 'id' | 'name' | 'type'>
+  sourceAsset: Pick<Asset, 'id' | 'name' | 'type' | 'subType'>
   /**
    * Optional. Called when the user clicks a related asset (in a card
    * or list row) to navigate to it. The tab itself cannot swap the
@@ -82,6 +82,7 @@ interface BackendAssetSearchItem {
   id: string
   name: string
   type: string
+  sub_type?: string
   description?: string
 }
 interface BackendAssetsListResponse {
@@ -145,6 +146,7 @@ export function AssetRelationshipsTab({
           id: a.id,
           name: a.name,
           type: a.type as ExtendedAssetType,
+          subType: a.sub_type,
           description: a.description,
         }))
       } catch {
@@ -347,6 +349,7 @@ export function AssetRelationshipsTab({
           id: sourceAsset.id,
           name: sourceAsset.name,
           type: sourceAsset.type as ExtendedAssetType,
+          subType: sourceAsset.subType,
         }}
         searchAssets={searchAssets}
         existingRelationships={relationships}

@@ -79,11 +79,14 @@ type Repository interface {
 	// finding (status in new/confirmed/in_progress) for this component are
 	// returned. Default false → returns every asset using the component
 	// regardless of vulnerability status (full SBOM view).
+	//
+	// scope limits the assets to the caller's data scope (nil: all).
 	ListAssetUsage(
 		ctx context.Context,
 		tenantID shared.ID,
 		componentID shared.ID,
 		atRiskOnly bool,
+		scope *shared.DataScope,
 		page pagination.Pagination,
 	) (pagination.Result[ComponentAssetUsage], error)
 
@@ -112,6 +115,9 @@ type Filter struct {
 	Statuses           []Status
 	Licenses           []string
 	HasVulnerabilities *bool
+	// DataScope limits the components to those used by assets in the
+	// caller's data scope. Nil means unrestricted.
+	DataScope *shared.DataScope
 }
 
 // NewFilter creates a new empty filter.

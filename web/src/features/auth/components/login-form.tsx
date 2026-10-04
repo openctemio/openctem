@@ -32,6 +32,7 @@ import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
 import { validateRedirectUrl } from '@/lib/redirect'
 import { loginErrorMessage } from '@/features/auth/lib/login-error'
+import { isInvitationReturnTo } from '@/features/auth/lib/self-register'
 import { useTranslation } from '@/context/i18n-provider'
 
 // Import schema and server actions
@@ -203,7 +204,7 @@ export function LoginForm({
       // Case 2: No tenants - check if user has a specific destination (e.g., invitation)
       if (result.tenants && result.tenants.length === 0) {
         // If returnTo is an invitation page, go there first (user can accept and get a tenant)
-        if (safeRedirectTo.includes('/invitations/')) {
+        if (isInvitationReturnTo(safeRedirectTo)) {
           toast.success('Logged in successfully')
           hardNavigate(safeRedirectTo)
           return

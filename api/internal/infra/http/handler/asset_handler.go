@@ -167,6 +167,25 @@ func (h *AssetHandler) auditCreateMerged(r *http.Request, a *asset.Asset, change
 	_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
 }
 
+// DuplicateAssetDetails is the details object of the 409 a create returns
+// when the asset already exists. ExistingAssetID is present only when the
+// caller may see that asset.
+type DuplicateAssetDetails struct {
+	ExistingAssetID string `json:"existing_asset_id,omitempty"`
+}
+
+// writeDuplicateAsset writes the 409 for a create that matched an existing
+// asset. The body names the existing asset only when the service set its id
+// (the asset is in the caller's data scope); otherwise it is the same generic
+// conflict for every match, so it reveals nothing about the asset.
+func writeDuplicateAsset(w http.ResponseWriter, dup *app.DuplicateAssetError) {
+	e := apierror.Conflict("Asset already exists")
+	if !dup.ExistingID.IsZero() {
+		e = e.WithDetails(DuplicateAssetDetails{ExistingAssetID: dup.ExistingID.String()})
+	}
+	e.WriteJSON(w)
+}
+
 // SnoozeLifecycleRequest is the body for POST /assets/{id}/lifecycle/snooze.
 // Duration is expressed in days so the HTTP contract is simple;
 // service layer converts to an absolute timestamp on the server
@@ -563,6 +582,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        providers             query string false "Filter by provider/source (comma-separated)"
 // @Param        last_seen_after       query string false "Filter assets last seen at/after this time (RFC3339 or YYYY-MM-DD)"
 // @Param        last_seen_before      query string false "Filter assets last seen at/before this time (RFC3339 or YYYY-MM-DD)"
+// @Param        attribution           query string false "Filter by attribution (comma-separated): confirmed (includes assets with no record), needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (confirmed+unknown+dependency+monitor_only)"
 // @Param        sort          query     string  false  "Sort field (e.g., -created_at, name, -risk_score)"
 // @Param        page          query     int     false  "Page number"  default(1)
 // @Param        per_page      query     int     false  "Items per page"  default(20)  maximum(100)
@@ -603,6 +623,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Providers:            parseQueryArray(query.Get("providers")),
 		LastSeenAfter:        parseQueryTimePtr(query.Get("last_seen_after")),
 		LastSeenBefore:       parseQueryTimePtr(query.Get("last_seen_before")),
+		Attribution:          parseQueryArray(query.Get("attribution")),
 		Sort:                 query.Get("sort"),
 		Page:                 parseQueryInt(query.Get("page"), 1),
 		PerPage:              parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
@@ -692,7 +713,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/v1/assets
 // @Summary      Create asset
-// @Description  Creates a new asset for the current tenant
+// @Description  Creates a new asset for the current tenant. A name (or a correlated address) that matches an existing asset is a 409 and nothing is changed; details.existing_asset_id names the existing asset only when it is in the caller's data scope.
 // @Tags         Assets
 // @Accept       json
 // @Produce      json
@@ -732,17 +753,18 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Properties:  req.Properties,
 	}
 
-	a, outcome, err := h.service.CreateAssetWithOutcome(r.Context(), input)
+	a, err := h.service.CreateAsset(r.Context(), input)
 	if err != nil {
+		var dup *app.DuplicateAssetError
+		if errors.As(err, &dup) {
+			writeDuplicateAsset(w, dup)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
-	if outcome.Merged {
-		h.auditCreateMerged(r, a, outcome.ChangedFields)
-	} else {
-		h.auditAsset(r, auditdom.ActionAssetCreated, a.ID().String(), a.Name(), "Asset created",
-			map[string]any{"type": a.Type().String(), "criticality": a.Criticality().String()})
-	}
+	h.auditAsset(r, auditdom.ActionAssetCreated, a.ID().String(), a.Name(), "Asset created",
+		map[string]any{"type": a.Type().String(), "criticality": a.Criticality().String()})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

@@ -21,6 +21,12 @@ var (
 	ErrReasonRequired         = fmt.Errorf("%w: reason is required for exclusion", shared.ErrValidation)
 	// ErrExclusionSelfApproval: the requester of an exclusion cannot approve it.
 	ErrExclusionSelfApproval = fmt.Errorf("%w: cannot approve a scope exclusion you requested", shared.ErrForbidden)
+	// ErrExclusionReduceNeedsApprover: deactivating, deleting or shortening an
+	// exclusion in effect takes the approval permission, like approving it.
+	ErrExclusionReduceNeedsApprover = fmt.Errorf("%w: removing or shortening an approved scope exclusion needs the exclusion approval permission", shared.ErrForbidden)
+	// ErrExclusionSelfReduce: the requester of an exclusion in effect cannot
+	// take it out of effect or shorten it alone (separation of duties).
+	ErrExclusionSelfReduce = fmt.Errorf("%w: cannot remove or shorten a scope exclusion you requested; another approver must", shared.ErrForbidden)
 	// ErrExclusionNotPending: approve/reject on an exclusion that is not
 	// awaiting review (already approved, or rejected).
 	ErrExclusionNotPending = fmt.Errorf("%w: scope exclusion is not awaiting approval", shared.ErrConflict)
