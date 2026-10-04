@@ -572,7 +572,7 @@ func (a Action) IsValid() bool {
 		ActionAuditChainRebaselined:
 		return true
 	}
-	return false
+	return isConfigAction(a)
 }
 
 // Category returns the category of the action (e.g., "user", "tenant").
@@ -768,7 +768,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
 		return true
 	}
-	return false
+	return isConfigResourceType(r)
 }
 
 // Result represents the outcome of an action.

@@ -192,6 +192,30 @@ export type AuditAction =
   | 'remediation_campaign.updated'
   | 'remediation_campaign.status_changed'
   | 'remediation_campaign.deleted'
+  // Configuration changes (audited with a before/after diff)
+  | 'invitation.resent'
+  | 'scim_token.created'
+  | 'scim_token.revoked'
+  | 'storage_config.updated'
+  | 'integration.created'
+  | 'integration.updated'
+  | 'integration.deleted'
+  | 'integration.enabled'
+  | 'integration.disabled'
+  | 'integration.credentials_changed'
+  | 'integration.webhook_secret_read'
+  | 'integration.webhook_secret_rotated'
+  | 'notification_outbox.retried'
+  | 'notification_outbox.deleted'
+  | 'priority_rule.created'
+  | 'priority_rule.updated'
+  | 'priority_rule.deleted'
+  | 'scope_rule.created'
+  | 'scope_rule.updated'
+  | 'scope_rule.deleted'
+  | 'assignment_rule.created'
+  | 'assignment_rule.updated'
+  | 'assignment_rule.deleted'
 
 /**
  * Resource types - maps to backend audit.ResourceType
@@ -222,6 +246,13 @@ export type AuditResourceType =
   | 'tool'
   | 'scanner_template'
   | 'remediation_campaign'
+  | 'integration'
+  | 'scim_token'
+  | 'storage_config'
+  | 'notification_outbox'
+  | 'priority_rule'
+  | 'scope_rule'
+  | 'assignment_rule'
   | typeof HISTORICAL_SENSOR_RESOURCE_TYPE
 
 /**
@@ -460,6 +491,30 @@ export function getActionLabel(action: AuditAction): string {
     'remediation_campaign.updated': 'Remediation Campaign Updated',
     'remediation_campaign.status_changed': 'Remediation Campaign Status Changed',
     'remediation_campaign.deleted': 'Remediation Campaign Deleted',
+    // Configuration changes
+    'invitation.resent': 'Invitation Resent',
+    'scim_token.created': 'SCIM Token Created',
+    'scim_token.revoked': 'SCIM Token Revoked',
+    'storage_config.updated': 'Evidence Storage Changed',
+    'integration.created': 'Integration Created',
+    'integration.updated': 'Integration Updated',
+    'integration.deleted': 'Integration Deleted',
+    'integration.enabled': 'Integration Enabled',
+    'integration.disabled': 'Integration Disabled',
+    'integration.credentials_changed': 'Integration Credentials Changed',
+    'integration.webhook_secret_read': 'Webhook Secret Viewed',
+    'integration.webhook_secret_rotated': 'Webhook Secret Rotated',
+    'notification_outbox.retried': 'Notification Retried',
+    'notification_outbox.deleted': 'Notification Deleted',
+    'priority_rule.created': 'Priority Rule Created',
+    'priority_rule.updated': 'Priority Rule Updated',
+    'priority_rule.deleted': 'Priority Rule Deleted',
+    'scope_rule.created': 'Scope Rule Created',
+    'scope_rule.updated': 'Scope Rule Updated',
+    'scope_rule.deleted': 'Scope Rule Deleted',
+    'assignment_rule.created': 'Assignment Rule Created',
+    'assignment_rule.updated': 'Assignment Rule Updated',
+    'assignment_rule.deleted': 'Assignment Rule Deleted',
   }
   const canonical = canonicalAuditAction(action)
   return labels[canonical] || action
