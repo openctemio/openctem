@@ -2,27 +2,28 @@
 # OpenCTEM gateway: the single public entry point (one HTTPS port).
 # =============================================================================
 # The browser UI (web, Next.js) and the REST API (api, Go) stay on the internal
-# network. This gateway terminates TLS and routes by path and credential:
+# network. This gateway terminates TLS and routes by plane (RFC-041), from
+# planes.caddy, which is GENERATED from the API's plane table
+# (api/internal/infra/http/routes/plane), the same table the route-style lint
+# checks every route against; CI fails if the two disagree:
 #
-#   to the API (api:8080)
-#     /api/v1/agent/*  /api/v2/sensor/*  /api/v1/platform/*   sensors
-#     /scim/v2/*                                              SCIM provisioning
-#     /api/v1/mcp                                             MCP (oct_ key)
-#     /api/v1/webhooks/incoming/*                             Jira/GitHub webhooks (HMAC)
-#     /api/v1/auth/saml/*                                     SAML metadata, login redirect,
-#                                                             ACS (IdP form POST)
-#     /api/v1/auth/backchannel-logout                         OIDC back-channel logout (IdP)
-#     /api/v1/ws                                              browser WebSocket (session cookie,
-#                                                             same origin as the UI)
-#     /health  /openapi.yaml  /docs                           liveness, API reference
-#     /api/* with Authorization: Bearer oct_*  or  X-API-Key  API-key clients
+#   to the API (api:8080), by plane
+#     sensor   /api/v2/sensor/*  /api/v1/agent/*  /api/v1/validation/evidence
+#     inbound  /hooks/*  /api/v1/webhooks/incoming/*        (HMAC per tenant)
+#     scim     /scim/v2/*
+#     mcp      /api/v1/mcp                                  (oct_ key)
+#     ops      /health  /openapi.yaml  /docs
+#     auth     /api/v1/auth/saml/*  /api/v1/auth/backchannel-logout   (called by the IdP)
+#     self     /api/v1/ws                                   (browser WebSocket, same origin)
+#   blocked here (404): /metrics  /ready  /debug/*
+#   browser planes (user, self, auth, admin): everything else under /api goes
+#     to the API only for token clients:
+#       Authorization: Bearer oct_*  or  X-API-Key          API-key clients
 #                                                           (tenant REST routes, read-only;
 #                                                           see docs/architecture/api-keys.md)
-#     /api/* with Authorization: Bearer * and no session cookie
-#                                                           other token clients
-#   blocked here (404): /metrics  /ready  /debug/*
-#   everything else to the web UI (web:3000), including the browser's
-#   cookie-session calls to /api/v1/*, which the web proxy authenticates.
+#       Authorization: Bearer * and no session cookie       other token clients
+#     and to the web UI (web:3000) otherwise, including the browser's
+#     cookie-session calls to /api/v1/*, which the web proxy authenticates.
 #
 # Why the credential split: the web's /api/v1 proxy authenticates with the
 # browser's session cookie and does not forward the caller's Authorization
@@ -66,6 +67,9 @@
 	import modes/{$OPENCTEM_TLS_MODE}.global
 }
 
+# The plane matchers, generated from the API's plane table.
+import planes.caddy
+
 # Everything a site needs apart from its address and TLS.
 (openctem) {
 	# Above the API's largest per-route limit (asset import, 200 MB); the API
@@ -101,16 +105,15 @@
 		?Referrer-Policy strict-origin-when-cross-origin
 	}
 
-	# Never public: Prometheus metrics, readiness detail, debug handlers.
-	@internal path /metrics /metrics/* /ready /debug/*
-	handle @internal {
+	# Never public: debug handlers (no plane). Metrics and readiness are the
+	# ops plane's internal paths, in planes.caddy.
+	@debug path /debug /debug/*
+	handle @debug {
 		respond 404
 	}
 
-	@api_paths path /api/v1/agent/* /api/v2/sensor/* /api/v1/platform/* /scim/v2/* /api/v1/mcp /api/v1/mcp/* /api/v1/webhooks/incoming/* /api/v1/auth/saml/* /api/v1/auth/backchannel-logout /api/v1/ws /health /openapi.yaml /docs
-	handle @api_paths {
-		import to_api
-	}
+	# The planes the gateway sends straight to the API (generated).
+	import planes
 
 	@api_key_bearer {
 		path /api/*

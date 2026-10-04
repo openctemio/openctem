@@ -19,6 +19,8 @@ import (
 	_ "github.com/lib/pq"
 
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -99,8 +101,16 @@ func (fx *fixture) newFinding(asset shared.ID, status, template string) shared.I
 
 func (fx *fixture) service() *retestapp.Service {
 	return retestapp.NewService(fx.repo, postgres.NewFindingRepository(fx.pg), postgres.NewAssetRepository(fx.pg),
-		postgres.NewCommandRepository(fx.pg), validation.NewCommandDispatcher(postgres.NewCommandRepository(fx.pg), logger.NewNop()),
+		postgres.NewCommandRepository(fx.pg), validation.NewCommandDispatcher(postgres.NewCommandRepository(fx.pg), fx.gate(), logger.NewNop()),
 		sensorsOnline(true), logger.NewNop())
+}
+
+// gate is the production active-probe gate over the test database.
+func (fx *fixture) gate() *scanapp.Service {
+	log := logger.NewNop()
+	scope := scopeapp.NewService(postgres.NewScopeTargetRepository(fx.pg), postgres.NewScopeExclusionRepository(fx.pg),
+		nil, postgres.NewAssetRepository(fx.pg), log)
+	return scanapp.NewTargetGate(scope, postgres.NewAttributionRepository(fx.pg), postgres.NewScanZoneRepository(fx.pg), nil, log)
 }
 
 // finish reports a sensor result for a command: completed with an outcome, or
