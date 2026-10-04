@@ -76,13 +76,14 @@ func (m *mockPermissionSetRepo) Create(_ context.Context, ps *permissionset.Perm
 	return nil
 }
 
-func (m *mockPermissionSetRepo) GetByID(_ context.Context, id shared.ID) (*permissionset.PermissionSet, error) {
+func (m *mockPermissionSetRepo) GetByID(_ context.Context, tenantID, id shared.ID) (*permissionset.PermissionSet, error) {
 	m.getByIDCalls++
 	if m.getByIDErr != nil {
 		return nil, m.getByIDErr
 	}
 	ps, ok := m.sets[id.String()]
-	if !ok {
+	// Like the repository: a system set, or one of tenantID's own.
+	if !ok || (ps.TenantID() != nil && *ps.TenantID() != tenantID) {
 		return nil, permissionset.ErrPermissionSetNotFound
 	}
 	return ps, nil
@@ -113,7 +114,7 @@ func (m *mockPermissionSetRepo) Update(_ context.Context, ps *permissionset.Perm
 	return nil
 }
 
-func (m *mockPermissionSetRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockPermissionSetRepo) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -199,7 +200,7 @@ func (m *mockPermissionSetRepo) ListItems(_ context.Context, _ shared.ID) ([]*pe
 	return nil, nil
 }
 
-func (m *mockPermissionSetRepo) GetWithItems(_ context.Context, id shared.ID) (*permissionset.PermissionSetWithItems, error) {
+func (m *mockPermissionSetRepo) GetWithItems(_ context.Context, _ shared.ID, id shared.ID) (*permissionset.PermissionSetWithItems, error) {
 	if m.getWithItemsErr != nil {
 		return nil, m.getWithItemsErr
 	}
@@ -247,7 +248,7 @@ func (m *mockPermissionSetRepo) ListChildren(_ context.Context, _ shared.ID) ([]
 	return nil, nil
 }
 
-func (m *mockPermissionSetRepo) GetInheritanceChain(_ context.Context, _ shared.ID) ([]*permissionset.PermissionSet, error) {
+func (m *mockPermissionSetRepo) GetInheritanceChain(_ context.Context, _ shared.ID, _ shared.ID) ([]*permissionset.PermissionSet, error) {
 	if m.getInheritChainErr != nil {
 		return nil, m.getInheritChainErr
 	}
@@ -304,7 +305,7 @@ func (m *mockGroupRepoForPermission) GetBySlug(_ context.Context, _ shared.ID, _
 	return nil, nil
 }
 func (m *mockGroupRepoForPermission) Update(_ context.Context, _ *group.Group) error { return nil }
-func (m *mockGroupRepoForPermission) Delete(_ context.Context, _ shared.ID) error    { return nil }
+func (m *mockGroupRepoForPermission) Delete(_ context.Context, _ shared.ID, _ shared.ID) error    { return nil }
 func (m *mockGroupRepoForPermission) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }
@@ -879,22 +880,19 @@ func TestGetPermissionSet_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	ps := seedCustomPermissionSet(repo, tenantID, "Test Set", "test-set")
 
-	found, err := svc.GetPermissionSet(context.Background(), ps.ID().String())
+	found, err := svc.GetPermissionSetWithItems(context.Background(), ps.ID().String(), tenantID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if found.ID() != ps.ID() {
-		t.Errorf("expected ID %s, got %s", ps.ID(), found.ID())
-	}
-	if repo.getByIDCalls != 1 {
-		t.Errorf("expected 1 GetByID call, got %d", repo.getByIDCalls)
+	if found.PermissionSet.ID() != ps.ID() {
+		t.Errorf("expected ID %s, got %s", ps.ID(), found.PermissionSet.ID())
 	}
 }
 
 func TestGetPermissionSet_NotFound(t *testing.T) {
 	svc, _, _, _ := newTestPermissionService()
 
-	_, err := svc.GetPermissionSet(context.Background(), shared.NewID().String())
+	_, err := svc.GetPermissionSetWithItems(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for permission set not found")
 	}
@@ -906,7 +904,7 @@ func TestGetPermissionSet_NotFound(t *testing.T) {
 func TestGetPermissionSet_InvalidID(t *testing.T) {
 	svc, _, _, _ := newTestPermissionService()
 
-	_, err := svc.GetPermissionSet(context.Background(), "not-a-valid-uuid")
+	_, err := svc.GetPermissionSetWithItems(context.Background(), "not-a-valid-uuid", shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}

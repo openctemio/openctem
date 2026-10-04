@@ -33,7 +33,7 @@ func newCeilingRepo(rs ...*role.Role) *ceilingRepo {
 	return c
 }
 
-func (c *ceilingRepo) GetByID(_ context.Context, id role.ID) (*role.Role, error) {
+func (c *ceilingRepo) GetByID(_ context.Context, _ role.ID, id role.ID) (*role.Role, error) {
 	if r, ok := c.roles[id.String()]; ok {
 		return r, nil
 	}
@@ -104,7 +104,7 @@ func (c *ceilingRepo) Update(_ context.Context, r *role.Role) error {
 	return nil
 }
 
-func (c *ceilingRepo) Delete(_ context.Context, id role.ID) error {
+func (c *ceilingRepo) Delete(_ context.Context, _ role.ID, id role.ID) error {
 	delete(c.roles, id.String())
 	return nil
 }
