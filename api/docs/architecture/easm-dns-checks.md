@@ -1,8 +1,11 @@
 # EASM DNS-only checks: dangling DNS and email posture
 
 > RFC-036 P1. Built. Passive (tier T0): the platform asks its own recursive
-> resolver about the tenant's names. Nothing is sent to the tenant's hosts or
-> to the CNAME targets, and no HTTP request is made.
+> resolver about the tenant's names. The only direct queries are DNS
+> questions about the tenant's own name to the name servers of its parent
+> zone and of its delegation, for the lame-delegation check below. Nothing is
+> sent to the tenant's hosts or to the CNAME targets, and no HTTP request is
+> made.
 
 ## What runs
 
@@ -37,6 +40,8 @@ hides this, hence `pkg/dnsprobe`). Names without a CNAME are then asked for
 | CNAME to a provider that [can-i-take-over-xyz](https://github.com/EdOverflow/can-i-take-over-xyz) marks *Vulnerable*, target `NXDOMAIN` | medium | anyone can claim that name at the provider. Medium until a sensor confirms (nuclei `takeover`, T1) — the exposure carries `confirmation: pending` |
 | all name servers of a delegation missing (their domain registered) | medium | the zone does not resolve; one registration away from takeover if the provider allows it |
 | some name servers missing | low | broken redundancy |
+| every delegated name server exists but none answers authoritatively for the zone (lame delegation) | medium | the name does not resolve; at many DNS providers whoever creates the zone on those servers controls it |
+| some delegated name servers lame | low | broken redundancy |
 | CNAME to any other missing target | low | a broken record, not a known takeover path |
 
 "Registrable domain" is one label below the ICANN public suffix. Private
@@ -91,14 +96,29 @@ MTA-STS policy file (fetched over HTTPS from the tenant's host, not DNS-only).
 - Resolver failure (SERVFAIL, timeout): nothing is concluded, raised or
   resolved; the outcome `unknown` is stored.
 
-**Known limit (follow-up).** The checks ask a recursive resolver. When every
-name server of a *delegated* sub-zone is dead but still resolves (a lame
-delegation), the resolver answers SERVFAIL and the name is stored as
-`unknown`, not `dangling_ns`; the case above (name servers that do not exist)
-is caught. Seeing the referral itself needs a non-recursive query to the
-parent zone's authoritative servers, which `pkg/dnsprobe` does not do yet.
-A name that stays `unknown` run after run is visible in
-`easm_dns_check_state.last_outcome`.
+**Lame delegation.** When the resolver answers SERVFAIL for a name (what a
+lame delegation looks like through a recursive resolver), the check
+(`internal/app/easmdns/lame.go`):
+
+1. finds the parent zone by asking the resolver for `NS` of each ancestor,
+   stopping at the registrable domain, so public-suffix (TLD) servers are
+   never asked;
+2. asks up to 3 addresses of the parent's name servers for the name's `NS`
+   **without recursion** (`dnsprobe.QueryServer`, RD=0) and reads the referral
+   from the authority section (an authoritative answer means the name is not
+   delegated: nothing concluded);
+3. asks each delegated name server (at most 8) for the name's `SOA` without
+   recursion; a server that does not answer authoritatively is lame, one that
+   does not exist is missing.
+
+All servers lame or missing: `dangling_ns` medium with `lame_name_servers` in
+the details; some: low; none: nothing concluded (`unknown`, the SERVFAIL has
+another cause, e.g. DNSSEC). **Safety:** every server address comes from DNS
+data, so `QueryServer` accepts only a public IP literal under the platform's
+SSRF policy (`httpsec.IsIPBlocked`: loopback, RFC 1918, link-local/metadata,
+CGNAT … refused before anything is sent), always port 53, through the same
+rate limiter and 3 s bound. A delegated server reachable only at a refused
+address is not judged at all, so a private name server is never called lame.
 
 ## Scale and politeness
 
