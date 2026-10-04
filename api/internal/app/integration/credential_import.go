@@ -795,7 +795,11 @@ func (s *CredentialImportService) GetByID(ctx context.Context, tenantID, id stri
 		return nil, fmt.Errorf("%w: invalid credential ID", shared.ErrValidation)
 	}
 
-	event, err := s.exposureRepo.GetByID(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	event, err := s.exposureRepo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -1272,7 +1276,11 @@ func (s *CredentialImportService) ReactivateCredential(ctx context.Context, tena
 		return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
 	}
 
-	event, err := s.exposureRepo.GetByID(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	event, err := s.exposureRepo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -1320,7 +1328,11 @@ func (s *CredentialImportService) changeCredentialState(ctx context.Context, ten
 		return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
 	}
 
-	event, err := s.exposureRepo.GetByID(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	event, err := s.exposureRepo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}

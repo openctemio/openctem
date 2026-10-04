@@ -38,7 +38,7 @@ func (m *MockFindingActivityRepo) CreateBatch(_ context.Context, activities []*v
 	return m.CreateBatchError
 }
 
-func (m *MockFindingActivityRepo) GetByID(_ context.Context, _ shared.ID) (*vulnerability.FindingActivity, error) {
+func (m *MockFindingActivityRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*vulnerability.FindingActivity, error) {
 	return nil, nil
 }
 
