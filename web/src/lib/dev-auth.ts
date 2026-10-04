@@ -98,7 +98,6 @@ export const DEV_USER: AuthUser & {
     'integrations:pipelines:read',
     'integrations:pipelines:write',
     // Settings
-    'settings:billing:read',
     'settings:sla:read',
     'settings:sla:write',
     'settings:sla:delete',

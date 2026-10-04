@@ -314,7 +314,7 @@ func TestAuthzPolicy_BillingNotGrantedToMemberOrViewer_DB(t *testing.T) {
 	h := newAuthzPolicyHarness(t)
 	rows, err := h.db.Query(`SELECT r.slug, rp.permission_id FROM role_permissions rp JOIN roles r ON r.id = rp.role_id
 		WHERE r.is_system AND r.slug IN ('member','viewer')
-		  AND rp.permission_id IN ('settings:billing:read','audit:read','sensors:write','sensors:delete')`)
+		  AND rp.permission_id IN ('audit:read','sensors:write','sensors:delete')`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,11 +331,11 @@ func TestAuthzPolicy_BillingNotGrantedToMemberOrViewer_DB(t *testing.T) {
 	var n int
 	if err := h.db.QueryRow(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id
 		WHERE r.is_system AND r.slug IN ('owner','admin')
-		  AND rp.permission_id IN ('settings:billing:read','audit:read','sensors:write')`).Scan(&n); err != nil {
+		  AND rp.permission_id IN ('audit:read','sensors:write')`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 6 {
-		t.Fatalf("owner+admin hold %d of the 6 admin-only grants, want 6", n)
+	if n != 4 {
+		t.Fatalf("owner+admin hold %d of the 4 admin-only grants, want 4", n)
 	}
 	// Members and viewers keep reading sensors.
 	if err := h.db.QueryRow(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id

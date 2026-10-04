@@ -475,10 +475,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ComplianceFrameworksRead,
     module: Module.Compliance,
   },
-  '/insights/reports/compliance': {
-    permission: Permission.ComplianceReportsRead,
-    module: Module.Compliance,
-  },
 
   // ========================================
   // Insights — extended dashboards (each its own module post-000161)
@@ -630,19 +626,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/audit-log/**': {
     permission: Permission.AuditRead,
     message: 'Audit logs require admin or owner privileges.',
-  },
-
-  // ========================================
-  // Settings - Billing (Admin/Owner only, no module required)
-  // Billing is a core feature, controlled by RBAC only
-  // ========================================
-  '/settings/billing': {
-    permission: Permission.BillingRead,
-    message: 'Billing information requires admin or owner privileges.',
-  },
-  '/settings/billing/**': {
-    permission: Permission.BillingRead,
-    message: 'Billing information requires admin or owner privileges.',
   },
 
   // ========================================
