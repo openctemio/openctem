@@ -3,7 +3,8 @@
 > Status: **Proposed** (2026-10-04; design merged in #995). P0 pull path:
 > platform side in this PR's branch `feat/tenable-sc-connector-sync`,
 > sensor side in openctemio/sensor#129. P1 scan launch: platform branch
-> `feat/tenable-sc-connector-scan`, sensor openctemio/sensor#131. Current build:
+> `feat/tenable-sc-connector-scan`, sensor openctemio/sensor#131. P2 coverage:
+> platform branch `feat/tenable-sc-coverage`. Current build:
 > [architecture/tenable-sc-connector.md](../architecture/tenable-sc-connector.md). Owner decision D-14 (2026-10-04, final):
 > rebuild the Tenable integration as a **two-way Tenable Security Center
 > (Tenable.sc) connector that runs inside the sensor**. Pull assets,
