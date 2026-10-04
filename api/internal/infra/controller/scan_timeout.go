@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
+
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -80,6 +82,7 @@ func (c *ScanTimeoutController) Reconcile(ctx context.Context) (int, error) {
 			c.logger.Error("failed to abort unclaimed scan runs", "error", err)
 		} else if n > 0 {
 			c.logger.Info("ended scan runs no sensor picked up", "count", n)
+			metrics.ScanRunsReapedTotal.WithLabelValues("unclaimed").Add(float64(n))
 			aborted = n
 		}
 	}
@@ -92,6 +95,7 @@ func (c *ScanTimeoutController) Reconcile(ctx context.Context) (int, error) {
 
 	if count > 0 {
 		c.logger.Info("ended scan runs past their deadline (partial when some work finished, else timeout)", "count", count)
+		metrics.ScanRunsReapedTotal.WithLabelValues("deadline").Add(float64(count))
 	}
 
 	return int(count + aborted), nil
