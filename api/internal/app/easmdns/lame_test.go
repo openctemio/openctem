@@ -172,8 +172,15 @@ func TestCheckDanglingTarget_LameEvent(t *testing.T) {
 	svc := &Service{dns: world(map[string]authReply{}, map[string]authReply{})}
 	tenant, asset := shared.NewID(), shared.NewID()
 	outcome, found, clear, err := svc.checkDanglingTarget(context.Background(), tenant, Target{AssetID: asset, Name: "dev.example.com"})
-	if err != nil || outcome != OutcomeDanglingNS || len(found) != 1 || len(clear) != 1 {
+	// A delegation finding clears the name's dangling_cname and any confirmed
+	// subdomain_takeover (a CNAME and a delegation cannot share a name).
+	if err != nil || outcome != OutcomeDanglingNS || len(found) != 1 || len(clear) != 2 {
 		t.Fatalf("outcome %s found %d clear %d err %v", outcome, len(found), len(clear), err)
+	}
+	cname, _ := danglingEvent(tenant, Target{AssetID: asset, Name: "dev.example.com"}, exposuredom.EventTypeDanglingCNAME, Dangling{})
+	takeover, _ := takeoverEvent(tenant, Target{AssetID: asset, Name: "dev.example.com"}, nil, nil)
+	if !(contains(clear, cname.Fingerprint()) && contains(clear, takeover.Fingerprint())) {
+		t.Fatalf("clear = %v, want the dangling_cname and takeover identities", clear)
 	}
 	ev := found[0]
 	if ev.EventType() != exposuredom.EventTypeDanglingNS || ev.TenantID() != tenant || ev.AssetID() == nil || *ev.AssetID() != asset {
@@ -185,4 +192,13 @@ func TestCheckDanglingTarget_LameEvent(t *testing.T) {
 	if !strings.Contains(ev.Description(), "do not serve the zone") {
 		t.Fatalf("description = %q", ev.Description())
 	}
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }

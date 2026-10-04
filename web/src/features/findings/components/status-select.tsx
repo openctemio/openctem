@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ChevronDown, Loader2, Check } from 'lucide-react'
+import { usePermissions } from '@/context/permission-provider'
+import { Permission } from '@/lib/permissions'
 import { FINDING_STATUS_CONFIG, STATUS_TRANSITIONS, getStatusesForSource } from '../types'
 import type { FindingStatus } from '../types'
 
@@ -61,9 +63,14 @@ export function StatusSelect({
   const allTransitions = STATUS_TRANSITIONS[value]
   // Filter transitions by source type (pentest vs automated have different valid statuses)
   const validStatuses = source ? getStatusesForSource(source) : undefined
-  const availableTransitions = validStatuses
-    ? allTransitions.filter((s) => validStatuses.includes(s))
-    : allTransitions
+  // Moving a finding to resolved needs findings:verify (the API refuses it
+  // otherwise); without it the person marks fix_applied and a retest, a
+  // covered scan or a security reviewer closes the finding.
+  const { hasPermission } = usePermissions()
+  const canResolve = hasPermission(Permission.FindingsVerify)
+  const availableTransitions = (
+    validStatuses ? allTransitions.filter((s) => validStatuses.includes(s)) : allTransitions
+  ).filter((s) => canResolve || s !== 'resolved')
   const isProcessingRef = useRef(false)
 
   // Debounced onChange to prevent race conditions

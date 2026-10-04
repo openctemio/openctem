@@ -71,7 +71,7 @@ func TestBulkUpdateStatusByFilter(t *testing.T) {
 		tenant, asset := newTenant("bulk-reopen")
 		id := insert(tenant, asset, "fix_applied")
 		n, err := repo.BulkUpdateStatusByFilter(ctx, tenant, fixAppliedIn(tenant),
-			vulnerability.FindingStatusInProgress, "fix did not hold", &reviewer)
+			vulnerability.FindingStatusInProgress, "fix did not hold", &reviewer, "")
 		if err != nil {
 			t.Fatalf("reopen by filter: %v", err)
 		}
@@ -92,9 +92,16 @@ func TestBulkUpdateStatusByFilter(t *testing.T) {
 			t.Fatal(err)
 		}
 		n, err := repo.BulkUpdateStatusByFilter(ctx, tenant, fixAppliedIn(tenant),
-			vulnerability.FindingStatusResolved, "verified", &reviewer)
+			vulnerability.FindingStatusResolved, "verified", &reviewer, vulnerability.ResolutionMethodSecurityReviewed)
 		if err != nil {
 			t.Fatalf("verify by filter: %v", err)
+		}
+		var method sql.NullString
+		if err := db.QueryRow(`SELECT resolution_method FROM findings WHERE id = $1`, id.String()).Scan(&method); err != nil {
+			t.Fatal(err)
+		}
+		if method.String != "security_reviewed" {
+			t.Fatalf("resolution_method = %v, want security_reviewed", method)
 		}
 		if n != 1 {
 			t.Fatalf("expected 1 finding resolved, got %d", n)
@@ -103,6 +110,18 @@ func TestBulkUpdateStatusByFilter(t *testing.T) {
 		if status != "resolved" || by.String != reviewer.String() || !at.Valid {
 			t.Fatalf("got status=%s resolved_by=%v resolved_at=%v; want resolved by %s with a time",
 				status, by, at, reviewer)
+		}
+	})
+
+	t.Run("a close without a resolution method is refused", func(t *testing.T) {
+		tenant, asset := newTenant("bulk-nomethod")
+		id := insert(tenant, asset, "fix_applied")
+		if _, err := repo.BulkUpdateStatusByFilter(ctx, tenant, fixAppliedIn(tenant),
+			vulnerability.FindingStatusResolved, "verified", &reviewer, ""); err == nil {
+			t.Fatal("resolve by filter with no resolution method succeeded, want refused")
+		}
+		if status, _, _ := read(id); status != "fix_applied" {
+			t.Fatalf("status = %s after a refused close, want fix_applied", status)
 		}
 	})
 }

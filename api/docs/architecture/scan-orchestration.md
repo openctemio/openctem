@@ -312,26 +312,20 @@ ON commands(step_run_id) WHERE step_run_id IS NOT NULL;
 
 ## Prometheus Metrics
 
-```go
-// Pipeline metrics
-var (
-    PipelineRunsTotal = prometheus.NewCounterVec(...)     // pipeline_runs_total
-    PipelineRunsInProgress = prometheus.NewGaugeVec(...)  // pipeline_runs_in_progress
-    StepRunsTotal = prometheus.NewCounterVec(...)         // step_runs_total
-)
+No metric carries a tenant, sensor, pipeline, run or user id as a label
+(RFC-046 B9, enforced by `internal/metrics/labels_test.go`); per-tenant views
+come from logs (`tenant_id`, `run_id`) and traces.
 
-// Command metrics
-var (
-    CommandsTotal = prometheus.NewCounterVec(...)         // commands_total
-    CommandsExpired = prometheus.NewCounterVec(...)       // commands_expired_total
-    CommandDuration = prometheus.NewHistogramVec(...)     // command_duration_seconds
-)
-
-// Scheduler metrics
-var (
-    ScansScheduled = prometheus.NewCounterVec(...)        // scans_scheduled_total
-)
-```
+| Metric | Labels | What |
+|---|---|---|
+| `pipeline_runs_total` | `status` | runs started and settled |
+| `pipeline_runs_in_progress` | — | runs in progress (this replica) |
+| `step_runs_total` | `step_key`, `status` | step outcomes |
+| `commands_total`, `commands_expired_total` | `type`, `status` / — | command outcomes, expiries |
+| `command_claims_total` | `mode` (`claim`, `claim_n`) | commands sensors claimed |
+| `command_leases_expired_total` | — | commands re-queued after their lease ran out |
+| `scan_runs_reaped_total` | `reason` (`deadline`, `unclaimed`) | runs the timeout controller ended |
+| `scans_scheduled_total`, `scan_schedule_outcomes_total` | — / `outcome` | scheduler occurrences and what they became |
 
 ## Error Handling & Retries
 
