@@ -238,9 +238,6 @@ func findingStatusRank(status string) int {
 	}
 }
 
-// mergeFindingInto folds loser into survivor: the survivor inherits the
-// loser's state where the loser's is stronger, every row that references the
-// loser moves to the survivor, and the loser becomes a tombstone.
 // findingMergeCause says why two findings became one, for the activity
 // trail of both.
 type findingMergeCause struct {
@@ -254,6 +251,10 @@ type findingMergeCause struct {
 
 var causeAssetMerge = findingMergeCause{Reason: "asset_merge", Phrase: "by an asset merge", ActorType: "system"}
 
+// mergeFindingInto folds loser into survivor: the survivor inherits the
+// loser's state where the loser's is stronger, every row that references the
+// loser moves to the survivor, and the loser becomes a tombstone. Used by the
+// asset merge, the re-fingerprint job and "mark duplicate of".
 func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, loserID string, cause findingMergeCause) error {
 	var survivorStatus, loserStatus string
 	if err := tx.QueryRowContext(ctx,

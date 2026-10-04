@@ -73,6 +73,18 @@ that finding is re-keyed in place on that sighting
 asset merge re-keys a version-2 finding by rewriting the `asset` field of its
 stored tuple, only when the stored tuple still reproduces the stored key.
 
+**Mark duplicate of (manual merge):** `POST /api/v1/findings/{id}/duplicates`
+`{"finding_id": …}` folds a finding into the original `{id}` with the same
+`mergeFindingInto` the asset merge uses, in one transaction with both rows
+locked and the rules re-checked under the lock
+(`FindingRepository.MarkDuplicateOf`, rules in
+`vulnerability.CheckMarkDuplicate`): same tenant and data scope (404
+otherwise), same asset, neither already a duplicate, no pentest finding, and
+`findings:approve` when either finding is a false positive or risk acceptance
+(otherwise a merge would close an open finding under, or carry onto it, a
+decision that needs approval). The activity on both findings names the user;
+the audit log records `finding.duplicate_marked`.
+
 Known limits: the SAST occurrence index is counted within one report, so twin
 snippets split across report chunks can swap; the secret HMAC is over the
 masked value the sensor sends (CTIS carries no raw value), so two secrets that

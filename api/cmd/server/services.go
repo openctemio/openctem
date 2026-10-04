@@ -907,7 +907,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability = app.NewVulnerabilityService(repos.Vulnerability, repos.Finding, log)
 	s.Vulnerability.SetCommentRepository(repos.FindingComment)
 	s.Vulnerability.SetCommentReactionRepository(repos.CommentReaction)
-	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation
+	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
