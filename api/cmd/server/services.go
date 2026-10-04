@@ -913,6 +913,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.SBOMImport = app.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.SBOMImport.SetDataScope(s.DataScope)
 	s.ReportSchedule = app.NewReportScheduleService(repos.ReportSchedule, log)
+	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
 	s.Branch = app.NewBranchService(repos.Branch, log)
 
@@ -953,6 +954,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, repos.Exposure, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
+	s.CertMonitor.SetSeedSource(repos.EASMSeed)
 	// Excluded names are neither queried nor discovered (RFC-042 F16).
 	s.CertMonitor.SetExclusions(s.Scope)
 	s.CertMonitor.SetStateStore(repos.CTMonitorState)

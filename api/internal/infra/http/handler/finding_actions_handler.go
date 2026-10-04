@@ -75,7 +75,7 @@ func (h *FindingActionsHandler) SourceAnalytics(w http.ResponseWriter, r *http.R
 // let status and type through to a 500.
 var findingGroupByDimensions = map[string]bool{
 	"cve_id": true, "rule_id": true, "asset_id": true, "owner_id": true, "component_id": true,
-	"severity": true, "source": true, "finding_type": true,
+	"severity": true, "source": true, "finding_type": true, "family": true,
 }
 
 // findingGroupsRoute is GET /findings/groups on the list query contract:
@@ -98,7 +98,89 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Tags         Findings
 // @Produce      json
 // @Security     BearerAuth
-// @Param        group_by  query  string  false  "cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type"
+// @Param        group_by  query  string  false  "cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type, family"
+// filterspec-params: findings GET /findings/groups
+// @Param  id  query  []string  false  "id: any of (comma list)"  collectionFormat(csv)
+// @Param  id_not  query  []string  false  "id: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_id  query  []string  false  "asset id: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_id_not  query  []string  false  "asset id: none of (comma list)"  collectionFormat(csv)
+// @Param  branch_id  query  []string  false  "branch id: any of (comma list)"  collectionFormat(csv)
+// @Param  open_on_branch_id  query  []string  false  "open on branch id: any of (comma list)"  collectionFormat(csv)
+// @Param  fixed_on_branch_id  query  []string  false  "fixed on branch id: any of (comma list)"  collectionFormat(csv)
+// @Param  component_id  query  []string  false  "component id: any of (comma list)"  collectionFormat(csv)
+// @Param  component_id_not  query  []string  false  "component id: none of (comma list)"  collectionFormat(csv)
+// @Param  vulnerability_id  query  []string  false  "vulnerability id: any of (comma list)"  collectionFormat(csv)
+// @Param  vulnerability_id_not  query  []string  false  "vulnerability id: none of (comma list)"  collectionFormat(csv)
+// @Param  severity  query  []string  false  "severity: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, validated_fixed, not_observed, resolved, false_positive, accepted, duplicate, draft, in_review, remediation, retest, verified, accepted_risk)
+// @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, validated_fixed, not_observed, resolved, false_positive, accepted, duplicate, draft, in_review, remediation, retest, verified, accepted_risk)
+// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(sast, dast, sca, secret, iac, container, cspm, easm, va, rasp, waf, siem, manual, pentest, bug_bounty, red_team, external, threat_intel, vendor, sarif, sca_tool)
+// @Param  source_not  query  []string  false  "source: none of (comma list)"  collectionFormat(csv)  Enums(sast, dast, sca, secret, iac, container, cspm, easm, va, rasp, waf, siem, manual, pentest, bug_bounty, red_team, external, threat_intel, vendor, sarif, sca_tool)
+// @Param  sla_status  query  []string  false  "sla status: any of (comma list)"  collectionFormat(csv)  Enums(on_track, warning, overdue, exceeded, not_applicable)
+// @Param  sla_status_not  query  []string  false  "sla status: none of (comma list)"  collectionFormat(csv)  Enums(on_track, warning, overdue, exceeded, not_applicable)
+// @Param  priority_class  query  []string  false  "priority class: any of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
+// @Param  priority_class_not  query  []string  false  "priority class: none of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
+// @Param  cve_id  query  []string  false  "cve id: any of (comma list)"  collectionFormat(csv)
+// @Param  cve_id_not  query  []string  false  "cve id: none of (comma list)"  collectionFormat(csv)
+// @Param  family  query  []string  false  "family: any of (comma list)"  collectionFormat(csv)
+// @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
+// @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3)
+// @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3)
+// @Param  is_in_kev  query  boolean  false  "is in kev equals"
+// @Param  is_reachable  query  boolean  false  "is reachable equals"
+// @Param  epss_score_gte  query  number  false  "epss score at least"
+// @Param  epss_score_lte  query  number  false  "epss score at most"
+// @Param  epss_score_gt  query  number  false  "epss score greater than"
+// @Param  epss_score_lt  query  number  false  "epss score less than"
+// @Param  tool_name  query  []string  false  "tool name: any of (comma list)"  collectionFormat(csv)
+// @Param  tool_name_not  query  []string  false  "tool name: none of (comma list)"  collectionFormat(csv)
+// @Param  rule_id  query  []string  false  "rule id: any of (comma list)"  collectionFormat(csv)
+// @Param  rule_id_not  query  []string  false  "rule id: none of (comma list)"  collectionFormat(csv)
+// @Param  scan_id  query  []string  false  "scan id: any of (comma list)"  collectionFormat(csv)
+// @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
+// @Param  file_path  query  string  false  "file path contains"
+// @Param  file_path_contains  query  string  false  "file path contains"
+// @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
+// @Param  related_to  query  string  false  "related to equals"  Enums(me)
+// @Param  cvss_score_gte  query  number  false  "cvss score at least"
+// @Param  cvss_score_lte  query  number  false  "cvss score at most"
+// @Param  cvss_score_gt  query  number  false  "cvss score greater than"
+// @Param  cvss_score_lt  query  number  false  "cvss score less than"
+// @Param  first_detected_at_gte  query  string  false  "first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  first_detected_at_lte  query  string  false  "first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  first_detected_at_gt  query  string  false  "first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  first_detected_at_lt  query  string  false  "first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  last_seen_at_gte  query  string  false  "last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  last_seen_at_lte  query  string  false  "last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  last_seen_at_gt  query  string  false  "last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  last_seen_at_lt  query  string  false  "last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  network_port  query  []integer  false  "network port: any of (comma list)"  collectionFormat(csv)
+// @Param  network_port_not  query  []integer  false  "network port: none of (comma list)"  collectionFormat(csv)
+// @Param  network_port_gte  query  integer  false  "network port at least"
+// @Param  network_port_lte  query  integer  false  "network port at most"
+// @Param  network_transport  query  []string  false  "network transport: any of (comma list)"  collectionFormat(csv)  Enums(tcp, udp, sctp)
+// @Param  network_transport_not  query  []string  false  "network transport: none of (comma list)"  collectionFormat(csv)  Enums(tcp, udp, sctp)
+// @Param  network_service  query  []string  false  "network service: any of (comma list)"  collectionFormat(csv)
+// @Param  network_service_not  query  []string  false  "network service: none of (comma list)"  collectionFormat(csv)
+// @Param  assigned_to  query  []string  false  "assigned to: any of (comma list)"  collectionFormat(csv)
+// @Param  assigned_to_null  query  boolean  false  "assigned to is unset (true) or set (false)"
+// @Param  assigned_to_not  query  []string  false  "assigned to: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
+// @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
+// @Param  exploit_available  query  boolean  false  "exploit available equals"
+// @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  created_at_gt  query  string  false  "created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  created_at_lt  query  string  false  "created at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  updated_at_gte  query  string  false  "updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  updated_at_lte  query  string  false  "updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// end filterspec-params
+// @Param        q         query  string  false  "Free text"
+// @Param        sort      query  string  false  "Ignored by groups (accepted for URL parity with the list)"
 // @Param        page      query  int     false  "Page number"  default(1)
 // @Param        per_page  query  int     false  "Groups per page"  default(50)
 // @Success      200  {object}  map[string]interface{}

@@ -268,6 +268,49 @@ func TestReportScheduler_LostClaimSkipsDelivery(t *testing.T) {
 	}
 }
 
+// allowOnly is a recipient policy that admits a fixed set of addresses.
+type allowOnly map[string]bool
+
+func (a allowOnly) AllowedRecipients(_ context.Context, _ shared.ID, emails []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, e := range emails {
+		out[e] = a[e]
+	}
+	return out, nil
+}
+
+// Recipients are re-checked at send time (D12): an address that is no
+// longer a member or in an allowed domain is skipped, the others still get
+// the report, and with nobody left nothing is sent.
+func TestReportScheduler_SkipsRecipientsNoLongerAllowed(t *testing.T) {
+	s := newSchedule(t, "executive_summary", "0 9 * * 1", "ciso@acme.com", "Leaver@Gmail.com")
+	store := &fakeStore{due: []*reportschedule.ReportSchedule{s}}
+	em := &fakeEmailer{configured: true}
+	sch := newTestScheduler(store, em)
+	sch.SetRecipientPolicy(allowOnly{"ciso@acme.com": true})
+	if _, err := sch.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(em.sentTo) != 1 || len(em.sentTo[0]) != 1 || em.sentTo[0][0] != "ciso@acme.com" {
+		t.Fatalf("sent to %v, want only ciso@acme.com", em.sentTo)
+	}
+
+	s2 := newSchedule(t, "executive_summary", "0 9 * * 1", "leaver@gmail.com")
+	store2 := &fakeStore{due: []*reportschedule.ReportSchedule{s2}}
+	em2 := &fakeEmailer{configured: true}
+	sch2 := newTestScheduler(store2, em2)
+	sch2.SetRecipientPolicy(allowOnly{})
+	if _, err := sch2.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(em2.sentTo) != 0 {
+		t.Fatalf("a schedule with no allowed recipient sent mail: %v", em2.sentTo)
+	}
+	if got := store2.updated[0].LastStatus(); got != "no_recipients" {
+		t.Errorf("status = %q, want no_recipients", got)
+	}
+}
+
 // recordingStats records the scope each render asks for.
 type recordingStats struct {
 	user   *shared.ID

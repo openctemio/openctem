@@ -261,6 +261,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:          newEASMHandler(repos, svc, log),
+		EASMSeed:      newEASMSeedHandler(repos, svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -273,7 +274,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            newAssetImportHandler(svc, log),
-		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
+		ReportSchedule:         newReportScheduleHandler(svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
 
 		// Vulnerabilities & Exposures
@@ -729,6 +730,15 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	return h.SetReview(easmapp.NewReviewService(repos.Attribution, svc.DataScope), audit)
 }
 
+// newEASMSeedHandler builds the seeds handler; every change is audited.
+func newEASMSeedHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMSeedHandler {
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewEASMSeedHandler(easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed), audit, log)
+}
+
 // newAssetAttributionHandler builds the attribution handler with its audit
 // trail (RFC-036: every human attribution decision is audited).
 func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.AssetAttributionHandler {
@@ -744,5 +754,13 @@ func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImpo
 	h := handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log)
 	h.SetAuditService(svc.Audit)
 	h.SetDataScope(svc.DataScope)
+	return h
+}
+
+// newReportScheduleHandler builds the report schedule handler with its audit
+// trail.
+func newReportScheduleHandler(svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
+	h := handler.NewReportScheduleHandler(svc.ReportSchedule, log)
+	h.SetAuditService(svc.Audit)
 	return h
 }
