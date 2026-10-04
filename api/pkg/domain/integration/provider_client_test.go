@@ -9,7 +9,7 @@ import "testing"
 func TestProviderHasClient(t *testing.T) {
 	withClient := []Provider{
 		ProviderGitHub, ProviderGitLab, ProviderBitbucket, ProviderAzureDevOps,
-		ProviderTenable, ProviderDefectDojo,
+		ProviderDefectDojo,
 		ProviderJira,
 		ProviderSlack, ProviderTeams, ProviderTelegram, ProviderEmail, ProviderWebhook, ProviderSplunk,
 	}
@@ -17,6 +17,8 @@ func TestProviderHasClient(t *testing.T) {
 		ProviderWiz, ProviderSnyk, ProviderCrowdStrike,
 		ProviderAWS, ProviderGCP, ProviderAzure,
 		ProviderLinear, ProviderAsana,
+		// Paused until the runner is rebuilt on the sensor daemon (D-14).
+		ProviderTenable,
 	}
 	for _, p := range withClient {
 		if !p.IsValid() {

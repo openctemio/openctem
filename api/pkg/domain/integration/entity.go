@@ -133,17 +133,21 @@ func (p Provider) IsValid() bool {
 //
 // Keep this list in step with the code that consumes each provider:
 //   - SCM: internal/infra/scm (GitHub, GitLab, Bitbucket, Azure DevOps)
-//   - Security: Tenable coverage scheduler, DefectDojo sync
+//   - Security: DefectDojo sync
 //   - Ticketing: Jira (internal/infra/jira)
 //   - Notification: internal/infra/notifier (incl. the Splunk HEC sink)
 //
 // Declared without a client: Wiz, Snyk, CrowdStrike, AWS, GCP, Azure,
-// Linear, Asana.
+// Linear, Asana, and Tenable. Tenable is paused, not dropped: sensor v0.8.0
+// removed the Tenable runner, so the coverage scheduler's commands had nothing
+// to run them (owner decision D-14). Existing Tenable rows, their config and
+// the scancoverage code are kept for the rebuild on the sensor daemon; put
+// Tenable back here when that runner ships.
 func (p Provider) HasClient() bool {
 	switch p {
 	case ProviderGitHub, ProviderGitLab, ProviderBitbucket, ProviderAzureDevOps:
 		return true
-	case ProviderTenable, ProviderDefectDojo:
+	case ProviderDefectDojo:
 		return true
 	case ProviderJira:
 		return true

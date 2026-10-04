@@ -179,7 +179,7 @@
   "settings.item.source-control": "Source control",
   "settings.desc.source-control": "GitHub, GitLab, Bitbucket and Azure DevOps.",
   "settings.item.vulnerability-scanners": "Vulnerability scanners",
-  "settings.desc.vulnerability-scanners": "Tenable Nessus Pro and Tenable.sc connectors.",
+  "settings.desc.vulnerability-scanners": "Import Nessus and Tenable scan exports.",
   "settings.item.ticketing": "Ticketing",
   "settings.desc.ticketing": "Jira and other ticketing systems.",
   "settings.item.notification-channels": "Notification channels",
