@@ -318,7 +318,7 @@ func (m *mockAuthTenantRepo) GetMembership(_ context.Context, _ shared.ID, _ sha
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockAuthTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID) (*tenant.Membership, error) {
+func (m *mockAuthTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Membership, error) {
 	if m.getMembershipByIDErr != nil {
 		return nil, m.getMembershipByIDErr
 	}
@@ -332,7 +332,7 @@ func (m *mockAuthTenantRepo) UpdateMembership(_ context.Context, _ *tenant.Membe
 	return nil
 }
 
-func (m *mockAuthTenantRepo) DeleteMembership(_ context.Context, _ shared.ID) error {
+func (m *mockAuthTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, _ shared.ID) error {
 	if m.deleteMembershipErr != nil {
 		return m.deleteMembershipErr
 	}
@@ -404,7 +404,7 @@ func (m *mockAuthTenantRepo) GetInvitationByToken(_ context.Context, _ string) (
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockAuthTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID) (*tenant.Invitation, error) {
+func (m *mockAuthTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Invitation, error) {
 	return nil, shared.ErrNotFound
 }
 
@@ -412,7 +412,7 @@ func (m *mockAuthTenantRepo) UpdateInvitation(_ context.Context, _ *tenant.Invit
 	return nil
 }
 
-func (m *mockAuthTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID) error {
+func (m *mockAuthTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 

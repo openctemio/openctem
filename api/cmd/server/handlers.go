@@ -372,7 +372,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		BusinessUnit: handler.NewBusinessUnitHandler(svc.BusinessUnit, log),
 
 		// Business Services (Phase 3)
-		BusinessService: handler.NewBusinessServiceHandler(deps.DB.DB, log),
+		BusinessService: handler.NewBusinessServiceHandler(deps.DB.DB, log).WithDataScope(svc.DataScope),
 
 		// API Keys & Webhooks
 		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
@@ -432,7 +432,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
-		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),

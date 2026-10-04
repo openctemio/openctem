@@ -89,19 +89,6 @@ func (r *GroupRepository) Create(ctx context.Context, g *group.Group) error {
 	return nil
 }
 
-// GetByID retrieves a group by ID.
-func (r *GroupRepository) GetByID(ctx context.Context, id shared.ID) (*group.Group, error) {
-	query := `
-		SELECT id, tenant_id, name, slug, description, group_type,
-			   external_id, external_source, settings, notification_config,
-			   metadata, is_active, created_at, updated_at
-		FROM groups
-		WHERE id = $1
-	`
-
-	return r.scanGroup(r.db.QueryRowContext(ctx, query, id.String()))
-}
-
 // GetByTenantAndID retrieves a group by tenant and ID.
 func (r *GroupRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*group.Group, error) {
 	query := `
@@ -150,7 +137,7 @@ func (r *GroupRepository) Update(ctx context.Context, g *group.Group) error {
 		SET name = $2, slug = $3, description = $4, group_type = $5,
 			external_id = $6, external_source = $7, settings = $8,
 			notification_config = $9, metadata = $10, is_active = $11, updated_at = $12
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $13
 	`
 
 	var externalID, externalSource sql.NullString
@@ -174,6 +161,7 @@ func (r *GroupRepository) Update(ctx context.Context, g *group.Group) error {
 		metadata,
 		g.IsActive(),
 		g.UpdatedAt(),
+		g.TenantID().String(),
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "groups_tenant_id_slug_key") {
@@ -193,11 +181,11 @@ func (r *GroupRepository) Update(ctx context.Context, g *group.Group) error {
 	return nil
 }
 
-// Delete removes a group.
-func (r *GroupRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM groups WHERE id = $1`
+// Delete removes a group of tenantID. A group of another tenant is not found.
+func (r *GroupRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM groups WHERE tenant_id = $1 AND id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete group: %w", err)
 	}

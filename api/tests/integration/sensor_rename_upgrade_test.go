@@ -120,7 +120,7 @@ func effectiveAccess(t *testing.T, db *sql.DB) map[string]string {
 			SELECT replace(s, 'agents:', 'sensors:') AS p FROM unnest(k.scopes::text[]) s ORDER BY p), ',')
 		FROM api_keys k`
 	// Group permission overrides and permission sets exist until migration
-	// 000466 removes them (permissions come only from roles); include them
+	// 000493 removes them (permissions come only from roles); include them
 	// while they exist.
 	if queryString(t, db, `SELECT coalesce(to_regclass('public.group_permissions')::text, '')`) != "" {
 		q += `
@@ -196,8 +196,8 @@ func TestSensorRenameUpgrade(t *testing.T) {
 
 	// 3. Re-running the rename on an upgraded database changes nothing. The
 	// rename also rewrites group permission overrides and permission sets,
-	// which 000466 later drops, so the re-run happens with 000466 rolled back
-	// (its down restores the archived rows) and 000466 is applied again after.
+	// which 000493 later drops, so the re-run happens with 000493 rolled back
+	// (its down restores the archived rows) and 000493 is applied again after.
 	removal := migrationByVersion(t, pending, groupPermissionSetRemovalVersion)
 	execFile(t, db, removal.down)
 	execFile(t, db, pending[0].up)
@@ -256,7 +256,7 @@ func TestSensorRenameUpgrade(t *testing.T) {
 
 // groupPermissionSetRemovalVersion drops group permission overrides and
 // permission sets (permissions come only from roles).
-const groupPermissionSetRemovalVersion = "000466"
+const groupPermissionSetRemovalVersion = "000493"
 
 func migrationByVersion(t *testing.T, migs []migrationFile, version string) migrationFile {
 	t.Helper()
@@ -331,14 +331,14 @@ var laterRevocations = map[string][]string{
 }
 
 // laterRemovedPermissions are permission ids a migration after 000230
-// deletes from the catalog, with every grant of them (000465: permission
-// sets are gone, so team:permission_sets:* means nothing).
+// deletes from the catalog with every grant of them (000492: permission sets
+// are gone, so team:permission_sets:* means nothing).
 var laterRemovedPermissions = []string{
 	"team:permission_sets:read", "team:permission_sets:write", "team:permission_sets:delete",
 }
 
 // laterRemovedPrincipals are grant holders a migration after 000230 removes
-// (000466: group permission overrides and permission sets; their rows are
+// (000493: group permission overrides and permission sets; their rows are
 // archived and restored by its down migration).
 var laterRemovedPrincipals = []string{"group:", "permission_set:"}
 

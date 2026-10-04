@@ -189,7 +189,7 @@ func (s *UserProvisioningService) CreateUser(ctx context.Context, in CreateUserI
 		grantedBy = invitedBy.String()
 	}
 	if err := s.roles.GrantExactRoles(ctx, tenantID.String(), u.ID().String(), in.RoleIDs, grantedBy, actx); err != nil {
-		if derr := s.tenants.DeleteMembership(ctx, membership.ID()); derr != nil {
+		if derr := s.tenants.DeleteMembership(ctx, membership.TenantID(), membership.ID()); derr != nil {
 			s.logger.Error("rollback membership after role grant failure", "tenant_id", tenantID.String(), "error", derr)
 		}
 		s.discardAccount(ctx, u.ID())

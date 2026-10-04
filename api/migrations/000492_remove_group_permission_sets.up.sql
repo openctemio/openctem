@@ -13,11 +13,14 @@
 -- the role grants are copied, as JSON, into access_control_removed_archive
 -- first, so the down migration restores them exactly.
 
-CREATE TEMP TABLE removed_permission_ids (id VARCHAR(100) PRIMARY KEY);
+-- A session temp table (no ON COMMIT DROP: some runners apply a file
+-- statement by statement); it goes away with the migration session.
+CREATE TEMP TABLE IF NOT EXISTS removed_permission_ids (id VARCHAR(100) PRIMARY KEY);
 INSERT INTO removed_permission_ids (id) VALUES
     ('team:permission_sets:read'),
     ('team:permission_sets:write'),
-    ('team:permission_sets:delete');
+    ('team:permission_sets:delete')
+ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS access_control_removed_archive (
     id           BIGSERIAL PRIMARY KEY,
@@ -26,7 +29,7 @@ CREATE TABLE IF NOT EXISTS access_control_removed_archive (
     archived_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 COMMENT ON TABLE access_control_removed_archive IS
-    'Rows removed with group permission sets (migration 000465 and its contract step); restored by their down migrations';
+    'Rows removed with group permission sets (migration 000492 and its contract step); restored by their down migrations';
 
 INSERT INTO access_control_removed_archive (source_table, row_data)
 SELECT 'permissions', to_jsonb(t) FROM permissions t
@@ -38,8 +41,6 @@ WHERE t.permission_id IN (SELECT id FROM removed_permission_ids);
 
 DELETE FROM permissions WHERE id IN (SELECT id FROM removed_permission_ids);
 
-COMMENT ON TABLE permission_sets IS 'Unused since migration 000465 (permissions come only from roles); dropped by a later migration';
-COMMENT ON TABLE group_permission_sets IS 'Unused since migration 000465 (permissions come only from roles); dropped by a later migration';
-COMMENT ON TABLE group_permissions IS 'Unused since migration 000465 (permissions come only from roles); dropped by a later migration';
-
-DROP TABLE removed_permission_ids;
+COMMENT ON TABLE permission_sets IS 'Unused since migration 000492 (permissions come only from roles); dropped by a later migration';
+COMMENT ON TABLE group_permission_sets IS 'Unused since migration 000492 (permissions come only from roles); dropped by a later migration';
+COMMENT ON TABLE group_permissions IS 'Unused since migration 000492 (permissions come only from roles); dropped by a later migration';
