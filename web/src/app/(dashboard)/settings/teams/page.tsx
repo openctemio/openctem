@@ -28,7 +28,7 @@ export default function TeamsPage() {
         title="Teams"
         description={
           tab === 'teams'
-            ? 'Organize members into teams to control which assets they can see.'
+            ? 'Organize members into teams to control which assets they can see. What members can do comes from their roles.'
             : 'Rules that assign assets to teams automatically, evaluated in priority order.'
         }
       >

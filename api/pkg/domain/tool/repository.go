@@ -117,19 +117,9 @@ type TenantToolConfigRepository interface {
 type ToolExecutionRepository interface {
 	Create(ctx context.Context, execution *ToolExecution) error
 
-	// GetByID retrieves a tool execution by ID without tenant scoping.
-	//
-	// F-4: This method is UNSAFE for user-facing handlers — it would allow
-	// an IDOR because the tool_executions row contains cross-tenant
-	// sensitive data (error_message, output_summary, targets). Callers from
-	// HTTP handlers MUST use GetByIDInTenant instead. Safe uses are limited
-	// to sensor/platform-authenticated internal lifecycle flows where tenant
-	// identity is validated elsewhere, and audits / retention controllers
-	// that iterate the whole table.
-	GetByID(ctx context.Context, id shared.ID) (*ToolExecution, error)
-
 	// GetByIDInTenant retrieves a tool execution restricted to one tenant.
-	// Prefer this for any handler exposed to user input.
+	// There is deliberately no tenantless GetByID (F-4, D-11): the row holds
+	// tenant-sensitive data (error_message, output_summary, targets).
 	GetByIDInTenant(ctx context.Context, tenantID, id shared.ID) (*ToolExecution, error)
 
 	List(ctx context.Context, filter ToolExecutionFilter, page pagination.Pagination) (pagination.Result[*ToolExecution], error)
