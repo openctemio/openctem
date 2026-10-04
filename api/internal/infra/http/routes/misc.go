@@ -307,9 +307,13 @@ func registerBootstrapRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerWebSocketRoutes registers WebSocket endpoints for real-time communication.
-// WebSocket replaces SSE for real-time features (activities, scans, notifications).
-// Authentication is handled by the UnifiedAuth middleware (JWT token in Authorization header).
+// registerWebSocketRoutes registers the real-time WebSocket endpoint
+// (RFC-045). The browser opens it on the UI's own origin and the upgrade is
+// authenticated by the auth_token session cookie (or a Bearer access token),
+// through realtimeMiddlewares: the same tenant gates as every tenant route.
+// No credential travels in the URL. The handler then requires an Origin from
+// the allowlist for a cookie-authenticated upgrade, and binds the socket to
+// the session and the token's expiry.
 //
 // Channels follow the format: {type}:{id}. The hub authorizes every
 // subscription against the connection's own user and tenant
@@ -325,30 +329,10 @@ func registerWebSocketRoutes(
 	h *websocket.Handler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	wsTicketMiddleware Middleware, // F-8: non-nil when the single-use ticket path is enabled.
 ) {
-	// F-8: When the single-use ticket middleware is wired (Redis available),
-	// use it as the ONLY authenticator for /ws. This prevents replay-via-URL
-	// because each ticket is atomically consumed on first redemption. We
-	// intentionally skip the JWT auth chain here so that a leaked query-
-	// string token is no longer an accepted credential for WS upgrades.
-	// The tenant gates ran when the ticket was issued (/auth/ws-token,
-	// wsTokenMiddlewares); the ticket middleware re-checks active
-	// membership for the ticket's user+tenant at upgrade.
-	if wsTicketMiddleware != nil {
-		router.Group("/api/v1/ws", func(r Router) {
-			r.GET("/", h.ServeWS)
-		}, wsTicketMiddleware)
-		return
-	}
-
-	// Fallback: build tenant middleware chain from JWT token. Only used
-	// when Redis / WSTicketService is not configured — operators running
-	// without Redis inherit the old short-lived-JWT-in-URL behaviour.
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/ws", func(r Router) {
 		r.GET("/", h.ServeWS)
-	}, tenantMiddlewares...)
+	}, realtimeMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
 // registerAPIKeyRoutes registers API key management routes.
