@@ -103,6 +103,8 @@ type RunFilter struct {
 	TriggeredBy string
 	StartedFrom *time.Time
 	StartedTo   *time.Time
+	// Sort orders the list; the zero value is newest first.
+	Sort RunListSort
 }
 
 // RunRepository defines the interface for pipeline run persistence.
