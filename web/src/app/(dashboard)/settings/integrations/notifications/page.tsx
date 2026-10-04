@@ -49,6 +49,7 @@ import type { Integration } from '@/features/integrations'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { ALL_NOTIFICATION_SEVERITIES } from '@/features/integrations/types/integration.types'
 import { coversAllSeverities } from '@/features/notifications/lib/notification-filters'
+import { notificationChannelsOnly } from '@/features/integrations/lib/integration-routing'
 import {
   useTenantEventTypes,
   labelEventTypes,
@@ -172,7 +173,9 @@ export default function NotificationIntegrationsPage() {
   // Handle the API response format
   const integrations = useMemo(() => {
     if (!integrationsData) return []
-    return integrationsData.data ?? []
+    // SIEM destinations (Splunk) are managed on the SIEM page; this page's
+    // edit dialog would overwrite their HEC token with a webhook URL.
+    return notificationChannelsOnly(integrationsData.data ?? [])
   }, [integrationsData])
 
   // Calculate stats
