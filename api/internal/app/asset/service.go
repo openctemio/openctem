@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -895,6 +896,23 @@ func (s *AssetService) GetAsset(ctx context.Context, tenantID, assetID string) (
 	return s.GetAssetWithScope(ctx, tenantID, assetID, "", true)
 }
 
+// GetAssetInCallerScope is GetAsset for a path keyed on an asset that the
+// route guard does not see (another resource's URL, a query parameter): it
+// also answers shared.ErrNotFound when the request's caller may not see the
+// asset, through the data-scope enforcer.
+func (s *AssetService) GetAssetInCallerScope(ctx context.Context, tenantID, assetID string) (*assetdom.Asset, error) {
+	a, err := s.GetAsset(ctx, tenantID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	if s.dataScope != nil {
+		if err := s.dataScope.AssertAsset(ctx, a.TenantID(), a.ID()); err != nil {
+			return nil, err
+		}
+	}
+	return a, nil
+}
+
 // GetAssetWithScope retrieves an asset with optional data scope enforcement.
 // Non-admin users with group assignments can only access assets in their groups.
 // Security: fail-closed — any error during scope check denies access.
@@ -1297,6 +1315,10 @@ type ListAssetsInput struct {
 	Providers            []string `validate:"max=20,dive,max=50"`
 	LastSeenAfter        *time.Time
 	LastSeenBefore       *time.Time
+	// Attribution: attribution states (confirmed, needs_review, candidate,
+	// dependency, monitor_only, rejected) or the aliases unknown, unconfirmed
+	// and approved (RFC-036). Validated by attribution.ParseFilter.
+	Attribution []string `validate:"max=9,dive,max=20"`
 
 	Sort    string `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page    int    `validate:"min=0"`
@@ -1420,6 +1442,11 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	}
 	if input.HasOwner != nil {
 		filter = filter.WithHasOwner(*input.HasOwner)
+	}
+	if af, given, err := attribution.ParseFilter(input.Attribution); err != nil {
+		return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	} else if given {
+		filter = filter.WithAttribution(af)
 	}
 	if len(input.DataClassifications) > 0 {
 		filter = filter.WithDataClassifications(input.DataClassifications...)

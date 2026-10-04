@@ -49,11 +49,12 @@ func TestFilterAssetsForScan_StoredApplicationsAreURLTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.ScannedAssets != 3+2+1+4+8 {
-		t.Errorf("scanned = %d, want %d (by type %v)", res.ScannedAssets, 3+2+1+4+8, res.ScannedByType)
+	// unclassified assets cannot be decided: dispatched, as the gate does
+	if res.ScannedAssets != 3+2+1+4+8+7 {
+		t.Errorf("scanned = %d, want %d (by type %v)", res.ScannedAssets, 3+2+1+4+8+7, res.ScannedByType)
 	}
-	if res.SkippedAssets != 5+6+7 {
-		t.Errorf("skipped = %d, want %d (by type %v)", res.SkippedAssets, 5+6+7, res.SkippedByType)
+	if res.SkippedAssets != 5+6 {
+		t.Errorf("skipped = %d, want %d (by type %v)", res.SkippedAssets, 5+6, res.SkippedByType)
 	}
 	if res.UnclassifiedAssets != 7 {
 		t.Errorf("unclassified = %d, want 7", res.UnclassifiedAssets)
@@ -86,7 +87,7 @@ func TestFilterAssetsForScan_AdminMappingsExtendTheRegistry(t *testing.T) {
 }
 
 // A tool that declares no target type the platform knows cannot be decided
-// for: nothing is refused (except unclassified assets, which match no tool).
+// for: nothing is refused.
 func TestFilterAssetsForScan_UnknownToolTargetsScanEverything(t *testing.T) {
 	svc := NewAssetFilterService(&fakeMappings{}, nil)
 	res, err := svc.FilterAssetsForScan(context.Background(), []string{"quantum"}, "x", map[asset.TypeRef]int64{
@@ -96,7 +97,7 @@ func TestFilterAssetsForScan_UnknownToolTargetsScanEverything(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.ScannedAssets != 2 || res.SkippedAssets != 1 {
+	if res.ScannedAssets != 3 || res.SkippedAssets != 0 {
 		t.Errorf("scanned %d skipped %d", res.ScannedAssets, res.SkippedAssets)
 	}
 }
