@@ -12,7 +12,9 @@ import (
 // asset-derived read cannot ship unscoped without someone deciding, in
 // review, that it is meant to be. Matching is by the longest path prefix
 // (method-agnostic unless the key starts with a method), so a whole module
-// is classified once and the exceptions inside it are listed explicitly.
+// is classified once and the exceptions inside it are listed explicitly. A
+// key ending in "$" matches its one path exactly, for a single route whose
+// path is also the prefix of others.
 //
 // Classes:
 //   - scoped: rows derived from assets are filtered to the caller's data
@@ -115,10 +117,14 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	// --- scoped ------------------------------------------------------------------
 	"/api/v1/assets":                                      {classScoped, "route guard on /assets/{id}/**, list, stats and facets scoped (RFC-042 F10)"},
 	"/api/v1/findings":                                    {classScoped, "route guard on /findings/{id}/**, lists and bulk paths scoped"},
+	"POST /api/v1/findings/$":                             {classScoped, "asset_id through AssertAssetRef (tenant + caller scope), branch bound to the asset (research 21b C1)"},
+	"GET /api/v1/findings/analytics/sources":              {classGap, "L-18 (source analytics counts are tenant-wide)"},
 	"/api/v1/compliance/findings":                         {classScoped, "route guard on /compliance/findings/{id}/**"},
 	"/api/v1/verification-checklists":                     {classScoped, "route guard on the finding id"},
 	"/api/v1/comments":                                    {classScoped, "comment resolved to its finding, finding scope applies"},
-	"/api/v1/exposures":                                   {classScoped, "exposure service scope"},
+	"/api/v1/exposures":                                   {classScoped, "exposure service scope; POST / checks asset_id with AssertAssetRef (research 21b C3)"},
+	"POST /api/v1/exposures/ingest":                       {classGap, "§3 H1 of research 21b: asset_id checked (C3), but the fingerprint upsert can overwrite an out-of-scope or asset-less exposure"},
+	"GET /api/v1/exposures/stats":                         {classPartial, "counts tenant-wide (L-18)"},
 	"/api/v1/components":                                  {classScoped, "component service scope (L-10)"},
 	"/api/v1/repositories":                                {classScoped, "repository must be in scope (L-10)"},
 	"/api/v1/relationships":                               {classScoped, "both ends in scope"},
@@ -154,6 +160,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/scan-sessions":               {classGap, "L-06 (scan reads)"},
 	"/api/v1/commands":                    {classGap, "L-06 (command payloads)"},
 	"/api/v1/pipelines":                   {classGap, "L-06 (pipeline reads)"},
+	"POST /api/v1/pipelines/{id}/runs":    {classPartial, "asset_id through AssertAssetRef (research 21b C4), run targets through the act-scope gate (D9); step config targets unchecked (21b LOW)"},
 	"/api/v1/pipeline-runs":               {classGap, "L-06 (run reads)"},
 	"/api/v1/workflow-runs":               {classGap, "L-18 (trigger data)"},
 	"/api/v1/iocs":                        {classGap, "§1.3 IOC matches (L-18)"},
@@ -177,7 +184,14 @@ func lookupDataSurface(method, path string) (string, dataSurface, bool) {
 			}
 			prefix, specific = rest, true
 		}
-		if !strings.HasPrefix(path, prefix) {
+		if exact, ok := strings.CutSuffix(prefix, "$"); ok {
+			// A key ending in "$" names exactly one route, not a subtree
+			// (POST /findings/ must not also classify POST /findings/search).
+			if path != exact {
+				continue
+			}
+			prefix = exact
+		} else if !strings.HasPrefix(path, prefix) {
 			continue
 		}
 		if len(prefix) > bestLen || (len(prefix) == bestLen && specific && !bestMethod) {
@@ -238,6 +252,13 @@ func TestDataSurfaceLookup_LongestPrefixWins(t *testing.T) {
 		"POST /api/v1/groups/{groupId}/assets":                 classConfig,
 		"GET /api/v1/compliance/findings/{findingId}/controls": classScoped,
 		"GET /api/v1/compliance/frameworks/":                   classConfig,
+		"POST /api/v1/findings/":                               classScoped,
+		"POST /api/v1/findings/search":                         classScoped,
+		"GET /api/v1/findings/analytics/sources":               classGap,
+	}
+	// An exact key classifies only its own path.
+	if key, _, _ := lookupDataSurface("POST", "/api/v1/findings/search"); key == "POST /api/v1/findings/$" {
+		t.Errorf("the exact key POST /api/v1/findings/$ matched POST /api/v1/findings/search")
 	}
 	for route, want := range cases {
 		method, path, _ := strings.Cut(route, " ")

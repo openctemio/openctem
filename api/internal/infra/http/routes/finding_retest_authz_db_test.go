@@ -43,12 +43,6 @@ func (rtNucleiOnline) HasNucleiValidationSensor(context.Context, shared.ID) (boo
 	return true, nil
 }
 
-// rtEveryonePolicy: members without an access group see everything (the
-// policy of organizations created before the "nothing" default).
-type rtEveryonePolicy struct{}
-
-func (rtEveryonePolicy) RestrictedDataScope(context.Context, string) bool { return false }
-
 type rtHarness struct {
 	t   *testing.T
 	db  *sql.DB
@@ -79,7 +73,7 @@ func newRetestAuthzHarness(t *testing.T) *rtHarness {
 
 	pg := &postgres.DB{DB: db}
 	log := logger.NewNop()
-	enforcer := datascope.New(postgres.NewDataScopeRepository(pg), rtEveryonePolicy{},
+	enforcer := datascope.New(postgres.NewDataScopeRepository(pg),
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, log)
@@ -127,7 +121,7 @@ func (h *rtHarness) seed() {
 	h.findingA1, h.findingA2, h.findingB = shared.NewID(), shared.NewID(), shared.NewID()
 
 	for _, tid := range []shared.ID{h.tenantA, h.tenantB} {
-		h.exec(`INSERT INTO tenants (id, name, slug, members_without_group_see) VALUES ($1, $2, $2, 'everything')`, tid.String(), "rt-"+tid.String())
+		h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tid.String(), "rt-"+tid.String())
 	}
 	h.t.Cleanup(func() {
 		ctx := context.Background()
@@ -160,9 +154,17 @@ func (h *rtHarness) seed() {
 			VALUES ($1::uuid, $2, $3, 'dast', 'nuclei', 'exposed-panel', 'hit', 'high', $1::text, 'confirmed')`,
 			f.id.String(), f.tenant.String(), f.asset.String())
 	}
-	// The scoped member's data scope is asset A1 only.
+	// The scoped member's data scope is asset A1 only; the verifier and the
+	// writer hold both of tenant A's assets, so their checks are about
+	// permissions, not data scope (a member with no scope row sees nothing).
 	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
 		h.scoped.String(), h.tenantA.String(), h.assetA1.String())
+	for _, u := range []shared.ID{h.verifier, h.writer} {
+		for _, a := range []shared.ID{h.assetA1, h.assetA2} {
+			h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
+				u.String(), h.tenantA.String(), a.String())
+		}
+	}
 }
 
 func (h *rtHarness) do(user shared.ID, perms []permission.Permission, method, path string) (int, string) {

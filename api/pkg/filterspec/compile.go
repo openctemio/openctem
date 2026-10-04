@@ -32,8 +32,7 @@ type UserActorInput struct {
 	// IsAdmin is the request's owner/admin decision.
 	IsAdmin bool
 	// Scope is datascope.Enforcer.Resolve for this tenant: nil only for an
-	// unrestricted caller (administrator, or a member of a fail-open tenant
-	// with no scope row).
+	// unrestricted caller (administrator, full-data role, internal call).
 	Scope *shared.DataScope
 	// Has reports the caller's permissions, for fields with a Permission;
 	// nil denies every such field.
