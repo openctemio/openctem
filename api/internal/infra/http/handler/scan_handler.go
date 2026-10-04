@@ -57,25 +57,28 @@ func NewScanHandler(service *scansvc.Service, userRepo user.Repository, coverage
 // CreateScanRequest represents the request body for creating a scan.
 // Either asset_group_id OR asset_group_ids OR targets must be provided (can have all).
 type CreateScanRequest struct {
-	Name             string         `json:"name" validate:"required,min=1,max=200"`
-	Description      string         `json:"description" validate:"max=1000"`
-	AssetGroupID     string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
-	AssetGroupIDs    []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
-	Targets          []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
-	ScanType         string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName      string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig    map[string]any `json:"scanner_config"`
-	TargetsPerJob    int            `json:"targets_per_job"`
-	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay      *int           `json:"schedule_day"`
-	ScheduleTime     *string        `json:"schedule_time"`
-	Timezone         string         `json:"timezone" validate:"max=50"`
-	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner     bool           `json:"run_on_tenant_runner"`
-	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID        string         `json:"profile_id" validate:"omitempty,uuid"`
+	Name          string         `json:"name" validate:"required,min=1,max=200"`
+	Description   string         `json:"description" validate:"max=1000"`
+	AssetGroupID  string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
+	AssetGroupIDs []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
+	Targets       []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	ScanType      string         `json:"scan_type" validate:"required,oneof=workflow single"`
+	PipelineID    string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName   string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig map[string]any `json:"scanner_config"`
+	TargetsPerJob int            `json:"targets_per_job"`
+	ScheduleType  string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleCron  string         `json:"schedule_cron" validate:"max=100"`
+	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+	// evaluated in timezone; at most every 15 minutes.
+	ScheduleRRule    string   `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay      *int     `json:"schedule_day"`
+	ScheduleTime     *string  `json:"schedule_time"`
+	Timezone         string   `json:"timezone" validate:"max=50"`
+	Tags             []string `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     bool     `json:"run_on_tenant_runner"`
+	SensorPreference string   `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID        string   `json:"profile_id" validate:"omitempty,uuid"`
 	// ScanZoneID pins every target to one scan zone; empty = Automatic routing.
 	ScanZoneID          string `json:"scan_zone_id" validate:"omitempty,uuid"`
 	TimeoutSeconds      int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
@@ -85,21 +88,24 @@ type CreateScanRequest struct {
 
 // UpdateScanRequest represents the request body for updating a scan.
 type UpdateScanRequest struct {
-	Name             string         `json:"name" validate:"omitempty,min=1,max=200"`
-	Description      string         `json:"description" validate:"max=1000"`
-	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName      string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig    map[string]any `json:"scanner_config"`
-	TargetsPerJob    *int           `json:"targets_per_job"`
-	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay      *int           `json:"schedule_day"`
-	ScheduleTime     *string        `json:"schedule_time"`
-	Timezone         string         `json:"timezone" validate:"max=50"`
-	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner     *bool          `json:"run_on_tenant_runner"`
-	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID        *string        `json:"profile_id" validate:"omitempty"`
+	Name          string         `json:"name" validate:"omitempty,min=1,max=200"`
+	Description   string         `json:"description" validate:"max=1000"`
+	PipelineID    string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName   string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig map[string]any `json:"scanner_config"`
+	TargetsPerJob *int           `json:"targets_per_job"`
+	ScheduleType  string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleCron  string         `json:"schedule_cron" validate:"max=100"`
+	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+	// evaluated in timezone; at most every 15 minutes.
+	ScheduleRRule    string   `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay      *int     `json:"schedule_day"`
+	ScheduleTime     *string  `json:"schedule_time"`
+	Timezone         string   `json:"timezone" validate:"max=50"`
+	Tags             []string `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     *bool    `json:"run_on_tenant_runner"`
+	SensorPreference string   `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID        *string  `json:"profile_id" validate:"omitempty"`
 	// ScanZoneID: omitted = unchanged, "" = Automatic routing, id = pin to that zone.
 	ScanZoneID          *string `json:"scan_zone_id" validate:"omitempty"`
 	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
@@ -199,6 +205,7 @@ type ScanDetailResponse struct {
 	TargetsPerJob         int                        `json:"targets_per_job"`
 	ScheduleType          string                     `json:"schedule_type"`
 	ScheduleCron          string                     `json:"schedule_cron,omitempty"`
+	ScheduleRRule         string                     `json:"schedule_rrule,omitempty"`
 	ScheduleDay           *int                       `json:"schedule_day,omitempty"`
 	ScheduleTime          *string                    `json:"schedule_time,omitempty"`
 	ScheduleTimezone      string                     `json:"schedule_timezone"`
@@ -323,6 +330,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		TargetsPerJob:       req.TargetsPerJob,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
+		ScheduleRRule:       req.ScheduleRRule,
 		ScheduleDay:         req.ScheduleDay,
 		ScheduleTime:        scheduleTime,
 		Timezone:            req.Timezone,
@@ -531,6 +539,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		TargetsPerJob:       req.TargetsPerJob,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
+		ScheduleRRule:       req.ScheduleRRule,
 		ScheduleDay:         req.ScheduleDay,
 		ScheduleTime:        scheduleTime,
 		Timezone:            req.Timezone,
@@ -1254,6 +1263,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		TargetsPerJob:         s.TargetsPerJob,
 		ScheduleType:          string(s.ScheduleType),
 		ScheduleCron:          s.ScheduleCron,
+		ScheduleRRule:         s.ScheduleRRule,
 		ScheduleDay:           s.ScheduleDay,
 		ScheduleTimezone:      s.ScheduleTimezone,
 		Tags:                  s.Tags,
