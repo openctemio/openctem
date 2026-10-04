@@ -48,7 +48,7 @@ func (m *findingActActivityRepo) CreateBatch(ctx context.Context, activities []*
 	return nil
 }
 
-func (m *findingActActivityRepo) GetByID(ctx context.Context, id shared.ID) (*vulnerability.FindingActivity, error) {
+func (m *findingActActivityRepo) GetByTenantAndID(ctx context.Context, _, id shared.ID) (*vulnerability.FindingActivity, error) {
 	if m.GetByIDFunc != nil {
 		return m.GetByIDFunc(ctx, id)
 	}

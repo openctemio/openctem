@@ -81,6 +81,10 @@ type IntegrationService struct {
 	// integrations — so it would be stored but never used.
 	ticketingTester TicketingConnectionTester
 
+	// tenableConnector validates Tenable.sc sensor connector configs
+	// (RFC-047). nil: Tenable integrations cannot be created.
+	tenableConnector TenableConnectorValidator
+
 	// Rate limiting for test notifications
 	testRateLimitMu  sync.RWMutex
 	testRateLimitMap map[string]time.Time // integration ID -> last test time
@@ -196,6 +200,21 @@ type CreateIntegrationInput struct {
 	SCMOrganization string
 }
 
+// tenableConnectorSyncMinutes is a new Tenable.sc connector's sync interval
+// (tenablesc.DefaultSyncIntervalMinutes; not imported, to keep this package
+// free of the connector).
+const tenableConnectorSyncMinutes = 360
+
+// TenableConnectorValidator validates a Tenable.sc sensor connector config for
+// a tenant (tenablesc.Service).
+type TenableConnectorValidator interface {
+	ValidateConnector(ctx context.Context, tenantID shared.ID, cfg map[string]any) error
+}
+
+// SetTenableConnector wires the Tenable.sc connector validator; without it
+// Tenable integrations are refused.
+func (s *IntegrationService) SetTenableConnector(v TenableConnectorValidator) { s.tenableConnector = v }
+
 // CreateIntegration creates a new integration.
 func (s *IntegrationService) CreateIntegration(ctx context.Context, input CreateIntegrationInput) (*integrationdom.IntegrationWithSCM, error) {
 	tenantID, err := shared.IDFromString(input.TenantID)
@@ -221,8 +240,14 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 	}
 
 	// Refuse providers that are declared but have no client: the row would be
-	// accepted, shown as an integration, and then never do anything.
-	if !provider.HasClient() {
+	// accepted, shown as an integration, and then never do anything. Tenable
+	// is served only as the Tenable.sc sensor connector (RFC-047), and only
+	// when the connector is wired.
+	if provider == integrationdom.ProviderTenable {
+		if s.tenableConnector == nil {
+			return nil, unsupportedProviderError(provider)
+		}
+	} else if !provider.HasClient() {
 		return nil, unsupportedProviderError(provider)
 	}
 
@@ -243,6 +268,9 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 		}
 		if cfgErr := scancoverage.ValidateTenableIntegration(tcfg, input.Credentials != "", input.BaseURL); cfgErr != nil {
 			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
+		}
+		if err := s.tenableConnector.ValidateConnector(ctx, tenantID, input.Config); err != nil {
+			return nil, err
 		}
 		if input.Config == nil {
 			input.Config = map[string]any{}
@@ -284,6 +312,11 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 	}
 	if len(input.Config) > 0 {
 		intg.SetConfig(input.Config)
+	}
+	if provider == integrationdom.ProviderTenable {
+		// The connector syncs on a schedule (every 6 hours by default); the
+		// first sync is due at once.
+		intg.SetSyncInterval(tenableConnectorSyncMinutes)
 	}
 	if input.Credentials != "" {
 		// Defense-in-depth: warn loudly when persisting credentials
@@ -512,6 +545,13 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 		}
 		if cfgErr := scancoverage.ValidateTenableIntegration(tcfg, willHaveCreds, effURL); cfgErr != nil {
 			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
+		}
+		// A connector's settings (sensor, instance, ...) are re-checked when
+		// they change; rows stored before the connector keep loading.
+		if input.Config != nil && s.tenableConnector != nil {
+			if err := s.tenableConnector.ValidateConnector(ctx, tid, merged); err != nil {
+				return nil, err
+			}
 		}
 		merged["execution_mode"] = string(tcfg.ExecutionMode)
 		merged["engine"] = string(tcfg.Engine)

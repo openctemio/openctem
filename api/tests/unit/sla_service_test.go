@@ -96,11 +96,11 @@ func (m *mockSLARepo) Update(_ context.Context, policy *sladom.Policy) error {
 	return nil
 }
 
-func (m *mockSLARepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockSLARepo) Delete(_ context.Context, tenantID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
-	if _, ok := m.policies[id.String()]; !ok {
+	if p, ok := m.policies[id.String()]; !ok || p.TenantID() != tenantID {
 		return sladom.ErrNotFound
 	}
 	delete(m.policies, id.String())
@@ -668,7 +668,7 @@ func TestUpdateSLAPolicy_IDORPrevention(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for IDOR prevention")
 	}
-	if !errors.Is(err, shared.ErrNotFound) {
+	if !errors.Is(err, shared.ErrNotFound) && !errors.Is(err, sladom.ErrNotFound) {
 		t.Errorf("expected ErrNotFound for IDOR, got %v", err)
 	}
 }
@@ -903,7 +903,7 @@ func TestDeleteSLAPolicy_IDORPrevention(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for IDOR prevention")
 	}
-	if !errors.Is(err, shared.ErrNotFound) {
+	if !errors.Is(err, shared.ErrNotFound) && !errors.Is(err, sladom.ErrNotFound) {
 		t.Errorf("expected ErrNotFound for IDOR, got %v", err)
 	}
 	// Policy should not be deleted

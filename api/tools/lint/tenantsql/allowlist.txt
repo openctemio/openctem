@@ -7,27 +7,12 @@
 # "D-11 baseline" entries predate the guard and are being fixed area by area
 # (research/14 SEC-15, owner decision D-11). Any other entry is a permanent,
 # reviewed exception and says why the id alone is safe.
-asset_dedup_repository.go:AssetDedupRepository.ApproveAndMerge:asset_dedup_review  D-11 baseline: add the tenant predicate
-asset_dedup_repository.go:AssetDedupRepository.EnqueueIdentityReview:asset_dedup_review  D-11 baseline: add the tenant predicate
-asset_service_repository.go:AssetServiceRepository.UpdateFindingCounts:asset_services  D-11 baseline: add the tenant predicate
-audit_repository.go:AuditRepository.GetByID:audit_logs  D-11 baseline: add the tenant predicate
 capability_repository.go:CapabilityRepository.Delete:capabilities  D-11 baseline: add the tenant predicate
 capability_repository.go:CapabilityRepository.GetByID:capabilities  D-11 baseline: add the tenant predicate
 capability_repository.go:CapabilityRepository.GetUsageStats:capabilities  D-11 baseline: add the tenant predicate
 capability_repository.go:CapabilityRepository.Update:capabilities  D-11 baseline: add the tenant predicate
 command_repository.go:CommandRepository.Delete:commands  D-11 baseline: add the tenant predicate
 command_repository.go:CommandRepository.GetByID:commands  D-11 baseline: add the tenant predicate
-component_repository.go:ComponentRepository.DeleteDependency:asset_components  D-11 baseline: add the tenant predicate
-component_repository.go:ComponentRepository.GetDependency:asset_components  D-11 baseline: add the tenant predicate
-component_repository.go:ComponentRepository.UpdateAssetDependencyParent:asset_components  D-11 baseline: add the tenant predicate
-component_repository.go:ComponentRepository.UpdateDependency:asset_components  D-11 baseline: add the tenant predicate
-credential_secret_backfill.go:backfillCredentialSecretBatch:exposure_events  D-11 baseline: add the tenant predicate
-exposure_repository.go:ExposureRepository.Delete:exposure_events  D-11 baseline: add the tenant predicate
-exposure_repository.go:ExposureRepository.GetByID:exposure_events  D-11 baseline: add the tenant predicate
-exposure_repository.go:ExposureRepository.Update:exposure_events  D-11 baseline: add the tenant predicate
-finding_activity_repository.go:FindingActivityRepository.GetByID:finding_activities  D-11 baseline: add the tenant predicate
-finding_approval_repository.go:FindingApprovalRepository.Update:finding_status_approvals  D-11 baseline: add the tenant predicate
-finding_comment_repository.go:FindingCommentRepository.GetByID:finding_comments  D-11 baseline: add the tenant predicate
 ingest_job_repository.go:IngestJobRepository.ClaimBatch:ingest_jobs  D-11 baseline: add the tenant predicate
 ingest_job_repository.go:IngestJobRepository.Complete:ingest_jobs  D-11 baseline: add the tenant predicate
 ingest_job_repository.go:IngestJobRepository.Fail:ingest_jobs  D-11 baseline: add the tenant predicate
@@ -102,9 +87,6 @@ sensor_repository.go:SensorRepository.UpdateLastSeen:sensors  D-11 baseline: add
 sensor_repository.go:SensorRepository.UpdateOfflineTimestamp:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:SensorRepository.Update:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:updateInlineKey:sensors  D-11 baseline: add the tenant predicate
-sla_repository.go:SLAPolicyRepository.Delete:sla_policies  D-11 baseline: add the tenant predicate
-sla_repository.go:SLAPolicyRepository.GetByID:sla_policies  D-11 baseline: add the tenant predicate
-sla_repository.go:SLAPolicyRepository.Update:sla_policies  D-11 baseline: add the tenant predicate
 template_source_repository.go:TemplateSourceRepository.Delete:template_sources  D-11 baseline: add the tenant predicate
 template_source_repository.go:TemplateSourceRepository.GetByID:template_sources  D-11 baseline: add the tenant predicate
 template_source_repository.go:TemplateSourceRepository.UpdateSyncStatus:template_sources  D-11 baseline: add the tenant predicate
