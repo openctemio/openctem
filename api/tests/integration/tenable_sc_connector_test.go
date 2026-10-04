@@ -154,6 +154,10 @@ func TestTenableSCConnector_Flow(t *testing.T) {
 		AND resolution_method = 'source_mitigated'`, tenant.String()); n != 1 {
 		t.Fatal("the mitigated finding was not resolved")
 	}
+	if n := count(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'ingest.source_resolved'
+		AND resource_id = $2 AND metadata->>'count' = '1'`, tenant.String(), cmdID.String()); n != 1 {
+		t.Fatalf("source-asserted resolve audit entries: %d, want 1", n)
+	}
 
 	// Completion moves the cursor.
 	result, _ := json.Marshal(map[string]any{"status": "completed", "metadata": map[string]any{
