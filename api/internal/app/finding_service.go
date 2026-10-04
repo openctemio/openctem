@@ -56,6 +56,7 @@ type (
 	KEVData                       = finding.KEVData
 	KEVRepository                 = finding.KEVRepository
 	ListFindingsInput             = finding.ListFindingsInput
+	FilterCaller                  = finding.FilterCaller
 	ListVulnerabilitiesInput      = finding.ListVulnerabilitiesInput
 	ListActiveCVEsInput           = finding.ListActiveCVEsInput
 	PriorityAuditEntry            = finding.PriorityAuditEntry
