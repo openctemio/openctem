@@ -170,6 +170,9 @@ export type AuditAction =
   | 'easm_seed.created'
   | 'easm_seed.updated'
   | 'easm_seed.deleted'
+  | 'report_schedule.created'
+  | 'report_schedule.activated'
+  | 'report_schedule.deleted'
   | 'tool.created'
   | 'tool.updated'
   | 'tool.deleted'
@@ -211,6 +214,7 @@ export type AuditResourceType =
   | 'scope_target'
   | 'scope_exclusion'
   | 'easm_seed'
+  | 'report_schedule'
   | 'tool'
   | 'scanner_template'
   | 'remediation_campaign'
@@ -427,6 +431,10 @@ export function getActionLabel(action: AuditAction): string {
     'easm_seed.created': 'EASM Seed Added',
     'easm_seed.updated': 'EASM Seed Changed',
     'easm_seed.deleted': 'EASM Seed Removed',
+    // Report schedules
+    'report_schedule.created': 'Report Schedule Created',
+    'report_schedule.activated': 'Report Schedule Activated',
+    'report_schedule.deleted': 'Report Schedule Deleted',
     // Tool actions
     'tool.created': 'Tool Created',
     'tool.updated': 'Tool Updated',
