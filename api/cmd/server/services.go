@@ -68,6 +68,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -1456,7 +1457,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// the integration's sensor, followed to keep the sync cursor.
 	s.TenableSC = tenablesc.NewService(repos.Integration, repos.Sensor, repos.Command, repos.Finding, s.Audit, log)
 	s.TenableSC.SetSyncClaimer(repos.Integration)
-	s.Integration.SetTenableConnector(s.TenableSC)
+	// Tenable integrations can be created only once the connector ships
+	// (integrationdom.TenableConnectorEnabled, owner decision D-14): without
+	// the validator the integration service refuses them.
+	if integrationdom.TenableConnectorEnabled {
+		s.Integration.SetTenableConnector(s.TenableSC)
+	}
 	s.SensorPlatformHealth = sensorapp.NewPlatformHealth(sensorapp.PlatformHealthConfig{
 		SlowHeartbeat: cfg.SensorConfig.HealthSlowHeartbeat,
 		StartupGrace:  cfg.SensorConfig.HealthStartupGrace,
