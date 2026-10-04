@@ -62,7 +62,11 @@ func (r *FindingRepository) ListWhere(ctx context.Context, w *filterspec.Where, 
 	defer rows.Close()
 	// pagination.New caps the page at 100 rows; the cap is restated so the
 	// allocation never depends on a request value.
-	findings := make([]*vulnerability.Finding, 0, min(page.Limit(), maxFindingPageRows))
+	capacity := page.Limit()
+	if capacity < 0 || capacity > maxFindingPageRows {
+		capacity = maxFindingPageRows
+	}
+	findings := make([]*vulnerability.Finding, 0, capacity)
 	for rows.Next() {
 		f, err := r.scanFindingFromRows(rows)
 		if err != nil {
