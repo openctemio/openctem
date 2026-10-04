@@ -14,7 +14,17 @@
  */
 
 import { useState } from 'react'
-import { ExternalLink, Link2, Loader2, MoreHorizontal, ShieldCheck, Ticket } from 'lucide-react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import {
+  Copy,
+  ExternalLink,
+  Link2,
+  Loader2,
+  MoreHorizontal,
+  ShieldCheck,
+  Ticket,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +35,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { copyToClipboard } from '@/lib/clipboard'
+import { safeHref } from '@/lib/safe-href'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions } from '@/context/permission-provider'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
@@ -33,6 +44,7 @@ import { isNoValidationSensorError, useRequestValidationApi } from '../../api/us
 import type { FindingDetail, FindingStatus } from '../../types'
 import { FINDING_TYPE_CONFIG } from '../../types'
 import { CreateTicketDialog } from '../create-ticket-dialog'
+import { MarkDuplicateDialog } from '../mark-duplicate-dialog'
 import { findingSourceLabel, HUMAN_SOURCES } from '../../lib/finding-detail'
 
 interface FindingHeaderProps {
@@ -42,12 +54,21 @@ interface FindingHeaderProps {
   onTriageCompleted?: () => void
 }
 
-export function FindingHeader({ finding, onTriageCompleted }: FindingHeaderProps) {
+export function FindingHeader({ finding, status, onTriageCompleted }: FindingHeaderProps) {
   const isHuman = HUMAN_SOURCES.has(finding.source)
   const { hasPermission } = usePermissions()
+  const router = useRouter()
   const canWrite = hasPermission('findings:write')
   const integrationsEnabled = useModuleEnabled('integrations')
   const [ticketOpen, setTicketOpen] = useState(false)
+  const [duplicateOpen, setDuplicateOpen] = useState(false)
+  // An inventory asset (not a free-text pentest target) the duplicate must share.
+  const assetId = isHuman ? undefined : finding.assets[0]?.id
+  const canMarkDuplicate =
+    hasPermission('findings:triage') && !!assetId && status !== 'duplicate' && !finding.duplicateOf
+  const duplicateOfHref = finding.duplicateOf
+    ? safeHref(`/findings/${encodeURIComponent(finding.duplicateOf)}`)
+    : undefined
 
   const { trigger: requestValidation, isMutating: reverifying } = useRequestValidationApi(
     finding.id
@@ -99,6 +120,14 @@ export function FindingHeader({ finding, onTriageCompleted }: FindingHeaderProps
               {finding.cve}
               <ExternalLink className="h-3 w-3" aria-hidden />
             </a>
+          </Badge>
+        )}
+        {duplicateOfHref && (
+          <Badge variant="secondary" asChild className="text-xs">
+            <Link href={duplicateOfHref} data-slot="duplicate-of">
+              <Copy className="h-3 w-3" aria-hidden />
+              Duplicate of another finding
+            </Link>
           </Badge>
         )}
         {finding.cwe && cweNum && (
@@ -165,9 +194,25 @@ export function FindingHeader({ finding, onTriageCompleted }: FindingHeaderProps
                 Create ticket
               </DropdownMenuItem>
             )}
+            {canMarkDuplicate && (
+              <DropdownMenuItem onClick={() => setDuplicateOpen(true)}>
+                <Copy className="h-4 w-4" />
+                Mark as duplicate
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {canMarkDuplicate && assetId && (
+        <MarkDuplicateDialog
+          findingId={finding.id}
+          assetId={assetId}
+          open={duplicateOpen}
+          onOpenChange={setDuplicateOpen}
+          onMarked={(canonicalId) => router.push(`/findings/${encodeURIComponent(canonicalId)}`)}
+        />
+      )}
 
       {integrationsEnabled && (
         <CreateTicketDialog
