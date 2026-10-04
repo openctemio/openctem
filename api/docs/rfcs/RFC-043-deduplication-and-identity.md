@@ -443,6 +443,13 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
    be in the caller's tenant and data scope and on the same asset; pentest
    findings are excluded; audited as `finding.duplicate_marked`. Web: "Mark as
    duplicate" in the finding page menu.
+   **One parser per tool, API side done:** the in-tree SARIF adapter picks
+   `fingerprints` deterministically (the `ctis.FromSARIF` rule); the unused
+   duplicate SARIF parser `pkg/parsers/sarif` is deleted; `.nessus` files are
+   read by one parser (`pkg/parsers/nessus`) for both findings and the asset
+   import. Cross-repository duplicates (sensor parsers vs in-tree adapters)
+   no longer change identity (the server recipe decides, item 11); moving the
+   remaining converters into `ctis` is open.
 
 **P2 — sightings and correlation**
 
