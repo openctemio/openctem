@@ -25,6 +25,18 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Fixed
 
+- **Coverage-scoped auto-resolve no longer reads a missing `coverage_type`
+  as full** (safety; CTIS spec 4.5, research 16 G4, owner decision Q5).
+  A scan command's run closed findings it no longer reported when its
+  report declared `full` *or nothing at all*, while the report-level
+  (repository) path already treated an absent value as no auto-resolve.
+  Now only an explicit `full` qualifies; an undeclared report is refused
+  with reason `coverage_undeclared`. **Upgrade note:** sensors whose sdk-go
+  predates openctemio/sdk-go#150 send no `coverage_type`, so their scans no
+  longer close findings on this path (fail safe; the mode defaults to
+  `dry_run`). Sensors with that change send `full` only for completed runs
+  and `partial` for runs that stopped part-way.
+
 - **A finding's occurrence count grows with every sighting** (RFC-043 P0).
   Re-ingesting an existing finding wrote back the count it had loaded before
   the merge, so `occurrence_count` stayed at 1 however often a scan saw the
