@@ -197,6 +197,7 @@ invtok="Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8"
 probe web GET "/invitations/$invtok"
 probe web GET "/api/v1/invitations/$invtok/preview"
 probe web POST /api/v1/invitations/lookup
+probe api GET "/api/v1/ws?ticket=$invtok&x=1"
 sleep 1
 gwlog="$(docker logs "$run-gw" 2>&1)"
 if grep -q "$invtok" <<<"$gwlog"; then
@@ -208,6 +209,11 @@ if grep -q "/invitations/REDACTED" <<<"$gwlog" && grep -q "/api/v1/invitations/R
 	ok "token paths logged as REDACTED"
 else
 	bad "token paths not logged as REDACTED"
+fi
+if grep -q "/api/v1/ws?ticket=REDACTED&x=1" <<<"$gwlog"; then
+	ok "WebSocket ticket logged as REDACTED"
+else
+	bad "WebSocket ticket not logged as REDACTED"
 fi
 if grep -q "/api/v1/invitations/lookup" <<<"$gwlog"; then
 	ok "body routes logged as is"
