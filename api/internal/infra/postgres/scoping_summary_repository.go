@@ -43,7 +43,7 @@ const scopingSummaryQuery = `
 WITH live_assets AS (
 	SELECT a.id, a.is_crown_jewel
 	  FROM assets a
-	 WHERE a.tenant_id = $1 AND a.status <> 'archived'
+	 WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.status <> 'archived'
 ),
 crown AS (
 	SELECT la.id FROM live_assets la WHERE la.is_crown_jewel

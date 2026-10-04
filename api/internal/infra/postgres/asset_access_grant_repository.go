@@ -113,7 +113,7 @@ func (r *AccessControlRepository) CreateAssetAccessGrant(ctx context.Context, te
 		SELECT a.tenant_id, a.id, tm.user_id, 'manual', $4::uuid
 		FROM assets a
 		JOIN tenant_members tm ON tm.tenant_id = a.tenant_id AND tm.user_id = $3::uuid
-		WHERE a.id = $2 AND a.tenant_id = $1
+		WHERE a.id = $2 AND a.tenant_id = $1 AND a.deleted_at IS NULL
 		RETURNING id::text`,
 		tenantID.String(), assetID.String(), userID.String(), by).Scan(&id)
 	if err != nil {

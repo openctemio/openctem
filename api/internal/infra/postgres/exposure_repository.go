@@ -659,7 +659,8 @@ func (r *ExposureRepository) doScan(scan func(dest ...any) error) (*exposure.Exp
 }
 
 func (r *ExposureRepository) buildWhereClause(filter exposure.Filter) (string, []any) {
-	var conditions []string
+	// Exposures of a soft-deleted asset are history, not work: not listed.
+	conditions := []string{"NOT EXISTS (SELECT 1 FROM assets d WHERE d.id = exposure_events.asset_id AND d.deleted_at IS NOT NULL)"}
 	var args []any
 	argIndex := 1
 

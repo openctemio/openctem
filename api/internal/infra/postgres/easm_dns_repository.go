@@ -41,7 +41,7 @@ func (r *EASMDNSRepository) DueTargets(ctx context.Context, tenantID shared.ID, 
 		FROM assets a
 		LEFT JOIN asset_attributions aa ON aa.asset_id = a.id
 		LEFT JOIN easm_dns_check_state s ON s.asset_id = a.id AND s.check_kind = $2
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		  AND a.asset_type = ANY($3)
 		  AND a.status = 'active'
 		  AND COALESCE(aa.state, 'confirmed') <> 'rejected'
@@ -73,7 +73,7 @@ func (r *EASMDNSRepository) DueTargets(ctx context.Context, tenantID shared.ID, 
 func (r *EASMDNSRepository) SaveState(ctx context.Context, tenantID, assetID shared.ID, kind, outcome, lastErr string, at time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO easm_dns_check_state (tenant_id, asset_id, check_kind, last_checked_at, last_outcome, last_error)
-		SELECT a.tenant_id, a.id, $3, $4, $5, $6 FROM assets a WHERE a.id = $2 AND a.tenant_id = $1
+		SELECT a.tenant_id, a.id, $3, $4, $5, $6 FROM assets a WHERE a.id = $2 AND a.tenant_id = $1 AND a.deleted_at IS NULL
 		ON CONFLICT (asset_id, check_kind) DO UPDATE SET
 			last_checked_at = EXCLUDED.last_checked_at,
 			last_outcome    = EXCLUDED.last_outcome,

@@ -44,7 +44,7 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 				CASE WHEN COUNT(*) = 0 THEN 0
 					ELSE COUNT(*) FILTER(WHERE EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = assets.id)) * 100.0 / COUNT(*)
 				END AS ownership_pct
-			FROM assets GROUP BY tenant_id
+			FROM assets WHERE deleted_at IS NULL GROUP BY tenant_id
 		),
 		finding_metrics AS (
 			SELECT tenant_id,
