@@ -220,6 +220,9 @@ func TestTwoReplicas_AuditChainNeverForks(t *testing.T) {
 		prev = h
 		n++
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if n != 2*raceRounds {
 		t.Fatalf("chain has %d entries, want %d", n, 2*raceRounds)
 	}
