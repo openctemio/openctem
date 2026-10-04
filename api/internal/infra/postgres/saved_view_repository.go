@@ -12,7 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// SavedViewRepository stores saved views (migration 000762). Every statement
+// SavedViewRepository stores saved views (migration 000777). Every statement
 // carries the tenant; reads return only views the user may see.
 type SavedViewRepository struct {
 	db *DB
