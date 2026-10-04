@@ -12,7 +12,7 @@ export const SCAN_TYPES = ['workflow', 'single'] as const
 export type ScanType = (typeof SCAN_TYPES)[number]
 
 // Schedule types
-export const SCHEDULE_TYPES = ['manual', 'daily', 'weekly', 'monthly', 'crontab'] as const
+export const SCHEDULE_TYPES = ['manual', 'daily', 'weekly', 'monthly', 'crontab', 'rrule'] as const
 export type ScheduleType = (typeof SCHEDULE_TYPES)[number]
 
 // Status types
@@ -35,6 +35,7 @@ export const SCHEDULE_TYPE_LABELS: Record<ScheduleType, string> = {
   weekly: 'Weekly',
   monthly: 'Monthly',
   crontab: 'Custom (Cron)',
+  rrule: 'Recurrence rule',
 }
 
 export const SCAN_CONFIG_STATUS_LABELS: Record<ScanConfigStatus, string> = {
@@ -87,6 +88,8 @@ export interface ScanConfig {
   targets_per_job: number
   schedule_type: ScheduleType
   schedule_cron?: string
+  /** RFC 5545 rule (RRULE parts) of an rrule schedule, in the scan timezone. */
+  schedule_rrule?: string
   schedule_day?: number
   schedule_time?: string
   schedule_timezone: string
@@ -148,6 +151,8 @@ export interface CreateScanConfigRequest {
   targets_per_job?: number
   schedule_type?: ScheduleType
   schedule_cron?: string
+  /** RFC 5545 rule (RRULE parts) of an rrule schedule, in the scan timezone. */
+  schedule_rrule?: string
   schedule_day?: number
   schedule_time?: string
   timezone?: string
@@ -177,6 +182,8 @@ export interface UpdateScanConfigRequest {
   targets_per_job?: number
   schedule_type?: ScheduleType
   schedule_cron?: string
+  /** RFC 5545 rule (RRULE parts) of an rrule schedule, in the scan timezone. */
+  schedule_rrule?: string
   schedule_day?: number
   schedule_time?: string
   timezone?: string

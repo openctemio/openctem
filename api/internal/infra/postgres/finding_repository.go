@@ -2721,18 +2721,21 @@ func (r *FindingRepository) ListByAssetID(ctx context.Context, tenantID, assetID
 // CountWindow returns, for the trailing `days` window, how many findings were
 // newly detected (created_at) and how many were resolved (resolved_at, status
 // resolved/verified) — the new-vs-resolved trend a digest reports. Tenant-scoped.
-func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID, days int) (newCount, resolvedCount int64, err error) {
+func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (newCount, resolvedCount int64, err error) {
 	if days <= 0 {
 		days = 7
 	}
+	// A non-nil scope counts only findings on in-scope assets ($3, $4).
+	args := []any{tenantID.String(), days}
+	inScope, args := dataScopeCond("asset_id", scope, args)
 	query := `
 		SELECT
 			COALESCE(SUM(CASE WHEN created_at >= NOW() - ($2::int || ' days')::interval THEN 1 ELSE 0 END), 0) AS new_count,
 			COALESCE(SUM(CASE WHEN resolved_at >= NOW() - ($2::int || ' days')::interval
 				AND status IN ('resolved','verified') THEN 1 ELSE 0 END), 0) AS resolved_count
 		FROM findings
-		WHERE tenant_id = $1`
-	if err = r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(&newCount, &resolvedCount); err != nil {
+		WHERE tenant_id = $1 AND ` + inScope
+	if err = r.db.QueryRowContext(ctx, query, args...).Scan(&newCount, &resolvedCount); err != nil {
 		return 0, 0, fmt.Errorf("failed to count finding window: %w", err)
 	}
 	return newCount, resolvedCount, nil
@@ -2847,7 +2850,10 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	// handled one level up in the service (it returns empty stats when the tenant
 	// enforces RestrictedDataScope and the user has no assignment), so this query
 	// stays unchanged and its interface signature stable.
-	if dataScopeUserID != nil {
+	if dataScopeUserID != nil && filter.ScopeStrict {
+		query += ` AND asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)`
+		args = append(args, dataScopeUserID.String())
+	} else if dataScopeUserID != nil {
 		query += ` AND (
 			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
 			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
@@ -3581,6 +3587,8 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 					(status IN ('resolved', 'verified')
 						AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed')))
 					OR status = 'validated_fixed'
+					-- Seen again: a not_observed finding is observed (O2).
+					OR status = 'not_observed'
 				)
 			FOR UPDATE
 		)
@@ -3641,9 +3649,10 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	return result, nil
 }
 
-// ExpireFeatureBranchFindings marks stale feature branch findings as resolved.
-// This is called by a background job to clean up findings on non-default branches
-// that have not been seen for a configurable period.
+// ExpireFeatureBranchFindings marks stale feature branch findings as
+// not_observed: not seen for a configurable period on a non-default branch is
+// stale, not fixed (research 18 F7, owner decision O2), so the finding is never
+// counted as fixed and its SLA keeps running. A sighting reopens it.
 // Uses JOIN with repository_branches to determine default branch status.
 func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, tenantID shared.ID, defaultExpiryDays int) (int64, error) {
 	// Expire findings that:
@@ -3651,12 +3660,14 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 	// 2. The branch allows expiry (keep_when_inactive = false)
 	// 3. Have active status (new, open)
 	// 4. Have not been seen for the configured expiry period (per-branch or default)
-	// Resolution is set to 'branch_expired' to distinguish from other auto-resolve types
+	// Resolution 'branch_expired' records why the finding is not observed.
 	query := `
 		UPDATE findings f
-		SET status = 'resolved',
+		SET status = 'not_observed',
 			resolution = 'branch_expired',
-			resolved_at = NOW(),
+			resolution_method = NULL,
+			resolved_at = NULL,
+			resolved_by = NULL,
 			updated_at = NOW()
 		FROM repository_branches rb
 		WHERE f.tenant_id = $1

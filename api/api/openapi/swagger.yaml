@@ -7622,6 +7622,12 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        description: |-
+          ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+          evaluated in timezone; at most every 15 minutes.
+        maxLength: 500
+        type: string
       schedule_time:
         type: string
       schedule_type:
@@ -7631,6 +7637,7 @@ definitions:
         - weekly
         - monthly
         - crontab
+        - rrule
         type: string
       sensor_preference:
         enum:
@@ -11938,6 +11945,8 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        type: string
       schedule_time:
         type: string
       schedule_timezone:
@@ -14428,6 +14437,12 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        description: |-
+          ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+          evaluated in timezone; at most every 15 minutes.
+        maxLength: 500
+        type: string
       schedule_time:
         type: string
       schedule_type:
@@ -14437,6 +14452,7 @@ definitions:
         - weekly
         - monthly
         - crontab
+        - rrule
         type: string
       sensor_preference:
         enum:
