@@ -48,6 +48,14 @@ func (s RunStatus) IsTerminal() bool {
 var ErrRunAlreadyFinished = shared.NewDomainError("RUN_ALREADY_FINISHED",
 	"pipeline run has already finished", shared.ErrConflict)
 
+// ErrScanRunActive is returned when a scheduled run is created while the
+// scan already has an active run (overlap policy skip, RFC-046 D4). The check
+// runs under the scan row lock that serializes every trigger of the scan, in
+// the transaction that inserts the run (§6.2), so a manual trigger cannot
+// slip in between the check and the insert.
+var ErrScanRunActive = shared.NewDomainError("SCAN_RUN_IN_PROGRESS",
+	"the scan's previous run is still active", shared.ErrConflict)
+
 // ErrOccurrenceAlreadyRun is returned when a run is created for a schedule
 // occurrence of a scan that already has a run: a second scheduler instance,
 // or a retried trigger, firing the same slot.

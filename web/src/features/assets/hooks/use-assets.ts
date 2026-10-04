@@ -84,6 +84,9 @@ export interface AssetSearchFilters {
   providers?: string[]
   lastSeenBefore?: string // ISO timestamp — assets last seen before this instant
   lastSeenAfter?: string // ISO timestamp — assets last seen after this instant
+  // Attribution (RFC-036): states, or the aliases unknown / unconfirmed /
+  // approved. Empty = no attribution filter (every asset).
+  attribution?: string[]
 
   // Properties filter: key=value pairs for JSONB containment (server-side)
   propertiesFilter?: Record<string, string[]>
@@ -411,6 +414,7 @@ function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, str
   if (filters.providers?.length) params.providers = filters.providers.join(',')
   if (filters.lastSeenBefore) params.last_seen_before = filters.lastSeenBefore
   if (filters.lastSeenAfter) params.last_seen_after = filters.lastSeenAfter
+  if (filters.attribution?.length) params.attribution = filters.attribution.join(',')
 
   // Sorting
   if (filters.sort) params.sort = filters.sort
