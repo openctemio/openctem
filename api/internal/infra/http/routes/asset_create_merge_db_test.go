@@ -100,9 +100,8 @@ func (h *dsHarness) wantConflict(status int, body, wantID string) {
 }
 
 // A create of an asset the caller may see is a 409 that names it, for an
-// in-scope member, an owner and a member whose organization lets members
-// without an access group see everything. Nothing is changed or audited as
-// a merge.
+// in-scope member, an owner and a full-data role. Nothing is changed or
+// audited as a merge.
 func TestAssetCreate_DuplicateInScope_ConflictWithID(t *testing.T) {
 	h := newDSHarness(t)
 	a := h.assetA.String()
@@ -112,7 +111,7 @@ func TestAssetCreate_DuplicateInScope_ConflictWithID(t *testing.T) {
 		name  string
 		user  shared.ID
 		admin bool
-	}{{"member in scope", h.memberA, false}, {"owner", h.owner, true}, {"member without a group (sees everything)", h.memberFree, false}} {
+	}{{"member in scope", h.memberA, false}, {"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
 		status, body := h.do(who.user, who.admin, http.MethodPost, "/api/v1/assets/", map[string]any{
 			"name": dsMarkerAssetA, "type": "domain", "criticality": "low", "description": "seen again",
 		})
@@ -133,12 +132,11 @@ func TestAssetCreate_DuplicateInScope_ConflictWithID(t *testing.T) {
 	}
 }
 
-// A strict organization's member without an access group sees nothing, so a
+// A member without a scope row sees nothing (in every organization), so a
 // duplicate of any asset is the generic conflict.
-func TestAssetCreate_DuplicateStrictMemberWithoutGroup_ConflictWithoutID(t *testing.T) {
+func TestAssetCreate_DuplicateMemberWithoutScope_ConflictWithoutID(t *testing.T) {
 	h := newDSHarness(t)
-	h.setPolicy("nothing")
-	status, body := h.do(h.memberStrict, false, http.MethodPost, "/api/v1/assets/", map[string]any{
+	status, body := h.do(h.memberFree, false, http.MethodPost, "/api/v1/assets/", map[string]any{
 		"name": dsMarkerAssetA, "type": "domain", "criticality": "low",
 	})
 	h.wantConflict(status, body, "")
