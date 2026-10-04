@@ -12,6 +12,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/lib/pq"
@@ -33,32 +34,9 @@ func (r *FindingRepository) MarkDuplicateOf(ctx context.Context, tenantID, dupli
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	rows, err := tx.QueryContext(ctx, `
-		SELECT id, COALESCE(asset_id::text, ''), status, source
-		FROM findings
-		WHERE tenant_id = $1 AND id = ANY($2::uuid[])
-		ORDER BY id
-		FOR UPDATE`, tenant, pq.Array([]string{duplicateID.String(), canonicalID.String()}))
+	found, err := lockDuplicateCandidates(ctx, tx, tenant, duplicateID, canonicalID)
 	if err != nil {
-		return fmt.Errorf("lock findings to merge: %w", err)
-	}
-	found := map[string]vulnerability.DuplicateCandidate{}
-	for rows.Next() {
-		var id, asset, status, source string
-		if err := rows.Scan(&id, &asset, &status, &source); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("scan finding to merge: %w", err)
-		}
-		c := vulnerability.DuplicateCandidate{Status: vulnerability.FindingStatus(status), Source: vulnerability.FindingSource(source)}
-		c.ID, _ = shared.IDFromString(id)
-		c.AssetID, _ = shared.IDFromString(asset)
-		found[id] = c
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("read findings to merge: %w", err)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("read findings to merge: %w", err)
+		return err
 	}
 	dup, ok := found[duplicateID.String()]
 	if !ok {
@@ -86,4 +64,38 @@ func (r *FindingRepository) MarkDuplicateOf(ctx context.Context, tenantID, dupli
 		return fmt.Errorf("commit mark duplicate: %w", err)
 	}
 	return nil
+}
+
+// lockDuplicateCandidates locks the two findings of the tenant, in id order,
+// and returns them by id; a finding not in the tenant is absent.
+func lockDuplicateCandidates(ctx context.Context, tx *sql.Tx, tenant string, ids ...shared.ID) (map[string]vulnerability.DuplicateCandidate, error) {
+	strs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		strs = append(strs, id.String())
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, COALESCE(asset_id::text, ''), status, source
+		FROM findings
+		WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+		ORDER BY id
+		FOR UPDATE`, tenant, pq.Array(strs))
+	if err != nil {
+		return nil, fmt.Errorf("lock findings to merge: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	found := map[string]vulnerability.DuplicateCandidate{}
+	for rows.Next() {
+		var id, asset, status, source string
+		if err := rows.Scan(&id, &asset, &status, &source); err != nil {
+			return nil, fmt.Errorf("scan finding to merge: %w", err)
+		}
+		c := vulnerability.DuplicateCandidate{Status: vulnerability.FindingStatus(status), Source: vulnerability.FindingSource(source)}
+		c.ID, _ = shared.IDFromString(id)
+		c.AssetID, _ = shared.IDFromString(asset)
+		found[id] = c
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read findings to merge: %w", err)
+	}
+	return found, nil
 }
