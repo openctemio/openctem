@@ -1873,6 +1873,67 @@ type DataScopePolicyResponse struct {
 	// MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
 	// (fail-closed). Owners and admins always see everything.
 	MembersWithoutGroupSee string `json:"members_without_group_see" enums:"everything,nothing"`
+	// Deprecated is true while the organization still shows everything: that
+	// mode is being retired and only the owner can switch it off.
+	Deprecated bool `json:"deprecated"`
+}
+
+func dataScopePolicyResponse(policy string) DataScopePolicyResponse {
+	return DataScopePolicyResponse{MembersWithoutGroupSee: policy, Deprecated: policy == tenant.MembersWithoutGroupSeeEverything}
+}
+
+// DataScopeImpactMember is one member who would see nothing after the switch.
+type DataScopeImpactMember struct {
+	UserID string `json:"user_id"`
+	Name   string `json:"name"`
+	Email  string `json:"email"`
+	Role   string `json:"role"`
+}
+
+// DataScopeImpactResponse is the pre-flight report for switching members
+// without a team to "nothing".
+type DataScopeImpactResponse struct {
+	MembersWithoutGroupSee string `json:"members_without_group_see" enums:"everything,nothing"`
+	// TotalCount is the number of members who would see nothing (exact);
+	// Members lists at most 500 of them.
+	TotalCount int                     `json:"total_count"`
+	Members    []DataScopeImpactMember `json:"members"`
+}
+
+// GetDataScopeImpact handles GET /api/v1/tenants/{tenant}/settings/data-scope/impact
+// @Summary      Members who would see nothing after switching to "nothing"
+// @Description  Lists the active members who are not owner or admin, hold no role with full data access, and are in no access group and have no grant: they see everything today only because the organization shows everything to members without a team, and would see nothing after the switch. Owners and admins only.
+// @Tags         Tenants
+// @Produce      json
+// @Security     BearerAuth
+// @Param        tenant  path      string  true  "Tenant ID or slug"
+// @Success      200     {object}  DataScopeImpactResponse
+// @Failure      401     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Failure      404     {object}  apierror.Error
+// @Router       /tenants/{tenant}/settings/data-scope/impact [get]
+func (h *TenantHandler) GetDataScopeImpact(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	impact, err := h.service.GetDataScopeImpact(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	resp := DataScopeImpactResponse{
+		MembersWithoutGroupSee: impact.Policy,
+		TotalCount:             impact.TotalCount,
+		Members:                make([]DataScopeImpactMember, 0, len(impact.Members)),
+	}
+	for _, m := range impact.Members {
+		resp.Members = append(resp.Members, DataScopeImpactMember{UserID: m.UserID, Name: m.Name, Email: m.Email, Role: m.Role})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // UpdateDataScopePolicyRequest sets what members without an access group see.
@@ -1905,12 +1966,12 @@ func (h *TenantHandler) GetDataScopePolicy(w http.ResponseWriter, r *http.Reques
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(DataScopePolicyResponse{MembersWithoutGroupSee: policy})
+	_ = json.NewEncoder(w).Encode(dataScopePolicyResponse(policy))
 }
 
 // UpdateDataScopePolicy handles PATCH /api/v1/tenants/{tenant}/settings/data-scope
 // @Summary      Set the data scope of members without an access group
-// @Description  Sets what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything. The change is audited.
+// @Description  Switches what members who are in no access group see to nothing. "everything" is being retired: an organization that sees nothing cannot switch back (400). Owners only; owners and admins always see everything. The change is audited.
 // @Tags         Tenants
 // @Accept       json
 // @Produce      json
@@ -1948,7 +2009,7 @@ func (h *TenantHandler) UpdateDataScopePolicy(w http.ResponseWriter, r *http.Req
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(DataScopePolicyResponse{MembersWithoutGroupSee: policy})
+	_ = json.NewEncoder(w).Encode(dataScopePolicyResponse(policy))
 }
 
 // UpdateAPISettingsRequest represents the request to update API settings.

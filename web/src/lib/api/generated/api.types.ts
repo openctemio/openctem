@@ -29364,7 +29364,7 @@ export interface paths {
     head?: never
     /**
      * Set the data scope of members without an access group
-     * @description Sets what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything. The change is audited.
+     * @description Switches what members who are in no access group see to nothing. "everything" is being retired: an organization that sees nothing cannot switch back (400). Owners only; owners and admins always see everything. The change is audited.
      */
     patch: {
       parameters: {
@@ -29430,6 +29430,75 @@ export interface paths {
         }
       }
     }
+    trace?: never
+  }
+  '/tenants/{tenant}/settings/data-scope/impact': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Members who would see nothing after switching to "nothing"
+     * @description Lists the active members who are not owner or admin, hold no role with full data access, and are in no access group and have no grant: they see everything today only because the organization shows everything to members without a team, and would see nothing after the switch. Owners and admins only.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Tenant ID or slug */
+          tenant: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.DataScopeImpactResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/tenants/{tenant}/settings/sso/changes': {
@@ -36044,7 +36113,28 @@ export interface components {
       /** @description Ordered steps from source to sink */
       steps?: components['schemas']['internal_infra_http_handler.DataFlowStepResponse'][]
     }
+    'internal_infra_http_handler.DataScopeImpactMember': {
+      email?: string
+      name?: string
+      role?: string
+      user_id?: string
+    }
+    'internal_infra_http_handler.DataScopeImpactResponse': {
+      members?: components['schemas']['internal_infra_http_handler.DataScopeImpactMember'][]
+      /** @enum {string} */
+      members_without_group_see?: 'everything' | 'nothing'
+      /**
+       * @description TotalCount is the number of members who would see nothing (exact);
+       *     Members lists at most 500 of them.
+       */
+      total_count?: number
+    }
     'internal_infra_http_handler.DataScopePolicyResponse': {
+      /**
+       * @description Deprecated is true while the organization still shows everything: that
+       *     mode is being retired and only the owner can switch it off.
+       */
+      deprecated?: boolean
       /**
        * @description MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
        *     (fail-closed). Owners and admins always see everything.

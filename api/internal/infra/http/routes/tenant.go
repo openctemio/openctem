@@ -162,7 +162,10 @@ func registerTenantRoutes(
 		// Data scope of members without an access group ("everything" |
 		// "nothing"); owners/admins always see everything.
 		r.GET("/settings/data-scope", h.GetDataScopePolicy, middleware.RequireTeamAdmin())
-		r.PATCH("/settings/data-scope", h.UpdateDataScopePolicy, middleware.RequireTeamAdmin())
+		r.GET("/settings/data-scope/impact", h.GetDataScopeImpact, middleware.RequireTeamAdmin())
+		// Owner decision D2: the owner switches the organization off
+		// "everything" after reviewing the impact report.
+		r.PATCH("/settings/data-scope", h.UpdateDataScopePolicy, middleware.RequireTeamOwner())
 
 		// Security & API settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner())
