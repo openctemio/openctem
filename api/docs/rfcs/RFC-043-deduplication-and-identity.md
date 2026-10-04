@@ -432,7 +432,7 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
    `tests/integration/testdata/dedup/`. sdk-go keeps SARIF
    `partialFingerprints` in `FromSARIF` (sdk-go#142).
    **Re-fingerprint job done** (`cmd/refingerprint`, `internal/app/refingerprint`,
-   migration 000420 `finding_rekey_runs`): per tenant, batched, resumable,
+   migration 000458 `finding_rekey_runs`): per tenant, batched, resumable,
    idempotent. The default is a dry run on a read-only connection that reports
    re-keys, would-merge pairs and the rows it cannot recompute; `-apply` merges
    through the finding merge (earliest wins, tombstone), never across assets,
