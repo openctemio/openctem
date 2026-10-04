@@ -40,7 +40,7 @@ export const INTEGRATION_CATEGORIES: IntegrationCategoryCard[] = [
   {
     id: 'security',
     title: 'Vulnerability scanners',
-    description: 'Connect Tenable (Nessus Pro / Tenable.sc)',
+    description: 'Import Nessus and Tenable scan exports',
     icon: ShieldCheck,
     href: '/settings/integrations/scanners',
   },

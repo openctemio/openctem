@@ -32,6 +32,11 @@ import (
 // offline distance.
 const sensorStaleTimeout = sensordom.LadderOfflineFloor
 
+// tenableCoverageRunnerAvailable gates the RFC-007 coverage scheduler. False
+// while no sensor runs Tenable commands (owner decision D-14); see the
+// registration in NewWorkers.
+const tenableCoverageRunnerAvailable = false
+
 // ddTenantSyncerAdapter adapts *defectdojo.SyncService (which returns a
 // SyncResult) to the scheduler's error-only TenantSyncer, so the controller
 // package need not import app/defectdojo.
@@ -282,20 +287,24 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	))
 
 	// Coverage scheduler: license-aware rolling Tenable scan coverage (RFC-007).
-	// Dispatches license-sized batches to runners for coverage-enabled, unlimited
-	// (Nessus Pro) Tenable integrations and advances the rotation cursor. Capped
-	// engines (Tenable.sc) are skipped until active-IP accounting ships.
-	w.ControllerManager.Register(controller.NewCoverageScheduler(
-		repos.Integration,
-		repos.ScanCoverage,
-		scancoverage.NewDispatcher(repos.Command),
-		&controller.CoverageSchedulerConfig{
-			Interval: 5 * time.Minute,
-			// Each batch passes a scan trigger's target checks (RFC-042 F16).
-			Gate:   svc.Scan,
-			Logger: log.With("controller", "coverage-scheduler"),
-		},
-	))
+	// Paused (owner decision D-14): sensor v0.8.0 removed the Tenable runner, so
+	// every batch it dispatched was a command nothing would run. The controller
+	// and its data are kept for the rebuild on the sensor daemon; register it
+	// again (and put Tenable back in integration.Provider.HasClient) when that
+	// runner ships.
+	if tenableCoverageRunnerAvailable {
+		w.ControllerManager.Register(controller.NewCoverageScheduler(
+			repos.Integration,
+			repos.ScanCoverage,
+			scancoverage.NewDispatcher(repos.Command),
+			&controller.CoverageSchedulerConfig{
+				Interval: 5 * time.Minute,
+				// Each batch passes a scan trigger's target checks (RFC-042 F16).
+				Gate:   svc.Scan,
+				Logger: log.With("controller", "coverage-scheduler"),
+			},
+		))
+	}
 
 	// Report scheduler: runs due report_schedules, renders the executive summary,
 	// and emails it to recipients. Only registered when email is configured
