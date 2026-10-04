@@ -127,7 +127,7 @@ export const LEGACY_VALIDATION_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
     destination: '/pentest/campaigns/:campaign?view=findings',
     permanent: true,
   },
-  { source: '/pentest/findings', destination: '/findings?sources=pentest', permanent: true },
+  { source: '/pentest/findings', destination: '/findings?source=pentest', permanent: true },
   {
     source: '/pentest/reports',
     has: [{ type: 'query', key: 'campaign' }],
