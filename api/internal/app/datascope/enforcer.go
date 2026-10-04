@@ -241,6 +241,35 @@ func (e *Enforcer) AssertAssetRef(ctx context.Context, tenantID, assetID shared.
 	return e.AssertAsset(ctx, tenantID, assetID)
 }
 
+// FilterAssetRefs is AssertAssetRef for a batch of asset ids, resolved with
+// at most three queries: the predicate admits an id only when it is a live
+// asset of the tenant AND the request's caller may see it. Use it where a
+// bulk write drops refused items instead of failing the whole request. An
+// unwired enforcer admits nothing (fail closed); a lookup error is returned
+// and the caller must refuse.
+func (e *Enforcer) FilterAssetRefs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, error) {
+	if e == nil || e.repo == nil {
+		return func(shared.ID) bool { return false }, nil
+	}
+	ids := dedupe(assetIDs) // also drops zero ids
+	if len(ids) == 0 {
+		return func(shared.ID) bool { return false }, nil
+	}
+	inTenant, err := e.repo.AssetIDsInTenant(ctx, tenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("asset tenant check: %w", err)
+	}
+	if len(inTenant) == 0 {
+		return func(shared.ID) bool { return false }, nil
+	}
+	inScope, err := e.FilterForCaller(ctx, tenantID, inTenant)
+	if err != nil {
+		return nil, err
+	}
+	tenantSet := setOf(inTenant)
+	return func(id shared.ID) bool { return tenantSet(id) && inScope(id) }, nil
+}
+
 // AssertFinding is AssertAsset for the asset a finding belongs to. A finding
 // that does not exist in the tenant is also ErrNotFound.
 func (e *Enforcer) AssertFinding(ctx context.Context, tenantID, findingID shared.ID) error {
