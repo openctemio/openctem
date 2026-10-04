@@ -14,7 +14,7 @@ net="$run-net"
 fail=0
 
 cleanup() {
-	docker rm -f "$run-gw" "$run-api" "$run-web" >/dev/null 2>&1 || true
+	docker rm -f "$run-gw" "$run-gwh" "$run-api" "$run-web" >/dev/null 2>&1 || true
 	docker network rm "$net" >/dev/null 2>&1 || true
 	rm -rf "${certs:-}"
 }
@@ -107,16 +107,31 @@ for _ in $(seq 1 30); do
 	sleep 1
 done
 
+# Each plane the gateway sends straight to the API (planes.caddy, generated
+# from the API's plane table).
 probe api GET /api/v1/agent/heartbeat
 probe api PUT /api/v2/sensor/results/r1/segments/0
-probe api POST /api/v1/platform/poll
+probe api POST /api/v1/validation/evidence
 probe api GET /scim/v2/Users
 probe api POST /api/v1/mcp
 probe api POST /api/v1/webhooks/incoming/github
+probe api POST /hooks/github
 probe api POST /api/v1/auth/saml/acme/acs
+probe api GET /api/v1/auth/saml/acme/metadata
 probe api POST /api/v1/auth/backchannel-logout
 probe api GET /api/v1/ws
 probe api GET /health
+probe api GET /openapi.yaml
+probe api GET /docs
+# Browser planes reach the API only by credential, never by path.
+probe web GET /api/v1/validation/coverage -H "Cookie: auth_token=abc"
+probe web POST /api/v1/auth/login
+probe web GET /api/v1/me/permissions -H "Cookie: auth_token=abc"
+probe web GET /api/v1/admin/tenants
+probe web GET /api/v1/admin/tenants -H "Cookie: admin_session=abc"
+# The stale protocol-v0 rule is gone (the API serves none of these).
+probe web POST /api/v1/platform/poll
+probe web GET /api/v1/platform/stats -H "Cookie: auth_token=abc"
 probe api GET /api/v1/findings -H "Authorization: Bearer oct_example"
 probe api GET /api/v1/findings -H "X-API-Key: oct_example"
 probe api GET /api/v1/findings -H "Authorization: Bearer eyJ.token"
@@ -127,8 +142,11 @@ probe web GET /api/auth/refresh
 probe web GET /
 probe web GET /login
 probe 404 GET /metrics
+probe 404 GET /metrics -H "Authorization: Bearer oct_example"
 probe 404 GET /ready
+probe 404 GET /ready/detail
 probe 404 GET /debug/pprof/
+probe 404 GET /debug
 
 echo "== Client address is set by the gateway, not the client"
 body="$(docker run --rm --network "$net" curlimages/curl:latest -sk -m 5 \
@@ -138,6 +156,28 @@ case "$body" in
 *"xrealip=6.6.6.6"*) bad "client-supplied X-Real-IP reached the API: $body" ;;
 *"xrealip="[0-9]*) ok "X-Real-IP overwritten ($body)" ;;
 *) bad "unexpected: $body" ;;
+esac
+
+echo "== Behind a trusted front proxy, the client is the right-most untrusted X-Forwarded-For entry"
+# TLS mode http, with the whole test network as the "front proxy". A front
+# proxy that appends keeps whatever the client typed on the left; only the
+# entry the proxy appended (right-most) may become X-Real-IP.
+subnet="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$net")"
+docker run -d --name "$run-gwh" --network "$net" \
+	-e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -e OPENCTEM_TRUSTED_PROXIES="$subnet" \
+	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
+	-v "$here:/etc/caddy:ro" --entrypoint sh "$image" /etc/caddy/entrypoint.sh >/dev/null
+gwhip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gwh")"
+body=""
+for _ in $(seq 1 30); do
+	body="$(docker run --rm --network "$net" curlimages/curl:latest -s -m 2 \
+		-H 'X-Real-IP: 6.6.6.6' -H 'X-Forwarded-For: 6.6.6.6, 198.51.100.9' "http://$gwhip/health" 2>/dev/null || true)"
+	[ -n "$body" ] && break
+	sleep 1
+done
+case "$body" in
+*"xrealip=198.51.100.9"*) ok "X-Real-IP is the proxy-appended client ($body)" ;;
+*) bad "X-Real-IP should be 198.51.100.9 (right-most untrusted), got: $body" ;;
 esac
 
 echo "== Response headers"

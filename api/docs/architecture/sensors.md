@@ -95,7 +95,7 @@ claim predicate and claim semantics stay in one place.
 | Field | Type | Meaning |
 |---|---|---|
 | `pending_jobs` | int | Commands this sensor could claim right now, capped at 100. Exactly what the poll would offer: pinned to the sensor or unpinned, pending, not expired, not scheduled for later, zone claim predicate (`zoneClaimPredicate`, incl. the tool match), capability gate. `> 0` ⇒ poll now. Not computed for platform sensors (no tenant poll). |
-| `next_heartbeat_seconds` | int | Advised interval. 5 s while work is waiting, 30 s idle, 120 s when the doorbell query itself took ≥ 250 ms (platform under load). Clamped to `[SENSOR_HEARTBEAT_MIN_INTERVAL, SENSOR_HEARTBEAT_MAX_INTERVAL]` and never more than half of the offline distance (45 s: half the ladder's 90 s floor, or of `WORKER_HEARTBEAT_TIMEOUT` when shorter; RFC-035 D2). The heartbeat stores the advice as the sensor's deadline ("Fleet health"), so a sensor that follows it is never marked offline. |
+| `next_heartbeat_seconds` | int | Advised interval. 5 s while work is waiting or while a command the sensor claimed was canceled within the last lease period (so it hears `cancel_command_ids` within seconds), 30 s idle, 120 s when the doorbell query itself took ≥ 250 ms (platform under load). Clamped to `[SENSOR_HEARTBEAT_MIN_INTERVAL, SENSOR_HEARTBEAT_MAX_INTERVAL]` and never more than half of the offline distance (45 s: half the ladder's 90 s floor, or of `WORKER_HEARTBEAT_TIMEOUT` when shorter; RFC-035 D2). The heartbeat stores the advice as the sensor's deadline ("Fleet health"), so a sensor that follows it is never marked offline. |
 | `actions` | []string | Typed directives from a closed set: `pause`, `resume`, `drain`, `rotate_key`, `update`. Rung today: `pause` (sensor disabled by an admin), `rotate_key` (the presented key expires within `SENSOR_KEY_RENEW_BEFORE`, default half of `SENSOR_KEY_TTL`). `resume`, `drain`, `update` are reserved. There is no free-form or shell verb (RFC-023 §10.4 R-4); a sensor ignores a value it does not know. |
 | `config_version` | string | 16 hex chars, opaque. A digest of what the platform governs about the sensor: capabilities, tools, max concurrent jobs, execution mode, operator config, the presented key's expiry and the assigned scan zones with each zone's last change. Heartbeat metrics and `last_seen_at` are not part of it (both rewrite `sensors.updated_at` on every heartbeat, which is why `updated_at` cannot be the source). |
 
@@ -1149,6 +1149,12 @@ A sensor holds every command it claims under a **lease** (migration 000260:
 
 ## Sensor-local policy (RFC-040 §5.7)
 
+> **Version requirement.** Enforcement is in sdk-go#140 and sensor#119, merged
+> after sensor v0.8.0. Sensor v0.8.0 and older ignore `SENSOR_LOCAL_POLICY`,
+> the policy file and the kill-switch file, and report no `local_policy`
+> (the page shows `unknown`). The install snippets mount the file anyway; it
+> takes effect once the sensor runs a release later than v0.8.0.
+
 The owner of the scanned network installs a read-only policy file on the
 sensor host (`/etc/openctem/sensor-policy.yaml`, `SENSOR_LOCAL_POLICY`; keys
 and semantics in the sensor repository, `docs/LOCAL_POLICY.md`). The sensor
@@ -1207,7 +1213,12 @@ and narrows dispatch:
 ## Network egress and proxies (RFC-034, proposed)
 
 > Design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md). Status:
-> **Proposed**. Only "Today" below is implemented.
+> **Proposed**; Phase 0 shipped on the sensor side. sdk-go v0.15.0 and later
+> (sdk-go#111, sensor#102) add `SENSOR_CONTROL_PROXY`, `SENSOR_CONTENT_PROXY`
+> (content sources, including `SafeHTTPClient`, which checks the target before
+> the proxy) and `SENSOR_SCAN_PROXY` (`inherit` or `direct`). "Today" below
+> describes sensors built on older SDKs; "Proposed" (profiles, forwarder) is
+> not built.
 
 A sensor sends three kinds of traffic, and RFC-034 configures each one
 separately:

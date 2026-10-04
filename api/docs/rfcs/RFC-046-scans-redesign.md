@@ -2,7 +2,9 @@
 
 > Status: **Accepted.** Product decisions D1–D13 approved by the owner on
 > 2026-10-02; backend decisions B1–B12 approved on 2026-10-03. P0 shipped
-> (§2.3); P1 in progress (§9).
+> (§2.3); P1 in progress (§16): merged P1.1 (#940), P1.2 `partial` (#946)
+> and the P1.5 occurrence key `UNIQUE(scan_id, scheduled_for)` (#949; the
+> rrule part of P1.5 is open).
 > Scope: api + web, with sdk-go and sensor changes where a phase says so.
 > Builds on and does not duplicate:
 > [RFC-030](RFC-030-scan-work-distribution.md) (pull, chunks, leases, fair
@@ -355,7 +357,13 @@ Shipped: `POST /pipeline-runs/{id}/cancel` needs `pipelines:write` **and**
 `scans:write`; it cancels the run's open commands; the next heartbeat returns
 `cancel_command_ids` for any id the sensor runs but no longer holds; sdk-go
 cancels the job's context (process-group kill); the reaper does the same at
-the deadline. Remaining (P1.10):
+the deadline. Also shipped: the cancel closes the run's open **step runs**
+and commands in one statement (`CloseCanceledRun`), the commands lose their
+lease so the expired-lease sweep never re-queues them (a sensor that was
+offline is told to stop when it comes back and reports them), a sensor that
+held a just-canceled command is asked to ring again within the busy interval
+(5 s) instead of the idle one, and a second cancel succeeds without counting
+the run again. Remaining (P1.10):
 
 - sdk-go honours cancels without the doorbell (today a sensor started with
   `-disable-doorbell` runs canceled work to the end);

@@ -186,3 +186,32 @@ func TestScheduler_BatchStaysInOneZoneAndIsStamped(t *testing.T) {
 		t.Fatal("a candidate of another zone was claimed; it must stay for a later cycle")
 	}
 }
+
+// Every coverage candidate is an inventory asset, so the gate gets its asset
+// id and refuses one whose ownership is not confirmed (RFC-036 O4), as on a
+// scan run; the refused candidate is skipped, not dispatched.
+func TestScheduler_UnconfirmedAssetIsNotDispatched(t *testing.T) {
+	tenant := shared.NewID()
+	src := gateTestSource(tenant,
+		Candidate{AssetID: "ok", Target: "203.0.113.10", Criticality: "critical"},
+		Candidate{AssetID: "shadow", Target: "203.0.113.30", Criticality: "critical"},
+	)
+	gate := &scriptedGate{refused: map[string]string{"203.0.113.30": "ownership is not confirmed (attribution: needs_review)"}}
+	disp := &recordingDispatcher{}
+	if _, err := NewScheduler(src, disp, &claimingStore{}, &SchedulerConfig{Gate: gate}).RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if len(gate.calls) != 1 {
+		t.Fatalf("gate calls = %d", len(gate.calls))
+	}
+	assets := gate.calls[0].Assets
+	if got := assets["203.0.113.10"].IDs; len(got) != 1 || got[0] != "ok" {
+		t.Fatalf("asset of 203.0.113.10 = %v, want [ok]", got)
+	}
+	if got := assets["203.0.113.30"].IDs; len(got) != 1 || got[0] != "shadow" {
+		t.Fatalf("asset of 203.0.113.30 = %v, want [shadow]", got)
+	}
+	if len(disp.calls) != 1 || strings.Join(disp.calls[0].Targets, ",") != "203.0.113.10" {
+		t.Fatalf("dispatched %+v, want only the confirmed asset", disp.calls)
+	}
+}

@@ -98,59 +98,15 @@ func ResolveTypeAlias(t AssetType) (coreType AssetType, subType string) {
 	return t, ""
 }
 
-// AllAssetTypes returns all valid asset types (including legacy for backward compat).
+// AllAssetTypes returns every name the registry accepts as an asset type
+// on input: the core types and the aliases, in registry order. Only the
+// core types are stored (StoredAssetTypes).
 func AllAssetTypes() []AssetType {
-	return []AssetType{
-		// Discovery/External Attack Surface
-		AssetTypeDomain,
-		AssetTypeSubdomain,
-		AssetTypeCertificate,
-		AssetTypeIPAddress,
-		// Applications
-		AssetTypeWebsite,
-		AssetTypeWebApplication,
-		AssetTypeAPI,
-		AssetTypeMobileApp,
-		AssetTypeService,
-		// Code/Repository
-		AssetTypeRepository,
-		// Cloud
-		AssetTypeCloudAccount,
-		AssetTypeCompute,
-		AssetTypeStorage,
-		AssetTypeServerless,
-		AssetTypeContainerRegistry,
-		// Infrastructure
-		AssetTypeHost,
-		AssetTypeContainer,
-		AssetTypeKubernetesCluster,
-		AssetTypeKubernetesNamespace,
-		AssetTypeEndpoint,
-		// Data
-		AssetTypeDatabase,
-		AssetTypeDataStore,
-		AssetTypeS3Bucket,
-		// Network
-		AssetTypeNetwork,
-		AssetTypeVPC,
-		AssetTypeSubnet,
-		AssetTypeLoadBalancer,
-		AssetTypeFirewall,
-		// Identity
-		AssetTypeIAMUser,
-		AssetTypeIAMRole,
-		AssetTypeServiceAccount,
-		// Unclassified
-		AssetTypeUnclassified,
-		// Recon-specific
-		AssetTypeHTTPService,
-		AssetTypeOpenPort,
-		AssetTypeDiscoveredURL,
-		// Consolidated core types
-		AssetTypeApplication,
-		AssetTypeIdentity,
-		AssetTypeKubernetes,
+	out := make([]AssetType, len(registryTypes))
+	for i, d := range registryTypes {
+		out[i] = d.Type
 	}
+	return out
 }
 
 // IsRepository returns true if the asset type is a code repository.
@@ -264,7 +220,8 @@ func ParseClassification(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// IsValid checks if the asset type is valid.
+// IsValid reports whether t is a name the registry accepts on input (a core
+// type or an alias). Use IsStored for what may be stored.
 func (t AssetType) IsValid() bool {
 	return slices.Contains(AllAssetTypes(), t)
 }
@@ -274,7 +231,8 @@ func (t AssetType) String() string {
 	return string(t)
 }
 
-// ParseAssetType parses a string into an AssetType.
+// ParseAssetType parses an input name (core type or alias). It does not
+// resolve aliases: writers use ResolveInputType.
 func ParseAssetType(s string) (AssetType, error) {
 	t := AssetType(strings.ToLower(strings.TrimSpace(s)))
 	if !t.IsValid() {
