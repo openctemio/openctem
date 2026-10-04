@@ -408,7 +408,7 @@ export const settingsNav: SettingsNavGroup[] = [
       {
         id: 'vulnerability-scanners',
         title: 'Vulnerability scanners',
-        description: 'Tenable Nessus Pro and Tenable.sc connectors.',
+        description: 'Import Nessus and Tenable scan exports.',
         url: '/settings/integrations/scanners',
         icon: ShieldCheck,
         permission: Permission.IntegrationsRead,
