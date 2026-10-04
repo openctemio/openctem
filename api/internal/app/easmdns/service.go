@@ -252,6 +252,10 @@ func danglingEvent(tenantID shared.ID, t Target, typ exposuredom.EventType, d Da
 		details["missing_name_servers"] = d.Missing
 		details["name_servers_total"] = d.Total
 	}
+	if len(d.Lame) > 0 {
+		details["lame_name_servers"] = d.Lame
+		details["name_servers_total"] = d.Total
+	}
 	ev, err := exposuredom.NewExposureEvent(tenantID, typ, sev, title, Source, details)
 	if err != nil {
 		return nil, err
@@ -260,6 +264,10 @@ func danglingEvent(tenantID shared.ID, t Target, typ exposuredom.EventType, d Da
 	if typ == exposuredom.EventTypeDanglingNS {
 		desc = fmt.Sprintf("%s is delegated to name servers that do not exist (%s): %s. Remove the delegation or fix the name servers.",
 			t.Name, strings.Join(d.Missing, ", "), d.Reason)
+		if len(d.Lame) > 0 {
+			desc = fmt.Sprintf("%s is delegated to name servers that do not serve the zone (%s): %s. Remove the delegation or recreate the zone at the provider.",
+				t.Name, strings.Join(append(append([]string{}, d.Missing...), d.Lame...), ", "), d.Reason)
+		}
 	}
 	ev.UpdateDescription(desc)
 	id := t.AssetID
