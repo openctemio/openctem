@@ -165,8 +165,11 @@ rules. A registry PR that breaks one needs an RFC amendment first.
 ## Only core types are stored
 
 Since migration 000490, `chk_assets_core_type` refuses any `assets.asset_type`
-that is not a core type. The registry block emits it, so a registry change that
-adds a core type updates the CHECK in the same migration. Rows written before
+that is not a core type. The registry block emits it `NOT VALID`, so a registry
+change updates the list in the same migration; the migration then moves the rows
+the change leaves outside the list (`asset_type_normalise_batch`) and runs
+`ALTER TABLE assets VALIDATE CONSTRAINT chk_assets_core_type;` after the block.
+`gen-asset-types -check` fails when that statement is missing. Rows written before
 were moved by the normalisation (ledger `asset_type_reclassifications`; legacy
 codes kept in `properties.x_native_type`, values that did not fit in
 `properties.x_native_sub_type`).

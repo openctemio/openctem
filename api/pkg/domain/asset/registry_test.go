@@ -280,6 +280,7 @@ func TestTypeAliases_UnchangedByTheRegistry(t *testing.T) {
 		"http_service":         {AssetTypeService, "http"},
 		"open_port":            {AssetTypeService, "open_port"},
 		"discovered_url":       {AssetTypeService, "discovered_url"},
+		"endpoint":             {AssetTypeHost, "workstation"}, // T4a
 	}
 	got := map[AssetType]alias{}
 	for k, v := range TypeAliases {
