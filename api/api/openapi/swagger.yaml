@@ -4661,6 +4661,7 @@ definitions:
       asset_ids:
         items:
           type: string
+        maxItems: 1000
         minItems: 1
         type: array
     required:
@@ -6712,6 +6713,7 @@ definitions:
       existing_asset_ids:
         items:
           type: string
+        maxItems: 1000
         type: array
       name:
         maxLength: 255
@@ -11097,6 +11099,7 @@ definitions:
       asset_ids:
         items:
           type: string
+        maxItems: 1000
         minItems: 1
         type: array
     required:
