@@ -22459,6 +22459,15 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Not Found */
         404: {
           headers: {
@@ -22505,6 +22514,15 @@ export interface paths {
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester */
+        403: {
           headers: {
             [name: string]: unknown
           }
@@ -22738,6 +22756,15 @@ export interface paths {
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester */
+        403: {
           headers: {
             [name: string]: unknown
           }
