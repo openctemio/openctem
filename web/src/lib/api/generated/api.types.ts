@@ -19667,72 +19667,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/organization/settings/data-scope/impact': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Members who would see nothing after switching to "nothing"
-     * @description Lists the active members who are not owner or admin, hold no role with full data access, and are in no access group and have no grant: they see everything today only because the organization shows everything to members without a team, and would see nothing after the switch. Owners and admins only.
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.DataScopeImpactResponse']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/organization/settings/retest': {
     parameters: {
       query?: never
@@ -30727,142 +30661,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/tenants/{tenant}/settings/data-scope': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get the data scope of members without an access group
-     * @description Returns what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything.
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tenant ID or slug */
-          tenant: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.DataScopePolicyResponse']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    /**
-     * Set the data scope of members without an access group
-     * @description Switches what members who are in no access group see to nothing. "everything" is being retired: an organization that sees nothing cannot switch back (400). Owners only; owners and admins always see everything. The change is audited.
-     */
-    patch: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tenant ID or slug */
-          tenant: string
-        }
-        cookie?: never
-      }
-      /** @description Policy */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.UpdateDataScopePolicyRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.DataScopePolicyResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    trace?: never
-  }
   '/tenants/{tenant}/settings/sso/changes': {
     parameters: {
       query?: never
@@ -37716,35 +37514,6 @@ export interface components {
       /** @description Ordered steps from source to sink */
       steps?: components['schemas']['internal_infra_http_handler.DataFlowStepResponse'][]
     }
-    'internal_infra_http_handler.DataScopeImpactMember': {
-      email?: string
-      name?: string
-      role?: string
-      user_id?: string
-    }
-    'internal_infra_http_handler.DataScopeImpactResponse': {
-      members?: components['schemas']['internal_infra_http_handler.DataScopeImpactMember'][]
-      /** @enum {string} */
-      members_without_group_see?: 'everything' | 'nothing'
-      /**
-       * @description TotalCount is the number of members who would see nothing (exact);
-       *     Members lists at most 500 of them.
-       */
-      total_count?: number
-    }
-    'internal_infra_http_handler.DataScopePolicyResponse': {
-      /**
-       * @description Deprecated is true while the organization still shows everything: that
-       *     mode is being retired and only the owner can switch it off.
-       */
-      deprecated?: boolean
-      /**
-       * @description MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
-       *     (fail-closed). Owners and admins always see everything.
-       * @enum {string}
-       */
-      members_without_group_see?: 'everything' | 'nothing'
-    }
     'internal_infra_http_handler.DedupKeyRequest': {
       branch?: string
       breach_date?: string
@@ -39517,6 +39286,11 @@ export interface components {
       pipeline_id?: string
       quality_gate_result?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult']
       scan_id?: string
+      /**
+       * @description ScanName names the run's scan (list rows only; empty when the scan was
+       *     deleted).
+       */
+      scan_name?: string
       scan_profile_id?: string
       /** @description ScheduledFor is the schedule occurrence this run serves (scheduled runs only). */
       scheduled_for?: string
@@ -41014,10 +40788,6 @@ export interface components {
       description?: string
       expires_at?: string
       name?: string
-    }
-    'internal_infra_http_handler.UpdateDataScopePolicyRequest': {
-      /** @enum {string} */
-      members_without_group_see: 'everything' | 'nothing'
     }
     'internal_infra_http_handler.UpdateFindingStatusRequest': {
       resolution?: string

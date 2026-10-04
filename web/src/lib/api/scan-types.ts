@@ -5,8 +5,9 @@
  * Scan configurations bind asset groups with scanners/workflows and schedules.
  */
 
+import type { PipelineRun } from './pipeline-types'
+
 // Scan types
-import type { RunTask, RunTaskSummary } from './generated'
 
 export const SCAN_TYPES = ['workflow', 'single'] as const
 export type ScanType = (typeof SCAN_TYPES)[number]
@@ -281,41 +282,10 @@ export interface ScanConfigStatsData {
 }
 
 /**
- * Pipeline run response (returned when triggering scan)
+ * A scan run. Scan runs are pipeline runs; the one run type lives in
+ * pipeline-types (statuses typed as the API spells them).
  */
-export interface PipelineRun {
-  id: string
-  tenant_id: string
-  pipeline_id: string
-  asset_id?: string
-  scan_id?: string
-  trigger_type: string
-  triggered_by?: string
-  /** Display name of the user in triggered_by, when it is a user id (API fills it). */
-  triggered_by_name?: string
-  status: string
-  /** The schedule occurrence this run serves (scheduled runs only); one run per occurrence. */
-  scheduled_for?: string
-  started_at?: string
-  completed_at?: string
-  total_steps: number
-  completed_steps: number
-  failed_steps: number
-  skipped_steps: number
-  total_findings: number
-  error_message?: string
-  created_at: string
-  /** What the trigger dispatched (scope exclusions, zone routing). RFC-023. */
-  dispatch?: RunDispatch
-  /** Tasks (dispatched commands) by status, once the run has any. RFC-046. */
-  task_summary?: RunTaskSummary
-  /** The run's tasks, in dispatch order (GET /pipeline-runs/{id} only). */
-  tasks?: RunTask[]
-  /** True when the run has more tasks than `tasks` lists. */
-  tasks_truncated?: boolean
-  /** Continues the task list after `tasks` (GET /pipeline-runs/{id}/tasks?cursor=). */
-  tasks_next_cursor?: string
-}
+export type { PipelineRun } from './pipeline-types'
 
 /** A target a run did not scan, with the reason. */
 export interface RunUncoveredTarget {

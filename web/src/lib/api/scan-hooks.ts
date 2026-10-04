@@ -359,9 +359,14 @@ interface ScanRunsResponse {
  * single scan. Pipeline runs do carry scan_id, which makes this the only
  * hook that can answer "what has this scan done".
  */
-export function useScanRuns(scanId: string | null, perPage = 10, config?: SWRConfiguration) {
+export function useScanRuns(
+  scanId: string | null,
+  page = 1,
+  perPage = 10,
+  config?: SWRConfiguration
+) {
   const { currentTenant } = useTenant()
-  const key = currentTenant && scanId ? scanEndpoints.listRuns(scanId, 1, perPage) : null
+  const key = currentTenant && scanId ? scanEndpoints.listRuns(scanId, page, perPage) : null
 
   return useSWR<ScanRunsResponse>(key, (url: string) => get<ScanRunsResponse>(url), {
     ...defaultConfig,
