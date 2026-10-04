@@ -179,11 +179,14 @@ type TriggerRunRequest struct {
 
 // RunResponse represents the response for a pipeline run.
 type RunResponse struct {
-	ID                string                         `json:"id"`
-	TenantID          string                         `json:"tenant_id"`
-	PipelineID        string                         `json:"pipeline_id"`
-	AssetID           *string                        `json:"asset_id,omitempty"`
-	ScanID            *string                        `json:"scan_id,omitempty"`
+	ID         string  `json:"id"`
+	TenantID   string  `json:"tenant_id"`
+	PipelineID string  `json:"pipeline_id"`
+	AssetID    *string `json:"asset_id,omitempty"`
+	ScanID     *string `json:"scan_id,omitempty"`
+	// ScanName names the run's scan (list rows only; empty when the scan was
+	// deleted).
+	ScanName          string                         `json:"scan_name,omitempty"`
 	ScanProfileID     *string                        `json:"scan_profile_id,omitempty"`
 	TriggerType       string                         `json:"trigger_type"`
 	TriggeredBy       string                         `json:"triggered_by,omitempty"`
@@ -962,6 +965,7 @@ func (h *PipelineHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		PipelineID: r.URL.Query().Get("pipeline_id"),
 		AssetID:    r.URL.Query().Get("asset_id"),
 		Status:     r.URL.Query().Get("status"),
+		Sort:       r.URL.Query().Get("sort"),
 		Page:       parseQueryInt(r.URL.Query().Get("page"), 1),
 		PerPage:    parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
@@ -978,11 +982,20 @@ func (h *PipelineHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to read the runs' tasks").WriteJSON(w)
 		return
 	}
+	scanNames, err := h.service.RunScanNames(r.Context(), tenantID, result.Data)
+	if err != nil {
+		h.logger.Error("failed to name run scans", "error", err)
+		apierror.InternalServerError("failed to read the runs' scans").WriteJSON(w)
+		return
+	}
 	items := make([]*RunResponse, len(result.Data))
 	for i, run := range result.Data {
 		items[i] = toRunResponse(run)
 		if sum, ok := summaries[run.ID]; ok {
 			items[i].TaskSummary = toRunTaskSummaryResponse(sum)
+		}
+		if run.ScanID != nil {
+			items[i].ScanName = scanNames[*run.ScanID]
 		}
 	}
 
