@@ -832,11 +832,11 @@ export default function UsersPage() {
 
   // Confirm and execute the pending 2FA reset.
   const handleConfirmResetMfa = async () => {
-    if (!tenantSlug || !resetMfaMember) return
+    if (!resetMfaMember) return
     setIsResettingMfa(true)
     try {
-      await fetcherWithOptions(tenantEndpoints.resetMemberMfa(tenantSlug, resetMfaMember.id), {
-        method: 'POST',
+      await fetcherWithOptions(tenantEndpoints.resetMemberMfa(resetMfaMember.id), {
+        method: 'DELETE',
       })
       toast.success(
         `Two-factor authentication reset for ${resetMfaMember.name || resetMfaMember.email}`
@@ -1272,10 +1272,10 @@ export default function UsersPage() {
                   <span className="font-medium text-foreground">
                     {resetMfaMember.name || resetMfaMember.email}
                   </span>{' '}
-                  will be signed out everywhere and can sign in with their password alone until
-                  they set up two-factor authentication again (required at their next sign-in if
-                  this organization requires it). Use this only after confirming their identity.
-                  They are notified by email, and the reset is recorded in the audit log.
+                  will be signed out everywhere and can sign in with their password alone until they
+                  set up two-factor authentication again (required at their next sign-in if this
+                  organization requires it). Use this only after confirming their identity. They are
+                  notified by email, and the reset is recorded in the audit log.
                 </>
               )}
             </AlertDialogDescription>

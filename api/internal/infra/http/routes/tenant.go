@@ -95,11 +95,6 @@ func registerTenantRoutes(
 		r.POST("/members/{userId}/suspend", h.SuspendMember, middleware.RequireTeamAdmin())
 		r.POST("/members/{userId}/reactivate", h.ReactivateMember, middleware.RequireTeamAdmin())
 		r.DELETE("/members/{userId}", h.RemoveMember, middleware.RequireTeamAdmin())
-		// Reset a member's second factor (owner/admin; the service adds the
-		// peer-administrator and other-organization rules).
-		if localAuth != nil {
-			r.POST("/members/{userId}/reset-2fa", localAuth.ResetMemberMFA, middleware.RequireTeamAdmin())
-		}
 		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin())
 		// Administrator-created accounts: create a user with roles and a
 		// one-time set-password link; reissue the link while the account is unused.
@@ -206,4 +201,21 @@ func registerTenantRoutes(
 		r.GET("/{token}", ChainFunc(h.GetInvitation, append(append([]Middleware{}, baseMiddlewares...), invitationRL)...).ServeHTTP)
 		r.POST("/{token}/accept", ChainFunc(h.AcceptInvitation, append(append([]Middleware{}, baseMiddlewares...), invitationRL)...).ServeHTTP)
 	})
+}
+
+// registerOrganizationMemberRoutes wires member administration under the
+// token singleton /api/v1/organization: the tenant comes from the credential,
+// never from the path (docs/architecture/api-conventions.md §2).
+//
+// DELETE .../members/{member_id}/mfa resets a member's second factor. The
+// route admits owners and administrators; the service re-checks the caller's
+// live membership and adds the peer-administrator, self and
+// other-organization rules.
+func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAuthHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if localAuth == nil {
+		return
+	}
+	router.Group("/api/v1/organization/members/{member_id}/mfa", func(r Router) {
+		r.DELETE("/", localAuth.ResetMemberMFA, middleware.RequireAdmin())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }

@@ -17440,6 +17440,77 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/organization/members/{member_id}/mfa': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Reset a member's two-factor authentication
+     * @description An owner or administrator turns off the second factor of a member of their organization who lost their authenticator and recovery codes. The member is signed out everywhere and e-mailed. An owner or administrator target needs the owner; a member who also belongs to another organization needs the same authority there; nobody resets their own factor here.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Membership ID */
+          member_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/organization/settings/retest': {
     parameters: {
       query?: never
@@ -28743,79 +28814,6 @@ export interface paths {
     }
     put?: never
     post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tenants/{tenant}/members/{userId}/reset-2fa': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Reset a member's two-factor authentication
-     * @description An owner or administrator turns off the second factor of a member of their organization who lost their authenticator and recovery codes. The member is signed out everywhere and e-mailed. An owner or administrator target needs the owner; a member who also belongs to another organization needs the same authority there; nobody resets their own factor here.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tenant ID or slug */
-          tenant: string
-          /** @description Membership ID */
-          userId: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': {
-              [key: string]: string
-            }
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
     delete?: never
     options?: never
     head?: never

@@ -24697,6 +24697,45 @@ paths:
       summary: Get unread notification count
       tags:
       - notifications
+  /organization/members/{member_id}/mfa:
+    delete:
+      description: An owner or administrator turns off the second factor of a member
+        of their organization who lost their authenticator and recovery codes. The
+        member is signed out everywhere and e-mailed. An owner or administrator target
+        needs the owner; a member who also belongs to another organization needs the
+        same authority there; nobody resets their own factor here.
+      parameters:
+      - description: Membership ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reset a member's two-factor authentication
+      tags:
+      - Tenants
   /organization/settings/retest:
     get:
       description: The tenant's auto-retest settings (RFC-039). auto_enabled is false
@@ -31328,50 +31367,6 @@ paths:
       security:
       - BearerAuth: []
       summary: List pending invitations
-      tags:
-      - Tenants
-  /tenants/{tenant}/members/{userId}/reset-2fa:
-    post:
-      description: An owner or administrator turns off the second factor of a member
-        of their organization who lost their authenticator and recovery codes. The
-        member is signed out everywhere and e-mailed. An owner or administrator target
-        needs the owner; a member who also belongs to another organization needs the
-        same authority there; nobody resets their own factor here.
-      parameters:
-      - description: Tenant ID or slug
-        in: path
-        name: tenant
-        required: true
-        type: string
-      - description: Membership ID
-        in: path
-        name: userId
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Reset a member's two-factor authentication
       tags:
       - Tenants
   /tenants/{tenant}/settings/data-scope:

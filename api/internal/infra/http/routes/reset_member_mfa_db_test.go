@@ -1,6 +1,6 @@
 package routes
 
-// POST /api/v1/tenants/{tenant}/members/{membership}/reset-2fa over the real
+// DELETE /api/v1/organization/members/{member_id}/mfa over the real
 // routes, services and a migrated database: an organization administrator
 // turns off a member's second factor, which signs the member out and is
 // audited in that organization; a membership of another organization, an
@@ -133,14 +133,14 @@ func TestResetMemberMFA_DB(t *testing.T) {
 	h := newResetMFAHarness(t)
 	tidA, tidB := h.tenant(), h.tenant()
 	adminA := h.member(tidA, "admin")
-	path := func(tid, membershipID string) string {
-		return "/api/v1/tenants/" + tid + "/members/" + membershipID + "/reset-2fa"
+	path := func(_, membershipID string) string {
+		return "/api/v1/organization/members/" + membershipID + "/mfa"
 	}
 
 	// A member of A: reset succeeds, factor and codes gone, session revoked, audited in A.
 	memberA := h.member(tidA, "member")
 	sid := h.enroll(memberA)
-	h.expect(adminA, http.MethodPost, path(tidA, memberA.membershipID), "", http.StatusOK)
+	h.expect(adminA, http.MethodDelete, path(tidA, memberA.membershipID), "", http.StatusOK)
 	if n := h.factorCount(memberA); n != 0 {
 		t.Fatalf("factor rows left after reset: %d", n)
 	}
@@ -152,16 +152,12 @@ func TestResetMemberMFA_DB(t *testing.T) {
 		t.Fatalf("want one auth.mfa_reset audit row in A, got %d", n)
 	}
 	// Again: nothing left to reset.
-	h.expect(adminA, http.MethodPost, path(tidA, memberA.membershipID), "", http.StatusBadRequest)
+	h.expect(adminA, http.MethodDelete, path(tidA, memberA.membershipID), "", http.StatusBadRequest)
 
-	// A member of B through A's URL: not found, unchanged.
+	// A member of B, by an administrator of A (whose credential selects A): not found, unchanged.
 	memberB := h.member(tidB, "member")
 	h.enroll(memberB)
-	h.expect(adminA, http.MethodPost, path(tidA, memberB.membershipID), "", http.StatusNotFound)
-	// And through B's URL, where adminA is not a member: refused by the chain.
-	if code, _ := h.do(adminA, http.MethodPost, path(tidB, memberB.membershipID), ""); code != http.StatusForbidden && code != http.StatusNotFound {
-		t.Fatalf("reset in an organization the caller is not in: status %d", code)
-	}
+	h.expect(adminA, http.MethodDelete, path(tidA, memberB.membershipID), "", http.StatusNotFound)
 	if h.factorCount(memberB) == 0 {
 		t.Fatal("cross-organization reset removed the factor")
 	}
@@ -169,7 +165,7 @@ func TestResetMemberMFA_DB(t *testing.T) {
 	// A peer administrator: owner only.
 	peer := h.member(tidA, "admin")
 	h.enroll(peer)
-	body := h.expect(adminA, http.MethodPost, path(tidA, peer.membershipID), "", http.StatusForbidden)
+	body := h.expect(adminA, http.MethodDelete, path(tidA, peer.membershipID), "", http.StatusForbidden)
 	if !strings.Contains(body, "owner") {
 		t.Fatalf("refusal does not explain the owner rule: %s", body)
 	}
@@ -181,11 +177,11 @@ func TestResetMemberMFA_DB(t *testing.T) {
 	both := h.member(tidA, "member")
 	h.enroll(both)
 	h.exec(`INSERT INTO tenant_members (id, user_id, tenant_id, role) VALUES ($1, $2, $3, 'viewer')`, uuid.NewString(), both.id, tidB)
-	h.expect(adminA, http.MethodPost, path(tidA, both.membershipID), "", http.StatusForbidden)
+	h.expect(adminA, http.MethodDelete, path(tidA, both.membershipID), "", http.StatusForbidden)
 	if h.factorCount(both) == 0 {
 		t.Fatal("reset of a member of another organization removed the factor")
 	}
 
 	// A member cannot reset anyone.
-	h.expect(h.member(tidA, "member"), http.MethodPost, path(tidA, peer.membershipID), "", http.StatusForbidden)
+	h.expect(h.member(tidA, "member"), http.MethodDelete, path(tidA, peer.membershipID), "", http.StatusForbidden)
 }

@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"strings"
 	"time"
@@ -383,18 +384,17 @@ func writeNoStoreJSON(w http.ResponseWriter, status int, body any) {
 // @Description  An owner or administrator turns off the second factor of a member of their organization who lost their authenticator and recovery codes. The member is signed out everywhere and e-mailed. An owner or administrator target needs the owner; a member who also belongs to another organization needs the same authority there; nobody resets their own factor here.
 // @Tags         Tenants
 // @Produce      json
-// @Param        tenant  path  string  true  "Tenant ID or slug"
-// @Param        userId  path  string  true  "Membership ID"
+// @Param        member_id  path  string  true  "Membership ID"
 // @Success      200  {object}  map[string]string
 // @Failure      400  {object}  apierror.Error
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /tenants/{tenant}/members/{userId}/reset-2fa [post]
+// @Router       /organization/members/{member_id}/mfa [delete]
 func (h *LocalAuthHandler) ResetMemberMFA(w http.ResponseWriter, r *http.Request) {
-	membershipID := r.PathValue("userId")
-	tenantID := middleware.GetTeamID(r.Context())
-	if membershipID == "" || tenantID.IsZero() {
+	membershipID := chi.URLParam(r, "member_id")
+	tenantID := middleware.GetTenantID(r.Context())
+	if membershipID == "" || tenantID == "" {
 		apierror.BadRequest("Member ID is required").WriteJSON(w)
 		return
 	}
@@ -402,7 +402,7 @@ func (h *LocalAuthHandler) ResetMemberMFA(w http.ResponseWriter, r *http.Request
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
-		TenantID:  tenantID.String(),
+		TenantID:  tenantID,
 	}
 	if u := middleware.GetLocalUser(r.Context()); u != nil {
 		actx.ActorID = u.ID().String()
@@ -412,7 +412,7 @@ func (h *LocalAuthHandler) ResetMemberMFA(w http.ResponseWriter, r *http.Request
 		apierror.Unauthorized("Authentication required").WriteJSON(w)
 		return
 	}
-	if err := h.authService.ResetMemberMFA(r.Context(), actx, tenantID.String(), membershipID); err != nil {
+	if err := h.authService.ResetMemberMFA(r.Context(), actx, tenantID, membershipID); err != nil {
 		switch {
 		case errors.Is(err, shared.ErrNotFound):
 			apierror.NotFound("Member").WriteJSON(w)
