@@ -147,6 +147,12 @@ nothing about another tenant's seed or verification is ever shown. Code:
 `pkg/domain/easmseed`, `internal/app/easm/seeds.go`,
 `internal/infra/postgres/easm_seed_repository.go`.
 
+**Web.** Scoping › Boundaries (`/scope-config?tab=seeds`) has a **Seeds** tab
+when the `attack_surface` module is on: the list with ownership (verified by a
+DNS TXT record, or asserted), a discovery switch, and Add seed, which stays
+disabled until the attestation box is ticked. Code:
+`web/src/features/attack-surface/components/easm-seeds.tsx`.
+
 ## 4. Attribution
 
 **Built (P0, migration 000324).** `asset_attributions` holds per asset a

@@ -167,6 +167,9 @@ export type AuditAction =
   | 'scope_exclusion.deactivated'
   | 'scope_exclusion.approved'
   | 'scope_exclusion.rejected'
+  | 'easm_seed.created'
+  | 'easm_seed.updated'
+  | 'easm_seed.deleted'
   | 'tool.created'
   | 'tool.updated'
   | 'tool.deleted'
@@ -207,6 +210,7 @@ export type AuditResourceType =
   | 'scan_zone'
   | 'scope_target'
   | 'scope_exclusion'
+  | 'easm_seed'
   | 'tool'
   | 'scanner_template'
   | 'remediation_campaign'
@@ -419,6 +423,10 @@ export function getActionLabel(action: AuditAction): string {
     'scope_exclusion.deactivated': 'Scope Exclusion Deactivated',
     'scope_exclusion.approved': 'Scope Exclusion Approved',
     'scope_exclusion.rejected': 'Scope Exclusion Rejected',
+    // EASM seeds (RFC-036)
+    'easm_seed.created': 'EASM Seed Added',
+    'easm_seed.updated': 'EASM Seed Changed',
+    'easm_seed.deleted': 'EASM Seed Removed',
     // Tool actions
     'tool.created': 'Tool Created',
     'tool.updated': 'Tool Updated',
