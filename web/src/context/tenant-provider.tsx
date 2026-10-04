@@ -345,6 +345,15 @@ export function useTenant() {
   return context
 }
 
+/**
+ * The active organization's id, or null outside a TenantProvider (never
+ * throws). Used by long-lived connections that must follow an organization
+ * switch, such as the WebSocket.
+ */
+export function useCurrentTenantId(): string | null {
+  return React.useContext(TenantContext)?.currentTenant?.id ?? null
+}
+
 // ============================================
 // UTILITIES
 // ============================================

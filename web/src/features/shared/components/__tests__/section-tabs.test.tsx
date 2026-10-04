@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { SectionTabs } from '../section-tabs'
+import { ASSETS_SECTION_TABS } from '@/config/section-tabs'
 
 let pathname = '/account'
 vi.mock('next/navigation', () => ({ usePathname: () => pathname }))
@@ -36,5 +37,16 @@ describe('SectionTabs', () => {
     pathname = '/account/activity/2026-09'
     render(<SectionTabs tabs={tabs} />)
     expect(screen.getByRole('link', { name: 'Activity' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it.each([
+    ['/assets/groups', 'Groups'],
+    ['/assets/groups/abc', 'Groups'],
+    ['/assets/suggestions', 'Suggestions'],
+  ])('Assets: %s marks %s current, not Inventory', (path, tab) => {
+    pathname = path
+    render(<SectionTabs tabs={ASSETS_SECTION_TABS} />)
+    expect(screen.getByRole('link', { name: tab })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Inventory' })).not.toHaveAttribute('aria-current')
   })
 })

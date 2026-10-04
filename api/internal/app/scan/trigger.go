@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -40,6 +41,10 @@ type TriggerScanExecInput struct {
 	// scan has an active run (overlap policy for scheduled runs, D4: skip the
 	// occurrence and record that it was skipped, never pile runs up).
 	SkipIfRunning bool `json:"-"`
+	// ScheduledFor is the schedule occurrence the scheduler claimed; the run
+	// records it and a scan gets at most one run per occurrence
+	// (pipeline.ErrOccurrenceAlreadyRun otherwise). nil for every other trigger.
+	ScheduledFor *time.Time `json:"-"`
 }
 
 // ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
@@ -110,9 +115,9 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// Execute based on scan type
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		run, err = s.triggerWorkflow(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt)
+		run, err = s.triggerWorkflow(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor)
 	} else {
-		run, err = s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt)
+		run, err = s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor)
 	}
 
 	if err != nil {
@@ -141,7 +146,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 }
 
 // triggerWorkflow triggers a workflow pipeline execution.
-func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
+func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int, scheduledFor *time.Time) (*pipeline.Run, error) {
 	if sc.PipelineID == nil {
 		return nil, fmt.Errorf("%w: pipeline_id is required for workflow", shared.ErrValidation)
 	}
@@ -223,6 +228,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 	run.SetTotalSteps(len(steps))
 	run.RetryAttempt = retryAttempt
+	run.ScheduledFor = scheduledFor
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
 	if sc.ProfileID != nil {
 		run.ScanProfileID = sc.ProfileID // Propagate scan profile for quality gate evaluation
@@ -265,7 +271,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 const QuickScanTemplateID = "00000000-0000-0000-0000-000000000001"
 
 // triggerSingleScan triggers a single scanner execution.
-func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int) (*pipeline.Run, error) {
+func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int, scheduledFor *time.Time) (*pipeline.Run, error) {
 	// Build context
 	if runContext == nil {
 		runContext = make(map[string]any)
@@ -356,6 +362,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	}
 	run.SetTotalSteps(1)
 	run.RetryAttempt = retryAttempt
+	run.ScheduledFor = scheduledFor
 	run.Start()
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
 	if sc.ProfileID != nil {

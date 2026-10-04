@@ -46,7 +46,7 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 
 	query := `
 		INSERT INTO assets (
-			id, tenant_id, parent_id, owner_id, owner_ref, name, asset_type, sub_type, criticality, status,
+			id, tenant_id, parent_id, owner_ref, name, asset_type, sub_type, criticality, status,
 			scope, exposure, risk_score,
 			description, tags, properties,
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
@@ -57,7 +57,7 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 			lifecycle_paused_until, manual_status_override,
 			impact_confidentiality, impact_integrity, impact_availability
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41)
 	`
 
 	ownerRefVal := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
@@ -65,7 +65,6 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 		a.ID().String(),
 		nullIDValue(a.TenantID()),
 		nullIDPtr(a.ParentID()),
-		nullIDPtr(a.OwnerID()),
 		ownerRefVal,
 		a.Name(),
 		a.Type().String(),
@@ -448,7 +447,7 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 
 func (r *AssetRepository) selectQuery() string {
 	return `
-		SELECT a.id, a.tenant_id, a.parent_id, a.owner_id, a.owner_ref, a.name, a.asset_type, a.sub_type, a.criticality, a.status,
+		SELECT a.id, a.tenant_id, a.parent_id, a.owner_ref, a.name, a.asset_type, a.sub_type, a.criticality, a.status,
 			   a.scope, a.exposure, a.risk_score,
 			   COALESCE(fc.finding_count, 0) as finding_count,
 			   COALESCE(fc.finding_critical, 0) as finding_critical,
@@ -494,24 +493,23 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 
 	query := `
 		UPDATE assets
-		SET parent_id = $2, owner_id = $3, owner_ref = $4, name = $5, asset_type = $6, sub_type = $7, criticality = $8, status = $9,
-		    scope = $10, exposure = $11, risk_score = $12,
-		    description = $13, tags = $14, properties = $15,
-		    provider = $16, external_id = $17, classification = $18, sync_status = $19, last_synced_at = $20, sync_error = $21,
-		    discovery_source = $22, discovery_tool = $23, discovered_at = $24,
-		    compliance_scope = $25, data_classification = $26, pii_data_exposed = $27, phi_data_exposed = $28, regulatory_owner_id = $29,
-		    is_internet_accessible = $30, exposure_changed_at = $31, last_exposure_level = $32,
-		    last_seen = $33, updated_at = $34,
-		    lifecycle_paused_until = $36, manual_status_override = $37,
-		    impact_confidentiality = $38, impact_integrity = $39, impact_availability = $40
-		WHERE id = $1 AND tenant_id = $35
+		SET parent_id = $2, owner_ref = $3, name = $4, asset_type = $5, sub_type = $6, criticality = $7, status = $8,
+		    scope = $9, exposure = $10, risk_score = $11,
+		    description = $12, tags = $13, properties = $14,
+		    provider = $15, external_id = $16, classification = $17, sync_status = $18, last_synced_at = $19, sync_error = $20,
+		    discovery_source = $21, discovery_tool = $22, discovered_at = $23,
+		    compliance_scope = $24, data_classification = $25, pii_data_exposed = $26, phi_data_exposed = $27, regulatory_owner_id = $28,
+		    is_internet_accessible = $29, exposure_changed_at = $30, last_exposure_level = $31,
+		    last_seen = $32, updated_at = $33,
+		    lifecycle_paused_until = $35, manual_status_override = $36,
+		    impact_confidentiality = $37, impact_integrity = $38, impact_availability = $39
+		WHERE id = $1 AND tenant_id = $34
 	`
 
 	updateOwnerRef := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
 	result, err := r.db.ExecContext(ctx, query,
 		a.ID().String(),
 		nullIDPtr(a.ParentID()),
-		nullIDPtr(a.OwnerID()),
 		updateOwnerRef,
 		a.Name(),
 		a.Type().String(),
@@ -754,7 +752,6 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		idStr           string
 		tenantIDStr     sql.NullString
 		parentIDStr     sql.NullString
-		ownerIDStr      sql.NullString
 		ownerRef        sql.NullString
 		name            string
 		assetType       string
@@ -809,7 +806,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 	)
 
 	err := scan(
-		&idStr, &tenantIDStr, &parentIDStr, &ownerIDStr, &ownerRef, &name, &assetType, &subType, &criticality, &status,
+		&idStr, &tenantIDStr, &parentIDStr, &ownerRef, &name, &assetType, &subType, &criticality, &status,
 		&scope, &exposure, &riskScore, &findingCount,
 		&findingCritical, &findingHigh, &findingMedium, &findingLow, &findingInfo,
 		&description, &tags, &properties,
@@ -827,7 +824,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 	}
 
 	a, err := r.reconstructAsset(
-		idStr, tenantIDStr, parentIDStr, ownerIDStr, ownerRef, name, assetType, subType.String, criticality, status,
+		idStr, tenantIDStr, parentIDStr, ownerRef, name, assetType, subType.String, criticality, status,
 		scope, exposure, riskScore, findingCount,
 		description, tags, properties,
 		provider, externalID, classification, syncStatus, lastSyncedAt, syncError,
@@ -856,7 +853,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 
 func (r *AssetRepository) reconstructAsset(
 	idStr string,
-	tenantIDStr, parentIDStr, ownerIDStr, ownerRefStr sql.NullString,
+	tenantIDStr, parentIDStr, ownerRefStr sql.NullString,
 	name, assetTypeStr, subTypeStr, criticalityStr, statusStr string,
 	scopeStr, exposureStr string,
 	riskScore, findingCount int,
@@ -900,12 +897,6 @@ func (r *AssetRepository) reconstructAsset(
 	if parentIDStr.Valid {
 		id, _ := shared.IDFromString(parentIDStr.String)
 		parentID = &id
-	}
-
-	var ownerID *shared.ID
-	if ownerIDStr.Valid {
-		id, _ := shared.IDFromString(ownerIDStr.String)
-		ownerID = &id
 	}
 
 	assetType, _ := asset.ParseAssetType(assetTypeStr)
@@ -962,7 +953,6 @@ func (r *AssetRepository) reconstructAsset(
 		parsedID,
 		tenantID,
 		parentID,
-		ownerID,
 		name,
 		assetType,
 		criticality,
@@ -1425,7 +1415,7 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 
 // assetUpsertColumnCount is the number of columns in the assets upsert. It MUST
 // stay in sync with assetUpsertColumnsSQL and assetUpsertArgs.
-const assetUpsertColumnCount = 38
+const assetUpsertColumnCount = 37
 
 // assetUpsertColumnsSQL is the INSERT INTO assets (...) column header.
 //
@@ -1438,7 +1428,7 @@ const assetUpsertColumnCount = 38
 func assetUpsertColumnsSQL() string {
 	return `
 		INSERT INTO assets (
-			id, tenant_id, parent_id, owner_id, owner_ref, name, asset_type, sub_type, criticality, status,
+			id, tenant_id, parent_id, owner_ref, name, asset_type, sub_type, criticality, status,
 			scope, exposure, risk_score,
 			description, tags, properties,
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
@@ -1533,7 +1523,6 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 		a.ID().String(),
 		nullIDValue(a.TenantID()),
 		nullIDPtr(a.ParentID()),
-		nullIDPtr(a.OwnerID()),
 		nullString(a.OwnerRef()),
 		a.Name(),
 		a.Type().String(),

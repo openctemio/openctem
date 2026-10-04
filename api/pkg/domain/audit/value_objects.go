@@ -26,6 +26,9 @@ const (
 	ActionTenantRiskScoresRecalculated Action = "tenant.risk_scores_recalculated"
 	ActionTenantAssetSourceUpdated     Action = "tenant.asset_source_updated"
 	ActionTenantAssetLifecycleUpdated  Action = "tenant.asset_lifecycle_updated"
+	// ActionTenantRetestUpdated records a change to the tenant's auto-retest
+	// settings (RFC-039).
+	ActionTenantRetestUpdated Action = "tenant.retest_updated"
 
 	// Asset lifecycle transitions. Emitted per batch run (worker)
 	// rather than per asset so the audit log stays scannable.
@@ -38,6 +41,20 @@ const (
 	// ActionAssetAttributionDecided: a person set whether an asset is the
 	// organization's (RFC-036 attribution review).
 	ActionAssetAttributionDecided Action = "asset.attribution_decided"
+	// ActionAssetCreateMerged: a create request matched an existing asset by
+	// name or address and updated it instead of creating a new one.
+	// Metadata lists the changed field names.
+	ActionAssetCreateMerged Action = "asset.create_merged"
+
+	// Human changes to assets (API/UI). Metadata carries the names of the
+	// changed fields, counts and ids, never field values.
+	ActionAssetCreated           Action = "asset.created"
+	ActionAssetUpdated           Action = "asset.updated"
+	ActionAssetDeleted           Action = "asset.deleted"
+	ActionAssetStatusChanged     Action = "asset.status_changed"
+	ActionAssetBulkStatusChanged Action = "asset.bulk_status_changed"
+	ActionAssetCrownJewelChanged Action = "asset.crown_jewel_changed"
+	ActionAssetImported          Action = "asset.imported"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -87,6 +104,9 @@ const (
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
+	// ActionFindingRetestRequested records a user pressing "Retest now" on a
+	// finding (RFC-039): who, which finding, which template against which target.
+	ActionFindingRetestRequested Action = "finding.retest_requested"
 	// ActionFindingCommentReactionRemoved records an administrator removing
 	// another member's reaction from a finding comment (moderation). A
 	// person adding or removing their own reaction is not audited.
@@ -277,6 +297,10 @@ const (
 	ActionAssetUnassigned       Action = "asset.unassigned"
 	ActionAssetOwnershipUpdated Action = "asset.ownership_updated"
 
+	// Explicit per-user data-scope grants on an asset (asset_access_grants).
+	ActionAssetAccessGranted Action = "asset.access_granted"
+	ActionAssetAccessRevoked Action = "asset.access_revoked"
+
 	// Permission Set actions
 	ActionPermissionSetCreated    Action = "permission_set.created"
 	ActionPermissionSetUpdated    Action = "permission_set.updated"
@@ -307,6 +331,7 @@ const (
 	ActionPipelineStepDeleted         Action = "pipeline_step.deleted"
 	ActionPipelineRunTriggered        Action = "pipeline_run.triggered"
 	ActionPipelineRunCompleted        Action = "pipeline_run.completed"
+	ActionPipelineRunPartial          Action = "pipeline_run.partial"
 	ActionPipelineRunFailed           Action = "pipeline_run.failed"
 	ActionPipelineRunCanceled         Action = "pipeline_run.canceled"
 
@@ -318,6 +343,13 @@ const (
 	ActionCampaignUpdated           Action = "campaign.updated"
 	ActionCampaignStatusChanged     Action = "campaign.status_changed"
 	ActionCampaignDeleted           Action = "campaign.deleted"
+
+	// Remediation campaign actions (Mobilization). Distinct from the pentest
+	// campaign.* actions above: a different resource with its own lifecycle.
+	ActionRemediationCampaignCreated       Action = "remediation_campaign.created"
+	ActionRemediationCampaignUpdated       Action = "remediation_campaign.updated"
+	ActionRemediationCampaignStatusChanged Action = "remediation_campaign.status_changed"
+	ActionRemediationCampaignDeleted       Action = "remediation_campaign.deleted"
 
 	// Scan config actions
 	ActionScanConfigCreated   Action = "scan_config.created"
@@ -416,9 +448,12 @@ func (a Action) IsValid() bool {
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
+		ActionAssetCreateMerged,
+		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
+		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
@@ -428,6 +463,7 @@ func (a Action) IsValid() bool {
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
+		ActionFindingRetestRequested,
 		ActionFindingCommentReactionRemoved,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
@@ -465,6 +501,7 @@ func (a Action) IsValid() bool {
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
+		ActionAssetAccessGranted, ActionAssetAccessRevoked,
 		ActionPermissionSetCreated, ActionPermissionSetUpdated, ActionPermissionSetDeleted,
 		ActionPermissionSetAssigned, ActionPermissionSetUnassigned,
 		ActionPermissionGranted, ActionPermissionRevoked,
@@ -473,7 +510,7 @@ func (a Action) IsValid() bool {
 		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineTemplateDeleted,
 		ActionPipelineTemplateActivated, ActionPipelineTemplateDeactivated,
 		ActionPipelineStepCreated, ActionPipelineStepUpdated, ActionPipelineStepDeleted,
-		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
+		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunPartial, ActionPipelineRunFailed, ActionPipelineRunCanceled,
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
 		ActionScanConfigExported, ActionScanConfigImported,
@@ -493,6 +530,8 @@ func (a Action) IsValid() bool {
 		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
+		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted,
 		ActionMCPToolCalled, ActionMCPPromptGotten,
 		ActionAuditChainRebaselined:
 		return true
@@ -526,7 +565,7 @@ func (a Action) Category() string {
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
-		ActionFindingCommentReactionRemoved:
+		ActionFindingRetestRequested, ActionFindingCommentReactionRemoved:
 		return "finding"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"
@@ -580,6 +619,9 @@ func (a Action) Category() string {
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
 		return "pentest_campaign"
+	case ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
+		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted:
+		return "remediation_campaign"
 	case ActionMCPToolCalled, ActionMCPPromptGotten:
 		return "mcp"
 	case ActionAuditChainRebaselined:
@@ -620,25 +662,28 @@ const (
 	ResourceTypeRole             ResourceType = "role"
 	ResourceTypePipelineTemplate ResourceType = "pipeline_template"
 	ResourceTypeCampaign         ResourceType = "pentest_campaign"
-	ResourceTypePipelineStep     ResourceType = "pipeline_step"
-	ResourceTypePipelineRun      ResourceType = "pipeline_run"
-	ResourceTypeScanConfig       ResourceType = "scan_config"
-	ResourceTypeScanProfile      ResourceType = "scan_profile"
-	ResourceTypeCommand          ResourceType = "command"
-	ResourceTypeWorkflow         ResourceType = "workflow"
-	ResourceTypeWorkflowRun      ResourceType = "workflow_run"
-	ResourceTypeCapability       ResourceType = "capability"
-	ResourceTypeTool             ResourceType = "tool"
-	ResourceTypeRuleSource       ResourceType = "rule_source"
-	ResourceTypeRuleOverride     ResourceType = "rule_override"
-	ResourceTypeIngest           ResourceType = "ingest"
-	ResourceTypeAITriage         ResourceType = "ai_triage"
-	ResourceTypeMCPTool          ResourceType = "mcp_tool"
-	ResourceTypeMCPPrompt        ResourceType = "mcp_prompt"
-	ResourceTypeAPIKey           ResourceType = "api_key"
-	ResourceTypeSAMLConfig       ResourceType = "saml_config"
-	ResourceTypeIdentityProvider ResourceType = "identity_provider"
-	ResourceTypeVerifiedDomain   ResourceType = "verified_domain"
+	// ResourceTypeRemediationCampaign is a Mobilization remediation campaign
+	// (table remediation_campaigns), not a pentest campaign.
+	ResourceTypeRemediationCampaign ResourceType = "remediation_campaign"
+	ResourceTypePipelineStep        ResourceType = "pipeline_step"
+	ResourceTypePipelineRun         ResourceType = "pipeline_run"
+	ResourceTypeScanConfig          ResourceType = "scan_config"
+	ResourceTypeScanProfile         ResourceType = "scan_profile"
+	ResourceTypeCommand             ResourceType = "command"
+	ResourceTypeWorkflow            ResourceType = "workflow"
+	ResourceTypeWorkflowRun         ResourceType = "workflow_run"
+	ResourceTypeCapability          ResourceType = "capability"
+	ResourceTypeTool                ResourceType = "tool"
+	ResourceTypeRuleSource          ResourceType = "rule_source"
+	ResourceTypeRuleOverride        ResourceType = "rule_override"
+	ResourceTypeIngest              ResourceType = "ingest"
+	ResourceTypeAITriage            ResourceType = "ai_triage"
+	ResourceTypeMCPTool             ResourceType = "mcp_tool"
+	ResourceTypeMCPPrompt           ResourceType = "mcp_prompt"
+	ResourceTypeAPIKey              ResourceType = "api_key"
+	ResourceTypeSAMLConfig          ResourceType = "saml_config"
+	ResourceTypeIdentityProvider    ResourceType = "identity_provider"
+	ResourceTypeVerifiedDomain      ResourceType = "verified_domain"
 	// ResourceTypeSSOChange is an SSO change waiting for an owner's approval.
 	ResourceTypeSSOChange ResourceType = "sso_change"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
@@ -671,7 +716,8 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
-		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate:
+		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate,
+		ResourceTypeRemediationCampaign:
 		return true
 	}
 	return false
@@ -753,7 +799,9 @@ func SeverityForAction(a Action) Severity {
 		// Widening what sensors scan, and the code they run.
 		ActionScopeTargetCreated, ActionScopeTargetActivated,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
-		ActionScannerTemplateCreated, ActionScannerTemplateUpdated:
+		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
+		// Deleting an asset also deletes its findings.
+		ActionAssetDeleted:
 		return SeverityHigh
 
 	// Medium - important changes
@@ -761,9 +809,11 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthMFAEnabled, ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
+		ActionAssetCreateMerged,
+		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,
@@ -771,7 +821,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSensorCreated, ActionSensorActivated, ActionSensorKeyRenewed,
 		ActionAPIKeyCreated,
 		ActionRoleCreated, ActionRoleUpdated,
-		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted,
+		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunPartial,
 		ActionScanConfigCreated, ActionScanConfigTriggered,
 		ActionScanProfileDeleted, ActionScanProfileDefaultSet, ActionScanProfileQualityGateUpdated,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialAccessed,

@@ -7,10 +7,12 @@
  * test renders a page's columns and drawer sections against an asset shaped
  * exactly as ingest stores it (see `__fixtures__/ingest-shaped-assets.ts`)
  * and checks the facts appear, then against an empty asset and checks it
- * says "unknown" instead of inventing a value.
+ * invents no value: a fact nothing collected is an empty cell (`—`) in the
+ * list and one "Not collected yet: …" line in the drawer
+ * (ui-style-contract §7, "Unknown facts").
  */
 import { describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { Asset } from '@/features/assets'
@@ -34,6 +36,10 @@ import { ipAddressesConfig } from '../ip-addresses/config'
 import { domainsConfig } from '../domains/config'
 import { certificatesConfig } from '../certificates/config'
 import { apisConfig } from '../apis/config'
+import { databasesConfig } from '../databases/config'
+import { serverlessConfig } from '../serverless/config'
+import { resolveDetailSections } from '@/features/assets/lib/detail-sections'
+import { TypedDetailSections } from '@/features/assets/components/typed-detail-sections'
 
 type CellFn = (ctx: { row: { original: Asset } }) => ReactNode
 
@@ -71,6 +77,16 @@ function renderDetail(config: AssetPageConfig, asset: Asset) {
   return (label: string) => within(screen.getByTestId(`field-${label}`))
 }
 
+/** The drawer's "Not collected yet" facts for one asset. */
+const notCollected = (config: AssetPageConfig, asset: Asset) =>
+  resolveDetailSections(config.detailSections ?? [], asset).notCollected
+
+/** No cell shows a dashed "unknown" chip or "Unknown" / "Not collected" text. */
+function expectNoUnknownText(container: HTMLElement = document.body) {
+  expect(container.querySelector('.border-dashed')).toBeNull()
+  expect(container.textContent ?? '').not.toMatch(/unknown|not collected|not resolved/i)
+}
+
 const csv = (config: AssetPageConfig, asset: Asset) =>
   Object.fromEntries((config.exportFields ?? []).map((f) => [f.header, f.accessor(asset)]))
 
@@ -93,14 +109,31 @@ describe('services page', () => {
     expect(col('http_status').queryByText('Status unknown')).toBeNull()
   })
 
-  it('says unknown instead of defaulting to TCP', () => {
+  it('shows an empty cell instead of defaulting to TCP', () => {
     const col = renderRow(servicesConfig, bareService)
-    expect(col('port').getByText('Unknown')).toBeInTheDocument()
-    expect(col('protocol').getByText('Unknown')).toBeInTheDocument()
+    expect(col('port').getByText('—')).toBeInTheDocument()
+    expect(col('protocol').getByText('—')).toBeInTheDocument()
     expect(col('protocol').queryByText('TCP')).toBeNull()
-    expect(col('tls').getByText('TLS not collected')).toBeInTheDocument()
+    expect(col('tls').getByText('—')).toBeInTheDocument()
+    expect(col('version').getByText('—')).toBeInTheDocument()
+    expectNoUnknownText()
     expect(servicesConfig.copyAction?.getValue(bareService)).toBe('staging.example.org')
     expect(csv(servicesConfig, bareService).Protocol).toBe('')
+  })
+
+  it('drawer names the missing facts once instead of "Unknown" rows', () => {
+    expect(notCollected(servicesConfig, bareService)).toEqual([
+      'protocol',
+      'transport',
+      'product',
+      'TLS',
+      'IP addresses',
+      'banner',
+    ])
+    // HTTP-only facts are not a gap on an SSH port.
+    expect(notCollected(servicesConfig, sdkOpenPort)).not.toContain('HTTP status')
+    // An HTTPS service without its certificate says so in the same line.
+    expect(notCollected(servicesConfig, sensorHttpService)).toContain('TLS certificate')
   })
 
   it('drawer reads banner, title and technologies', () => {
@@ -132,13 +165,17 @@ describe('websites page', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer nofollow')
   })
 
-  it('has explicit empty states and no default 200', () => {
+  it('keeps known negatives, hides unknowns and has no default 200', () => {
     const col = renderRow(websitesConfig, sensorHttpServiceNoTech)
-    expect(col('technology').getByText('No technologies')).toBeInTheDocument()
+    expect(col('technology').getByText('No technologies detected')).toBeInTheDocument()
     expect(col('ssl').getByText('No TLS')).toBeInTheDocument()
-    renderRow(websitesConfig, bareService)
-    expect(screen.getAllByText('Status unknown').length).toBeGreaterThan(0)
+    cleanup()
+    const bare = renderRow(websitesConfig, bareService)
+    expect(bare('http_status').getByText('—')).toBeInTheDocument()
+    expect(bare('technology').getByText('—')).toBeInTheDocument()
+    expect(bare('ssl').getByText('—')).toBeInTheDocument()
     expect(screen.queryByText('200')).toBeNull()
+    expectNoUnknownText()
     expect(csv(websitesConfig, bareService)['HTTP Status']).toBe('')
   })
 })
@@ -151,11 +188,13 @@ describe('IP addresses page', () => {
     expect(col('open_ports').getByText('8443/tcp')).toBeInTheDocument()
   })
 
-  it('reads naabu ports and says "not collected" for ASN', () => {
+  it('reads naabu ports and leaves an uncollected ASN empty', () => {
     const col = renderRow(ipAddressesConfig, sensorIpWithPorts)
     expect(col('open_ports').getByText('22/tcp')).toBeInTheDocument()
     expect(col('open_ports').getByText('+1')).toBeInTheDocument()
-    expect(col('asnOrg').getByText('Not collected')).toBeInTheDocument()
+    expect(col('asnOrg').getByText('—')).toBeInTheDocument()
+    expectNoUnknownText()
+    expect(notCollected(ipAddressesConfig, sensorIpWithPorts)).toEqual(['ASN', 'organization'])
     expect(csv(ipAddressesConfig, sensorIpWithPorts)['Open Ports']).toBe(
       '22/tcp;80/tcp;443/tcp;8443/tcp'
     )
@@ -177,9 +216,20 @@ describe('domains page', () => {
     expect(csv(domainsConfig, ctisRootDomain)['Expiry Date']).toBe('2027-05-14')
   })
 
-  it('says "Not resolved" when there is no DNS data', () => {
-    const col = renderRow(domainsConfig, { ...bareService, type: 'subdomain' } as Asset)
-    expect(col('dnsInfo').getByText('Not resolved')).toBeInTheDocument()
+  it('leaves the DNS cell empty when there is no DNS data', () => {
+    const sub = { ...bareService, type: 'subdomain' } as Asset
+    const col = renderRow(domainsConfig, sub)
+    expect(col('dnsInfo').getByText('—')).toBeInTheDocument()
+    expectNoUnknownText()
+    // Registration is not a gap on a subdomain.
+    expect(notCollected(domainsConfig, sub)).toEqual(['DNS records', 'resolved IPs'])
+    expect(notCollected(domainsConfig, { ...bareService, type: 'domain' } as Asset)).toEqual([
+      'registrar',
+      'expiry date',
+      'DNS records',
+      'resolved IPs',
+      'nameservers',
+    ])
   })
 })
 
@@ -198,25 +248,110 @@ describe('certificates page', () => {
   })
 
   it('never shows an unknown certificate as valid', () => {
-    const col = renderRow(certificatesConfig, { ...bareService, type: 'certificate' } as Asset)
-    expect(col('certStatus').getByText('Expiry unknown')).toBeInTheDocument()
-    expect(col('issuer').getByText('Unknown')).toBeInTheDocument()
-    const field = renderDetail(certificatesConfig, { ...bareService, type: 'certificate' } as Asset)
-    expect(field('Wildcard').getByText('Unknown')).toBeInTheDocument()
+    const bare = { ...bareService, type: 'certificate' } as Asset
+    const col = renderRow(certificatesConfig, bare)
+    expect(col('certStatus').getByText('—')).toBeInTheDocument()
+    expect(col('issuer').getByText('—')).toBeInTheDocument()
+    expect(screen.queryByText(/valid/i)).toBeNull()
+    expectNoUnknownText()
+    cleanup()
+    const field = renderDetail(certificatesConfig, bare)
+    expect(field('Wildcard').queryByText(/yes|no/i)).toBeNull()
+    expect(notCollected(certificatesConfig, bare)).toEqual([
+      'expiry',
+      'issuer',
+      'subject',
+      'valid from',
+      'valid until',
+      'algorithm',
+      'key',
+      'serial number',
+      'wildcard',
+      'self-signed',
+      'fingerprint',
+      'SANs',
+    ])
   })
 })
 
 describe('APIs page', () => {
   it('does not claim "No Auth", REST or 0 endpoints for an API nobody described', () => {
     const col = renderRow(apisConfig, scannedApiWithoutDetails)
-    expect(col('metadata.auth_type').getByText('Unknown')).toBeInTheDocument()
+    expect(col('metadata.auth_type').getByText('—')).toBeInTheDocument()
     expect(col('metadata.auth_type').queryByText('No Auth')).toBeNull()
-    expect(col('metadata.api_type').getByText('Unknown')).toBeInTheDocument()
-    expect(col('metadata.endpoint_count').getByText('Unknown')).toBeInTheDocument()
-    expect(col('http_status').getByText('Status unknown')).toBeInTheDocument()
+    expect(col('metadata.api_type').getByText('—')).toBeInTheDocument()
+    expect(col('metadata.endpoint_count').getByText('—')).toBeInTheDocument()
+    expect(col('http_status').getByText('—')).toBeInTheDocument()
+    expect(col('tls').getByText('—')).toBeInTheDocument()
+    expectNoUnknownText()
+    expect(notCollected(apisConfig, scannedApiWithoutDetails)).toEqual([
+      'authentication',
+      'HTTP status',
+      'TLS',
+    ])
     const row = csv(apisConfig, scannedApiWithoutDetails)
     expect(row['Auth Type']).toBe('')
     expect(row.Type).toBe('')
     expect(row.Endpoints).toBe('')
+  })
+})
+
+describe('databases and serverless pages', () => {
+  it('leave an unrecorded engine or provider empty, without a dashed chip', () => {
+    const db = { ...bareService, type: 'database' } as Asset
+    const fn = { ...bareService, type: 'host', subType: 'serverless' } as Asset
+    const dbCol = renderRow(databasesConfig, db)
+    expect(dbCol('metadata.engine').getByText('—')).toBeInTheDocument()
+    cleanup()
+    const fnCol = renderRow(serverlessConfig, fn)
+    expect(fnCol('metadata.cloud_provider').getByText('—')).toBeInTheDocument()
+    expect(document.body.querySelector('.border-dashed')).toBeNull()
+  })
+})
+
+describe('typed drawer sections', () => {
+  it('end with one "Not collected yet" line naming exactly the missing facts', () => {
+    const partial = {
+      ...bareService,
+      subType: 'http',
+      name: 'https://partial.example.org',
+      metadata: { status_code: 200, service: { port: 443, protocol: 'https' } },
+    } as Asset
+    const { container } = render(
+      <TypedDetailSections sections={servicesConfig.detailSections ?? []} asset={partial} />
+    )
+    const notes = container.querySelectorAll('[data-slot="not-collected"]')
+    expect(notes).toHaveLength(1)
+    expect(notes[0]).toHaveTextContent(
+      'Not collected yet: transport, product, TLS certificate, IP addresses, banner, page title, technologies'
+    )
+    // The note is the last thing in the facts.
+    expect(container.lastElementChild?.lastElementChild).toBe(notes[0])
+    // The known facts stay, and no row says "Unknown".
+    expect(screen.getByText('HTTPS')).toBeInTheDocument()
+    expect(screen.getByText('200')).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/unknown/i)
+  })
+
+  it('omit the line when nothing is missing', () => {
+    const { container } = render(
+      <TypedDetailSections
+        sections={ipAddressesConfig.detailSections ?? []}
+        asset={ctisIpWithAsn}
+      />
+    )
+    expect(container.querySelector('[data-slot="not-collected"]')).toBeNull()
+    expect(screen.getByText('AS64502')).toBeInTheDocument()
+  })
+
+  it('still say what is missing when no field has a value', () => {
+    const { container } = render(
+      <TypedDetailSections
+        sections={apisConfig.detailSections ?? []}
+        asset={scannedApiWithoutDetails}
+      />
+    )
+    expect(container.querySelectorAll('[data-slot="not-collected"]')).toHaveLength(1)
+    expect(container).toHaveTextContent('Not collected yet: authentication, HTTP status, TLS')
   })
 })

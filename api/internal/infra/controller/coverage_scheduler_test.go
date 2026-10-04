@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -90,7 +91,7 @@ func TestCoverageScheduler_DrivesUnlimitedEngine(t *testing.T) {
 		{AssetID: "a3", Target: "10.0.0.3", Criticality: "low"},
 	}}
 	disp := &fakeDispatcher{}
-	c := NewCoverageScheduler(lister, repo, disp, nil)
+	c := NewCoverageScheduler(lister, repo, disp, &CoverageSchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := c.Reconcile(context.Background())
 	if err != nil {
@@ -120,7 +121,7 @@ func TestCoverageScheduler_SkipsWhenCoverageDisabled(t *testing.T) {
 		Total: 1,
 	}}
 	disp := &fakeDispatcher{}
-	c := NewCoverageScheduler(lister, &fakeCoverageRepo{}, disp, nil)
+	c := NewCoverageScheduler(lister, &fakeCoverageRepo{}, disp, &CoverageSchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := c.Reconcile(context.Background())
 	if err != nil {
@@ -148,7 +149,7 @@ func TestCoverageScheduler_SkipsCappedEngine(t *testing.T) {
 		{AssetID: "a1", Target: "10.0.0.1", Criticality: "high"},
 	}}
 	disp := &fakeDispatcher{}
-	c := NewCoverageScheduler(lister, repo, disp, nil)
+	c := NewCoverageScheduler(lister, repo, disp, &CoverageSchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := c.Reconcile(context.Background())
 	if err != nil {
@@ -176,7 +177,7 @@ func TestCoverageScheduler_PinsSensorFromConfig(t *testing.T) {
 		{AssetID: "a1", Target: "10.0.0.1", Criticality: "high"},
 	}}
 	disp := &fakeDispatcher{}
-	c := NewCoverageScheduler(lister, repo, disp, nil)
+	c := NewCoverageScheduler(lister, repo, disp, &CoverageSchedulerConfig{Gate: allowAllGate{}})
 
 	if _, err := c.Reconcile(context.Background()); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -195,7 +196,7 @@ func TestCoverageScheduler_InvalidConfigSkipped(t *testing.T) {
 		Total: 1,
 	}}
 	disp := &fakeDispatcher{}
-	c := NewCoverageScheduler(lister, &fakeCoverageRepo{}, disp, nil)
+	c := NewCoverageScheduler(lister, &fakeCoverageRepo{}, disp, &CoverageSchedulerConfig{Gate: allowAllGate{}})
 
 	n, err := c.Reconcile(context.Background())
 	if err != nil {
@@ -208,18 +209,25 @@ func TestCoverageScheduler_InvalidConfigSkipped(t *testing.T) {
 
 func TestCoverageScheduler_ListErrorPropagates(t *testing.T) {
 	lister := &fakeIntegrationLister{err: errors.New("db down")}
-	c := NewCoverageScheduler(lister, &fakeCoverageRepo{}, &fakeDispatcher{}, nil)
+	c := NewCoverageScheduler(lister, &fakeCoverageRepo{}, &fakeDispatcher{}, &CoverageSchedulerConfig{Gate: allowAllGate{}})
 	if _, err := c.Reconcile(context.Background()); err == nil {
 		t.Fatal("integration list error must propagate")
 	}
 }
 
 func TestCoverageScheduler_Meta(t *testing.T) {
-	c := NewCoverageScheduler(&fakeIntegrationLister{}, &fakeCoverageRepo{}, &fakeDispatcher{}, nil)
+	c := NewCoverageScheduler(&fakeIntegrationLister{}, &fakeCoverageRepo{}, &fakeDispatcher{}, &CoverageSchedulerConfig{Gate: allowAllGate{}})
 	if c.Name() != "coverage-scheduler" {
 		t.Fatalf("name: %q", c.Name())
 	}
 	if c.Interval() <= 0 {
 		t.Fatal("interval should default to a positive duration")
 	}
+}
+
+// allowAllGate lets every target through, unzoned.
+type allowAllGate struct{}
+
+func (allowAllGate) ResolveDispatchTargets(_ context.Context, in scanapp.DispatchTargetsInput) (*scanapp.DispatchTargets, error) {
+	return &scanapp.DispatchTargets{Allowed: in.Targets}, nil
 }

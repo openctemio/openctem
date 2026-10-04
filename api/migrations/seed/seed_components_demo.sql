@@ -296,28 +296,37 @@ BEGIN
   -- Step 3a: Assets (6 covering common types)
   -- ---------------------------------------------------------------------------
   INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status, scope,
-                      exposure, risk_score, description, owner_id,
+                      exposure, risk_score, description,
                       is_internet_accessible, source_type, discovery_source)
   VALUES
     ('dcdc1111-0000-0000-0000-000000000001', v_tenant_id, 'demo-web-storefront', 'web_application', 'critical', 'active',
-      'external', 'public', 87, 'Customer-facing e-commerce storefront (React + Node.js)', v_owner_id,
+      'external', 'public', 87, 'Customer-facing e-commerce storefront (React + Node.js)',
       true, 'manual', 'manual'),
     ('dcdc1111-0000-0000-0000-000000000002', v_tenant_id, 'demo-api-gateway', 'api', 'critical', 'active',
-      'external', 'public', 79, 'Public API gateway routing customer requests to microservices', v_owner_id,
+      'external', 'public', 79, 'Public API gateway routing customer requests to microservices',
       true, 'manual', 'manual'),
     ('dcdc1111-0000-0000-0000-000000000003', v_tenant_id, 'demo-payment-service', 'service', 'critical', 'active',
-      'internal', 'restricted', 72, 'Internal payment processing service (Java/Spring Boot)', v_owner_id,
+      'internal', 'restricted', 72, 'Internal payment processing service (Java/Spring Boot)',
       false, 'manual', 'manual'),
     ('dcdc1111-0000-0000-0000-000000000004', v_tenant_id, 'demo-mobile-app', 'mobile_app', 'high', 'active',
-      'external', 'public', 58, 'iOS/Android mobile companion app', v_owner_id,
+      'external', 'public', 58, 'iOS/Android mobile companion app',
       true, 'manual', 'manual'),
     ('dcdc1111-0000-0000-0000-000000000005', v_tenant_id, 'demo-iac-infra', 'repository', 'high', 'active',
-      'internal', 'private', 41, 'Terraform/Helm IaC monorepo for production infrastructure', v_owner_id,
+      'internal', 'private', 41, 'Terraform/Helm IaC monorepo for production infrastructure',
       false, 'manual', 'manual'),
     ('dcdc1111-0000-0000-0000-000000000006', v_tenant_id, 'demo-k8s-prod', 'kubernetes_cluster', 'critical', 'active',
-      'cloud', 'restricted', 65, 'Production Kubernetes cluster (AWS EKS, 3 AZs)', v_owner_id,
+      'cloud', 'restricted', 65, 'Production Kubernetes cluster (AWS EKS, 3 AZs)',
       false, 'manual', 'manual')
   ON CONFLICT (id) DO NOTHING;
+
+  -- Owner: asset_owners is the only owner store (primary user owner).
+  IF v_owner_id IS NOT NULL THEN
+    INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source)
+    SELECT a.id, v_owner_id, 'primary', 'owner_ref'
+    FROM assets a
+    WHERE a.tenant_id = v_tenant_id AND a.id::text LIKE 'dcdc1111-%'
+    ON CONFLICT DO NOTHING;
+  END IF;
 
   RAISE NOTICE 'Inserted assets: %', (SELECT COUNT(*) FROM assets WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc1111-%');
 END $$;

@@ -77,7 +77,7 @@ func TestApproveAndMerge_ConflictSafe(t *testing.T) {
 
 	// --- ACT ---
 	repo := postgres.NewAssetDedupRepository(&postgres.DB{DB: db})
-	if err := repo.ApproveAndMerge(ctx, tenant.String(), reviewID.String(), shared.NewID().String()); err != nil {
+	if err := repo.ApproveAndMerge(ctx, tenant.String(), reviewID.String(), shared.NewID().String(), nil); err != nil {
 		t.Fatalf("ApproveAndMerge failed (should be conflict-safe): %v", err)
 	}
 
@@ -152,7 +152,7 @@ func TestUpsertReview_Idempotent(t *testing.T) {
 		t.Fatalf("second UpsertReview: %v", err)
 	}
 
-	pending, err := repo.ListPendingReviews(ctx, tenant.String())
+	pending, err := repo.ListPendingReviews(ctx, tenant.String(), nil)
 	if err != nil {
 		t.Fatalf("ListPendingReviews: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestUpsertReview_Idempotent(t *testing.T) {
 	}
 
 	// Approve it → merge succeeds (exercises the full enqueue→approve loop)
-	if err := repo.ApproveAndMerge(ctx, tenant.String(), pending[0].ID, shared.NewID().String()); err != nil {
+	if err := repo.ApproveAndMerge(ctx, tenant.String(), pending[0].ID, shared.NewID().String(), nil); err != nil {
 		t.Fatalf("ApproveAndMerge after enqueue: %v", err)
 	}
 	var remaining int
@@ -227,7 +227,7 @@ func TestIngestEnqueuesDedupReview(t *testing.T) {
 		t.Fatalf("ProcessBatch: %v", err)
 	}
 
-	pending, err := dedupRepo.ListPendingReviews(ctx, tenant.String())
+	pending, err := dedupRepo.ListPendingReviews(ctx, tenant.String(), nil)
 	if err != nil {
 		t.Fatalf("ListPendingReviews: %v", err)
 	}

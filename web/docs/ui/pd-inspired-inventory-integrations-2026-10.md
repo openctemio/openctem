@@ -211,7 +211,7 @@ There are two builds of the asset list:
     - remediation-efficiency-per-SLA-tier card.
 - **Assets overview:** `/attack-surface` is the overview, and PR #857 (open) turns it into the EASM overview from `GET /easm/summary` (#839).
   - PD's "over time" charts need observation history, which is RFC-036 P4 / the inventory v2 RFC. `What changed` has 7/30/90-day state history only.
-- **Asset groups:** `/asset-groups` lists **static** groups.
+- **Asset groups:** `/assets/groups` lists **static** groups.
   - 6 of 10 live groups are quick-scan machine groups (Scoping IA C13).
   - There is no source, discovery duration or "last run". PD's groups are discovery runs per root domain; ours are containers.
 
@@ -349,6 +349,7 @@ Effort: XS < 1 day, S ≈ 2–3 days, M ≈ 1 week, L ≥ 2 weeks. Value is for 
    - For ≥ 3 dimensions the contract asks for the side `FacetFilterPanel`. `/assets` already has one, so the popover is a **second entry point onto the same URL state**, not a second filter system. D3 picks one.
 4. **Counts only when they are true.** A value count is shown only when it comes from the disjunctive facet query (§5.2). A zero is shown uncoloured. A value list is capped (top 50) with "search all values".
 5. **No defaults for missing facts.** "Status unknown", "Not collected" (no TLS probe ran) and "No TLS" (probe ran, plain HTTP) are three different states, and none of them is shown as healthy. This continues #829.
+   - Revised 2026-10-03: lists no longer show a dashed chip per unknown fact. An unknown fact is hidden in lists, named once in the drawer's "Not collected yet: …" line, and stays filterable where a facet has a "Not collected" value. Known negatives ("No TLS", "No open ports", "No technologies detected") are still shown. See `ui-style-contract.md` §7, "Unknown facts".
 6. **Screenshots are a view, not a tab.**
    - PD has a Screenshots tab. We put a `ViewSwitcher` (list | gallery) on Inventory instead, so filters and selection carry over.
    - The Assets tabs stay Inventory | Groups | What changed | Suggestions, plus **Policies** when that feature ships (inventory v2 RFC).

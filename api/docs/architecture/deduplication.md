@@ -31,6 +31,20 @@ The only database guard is `UNIQUE (tenant_id, fingerprint)`
 version produced a fingerprint: `partial_fingerprints` holds only
 `{"composite/base": …}` (**proven**, probe P15).
 
+**Since RFC-043 item 10 (migrations 000370–000371):** `findings.fingerprint`
+stays the current key, and `finding_fingerprints (tenant_id, fingerprint) →
+finding_id` holds every key a finding has had. Triggers on `findings` add the
+current key on insert and on every re-key, and keep the previous one; a finding
+merge (`asset_merge_findings.go`) records the loser's key and moves all its
+aliases to the survivor (`finding_fingerprints` is in `findingMergeRefs`).
+Ingest resolves incoming keys through `FindingRepository.ResolveFingerprintAliases`
+before the existence check, so a former key lands on the finding that carries it
+now; the sensor fingerprint check reports a former key as known. The alias
+references `findings (id, tenant_id)`, so it cannot name another tenant's
+finding, and every lookup is tenant-scoped. `findings.fingerprint_version` and
+`findings.identity_key` exist; every row is version 1 until the v2 recipes of
+item 11 land.
+
 What `ctis/fingerprint.GenerateAuto` keys on, per detected type
 (`ctis/fingerprint/fingerprint.go:112-213`, `DetectType` `:435-472`), given the
 fields the API fills in (`processor_findings.go:706-748`):

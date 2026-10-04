@@ -5,7 +5,7 @@ import { Cpu, CheckCircle, AlertTriangle, Shield, Zap, Network } from 'lucide-re
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import { toStringArray } from '@/features/assets/lib/property-utils'
 import { yesNoUnknown } from '@/features/assets/lib/honest-values'
-import { UnknownChip } from '@/features/assets/components/service-cells'
+import { EmptyCell } from '@/features/assets/components/service-cells'
 
 const runtimeColors: Record<string, string> = {
   nodejs: 'bg-green-500/10 text-green-500',
@@ -61,7 +61,7 @@ export const serverlessConfig: AssetPageConfig = {
       header: 'Provider',
       cell: ({ row }) => {
         const provider = row.original.metadata.cloud_provider as string | undefined
-        if (!provider) return <UnknownChip>Unknown</UnknownChip>
+        if (!provider) return <EmptyCell />
         return (
           <Badge variant="secondary" className={providerColors[provider]}>
             {provider.toUpperCase()}

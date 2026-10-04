@@ -985,3 +985,31 @@ func (m *mockFindingRepoForScope) GetActiveCVEStats(_ context.Context, _ shared.
 func (m *mockFindingRepoForScope) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
 	return nil, nil
 }
+
+func (m *mockAccessControlRepo) GetPrimaryUserOwnersByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]shared.ID, error) {
+	return map[shared.ID]shared.ID{}, nil
+}
+
+func (m *mockAccessControlRepo) FilterAssetsOwnedByUser(_ context.Context, _, _ shared.ID, _ []shared.ID) (map[shared.ID]bool, error) {
+	return map[shared.ID]bool{}, nil
+}
+
+func (m *mockAccessControlRepo) SyncOwnerRefOwner(_ context.Context, _, _ shared.ID, _ *shared.ID) error {
+	return nil
+}
+
+func (m *mockAccessControlRepo) GetAssetOwnerSource(_ context.Context, _ shared.ID) (string, error) {
+	return accesscontrol.AssignmentSourceManual, nil
+}
+
+func (m *mockAccessControlRepo) ListAssetAccessGrants(_ context.Context, _, _ shared.ID) ([]*accesscontrol.AssetAccessGrant, error) {
+	return nil, nil
+}
+
+func (m *mockAccessControlRepo) CreateAssetAccessGrant(_ context.Context, _, _, _ shared.ID, _ *shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	return nil, nil
+}
+
+func (m *mockAccessControlRepo) DeleteAssetAccessGrant(_ context.Context, _, _, _ shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	return nil, accesscontrol.ErrAccessGrantNotFound
+}

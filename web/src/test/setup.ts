@@ -78,6 +78,28 @@ vi.mock('next/headers', () => ({
   }
 }
 
+// Pointer capture: jsdom has none. Vaul (the phone DetailSheet) captures the
+// pointer on every press inside a drawer.
+if (typeof Element !== 'undefined' && !Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = () => {}
+  Element.prototype.releasePointerCapture = () => {}
+  Element.prototype.hasPointerCapture = () => false
+}
+// Vaul reads `getComputedStyle(el).transform || webkitTransform || mozTransform`
+// as a string; jsdom leaves all three empty or undefined (a browser says
+// `none`). Answer on the last, non-standard one so real values still win.
+if (
+  typeof CSSStyleDeclaration !== 'undefined' &&
+  !('mozTransform' in CSSStyleDeclaration.prototype)
+) {
+  Object.defineProperty(CSSStyleDeclaration.prototype, 'mozTransform', {
+    configurable: true,
+    get() {
+      return 'none'
+    },
+  })
+}
+
 // ============================================
 // ENVIRONMENT SETUP
 // ============================================

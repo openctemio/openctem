@@ -19,6 +19,19 @@ const (
 	OwnershipInformed OwnershipType = "informed"
 )
 
+// Values of asset_owners.assignment_source: who created the owner row.
+const (
+	// AssignmentSourceManual is an owner set by a person (the asset's Owners
+	// tab or a group's asset assignment).
+	AssignmentSourceManual = "manual"
+	// AssignmentSourceScopeRule is a group owner created by a group scope rule.
+	AssignmentSourceScopeRule = "scope_rule"
+	// AssignmentSourceOwnerRef is the primary user owner matched from the
+	// asset's owner_ref (an email of a tenant member). It follows owner_ref:
+	// it is replaced when owner_ref changes, and never grants data access.
+	AssignmentSourceOwnerRef = "owner_ref"
+)
+
 // AllOwnershipTypes returns all valid ownership types.
 func AllOwnershipTypes() []OwnershipType {
 	return []OwnershipType{

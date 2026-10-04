@@ -231,7 +231,14 @@ func (r *AssetStateHistoryRepository) List(ctx context.Context, tenantID shared.
 	if opts.To != nil {
 		conditions = append(conditions, fmt.Sprintf("h.changed_at <= $%d", argIdx))
 		args = append(args, *opts.To)
-		// argIdx not incremented — no further conditions
+		argIdx++
+	}
+
+	if opts.Scope != nil {
+		cond, scopeArgs := dataScopeCondAt("h.asset_id", opts.Scope, argIdx)
+		conditions = append(conditions, cond)
+		args = append(args, scopeArgs...)
+		argIdx += len(scopeArgs)
 	}
 
 	whereClause := ""
@@ -468,16 +475,18 @@ func (r *AssetStateHistoryRepository) GetChangesByUser(ctx context.Context, tena
 // =============================================================================
 
 // CountByType returns count of changes grouped by change type.
-func (r *AssetStateHistoryRepository) CountByType(ctx context.Context, tenantID shared.ID, since time.Time) (map[asset.StateChangeType]int, error) {
+func (r *AssetStateHistoryRepository) CountByType(ctx context.Context, tenantID shared.ID, since time.Time, scope *shared.DataScope) (map[asset.StateChangeType]int, error) {
+	scopeCond, args := dataScopeCond("asset_id", scope, []any{tenantID.String(), since})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT change_type, COUNT(*) as count
 		FROM asset_state_history
-		WHERE tenant_id = $1 AND changed_at >= $2
+		WHERE tenant_id = $1 AND changed_at >= $2 AND ` + scopeCond + `
 		GROUP BY change_type
 		ORDER BY count DESC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), since)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get change type counts: %w", err)
 	}
@@ -497,16 +506,18 @@ func (r *AssetStateHistoryRepository) CountByType(ctx context.Context, tenantID 
 }
 
 // CountBySource returns count of changes grouped by source.
-func (r *AssetStateHistoryRepository) CountBySource(ctx context.Context, tenantID shared.ID, since time.Time) (map[asset.ChangeSource]int, error) {
+func (r *AssetStateHistoryRepository) CountBySource(ctx context.Context, tenantID shared.ID, since time.Time, scope *shared.DataScope) (map[asset.ChangeSource]int, error) {
+	scopeCond, args := dataScopeCond("asset_id", scope, []any{tenantID.String(), since})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT COALESCE(source, 'unknown') as source, COUNT(*) as count
 		FROM asset_state_history
-		WHERE tenant_id = $1 AND changed_at >= $2
+		WHERE tenant_id = $1 AND changed_at >= $2 AND ` + scopeCond + `
 		GROUP BY source
 		ORDER BY count DESC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), since)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source counts: %w", err)
 	}
@@ -526,7 +537,9 @@ func (r *AssetStateHistoryRepository) CountBySource(ctx context.Context, tenantI
 }
 
 // GetActivityTimeline returns daily counts of changes over a time period.
-func (r *AssetStateHistoryRepository) GetActivityTimeline(ctx context.Context, tenantID shared.ID, from, to time.Time) ([]asset.DailyActivityCount, error) {
+func (r *AssetStateHistoryRepository) GetActivityTimeline(ctx context.Context, tenantID shared.ID, from, to time.Time, scope *shared.DataScope) ([]asset.DailyActivityCount, error) {
+	scopeCond, args := dataScopeCond("asset_id", scope, []any{tenantID.String(), from, to})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT
 			DATE(changed_at) as date,
@@ -537,12 +550,12 @@ func (r *AssetStateHistoryRepository) GetActivityTimeline(ctx context.Context, t
 			COUNT(*) FILTER (WHERE change_type NOT IN ('appeared', 'disappeared', 'recovered', 'exposure_changed', 'internet_exposure_changed')) as other_changes,
 			COUNT(*) as total
 		FROM asset_state_history
-		WHERE tenant_id = $1 AND changed_at >= $2 AND changed_at <= $3
+		WHERE tenant_id = $1 AND changed_at >= $2 AND changed_at <= $3 AND ` + scopeCond + `
 		GROUP BY DATE(changed_at)
 		ORDER BY date ASC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), from, to)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get activity timeline: %w", err)
 	}

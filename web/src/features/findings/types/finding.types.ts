@@ -185,7 +185,7 @@ export const STATUS_TRANSITIONS: Record<FindingStatus, FindingStatus[]> = {
   confirmed: ['in_progress', 'resolved', 'duplicate', 'false_positive', 'accepted'],
   // In progress
   in_progress: ['fix_applied', 'confirmed'],
-  // Fix applied — awaiting verification scan or manual security review
+  // Fix applied — awaiting a proof-of-fix retest or manual security review
   fix_applied: ['resolved', 'in_progress'],
   // Closed states (can reopen to confirmed)
   resolved: ['confirmed'],

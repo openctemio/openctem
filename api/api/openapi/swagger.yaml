@@ -4268,6 +4268,21 @@ definitions:
         description: For cross-account
         type: string
     type: object
+  github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings:
+    properties:
+      auto_enabled:
+        type: boolean
+      daily_cap:
+        description: |-
+          DailyCap bounds the auto retests queued for the tenant per 24 h.
+          0 = DefaultRetestDailyCap.
+        type: integer
+      interval_hours:
+        description: |-
+          IntervalHours is how often each eligible finding is retested.
+          0 = DefaultRetestIntervalHours.
+        type: integer
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_tenant.RiskLevelConfig:
     properties:
       critical_min:
@@ -4646,6 +4661,7 @@ definitions:
       asset_ids:
         items:
           type: string
+        maxItems: 1000
         minItems: 1
         type: array
     required:
@@ -5047,6 +5063,35 @@ definitions:
       introduced:
         type: string
       package:
+        type: string
+    type: object
+  internal_infra_http_handler.AssetAccessGrantListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.AssetAccessGrantResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_infra_http_handler.AssetAccessGrantResponse:
+    properties:
+      granted_at:
+        type: string
+      granted_by_name:
+        type: string
+      id:
+        type: string
+      source:
+        enum:
+        - manual
+        - migration
+        type: string
+      user_email:
+        type: string
+      user_id:
+        type: string
+      user_name:
         type: string
     type: object
   internal_infra_http_handler.AssetAttributionDecisionRequest:
@@ -6688,6 +6733,13 @@ definitions:
       updated_by:
         type: string
     type: object
+  internal_infra_http_handler.CreateAssetAccessGrantRequest:
+    properties:
+      user_id:
+        type: string
+    required:
+    - user_id
+    type: object
   internal_infra_http_handler.CreateAssetGroupRequest:
     properties:
       business_unit:
@@ -6703,6 +6755,7 @@ definitions:
       existing_asset_ids:
         items:
           type: string
+        maxItems: 1000
         type: array
       name:
         maxLength: 255
@@ -8678,6 +8731,16 @@ definitions:
         type: string
       misconfig_resource_type:
         type: string
+      network_port:
+        description: Port the finding was observed on (CTIS Finding.Network); absent
+          when not port-specific
+        type: integer
+      network_service:
+        description: Service on the port as the scanner named it (https, ssh, ...)
+        type: string
+      network_transport:
+        description: tcp, udp or sctp
+        type: string
       occurrence_count:
         type: integer
       owasp_ids:
@@ -8737,7 +8800,8 @@ definitions:
       secret_expires_at:
         type: string
       secret_fingerprint:
-        description: keyed hash of the reported value (HMAC under a per-tenant key derived from the platform secret), for dedup
+        description: keyed hash of the reported value (HMAC under a per-tenant key
+          derived from the platform secret), for dedup
         type: string
       secret_in_history_only:
         type: boolean
@@ -8836,6 +8900,44 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  internal_infra_http_handler.FindingRetestListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.FindingRetestResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.FindingRetestResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      deadline_at:
+        type: string
+      finding_id:
+        type: string
+      id:
+        type: string
+      outcome:
+        type: string
+      prior_status:
+        type: string
+      reason:
+        type: string
+      requested_by:
+        type: string
+      result_status:
+        type: string
+      status:
+        type: string
+      target:
+        type: string
+      template_id:
+        type: string
+      trigger:
+        type: string
     type: object
   internal_infra_http_handler.FindingSeverityResponse:
     properties:
@@ -9444,6 +9546,11 @@ definitions:
         description: |-
           AssetsLimited counts existing assets the report matched but was not
           allowed to change, because no command covering them stood behind it.
+        type: integer
+      assets_skipped_excluded:
+        description: |-
+          AssetsSkippedExcluded counts new assets not added because they match
+          an active scope exclusion; their findings are in findings_skipped.
         type: integer
       assets_updated:
         type: integer
@@ -11044,6 +11151,7 @@ definitions:
       asset_ids:
         items:
           type: string
+        maxItems: 1000
         minItems: 1
         type: array
     required:
@@ -11197,6 +11305,10 @@ definitions:
       scan_id:
         type: string
       scan_profile_id:
+        type: string
+      scheduled_for:
+        description: ScheduledFor is the schedule occurrence this run serves (scheduled
+          runs only).
         type: string
       skipped_steps:
         type: integer
@@ -11492,6 +11604,10 @@ definitions:
         type: string
       next_run_at:
         type: string
+      partial_runs:
+        description: 'PartialRuns: runs that kept results but lost some work (RFC-046
+          D5).'
+        type: integer
       pipeline_id:
         type: string
       profile_id:
@@ -14481,14 +14597,6 @@ definitions:
       updated_at:
         type: string
     type: object
-  internal_infra_http_handler.WSTokenResponse:
-    properties:
-      expires_in:
-        description: Seconds until expiration
-        type: integer
-      token:
-        type: string
-    type: object
   internal_infra_http_handler.remediationGroupsResponse:
     properties:
       groups:
@@ -17449,6 +17557,158 @@ paths:
       summary: Update asset
       tags:
       - Assets
+  /assets/{id}/access-grants:
+    get:
+      description: 'Lists the users given explicit data-scope access to the asset.
+        Owners are not listed: being an owner gives no access.'
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AssetAccessGrantListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List an asset's access grants
+      tags:
+      - Assets
+    post:
+      consumes:
+      - application/json
+      description: Puts the asset in the user's data scope. The user must be a member
+        of the organization. Audited.
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User to grant
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CreateAssetAccessGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AssetAccessGrantResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Grant a member access to an asset
+      tags:
+      - Assets
+  /assets/{id}/access-grants/{grant_id}:
+    delete:
+      description: Removes the asset from the user's data scope unless one of the
+        user's groups still gives access. Audited.
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Grant ID
+        in: path
+        name: grant_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke an access grant
+      tags:
+      - Assets
   /assets/{id}/activate:
     post:
       description: Activates an asset
@@ -19138,27 +19398,6 @@ paths:
               type: string
             type: object
       summary: Verify email
-      tags:
-      - Authentication
-  /auth/ws-token:
-    get:
-      description: Returns a short-lived token for WebSocket authentication
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.WSTokenResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Get WebSocket token
       tags:
       - Authentication
   /commands:
@@ -22012,6 +22251,79 @@ paths:
       summary: Get finding data flows
       tags:
       - Findings
+  /findings/{id}/retests:
+    get:
+      description: The finding's retest history, newest first (RFC-039).
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Max items (1-100, default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingRetestListResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: A finding's retests
+      tags:
+      - Findings
+    post:
+      description: 'Re-runs the nuclei template that produced the finding against
+        its own target, with a reachability probe of the same target (RFC-039). The
+        result is applied asynchronously: fixed resolves the finding, still present
+        keeps it (or reopens a resolved one), and an unreachable target is "unknown"
+        and changes nothing. Requires findings:verify; out-of-scope findings are 404.'
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingRetestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Retest a finding now
+      tags:
+      - Findings
   /findings/{id}/severity:
     patch:
       consumes:
@@ -24353,6 +24665,63 @@ paths:
       summary: Get unread notification count
       tags:
       - notifications
+  /organization/settings/retest:
+    get:
+      description: The tenant's auto-retest settings (RFC-039). auto_enabled is false
+        until an admin turns it on; zero interval/cap mean the defaults (24 h, 200
+        per day).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get auto-retest settings
+      tags:
+      - Tenants
+    put:
+      consumes:
+      - application/json
+      description: Turns auto-retest on or off and sets its interval (6–168 h) and
+        daily cap (1–2000). Audited.
+      parameters:
+      - description: Auto-retest settings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update auto-retest settings
+      tags:
+      - Tenants
   /permission-sets:
     get:
       description: List all permission sets for the tenant

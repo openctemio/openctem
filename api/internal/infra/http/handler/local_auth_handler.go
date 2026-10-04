@@ -26,16 +26,12 @@ type LocalAuthHandler struct {
 	authService    *app.AuthService
 	sessionService *app.SessionService
 	emailService   *app.EmailService
-	// F-8: optional single-use WS ticket service. When non-nil, GetWSToken
-	// returns an opaque ticket instead of a JWT, eliminating query-string
-	// replay risk.
-	wsTicketService *app.WSTicketService
-	platformAdmin   PlatformAdminChecker
-	authConfig      config.AuthConfig
-	cookieConfig    CookieConfig
-	csrfConfig      middleware.CSRFConfig
-	validator       *validator.Validator
-	logger          *logger.Logger
+	platformAdmin  PlatformAdminChecker
+	authConfig     config.AuthConfig
+	cookieConfig   CookieConfig
+	csrfConfig     middleware.CSRFConfig
+	validator      *validator.Validator
+	logger         *logger.Logger
 }
 
 // NewLocalAuthHandler creates a new LocalAuthHandler.
@@ -58,12 +54,6 @@ func NewLocalAuthHandler(
 		validator:      validator.New(),
 		logger:         log.With("handler", "local_auth"),
 	}
-}
-
-// SetWSTicketService wires the single-use WebSocket ticket service (F-8).
-// When configured, GetWSToken returns an opaque ticket instead of a JWT.
-func (h *LocalAuthHandler) SetWSTicketService(svc *app.WSTicketService) {
-	h.wsTicketService = svc
 }
 
 // RegisterRequest is the request body for user registration.
@@ -1103,75 +1093,6 @@ type AuthInfoResponse struct {
 	Provider             string `json:"provider"`
 	RegistrationEnabled  bool   `json:"registration_enabled"`
 	EmailVerificationReq bool   `json:"email_verification_required"`
-}
-
-// WSTokenResponse is the response body for WebSocket token.
-type WSTokenResponse struct {
-	Token     string `json:"token"`
-	ExpiresIn int64  `json:"expires_in"` // Seconds until expiration
-}
-
-// GetWSToken returns a short-lived token for WebSocket authentication.
-// This is needed because WebSocket connections cannot use httpOnly cookies
-// when the connection is cross-origin (different port in development).
-// The token is valid for 30 seconds - just enough time to establish the connection.
-// @Summary      Get WebSocket token
-// @Description  Returns a short-lived token for WebSocket authentication
-// @Tags         Authentication
-// @Produce      json
-// @Security     BearerAuth
-// @Success      200  {object}  WSTokenResponse
-// @Failure      401  {object}  map[string]string
-// @Router       /auth/ws-token [get]
-func (h *LocalAuthHandler) GetWSToken(w http.ResponseWriter, r *http.Request) {
-	userID := middleware.GetUserID(r.Context())
-	tenantID := middleware.GetTenantID(r.Context())
-
-	if userID == "" || tenantID == "" {
-		apierror.Unauthorized("Authentication required").WriteJSON(w)
-		return
-	}
-
-	// F-8: prefer the single-use ticket path. The ticket is an opaque
-	// 64-hex string with no embedded claims — capturing it after
-	// redemption is useless because it has already been DEL'd from Redis.
-	// Clients pass it as ?ticket=<ticket> on the WS upgrade.
-	if h.wsTicketService != nil {
-		ticket, err := h.wsTicketService.IssueTicket(r.Context(), userID, tenantID)
-		if err != nil {
-			h.logger.Error("failed to issue WS ticket", "error", err)
-			apierror.InternalError(err).WriteJSON(w)
-			return
-		}
-		resp := WSTokenResponse{
-			Token:     ticket,
-			ExpiresIn: int64(h.wsTicketService.TTLSeconds()),
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
-		return
-	}
-
-	// Fallback (only when Redis/WSTicket is not configured). This path
-	// still issues a short-lived JWT — operators running without Redis
-	// MUST treat WebSocket URLs as equivalent to short-lived credentials
-	// in access logs.
-	token, err := h.authService.GenerateWSToken(r.Context(), userID, tenantID)
-	if err != nil {
-		h.logger.Error("failed to generate WS token", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	resp := WSTokenResponse{
-		Token:     token,
-		ExpiresIn: 30, // 30 seconds
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Info returns authentication provider information.

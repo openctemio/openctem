@@ -377,6 +377,9 @@ type ListStateHistoryOptions struct {
 	// AssetInternetFacing keeps only changes of assets that are currently
 	// internet-facing (true) or not (false).
 	AssetInternetFacing *bool
+	// Scope, when non-nil, keeps only changes of assets in the caller's
+	// data scope.
+	Scope *shared.DataScope
 
 	// Pagination
 	Limit  int

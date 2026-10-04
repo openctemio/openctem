@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_asset_owners_user;

@@ -40,7 +40,7 @@ import {
 } from '@/lib/api/scan-types'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { formatScanDate } from '../lib/format'
+import { formatScanDate, scanSuccessRate } from '../lib/format'
 
 type Tab = 'overview' | 'config' | 'details'
 const TABS: DetailTab<Tab>[] = [
@@ -211,13 +211,9 @@ function RunControls({ config }: { config: ScanConfig }) {
 }
 
 function Overview({ config }: { config: ScanConfig }) {
-  const successRate = useMemo(
-    () =>
-      config.total_runs === 0
-        ? null
-        : Math.round((config.successful_runs / config.total_runs) * 100),
-    [config.total_runs, config.successful_runs]
-  )
+  // The same formula as the scan list and the scan page (scanSuccessRate).
+  const successRate = useMemo(() => scanSuccessRate(config), [config])
+  const settled = config.successful_runs + (config.partial_runs ?? 0) + config.failed_runs
   return (
     <div className="space-y-5">
       <DetailStatGrid aria-label="Key numbers">
@@ -227,12 +223,13 @@ function Overview({ config }: { config: ScanConfig }) {
           meter={
             successRate === null
               ? undefined
-              : { value: config.successful_runs, max: config.total_runs, label: 'Successful runs' }
+              : { value: config.successful_runs, max: settled, label: 'Successful runs' }
           }
           caption={SCAN_CONFIG_STATUS_LABELS[config.status]}
         />
         <DetailStat label="Total runs" value={config.total_runs} />
         <DetailStat label="Successful" value={config.successful_runs} />
+        <DetailStat label="Partial" value={config.partial_runs ?? 0} />
         <DetailStat
           label="Failed"
           value={config.failed_runs}

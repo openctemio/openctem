@@ -6,19 +6,33 @@ import (
 	"net/http"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // AssetOwnerHandler handles asset ownership HTTP requests.
+//
+// Being an owner is an assignment (accountability) only: a user owner gains no
+// data access. A group owner is the group's asset assignment, which is the
+// group data-scope path, so adding or removing a group owner also needs
+// team:groups:write. A user's direct access is an explicit access grant
+// (/assets/{id}/access-grants, team:groups:read / team:groups:write).
 type AssetOwnerHandler struct {
-	repo      accesscontrol.Repository
-	assetRepo asset.Repository
-	logger    *logger.Logger
+	repo         accesscontrol.Repository
+	assetRepo    asset.Repository
+	auditService *auditapp.AuditService
+	logger       *logger.Logger
+}
+
+// SetAuditService wires the audit logger for access grant changes. Nil-safe.
+func (h *AssetOwnerHandler) SetAuditService(svc *auditapp.AuditService) {
+	h.auditService = svc
 }
 
 // NewAssetOwnerHandler creates a new asset owner handler.
@@ -89,6 +103,10 @@ type AssetOwnerResponse struct {
 	OwnershipType  string    `json:"ownership_type"`
 	AssignedAt     time.Time `json:"assigned_at"`
 	AssignedByName *string   `json:"assigned_by_name,omitempty"`
+	// AssignmentSource says who created the row: manual (a person),
+	// scope_rule (a group scope rule) or owner_ref (matched from the asset's
+	// owner reference; removing it clears the owner reference).
+	AssignmentSource string `json:"assignment_source" enums:"manual,scope_rule,owner_ref"`
 }
 
 // UpdateAssetOwnerRequest represents the request to update an owner's type.
@@ -128,9 +146,10 @@ func (h *AssetOwnerHandler) ListOwners(w http.ResponseWriter, r *http.Request) {
 	data := make([]AssetOwnerResponse, 0, len(owners))
 	for _, o := range owners {
 		resp := AssetOwnerResponse{
-			ID:            o.ID().String(),
-			OwnershipType: o.OwnershipType().String(),
-			AssignedAt:    o.AssignedAt(),
+			ID:               o.ID().String(),
+			OwnershipType:    o.OwnershipType().String(),
+			AssignedAt:       o.AssignedAt(),
+			AssignmentSource: o.AssignmentSource,
 		}
 
 		if o.UserID() != nil {
@@ -253,6 +272,13 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
+		// A group owner is the group's asset assignment: its members see the
+		// asset. That is an access-control change, so it needs the groups
+		// permission, not only assets:write.
+		if !middleware.HasPermission(r.Context(), permission.GroupsWrite.String()) {
+			apierror.Forbidden("Adding a group as owner gives its members access to the asset; it requires team:groups:write").WriteJSON(w)
+			return
+		}
 		groupID, err := shared.IDFromString(*req.GroupID)
 		if err != nil {
 			apierror.BadRequest("Invalid group_id").WriteJSON(w)
@@ -286,15 +312,8 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refresh access for direct user ownership
-	if req.UserID != nil {
-		userID, _ := shared.IDFromString(*req.UserID)
-		if refreshErr := h.repo.RefreshAccessForDirectOwnerAdd(r.Context(), parsedAssetID, userID, req.OwnershipType); refreshErr != nil {
-			h.logger.Warn("failed to refresh access for direct owner add", "error", refreshErr)
-		}
-	}
-
-	// Refresh access for group ownership
+	// A user owner gains no data access (owner decision O1). A group owner
+	// is the group's asset assignment: refresh its members' access.
 	if req.GroupID != nil {
 		groupID, _ := shared.IDFromString(*req.GroupID)
 		if refreshErr := h.repo.RefreshAccessForAssetAssign(r.Context(), groupID, parsedAssetID, req.OwnershipType); refreshErr != nil {
@@ -412,6 +431,18 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if ao.GroupID() != nil && !middleware.HasPermission(r.Context(), permission.GroupsWrite.String()) {
+		apierror.Forbidden("Removing a group owner removes its members' access to the asset; it requires team:groups:write").WriteJSON(w)
+		return
+	}
+
+	source, err := h.repo.GetAssetOwnerSource(r.Context(), parsedOwnerID)
+	if err != nil {
+		h.logger.Error("failed to get asset owner source", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
 	if err := h.repo.DeleteAssetOwnerByID(r.Context(), parsedOwnerID); err != nil {
 		if errors.Is(err, accesscontrol.ErrAssetOwnerNotFound) {
 			apierror.NotFound("Asset owner").WriteJSON(w)
@@ -422,12 +453,14 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Refresh access after removal
-	if ao.UserID() != nil {
-		if refreshErr := h.repo.RefreshAccessForDirectOwnerRemove(r.Context(), ao.AssetID(), *ao.UserID()); refreshErr != nil {
-			h.logger.Warn("failed to refresh access for direct owner remove", "error", refreshErr)
-		}
+	// An owner matched from the asset's owner_ref would be matched again by
+	// the owner-resolution controller, so removing it clears owner_ref too.
+	if source == accesscontrol.AssignmentSourceOwnerRef {
+		h.clearOwnerRef(r, ao.AssetID())
 	}
+
+	// Removing a user owner changes no access. Removing a group owner removes
+	// the group's assignment: refresh its members' access.
 	if ao.GroupID() != nil {
 		if refreshErr := h.repo.RefreshAccessForAssetUnassign(r.Context(), *ao.GroupID(), ao.AssetID()); refreshErr != nil {
 			h.logger.Warn("failed to refresh access for group owner remove", "error", refreshErr)
@@ -435,4 +468,25 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// clearOwnerRef empties the asset's owner reference after its derived owner
+// was removed. Best-effort: the owner row is already gone.
+func (h *AssetOwnerHandler) clearOwnerRef(r *http.Request, assetID shared.ID) {
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		return
+	}
+	a, err := h.assetRepo.GetByID(r.Context(), tenantID, assetID)
+	if err != nil {
+		h.logger.Warn("failed to load asset to clear owner_ref", "asset_id", assetID.String(), "error", err)
+		return
+	}
+	if a.OwnerRef() == "" {
+		return
+	}
+	a.SetOwnerRef("")
+	if err := h.assetRepo.Update(r.Context(), a); err != nil {
+		h.logger.Warn("failed to clear owner_ref", "asset_id", assetID.String(), "error", err)
+	}
 }

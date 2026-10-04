@@ -10,14 +10,14 @@ import {
   ChipRow,
   FactChip,
   OpenPortChips,
-  UnknownChip,
+  EmptyCell,
 } from '@/features/assets/components/service-cells'
-
-const unknownText = (text = 'Unknown') => <span className="text-muted-foreground">{text}</span>
 
 // ASN and open ports come from `ip_address.{asn,asn_org,ports[]}` (ingest)
 // or the manual form's flat `asn` / `asn_organization` / `open_ports`, read
-// through service-facts. "Ports not collected" is not "no open ports".
+// through service-facts. No port scan (`null`) is not "no open ports" (`[]`):
+// the first is an empty cell in the list and named in the drawer's "Not
+// collected yet" line, the second is shown as "No open ports".
 
 // Helper to determine if IP is public or private
 function isPublicIp(address: string): boolean {
@@ -58,10 +58,10 @@ export const ipAddressesConfig: AssetPageConfig = {
       header: 'ASN / Organization',
       cell: ({ row }) => {
         const { asn, org } = asnInfo(row.original)
-        if (!asn && !org) return <UnknownChip>Not collected</UnknownChip>
+        if (!asn && !org) return <EmptyCell />
         return (
           <div className="min-w-0 max-w-[200px]">
-            <p className="font-mono text-sm">{asn ?? unknownText()}</p>
+            {asn && <p className="font-mono text-sm">{asn}</p>}
             {org && (
               <p className="truncate text-xs text-muted-foreground" title={org}>
                 {org}
@@ -88,7 +88,7 @@ export const ipAddressesConfig: AssetPageConfig = {
       header: 'Open Ports',
       cell: ({ row }) => (
         <ChipRow className="max-w-[240px]">
-          <OpenPortChips asset={row.original} max={3} />
+          <OpenPortChips asset={row.original} max={3} fallback={<EmptyCell />} />
         </ChipRow>
       ),
     },
@@ -183,18 +183,20 @@ export const ipAddressesConfig: AssetPageConfig = {
         },
         {
           label: 'ASN',
-          getValue: (asset: Asset) => asnInfo(asset).asn ?? unknownText(),
+          getValue: (asset: Asset) => asnInfo(asset).asn,
+          notCollected: 'ASN',
         },
         {
           label: 'Organization',
-          getValue: (asset: Asset) => asnInfo(asset).org ?? unknownText(),
+          getValue: (asset: Asset) => asnInfo(asset).org,
+          notCollected: 'organization',
         },
         {
           label: 'Open Ports',
           fullWidth: true,
           getValue: (asset: Asset) => {
             const ports = openPorts(asset)
-            if (ports === null) return <UnknownChip>Not collected</UnknownChip>
+            if (ports === null) return null
             if (ports.length === 0) return <span className="text-muted-foreground">None open</span>
             return (
               <ChipRow>
@@ -207,6 +209,7 @@ export const ipAddressesConfig: AssetPageConfig = {
               </ChipRow>
             )
           },
+          notCollected: 'open ports',
         },
       ],
     },

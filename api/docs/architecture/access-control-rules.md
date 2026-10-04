@@ -63,7 +63,21 @@ Automatically assign assets to groups based on asset properties, giving group me
 | `tag_match` | Match assets by their tags | `any` (OR) or `all` (AND) |
 | `asset_group_match` | Match assets by asset group membership | OR logic (any group match) |
 
+### Ownership and access
+
+Scope rules write **group** rows in `asset_owners`; those are a group's asset
+assignment and give the group's members access. A **user** owner row (Owners
+tab, `owner_ref` match) is an assignment only and gives no access (owner
+decision O1, 2026-10-03). A single user's access to a single asset is an
+explicit grant in `asset_access_grants` (`/api/v1/assets/{id}/access-grants`,
+`team:groups:write`). `user_accessible_assets` = group assignments ∪ grants;
+see the data-scope section of [authorization-matrix.md](authorization-matrix.md)
+and [asset-ownership.md](asset-ownership.md).
+
 ### Ownership Types
+
+For a **group** owner (the access columns describe the group's members; a
+user owner gets no access from any type):
 
 | Type | Full Access | View Access | Description |
 |------|------------|-------------|-------------|

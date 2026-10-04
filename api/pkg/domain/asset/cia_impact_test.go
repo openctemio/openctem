@@ -87,7 +87,7 @@ func TestSetImpactRatings(t *testing.T) {
 func TestReconstituteRoundTripsCIA(t *testing.T) {
 	now := time.Now().UTC()
 	a := Reconstitute(
-		shared.NewID(), shared.NewID(), nil, nil,
+		shared.NewID(), shared.NewID(), nil,
 		"recon.example.com", AssetTypeHost, CriticalityMedium,
 		StatusActive, ScopeInternal, ExposurePrivate,
 		0, 0, "", nil, nil,

@@ -1,4 +1,5 @@
 import type { PipelineRun } from '@/lib/api/scan-types'
+import { scanSuccessRate } from './format'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -28,19 +29,33 @@ export function runTriggeredByLabel(
  * The run counts on a scan's page. The scan's own counters (total, successful,
  * failed) are bumped when a run FINISHES, so a scan whose first run is still
  * going read "Total runs 0" above a run history showing that run. Total adds
- * the runs in progress; successful and failed stay finished-only.
+ * the runs in progress; successful, partial and failed stay finished-only.
+ * successRate is scanSuccessRate (null before any run settled), the same
+ * number the scan list shows.
  */
 export function scanRunCounts(
-  config: { total_runs: number; successful_runs: number; failed_runs: number },
+  config: {
+    total_runs: number
+    successful_runs: number
+    failed_runs: number
+    partial_runs?: number
+  },
   recentRuns: { status: string }[]
-): { total: number; inProgress: number; successful: number; failed: number; successRate: number } {
+): {
+  total: number
+  inProgress: number
+  successful: number
+  partial: number
+  failed: number
+  successRate: number | null
+} {
   const inProgress = recentRuns.filter(isRunInProgress).length
-  const finished = config.total_runs
   return {
-    total: finished + inProgress,
+    total: config.total_runs + inProgress,
     inProgress,
     successful: config.successful_runs,
+    partial: config.partial_runs ?? 0,
     failed: config.failed_runs,
-    successRate: finished > 0 ? Math.round((config.successful_runs / finished) * 100) : 0,
+    successRate: scanSuccessRate(config),
   }
 }

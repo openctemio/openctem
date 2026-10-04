@@ -14,17 +14,21 @@ const (
 	StepRunStatusQueued    StepRunStatus = "queued"
 	StepRunStatusRunning   StepRunStatus = "running"
 	StepRunStatusCompleted StepRunStatus = "completed"
-	StepRunStatusFailed    StepRunStatus = "failed"
-	StepRunStatusSkipped   StepRunStatus = "skipped"
-	StepRunStatusCanceled  StepRunStatus = "canceled"
-	StepRunStatusTimeout   StepRunStatus = "timeout"
+	// StepRunStatusPartial: a batched step where some batches completed and
+	// some failed. Its results are kept and it unblocks dependent steps
+	// (RFC-046 D5).
+	StepRunStatusPartial  StepRunStatus = "partial"
+	StepRunStatusFailed   StepRunStatus = "failed"
+	StepRunStatusSkipped  StepRunStatus = "skipped"
+	StepRunStatusCanceled StepRunStatus = "canceled"
+	StepRunStatusTimeout  StepRunStatus = "timeout"
 )
 
 // IsValid checks if the step run status is valid.
 func (s StepRunStatus) IsValid() bool {
 	switch s {
 	case StepRunStatusPending, StepRunStatusQueued, StepRunStatusRunning,
-		StepRunStatusCompleted, StepRunStatusFailed, StepRunStatusSkipped,
+		StepRunStatusCompleted, StepRunStatusPartial, StepRunStatusFailed, StepRunStatusSkipped,
 		StepRunStatusCanceled, StepRunStatusTimeout:
 		return true
 	}
@@ -34,16 +38,31 @@ func (s StepRunStatus) IsValid() bool {
 // IsTerminal checks if the status is terminal.
 func (s StepRunStatus) IsTerminal() bool {
 	switch s {
-	case StepRunStatusCompleted, StepRunStatusFailed, StepRunStatusSkipped,
+	case StepRunStatusCompleted, StepRunStatusPartial, StepRunStatusFailed, StepRunStatusSkipped,
 		StepRunStatusCanceled, StepRunStatusTimeout:
 		return true
 	}
 	return false
 }
 
+// ErrStepRunAlreadyFinished is returned when a write would move a step run that
+// already reached a terminal state (completed, partial, failed, skipped,
+// canceled, timeout). Like a run, a finished step is final: a duplicate or late sensor
+// result, a cancel or timeout racing a completion, or a stale in-memory copy
+// must not reopen it, re-queue it or overwrite its outcome and findings count.
+var ErrStepRunAlreadyFinished = shared.NewDomainError("STEP_RUN_ALREADY_FINISHED",
+	"step run has already finished", shared.ErrConflict)
+
 // IsSuccess checks if the status indicates success.
 func (s StepRunStatus) IsSuccess() bool {
 	return s == StepRunStatusCompleted
+}
+
+// ProducedResults reports whether a finished step produced results its
+// dependents can build on: completed, or partial (some batches failed, the
+// others' results are kept).
+func (s StepRunStatus) ProducedResults() bool {
+	return s == StepRunStatusCompleted || s == StepRunStatusPartial
 }
 
 // StepRun represents an execution of a pipeline step.
@@ -136,6 +155,17 @@ func (sr *StepRun) Complete(findingsCount int, output map[string]any) {
 	if output != nil {
 		sr.Output = output
 	}
+}
+
+// Partial marks a batched step that kept some batches' results and lost
+// others. message says how many batches failed and why.
+func (sr *StepRun) Partial(findingsCount int, message, errorCode string) {
+	now := time.Now()
+	sr.CompletedAt = &now
+	sr.Status = StepRunStatusPartial
+	sr.FindingsCount = findingsCount
+	sr.ErrorMessage = message
+	sr.ErrorCode = errorCode
 }
 
 // Fail marks the step as failed.

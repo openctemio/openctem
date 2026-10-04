@@ -28,6 +28,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { AssigneeSelect } from '@/features/findings/components/assignee-select'
 import { useRemediationCampaigns } from '@/features/remediation/api/use-remediation-campaigns'
+import { progressPercent } from '@/features/remediation/lib/campaign-completion'
 
 interface LinkFindingsToRemediationDialogProps {
   open: boolean
@@ -247,8 +248,8 @@ export function LinkFindingsToRemediationDialog({
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{c.name}</p>
                       <p className="text-muted-foreground text-xs">
-                        {c.finding_count} finding{c.finding_count === 1 ? '' : 's'} · {c.progress}%
-                        done
+                        {c.finding_count} finding{c.finding_count === 1 ? '' : 's'} ·{' '}
+                        {progressPercent(c.progress)}% done
                       </p>
                     </div>
                     <Badge variant="outline" className="shrink-0 capitalize">

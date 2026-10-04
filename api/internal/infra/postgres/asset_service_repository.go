@@ -234,7 +234,14 @@ func (r *AssetServiceRepository) List(ctx context.Context, tenantID shared.ID, o
 		conditions = append(conditions, fmt.Sprintf("s.product ILIKE $%d", argIdx))
 		// Escape LIKE special characters to prevent pattern injection
 		args = append(args, "%"+escapeLikePattern(*opts.Product)+"%")
-		// argIdx not incremented — no further conditions
+		argIdx++
+	}
+
+	if opts.Scope != nil {
+		cond, scopeArgs := dataScopeCondAt("s.asset_id", opts.Scope, argIdx)
+		conditions = append(conditions, cond)
+		args = append(args, scopeArgs...)
+		argIdx += len(scopeArgs)
 	}
 
 	whereClause := ""
@@ -509,11 +516,12 @@ func (r *AssetServiceRepository) UpdateFindingCounts(ctx context.Context, counts
 // =============================================================================
 
 // CountByTenant returns the total number of services for a tenant.
-func (r *AssetServiceRepository) CountByTenant(ctx context.Context, tenantID shared.ID) (int64, error) {
-	query := `SELECT COUNT(*) FROM asset_services WHERE tenant_id = $1`
+func (r *AssetServiceRepository) CountByTenant(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error) {
+	scopeCond, args := dataScopeCond("asset_id", scope, []any{tenantID.String()})
+	query := `SELECT COUNT(*) FROM asset_services WHERE tenant_id = $1 AND ` + scopeCond
 
 	var count int64
-	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(&count)
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count services: %w", err)
 	}
@@ -535,11 +543,12 @@ func (r *AssetServiceRepository) CountByAsset(ctx context.Context, tenantID, ass
 }
 
 // CountPublic returns the number of public services for a tenant.
-func (r *AssetServiceRepository) CountPublic(ctx context.Context, tenantID shared.ID) (int64, error) {
-	query := `SELECT COUNT(*) FROM asset_services WHERE tenant_id = $1 AND is_public = true`
+func (r *AssetServiceRepository) CountPublic(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error) {
+	scopeCond, args := dataScopeCond("asset_id", scope, []any{tenantID.String()})
+	query := `SELECT COUNT(*) FROM asset_services WHERE tenant_id = $1 AND is_public = true AND ` + scopeCond
 
 	var count int64
-	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(&count)
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count public services: %w", err)
 	}
@@ -548,16 +557,18 @@ func (r *AssetServiceRepository) CountPublic(ctx context.Context, tenantID share
 }
 
 // GetServiceTypeCounts returns count of services grouped by service type.
-func (r *AssetServiceRepository) GetServiceTypeCounts(ctx context.Context, tenantID shared.ID) (map[asset.ServiceType]int, error) {
+func (r *AssetServiceRepository) GetServiceTypeCounts(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[asset.ServiceType]int, error) {
+	scopeCond, args := dataScopeCond("asset_id", scope, []any{tenantID.String()})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT service_type, COUNT(*) as count
 		FROM asset_services
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ` + scopeCond + `
 		GROUP BY service_type
 		ORDER BY count DESC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get service type counts: %w", err)
 	}
@@ -577,17 +588,19 @@ func (r *AssetServiceRepository) GetServiceTypeCounts(ctx context.Context, tenan
 }
 
 // GetPortCounts returns count of services grouped by port (top N).
-func (r *AssetServiceRepository) GetPortCounts(ctx context.Context, tenantID shared.ID, topN int) (map[int]int, error) {
+func (r *AssetServiceRepository) GetPortCounts(ctx context.Context, tenantID shared.ID, topN int, scope *shared.DataScope) (map[int]int, error) {
+	scopeCond, args := dataScopeCond("asset_id", scope, []any{tenantID.String(), topN})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT port, COUNT(*) as count
 		FROM asset_services
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ` + scopeCond + `
 		GROUP BY port
 		ORDER BY count DESC
 		LIMIT $2
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), topN)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get port counts: %w", err)
 	}

@@ -88,7 +88,8 @@ API connector already uses (`pkg/httpsec`).
 | Seeds / organisation model | **Missing** | — |
 | Attribution confidence and evidence on assets | **Missing** (`asset_sources` has a confidence column but no writer) | migration 000014 |
 | Passive sources other than crt.sh; cloud connectors | **Missing** (providers declared, no clients) | `pkg/domain/integration/entity.go` |
-| Subdomain takeover, email security (SPF/DMARC), open buckets, lookalike domains | **Missing** | — |
+| Subdomain takeover (DNS part), email security (SPF/DMARC/MTA-STS/TLS-RPT) | **Built** (RFC-036 P1): daily DNS-only checks, [easm-dns-checks.md](easm-dns-checks.md) | `internal/app/easmdns` |
+| Takeover confirmation on sensors, open buckets, lookalike domains | **Missing** | — |
 | Chained discovery pipeline (step output → next step input) | **Missing** (steps share one context) | `internal/app/pipeline/run.go` |
 | Change facets beyond appear/disappear/exposure (DNS, ports, certs) | **Missing**: `dns_change`, `port_closed`, `service_changed`, `subdomain_removed` have no producer | `pkg/domain/exposure/value_objects.go` |
 | Hosted scanning from published IP ranges | **Missing**: `CanUsePlatformSensors` is false in OSS | `internal/app/adapters.go` |

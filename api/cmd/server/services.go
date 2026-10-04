@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
+	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -39,6 +40,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
+	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
@@ -58,6 +60,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/storage"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
@@ -496,25 +499,6 @@ type wsHubBroadcaster struct {
 	hub *websocket.Hub
 }
 
-// wsTicketStore is an adapter exposing only the Get/Set/Del surface that the
-// WS ticket service needs — keeps that service decoupled from the full Redis
-// client surface. F-8.
-type wsTicketStore struct {
-	rc *redis.Client
-}
-
-func newWSTicketStore(rc *redis.Client) *wsTicketStore {
-	return &wsTicketStore{rc: rc}
-}
-
-func (s *wsTicketStore) Set(ctx context.Context, key, value string, ttl time.Duration) error {
-	return s.rc.Set(ctx, key, value, ttl)
-}
-
-func (s *wsTicketStore) GetDel(ctx context.Context, key string) (string, bool, error) {
-	return s.rc.GetDel(ctx, key)
-}
-
 func (b *wsHubBroadcaster) BroadcastActivity(channel string, data any, tenantID string) {
 	b.hub.BroadcastEvent(channel, data, tenantID)
 }
@@ -589,6 +573,7 @@ type Services struct {
 	ThreatIntel      *threat.IntelService
 	CTEMID           *ctemidapp.Service
 	CertMonitor      *certmonitorapp.Service
+	EASMDNS          *easmdnsapp.Service
 	CredentialImport *app.CredentialImportService
 
 	// Components & Branches
@@ -709,6 +694,8 @@ type Services struct {
 	// Validation (CTEM Stage-4): proof-of-fix / technique-execution evidence
 	// recorded by sensors, reconciling finding status from the outcome.
 	ValidationEvidence *validation.EvidenceIngestService
+	// Retest runs continuous retests (RFC-039): Retest now, settle, auto ticks.
+	Retest *retestapp.Service
 
 	// ValidationRun dispatches validation (safe-check) jobs for findings.
 	ValidationRun *validation.RunService
@@ -739,7 +726,6 @@ type Services struct {
 	// WebSocket
 	WebSocketHub *websocket.Hub
 	// F-8: Single-use ticket service used by WS upgrade auth.
-	WSTicket *app.WSTicketService
 	// SessionRevocations rejects access tokens of signed-out sessions
 	// immediately (nil without Redis).
 	SessionRevocations *redis.SessionRevocationStore
@@ -896,7 +882,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.ThreatModel, s.AttackSurface, repos.Asset, repos.AssetRelationship,
 		repos.AttackerProfileReader, repos.Finding, log)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
+	s.AssetRelationship.SetDataScope(s.DataScope)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
+	s.RelationshipSuggestion.SetDataScope(s.DataScope)
 	s.AssetImport = app.NewAssetImportService(repos.Asset, log)
 
 	// Initialize finding source service (read-only system configuration)
@@ -952,11 +940,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, repos.Exposure, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
+	// Excluded names are neither queried nor discovered (RFC-042 F16).
+	s.CertMonitor.SetExclusions(s.Scope)
 	s.CertMonitor.SetStateStore(repos.CTMonitorState)
 	s.CertMonitor.SetCertSpotterFallback(cfg.Worker.CertMonitorCertSpotterURL)
 	// Re-check a little under the sweep interval: the next scheduled run
 	// re-queries, an API restart in between does not.
 	s.CertMonitor.SetLimits(cfg.Worker.CertMonitorMaxDomainsPerRun, cfg.Worker.CertMonitorInterval*5/6)
+	// DNS-only EASM checks (RFC-036 P1): dangling CNAME/NS, email posture.
+	if cfg.Worker.EASMDNSChecksEnabled {
+		dnsClient, err := dnsprobe.New(dnsprobe.Config{Server: cfg.Worker.EASMDNSResolver, QPS: cfg.Worker.EASMDNSQPS})
+		if err != nil {
+			log.Warn("EASM DNS checks disabled: no resolver", "error", err)
+		} else {
+			s.EASMDNS = easmdnsapp.NewService(dnsClient, repos.EASMDNS, repos.Exposure, log)
+			s.EASMDNS.SetLimits(cfg.Worker.EASMDNSMaxNamesPerRun, cfg.Worker.EASMDNSInterval*5/6)
+		}
+	}
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 	// Leaked-credential secrets are sealed with the platform credential key
 	// on every write path, and the fingerprint HMAC is keyed from it.
@@ -1198,11 +1198,30 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// path.
 	s.Simulation.SetSafeCheckDispatcher(s.ValidationRun)
 
+	// Continuous retest (RFC-039): re-run a finding's own nuclei template plus a
+	// reachability probe through the same validate-command transport, gated by
+	// the fail-closed scope exclusions (the #835 attribution gate plugs into the
+	// same TargetGate list). Evidence is recorded advisory-only; the retest
+	// service settles the finding (fixed / still present / unknown).
+	s.Retest = retestapp.NewService(
+		repos.FindingRetest,
+		repos.Finding,
+		repos.Asset,
+		repos.Command,
+		validation.NewCommandDispatcher(repos.Command, log),
+		validationSensorAvailability{sensors: repos.Sensor},
+		log,
+		retestapp.ScopeExclusionGate{Scope: s.Scope},
+	)
+	s.Retest.SetAuditLogger(s.Audit)
+
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
 	// progress) is computed from live finding data instead of staying at zero.
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
+	// Creates, edits, status changes and deletes go to audit_logs.
+	s.RemediationCampaign.SetAuditLogger(s.Audit)
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
@@ -1440,6 +1459,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
+	s.Ingest.SetExclusionSource(s.Scope)                             // New assets matching a scope exclusion are not added (RFC-042 F16)
 	s.Ingest.SetActivityService(s.FindingActivity)                   // Wire activity logging for auto-resolve/reopen
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
 	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)))
@@ -1562,14 +1582,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 
-	// Wire verification scan trigger: allows FindingActionsService to launch targeted scans
-	// when a finding transitions to fix_applied and the user requests scan-based verification.
-	s.FindingActions.SetVerificationScanTrigger(app.NewVerificationScanTriggerAdapter(s.Scan))
-
 	// Closed-loop CTEM: auto-queue a proof-of-fix safe-check re-check when
 	// findings transition to fix_applied, so a "fixed" claim is verified rather
 	// than trusted. Bounded + best-effort; non-network findings are skipped.
-	s.FindingActions.SetAutoValidator(s.ValidationRun)
+	// RFC-039: a nuclei finding gets a proof-of-fix retest (its own template +
+	// a reachability probe); any other finding falls back to the validation
+	// re-check, whose verdict never resolves on a reachability probe.
+	proofOfFix := retestapp.NewProofOfFix(s.Retest, s.ValidationRun)
+	s.FindingActions.SetAutoValidator(proofOfFix)
 
 	// B3 wire: when a Jira "Done" webhook arrives and the
 	// finding transitions to fix_applied, automatically trigger a
@@ -1578,9 +1598,27 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Without this wire Jira "Done" would only update status and
 	// leave the "did the fix actually work?" question unanswered.
 	if s.JiraSync != nil && s.FindingActions != nil && repos.Finding != nil {
-		rescanHook := jira.NewRescanHook(s.FindingActions, repos.Finding, log)
+		rescanHook := jira.NewRescanHook(proofOfFix, repos.Finding, log)
 		s.JiraSync.SetPostFixAppliedHook(rescanHook.Hook)
 	}
+
+	// RFC-039 Phase 2: a regression (a retest or a scan seeing a finding closed
+	// as fixed again) gets a fresh SLA deadline from the reopen (D2), and a fix
+	// or regression is announced on the linked ticket (opt-in outbound sync) and
+	// as a finding_fixed / finding_reopened notification.
+	regressionSLA := sla.NewRegressionRestarter(s.SLA, repos.FindingSLARestart, log)
+	var ticketCommenter retestapp.TicketCommenter
+	if s.JiraSync != nil {
+		ticketCommenter = s.JiraSync
+	}
+	var notifier retestapp.NotificationEnqueuer
+	if s.Outbox != nil {
+		notifier = s.Outbox
+	}
+	changeAnnouncer := retestapp.NewChangeAnnouncer(repos.Finding, ticketCommenter, notifier, log)
+	s.Retest.SetRegressionSLA(regressionSLA)
+	s.Retest.SetAnnouncer(changeAnnouncer)
+	s.Ingest.SetRegressionHandler(retestapp.NewScanRegressions(regressionSLA, changeAnnouncer, log))
 
 	// Create adapters for pipeline sub-package
 	pipelineAuditAdapter := app.NewPipelineAuditServiceAdapter(s.Audit)
@@ -1604,6 +1642,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		pipeline.WithQualityGate(repos.ScanProfile, repos.Finding),
 		pipeline.WithScanDeactivator(s.Scan),     // Cascade pause scans when pipeline is deactivated
 		pipeline.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
+		// Targets of a directly started run pass a scan trigger's checks:
+		// private-range policy, scope exclusions, scan zones (RFC-042 F16).
+		pipeline.WithTargetGate(s.Scan),
 	)
 
 	// Wire up pipeline deactivator to tool service for cascade deactivation
@@ -1839,6 +1880,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
 	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group, scope: s.DataScope})
+	// A role assigned, removed or redefined, or a membership removed or
+	// suspended, closes the user's live sockets in that tenant; the client
+	// reconnects through every upgrade gate again (RFC-045).
+	if s.PermVersion != nil {
+		hub := s.WebSocketHub
+		s.PermVersion.SetChangeListener(func(ctx context.Context, tenantID, userID string) {
+			hub.RevokeAccess(ctx, tenantID, userID)
+		})
+	}
 	log.Info("websocket hub initialized")
 
 	// Wire WebSocket broadcasters - must be done AFTER WebSocketHub is initialized
@@ -1929,11 +1979,6 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
 	s.Auth.SetPermissionVersionService(s.PermVersion)
 
-	// F-8: single-use WebSocket ticket service, Redis-backed.
-	if redisClient != nil {
-		s.WSTicket = app.NewWSTicketService(newWSTicketStore(redisClient), 30*time.Second, log)
-	}
-
 	// Two-factor authentication (TOTP). Secrets are encrypted with the same
 	// AES-GCM key as integration credentials.
 	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.App.Name)
@@ -1943,6 +1988,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// this device", password change, enabling 2FA, suspension) records its id
 	// in Redis so the auth middleware rejects its still-unexpired access
 	// tokens on the next request. Without Redis they expire naturally.
+	var revocationStore app.SessionRevocationStore
 	if redisClient != nil {
 		if tokens, err := redis.NewTokenStore(redisClient, log); err != nil {
 			log.Warn("session revocation store unavailable", "error", err)
@@ -1950,10 +1996,16 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			log.Warn("session revocation store unavailable", "error", err)
 		} else {
 			s.SessionRevocations = store
-			s.Auth.SetSessionRevocationStore(store)
-			s.Session.SetRevocationStore(store, cfg.Auth.AccessTokenDuration+time.Minute)
+			revocationStore = store
 		}
 	}
+	// Every session revocation also closes the session's live WebSocket
+	// connections, on every API instance (RFC-045). Wired even without Redis,
+	// so a single instance still closes its own sockets on logout.
+	sessionRevocations := websocket.SessionRevocationNotifier{Store: revocationStore, Hub: s.WebSocketHub}
+	revocationTTL := cfg.Auth.AccessTokenDuration + time.Minute
+	s.Auth.SetSessionRevocationStore(sessionRevocations)
+	s.Session.SetRevocationStore(sessionRevocations, revocationTTL)
 
 	// Wire permission services to session service
 	tenantMembershipAdapter := app.NewTenantMembershipAdapter(repos.Tenant)
@@ -1980,6 +2032,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log,
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
+	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
 	// auto-provisioning gate — a non-member is auto-joined only when the email

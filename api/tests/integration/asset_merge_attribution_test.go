@@ -24,7 +24,7 @@ func mergeOne(t *testing.T, db *sql.DB, tenant, keep, merge shared.ID) {
 	if _, err := db.Exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'merge')`, user, user+"@merge.test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := postgres.NewAssetDedupRepository(&postgres.DB{DB: db}).ApproveAndMerge(context.Background(), tenant.String(), reviewID, user); err != nil {
+	if err := postgres.NewAssetDedupRepository(&postgres.DB{DB: db}).ApproveAndMerge(context.Background(), tenant.String(), reviewID, user, nil); err != nil {
 		t.Fatalf("ApproveAndMerge: %v", err)
 	}
 }

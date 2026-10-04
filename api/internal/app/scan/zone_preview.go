@@ -281,13 +281,21 @@ type rejectedTarget struct {
 // previewValidateTargets applies scan creation's target validation, including
 // the admission of private targets a zone covers.
 func (s *Service) previewValidateTargets(ctx context.Context, tenantID string, targets []string) ([]string, []rejectedTarget, error) {
+	return s.validateTargetsEach(ctx, tenantID, targets, maxPreviewDirectTargets)
+}
+
+// validateTargetsEach is scan creation's target validation, target by target:
+// it returns the accepted targets (private ones only when a scan zone covers
+// them) and the rejected ones with the reason, instead of failing on the
+// first rejection.
+func (s *Service) validateTargetsEach(ctx context.Context, tenantID string, targets []string, maxTargets int) ([]string, []rejectedTarget, error) {
 	if len(targets) == 0 {
 		return nil, nil, nil
 	}
 	v := validator.NewTargetValidator(
 		validator.WithAllowInternalIPs(false),
 		validator.WithAllowLocalhost(false),
-		validator.WithMaxTargets(maxPreviewDirectTargets),
+		validator.WithMaxTargets(maxTargets),
 	)
 	result := v.ValidateTargets(targets)
 	var admitted []string

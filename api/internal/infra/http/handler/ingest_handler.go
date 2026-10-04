@@ -146,6 +146,9 @@ type IngestResponse struct {
 	CVEsCreated     int      `json:"cves_created"`
 	CVEsUpdated     int      `json:"cves_updated"`
 	Errors          []string `json:"errors,omitempty"`
+	// AssetsSkippedExcluded counts new assets not added because they match
+	// an active scope exclusion; their findings are in findings_skipped.
+	AssetsSkippedExcluded int `json:"assets_skipped_excluded,omitempty"`
 	// Binding is "command" when the report named a command assigned to this
 	// sensor (X-OpenCTEM-Command-ID), "unsolicited" otherwise (RFC-040 §5.3).
 	Binding string `json:"binding,omitempty"`
@@ -170,19 +173,20 @@ const HeaderCommandID = "X-OpenCTEM-Command-ID"
 // newIngestResponse is the v1 response for an ingest output.
 func newIngestResponse(output *ingest.Output) IngestResponse {
 	return IngestResponse{
-		ScanID:            output.ReportID,
-		AssetsCreated:     output.AssetsCreated,
-		AssetsUpdated:     output.AssetsUpdated,
-		FindingsCreated:   output.FindingsCreated,
-		FindingsUpdated:   output.FindingsUpdated,
-		FindingsSkipped:   output.FindingsSkipped,
-		CVEsCreated:       output.CVEsCreated,
-		CVEsUpdated:       output.CVEsUpdated,
-		Errors:            output.Errors,
-		Binding:           output.Binding,
-		AssetsLimited:     output.AssetsLimited,
-		ReopensWithheld:   output.ReopensWithheld,
-		UnsolicitedWarned: output.UnsolicitedWarned,
+		ScanID:                output.ReportID,
+		AssetsCreated:         output.AssetsCreated,
+		AssetsUpdated:         output.AssetsUpdated,
+		FindingsCreated:       output.FindingsCreated,
+		FindingsUpdated:       output.FindingsUpdated,
+		FindingsSkipped:       output.FindingsSkipped,
+		AssetsSkippedExcluded: output.AssetsSkippedExcluded,
+		CVEsCreated:           output.CVEsCreated,
+		CVEsUpdated:           output.CVEsUpdated,
+		Errors:                output.Errors,
+		Binding:               output.Binding,
+		AssetsLimited:         output.AssetsLimited,
+		ReopensWithheld:       output.ReopensWithheld,
+		UnsolicitedWarned:     output.UnsolicitedWarned,
 	}
 }
 

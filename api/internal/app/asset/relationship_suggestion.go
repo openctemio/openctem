@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -18,6 +19,30 @@ type RelationshipSuggestionService struct {
 	assetRepo      assetdom.Repository
 	relRepo        assetdom.RelationshipRepository
 	logger         *logger.Logger
+
+	// Layer 2 data scope (nil = unrestricted). A suggestion names both of
+	// its assets, so a scoped member sees and acts only on suggestions whose
+	// source and target are both in scope.
+	dataScope *datascope.Enforcer
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer.
+func (s *RelationshipSuggestionService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
+}
+
+// getInScope fetches a suggestion and hides it (ErrNotFound) when
+// either asset is outside the caller's data scope.
+func (s *RelationshipSuggestionService) getInScope(ctx context.Context, tenantID, id shared.ID) (*relationshipdom.Suggestion, error) {
+	suggestion, err := s.suggestionRepo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if s.dataScope.AssertAsset(ctx, tenantID, suggestion.SourceAssetID()) != nil ||
+		s.dataScope.AssertAsset(ctx, tenantID, suggestion.TargetAssetID()) != nil {
+		return nil, fmt.Errorf("%w: suggestion not found", shared.ErrNotFound)
+	}
+	return suggestion, nil
 }
 
 // NewRelationshipSuggestionService creates a new RelationshipSuggestionService.
@@ -43,6 +68,16 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return 0, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+
+	// Generating reads every asset of the organization and replaces every
+	// pending suggestion, so it is not something a scoped member may do.
+	scope, err := s.dataScope.Resolve(ctx, parsedTenantID)
+	if err != nil {
+		return 0, fmt.Errorf("resolve data scope: %w", err)
+	}
+	if scope != nil {
+		return 0, fmt.Errorf("%w: generating suggestions covers every asset of the organization", shared.ErrForbidden)
 	}
 
 	s.logger.Info("generating relationship suggestions", "tenant_id", tenantID)
@@ -153,7 +188,11 @@ func (s *RelationshipSuggestionService) ListPending(ctx context.Context, tenantI
 		return pagination.Result[*relationshipdom.Suggestion]{}, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	return s.suggestionRepo.ListPending(ctx, parsedTenantID, search, page)
+	scope, err := s.dataScope.Resolve(ctx, parsedTenantID)
+	if err != nil {
+		return pagination.Result[*relationshipdom.Suggestion]{}, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.suggestionRepo.ListPending(ctx, parsedTenantID, search, page, scope)
 }
 
 // ApproveBatch approves multiple suggestions by IDs.
@@ -196,7 +235,7 @@ func (s *RelationshipSuggestionService) Approve(ctx context.Context, tenantID, s
 	}
 
 	// Fetch the suggestion
-	suggestion, err := s.suggestionRepo.GetByID(ctx, parsedTenantID, parsedSuggestionID)
+	suggestion, err := s.getInScope(ctx, parsedTenantID, parsedSuggestionID)
 	if err != nil {
 		return err
 	}
@@ -255,8 +294,12 @@ func (s *RelationshipSuggestionService) ApproveAll(ctx context.Context, tenantID
 		return 0, fmt.Errorf("%w: invalid reviewer ID", shared.ErrValidation)
 	}
 
-	// Approve all in DB and get the approved suggestions
-	approved, err := s.suggestionRepo.ApproveAll(ctx, parsedTenantID, parsedReviewerID)
+	// Approve all the caller can see in DB and get the approved suggestions
+	scope, err := s.dataScope.Resolve(ctx, parsedTenantID)
+	if err != nil {
+		return 0, fmt.Errorf("resolve data scope: %w", err)
+	}
+	approved, err := s.suggestionRepo.ApproveAll(ctx, parsedTenantID, parsedReviewerID, scope)
 	if err != nil {
 		return 0, fmt.Errorf("failed to approve all suggestions: %w", err)
 	}
@@ -318,6 +361,9 @@ func (s *RelationshipSuggestionService) UpdateRelationshipType(ctx context.Conte
 	if _, parseErr := assetdom.ParseRelationshipType(relType); parseErr != nil {
 		return fmt.Errorf("%w: invalid relationship type: %s", shared.ErrValidation, relType)
 	}
+	if _, err := s.getInScope(ctx, parsedTenantID, parsedSuggestionID); err != nil {
+		return err
+	}
 
 	return s.suggestionRepo.UpdateRelationshipType(ctx, parsedTenantID, parsedSuggestionID, relType)
 }
@@ -337,7 +383,7 @@ func (s *RelationshipSuggestionService) Dismiss(ctx context.Context, tenantID, s
 		return fmt.Errorf("%w: invalid reviewer ID", shared.ErrValidation)
 	}
 
-	suggestion, err := s.suggestionRepo.GetByID(ctx, parsedTenantID, parsedSuggestionID)
+	suggestion, err := s.getInScope(ctx, parsedTenantID, parsedSuggestionID)
 	if err != nil {
 		return err
 	}
@@ -357,7 +403,11 @@ func (s *RelationshipSuggestionService) CountPending(ctx context.Context, tenant
 		return 0, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	return s.suggestionRepo.CountPending(ctx, parsedTenantID)
+	scope, err := s.dataScope.Resolve(ctx, parsedTenantID)
+	if err != nil {
+		return 0, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.suggestionRepo.CountPending(ctx, parsedTenantID, scope)
 }
 
 // =============================================================================

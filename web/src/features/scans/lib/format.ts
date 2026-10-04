@@ -21,15 +21,19 @@ export function formatScanDuration(ms?: number): string {
 }
 
 /**
- * Share of a scan's FINISHED runs that succeeded, 0–100, or null before any
- * run finished. Runs still going are in total_runs but are neither a success
- * nor a failure yet, so they are left out.
+ * Share of a scan's SETTLED runs that fully succeeded, 0–100, or null before
+ * any run settled. Settled = succeeded + partial + failed. Runs still going
+ * and canceled runs are in total_runs but are neither, so they are left out.
+ * A partial run (results kept, some work lost) is settled but not a success.
+ * The one formula every scan page uses.
  */
 export function scanSuccessRate(config: {
   successful_runs: number
   failed_runs: number
+  partial_runs?: number
 }): number | null {
-  const finished = (config.successful_runs ?? 0) + (config.failed_runs ?? 0)
-  if (finished <= 0) return null
-  return Math.round(((config.successful_runs ?? 0) / finished) * 100)
+  const ok = config.successful_runs ?? 0
+  const settled = ok + (config.partial_runs ?? 0) + (config.failed_runs ?? 0)
+  if (settled <= 0) return null
+  return Math.round((ok / settled) * 100)
 }

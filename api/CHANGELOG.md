@@ -55,6 +55,43 @@ published at https://docs.openctem.io (operations/release-notes-*).
   per asset and returns the top 20 values per key from the database. On a
   larger inventory the facet counts are counts within that sample.
 
+- **Findings keep the port they were found on.** CTIS `Finding.Network`
+  (port, transport, service) was used only inside the network-VA dedup
+  fingerprint and then dropped, so no stored finding knew its port. Ingest
+  now stores it in `findings.network_port`, `network_transport` and
+  `network_service` (migration 000377), and the finding API returns
+  `network_port`, `network_transport` and `network_service`. A re-sighting
+  fills a missing value and never replaces a stored port, so the port does
+  not flip between scans for a finding whose fingerprint does not include
+  it. Fingerprints are unchanged. Existing findings get the value on their
+  next scan.
+
+
+- **Scope exclusions apply on every path that scans or discovers, not
+  only at scan trigger** (RFC-042 F16). Four paths ignored them:
+  - `POST /api/v1/pipelines/runs` and the `trigger_pipeline` workflow
+    action passed `context.targets` straight into the step commands. The
+    run's targets now get a scan's checks: excluded targets are dropped
+    (every target excluded: `ALL_TARGETS_EXCLUDED`); a private address
+    outside every scan zone, loopback, link-local or metadata address, or
+    a target zone routing cannot place refuses the run (400
+    `TARGET_REFUSED`); a caller's `scan_zone_id` is ignored and set from
+    the routing. These starts also crashed on a nil scan id before
+    creating the run; they now work and are limited per pipeline.
+  - The Tenable rolling coverage dispatcher sent its batches unchecked.
+    Excluded or refused assets are now skipped for that rotation, a batch
+    stays in one scan zone and its command is stamped with it.
+  - Certificate Transparency discovery no longer queries an excluded
+    domain or raises exposures for an excluded host.
+  - Ingest no longer adds a new asset (or a root domain or resolved IP
+    derived from one) that matches an exclusion by name, repository URL
+    or address. It is counted as `assets_skipped_excluded` and named in
+    the warnings; its findings are skipped, never attached to another
+    asset of the report. Assets already in the inventory are not changed
+    or deleted.
+  A failed exclusion lookup stops each of these paths (fail closed).
+
+
 - **Group scans resolve members as assets and skip archived ones.** A scan
   of an asset group matched scope exclusions against each member's name
   only, so a host whose address was in an excluded network was scanned. It
@@ -80,6 +117,13 @@ published at https://docs.openctem.io (operations/release-notes-*).
   queues it, with the reason.
 
 ### Changed (behaviour change)
+
+- **Tenable rolling coverage of private addresses needs a scan zone.**
+  The coverage dispatcher now applies scan create's private-range policy:
+  a private address is dispatched only when a scan zone of the tenant
+  covers it (and the pinned sensor, if any, is in that
+  zone). Tenants that rotated internal assets without zones see those
+  assets skipped (logged) until they add a zone.
 
 - **`*.example.com` means the subdomains of example.com, not example.com
   itself.** The scope matcher used to let a wildcard domain pattern match the

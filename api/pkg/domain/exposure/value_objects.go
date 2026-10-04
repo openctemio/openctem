@@ -31,6 +31,11 @@ const (
 	EventTypeSSLIssue            EventType = "ssl_issue"
 	EventTypeHeaderMissing       EventType = "header_missing"
 
+	// EASM DNS-only checks (RFC-036 P1).
+	EventTypeDanglingCNAME     EventType = "dangling_cname"
+	EventTypeDanglingNS        EventType = "dangling_ns"
+	EventTypeEmailSecurityWeak EventType = "email_security_weak"
+
 	// Identity exposures (CTEM Discovery "exposure ≠ vulnerability" — the
 	// identity attack surface). Emitted by the EntraID/IdP identity-exposure
 	// discovery source (see docs/rfcs/RFC-018). These are posture weaknesses on
@@ -70,6 +75,9 @@ func AllEventTypes() []EventType {
 		EventTypeIdentityMFAGap,
 		EventTypeIdentityStalePrincipal,
 		EventTypeIdentityOverprivileged,
+		EventTypeDanglingCNAME,
+		EventTypeDanglingNS,
+		EventTypeEmailSecurityWeak,
 		EventTypeCustom,
 	}
 }
@@ -102,7 +110,8 @@ func (t EventType) IsPositiveExposure() bool {
 		EventTypeSSLIssue, EventTypeHeaderMissing, EventTypeCertificateExpiring,
 		EventTypeCertificateExpired,
 		EventTypeIdentityMFAGap, EventTypeIdentityStalePrincipal,
-		EventTypeIdentityOverprivileged:
+		EventTypeIdentityOverprivileged,
+		EventTypeDanglingCNAME, EventTypeDanglingNS, EventTypeEmailSecurityWeak:
 		return true
 	default:
 		return false

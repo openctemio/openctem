@@ -14,7 +14,8 @@ import (
 //
 // When a scanner ingests an asset, it may set owner_ref (e.g., "alice@example.com")
 // but cannot know the internal user UUID. This controller finds those assets and
-// populates owner_id from the users table.
+// adds the matching tenant member as a primary owner in asset_owners (source
+// 'owner_ref'), the one owner model. Such an owner never grants data access.
 //
 // Runs every 30 minutes.
 type OwnerResolutionController struct {
@@ -33,24 +34,31 @@ func (c *OwnerResolutionController) Name() string { return "owner-resolution" }
 // Interval returns 30 minutes.
 func (c *OwnerResolutionController) Interval() time.Duration { return 30 * time.Minute }
 
-// Reconcile resolves owner_ref to owner_id for assets missing owner_id.
-// Uses a single UPDATE with JOIN for efficiency.
+// ownerResolutionQuery adds the member whose email equals owner_ref
+// (case-insensitive) as the asset's primary owner, unless the asset already has
+// an owner_ref-derived owner or that member already owns the asset in any role
+// (an explicit RACI choice is never overridden). The member must belong to the
+// asset's tenant. The unique index (asset_id, user_id) makes it idempotent.
+const ownerResolutionQuery = `
+	INSERT INTO asset_owners (asset_id, user_id, ownership_type, assigned_at, assignment_source)
+	SELECT a.id, u.id, 'primary', NOW(), 'owner_ref'
+	FROM assets a
+	JOIN users u ON LOWER(u.email) = LOWER(a.owner_ref)
+	JOIN tenant_members tm ON tm.user_id = u.id AND tm.tenant_id = a.tenant_id
+	WHERE a.owner_ref IS NOT NULL
+	  AND a.owner_ref LIKE '%@%'
+	  AND NOT EXISTS (
+	      SELECT 1 FROM asset_owners ao
+	      WHERE ao.asset_id = a.id
+	        AND (ao.user_id = u.id OR ao.assignment_source = 'owner_ref')
+	  )
+	ON CONFLICT DO NOTHING
+`
+
+// Reconcile resolves owner_ref to a primary owner for assets that have none
+// derived from it yet. Uses a single INSERT ... SELECT for efficiency.
 func (c *OwnerResolutionController) Reconcile(ctx context.Context) (int, error) {
-	// Match owner_ref (case-insensitive) against users.email
-	// Only processes assets with owner_ref set but owner_id NULL
-	query := `
-		UPDATE assets a SET
-			owner_id = u.id,
-			updated_at = NOW()
-		FROM users u, tenant_members tm
-		WHERE a.owner_id IS NULL
-		  AND a.owner_ref IS NOT NULL
-		  AND a.owner_ref != ''
-		  AND LOWER(u.email) = LOWER(a.owner_ref)
-		  AND tm.user_id = u.id
-		  AND tm.tenant_id = a.tenant_id
-	`
-	result, err := c.db.ExecContext(ctx, query)
+	result, err := c.db.ExecContext(ctx, ownerResolutionQuery)
 	if err != nil {
 		return 0, fmt.Errorf("owner resolution: %w", err)
 	}

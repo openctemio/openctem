@@ -181,14 +181,16 @@ var findingCreateSQL = `
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
 			sla_deadline, sla_status, tags, rule_name,
-			` + findingTypeColumnsSQL + `
+			` + findingTypeColumnsSQL + `,
+			` + findingNetworkColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
 			$83, $84, $85, $86, $87, $88,
-			$89, $90, $91, $92` + findingTypePlaceholders(93) + `)
+			$89, $90, $91, $92` + findingTypePlaceholders(93) +
+	findingNetworkPlaceholders(93+findingTypeColumnCount) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -312,6 +314,7 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 		nullString(finding.RuleName()), // $92
 	}
 	args = append(args, findingTypeArgs(finding)...) // $93…
+	args = append(args, findingNetworkArgs(finding)...)
 	return args, nil
 }
 
@@ -575,7 +578,8 @@ func findingInsertColumnsSQL() string {
 			ingest_channel,
 			sla_deadline, sla_status, tags, rule_name,
 			last_seen_tool,
-			` + findingTypeColumnsSQL + `
+			` + findingTypeColumnsSQL + `,
+			` + findingNetworkColumnsSQL + `
 		)`
 }
 
@@ -691,7 +695,7 @@ func findingUpsertConflictSQL() string {
 			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
 			-- Rule name: first non-empty one wins, as in EnrichFrom.
 			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
-		findingTypeConflictSQL() + "\n\t"
+		findingTypeConflictSQL() + findingNetworkConflictSQL() + "\n\t"
 }
 
 // findingTagsMergeSQL is the SQL expression merging a stored and an incoming
@@ -724,7 +728,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 92 + findingTypeColumnCount
+const findingInsertColumnCount = 92 + findingTypeColumnCount + findingNetworkColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -856,7 +860,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		nullString(finding.RuleName()),
 		// Tool of this sighting (RFC-043 interim auto-resolve guard).
 		nullString(finding.LastSeenTool()),
-	}, findingTypeArgs(finding)...), nil
+	}, append(findingTypeArgs(finding), findingNetworkArgs(finding)...)...), nil
 }
 
 // IsPentestCampaignMember reports whether the user belongs to the given
@@ -2055,6 +2059,7 @@ func (r *FindingRepository) selectQuery() string {
 			data_exposure_risk, reputational_impact, compliance_impact,
 			remediation, created_by, ingest_channel,
 			` + findingTypeColumnsSQL + `,
+			` + findingNetworkColumnsSQL + `,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2190,6 +2195,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	)
 
 	var typeCols findingTypeScan
+	var netCols findingNetworkScan
 	dests := []any{
 		&idStr, &tenantIDStr, &vulnerabilityID, &assetIDStr, &branchID, &componentID, &source,
 		&toolName, &toolID, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
@@ -2217,6 +2223,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&remediation, &createdBy, &ingestChannel,
 	}
 	dests = append(dests, typeCols.dests()...)
+	dests = append(dests, netCols.dests()...)
 	dests = append(dests, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
@@ -2262,6 +2269,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		return nil, err
 	}
 	f.RestoreTypeDetails(typeCols.details())
+	f.RestoreNetwork(netCols.location())
 	return f, nil
 }
 
@@ -3189,7 +3197,8 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	}
 
 	// RelatedToUserID: "assigned to / owned by me" — a finding is the user's when
-	// they are the direct assignee, OR they own its asset (assets.owner_id), OR
+	// they are the direct assignee, OR they are a primary or secondary owner of
+	// its asset (asset_owners, the one owner model), OR
 	// they are a member of a group the finding is assigned to. Same relatedness
 	// predicate the finding-groups endpoint uses (finding_group_repository), now
 	// available on the flat list so a scoped user can pull up "my work". Tenant
@@ -3202,7 +3211,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		argIndex += 2
 		conditions = append(conditions, fmt.Sprintf(`(
 			assigned_to = $%[1]d
-			OR asset_id IN (SELECT id FROM assets WHERE tenant_id = $%[2]d AND owner_id = $%[1]d)
+			OR asset_id IN `+assetsOwnedByUserSQL("$%[1]d", "$%[2]d")+`
 			OR id IN (
 				SELECT fga.finding_id
 				FROM finding_group_assignments fga
@@ -3476,38 +3485,48 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 	return &id, nil
 }
 
-// AutoReopenByFingerprintsBatch reopens multiple previously CLOSED-AS-FIXED findings in a single query.
-// This is the batch version of AutoReopenByFingerprint for better performance.
-// Reopens any re-detected finding closed as fixed (status resolved or verified),
-// whether auto-confirmed (resolution = 'auto_fixed') or resolved by a person.
+// AutoReopenByFingerprintsBatch reopens, in one statement, every finding a scan
+// re-detected that had been closed as fixed — status resolved or verified,
+// whether auto-resolved (resolution = 'auto_fixed') or resolved by a person —
+// and every validated_fixed finding (the scan refutes the validation downgrade).
 // Deliberate dispositions (false_positive, accepted_risk, duplicate, suppressed)
 // are NEVER reopened.
-// Returns a map of fingerprint -> reopened finding ID.
-func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]shared.ID, error) {
-	result := make(map[string]shared.ID)
+//
+// The reopen clears resolution, resolution_method and resolved_by on the row, so
+// it returns what they were (read under the row lock, in the same statement):
+// the regression's activity entry keeps who resolved the finding and how
+// (RFC-039 §6.5). Returns fingerprint -> reopened finding.
+func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]vulnerability.ReopenedFinding, error) {
+	result := make(map[string]vulnerability.ReopenedFinding)
 
 	if len(fingerprints) == 0 {
 		return result, nil
 	}
 
-	// Reopen findings closed as fixed (resolved/verified) regardless of who fixed
-	// them — a human-resolved finding a later scan re-detects was previously stuck
-	// resolved and invisible. Deliberate dispositions stay closed. resolution is a
-	// free-text note and may be NULL, so NULL must survive NOT IN.
-	// Use ANY($2) for batch lookup efficiency.
+	// resolution is a free-text note and may be NULL, so NULL must survive NOT IN.
 	query := `
-		UPDATE findings
+		WITH prev AS (
+			SELECT id, status, resolution, resolution_method, resolved_by, resolved_at
+			FROM findings
+			WHERE tenant_id = $1
+				AND fingerprint = ANY($2)
+				AND (
+					(status IN ('resolved', 'verified')
+						AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed')))
+					OR status = 'validated_fixed'
+				)
+			FOR UPDATE
+		)
+		UPDATE findings f
 		SET status = 'confirmed',
 			resolution = NULL,
 			resolution_method = NULL,
 			resolved_at = NULL,
 			resolved_by = NULL,
 			updated_at = NOW()
-		WHERE tenant_id = $1
-			AND fingerprint = ANY($2)
-			AND status IN ('resolved', 'verified')
-			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
-		RETURNING id, fingerprint
+		FROM prev
+		WHERE f.id = prev.id
+		RETURNING f.id, f.fingerprint, prev.status, prev.resolution, prev.resolution_method, prev.resolved_by, prev.resolved_at
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints))
@@ -3517,15 +3536,35 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	defer rows.Close()
 
 	for rows.Next() {
-		var idStr, fp string
-		if err := rows.Scan(&idStr, &fp); err != nil {
+		var (
+			idStr, fp, prevStatus             string
+			resolution, method, resolvedByStr sql.NullString
+			resolvedAt                        sql.NullTime
+		)
+		if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &method, &resolvedByStr, &resolvedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan reopened finding: %w", err)
 		}
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
 			continue
 		}
-		result[fp] = id
+		rf := vulnerability.ReopenedFinding{
+			ID:                       id,
+			Fingerprint:              fp,
+			PreviousStatus:           vulnerability.FindingStatus(prevStatus),
+			PreviousResolution:       resolution.String,
+			PreviousResolutionMethod: method.String,
+		}
+		if resolvedByStr.Valid {
+			if by, err := shared.IDFromString(resolvedByStr.String); err == nil {
+				rf.PreviousResolvedBy = &by
+			}
+		}
+		if resolvedAt.Valid {
+			at := resolvedAt.Time
+			rf.PreviousResolvedAt = &at
+		}
+		result[fp] = rf
 	}
 
 	if err := rows.Err(); err != nil {
@@ -3721,13 +3760,14 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			data_exposure_risk, reputational_impact, compliance_impact,
 			remediation, created_by, ingest_channel,
 			` + findingTypeColumnsSQL + `,
+			` + findingNetworkColumnsSQL + `,
 			FALSE AS has_data_flow
 		FROM findings
 	`
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 64
+const enrichColumnsPerRow = 67
 
 // enrichBatchChunkSize limits rows per batch UPDATE to stay under PostgreSQL's 65535 parameter limit.
 // 1000 rows × 50 columns = 50,000 params (safely under limit).
@@ -3808,6 +3848,9 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"sla_deadline", "timestamptz"},
 	{"sla_status", "text"},
 	{"last_seen_tool", "text"},
+	{"network_port", "int"},
+	{"network_transport", "text"},
+	{"network_service", "text"},
 }
 
 // EnrichBatchByFingerprints enriches existing findings with new scan data using domain EnrichFrom() rules.
@@ -3921,7 +3964,7 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 
 	remediationJSON := marshalRemediation(f.Remediation())
 
-	return []interface{}{
+	return append([]interface{}{
 		// WHERE columns
 		f.ID().String(),
 		f.TenantID().String(),
@@ -3992,7 +4035,8 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		nullTime(f.SLADeadline()),
 		f.SLAStatus().String(),
 		nullString(f.LastSeenTool()),
-	}, nil
+		// Network location — EnrichFrom fills it first-wins (enrichNetwork).
+	}, findingNetworkArgs(f)...), nil
 }
 
 // buildBatchEnrichQuery builds a VALUES-based UPDATE query for the given number of rows.

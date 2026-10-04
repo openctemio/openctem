@@ -132,16 +132,14 @@ func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string
 	// "Assigned to me" / related-to-user filter. Mirrors the canMarkFixApplied
 	// 3-way definition of relatedness so "mine" is consistent across the app:
 	// (1) direct assignee, (2) member of a group the finding is assigned to,
-	// (3) owner of the finding's asset. Written as a single WHERE predicate so
+	// (3) primary or secondary owner of the finding's asset (asset_owners). Written as a single WHERE predicate so
 	// it applies before GROUP BY across every group_by dimension. Tenant scope
 	// is inherited from the caller's f.tenant_id predicate; the correlated
 	// subqueries key off the outer finding row.
 	if filter.RelatedToUserID != nil {
 		clauses = append(clauses, fmt.Sprintf(`(
 			f.assigned_to = $%[1]d
-			OR f.asset_id IN (
-				SELECT id FROM assets WHERE tenant_id = f.tenant_id AND owner_id = $%[1]d
-			)
+			OR f.asset_id IN `+assetsOwnedByUserSQL("$%[1]d", "f.tenant_id")+`
 			OR f.id IN (
 				SELECT fga.finding_id
 				FROM finding_group_assignments fga
@@ -460,7 +458,7 @@ func (r *FindingRepository) groupByAsset(
 			%s
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
-		LEFT JOIN users u ON u.id = a.owner_id
+		LEFT JOIN users u ON u.id = `+primaryUserOwnerSQL("a.id")+`
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
 		GROUP BY a.id, a.name, a.asset_type, a.criticality, u.name
 		ORDER BY COUNT(*) DESC
@@ -529,9 +527,10 @@ func (r *FindingRepository) groupByOwner(
 	}
 
 	countQuery := fmt.Sprintf(`
-		SELECT COUNT(DISTINCT COALESCE(a.owner_id::text, 'unassigned'))
+		SELECT COUNT(DISTINCT COALESCE(po.user_id::text, 'unassigned'))
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
+		LEFT JOIN LATERAL (SELECT `+primaryUserOwnerSQL("a.id")+` AS user_id) po ON TRUE
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
 	`, extraWhere)
 	countArgs := append([]any{tenantID.String()}, filterArgs...)
@@ -543,15 +542,16 @@ func (r *FindingRepository) groupByOwner(
 	nextArg := len(filterArgs) + 2
 	query := fmt.Sprintf(`
 		SELECT
-			COALESCE(a.owner_id::text, 'unassigned') as group_key,
+			COALESCE(po.user_id::text, 'unassigned') as group_key,
 			COALESCE(u.name, 'Unassigned') as label,
 			COALESCE(u.email, '') as email,
 			%s
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
-		LEFT JOIN users u ON u.id = a.owner_id
+		LEFT JOIN LATERAL (SELECT `+primaryUserOwnerSQL("a.id")+` AS user_id) po ON TRUE
+		LEFT JOIN users u ON u.id = po.user_id
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
-		GROUP BY a.owner_id, u.name, u.email
+		GROUP BY po.user_id, u.name, u.email
 		ORDER BY COUNT(*) DESC
 		LIMIT $%d OFFSET $%d
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)

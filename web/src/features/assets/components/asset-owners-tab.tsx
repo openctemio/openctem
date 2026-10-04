@@ -74,6 +74,7 @@ import {
   removeAssetOwner,
 } from '../hooks/use-asset-owners'
 import type { AssetOwner, OwnershipType } from '../types'
+import { AssetAccessGrantsSection } from './asset-access-grants-section'
 import { OWNERSHIP_TYPE_LABELS, OWNERSHIP_TYPE_COLORS, OWNERSHIP_TYPE_DESCRIPTIONS } from '../types'
 
 // ============================================
@@ -170,8 +171,14 @@ function OwnerCard({
             <OwnershipBadge type={owner.ownershipType} />
           </div>
           {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-          {owner.assignedByName && (
-            <p className="text-xs text-muted-foreground">Assigned by {owner.assignedByName}</p>
+          {owner.assignmentSource === 'owner_ref' ? (
+            <p className="text-xs text-muted-foreground">Matched from the owner reference</p>
+          ) : owner.assignmentSource === 'scope_rule' ? (
+            <p className="text-xs text-muted-foreground">Assigned by a scope rule</p>
+          ) : (
+            owner.assignedByName && (
+              <p className="text-xs text-muted-foreground">Assigned by {owner.assignedByName}</p>
+            )
           )}
         </div>
       </div>
@@ -213,6 +220,9 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
   const { can } = usePermissions()
   const canEdit = can(Permission.AssetsWrite)
   const canDelete = can(Permission.AssetsDelete)
+  // A group owner is the group's asset assignment: its members see the asset.
+  // That is an access change, so the API asks for team:groups:write.
+  const canAssignGroups = can(Permission.GroupsWrite)
 
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editOwner, setEditOwner] = useState<AssetOwner | null>(null)
@@ -280,7 +290,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
   // pass it through so groups picker also scales. We pass `undefined` (the
   // hook's "skip" signal) when the dialog is closed.
   const { groups: groupsData, isLoading: groupsLoading } = useGroups(
-    showAddDialog ? { search: debouncedSearch.trim() || undefined } : undefined
+    showAddDialog && canAssignGroups ? { search: debouncedSearch.trim() || undefined } : undefined
   )
 
   const pickerLoading = membersLoading || groupsLoading
@@ -468,6 +478,11 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
         )}
       </div>
 
+      <p className="text-xs text-muted-foreground">
+        Owners are accountable for the asset and are assigned its findings. Being an owner does not
+        let someone see the asset: access comes from groups and the direct access grants below.
+      </p>
+
       {isLoading ? (
         <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
           Loading owners...
@@ -542,7 +557,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                   key={owner.id}
                   owner={owner}
                   canEdit={canEdit}
-                  canDelete={canDelete}
+                  canDelete={canDelete && (!owner.groupId || canAssignGroups)}
                   onEdit={onEditClick}
                   onRemove={setRemoveOwnerTarget}
                 />
@@ -551,6 +566,8 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           </div>
         </div>
       )}
+
+      <AssetAccessGrantsSection assetId={assetId} />
 
       {/* Add Owner Dialog
           NOTE: This dialog is nested inside the AssetDetailSheet (also a Radix
@@ -576,7 +593,8 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           <DialogHeader>
             <DialogTitle>Add Owner</DialogTitle>
             <DialogDescription>
-              Assign a user or group to be responsible for this asset.
+              Assign a user or group to be responsible for this asset. A group owner&rsquo;s members
+              can see the asset; a user owner gains no access.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -840,6 +858,13 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
             Are you sure you want to remove{' '}
             {removeOwnerTarget?.userName || removeOwnerTarget?.groupName || 'this owner'} from this
             asset? This action cannot be undone.
+            {removeOwnerTarget?.assignmentSource === 'owner_ref' && (
+              <>
+                {' '}
+                This owner was matched from the asset&rsquo;s owner reference, so the owner
+                reference is cleared too.
+              </>
+            )}
           </>
         }
         confirmText={isSubmitting ? 'Removing...' : 'Remove'}

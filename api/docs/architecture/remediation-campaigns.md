@@ -96,6 +96,32 @@ Base path `/api/v1/remediation/campaigns` (permissions: `remediation:read` /
 | POST   | `/{id}/refresh`  | recompute progress + auto-complete now   |
 | DELETE | `/{id}`          | delete                                   |
 
+## Audit trail
+
+Every change to a campaign is written to `audit_logs` (resource type
+`remediation_campaign`), through `RemediationCampaignService.SetAuditLogger`:
+
+| Action                                  | When                                                        |
+|-----------------------------------------|-------------------------------------------------------------|
+| `remediation_campaign.created`          | `POST /`                                                    |
+| `remediation_campaign.updated`          | `PATCH /{id}`, with before/after of only the changed fields |
+| `remediation_campaign.status_changed`   | any lifecycle move (see `trigger` below)                    |
+| `remediation_campaign.deleted`          | `DELETE /{id}`                                              |
+
+A status change carries `trigger` (`manual` for `PATCH /{id}/status`,
+`auto_complete` when every finding closed, `jira_epic` when the linked epic was
+closed), `finding_count`, `resolved_count`, and on completion `open_findings`.
+Completing with findings still open is allowed (the console asks first and
+says how many are open) and is logged at medium severity. Automatic moves are
+attributed to the actor `system`. The audit row is always filed under the
+campaign's tenant; an audit write failure is logged and never fails the change.
+
+A manual completion recomputes the counts first, so `progress`,
+`risk_reduction` and `open_findings` reflect the findings at that moment, not
+the last reconcile. Completing does not change progress: a campaign completed
+with 0 of 4 findings closed reads "Completed, 0%", because that is what
+happened.
+
 ## Layering
 
 | Layer    | File                                                                 |

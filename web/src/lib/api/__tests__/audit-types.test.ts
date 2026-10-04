@@ -31,6 +31,13 @@ describe('sensor audit events before and after the rename', () => {
     expect(formatAction('agent.key_regenerated')).toBe('Sensor Key Regenerated')
   })
 
+  it('labels sensor.commands_released (jobs taken back on revoke/disable, RFC-040)', () => {
+    expect(getActionLabel('sensor.commands_released')).toBe(
+      'Sensor Jobs Taken Back (Revoked or Disabled)'
+    )
+    expect(formatAction('sensor.commands_released')).toBe('Sensor Commands Released')
+  })
+
   it('labels the scan zone actions (RFC-023)', () => {
     expect(getActionLabel('scan_zone.created')).toBe('Scan Zone Created')
     expect(getActionLabel('scan_zone.sensor_assigned')).toBe('Sensor Assigned to Scan Zone')
@@ -44,6 +51,16 @@ describe('sensor audit events before and after the rename', () => {
     expect(getActionLabel('tool.config_updated')).toBe('Tool Configuration Updated')
     expect(getActionLabel('scanner_template.updated')).toBe('Scanner Template Updated')
     expect(canonicalAuditResourceType('scope_exclusion')).toBe('scope_exclusion')
+  })
+
+  it('labels the remediation campaign actions', () => {
+    expect(getActionLabel('remediation_campaign.created')).toBe('Remediation Campaign Created')
+    expect(getActionLabel('remediation_campaign.updated')).toBe('Remediation Campaign Updated')
+    expect(getActionLabel('remediation_campaign.status_changed')).toBe(
+      'Remediation Campaign Status Changed'
+    )
+    expect(getActionLabel('remediation_campaign.deleted')).toBe('Remediation Campaign Deleted')
+    expect(canonicalAuditResourceType('remediation_campaign')).toBe('remediation_campaign')
   })
 
   it('leaves every other action alone', () => {

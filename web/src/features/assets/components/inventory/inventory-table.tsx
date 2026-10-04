@@ -28,7 +28,13 @@ import { AssetTypeIcon } from '../../lib/asset-type-icon'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { ASSET_TYPE_LABELS, type Asset } from '../../types/asset.types'
 import { SORT_FIELDS, sortToSorting, sortingToSort } from '../../lib/inventory-url'
-import { IssuesChip, LabelChips, SurfaceFacts, cellsForType } from '../service-cells'
+import {
+  IssuesChip,
+  LabelChips,
+  SurfaceFacts,
+  cellsForType,
+  hasSurfaceFacts,
+} from '../service-cells'
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 
@@ -166,6 +172,7 @@ export function InventoryTable({
       {
         // External-surface facts (status, IP, technologies, TLS …) for the
         // types cellsForType lists; other types have none to show here.
+        // Only known facts are shown; a row with none shows the muted dash.
         id: 'service',
         enableSorting: false,
         header: ({ column }) => <DataTableColumnHeader column={column} title="Service facts" />,
@@ -306,7 +313,8 @@ export function InventoryTable({
         mobileRow={(a) => {
           const typeLabel = ASSET_TYPE_LABELS[a.type] ?? a.type
           const context = a.groupName || a.description
-          const hasFacts = a.findingCount > 0 || !!cellsForType(a.type, a.subType)
+          // A card shows the facts row only when it has something known in it.
+          const hasFacts = a.findingCount > 0 || hasSurfaceFacts(a)
           // The card opens the drawer (a stretched button); the chip row sits
           // above it so its links and "+N" tooltips are not nested inside a
           // button.
@@ -345,7 +353,7 @@ export function InventoryTable({
               {hasFacts && (
                 <div className="relative z-10 mt-1.5 flex flex-wrap items-center gap-1 ps-7">
                   <IssuesChip assetId={a.id} count={a.findingCount} />
-                  <SurfaceFacts asset={a} />
+                  <SurfaceFacts asset={a} empty={null} />
                 </div>
               )}
             </div>

@@ -3,7 +3,7 @@ import type { Asset } from '@/features/assets'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import { Database, Lock, Save, HardDrive, CheckCircle, Shield, AlertTriangle } from 'lucide-react'
 import { yesNoUnknown } from '@/features/assets/lib/honest-values'
-import { UnknownChip } from '@/features/assets/components/service-cells'
+import { EmptyCell } from '@/features/assets/components/service-cells'
 
 const engineColors: Record<string, string> = {
   mysql: 'bg-blue-500/10 text-blue-500',
@@ -32,15 +32,14 @@ export const databasesConfig: AssetPageConfig = {
       cell: ({ row }) => {
         const engine = row.original.metadata.engine as string
         const version = row.original.metadata.db_version as string
-        // No engine recorded is "Unknown", never PostgreSQL.
+        // No engine recorded is an empty cell, never PostgreSQL.
+        if (!engine && !version) return <EmptyCell />
         return (
           <div>
-            {engine ? (
+            {engine && (
               <Badge variant="secondary" className={engineColors[engine]}>
                 {engine}
               </Badge>
-            ) : (
-              <UnknownChip>Unknown</UnknownChip>
             )}
             {version && <p className="text-xs text-muted-foreground mt-1">{version}</p>}
           </div>

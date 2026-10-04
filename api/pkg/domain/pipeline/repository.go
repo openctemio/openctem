@@ -198,8 +198,10 @@ type RunStats struct {
 	Pending   int64
 	Running   int64
 	Completed int64
-	Failed    int64
-	Canceled  int64
+	// Partial: kept results but lost some work (RFC-046 D5).
+	Partial  int64
+	Failed   int64
+	Canceled int64
 }
 
 // StepRunFilter represents filter options for listing step runs.

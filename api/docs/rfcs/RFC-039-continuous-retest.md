@@ -354,24 +354,27 @@ closed**:
 ### 7.3 SLA clocks
 
 - **fixed** → `resolved`: the SLA stops like any resolve.
-- **regression** reopen (scan or retest): Phase 1 keeps today's behaviour (the
-  original deadline stands, so a regression is usually already overdue — which is
-  arguably right: the exposure is the same one). §10 D2 asks whether a regression
-  should instead get a fresh deadline from `last_reopened_at`.
+- **regression** reopen (scan or retest): **a fresh deadline from the reopen**
+  (owner decision D2, Phase 2a), computed by the tenant's SLA policy, with an
+  `sla_restarted` activity carrying the reason and the previous deadline. Phase 1
+  kept the original deadline, so a regression was overdue the moment it came
+  back.
 - **unknown** does not touch SLA.
 
 ### 7.4 Tickets
 
-Phase 1 writes the activity trail only. Phase 2 posts a ticket comment through
-the outbound sync (RFC-006 Phase 3 outbox) on *fixed* ("retest: no longer
-detected", transition to Done where the mapping allows) and on *regression*
-("retest/scan: detected again; previously resolved by X on D"), reusing the
-existing `AddComment` fallback. Ticket comments never carry the evidence body.
+Phase 1 writes the activity trail only. Phase 2a comments on the linked Jira
+issue on a *fix*, a *regression* and a *rejected fix*, only when the tenant
+enabled outbound sync on its integration (the same opt-in as status sync).
+Comments are platform-written text with the free-text part capped; they never
+carry the evidence body.
 
 ### 7.5 Notifications
 
-Phase 2: a regression raises the existing `findings` notification event with
-`reopened: true`; `fixed` is reported in the digest only (no per-finding noise).
+Phase 2a: a regression and a rejected fix queue the existing `finding_reopened`
+event; a retest that resolves a finding queues `finding_fixed`. The tenant's
+notification integrations route them by their event filters. One scan reopening
+many findings announces at most 50 of them (the SLA restart still covers all).
 
 ## 8. Threat model
 
@@ -386,6 +389,7 @@ Phase 2: a regression raises the existing `findings` notification event with
 | T7 | **False "fixed"** from a down host / wrong zone | reach probe guard (§4.2): unreachable ⇒ `unknown` |
 | T8 | **Race** with a person changing the finding mid-retest | the transition is decided under the finding's row lock from its status at settle time (§4.3); an ineligible status is never moved |
 | T9 | **Double-fire** with several API replicas | tenant tick claimed by compare-and-set; per-finding pending unique index; settle CAS on `pending` |
+| T11 | **Ticket / notification injection or flooding** (Phase 2a: a sensor summary flows into the retest reason, which is announced) | announcements are platform-written; the free-text part is flattened to one line of plain text without control characters and capped at 300 characters; ticket comments only when the tenant enabled outbound sync; at most 50 announcements per scan |
 | T10 | **Repudiation** | `finding.retest_requested` audit event (who, what, target); `retest_completed` activity with actor `system: retest`, `trigger`, `requested_by`, commands, template; reopen activity keeps the previous resolver |
 
 ### 8.1 Limits (Phase 1 constants, all server-side)
@@ -415,14 +419,15 @@ Manual Retest now is available whenever a `validate:nuclei` sensor is online.
 |---|---|
 | `POST /findings/{id}/retest` | `findings:verify` + data scope |
 | `GET /findings/{id}/retests` | `findings:read` + data scope |
-| `GET/PUT /tenants/{t}/settings/retest` | team admin (owner/admin), audited |
+| `GET/PUT /organization/settings/retest` (tenant from the token) | team admin (owner/admin), audited |
 
 ## 9. Phased plan
 
 | Phase | Content |
 |---|---|
-| **P1 (this PR)** | `finding_retests` + cursors (migration 000281); domain decision/transition; retest service (eligibility, gates, limits, dispatch, settle, sweep); Retest now + list routes; settings `retest` (default off) + endpoint; `RetestScheduler` with claim-once; advisory ingest of retest evidence; scan regression reopen keeps the previous resolver and reopens `validated_fixed`; web: Retest now button and last-retest status on the finding page and drawer |
-| P2 | port/service, TLS and DNS check kinds; ticket comment + notification on fixed/regression; SLA restart decision; web settings page and an auto-retest column/filter; fix D-a/D-b for `/validate` (reach guard) |
+| **P1 (#867)** | `finding_retests` + cursors (migration 000327); domain decision/transition; retest service (eligibility, gates, limits, dispatch, settle, sweep); Retest now + list routes; settings `retest` (default off) + endpoint; `RetestScheduler` with claim-once; advisory ingest of retest evidence; scan regression reopen keeps the previous resolver and reopens `validated_fixed`; web: Retest now button and last-retest status on the finding page and drawer |
+| **P2a (#881, owner decisions D2–D4)** | fresh SLA on every regression, scan or retest, with an `sla_restarted` activity (reason, previous deadline; migration 000336); `/validate` verdict rule acts only on exploitability-grade evidence (safe-check never moves a finding, a nuclei miss needs `reachable`); proof of fix on `fix_applied` (and on Jira "Done") is a `proof_of_fix` retest, else the validation re-check; "Request verification scan" retired (route, service, adapter, web); ticket comment (opt-in Jira outbound) + `finding_fixed` / `finding_reopened` notification on a fix, regression or rejected fix, capped at 50 per scan |
+| P2b | port/service, TLS and DNS check kinds; web settings page for auto-retest and an auto-retest column/filter |
 | P3 | retests as `pipeline_runs(kind = retest)` with scan-zone routing and coverage `partial`, once RFC-038 typed settings and scans P1 land; CVE→template resolver; asset-group-scoped auto-retest policies |
 
 ## 10. Owner decisions — approved 2026-10-03

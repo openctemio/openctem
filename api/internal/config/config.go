@@ -730,6 +730,26 @@ type SensorConfig struct {
 	// Defaults to 24h (daily), matching the threat-intel / CTEM-ID refreshes.
 	CertMonitorInterval time.Duration
 
+	// EASMDNSChecksEnabled toggles the daily DNS-only EASM checks (dangling
+	// CNAME/NS, email posture; RFC-036 P1). Passive: the platform's resolver
+	// is asked about the tenant's own names. EASM_DNS_CHECKS_ENABLED, default
+	// false: daily background work across every tenant waits for the scans
+	// P1 work (claim-N with SKIP LOCKED, controller leases, write
+	// amplification); an operator turns it on deliberately until then.
+	EASMDNSChecksEnabled bool
+	// EASMDNSResolver is the recursive resolver (host[:port]) the checks ask.
+	// Empty: the first nameserver of /etc/resolv.conf. EASM_DNS_RESOLVER.
+	EASMDNSResolver string
+	// EASMDNSQPS bounds the checks' DNS queries per second across all
+	// tenants. EASM_DNS_QPS, default 20.
+	EASMDNSQPS float64
+	// EASMDNSInterval is how often the checks run. EASM_DNS_CHECK_INTERVAL,
+	// default 24h (RFC-036 O9: daily light checks).
+	EASMDNSInterval time.Duration
+	// EASMDNSMaxNamesPerRun caps names checked per tenant per run; the rest
+	// rotate in, longest-unchecked first. EASM_DNS_MAX_NAMES_PER_RUN, 500.
+	EASMDNSMaxNamesPerRun int
+
 	// CertMonitorMaxDomainsPerRun caps how many domains of one tenant a sweep
 	// queries; the rest rotate in on later runs, oldest-queried first.
 	// CERT_MONITOR_MAX_DOMAINS_PER_RUN, default 50.
@@ -1134,6 +1154,11 @@ func Load() (*Config, error) {
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
 			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
+			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", false),
+			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
+			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),
+			EASMDNSInterval:             getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
+			EASMDNSMaxNamesPerRun:       getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
 			CertMonitorCertSpotterURL:   getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),

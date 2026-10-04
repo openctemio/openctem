@@ -690,11 +690,14 @@ function ConfigurationsTab() {
         cell: ({ row }) => {
           const rate = scanSuccessRate(row.original)
           if (rate === null) return <span className="text-muted-foreground">-</span>
-          const finished = row.original.successful_runs + row.original.failed_runs
+          const settled =
+            row.original.successful_runs +
+            (row.original.partial_runs ?? 0) +
+            row.original.failed_runs
           return (
             <div
               className="flex items-center gap-2"
-              title={`${row.original.successful_runs} of ${finished} finished runs succeeded`}
+              title={`${row.original.successful_runs} of ${settled} finished runs succeeded`}
             >
               <Progress value={rate} className="h-2 w-20 shrink-0" />
               <span className="w-10 shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -719,6 +722,9 @@ function ConfigurationsTab() {
           return (
             <span className="text-sm tabular-nums">
               {config.successful_runs} passed
+              {(config.partial_runs ?? 0) > 0 && (
+                <span className="text-warning"> · {config.partial_runs} partial</span>
+              )}
               {config.failed_runs > 0 && (
                 <span className="text-destructive"> · {config.failed_runs} failed</span>
               )}

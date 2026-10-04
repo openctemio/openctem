@@ -128,6 +128,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
+	// Continuous retest (RFC-039): a retest check's evidence is recorded
+	// advisory-only and its retest settled when the sensor completes or fails it.
+	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
 	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
 	// Ingest handler — opt into async mode (RFC-005) when configured. Default
@@ -263,13 +266,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
 
 		// CTEM Discovery - Network Services, State History & Relationships
-		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
-		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
+		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
-		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log),
+		AssetImport:            newAssetImportHandler(svc, log),
 		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
 
@@ -278,6 +281,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RemediationGroup:          handler.NewRemediationGroupHandler(svc.RemediationGroup),
 		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:            findingActionsHandler,
+		FindingRetest:             handler.NewFindingRetestHandler(svc.Retest, log),
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
 		GitHubWebhook:             githubWebhookHandler,
@@ -424,7 +428,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
 		// Asset Dedup Review (RFC-001)
-		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
+		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log).SetDataScope(svc.DataScope),
 
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
@@ -441,10 +445,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
 
-		// F-8: wire the single-use ticket redeemer when configured so the
-		// /ws route uses ticket auth instead of the JWT chain.
-		WSTicketRedeemer: svc.WSTicket,
-
 		// Login, MFA, password, SSO and invitation limits count in Redis so
 		// every replica spends one budget (in-memory fallback on a Redis error).
 		AuthRateLimitBackend: middleware.NewRedisAuthRateLimitBackend(deps.RedisClient, log),
@@ -457,6 +457,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// tools and their tenant config, scanner templates) too (RFC-040 §5.11).
 	handlers.Scope.SetAuditService(svc.Audit)
 	handlers.Tool.SetAuditService(svc.Audit)
+	// Asset access grants change who sees an asset: audited.
+	handlers.AssetOwner.SetAuditService(svc.Audit)
 	handlers.ScannerTemplate.SetAuditService(svc.Audit)
 
 	if svc.SSO != nil {
@@ -543,10 +545,6 @@ func InitLocalAuthHandler(
 			cfg.Auth,
 			log,
 		)
-		// F-8: wire the single-use ticket service (may be nil if Redis not configured).
-		if svc.WSTicket != nil {
-			handlers.LocalAuth.SetWSTicketService(svc.WSTicket)
-		}
 		log.Info("local auth handler initialized")
 	}
 }
@@ -723,5 +721,12 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 	if svc.Audit != nil {
 		h.SetAuditService(svc.Audit)
 	}
+	return h
+}
+
+// newAssetImportHandler builds the asset import handler with its audit trail.
+func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
+	h := handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log)
+	h.SetAuditService(svc.Audit)
 	return h
 }

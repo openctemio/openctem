@@ -1,4 +1,5 @@
-import { FactChip, UnknownChip, ChipMono, type FactChipTone } from './fact-chip'
+import type { ReactNode } from 'react'
+import { FactChip, ChipMono, type FactChipTone } from './fact-chip'
 
 const REASONS: Record<number, string> = {
   200: 'OK',
@@ -46,15 +47,17 @@ export interface HttpStatusChipProps {
   status: number | null
   /** Redirect hops before the final status (e.g. [301]). */
   chain?: number[]
+  /** Rendered when no status was recorded: nothing by default. */
+  fallback?: ReactNode
 }
 
 /**
  * "301, 200 OK": the redirect chain then the final status and its reason,
- * coloured by the final status. A missing status is "Status unknown"
- * (dashed), never a default 200.
+ * coloured by the final status. A missing status renders `fallback`
+ * (nothing by default), never a default 200.
  */
-export function HttpStatusChip({ status, chain = [] }: HttpStatusChipProps) {
-  if (status === null) return <UnknownChip>Status unknown</UnknownChip>
+export function HttpStatusChip({ status, chain = [], fallback = null }: HttpStatusChipProps) {
+  if (status === null) return <>{fallback}</>
   const reason = httpReason(status)
   const codes = [...chain, status].join(', ')
   const title =

@@ -1,0 +1,99 @@
+# Scan lifecycle: Scan → Run → Task
+
+> Last updated: 2026-10-03. Design: [RFC-046](../rfcs/RFC-046-scans-redesign.md)
+> (status audit in its [appendix A](../rfcs/RFC-046-appendix-status-audit.md)).
+> Dispatch details: [RFC-030](../rfcs/RFC-030-scan-work-distribution.md).
+> Older component walkthrough: [scan-orchestration.md](scan-orchestration.md).
+
+This page describes how a scan becomes work on a sensor and how its outcome is
+recorded: first the model every change now moves towards, then where the code
+stands today, so a reader can tell which parts are real.
+
+## 1. The model
+
+```
+Scan (definition) ──fires──▶ Run (one occurrence) ──is cut into──▶ Task (one tool, a slice of targets)
+  targets: selection            trigger, scheduled_for               attempt, lease (epoch), sensor
+  engine spec (stages)          status, deadline                     status, coverage, report ids
+  schedule: rrule + tz          progress, unfinished targets
+```
+
+- **Scan**: what to scan (a selection resolved through the one target gate,
+  RFC-042 §6.11), how (an engine spec over the stage catalogue, RFC-046 §5),
+  when (rrule + timezone, minimum 15 minutes, overlap = skip). Quick scans are
+  ad-hoc scans (`scans.ad_hoc`), saved on request.
+- **Run**: one firing of a scan. Exactly one run per scheduled occurrence
+  (`UNIQUE(scan_id, scheduled_for)`). Triggers: `schedule`, `manual`, `api`,
+  `ci`, `retest`, `automation`, `rollover`.
+- **Task**: one unit a sensor claims under a lease: today one command of a
+  step; with RFC-030 Phase 2, a chunk cut at claim time.
+
+### 1.1 Run states
+
+| Status | Meaning | Terminal | Counted as |
+|---|---|---|---|
+| `pending` | Created, no task claimed yet | no | — |
+| `running` | At least one task claimed or started | no | — |
+| `completed` | Every task completed | yes | success |
+| `partial` | Some tasks completed, some failed, or the deadline passed with work done; results kept, unfinished targets recorded | yes | partial |
+| `failed` | No task completed (all failed, or nobody claimed within 4 h scheduled / 1 h interactive) | yes | failure |
+| `timeout` | Deadline passed and no task completed | yes | failure |
+| `canceled` | Stopped by a user with `scans:write` | yes | not counted in the success rate |
+
+A terminal run never changes again, and neither does a terminal step run: a
+late or duplicate sensor result, a cancel racing a completion or the reaper
+cannot reopen one, recount its findings or record its outcome twice.
+
+### 1.2 What happens when
+
+| Event | Effect |
+|---|---|
+| Occurrence due | The scheduler claims it (compare-and-set on `next_run_at`, plus the occurrence key on the run), skips it if the scan's previous run is still active, else creates the run |
+| Trigger | Targets resolved through the target gate; routed to zones; tasks created; the run starts |
+| Sensor poll | Claims tasks it may run (verified tool, zone, capacity), lease + epoch set in the same update |
+| Heartbeat | Renews leases of tasks the sensor still runs; returns `cancel_command_ids` for those it no longer holds |
+| Task completes | Results ingested (idempotent report ids); coverage-scoped auto-resolve for that task's targets (dry-run by default); the step and run settle when their last task settles |
+| Deadline | Queued tasks dropped, leased tasks canceled, run ends `partial` or `timeout`, unfinished targets recorded for the next occurrence |
+| Cancel | Run → `canceled`; open tasks canceled; the sensor stops at its next heartbeat |
+| Failure | Classified: permanent codes never retried; lost work and timeouts retried twice with backoff; others by the scan's `max_retries` |
+
+## 2. Where the code stands (2026-10-03)
+
+| Part | State | Where |
+|---|---|---|
+| Runs and tasks | `pipeline_runs`, `step_runs`, `commands` | `api/internal/app/pipeline/run.go`, `api/internal/app/scan/trigger.go`, `zones.go` |
+| Run terminal guard | done | `api/internal/infra/postgres/pipeline_run_repository.go` (`terminalRunStatusesSQL`) |
+| Step terminal guard | RFC-046 P1.1 (first implementation PR) | same file |
+| `partial` | planned (P1.2, P1.3) | — |
+| Occurrence claim | compare-and-set on `next_run_at`; occurrence key planned (P1.5) | `api/internal/app/scan/scheduler.go`, `scan_repository.go` (`ClaimScheduledRun`) |
+| Overlap skip | done | `scheduler.go` (`SkipIfRunning`) |
+| rrule | planned (P1.5); daily/weekly/monthly/crontab + timezone today | `api/pkg/domain/scan/entity.go` |
+| Claim + leases + fencing | claim-1 by id with lease and epoch; claim-N planned (P1.7) | `command_repository.go` (`ClaimForSensor`), `command_lease.go`, `api/pkg/domain/command/lease.go` |
+| Cancel to sensor | via heartbeat `cancel_command_ids` | `command_lease.go` (`CommandsToCancel`), sdk-go `pkg/core/doorbell.go` |
+| Abort unclaimed | done (4 h / 1 h) | `pipeline_run_repository.go` (`AbortUnclaimedRuns`), `controller/scan_timeout.go` |
+| Retry classes | done (run-level) | `api/pkg/domain/pipeline/failure.go`, `pipeline_run_repository.go` (`ListPendingRetries`) |
+| Coverage auto-resolve | done, dry-run by default | `api/internal/app/ingest/coverage_autoresolve.go`, `INGEST_COVERAGE_AUTO_RESOLVE` |
+| Stage chaining | not yet (every step scans the seed targets) | RFC-046 §5.2 |
+| Automations | in-process executor fed by callbacks; outbox planned (P2) | `api/internal/app/workflow/` |
+| `scan_sessions` | written by nothing; retired in P2 | `api/internal/app/scan/session.go` |
+
+## 3. Things that are deliberately not wired
+
+- **Scope schedules** (`scan_schedules`, Scoping › Schedules) are **inert by
+  Scoping IA decision D10**. Nothing reads `ListDueSchedules`; do not connect
+  them to the scheduler or the dispatcher. Schedules belong to the Scan.
+- **Interactsh** is off on the sensor unless the sensor-local policy and the
+  job both allow it (RFC-040, RFC-046 D6).
+- **Adaptive chunk sizing** is deferred (RFC-046 D9, RFC-030 Phase 2).
+
+## 4. Invariants (each has a test)
+
+1. One run per scheduled occurrence.
+2. A terminal run or step run never changes.
+3. A task's results are accepted only from the sensor holding its live lease
+   (epoch match), for that task's tool and targets.
+4. Auto-resolve never acts on a failed, canceled, expired, timed-out or
+   partially covered task, and only on the targets the task covered.
+5. Every path that turns a selection into work goes through the one target
+   gate.
+6. Every query is tenant-scoped from the credential; a foreign id is a 404.

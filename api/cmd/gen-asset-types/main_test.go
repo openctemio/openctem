@@ -160,6 +160,9 @@ func TestResolve_RejectsInvalidRegistries(t *testing.T) {
 		{"other with a lens", "{ id: other, label: Other, jupiterone: Entity }", "{ id: other, label: Other, lens: code, jupiterone: Entity }", "", "must not have a lens"},
 		{"unknown field", "icon: git-branch", "icon: git-branch\n    unknown_key: red", "", "unknown_key"},
 		{"unresolved relationship type", "", "", "types:\n  - id: contains\n    constraints:\n      - { sources: [repository], targets: [k8s_thing] }\n", "k8s_thing"},
+		{"type named after an /assets page", "  - type: unclassified", "  - type: groups", "", "reserved"},
+		{"lens named after an /assets page", "id: code, label: Code,", "id: changes, label: Code,", "", "reserved"},
+		{"class named after an /assets page", "{ id: code_repo, label: Code repository", "{ id: duplicates, label: Code repository", "", "reserved"},
 		{"alias of an unknown type", "class: code_repo\n    legacy", "class: code_repo\n    alias_of: { type: nope, sub_type: x }\n    legacy", "", "alias_of unknown type"},
 	}
 	for _, tc := range cases {

@@ -188,7 +188,7 @@ func (m *MockRelationshipRepository) CreateBatchIgnoreConflicts(_ context.Contex
 // CountByType returns per-type relationship counts. The mock implementation
 // walks the in-memory relationships map and groups by type — used by the
 // usage-stats endpoint tests.
-func (m *MockRelationshipRepository) CountByType(_ context.Context, _ shared.ID) (map[asset.RelationshipType]int64, error) {
+func (m *MockRelationshipRepository) CountByType(_ context.Context, _ shared.ID, _ *shared.DataScope) (map[asset.RelationshipType]int64, error) {
 	out := make(map[asset.RelationshipType]int64)
 	for _, rel := range m.relationships {
 		out[rel.Type()]++

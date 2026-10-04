@@ -210,6 +210,12 @@ describe('tlsFacts', () => {
     })
   })
 
+  it('keeps a certificate without expiry "unknown", never valid', () => {
+    const facts = tlsFacts(withMeta({ certificate: { issuer_org: 'Example CA' } }), NOW)
+    expect(facts.kind).toBe('cert')
+    if (facts.kind === 'cert') expect(facts.cert.status).toBe('unknown')
+  })
+
   it('is "not collected" when nothing was recorded, whatever the name says', () => {
     expect(tlsFacts(bareService, NOW)).toEqual({ kind: 'not_collected' })
     expect(

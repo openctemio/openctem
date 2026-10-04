@@ -185,8 +185,9 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 	// Claim this occurrence: move next_run_at forward only if it still holds
 	// the value we were handed. Exactly one scheduler (on any replica) wins;
 	// the move also keeps the next polling cycle from picking it up again.
+	occurrence := *sc.NextRunAt
 	nextRunAt := sc.CalculateNextRunAt()
-	claimed, err := s.scanRepo.ClaimScheduledRun(ctx, sc.ID, *sc.NextRunAt, nextRunAt)
+	claimed, err := s.scanRepo.ClaimScheduledRun(ctx, sc.ID, occurrence, nextRunAt)
 	if err != nil {
 		s.logger.Error("failed to claim scheduled run", "scan_id", sc.ID.String(), "error", err)
 		return
@@ -206,7 +207,19 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 		},
 		TriggerType:   pipeline.TriggerTypeSchedule,
 		SkipIfRunning: true,
+		// The run records the occurrence it serves; a second run for the
+		// same occurrence is refused by UNIQUE(scan_id, scheduled_for).
+		ScheduledFor: &occurrence,
 	})
+	if errors.Is(err, pipeline.ErrOccurrenceAlreadyRun) {
+		// Another scheduler instance already started this occurrence (the
+		// next_run_at claim makes this rare; the unique index makes it
+		// impossible to double-fire). Nothing to record: that run is real.
+		metrics.ScanScheduleOutcomes.WithLabelValues(sc.TenantID.String(), "duplicate_occurrence").Inc()
+		s.logger.Info("scheduled run skipped: this occurrence already has a run",
+			"scan_id", sc.ID.String(), "scheduled_for", occurrence)
+		return
+	}
 	if errors.Is(err, ErrScanRunInProgress) {
 		// Overlap policy (D4): skip this occurrence and say so. Not recorded in
 		// last_run_status, which belongs to the run that is still going.

@@ -319,6 +319,43 @@ func (s *SyncService) SyncFindingStatus(ctx context.Context, tenantID, findingID
 	return s.SyncFindingStatusToTicket(ctx, tenantID, findingID, mapping)
 }
 
+// CommentOnFinding adds a comment to the Jira issue linked to a finding (RFC-039:
+// a retest or a scan found the issue fixed, or saw it again). Outbound writes
+// are opt-in per integration, exactly like status sync: a no-op unless the
+// tenant's mapping has SyncEnabled, and when the finding has no linked issue.
+// The body is platform-written text; it never carries scanner evidence.
+func (s *SyncService) CommentOnFinding(ctx context.Context, tenantID, findingID shared.ID, body string) error {
+	if s.mappingResolver == nil {
+		return nil
+	}
+	mapping, err := s.mappingResolver.ResolveMapping(ctx, tenantID)
+	if err != nil {
+		if errors.Is(err, ErrNoTicketingIntegration) {
+			return nil
+		}
+		return err
+	}
+	if !mapping.SyncEnabled {
+		return nil
+	}
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return fmt.Errorf("get finding: %w", err)
+	}
+	issueKey := firstJiraIssueKey(finding.WorkItemURIs())
+	if issueKey == "" {
+		return nil
+	}
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	if err := client.AddComment(ctx, issueKey, body); err != nil {
+		return fmt.Errorf("comment on jira issue: %w", err)
+	}
+	return nil
+}
+
 // resolveClient returns the Jira client to use for a tenant. A statically
 // injected client (tests) wins; otherwise the resolver loads the tenant's
 // integration. Returns ErrNoTicketingIntegration when neither is available.

@@ -230,6 +230,25 @@ load.
 
   No ad-hoc "No X found" text.
 
+- **Unknown facts** (a scanner fact nothing has collected yet: port, HTTP
+  status, technologies, TLS, open ports, DNS records …). Never show a default
+  as if it were data (no "200", no "TCP", no "valid"), and do not show the
+  gap either where space is tight:
+
+  | Where                     | A fact nothing collected                                                                                                                                                   | A known negative ("No TLS", "No open ports", "No technologies detected", a 4xx status) |
+  | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+  | List, table, compact cell | Nothing. A cell left with no content shows one muted `—` (`EmptyCell`)                                                                                                     | Shown                                                                                  |
+  | Drawer / detail page      | One muted line at the end of the facts: "Not collected yet: port, HTTP status, TLS certificate" (`NotCollectedNote`), only when something is missing. No per-row "Unknown" | Shown                                                                                  |
+  | Filters and facets        | Keep the "Not collected" / "Unknown" value where the facet has one, so coverage gaps stay findable                                                                         | Its own value                                                                          |
+
+  The shared service cells (`src/features/assets/components/service-cells/`)
+  do this by default: each returns nothing for an unknown fact (`fallback`
+  overrides it), `SurfaceFacts` shows the `—` for an all-unknown row, and
+  `SurfaceFactsDetail` / a typed page's `notCollected` field option build the
+  drawer line. A field the data cannot split into "not collected" and
+  "collected, none" (DNS records: no records either way) stays "not
+  collected". No dashed "unknown" chips.
+
 - **Error**: `<Alert variant="destructive">` with what failed and a retry.
 - Gated / coming-soon pages use the existing shared components.
 
@@ -265,6 +284,11 @@ className="flex flex-col gap-0 p-0 sm:p-0 …">` with a `<DialogHeaderBar>`
     `<DetailTabs>` (underline tabs; `useDetailTab(param, values)` keeps the
     tab in the URL when the page wants it, with a parameter the page does not
     already use).
+  - On phones `<DetailSheet>` is a Vaul drawer (`components/ui/drawer.tsx`):
+    swipe down from the handle, the header or a body scrolled to its top to
+    close; fields and the footer never start a drag; the Close button (44x44
+    hit area) and Esc always work; no slide under reduced motion. Never give
+    a sheet a swipe-only way out.
   - Real checks only: `<DetailChecklist>` ("Health checks: N of M passing",
     folded, failing first) and the `<DetailCallout>` above it appear only
     when the record has such state. Never placeholder checks.

@@ -70,20 +70,21 @@ type AssetServiceRepository interface {
 	// Statistics & Aggregations
 	// ==========================================================================
 
-	// CountByTenant returns the total number of services for a tenant.
-	CountByTenant(ctx context.Context, tenantID shared.ID) (int64, error)
+	// CountByTenant returns the total number of services for a tenant. The
+	// tenant-wide statistics below take the caller's data scope (nil = all).
+	CountByTenant(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error)
 
 	// CountByAsset returns the number of services for an asset.
 	CountByAsset(ctx context.Context, tenantID, assetID shared.ID) (int, error)
 
 	// CountPublic returns the number of public services for a tenant.
-	CountPublic(ctx context.Context, tenantID shared.ID) (int64, error)
+	CountPublic(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (int64, error)
 
 	// GetServiceTypeCounts returns count of services grouped by service type.
-	GetServiceTypeCounts(ctx context.Context, tenantID shared.ID) (map[ServiceType]int, error)
+	GetServiceTypeCounts(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[ServiceType]int, error)
 
 	// GetPortCounts returns count of services grouped by port (top N).
-	GetPortCounts(ctx context.Context, tenantID shared.ID, topN int) (map[int]int, error)
+	GetPortCounts(ctx context.Context, tenantID shared.ID, topN int, scope *shared.DataScope) (map[int]int, error)
 
 	// ==========================================================================
 	// Search Operations

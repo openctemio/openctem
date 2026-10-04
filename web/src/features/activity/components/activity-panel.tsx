@@ -642,7 +642,6 @@ export function ActivityPanel({
       open={open}
       onOpenChange={onOpenChange}
       width="xl"
-      phoneHeight="full"
       header={header}
       tabs={customBody ? undefined : filters}
       bodyRef={bodyRef}

@@ -326,6 +326,7 @@ type StatusCounts struct {
 	Running   int64 `json:"running"`
 	Pending   int64 `json:"pending"`
 	Completed int64 `json:"completed"`
+	Partial   int64 `json:"partial"`
 	Failed    int64 `json:"failed"`
 	Canceled  int64 `json:"canceled"`
 }
@@ -381,6 +382,7 @@ func (s *Service) getPipelineRunStats(ctx context.Context, tenantID shared.ID) (
 		Pending:   stats.Pending,
 		Running:   stats.Running,
 		Completed: stats.Completed,
+		Partial:   stats.Partial,
 		Failed:    stats.Failed,
 		Canceled:  stats.Canceled,
 	}, nil
@@ -400,6 +402,7 @@ func (s *Service) getStepRunStats(ctx context.Context, tenantID shared.ID) (Stat
 		Pending:   stats.Pending,
 		Running:   stats.Running,
 		Completed: stats.Completed,
+		Partial:   stats.Partial,
 		Failed:    stats.Failed,
 		Canceled:  stats.Canceled,
 	}, nil

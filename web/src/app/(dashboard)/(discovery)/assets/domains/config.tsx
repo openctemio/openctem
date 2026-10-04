@@ -15,16 +15,21 @@ import {
   ChipMono,
   ChipRow,
   FactChip,
+  EmptyCell,
   OverflowChips,
-  UnknownChip,
 } from '@/features/assets/components/service-cells'
 
 // DNS facts come from `domain.dns_records[]` (dnsx via ingest) or the flat
 // keys the collector path writes (`resolved_ips`, `cname_target`,
 // `dns_record_types`); registration from `domain.{registrar,expires_at}` or
 // the form's `registrar` / `expiry_date`. All read through service-facts.
+// A fact nothing recorded is an empty cell (`—`) in the list and one "Not
+// collected yet" line in the drawer (ui-style-contract §7). The data cannot
+// tell "never resolved" from "resolved to nothing" (both are no records), so
+// no records stays "not collected", never "does not resolve".
 
-const unknownText = (text = 'Unknown') => <span className="text-muted-foreground">{text}</span>
+/** Registration facts belong to a registered (root) domain only. */
+const isRoot = (asset: { type: string }) => asset.type === 'domain'
 
 export const domainsConfig: AssetPageConfig = {
   type: 'domain',
@@ -71,7 +76,7 @@ export const domainsConfig: AssetPageConfig = {
                 {reg}
               </span>
             )
-          return <UnknownChip>Not resolved</UnknownChip>
+          return <EmptyCell />
         }
         return (
           <ChipRow className="max-w-[260px]">
@@ -173,16 +178,18 @@ export const domainsConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Registrar',
-          getValue: (asset) => registrar(asset) ?? unknownText(),
+          getValue: (asset) => registrar(asset),
+          notCollected: (asset) => (isRoot(asset) && !registrar(asset) ? 'registrar' : null),
         },
         {
           label: 'Expiry Date',
-          getValue: (asset) => domainExpiry(asset)?.toLocaleDateString() ?? unknownText(),
+          getValue: (asset) => domainExpiry(asset)?.toLocaleDateString(),
+          notCollected: (asset) => (isRoot(asset) && !domainExpiry(asset) ? 'expiry date' : null),
         },
         {
           label: 'Root Domain',
           getValue: (asset) =>
-            ((asset.metadata as Record<string, unknown>).root_domain as string) || unknownText(),
+            ((asset.metadata as Record<string, unknown>).root_domain as string) || null,
         },
         {
           label: 'Collector',
@@ -190,7 +197,7 @@ export const domainsConfig: AssetPageConfig = {
             const meta = asset.metadata as Record<string, unknown>
             const type = (meta.collector_type as string) || ''
             const source = (meta.collector_source as string) || (meta.source as string) || ''
-            if (!type && !source) return unknownText()
+            if (!type && !source) return null
             return type ? `${type}${source ? ` (${source})` : ''}` : source
           },
         },
@@ -203,7 +210,7 @@ export const domainsConfig: AssetPageConfig = {
           label: 'Record Types',
           getValue: (asset) => {
             const types = dnsRecordTypes(asset)
-            if (types.length === 0) return unknownText('Not collected')
+            if (types.length === 0) return null
             return (
               <ChipRow>
                 {types.map((t) => (
@@ -214,12 +221,13 @@ export const domainsConfig: AssetPageConfig = {
               </ChipRow>
             )
           },
+          notCollected: 'DNS records',
         },
         {
           label: 'Resolved IPs',
           getValue: (asset) => {
             const ipList = ipAddresses(asset)
-            if (ipList.length === 0) return unknownText('None recorded')
+            if (ipList.length === 0) return null
             return (
               <ChipRow>
                 {ipList.map((ip) => (
@@ -231,12 +239,13 @@ export const domainsConfig: AssetPageConfig = {
             )
           },
           fullWidth: true,
+          notCollected: 'resolved IPs',
         },
         {
           label: 'CNAME Target',
           getValue: (asset) => {
             const targets = cnames(asset)
-            if (targets.length === 0) return unknownText('None recorded')
+            if (targets.length === 0) return null
             return (
               <ChipRow>
                 {targets.map((t) => (
@@ -253,7 +262,7 @@ export const domainsConfig: AssetPageConfig = {
           label: 'Nameservers',
           getValue: (asset) => {
             const ns = nameservers(asset)
-            if (ns.length === 0) return unknownText('None recorded')
+            if (ns.length === 0) return null
             return (
               <ChipRow>
                 {ns.map((n) => (
@@ -265,6 +274,8 @@ export const domainsConfig: AssetPageConfig = {
             )
           },
           fullWidth: true,
+          notCollected: (asset) =>
+            isRoot(asset) && nameservers(asset).length === 0 ? 'nameservers' : null,
         },
       ],
     },

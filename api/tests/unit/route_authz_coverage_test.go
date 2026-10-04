@@ -51,7 +51,7 @@ var routeAuthzAllowlist = map[string]string{
 // (public auth flow, sensor API-key, SCIM/MCP bearer, webhooks HMAC, or
 // self-scoped /me + /users/me where the handler scopes to the caller).
 var allowlistPrefixes = []struct{ prefix, reason string }{
-	{"/api/v1/auth", "public auth flow / self-scoped (login, register, oauth, sso, saml, logout); ws-token runs the tenant chain (SSO enforcement, IP allowlist, RequireTenant, active membership) and issues a ticket for the caller's own user+tenant"},
+	{"/api/v1/auth", "public auth flow / self-scoped (login, register, oauth, sso, saml, logout)"},
 	{"/api/v1/users/me", "self-scoped: acts only on the authenticated user"},
 	{"/api/v1/me/", "self-scoped: /me/* reads the caller's own perms/modules/roles"},
 	{"/api/v1/notifications", "tenant+user-scoped in handler"},
@@ -73,7 +73,7 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/metrics", "MetricsAuth bearer (fail-closed 404)"},
 	{"/openapi.yaml", "public API spec"},
 	{"/docs", "public API docs"},
-	{"/api/v1/ws", "single-use WS ticket bound to user+tenant, active membership re-checked at upgrade (or the JWT tenant chain without Redis); channels authorized per subscription by Hub.defaultAuthorize"},
+	{"/api/v1/ws", "session (cookie or Bearer, no API keys) through the tenant chain: SSO enforcement, IP allowlist, RequireTenant, active membership (realtimeMiddlewares, RFC-045); socket bound to the session and closed on revocation or expiry; channels authorized per subscription by Hub.defaultAuthorize"},
 }
 
 // routePathArg resolves a route path argument: a string literal, or one of the

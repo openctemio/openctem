@@ -48,7 +48,7 @@ func (m *expMerge) merge() {
 		m.t.Fatalf("seed review: %v", err)
 	}
 	repo := postgres.NewAssetDedupRepository(&postgres.DB{DB: m.db})
-	if err := repo.ApproveAndMerge(context.Background(), m.tenant.String(), reviewID, shared.NewID().String()); err != nil {
+	if err := repo.ApproveAndMerge(context.Background(), m.tenant.String(), reviewID, shared.NewID().String(), nil); err != nil {
 		m.t.Fatalf("merge: %v", err)
 	}
 }

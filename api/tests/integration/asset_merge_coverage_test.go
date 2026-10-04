@@ -185,7 +185,7 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		VALUES ($1,$2,'keep','repository',$3,'keep',$4,$5,'pending')`, reviewID, T, K, pq.Array([]string{M}), pq.Array([]string{"merge-mergeall"}))
 
 	repo := postgres.NewAssetDedupRepository(&postgres.DB{DB: db})
-	if err := repo.ApproveAndMerge(ctx, T, reviewID, U); err != nil {
+	if err := repo.ApproveAndMerge(ctx, T, reviewID, U, nil); err != nil {
 		t.Fatalf("ApproveAndMerge: %v", err)
 	}
 

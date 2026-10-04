@@ -17,10 +17,12 @@ import {
 } from '@/features/assets/lib/service-facts'
 import {
   ChipRow,
+  EmptyCell,
   HttpStatusChip,
   OverflowChips,
   TechChips,
   TlsSummary,
+  tlsNotCollected,
 } from '@/features/assets/components/service-cells'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { MonitorSmartphone, ShieldCheck, ShieldX, AlertTriangle, Shield, Zap } from 'lucide-react'
@@ -31,18 +33,22 @@ function tlsLabel(asset: Asset): string {
   return k === 'cert' || k === 'tls' ? 'Yes' : k === 'none' ? 'No' : ''
 }
 
-const unknownText = (text = 'Unknown') => <span className="text-muted-foreground">{text}</span>
-
 // Each cell reads the keys ingest stores (status_code, technologies,
 // web_server, service.*) as well as the manual form's keys, through
-// service-facts. A value nothing recorded says so; it is never defaulted.
+// service-facts. A value nothing recorded is never defaulted: it is an
+// empty cell (`—`) in the list and one "Not collected yet" line in the
+// drawer (ui-style-contract §7, "Unknown facts").
 const columns: ColumnDef<Asset>[] = [
   {
     id: 'http_status',
     header: 'Status',
     cell: ({ row }) => (
       <div className="min-w-0 max-w-[220px] space-y-1">
-        <HttpStatusChip status={httpStatusCode(row.original)} chain={redirectChain(row.original)} />
+        <HttpStatusChip
+          status={httpStatusCode(row.original)}
+          chain={redirectChain(row.original)}
+          fallback={pageTitle(row.original) ? null : <EmptyCell />}
+        />
         {pageTitle(row.original) && (
           <p className="truncate text-xs text-muted-foreground" title={pageTitle(row.original)}>
             {pageTitle(row.original)}
@@ -56,7 +62,7 @@ const columns: ColumnDef<Asset>[] = [
     header: 'Technologies',
     cell: ({ row }) => (
       <ChipRow className="max-w-[240px]">
-        <TechChips technologies={technologies(row.original)} max={2} />
+        <TechChips technologies={technologies(row.original)} max={2} fallback={<EmptyCell />} />
       </ChipRow>
     ),
   },
@@ -65,7 +71,7 @@ const columns: ColumnDef<Asset>[] = [
     header: 'TLS',
     cell: ({ row }) => (
       <div className="max-w-[200px]">
-        <TlsSummary facts={tlsFacts(row.original)} />
+        <TlsSummary facts={tlsFacts(row.original)} fallback={<EmptyCell />} />
       </div>
     ),
   },
@@ -198,30 +204,39 @@ export const websitesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'HTTP Status',
-          getValue: (asset) => (
-            <HttpStatusChip status={httpStatusCode(asset)} chain={redirectChain(asset)} />
-          ),
+          getValue: (asset) =>
+            httpStatusCode(asset) === null ? null : (
+              <HttpStatusChip status={httpStatusCode(asset)} chain={redirectChain(asset)} />
+            ),
+          notCollected: 'HTTP status',
         },
         {
           label: 'TLS',
-          getValue: (asset) => <TlsSummary facts={tlsFacts(asset)} explainMissing />,
+          getValue: (asset) =>
+            tlsFacts(asset).kind === 'not_collected' ? null : (
+              <TlsSummary facts={tlsFacts(asset)} />
+            ),
+          notCollected: (asset) => tlsNotCollected(tlsFacts(asset)),
         },
         {
           label: 'Title',
-          getValue: (asset) => pageTitle(asset) ?? unknownText('Not collected'),
+          getValue: (asset) => pageTitle(asset),
           fullWidth: true,
+          notCollected: 'page title',
         },
         {
           label: 'Web server',
-          getValue: (asset) => webServer(asset) ?? unknownText(),
+          getValue: (asset) => webServer(asset),
+          notCollected: 'web server',
         },
         {
+          // Optional facts: not every site has a CDN or reports a type.
           label: 'Content type',
-          getValue: (asset) => contentType(asset) ?? unknownText(),
+          getValue: (asset) => contentType(asset),
         },
         {
           label: 'CDN',
-          getValue: (asset) => cdnName(asset) ?? unknownText(),
+          getValue: (asset) => cdnName(asset),
         },
         {
           label: 'IP addresses',
@@ -231,10 +246,9 @@ export const websitesConfig: AssetPageConfig = {
               <ChipRow>
                 <OverflowChips label="IP" values={ips} />
               </ChipRow>
-            ) : (
-              unknownText()
-            )
+            ) : null
           },
+          notCollected: 'IP addresses',
         },
         {
           label: 'Redirects to',
@@ -247,9 +261,7 @@ export const websitesConfig: AssetPageConfig = {
               >
                 {target}
               </SafeExternalLink>
-            ) : (
-              unknownText('No redirect recorded')
-            )
+            ) : null
           },
           fullWidth: true,
         },
@@ -260,12 +272,14 @@ export const websitesConfig: AssetPageConfig = {
       fields: [
         {
           label: 'Technologies',
-          getValue: (asset) => (
-            <ChipRow>
-              <TechChips technologies={technologies(asset)} max={Infinity} />
-            </ChipRow>
-          ),
+          getValue: (asset) =>
+            technologies(asset) === null ? null : (
+              <ChipRow>
+                <TechChips technologies={technologies(asset)} max={Infinity} />
+              </ChipRow>
+            ),
           fullWidth: true,
+          notCollected: 'technologies',
         },
       ],
     },

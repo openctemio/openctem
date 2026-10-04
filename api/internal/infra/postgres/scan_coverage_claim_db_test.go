@@ -11,6 +11,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -113,7 +114,7 @@ func TestCoverageScheduler_TwoReplicasNeverDispatchAnAssetTwice(t *testing.T) {
 	}
 	disp := &countingDispatcher{targets: map[string]int{}}
 	newReplica := func() *scancoverage.Scheduler {
-		return scancoverage.NewScheduler(src, disp, repo, &scancoverage.SchedulerConfig{})
+		return scancoverage.NewScheduler(src, disp, repo, &scancoverage.SchedulerConfig{Gate: allowAllCoverageGate{}})
 	}
 
 	var wg sync.WaitGroup
@@ -228,4 +229,11 @@ func TestScanCoverageRepository_ClaimAndRelease(t *testing.T) {
 	if !back.Equal(oldAt) {
 		t.Fatalf("old cursor after release = %v, want restored %v", back, oldAt)
 	}
+}
+
+// allowAllCoverageGate lets every target through, unzoned.
+type allowAllCoverageGate struct{}
+
+func (allowAllCoverageGate) ResolveDispatchTargets(_ context.Context, in scanapp.DispatchTargetsInput) (*scanapp.DispatchTargets, error) {
+	return &scanapp.DispatchTargets{Allowed: in.Targets}, nil
 }

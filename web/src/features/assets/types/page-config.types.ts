@@ -157,12 +157,30 @@ export interface StatsCardConfig {
 /** Detail sheet section (overview tab) */
 export interface DetailSectionConfig {
   title: string
-  fields: {
-    label: string
-    getValue: (asset: Asset) => React.ReactNode
-    /** Full width in the 2-column grid */
-    fullWidth?: boolean
-  }[]
+  fields: DetailFieldConfig[]
+}
+
+/**
+ * One label → value row of a detail section. A field whose `getValue`
+ * returns null / undefined is not shown. A fact nothing collected is not
+ * written as "Unknown" in its row: the field returns null and names the
+ * fact in `notCollected`, and the drawer lists every such fact once, in a
+ * muted "Not collected yet: …" line after the sections
+ * (ui-style-contract §7, "Unknown facts").
+ */
+export interface DetailFieldConfig {
+  label: string
+  getValue: (asset: Asset) => React.ReactNode
+  /** Full width in the 2-column grid */
+  fullWidth?: boolean
+  /**
+   * The fact this row names in "Not collected yet: …":
+   * - a string: listed when `getValue` returned null / undefined;
+   * - a function: called for every asset, listed when it returns a string
+   *   (for a row that shows part of a fact, e.g. TLS without its
+   *   certificate). Leave it out for a field whose absence is not a gap.
+   */
+  notCollected?: string | ((asset: Asset) => string | null | undefined)
 }
 
 /** Detail sheet stat card */

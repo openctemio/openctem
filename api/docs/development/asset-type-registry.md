@@ -51,6 +51,28 @@ derives `assets.asset_class` and `assets.asset_lens` from
 (`asset_type`, `sub_type`) on every insert and update. A direct write to
 those two columns is re-derived, so they never disagree with the type.
 
+## Rules for registry changes
+
+RFC-042 §6.3.8 (type model hardening, accepted 2026-10-03) adds these
+rules. A registry PR that breaks one needs an RFC amendment first.
+
+1. **Aliases are input names only.** An `alias_of` entry is resolved to
+   (core type, sub_type) on every write path and is never stored. Code
+   outside the registry and the ingest mapper never compares against an
+   alias name: key on the class or on (core type, sub_type).
+2. **A sub-type is a kind**, from the core type's closed `sub_types`
+   list. Vendors go to `provider`, engines and operating systems to an
+   attribute. A legacy value that is still accepted on input is mapped
+   explicitly, never left as free text.
+3. **Every class has a core type of its own**, and an alias resolves
+   within its own class.
+4. **No type without a producer.** Add a type or sub-type only together
+   with the parser, connector or committed RFC that produces it.
+5. **Behaviour is declared here**, not coded: which tool target types can
+   scan the type, its default exposure, its relationship constraints.
+6. **This file is the only list of types.** Do not add a hand-written
+   type list in Go, TypeScript or SQL; generate it or read the registry.
+
 ## Changing the registry
 
 1. Edit `configs/asset-types.yaml`.

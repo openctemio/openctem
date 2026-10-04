@@ -25,6 +25,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/attack"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -96,7 +97,11 @@ func (h *dsHarness) dsAuth(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, middleware.UserIDKey, r.Header.Get("X-Test-User"))
 		ctx = context.WithValue(ctx, middleware.TenantIDKey, h.tenant.String())
 		ctx = context.WithValue(ctx, middleware.IsAdminKey, r.Header.Get("X-Test-Admin") == "1")
-		ctx = context.WithValue(ctx, middleware.PermissionsKey, dsMemberPerms)
+		perms := dsMemberPerms
+		if p := r.Header.Get("X-Test-Perms"); p != "" {
+			perms = strings.Split(p, ",")
+		}
+		ctx = context.WithValue(ctx, middleware.PermissionsKey, perms)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -145,6 +150,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	assetSvc.SetAccessControlRepository(accessRepo)
 	assetSvc.SetDataScopePolicy(dsStrictPolicy{h})
 	assetSvc.SetDataScope(enforcer)
+	assetSvc.SetRepositoryExtensionRepository(postgres.NewRepositoryExtensionRepository(db))
 
 	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
@@ -176,13 +182,34 @@ func newDSHarness(t *testing.T) *dsHarness {
 
 	router := infrahttp.NewChiRouter()
 	auth := Middleware(h.dsAuth)
-	registerAssetRoutes(router, handler.NewAssetHandler(assetSvc, v, log), auth, nil)
+	assetHandler := handler.NewAssetHandler(assetSvc, v, log)
+	assetHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
+	registerAssetRoutes(router, assetHandler, auth, nil)
+	importHandler := handler.NewAssetImportHandler(app.NewAssetImportService(assetRepo, log), nil, log)
+	importHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
+	registerAssetImportRoutes(router, importHandler, auth, nil)
 	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, v, log), nil, nil, nil, auth, nil)
 	registerAssetGroupRoutes(router, handler.NewAssetGroupHandler(groupSvc, v, log), auth, nil)
 	registerAttackSurfaceRoutes(router, handler.NewAttackSurfaceHandler(surfaceSvc, log), auth, nil, passthrough)
 	registerExposureRoutes(router, handler.NewExposureHandler(expSvc, nil, v, log), auth, nil, passthrough)
 	registerDashboardRoutes(router, handler.NewDashboardHandler(dashSvc, log), auth, nil)
 	registerNotificationRoutes(router, handler.NewNotificationHandler(notifSvc, log), auth, nil)
+
+	// Asset sub-resources outside /assets/<uuid>: services, state history,
+	// relationships, relationship suggestions, dedup reviews.
+	relRepo := postgres.NewAssetRelationshipRepository(db)
+	svcHandler := handler.NewAssetServiceHandler(postgres.NewAssetServiceRepository(db), assetRepo, v, log).SetDataScope(enforcer)
+	historyHandler := handler.NewAssetStateHistoryHandler(postgres.NewAssetStateHistoryRepository(db), assetRepo, v, log).SetDataScope(enforcer)
+	relSvc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+	relSvc.SetDataScope(enforcer)
+	suggSvc := app.NewRelationshipSuggestionService(postgres.NewRelationshipSuggestionRepository(db), assetRepo, relRepo, log)
+	suggSvc.SetDataScope(enforcer)
+	dedupHandler := handler.NewAdminDedupHandler(postgres.NewAssetDedupRepository(db), log).SetDataScope(enforcer)
+	registerAssetServiceRoutes(router, svcHandler, auth, nil)
+	registerAssetStateHistoryRoutes(router, historyHandler, auth, nil)
+	registerAssetRelationshipRoutes(router, handler.NewAssetRelationshipHandler(relSvc, v, log), auth, nil, passthrough)
+	registerRelationshipSuggestionRoutes(router, handler.NewRelationshipSuggestionHandler(suggSvc, log), auth, nil)
+	registerAssetDedupRoutes(router, dedupHandler, auth, nil)
 	// A sub-resource with no scope code of its own: the guard alone covers it.
 	router.Group("/api/v1/assets/{id}/owners", func(r Router) {
 		r.GET("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -644,5 +671,312 @@ func TestDataScope_AffectedAssetsAndCrossTenantActivity(t *testing.T) {
 	}
 	if !sawB {
 		t.Error("unrestricted cross-tenant activity must include FB")
+	}
+}
+
+// --- Asset sub-resources outside /assets/<uuid> -------------------------------
+//
+// Services, state history, relationships, relationship suggestions and dedup
+// reviews hang off assets but live under their own prefixes, so the by-id
+// guard on /api/v1/assets/<uuid> never saw them. A scoped member must see and
+// change only the rows of assets in their scope; a row that links an in-scope
+// asset to an out-of-scope one (a relationship, a suggestion, a dedup review)
+// is out of scope, because returning it would reveal the other asset.
+
+const (
+	dsMarkerAssetA2 = "dsa-a2.example.com"
+	dsMarkerSvcA    = "dsA-svc"
+	dsMarkerSvcB    = "dsB-SECRET-svc"
+	dsMarkerHistA   = "dsA-hist"
+	dsMarkerHistB   = "dsB-SECRET-hist"
+	dsMarkerSuggA   = "dsA-suggestion"
+	dsMarkerSuggB   = "dsB-SECRET-suggestion"
+	dsMarkerLogA    = "dsA-merged-name"
+	dsMarkerLogB    = "dsB-SECRET-merged-name"
+)
+
+type dsSubresources struct {
+	assetA2, svcA, svcB, histA, histB, relAA, relAB shared.ID
+	suggAA, suggAB, reviewAA, reviewAB              shared.ID
+}
+
+// seedSubresources adds a second in-scope asset A2 and, for each kind of
+// sub-resource, one row that stays inside memberA's scope and one that
+// reaches group B's asset B1.
+func (h *dsHarness) seedSubresources() dsSubresources {
+	h.t.Helper()
+	t := h.tenant.String()
+	r := dsSubresources{
+		assetA2: shared.NewID(), svcA: shared.NewID(), svcB: shared.NewID(),
+		histA: shared.NewID(), histB: shared.NewID(), relAA: shared.NewID(), relAB: shared.NewID(),
+		suggAA: shared.NewID(), suggAB: shared.NewID(), reviewAA: shared.NewID(), reviewAB: shared.NewID(),
+	}
+	a1, a2, b1 := h.assetA.String(), r.assetA2.String(), h.assetB.String()
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality) VALUES ($1, $2, $3, 'domain', 'public', 'high')`,
+		a2, t, dsMarkerAssetA2)
+	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
+		h.memberA.String(), t, a2)
+	h.exec(`INSERT INTO asset_services (id, tenant_id, asset_id, port, protocol, name, service_type, is_public, exposure)
+		VALUES ($1, $3, $4, 443, 'tcp', $5, 'https', TRUE, 'public'), ($2, $3, $6, 8443, 'tcp', $7, 'https', TRUE, 'public')`,
+		r.svcA.String(), r.svcB.String(), t, a1, dsMarkerSvcA, b1, dsMarkerSvcB)
+	h.exec(`INSERT INTO asset_state_history (id, tenant_id, asset_id, change_type, new_value, reason, source, changed_at)
+		VALUES ($1, $3, $4, 'appeared', $5, $5, 'scan', NOW()), ($2, $3, $6, 'appeared', $7, $7, 'scan', NOW())`,
+		r.histA.String(), r.histB.String(), t, a1, dsMarkerHistA, b1, dsMarkerHistB)
+	h.exec(`INSERT INTO asset_relationships (id, tenant_id, source_asset_id, target_asset_id, relationship_type)
+		VALUES ($1, $3, $4, $5, 'depends_on'), ($2, $3, $4, $6, 'depends_on')`,
+		r.relAA.String(), r.relAB.String(), t, a1, a2, b1)
+	h.exec(`INSERT INTO relationship_suggestions (id, tenant_id, source_asset_id, target_asset_id, relationship_type, reason, status)
+		VALUES ($1, $3, $4, $5, 'contains', $7, 'pending'), ($2, $3, $4, $6, 'contains', $8, 'pending')`,
+		r.suggAA.String(), r.suggAB.String(), t, a1, a2, b1, dsMarkerSuggA, dsMarkerSuggB)
+	h.exec(`INSERT INTO asset_dedup_review (id, tenant_id, normalized_name, asset_type, keep_asset_id, keep_asset_name, merge_asset_ids, merge_asset_names, status)
+		VALUES ($1, $3, 'dsa', 'domain', $4, $5, ARRAY[$6]::uuid[], ARRAY[$7], 'pending'),
+		       ($2, $3, 'dsb', 'domain', $8, $9, ARRAY[$4]::uuid[], ARRAY[$5], 'pending')`,
+		r.reviewAA.String(), r.reviewAB.String(), t, a1, dsMarkerAssetA, a2, dsMarkerAssetA2, b1, dsMarkerAssetB)
+	h.exec(`INSERT INTO asset_merge_log (tenant_id, kept_asset_id, kept_asset_name, merged_asset_name, correlation_type, action)
+		VALUES ($1, $2, $3, $4, 'admin_review', 'merge'), ($1, $5, $6, $7, 'admin_review', 'merge')`,
+		t, a1, dsMarkerAssetA, dsMarkerLogA, b1, dsMarkerAssetB, dsMarkerLogB)
+	return r
+}
+
+func dsLeaksB(body string) bool {
+	for _, m := range []string{dsMarkerAssetB, dsMarkerSvcB, dsMarkerHistB, dsMarkerSuggB, dsMarkerLogB, "dsB-SECRET"} {
+		if strings.Contains(body, m) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDataScope_SubresourceLists_FilterForScopedMemberOnly(t *testing.T) {
+	h := newDSHarness(t)
+	r := h.seedSubresources()
+	lists := []struct {
+		path string
+		keep string // in-scope row the scoped member must still see
+		hide string // out-of-scope row the scoped member must not see
+	}{
+		{"/api/v1/services", dsMarkerSvcA, dsMarkerSvcB},
+		{"/api/v1/services/public", dsMarkerSvcA, dsMarkerSvcB},
+		{"/api/v1/state-history", dsMarkerHistA, dsMarkerHistB},
+		{"/api/v1/state-history/appearances", dsMarkerHistA, dsMarkerHistB},
+		{"/api/v1/assets/" + h.assetA.String() + "/relationships", r.relAA.String(), r.relAB.String()},
+		{"/api/v1/relationships/suggestions", dsMarkerSuggA, dsMarkerSuggB},
+		{"/api/v1/assets/dedup/reviews", r.reviewAA.String(), r.reviewAB.String()},
+		{"/api/v1/assets/dedup/merge-log", dsMarkerLogA, dsMarkerLogB},
+	}
+	for _, l := range lists {
+		status, body := h.do(h.memberA, false, http.MethodGet, l.path, nil)
+		if status != http.StatusOK {
+			t.Errorf("memberA GET %s = %d (body %.200s)", l.path, status, body)
+			continue
+		}
+		if strings.Contains(body, l.hide) || dsLeaksB(body) {
+			t.Errorf("memberA GET %s leaked an out-of-scope row: %.400s", l.path, body)
+		}
+		if !strings.Contains(body, l.keep) {
+			t.Errorf("memberA GET %s lost the in-scope row %q (body %.300s)", l.path, l.keep, body)
+		}
+		for _, who := range []struct {
+			name  string
+			user  shared.ID
+			admin bool
+		}{{"owner", h.owner, true}, {"member without group", h.memberFree, false}} {
+			status, body := h.do(who.user, who.admin, http.MethodGet, l.path, nil)
+			if status != http.StatusOK || !strings.Contains(body, l.keep) || !strings.Contains(body, l.hide) {
+				t.Errorf("%s GET %s = %d, want both rows (body %.300s)", who.name, l.path, status, body)
+			}
+		}
+	}
+
+	// Aggregates count only in-scope rows for the scoped member.
+	counts := []struct {
+		path, member, owner string
+	}{
+		{"/api/v1/services/stats", `"total_services":1`, `"total_services":2`},
+		{"/api/v1/state-history/stats", `"appeared":1`, `"appeared":2`},
+		{"/api/v1/state-history/timeline", `"appeared":1`, `"appeared":2`},
+		{"/api/v1/relationships/suggestions/count", `"count":1`, `"count":2`},
+		{"/api/v1/relationships/usage-stats", `"id":"depends_on"`, `"id":"depends_on"`},
+	}
+	for _, c := range counts {
+		_, m := h.do(h.memberA, false, http.MethodGet, c.path, nil)
+		_, o := h.do(h.owner, true, http.MethodGet, c.path, nil)
+		if !strings.Contains(m, c.member) || !strings.Contains(o, c.owner) {
+			t.Errorf("GET %s: memberA %.300s (want %s); owner %.300s (want %s)", c.path, m, c.member, o, c.owner)
+		}
+	}
+	_, m := h.do(h.memberA, false, http.MethodGet, "/api/v1/relationships/usage-stats", nil)
+	if !strings.Contains(m, `"id":"depends_on","direct"`) || dsUsageCount(t, m, "depends_on") != 1 {
+		t.Errorf("usage-stats for memberA counts depends_on = %d, want 1 (body %.300s)", dsUsageCount(t, m, "depends_on"), m)
+	}
+	_, o := h.do(h.owner, true, http.MethodGet, "/api/v1/relationships/usage-stats", nil)
+	if dsUsageCount(t, o, "depends_on") != 2 {
+		t.Errorf("usage-stats for owner counts depends_on = %d, want 2", dsUsageCount(t, o, "depends_on"))
+	}
+}
+
+func dsUsageCount(t *testing.T, body, typ string) int64 {
+	t.Helper()
+	var out struct {
+		Data []struct {
+			ID    string `json:"id"`
+			Count int64  `json:"count"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		return -1
+	}
+	for _, d := range out.Data {
+		if d.ID == typ {
+			return d.Count
+		}
+	}
+	return -1
+}
+
+func TestDataScope_SubresourceByID_OutOfScopeIs404AndUnchanged(t *testing.T) {
+	h := newDSHarness(t)
+	r := h.seedSubresources()
+	reqs := []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodGet, "/api/v1/services/" + r.svcB.String(), nil},
+		{http.MethodPut, "/api/v1/services/" + r.svcB.String(), map[string]any{"name": "pwned"}},
+		{http.MethodDelete, "/api/v1/services/" + r.svcB.String(), nil},
+		{http.MethodGet, "/api/v1/state-history/" + r.histB.String(), nil},
+		{http.MethodGet, "/api/v1/relationships/" + r.relAB.String(), nil},
+		{http.MethodPut, "/api/v1/relationships/" + r.relAB.String(), map[string]any{"description": "pwned"}},
+		{http.MethodDelete, "/api/v1/relationships/" + r.relAB.String(), nil},
+		{http.MethodPost, "/api/v1/relationships/suggestions/" + r.suggAB.String() + "/approve", nil},
+		{http.MethodPost, "/api/v1/relationships/suggestions/" + r.suggAB.String() + "/dismiss", nil},
+		{http.MethodPatch, "/api/v1/relationships/suggestions/" + r.suggAB.String() + "/type", map[string]any{"relationship_type": "depends_on"}},
+		{http.MethodPost, "/api/v1/assets/dedup/reviews/" + r.reviewAB.String() + "/approve", nil},
+		{http.MethodPost, "/api/v1/assets/dedup/reviews/" + r.reviewAB.String() + "/reject", nil},
+	}
+	for _, q := range reqs {
+		status, body := h.do(h.memberA, false, q.method, q.path, q.body)
+		if status != http.StatusNotFound {
+			t.Errorf("memberA %s %s = %d, want 404 (body %.200s)", q.method, q.path, status, body)
+		}
+		if dsLeaksB(body) {
+			t.Errorf("memberA %s %s returned group-B data: %.200s", q.method, q.path, body)
+		}
+	}
+	var n int
+	var name, desc, suggStatus, suggType, reviewStatus sql.NullString
+	_ = h.db.QueryRow(`SELECT name FROM asset_services WHERE id = $1`, r.svcB.String()).Scan(&name)
+	if name.String != dsMarkerSvcB {
+		t.Errorf("service B changed or deleted by an out-of-scope member: name=%q", name.String)
+	}
+	_ = h.db.QueryRow(`SELECT description FROM asset_relationships WHERE id = $1`, r.relAB.String()).Scan(&desc)
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM asset_relationships WHERE id = $1`, r.relAB.String()).Scan(&n)
+	if n != 1 || desc.String == "pwned" {
+		t.Errorf("relationship A1->B1 changed by an out-of-scope member: exists=%d description=%q", n, desc.String)
+	}
+	_ = h.db.QueryRow(`SELECT status, relationship_type FROM relationship_suggestions WHERE id = $1`, r.suggAB.String()).Scan(&suggStatus, &suggType)
+	if suggStatus.String != "pending" || suggType.String != "contains" {
+		t.Errorf("suggestion A1->B1 changed by an out-of-scope member: %s %s", suggStatus.String, suggType.String)
+	}
+	_ = h.db.QueryRow(`SELECT status FROM asset_dedup_review WHERE id = $1`, r.reviewAB.String()).Scan(&reviewStatus)
+	if reviewStatus.String != "pending" {
+		t.Errorf("dedup review A1+B1 changed by an out-of-scope member: %s", reviewStatus.String)
+	}
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM assets WHERE id = $1`, h.assetB.String()).Scan(&n)
+	if n != 1 {
+		t.Error("B1 was merged away by an out-of-scope member")
+	}
+
+	// In-scope rows stay usable.
+	for _, q := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/services/" + r.svcA.String()},
+		{http.MethodGet, "/api/v1/state-history/" + r.histA.String()},
+		{http.MethodGet, "/api/v1/relationships/" + r.relAA.String()},
+		{http.MethodPost, "/api/v1/relationships/suggestions/" + r.suggAA.String() + "/dismiss"},
+		{http.MethodPost, "/api/v1/assets/dedup/reviews/" + r.reviewAA.String() + "/reject"},
+	} {
+		if status, body := h.do(h.memberA, false, q.method, q.path, nil); status != http.StatusOK {
+			t.Errorf("memberA %s in-scope %s = %d, want 200 (body %.200s)", q.method, q.path, status, body)
+		}
+	}
+	// An administrator still reaches group B's rows.
+	if status, body := h.do(h.owner, true, http.MethodGet, "/api/v1/relationships/"+r.relAB.String(), nil); status != http.StatusOK {
+		t.Errorf("owner GET relationship A1->B1 = %d (body %.200s)", status, body)
+	}
+}
+
+func TestDataScope_SubresourceWrites_TargetMustBeInScope(t *testing.T) {
+	h := newDSHarness(t)
+	r := h.seedSubresources()
+	count := func() int {
+		var n int
+		_ = h.db.QueryRow(`SELECT COUNT(*) FROM asset_relationships WHERE source_asset_id = $1 AND target_asset_id = $2 AND relationship_type = 'runs_on'`,
+			h.assetA.String(), h.assetB.String()).Scan(&n)
+		return n
+	}
+	base := "/api/v1/assets/" + h.assetA.String() + "/relationships"
+	status, body := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": h.assetB.String(), "type": "runs_on"})
+	if status == http.StatusCreated || dsLeaksB(body) {
+		t.Errorf("memberA linked A1 to out-of-scope B1: %d %.200s", status, body)
+	}
+	_, _ = h.do(h.memberA, false, http.MethodPost, base+"/batch", map[string]any{
+		"items": []map[string]any{{"target_asset_id": h.assetB.String(), "type": "runs_on"}},
+	})
+	if count() != 0 {
+		t.Error("an out-of-scope relationship target was linked")
+	}
+	// The same link to an in-scope target works.
+	if status, body := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": r.assetA2.String(), "type": "runs_on"}); status != http.StatusCreated {
+		t.Errorf("memberA link A1->A2 = %d (body %.200s)", status, body)
+	}
+
+	// Generating reads and replaces every pending suggestion of the
+	// organization: a scoped member may not trigger it.
+	if status, body := h.do(h.memberA, false, http.MethodPost, "/api/v1/relationships/suggestions/generate", nil); status != http.StatusForbidden {
+		t.Errorf("memberA generate = %d, want 403 (body %.200s)", status, body)
+	}
+
+	// Approve-all only approves the suggestions the member can see.
+	if status, body := h.do(h.memberA, false, http.MethodPost, "/api/v1/relationships/suggestions/approve-all", nil); status != http.StatusOK {
+		t.Fatalf("approve-all = %d (body %.200s)", status, body)
+	}
+	var sa, sb string
+	_ = h.db.QueryRow(`SELECT status FROM relationship_suggestions WHERE id = $1`, r.suggAA.String()).Scan(&sa)
+	_ = h.db.QueryRow(`SELECT status FROM relationship_suggestions WHERE id = $1`, r.suggAB.String()).Scan(&sb)
+	if sa != "approved" || sb != "pending" {
+		t.Errorf("approve-all by memberA: A1->A2 %s (want approved), A1->B1 %s (want pending)", sa, sb)
+	}
+}
+
+// The duplicate-review queue is readable with assets:read (the web route and
+// the asset overview show it to every reader); acting on it needs
+// assets:delete.
+func TestDataScope_DedupReviewPermissions(t *testing.T) {
+	h := newDSHarness(t)
+	r := h.seedSubresources()
+	call := func(perms, method, path string) int {
+		req, err := http.NewRequestWithContext(context.Background(), method, h.srv.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-Test-User", h.memberFree.String())
+		req.Header.Set("X-Test-Perms", perms)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	read := permission.AssetsRead.String()
+	if got := call(read, http.MethodGet, "/api/v1/assets/dedup/reviews"); got != http.StatusOK {
+		t.Errorf("assets:read GET reviews = %d, want 200", got)
+	}
+	reject := "/api/v1/assets/dedup/reviews/" + r.reviewAA.String() + "/reject"
+	if got := call(read+","+permission.AssetsWrite.String(), http.MethodPost, reject); got != http.StatusForbidden {
+		t.Errorf("assets:read+write POST reject = %d, want 403", got)
+	}
+	if got := call(read+","+permission.AssetsDelete.String(), http.MethodPost, reject); got != http.StatusOK {
+		t.Errorf("assets:delete POST reject = %d, want 200", got)
 	}
 }

@@ -114,7 +114,7 @@ func TestFailedDependencyGatesItsDependents(t *testing.T) {
 		map[string]pipelinedom.StepRunStatus{"a": pipelinedom.StepRunStatusRunning, "b": pipelinedom.StepRunStatusPending},
 		map[string][]string{"b": {"a"}})
 
-	if err := s.failStep(context.Background(), run, run.GetStepRun("a"), "boom", "COMMAND_FAILED", false); err != nil {
+	if err := s.failStep(context.Background(), run, run.GetStepRun("a"), "boom", "COMMAND_FAILED"); err != nil {
 		t.Fatal(err)
 	}
 	if len(cmds.created) != 0 {
