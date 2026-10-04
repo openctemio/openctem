@@ -574,6 +574,7 @@ export async function createAsset(input: CreateAssetInput): Promise<Asset> {
   const response = await post<BackendAsset>(endpoints.assets.create(), {
     name: input.name,
     type: input.type,
+    sub_type: input.subType || undefined,
     criticality: input.criticality || 'medium', // Default to medium if not specified
     description: input.description,
     scope: input.scope || 'internal',
@@ -652,9 +653,10 @@ export async function deleteAsset(assetId: string): Promise<void> {
 }
 
 /**
- * Bulk delete multiple assets
- * Deletes assets in batches with a concurrency limit.
- * Uses Promise.allSettled to preserve partial failure info.
+ * Bulk delete multiple assets (5 at a time). Throws when any delete fails,
+ * including an asset refused because it has findings; use
+ * bulkDeleteAssetsSafely (features/assets/lib/safe-delete) to get which were
+ * deleted, refused or failed.
  */
 export async function bulkDeleteAssets(assetIds: string[]): Promise<void> {
   const BATCH_SIZE = 5

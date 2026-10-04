@@ -126,8 +126,17 @@ is refused with 400 `IP allowlist must include your current IP address (<ip>)`.
 `security.current_ip`.
 
 **Client IP.** The API uses the TCP peer, and honors `X-Real-IP` /
-`X-Forwarded-For` only when the peer is in `SERVER_TRUSTED_PROXIES`. When users
-reach the API through the UI's Next.js proxy, the peer is the UI container, so:
+`X-Forwarded-For` only when the peer is in `SERVER_TRUSTED_PROXIES`
+(`pkg/httpsec.ClientIP`, the one place that reads those headers). From a trusted
+peer it walks `X-Forwarded-For` from the right, skipping entries that are
+themselves trusted proxies, and takes the first untrusted one (entries left of
+it were written by the client and are never believed). A well-formed
+`X-Real-IP` is used only when `X-Forwarded-For` is absent, because a proxy that
+ignores `X-Real-IP` (Caddy's `reverse_proxy` by default) passes the client's
+value through. A trusted proxy must therefore set or append `X-Forwarded-For`,
+and every proxy hop between the client and the API belongs in
+`SERVER_TRUSTED_PROXIES`. When users reach the API through the UI's
+Next.js proxy, the peer is the UI container, so:
 
 1. put a reverse proxy in front of the UI that **overwrites** `X-Real-IP` and
    `X-Forwarded-For` with the real client address;

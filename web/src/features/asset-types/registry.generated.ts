@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = '48862d766758d927'
+export const ASSET_REGISTRY_VERSION = '8527e50b8a6ab17a'
 
 export type AssetLens =
   | 'external_surface'
@@ -224,4 +224,106 @@ export const LEGACY_ASSET_CATEGORY_LABELS: Readonly<Record<LegacyAssetCategory, 
   code: 'Code',
   identity: 'Identity',
   other: 'Other',
+}
+
+/** The core types: the only values an asset's `type` holds (RFC-042 §6.3.8). */
+export type StoredAssetType =
+  | 'domain'
+  | 'subdomain'
+  | 'ip_address'
+  | 'certificate'
+  | 'service'
+  | 'application'
+  | 'host'
+  | 'endpoint'
+  | 'cloud_account'
+  | 'container'
+  | 'kubernetes'
+  | 'repository'
+  | 'identity'
+  | 'database'
+  | 'storage'
+  | 'network'
+  | 'unclassified'
+
+export const STORED_ASSET_TYPES: readonly StoredAssetType[] = [
+  'domain',
+  'subdomain',
+  'ip_address',
+  'certificate',
+  'service',
+  'application',
+  'host',
+  'endpoint',
+  'cloud_account',
+  'container',
+  'kubernetes',
+  'repository',
+  'identity',
+  'database',
+  'storage',
+  'network',
+  'unclassified',
+]
+
+/** The closed sub-type list of each core type (a sub-type is a kind). */
+export const ASSET_SUB_TYPES: Readonly<Record<StoredAssetType, readonly string[]>> = {
+  domain: [],
+  subdomain: [],
+  ip_address: [],
+  certificate: [],
+  service: ['http', 'open_port', 'discovered_url'],
+  application: ['website', 'web_application', 'api', 'mobile_app'],
+  host: ['compute', 'serverless'],
+  endpoint: [],
+  cloud_account: ['account', 'project', 'subscription', 'organization'],
+  container: ['image'],
+  kubernetes: ['cluster', 'namespace', 'workload'],
+  repository: [],
+  identity: ['iam_user', 'iam_role', 'service_account', 'identity_provider'],
+  database: ['relational', 'document', 'key_value', 'graph', 'warehouse', 'vector'],
+  storage: ['bucket', 'file_share', 'disk', 'container_registry'],
+  network: [
+    'vpc',
+    'subnet',
+    'ip_block',
+    'vlan',
+    'security_group',
+    'firewall',
+    'router',
+    'switch',
+    'load_balancer',
+    'vpn_gateway',
+    'wireless_controller',
+    'access_point',
+    'ids_ips',
+  ],
+  unclassified: [],
+}
+
+/** Input-only alias names and the (core type, sub-type) they are stored as. */
+export const ASSET_TYPE_ALIASES: Readonly<
+  Record<string, { type: StoredAssetType; subType?: string }>
+> = {
+  http_service: { type: 'service', subType: 'http' },
+  open_port: { type: 'service', subType: 'open_port' },
+  discovered_url: { type: 'service', subType: 'discovered_url' },
+  website: { type: 'application', subType: 'website' },
+  web_application: { type: 'application', subType: 'web_application' },
+  api: { type: 'application', subType: 'api' },
+  mobile_app: { type: 'application', subType: 'mobile_app' },
+  compute: { type: 'host', subType: 'compute' },
+  serverless: { type: 'host', subType: 'serverless' },
+  kubernetes_cluster: { type: 'kubernetes', subType: 'cluster' },
+  kubernetes_namespace: { type: 'kubernetes', subType: 'namespace' },
+  container_registry: { type: 'storage', subType: 'container_registry' },
+  iam_user: { type: 'identity', subType: 'iam_user' },
+  iam_role: { type: 'identity', subType: 'iam_role' },
+  service_account: { type: 'identity', subType: 'service_account' },
+  data_store: { type: 'database' },
+  s3_bucket: { type: 'storage', subType: 'bucket' },
+  vpc: { type: 'network', subType: 'vpc' },
+  subnet: { type: 'network', subType: 'subnet' },
+  firewall: { type: 'network', subType: 'firewall' },
+  load_balancer: { type: 'network', subType: 'load_balancer' },
 }

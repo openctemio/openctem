@@ -242,7 +242,10 @@ func TestClassOf_AliasesKeepTheirOwnClass(t *testing.T) {
 }
 
 // TypeAliases moved from a hand-written map in value_objects.go into the
-// generated file. Ingest depends on every entry, so it must not change.
+// generated file. Ingest depends on every entry, so it must not change
+// unintentionally. RFC-042 §6.3.8 changed two on purpose: a sub-type is a
+// kind, so s3_bucket is stored as (storage, bucket) + provider aws, and
+// data_store as a database with no sub-type.
 func TestTypeAliases_UnchangedByTheRegistry(t *testing.T) {
 	type alias = struct {
 		CoreType AssetType
@@ -262,8 +265,8 @@ func TestTypeAliases_UnchangedByTheRegistry(t *testing.T) {
 		"iam_user":             {AssetTypeIdentity, "iam_user"},
 		"iam_role":             {AssetTypeIdentity, "iam_role"},
 		"service_account":      {AssetTypeIdentity, "service_account"},
-		"data_store":           {AssetTypeDatabase, "data_store"},
-		"s3_bucket":            {AssetTypeStorage, "s3_bucket"},
+		"data_store":           {AssetTypeDatabase, ""},
+		"s3_bucket":            {AssetTypeStorage, "bucket"},
 		"container_registry":   {AssetTypeStorage, "container_registry"},
 		"kubernetes_cluster":   {AssetTypeKubernetes, "cluster"},
 		"kubernetes_namespace": {AssetTypeKubernetes, "namespace"},

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -263,5 +263,75 @@ func TestAssetTypeRegistry_BackfillRepairsRows(t *testing.T) {
 	}
 	if total != 0 {
 		t.Errorf("second backfill pass updated %d rows, want 0", total)
+	}
+}
+
+// RFC-042 §6.3.8: the closed sub-type lists, the storable flag and the input
+// map in the database are the registry's.
+func TestAssetTypeRegistry_InputsAndSubTypesMatchRegistry(t *testing.T) {
+	db, ctx := openRegistryDB(t)
+
+	rows, err := db.QueryContext(ctx, `SELECT code, sub_types, is_storable FROM asset_types`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	seen := 0
+	for rows.Next() {
+		var code string
+		var subs []string
+		var storable bool
+		if err := rows.Scan(&code, pq.Array(&subs), &storable); err != nil {
+			t.Fatal(err)
+		}
+		typ := asset.AssetType(code)
+		if storable != typ.IsStored() {
+			t.Errorf("%s: is_storable = %v, registry stored = %v", code, storable, typ.IsStored())
+		}
+		want := asset.SubTypesOf(typ)
+		if want == nil {
+			want = []string{}
+		}
+		if subs == nil {
+			subs = []string{}
+		}
+		if !slices.Equal(subs, want) {
+			t.Errorf("%s: sub_types = %v, registry %v", code, subs, want)
+		}
+		if typ.IsStored() {
+			seen++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if seen != len(asset.StoredAssetTypes()) {
+		t.Errorf("%d storable rows, registry has %d core types", seen, len(asset.StoredAssetTypes()))
+	}
+
+	inputs := asset.RegistryTypeInputs()
+	mrows, err := db.QueryContext(ctx,
+		`SELECT from_type, from_sub_type, to_type, COALESCE(to_sub_type, ''), COALESCE(provider, '') FROM asset_type_input_map`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = mrows.Close() }()
+	n := 0
+	for mrows.Next() {
+		var ft, fs, tt, ts, prov string
+		if err := mrows.Scan(&ft, &fs, &tt, &ts, &prov); err != nil {
+			t.Fatal(err)
+		}
+		n++
+		want, ok := inputs[asset.TypeRef{Type: asset.AssetType(ft), SubType: fs}]
+		if !ok || string(want.Type) != tt || want.SubType != ts || string(want.Provider) != prov {
+			t.Errorf("input map (%s, %s) -> (%s, %s, %s); registry %+v (found %v)", ft, fs, tt, ts, prov, want, ok)
+		}
+	}
+	if err := mrows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if n != len(inputs) {
+		t.Errorf("%d input map rows, registry has %d inputs", n, len(inputs))
 	}
 }

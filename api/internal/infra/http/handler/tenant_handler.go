@@ -336,7 +336,7 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 // buildAuditContext builds an app.AuditContext from the HTTP request.
 func (h *TenantHandler) buildAuditContext(r *http.Request) app.AuditContext {
 	actx := app.AuditContext{
-		ActorIP:   r.RemoteAddr,
+		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
 	}

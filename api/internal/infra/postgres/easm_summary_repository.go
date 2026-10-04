@@ -85,7 +85,7 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 	sc, args = scopeClause("a.id", scopeUserID, tenantID, args)
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM assets a
-		WHERE a.tenant_id = $1 AND a.asset_type = 'service' AND a.is_internet_accessible AND a.status <> 'archived'`+notRejectedFor("a.id")+sc,
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'service' AND a.is_internet_accessible AND a.status <> 'archived'`+notRejectedFor("a.id")+sc,
 		args...).Scan(&out.ExposedServices); err != nil {
 		return nil, fmt.Errorf("easm exposed services: %w", err)
 	}
@@ -107,7 +107,7 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 		       count(*) FILTER (WHERE a.first_seen >= $4),
 		       count(*) FILTER (WHERE a.first_seen >= $5)
 		FROM assets a
-		WHERE a.tenant_id = $1 AND a.asset_type = ANY($2) AND a.status <> 'archived'`+notRejectedFor("a.id")+sc,
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = ANY($2) AND a.status <> 'archived'`+notRejectedFor("a.id")+sc,
 		args...).Scan(&out.NewSince7d, &out.NewSince30d, &out.NewSinceCycle); err != nil {
 		return nil, fmt.Errorf("easm new assets: %w", err)
 	}
@@ -144,7 +144,7 @@ func (r *EASMSummaryRepository) surfaceCounts(ctx context.Context, tenantID shar
 		SELECT a.asset_type, COALESCE(aa.state, ''), count(*)
 		FROM assets a
 		LEFT JOIN asset_attributions aa ON aa.asset_id = a.id
-		WHERE a.tenant_id = $1 AND a.asset_type = ANY($2) AND a.status <> 'archived'`+sc+`
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = ANY($2) AND a.status <> 'archived'`+sc+`
 		GROUP BY 1, 2`, args...)
 	if err != nil {
 		return fmt.Errorf("easm surface counts: %w", err)
@@ -171,7 +171,8 @@ func (r *EASMSummaryRepository) exposureCounts(ctx context.Context, tenantID sha
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT e.severity, e.event_type, count(*)
 		FROM exposure_events e
-		WHERE e.tenant_id = $1 AND e.state = 'active' AND e.event_type = ANY($2)`+notRejectedFor("e.asset_id")+sc+`
+		WHERE e.tenant_id = $1 AND e.state = 'active' AND e.event_type = ANY($2)
+		  AND `+notOfDeletedAssetSQL("e.asset_id")+notRejectedFor("e.asset_id")+sc+`
 		GROUP BY 1, 2`, args...)
 	if err != nil {
 		return fmt.Errorf("easm exposures: %w", err)
@@ -198,7 +199,8 @@ func (r *EASMSummaryRepository) topRisks(ctx context.Context, tenantID shared.ID
 		FROM exposure_events e
 		LEFT JOIN assets a ON a.id = e.asset_id AND a.tenant_id = e.tenant_id
 		WHERE e.tenant_id = $1 AND e.state = 'active' AND e.event_type = ANY($2)
-		  AND e.severity IN ('critical', 'high', 'medium')`+notRejectedFor("e.asset_id")+sc+`
+		  AND e.severity IN ('critical', 'high', 'medium')
+		  AND (a.id IS NULL OR a.deleted_at IS NULL)`+notRejectedFor("e.asset_id")+sc+`
 		ORDER BY CASE e.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END, e.last_seen_at DESC
 		LIMIT $3`, args...)
 	if err != nil {

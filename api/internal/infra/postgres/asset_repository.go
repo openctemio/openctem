@@ -118,7 +118,7 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 // GetByID retrieves an asset by its ID within a tenant.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (r *AssetRepository) GetByID(ctx context.Context, tenantID, assetID shared.ID) (*asset.Asset, error) {
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.id = $2"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = $2"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), assetID.String())
 	return r.scanAsset(row, assetID)
@@ -135,7 +135,7 @@ func (r *AssetRepository) GetByIDs(ctx context.Context, tenantID shared.ID, ids 
 	for i, id := range ids {
 		idStrs[i] = id.String()
 	}
-	rows, err := r.db.QueryContext(ctx, r.selectQuery()+" WHERE a.tenant_id = $1 AND a.id = ANY($2::uuid[])",
+	rows, err := r.db.QueryContext(ctx, r.selectQuery()+" WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2::uuid[])",
 		tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get assets by ids: %w", err)
@@ -170,7 +170,7 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 	}
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, asset_type FROM assets WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+		`SELECT id, name, asset_type FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND id = ANY($2::uuid[])`,
 		tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to batch get asset display info: %w", err)
@@ -198,7 +198,7 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 
 // GetByExternalID retrieves an asset by external ID and provider.
 func (r *AssetRepository) GetByExternalID(ctx context.Context, tenantID shared.ID, provider asset.Provider, externalID string) (*asset.Asset, error) {
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.provider = $2 AND a.external_id = $3"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.provider = $2 AND a.external_id = $3"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), provider.String(), externalID)
 	return r.scanAsset(row, shared.ID{})
@@ -211,7 +211,7 @@ func (r *AssetRepository) FindByExternalID(ctx context.Context, tenantID shared.
 	if externalID == "" {
 		return nil, nil
 	}
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.external_id = $2 LIMIT 1"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.external_id = $2 LIMIT 1"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), externalID)
 	a, err := r.scanAsset(row, shared.ID{})
 	if err != nil {
@@ -249,7 +249,7 @@ func (r *AssetRepository) FindByPropertyValue(ctx context.Context, tenantID shar
 	// pattern entirely — defense-in-depth so a future "let users add
 	// custom correlation keys" feature can't accidentally introduce a
 	// vulnerability.
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.properties ->> $3 = $2 LIMIT 1"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.properties ->> $3 = $2 LIMIT 1"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), value, key)
 	a, err := r.scanAsset(row, shared.ID{})
 	if err != nil {
@@ -263,7 +263,7 @@ func (r *AssetRepository) FindByPropertyValue(ctx context.Context, tenantID shar
 
 // GetByName retrieves an asset by name within a tenant.
 func (r *AssetRepository) GetByName(ctx context.Context, tenantID shared.ID, name string) (*asset.Asset, error) {
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.name = $2"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.name = $2"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), name)
 	return r.scanAsset(row, shared.ID{})
@@ -274,7 +274,7 @@ func (r *AssetRepository) GetByName(ctx context.Context, tenantID shared.ID, nam
 // and properties->'ip_addresses' array (host with multiple IPs).
 // Returns nil (no error) if no match found.
 func (r *AssetRepository) FindByIP(ctx context.Context, tenantID shared.ID, ip string) (*asset.Asset, error) {
-	query := r.selectQuery() + ` WHERE a.tenant_id = $1 AND (
+	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND (
 		a.name = $2
 		OR a.properties->>'ip' = $2
 		OR a.properties->'ip_address'->>'address' = $2
@@ -296,7 +296,7 @@ func (r *AssetRepository) FindByIP(ctx context.Context, tenantID shared.ID, ip s
 // Searches: name (exact), properties->>'hostname', properties->'ip_address'->>'hostname'.
 // Returns nil (no error) if no match found.
 func (r *AssetRepository) FindByHostname(ctx context.Context, tenantID shared.ID, hostname string) (*asset.Asset, error) {
-	query := r.selectQuery() + ` WHERE a.tenant_id = $1 AND (
+	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND (
 		a.name = $2
 		OR a.properties->>'hostname' = $2
 		OR a.properties->'ip_address'->>'hostname' = $2
@@ -322,7 +322,7 @@ func (r *AssetRepository) FindByIPs(ctx context.Context, tenantID shared.ID, ips
 		return make(map[string][]*asset.Asset), nil
 	}
 
-	query := r.selectQuery() + ` WHERE a.tenant_id = $1
+	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		AND a.asset_type IN ('host', 'ip_address')
 		AND (
 			a.name = ANY($2)
@@ -399,7 +399,7 @@ func (r *AssetRepository) FindRepositoryByRepoName(ctx context.Context, tenantID
 	// 2. Or name ends with "-repoName" for some formats
 	// 3. Or exact match
 	query := r.selectQuery() + `
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		AND a.asset_type IN ('repository', 'code_repo')
 		AND (
 			a.name = $2
@@ -425,7 +425,7 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 	// Search for repository assets where name or external_id contains the full name pattern
 	// e.g., "github.com/openctemio/sdk-go" should match fullName "openctemio/sdk"
 	query := r.selectQuery() + `
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		AND a.asset_type IN ('repository', 'code_repo')
 		AND (
 			a.name LIKE $2
@@ -502,7 +502,7 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		    last_seen = $32, updated_at = $33,
 		    lifecycle_paused_until = $35, manual_status_override = $36,
 		    impact_confidentiality = $37, impact_integrity = $38, impact_availability = $39
-		WHERE id = $1 AND tenant_id = $34
+		WHERE id = $1 AND tenant_id = $34 AND deleted_at IS NULL
 	`
 
 	updateOwnerRef := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
@@ -601,7 +601,7 @@ func (r *AssetRepository) SnoozeLifecycle(
 				ELSE status
 			END,
 			updated_at = NOW()
-		WHERE tenant_id = $1 AND id = $2
+		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 	`
 	result, err := r.db.ExecContext(ctx, query,
 		tenantID.String(),
@@ -619,28 +619,6 @@ func (r *AssetRepository) SnoozeLifecycle(
 	if rowsAffected == 0 {
 		return asset.NotFoundError(assetID)
 	}
-	return nil
-}
-
-// Delete removes an asset by its ID within a tenant.
-// Security: Requires tenantID to prevent cross-tenant deletion.
-func (r *AssetRepository) Delete(ctx context.Context, tenantID, assetID shared.ID) error {
-	query := `DELETE FROM assets WHERE tenant_id = $1 AND id = $2`
-
-	result, err := r.db.ExecContext(ctx, query, tenantID.String(), assetID.String())
-	if err != nil {
-		return fmt.Errorf("failed to delete asset: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return asset.NotFoundError(assetID)
-	}
-
 	return nil
 }
 
@@ -718,7 +696,7 @@ func (r *AssetRepository) Count(ctx context.Context, filter asset.Filter) (int64
 // ExistsByName checks if an asset with the given name exists within a tenant.
 // Security: Requires tenantID to prevent cross-tenant enumeration.
 func (r *AssetRepository) ExistsByName(ctx context.Context, tenantID shared.ID, name string) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM assets WHERE tenant_id = $1 AND name = $2)`
+	query := `SELECT EXISTS(SELECT 1 FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND name = $2)`
 
 	var exists bool
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), name).Scan(&exists)
@@ -1009,7 +987,8 @@ func (r *AssetRepository) reconstructAsset(
 }
 
 func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) {
-	var conditions []string
+	// A soft-deleted asset is invisible to every list, count and facet.
+	conditions := []string{liveAssetSQL("a")}
 	var args []any
 	argIndex := 1
 
@@ -1363,7 +1342,7 @@ func (r *AssetRepository) GetByNames(ctx context.Context, tenantID shared.ID, na
 	}
 
 	// Build query with ANY for efficient lookup
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.name = ANY($2)"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.name = ANY($2)"
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(names))
 	if err != nil {
@@ -1593,6 +1572,7 @@ const assetRenameByIDSQL = `
 	FROM unnest($1::uuid[], $2::uuid[], $3::text[]) AS v(id, tenant_id, name)
 	WHERE a.id = v.id
 	  AND a.tenant_id = v.tenant_id
+	  AND a.deleted_at IS NULL
 	  AND a.name <> v.name
 	  AND NOT EXISTS (
 		SELECT 1 FROM assets o
@@ -1794,7 +1774,7 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 // ListDistinctTags returns distinct tags across all assets for a tenant.
 // Supports prefix filtering for autocomplete and a limit for result size.
 func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error) {
-	query := `SELECT DISTINCT tag FROM assets, unnest(tags) AS tag WHERE tenant_id = $1`
+	query := `SELECT DISTINCT tag FROM assets, unnest(tags) AS tag WHERE deleted_at IS NULL AND tenant_id = $1`
 	args := []any{tenantID.String()}
 	argIdx := 2
 
@@ -1854,7 +1834,7 @@ func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shar
 	query := `
 		UPDATE assets a
 		SET updated_at = NOW()
-		WHERE a.tenant_id = $1 AND a.id = ANY($2)
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2)
 	`
 
 	_, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(idStrings))
@@ -1906,7 +1886,7 @@ func (r *AssetRepository) BulkUpdateStatus(ctx context.Context, tenantID shared.
 	query := `
 		UPDATE assets
 		SET status = $1, updated_at = NOW()
-		WHERE tenant_id = $2 AND id = ANY($3::uuid[])
+		WHERE tenant_id = $2 AND id = ANY($3::uuid[]) AND deleted_at IS NULL
 	`
 
 	result, err := r.db.ExecContext(ctx, query, status.String(), tenantID.String(), pq.Array(ids))
@@ -1925,7 +1905,7 @@ func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID sh
 			COUNT(*) AS total,
 			COUNT(*) FILTER (WHERE exposure = 'public') AS exposed
 		FROM assets
-		WHERE tenant_id = $1
+		WHERE deleted_at IS NULL AND tenant_id = $1
 		GROUP BY asset_type
 	`
 
@@ -1955,7 +1935,7 @@ func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID sh
 func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shared.ID) (float64, error) {
 	var avg float64
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE tenant_id = $1`,
+		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE deleted_at IS NULL AND tenant_id = $1`,
 		tenantID.String(),
 	).Scan(&avg)
 	if err != nil {
@@ -1969,7 +1949,7 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 // List, so a scoped user's totals and breakdowns count only the assets they
 // can list).
 func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, tags []string, subType string) (string, []any) {
-	filterClause := " WHERE a.tenant_id = $1"
+	filterClause := " WHERE a.deleted_at IS NULL AND a.tenant_id = $1"
 	args := []any{tenantID.String()}
 	idx := 2
 	if len(types) > 0 {
@@ -2254,7 +2234,7 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 		WITH sample AS (
 			SELECT a.properties
 			FROM assets a
-			WHERE a.tenant_id = $1
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 			  AND a.properties IS NOT NULL
 			  AND a.properties != '{}'::jsonb
 			  %[1]s
@@ -2432,7 +2412,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			FROM findings f
 			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id
 		) fc ON true
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		ORDER BY a.created_at
 	`
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
