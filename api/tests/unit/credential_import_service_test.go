@@ -126,7 +126,7 @@ func (m *credImportMockExposureRepo) Update(_ context.Context, event *exposure.E
 	return nil
 }
 
-func (m *credImportMockExposureRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *credImportMockExposureRepo) Delete(_ context.Context, _, id shared.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr

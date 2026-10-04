@@ -43,12 +43,6 @@ type Repository interface {
 	// User-centric queries
 	ListGroupsByUser(ctx context.Context, tenantID, userID shared.ID) ([]*GroupWithRole, error)
 	ListGroupIDsByUser(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
-
-	// Permission set assignment
-	AssignPermissionSet(ctx context.Context, groupID, permissionSetID shared.ID, assignedBy *shared.ID) error
-	RemovePermissionSet(ctx context.Context, groupID, permissionSetID shared.ID) error
-	ListPermissionSetIDs(ctx context.Context, groupID shared.ID) ([]shared.ID, error)
-	ListGroupsWithPermissionSet(ctx context.Context, permissionSetID shared.ID) ([]*Group, error)
 }
 
 // ListFilter contains filter options for listing groups.
@@ -94,10 +88,4 @@ type GroupWithRole struct {
 type GroupWithMembers struct {
 	Group   *Group
 	Members []*MemberWithUser
-}
-
-// GroupWithPermissionSets represents a group with its assigned permission sets.
-type GroupWithPermissionSets struct {
-	Group            *Group
-	PermissionSetIDs []shared.ID
 }
