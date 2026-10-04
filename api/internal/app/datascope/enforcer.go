@@ -285,6 +285,35 @@ func (e *Enforcer) FilterFindings(ctx context.Context, scope *shared.DataScope, 
 	return setOf(in), nil
 }
 
+// CanActOnAssets is the one check of "may this actor act on (scan, probe)
+// these assets". The actor is the request's caller; without a user in the
+// context (a scheduled run) it is fallbackUser, resolved like ForUser; with
+// neither it is the system, which is unrestricted. unrestricted reports that
+// the actor may act on every asset of the tenant (today an administrator, or
+// a member of a fail-open organization with no scope row). Any lookup error
+// is returned, and the caller must refuse (fail closed).
+func (e *Enforcer) CanActOnAssets(ctx context.Context, tenantID shared.ID, fallbackUser *shared.ID, assetIDs []shared.ID) (canAct func(shared.ID) bool, unrestricted bool, err error) {
+	var scope *shared.DataScope
+	c := e.CallerOf(ctx)
+	switch {
+	case c.UserID != "" || c.IsAdmin:
+		scope, err = e.ResolveFor(ctx, tenantID, c)
+	case fallbackUser != nil && !fallbackUser.IsZero():
+		scope, err = e.ForUser(ctx, tenantID, *fallbackUser)
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("resolve act scope: %w", err)
+	}
+	if scope == nil {
+		return func(shared.ID) bool { return true }, true, nil
+	}
+	pred, err := e.Filter(ctx, scope, assetIDs)
+	if err != nil {
+		return nil, false, err
+	}
+	return pred, false, nil
+}
+
 // FilterForCaller is Filter for the request's caller.
 func (e *Enforcer) FilterForCaller(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, error) {
 	scope, err := e.Resolve(ctx, tenantID)
