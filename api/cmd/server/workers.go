@@ -545,6 +545,19 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Deleted-asset purge: assets a person deleted (soft delete, no findings)
+	// are hard-deleted 30 days later. Findings are never purged with them.
+	if repos.Asset != nil {
+		w.ControllerManager.Register(controller.NewAssetPurgeController(
+			repos.Asset,
+			&controller.AssetPurgeConfig{
+				Interval:      24 * time.Hour,
+				RetentionDays: 30,
+				Logger:        log.With("controller", "asset-purge"),
+			},
+		))
+	}
+
 	// Sensor activity timeline retention: sensor_events past 90 days.
 	if repos.SensorEvent != nil {
 		w.ControllerManager.Register(controller.NewSensorEventRetentionController(

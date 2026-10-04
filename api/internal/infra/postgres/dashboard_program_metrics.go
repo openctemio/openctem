@@ -58,7 +58,7 @@ const mttdInternetFacingQuery = `
 		SELECT a.id, a.first_seen,
 			CASE WHEN a.exposure = 'public' THEN a.exposure_changed_at END AS classified_at
 		FROM assets a
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 			AND a.status <> 'archived'
 			AND (a.exposure = 'public' OR a.is_internet_accessible = true)
 			AND a.first_seen >= NOW() - make_interval(days => $2::int)

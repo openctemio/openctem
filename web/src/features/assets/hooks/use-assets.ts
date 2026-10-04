@@ -652,9 +652,10 @@ export async function deleteAsset(assetId: string): Promise<void> {
 }
 
 /**
- * Bulk delete multiple assets
- * Deletes assets in batches with a concurrency limit.
- * Uses Promise.allSettled to preserve partial failure info.
+ * Bulk delete multiple assets (5 at a time). Throws when any delete fails,
+ * including an asset refused because it has findings; use
+ * bulkDeleteAssetsSafely (features/assets/lib/safe-delete) to get which were
+ * deleted, refused or failed.
  */
 export async function bulkDeleteAssets(assetIds: string[]): Promise<void> {
   const BATCH_SIZE = 5
