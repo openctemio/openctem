@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 000401: threat-model applicability keyed by stored (type, sub_type)
+-- Migration 000457: threat-model applicability keyed by stored (type, sub_type)
 -- =============================================================================
 -- RFC-042 §6.3.8 (docs/rfcs/RFC-042-asset-inventory-v2.md), PR T2 "re-key
 -- consumers". 30 of the 98 rows seeded by 000190 name alias types (website,
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS technique_applicability_rekey_ledger (
     PRIMARY KEY (technique_id, old_asset_type, dataset_version)
 );
 
-COMMENT ON TABLE technique_applicability_rekey_ledger IS 'RFC-042 §6.3.8: rows moved from alias asset types by 000401; read by its down migration';
+COMMENT ON TABLE technique_applicability_rekey_ledger IS 'RFC-042 §6.3.8: rows moved from alias asset types by 000457; read by its down migration';
 
 WITH moved AS (
     DELETE FROM technique_applicability t

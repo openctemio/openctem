@@ -30,13 +30,37 @@ func NewAccessControlRepository(db *DB) *AccessControlRepository {
 // ASSET OWNERSHIP
 // =============================================================================
 
+// ownerGroupSameTenantCond keeps an asset_owners row (unaliased) only when
+// it is a user row or its group is in the asset's tenant. Reads keyed by
+// asset use it so a foreign group's row never surfaces.
+const ownerGroupSameTenantCond = `(asset_owners.group_id IS NULL OR EXISTS (
+			SELECT 1 FROM groups g JOIN assets a ON a.tenant_id = g.tenant_id
+			WHERE g.id = asset_owners.group_id AND a.id = asset_owners.asset_id))`
+
+// sameTenantGroupCond is the WHERE condition every asset_owners insert path
+// uses, with `a` the asset being assigned and `<groupExpr>` the group id.
+// asset_owners has no tenant_id, so the asset's tenant is the only thing
+// that ties a row to a tenant: a group row is written only when the asset
+// is a live asset of the group's own tenant. A user row (group id NULL) is
+// unaffected.
+func sameTenantGroupCond(groupExpr string) string {
+	return `a.deleted_at IS NULL AND (` + groupExpr + ` IS NULL OR EXISTS (
+			SELECT 1 FROM groups g WHERE g.id = ` + groupExpr + ` AND g.tenant_id = a.tenant_id))`
+}
+
 // CreateAssetOwner creates a new asset ownership relationship.
 // Supports both group-level and user-level (direct) ownership.
+//
+// A group row whose asset is not a live asset of the group's tenant is not
+// written and the call returns shared.ErrNotFound, the same answer as an
+// asset id that does not exist, so the call is no existence oracle for
+// another tenant's asset ids.
 func (r *AccessControlRepository) CreateAssetOwner(ctx context.Context, ao *accesscontrol.AssetOwner) error {
 	query := `
 		INSERT INTO asset_owners (id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`
+		SELECT $1, a.id, $3::uuid, $4::uuid, $5, $6, $7::uuid
+		FROM assets a
+		WHERE a.id = $2 AND ` + sameTenantGroupCond("$3::uuid")
 
 	var groupID, userID, assignedBy any
 	if ao.GroupID() != nil {
@@ -49,7 +73,7 @@ func (r *AccessControlRepository) CreateAssetOwner(ctx context.Context, ao *acce
 		assignedBy = ao.AssignedBy().String()
 	}
 
-	_, err := r.db.ExecContext(ctx, query,
+	res, err := r.db.ExecContext(ctx, query,
 		ao.ID().String(),
 		ao.AssetID().String(),
 		groupID,
@@ -64,6 +88,13 @@ func (r *AccessControlRepository) CreateAssetOwner(ctx context.Context, ao *acce
 			return accesscontrol.ErrAssetOwnerExists
 		}
 		return fmt.Errorf("failed to create asset owner: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to create asset owner: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: asset not found", shared.ErrNotFound)
 	}
 
 	return nil
@@ -299,7 +330,7 @@ func (r *AccessControlRepository) ListAssetOwners(ctx context.Context, assetID s
 	query := `
 		SELECT id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by
 		FROM asset_owners
-		WHERE asset_id = $1
+		WHERE asset_id = $1 AND ` + ownerGroupSameTenantCond + `
 		ORDER BY
 			CASE ownership_type
 				WHEN 'primary' THEN 1
@@ -349,10 +380,12 @@ func (r *AccessControlRepository) ListAssetOwners(ctx context.Context, assetID s
 // ListAssetsByGroup lists all asset IDs owned by a group.
 func (r *AccessControlRepository) ListAssetsByGroup(ctx context.Context, groupID shared.ID) ([]shared.ID, error) {
 	query := `
-		SELECT asset_id
-		FROM asset_owners
-		WHERE group_id = $1
-		ORDER BY assigned_at DESC
+		SELECT ao.asset_id
+		FROM asset_owners ao
+		JOIN groups g ON g.id = ao.group_id
+		JOIN assets a ON a.id = ao.asset_id AND a.tenant_id = g.tenant_id
+		WHERE ao.group_id = $1
+		ORDER BY ao.assigned_at DESC
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, groupID.String())
@@ -393,7 +426,15 @@ func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.
 	}
 
 	// Count total asset owners for this group.
-	countQuery := `SELECT COUNT(*) FROM asset_owners WHERE group_id = $1`
+	// Only assets of the group's own tenant are listed or counted: a row
+	// pointing at another tenant's asset (written before inserts checked
+	// the tenant) never shows that asset's name.
+	countQuery := `
+		SELECT COUNT(*)
+		FROM asset_owners ao
+		JOIN groups g ON g.id = ao.group_id
+		JOIN assets a ON a.id = ao.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
+		WHERE ao.group_id = $1`
 	var totalCount int64
 	if err := r.db.QueryRowContext(ctx, countQuery, groupID.String()).Scan(&totalCount); err != nil {
 		return nil, 0, fmt.Errorf("failed to count asset owners with details: %w", err)
@@ -403,7 +444,8 @@ func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.
 		SELECT ao.id, ao.asset_id, ao.group_id, ao.user_id, ao.ownership_type, ao.assigned_at, ao.assigned_by,
 		       COALESCE(a.name, ''), COALESCE(a.asset_type, ''), COALESCE(a.status, '')
 		FROM asset_owners ao
-		LEFT JOIN assets a ON a.id = ao.asset_id
+		JOIN groups g ON g.id = ao.group_id
+		JOIN assets a ON a.id = ao.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
 		WHERE ao.group_id = $1
 		ORDER BY ao.assigned_at DESC
 		LIMIT $2 OFFSET $3
@@ -471,7 +513,7 @@ func (r *AccessControlRepository) ListGroupsByAsset(ctx context.Context, assetID
 	query := `
 		SELECT group_id
 		FROM asset_owners
-		WHERE asset_id = $1 AND group_id IS NOT NULL
+		WHERE asset_id = $1 AND group_id IS NOT NULL AND ` + ownerGroupSameTenantCond + `
 		ORDER BY
 			CASE ownership_type
 				WHEN 'primary' THEN 1
@@ -610,7 +652,13 @@ func (r *AccessControlRepository) CountAssetsByGroups(ctx context.Context, group
 		ids[i] = id.String()
 	}
 
-	query := `SELECT group_id, COUNT(DISTINCT asset_id) FROM asset_owners WHERE group_id = ANY($1) GROUP BY group_id`
+	query := `
+		SELECT ao.group_id, COUNT(DISTINCT ao.asset_id)
+		FROM asset_owners ao
+		JOIN groups g ON g.id = ao.group_id
+		JOIN assets a ON a.id = ao.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
+		WHERE ao.group_id = ANY($1)
+		GROUP BY ao.group_id`
 
 	rows, err := r.db.QueryContext(ctx, query, pq.Array(ids))
 	if err != nil {
@@ -751,8 +799,9 @@ func (r *AccessControlRepository) CanAccessAsset(ctx context.Context, userID, as
 	// First try materialized view (fast)
 	query := `
 		SELECT EXISTS(
-			SELECT 1 FROM user_accessible_assets
-			WHERE user_id = $1 AND asset_id = $2
+			SELECT 1 FROM user_accessible_assets uaa
+			JOIN assets a ON a.id = uaa.asset_id AND a.tenant_id = uaa.tenant_id
+			WHERE uaa.user_id = $1 AND uaa.asset_id = $2
 		)
 	`
 
@@ -796,8 +845,9 @@ func (r *AccessControlRepository) GetUserAssetAccess(ctx context.Context, userID
 			g.name as group_name
 		FROM user_accessible_assets uaa
 		JOIN group_members gm ON gm.user_id = uaa.user_id
-		JOIN groups g ON g.id = gm.group_id AND g.is_active = true
+		JOIN groups g ON g.id = gm.group_id AND g.is_active = true AND g.tenant_id = uaa.tenant_id
 		JOIN asset_owners ao ON ao.asset_id = uaa.asset_id AND ao.group_id = gm.group_id
+		JOIN assets a ON a.id = uaa.asset_id AND a.tenant_id = uaa.tenant_id
 		WHERE uaa.user_id = $1 AND uaa.asset_id = $2
 		ORDER BY
 			CASE uaa.ownership_type
@@ -1561,7 +1611,9 @@ func (r *AccessControlRepository) BulkCreateAssetOwners(ctx context.Context, own
 		batch := owners[i:end]
 
 		var sb strings.Builder
-		sb.WriteString(`INSERT INTO asset_owners (id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by) VALUES `)
+		sb.WriteString(`INSERT INTO asset_owners (id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by)
+			SELECT v.id, a.id, v.group_id, v.user_id, v.ownership_type, v.assigned_at, v.assigned_by
+			FROM (VALUES `)
 		args := make([]any, 0, len(batch)*7)
 		argIdx := 1
 
@@ -1569,8 +1621,8 @@ func (r *AccessControlRepository) BulkCreateAssetOwners(ctx context.Context, own
 			if j > 0 {
 				sb.WriteString(", ")
 			}
-			sb.WriteString(fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d)",
-				argIdx, argIdx+1, argIdx+2, argIdx+3, argIdx+4, argIdx+5, argIdx+6))
+			fmt.Fprintf(&sb, "($%d::uuid, $%d::uuid, $%d::uuid, $%d::uuid, $%d::text, $%d::timestamptz, $%d::uuid)",
+				argIdx, argIdx+1, argIdx+2, argIdx+3, argIdx+4, argIdx+5, argIdx+6)
 			argIdx += 7
 
 			var groupID, userID, assignedBy any
@@ -1595,7 +1647,12 @@ func (r *AccessControlRepository) BulkCreateAssetOwners(ctx context.Context, own
 			)
 		}
 
-		sb.WriteString(" ON CONFLICT DO NOTHING")
+		// Only rows whose asset is a live asset of the group's tenant are
+		// written; the caller counts the others as failed.
+		sb.WriteString(`) AS v(id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by)
+			JOIN assets a ON a.id = v.asset_id
+			WHERE ` + sameTenantGroupCond("v.group_id") + `
+			ON CONFLICT DO NOTHING`)
 
 		result, err := r.db.ExecContext(ctx, sb.String(), args...)
 		if err != nil {
@@ -1883,7 +1940,9 @@ func (r *AccessControlRepository) ListActiveScopeRulesByGroup(ctx context.Contex
 func (r *AccessControlRepository) CreateAssetOwnerWithSource(ctx context.Context, ao *accesscontrol.AssetOwner, source string, ruleID *shared.ID) error {
 	query := `
 		INSERT INTO asset_owners (id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by, assignment_source, scope_rule_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		SELECT $1, a.id, $3::uuid, $4::uuid, $5, $6, $7::uuid, $8, $9::uuid
+		FROM assets a
+		WHERE a.id = $2 AND ` + sameTenantGroupCond("$3::uuid") + `
 		ON CONFLICT DO NOTHING
 	`
 	var groupID, userID, assignedBy, ruleIDVal any
@@ -1948,7 +2007,9 @@ func (r *AccessControlRepository) BulkCreateAssetOwnersWithSource(ctx context.Co
 
 func (r *AccessControlRepository) bulkCreateAssetOwnersWithSourceChunk(ctx context.Context, owners []*accesscontrol.AssetOwner, source string, ruleID *shared.ID) (int, error) {
 	var sb strings.Builder
-	sb.WriteString(`INSERT INTO asset_owners (id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by, assignment_source, scope_rule_id) VALUES `)
+	sb.WriteString(`INSERT INTO asset_owners (id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by, assignment_source, scope_rule_id)
+		SELECT v.id, a.id, v.group_id, v.user_id, v.ownership_type, v.assigned_at, v.assigned_by, v.assignment_source, v.scope_rule_id
+		FROM (VALUES `)
 	args := make([]any, 0, len(owners)*9)
 	argIdx := 1
 
@@ -1956,7 +2017,7 @@ func (r *AccessControlRepository) bulkCreateAssetOwnersWithSourceChunk(ctx conte
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+		fmt.Fprintf(&sb, "($%d::uuid, $%d::uuid, $%d::uuid, $%d::uuid, $%d::text, $%d::timestamptz, $%d::uuid, $%d::text, $%d::uuid)",
 			argIdx, argIdx+1, argIdx+2, argIdx+3, argIdx+4, argIdx+5, argIdx+6, argIdx+7, argIdx+8)
 
 		var groupID, userID, assignedBy, ruleIDVal any
@@ -1978,7 +2039,10 @@ func (r *AccessControlRepository) bulkCreateAssetOwnersWithSourceChunk(ctx conte
 		argIdx += 9
 	}
 
-	sb.WriteString(" ON CONFLICT DO NOTHING")
+	sb.WriteString(`) AS v(id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by, assignment_source, scope_rule_id)
+		JOIN assets a ON a.id = v.asset_id
+		WHERE ` + sameTenantGroupCond("v.group_id") + `
+		ON CONFLICT DO NOTHING`)
 
 	result, err := r.db.ExecContext(ctx, sb.String(), args...)
 	if err != nil {
