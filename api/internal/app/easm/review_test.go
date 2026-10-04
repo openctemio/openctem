@@ -40,10 +40,6 @@ type scopeRepo struct {
 	err error
 }
 
-func (r *scopeRepo) HasAnyScopeAssignment(context.Context, shared.ID, shared.ID) (bool, error) {
-	return true, r.err
-}
-
 func (r *scopeRepo) AssetIDsInScope(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	if r.err != nil {
 		return nil, r.err
@@ -66,7 +62,7 @@ func (r *scopeRepo) FindingIDsInScope(context.Context, shared.ID, shared.ID, []s
 }
 
 func (r *scopeRepo) HasFullDataRole(context.Context, shared.ID, shared.ID) (bool, error) {
-	return false, nil
+	return false, r.err
 }
 
 func (r *scopeRepo) AssetIDsInTenant(_ context.Context, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
@@ -74,7 +70,7 @@ func (r *scopeRepo) AssetIDsInTenant(_ context.Context, _ shared.ID, ids []share
 }
 
 func memberEnforcer(repo datascope.Repository, user shared.ID) *datascope.Enforcer {
-	return datascope.New(repo, nil, func(context.Context) datascope.Caller {
+	return datascope.New(repo, func(context.Context) datascope.Caller {
 		return datascope.Caller{UserID: user.String()}
 	}, nil)
 }

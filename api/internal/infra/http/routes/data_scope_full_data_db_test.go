@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // A role with has_full_data_access is the Layer 2 bypass (owner decision D3,
@@ -16,7 +15,6 @@ import (
 // it, so such a user saw only their groups (or nothing).
 func TestDataScope_FullDataRole_IsTheBypass(t *testing.T) {
 	h := newDSHarness(t)
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
 	role := shared.NewID()
 	h.exec(`INSERT INTO roles (id, tenant_id, slug, name, hierarchy_level, has_full_data_access) VALUES ($1, $2, $3, 'Global Reader', 30, $4)`,
 		role, h.tenant, "global-reader-"+role.String()[:8], false)
