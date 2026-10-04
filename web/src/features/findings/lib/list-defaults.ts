@@ -15,6 +15,7 @@ export const FINDINGS_OPEN_STATUSES = [
   'confirmed',
   'in_progress',
   'fix_applied',
+  'not_observed', // stale, not fixed: still open
   'remediation',
   'retest',
 ] as const
