@@ -249,7 +249,11 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 // httpDataScopeCaller reads the acting user and the admin decision from the
 // HTTP auth context for the Layer 2 data-scope enforcer.
 func httpDataScopeCaller(ctx context.Context) datascope.Caller {
-	return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
+	return datascope.Caller{
+		UserID:  middleware.GetUserID(ctx),
+		IsAdmin: middleware.IsAdmin(ctx),
+		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
+	}
 }
 
 // membershipAdminLookup decides admin status outside a request (WebSocket
