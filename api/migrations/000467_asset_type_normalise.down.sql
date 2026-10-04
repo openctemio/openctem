@@ -34,7 +34,7 @@ UPDATE assets a
    AND a.sub_type IS NOT DISTINCT FROM l.new_sub_type;
 ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;
 
-DROP FUNCTION IF EXISTS asset_type_normalise_batch(UUID, INT);
+DROP FUNCTION IF EXISTS asset_type_normalise_batch(UUID, INT, INT);
 DROP TABLE IF EXISTS asset_type_reclassifications;
 DROP TABLE IF EXISTS asset_types_legacy_removed;
 DROP TABLE IF EXISTS asset_type_legacy_codes;
