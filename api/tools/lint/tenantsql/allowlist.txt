@@ -7,9 +7,6 @@
 # "D-11 baseline" entries predate the guard and are being fixed area by area
 # (research/14 SEC-15, owner decision D-11). Any other entry is a permanent,
 # reviewed exception and says why the id alone is safe.
-apikey_repository.go:APIKeyRepository.TouchLastUsed:api_keys  D-11 baseline: add the tenant predicate
-asset_access_grant_repository.go:AccessControlRepository.CreateAssetAccessGrant:asset_access_grants  D-11 baseline: add the tenant predicate
-asset_access_grant_repository.go:AccessControlRepository.DeleteAssetAccessGrant:asset_access_grants  D-11 baseline: add the tenant predicate
 asset_dedup_repository.go:AssetDedupRepository.ApproveAndMerge:asset_dedup_review  D-11 baseline: add the tenant predicate
 asset_dedup_repository.go:AssetDedupRepository.EnqueueIdentityReview:asset_dedup_review  D-11 baseline: add the tenant predicate
 asset_service_repository.go:AssetServiceRepository.UpdateFindingCounts:asset_services  D-11 baseline: add the tenant predicate
@@ -31,9 +28,6 @@ exposure_repository.go:ExposureRepository.Update:exposure_events  D-11 baseline:
 finding_activity_repository.go:FindingActivityRepository.GetByID:finding_activities  D-11 baseline: add the tenant predicate
 finding_approval_repository.go:FindingApprovalRepository.Update:finding_status_approvals  D-11 baseline: add the tenant predicate
 finding_comment_repository.go:FindingCommentRepository.GetByID:finding_comments  D-11 baseline: add the tenant predicate
-group_repository.go:GroupRepository.Delete:groups  D-11 baseline: add the tenant predicate
-group_repository.go:GroupRepository.GetByID:groups  D-11 baseline: add the tenant predicate
-group_repository.go:GroupRepository.Update:groups  D-11 baseline: add the tenant predicate
 ingest_job_repository.go:IngestJobRepository.ClaimBatch:ingest_jobs  D-11 baseline: add the tenant predicate
 ingest_job_repository.go:IngestJobRepository.Complete:ingest_jobs  D-11 baseline: add the tenant predicate
 ingest_job_repository.go:IngestJobRepository.Fail:ingest_jobs  D-11 baseline: add the tenant predicate
@@ -55,11 +49,6 @@ outbox_repository.go:OutboxRepository.Delete:notification_outbox  D-11 baseline:
 outbox_repository.go:OutboxRepository.FetchPendingBatch:notification_outbox  D-11 baseline: add the tenant predicate
 outbox_repository.go:OutboxRepository.GetByID:notification_outbox  D-11 baseline: add the tenant predicate
 outbox_repository.go:OutboxRepository.Update:notification_outbox  D-11 baseline: add the tenant predicate
-permission_set_repository.go:PermissionSetRepository.Delete:permission_sets  D-11 baseline: add the tenant predicate
-permission_set_repository.go:PermissionSetRepository.GetByID:permission_sets  D-11 baseline: add the tenant predicate
-permission_set_repository.go:PermissionSetRepository.GetInheritanceChain:permission_sets  D-11 baseline: add the tenant predicate
-permission_set_repository.go:PermissionSetRepository.GetParent:permission_sets  D-11 baseline: add the tenant predicate
-permission_set_repository.go:PermissionSetRepository.Update:permission_sets  D-11 baseline: add the tenant predicate
 pipeline_repository.go:PipelineTemplateRepository.DeleteInTx:pipeline_templates  D-11 baseline: add the tenant predicate
 pipeline_repository.go:PipelineTemplateRepository.Delete:pipeline_templates  D-11 baseline: add the tenant predicate
 pipeline_repository.go:PipelineTemplateRepository.GetByID:pipeline_templates  D-11 baseline: add the tenant predicate
@@ -75,9 +64,6 @@ pipeline_run_repository.go:PipelineRunRepository.Update:pipeline_runs  D-11 base
 pipeline_run_repository.go:PipelineRunRepository.UpdateStats:pipeline_runs  D-11 baseline: add the tenant predicate
 pipeline_run_repository.go:PipelineRunRepository.UpdateStatus:pipeline_runs  D-11 baseline: add the tenant predicate
 report_schedule_repository.go:ReportScheduleRepository.ClaimDue:report_schedules  D-11 baseline: add the tenant predicate
-role_repository.go:RoleRepository.Delete:roles  D-11 baseline: add the tenant predicate
-role_repository.go:RoleRepository.GetByID:roles  D-11 baseline: add the tenant predicate
-role_repository.go:RoleRepository.Update:roles  D-11 baseline: add the tenant predicate
 rule_bundle_repository.go:RuleBundleRepository.Delete:rule_bundles  D-11 baseline: add the tenant predicate
 rule_bundle_repository.go:RuleBundleRepository.GetByID:rule_bundles  D-11 baseline: add the tenant predicate
 rule_bundle_repository.go:RuleBundleRepository.Update:rule_bundles  D-11 baseline: add the tenant predicate
@@ -104,8 +90,6 @@ scan_repository.go:ScanRepository.UpdateNextRunAt:scans  D-11 baseline: add the 
 scansession_repository.go:ScanSessionRepository.Delete:scan_sessions  D-11 baseline: add the tenant predicate
 scansession_repository.go:ScanSessionRepository.GetByID:scan_sessions  D-11 baseline: add the tenant predicate
 scansession_repository.go:ScanSessionRepository.Update:scan_sessions  D-11 baseline: add the tenant predicate
-scim_group_repository.go:ScimGroupRepository.SetMembers:scim_groups  D-11 baseline: add the tenant predicate
-scim_token_repository.go:ScimTokenRepository.TouchLastUsed:scim_tokens  D-11 baseline: add the tenant predicate
 sensor_apikey_repository.go:lockSensorKeys:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:retireInlineKey:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:SensorRepository.ClearIdentityCloned:sensors  D-11 baseline: add the tenant predicate
@@ -125,13 +109,6 @@ template_source_repository.go:TemplateSourceRepository.Delete:template_sources  
 template_source_repository.go:TemplateSourceRepository.GetByID:template_sources  D-11 baseline: add the tenant predicate
 template_source_repository.go:TemplateSourceRepository.UpdateSyncStatus:template_sources  D-11 baseline: add the tenant predicate
 template_source_repository.go:TemplateSourceRepository.Update:template_sources  D-11 baseline: add the tenant predicate
-tenant_repository.go:TenantRepository.AcceptInvitationTx:tenant_invitations  D-11 baseline: add the tenant predicate
-tenant_repository.go:TenantRepository.DeleteInvitation:tenant_invitations  D-11 baseline: add the tenant predicate
-tenant_repository.go:TenantRepository.DeleteMembership:tenant_members  D-11 baseline: add the tenant predicate
-tenant_repository.go:TenantRepository.GetInvitationByID:tenant_invitations  D-11 baseline: add the tenant predicate
-tenant_repository.go:TenantRepository.UpdateInvitation:tenant_invitations  D-11 baseline: add the tenant predicate
-tenant_repository.go:TenantRepository.UpdateMembershipStatus:tenant_members  D-11 baseline: add the tenant predicate
-tenant_repository.go:TenantRepository.UpdateMembership:tenant_members  D-11 baseline: add the tenant predicate
 tenant_tool_config_repository.go:TenantToolConfigRepository.Delete:tenant_tool_configs  D-11 baseline: add the tenant predicate
 tenant_tool_config_repository.go:TenantToolConfigRepository.GetByID:tenant_tool_configs  D-11 baseline: add the tenant predicate
 tenant_tool_config_repository.go:TenantToolConfigRepository.Update:tenant_tool_configs  D-11 baseline: add the tenant predicate
