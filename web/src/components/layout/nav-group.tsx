@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
 import {
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -385,12 +384,11 @@ const NavSection = memo(function NavSection({
 }: {
   title: string
   icon?: ElementType
-  /** The section overview: the header label links to it (see NavGroup.url). */
+  /** The section overview: the rail flyout's heading links to it (see NavGroup.url). */
   url?: string
   items: NavItem[]
   dynamicBadges: DynamicBadges
 }) {
-  const { setOpenMobile } = useSidebarActions()
   const { state, isMobile } = useSidebar()
   const rail = state === 'collapsed' && !isMobile
   const pathname = usePathname()
@@ -428,43 +426,10 @@ const NavSection = memo(function NavSection({
           sectionActive={sectionActive}
           dynamicBadges={dynamicBadges}
         />
-      ) : url ? (
-        // Split header: the label opens the section overview (and unfolds the
-        // section), the chevron beside it folds and unfolds without navigating.
-        <>
-          <SidebarMenuButton
-            asChild
-            tooltip={label}
-            data-current={sectionActive}
-            className={cn(NAV_BUTTON_CLASS, 'pe-8')}
-          >
-            <SidebarLink
-              href={url}
-              onClick={() => {
-                setOpen(true)
-                setOpenMobile(false)
-              }}
-            >
-              {SectionIcon && <SectionIcon />}
-              <span>{label}</span>
-            </SidebarLink>
-          </SidebarMenuButton>
-          <SidebarMenuAction
-            aria-label={open ? `Collapse ${label}` : `Expand ${label}`}
-            aria-expanded={open}
-            aria-controls={contentId}
-            onClick={() => setOpen((o) => !o)}
-            className="in-data-[mobile=true]:top-3!"
-          >
-            <ChevronRight
-              className={cn(
-                'text-muted-foreground transition-transform duration-200 motion-reduce:transition-none rtl:rotate-180',
-                open && 'rotate-90 rtl:rotate-90'
-              )}
-            />
-          </SidebarMenuAction>
-        </>
       ) : (
+        // Every section header only folds and unfolds; it never navigates, even
+        // when the section has an overview (`url`). The overview is the
+        // section's own "Overview" row, one click away.
         <SidebarMenuButton
           tooltip={label}
           aria-expanded={open}
@@ -696,7 +661,8 @@ const NavSectionRailMenu = memo(function NavSectionRailMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="start" sideOffset={8} className="min-w-52">
         {url ? (
-          // The flyout's heading opens the section overview, like the header.
+          // The flyout's heading opens the section overview (a menu item, so
+          // navigating is expected here; the expanded header only toggles).
           <DropdownMenuItem asChild className="text-xs font-medium text-muted-foreground">
             <SidebarLink href={url}>{label}</SidebarLink>
           </DropdownMenuItem>
