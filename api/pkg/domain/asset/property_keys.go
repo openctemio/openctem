@@ -20,7 +20,7 @@ const (
 // the platform itself, and the platform reads them as such:
 //
 //   - is_crown_jewel is not a property at all: the flag is the
-//     assets.is_crown_jewel column (migration 000487), written only by
+//     assets.is_crown_jewel column (migration 000570), written only by
 //     PATCH /assets/{id}/crown-jewel. The key stays reserved so a client or a
 //     sensor cannot plant a look-alike value in properties;
 //   - business_impact_score / business_impact_notes are set on the asset's
