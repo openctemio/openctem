@@ -87,7 +87,8 @@ type Where struct {
 	Args []any
 	// OrderBy is "expr [DESC], ..., id" (without the ORDER BY keyword).
 	OrderBy string
-	// NextArg is the next free placeholder number.
+	// First is the first placeholder number; NextArg the next free one.
+	First   int
 	NextArg int
 }
 
@@ -139,7 +140,7 @@ func CompileFrom(spec *Spec, reg *Registry, actor Actor, first int) (*Where, err
 	if err := c.e.err(); err != nil {
 		return nil, err
 	}
-	return &Where{SQL: strings.Join(parts, " AND "), Args: c.args, OrderBy: order, NextArg: c.next}, nil
+	return &Where{SQL: strings.Join(parts, " AND "), Args: c.args, OrderBy: order, First: first, NextArg: c.next}, nil
 }
 
 // ScopeSQL is the data-scope predicate "assetExpr is in the user's scope",
@@ -224,6 +225,12 @@ func (c *compiler) leaf(l *Leaf) string {
 		// Same answer for a missing field and a forbidden one: no oracle.
 		c.fail(l, "unknown field")
 		return ""
+	}
+	if f.BoolTemplate != "" && l.Op == OpEq {
+		if l.Values[0] == true {
+			return "(" + c.render(f.BoolTemplate, "") + ")"
+		}
+		return "(NOT COALESCE((" + c.render(f.BoolTemplate, "") + "), FALSE))"
 	}
 	if tpl, ok := f.Templates[l.Op]; ok {
 		if strings.Contains(tpl, UserToken) && (c.actor.system || c.actor.userID.IsZero()) {
@@ -311,7 +318,9 @@ func (c *compiler) bindValue(f *Field, v any) string {
 	case TypeInt:
 		return p + "::bigint"
 	case TypeNumber:
-		return p + "::float8"
+		// No cast: the parameter takes the column's type (numeric columns
+		// keep their index; a float8 cast would cast the column instead).
+		return p
 	case TypeBool:
 		return p + "::boolean"
 	}
@@ -331,7 +340,7 @@ func (c *compiler) bindArray(f *Field, vals []any) string {
 		for i, v := range vals {
 			a[i], _ = v.(float64)
 		}
-		return c.bind(pq.Array(a)) + "::float8[]"
+		return c.bind(pq.Array(a)) // typed by the column, as above
 	case TypeBool:
 		a := make([]bool, len(vals))
 		for i, v := range vals {
@@ -371,11 +380,16 @@ func (c *compiler) orderBy(keys []SortKey) string {
 		if expr == "" {
 			expr = f.SQL
 		}
-		// Postgres defaults (ASC NULLS LAST, DESC NULLS FIRST), so the order
-		// matches the sort indexes built for the hand-written queries.
-		if k.Desc {
+		// Postgres defaults (ASC NULLS LAST, DESC NULLS FIRST) so the order
+		// matches the sort indexes of non-null columns; a nullable field
+		// sorted descending keeps its unset rows last ("highest CVSS first"
+		// must not start with the unscored).
+		switch {
+		case k.Desc && f.Nullable:
+			expr += " DESC NULLS LAST"
+		case k.Desc:
 			expr += " DESC"
-		} else {
+		default:
 			expr += " ASC"
 		}
 		parts = append(parts, expr)

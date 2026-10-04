@@ -354,7 +354,7 @@ middleware.RequireAdmin()                                               // Owner
 middleware.RequireOwner()                                               // Owner only
 ```
 
-**Owner-only operations:** `TeamDelete`, `BillingManage`, `GroupsDelete`, `PermissionSetsDelete`
+**Owner-only operations:** `TeamDelete`, `BillingManage`, `GroupsDelete`, `AssignmentRulesDelete`
 
 **Route registration pattern:**
 
@@ -408,6 +408,9 @@ touching any gate. In short:
   (or `RequireTeamAdmin/Owner` for `/tenants/{tenant}/*`). Genuinely public/self
   routes must be added to `allowlistPrefixes` in `route_authz_coverage_test.go` **with
   a reason** — that test fails the build on any ungated, un-allowlisted route.
+- **Classify every new route's data scope** in `dataSurfaceRegistry`
+  (`tests/unit/route_scope_classification_test.go`): scoped, partial, gap (with
+  its research id), separate, config or system. CI fails on an unclassified route.
 - **Add a permission** in three synced places: `permission.go` (`AllPermissions()`) +
   a numbered DB seed migration (additive, with a `.down.sql`) + the UI TS constants.
   `permission_catalog_sync_test.go` fails if Go and DB disagree.

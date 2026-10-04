@@ -283,7 +283,9 @@ func TestAccessGroup_CrossTenantRow_RefusedByDatabase(t *testing.T) {
 func TestAccessGroup_ExistingCrossTenantRow_NotReadable(t *testing.T) {
 	h := newAGAHarness(t)
 	ctx := context.Background()
-	conn, err := h.db.Conn(ctx)
+	// Bypassing the trigger needs a superuser (session_replication_role); the
+	// app role cannot, by design (D-6).
+	conn, err := testdb.OpenAdmin(t).Conn(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

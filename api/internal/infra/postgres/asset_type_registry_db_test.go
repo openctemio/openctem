@@ -198,7 +198,9 @@ func TestAssetTypeRegistry_BackfillRepairsRows(t *testing.T) {
 		}
 	}
 
-	tx, err := db.BeginTx(ctx, nil)
+	// Breaking rows with triggers off needs a superuser
+	// (session_replication_role); the app role cannot, by design (D-6).
+	tx, err := testdb.OpenAdmin(t).BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

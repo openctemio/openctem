@@ -187,18 +187,6 @@ func (m *mockGroupRepoForRules) ListGroupsByUser(_ context.Context, _, _ shared.
 func (m *mockGroupRepoForRules) ListGroupIDsByUser(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForRules) AssignPermissionSet(_ context.Context, _, _ shared.ID, _ *shared.ID) error {
-	return nil
-}
-func (m *mockGroupRepoForRules) RemovePermissionSet(_ context.Context, _, _ shared.ID) error {
-	return nil
-}
-func (m *mockGroupRepoForRules) ListPermissionSetIDs(_ context.Context, _ shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-func (m *mockGroupRepoForRules) ListGroupsWithPermissionSet(_ context.Context, _ shared.ID) ([]*group.Group, error) {
-	return nil, nil
-}
 
 // =============================================================================
 // Helpers
@@ -1478,7 +1466,7 @@ func (m *mockFindingRepoForRules) ListFindingGroups(_ context.Context, _ shared.
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *mockFindingRepoForRules) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *mockFindingRepoForRules) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 
