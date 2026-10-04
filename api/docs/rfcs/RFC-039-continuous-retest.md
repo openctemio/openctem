@@ -344,11 +344,18 @@ closed**:
 - the asset must be `active`;
 - **scope exclusions** (`scope.Service.ExcludedTargets`, the fail-closed variant
   the scan path uses) — an excluded asset is never retested;
-- **attribution** (#835, RFC-036): once `asset_attributions` lands, an asset
-  whose state is not `confirmed` (or unset) is not retested. Phase 1 exposes a
-  `TargetGate` seam in the retest service; the #835 `ActiveCheckBlocked` check
-  plugs into it when that PR merges (direct quick-scan targets are deliberately
-  ungated in #835 — retests are not, because the target comes from inventory).
+- **attribution** (#835, RFC-036): an asset whose state is not `confirmed` (or
+  unset) is not retested (direct quick-scan targets are deliberately ungated in
+  #835; retests are not, because the target comes from inventory);
+- **scan zones**: a private target outside every zone is refused, and a zoned
+  target's commands are pinned to its zone.
+
+These are the shared active-probe gate (`scan.Service.ResolveDispatchTargets`),
+which every validate command passes in `validation.CommandDispatcher`; the
+retest service runs it once more as a preflight before it records the retest.
+A refusal is `validation.ErrTargetRefused`, not `ErrNotEligible`, so
+proof-of-fix stops instead of falling back to a plain re-check of the same
+target. See [architecture/active-probe-gate.md](../architecture/active-probe-gate.md).
 - the sensor's own SSRF guard still applies (`validateScannerTarget`).
 
 ### 7.3 SLA clocks

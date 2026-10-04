@@ -9,6 +9,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -27,9 +28,19 @@ func NewScanCoverageRepository(db *DB) *ScanCoverageRepository {
 	return &ScanCoverageRepository{db: db}
 }
 
-// coverageAssetTypes are the asset types a network vulnerability scanner
-// (Nessus/Tenable) can target by IP/CIDR/hostname.
-var coverageAssetTypes = []string{"host", "ip_address", "subnet", "network"}
+// coverageAssetTypes are the stored asset types a network vulnerability
+// scanner (Nessus/Tenable) can target by IP/CIDR/hostname. A subnet is
+// (network, subnet), so `network` covers it (RFC-042 §6.3.8). Rows still
+// stored under a legacy alias name (`subnet`, `vpc` ...) are included until
+// the data normalisation moves them.
+var coverageAssetTypes = func() []string {
+	types := asset.WithLegacyNames(asset.AssetTypeHost, asset.AssetTypeIPAddress, asset.AssetTypeNetwork)
+	out := make([]string, len(types))
+	for i, t := range types {
+		out[i] = string(t)
+	}
+	return out
+}()
 
 // ListCandidates returns active, scannable assets for a tenant ordered
 // oldest-dispatched first (never-dispatched first), with their criticality and
@@ -44,7 +55,7 @@ func (r *ScanCoverageRepository) ListCandidates(ctx context.Context, tenantID sh
 		FROM assets a
 		LEFT JOIN scan_coverage_state c
 		       ON c.asset_id = a.id AND c.tenant_id = a.tenant_id
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		  AND a.status = 'active'
 		  AND a.asset_type = ANY($2)
 		ORDER BY c.last_dispatched_at ASC NULLS FIRST, a.criticality DESC
@@ -108,7 +119,7 @@ func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID sha
 			FROM assets a
 			LEFT JOIN scan_coverage_state c
 			       ON c.asset_id = a.id AND c.tenant_id = a.tenant_id
-			WHERE a.tenant_id = $1
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 			  AND a.status = 'active'
 			  AND a.asset_type = ANY($2)
 		)

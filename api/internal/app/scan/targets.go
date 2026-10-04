@@ -57,6 +57,9 @@ type resolvedTargets struct {
 	Unconfirmed int
 	// Archived counts group members left out because the asset is archived.
 	Archived int
+	// OutOfScope counts targets left out because the actor may not scan them
+	// (research/15 L-06, D9).
+	OutOfScope int
 	Warnings []string
 }
 
@@ -168,6 +171,11 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		}
 	}
 
+	outOfScope, err := s.runActScopeSkips(ctx, sc, candidates, names, memberIDs, excluded, blocked)
+	if err != nil {
+		return nil, err
+	}
+
 	if archived > 0 {
 		warnings = append(warnings, fmt.Sprintf("%d archived asset(s) in the group(s) were skipped", archived))
 	}
@@ -184,7 +192,15 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 				continue
 			}
 		}
+		if outOfScope[c.ID] {
+			out.OutOfScope++
+			continue
+		}
 		out.Targets = append(out.Targets, names[c.ID])
+	}
+	if out.OutOfScope > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d target(s) were skipped: they are outside the data scope of whoever runs this scan, or not scope targets", out.OutOfScope))
 	}
 	if out.Unconfirmed > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(

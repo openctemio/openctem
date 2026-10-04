@@ -30,8 +30,8 @@ func TestAssetImport_Nessus_SharedParser(t *testing.T) {
 		t.Fatalf("created %d skipped %d, want 1 and 1", res.AssetsCreated, res.AssetsSkipped)
 	}
 	for _, a := range repo.assets {
-		if a.Name() != "web01.corp.example" || a.Properties()["ip_address"] != "10.0.0.5" || a.SubType() != "linux" {
-			t.Fatalf("asset %s %v %s", a.Name(), a.Properties(), a.SubType())
+		if a.Name() != "web01.corp.example" || a.Properties()["ip_address"] != "10.0.0.5" || a.Properties()["os_family"] != "linux" {
+			t.Fatalf("asset %s %v", a.Name(), a.Properties())
 		}
 	}
 
