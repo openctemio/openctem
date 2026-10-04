@@ -1388,13 +1388,13 @@ Tenable.sc's RBAC.
   intentional (staged rollout), not a dead control. Tenant isolation is enforced by
   convention (`WHERE tenant_id = $n`) today; do not assume RLS backstops it.
 
-## Granular permissions enforced (D-4, migrations 000671/000672)
+## Granular permissions enforced (D-4, migrations 000677/000678)
 
 Thirty permissions were defined, seeded and shown in the role editor, yet no
 route checked them. Each is now either enforced or removed.
 
 **Enforced on top of the route's existing gate** (`RequireAll(old, new)`, so no
-role gains anything). Migration 000671 grants the new permission to every role,
+role gains anything). Migration 000677 grants the new permission to every role,
 system or custom, that held the old gate, recording each grant in
 `granular_permission_backfill` (its down removes exactly those), so every
 role keeps its abilities. An administrator can now remove the new permission
@@ -1427,13 +1427,13 @@ from a custom role to deny that one action.
 from the credential's tenant, so they use `RequireTenantPermission`: the
 caller's permissions are resolved **in the path tenant** (owner passes); a
 permission held in another tenant never counts. Every member could read the
-organization, its members and its settings, so 000671 also grants
+organization, its members and its settings, so 000677 also grants
 `team:read`, `team:members:read` and `settings:read` to every existing custom
 role. A custom role created later needs them explicitly for those reads.
 
 `findings:export` gates the server-side findings export (RFC-048, #1058); `assets:export` is kept for the planned asset export of the same RFC and is not removed.
 
-**Removed** (000672; catalog rows and grants archived in
+**Removed** (000678; catalog rows and grants archived in
 `access_control_removed_archive`, restored by its down):
 
 | Permission | Why it is meaningless |
