@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = '4449e500ad1d69fe'
+export const ASSET_REGISTRY_VERSION = '91008b669630f14f'
 
 export type AssetLens =
   | 'external_surface'
@@ -233,7 +233,6 @@ export type StoredAssetType =
   | 'service'
   | 'application'
   | 'host'
-  | 'endpoint'
   | 'cloud_account'
   | 'container'
   | 'kubernetes'
@@ -252,7 +251,6 @@ export const STORED_ASSET_TYPES: readonly StoredAssetType[] = [
   'service',
   'application',
   'host',
-  'endpoint',
   'cloud_account',
   'container',
   'kubernetes',
@@ -272,8 +270,7 @@ export const ASSET_SUB_TYPES: Readonly<Record<StoredAssetType, readonly string[]
   certificate: [],
   service: ['http', 'open_port', 'discovered_url'],
   application: ['website', 'api', 'mobile_app'],
-  host: ['compute', 'serverless'],
-  endpoint: [],
+  host: ['compute', 'serverless', 'workstation'],
   cloud_account: ['account', 'project', 'subscription', 'organization'],
   container: ['image'],
   kubernetes: ['cluster', 'namespace', 'workload'],
@@ -314,6 +311,7 @@ export const ASSET_RELATIONSHIP_NAMES: Readonly<
   api: { type: 'application', subType: 'api' },
   mobile_app: { type: 'application', subType: 'mobile_app' },
   compute: { type: 'host', subType: 'compute' },
+  endpoint: { type: 'host', subType: 'workstation' },
   serverless: { type: 'host', subType: 'serverless' },
   kubernetes_cluster: { type: 'kubernetes', subType: 'cluster' },
   kubernetes_namespace: { type: 'kubernetes', subType: 'namespace' },
@@ -347,6 +345,7 @@ export const ASSET_TYPE_ALIASES: Readonly<
   api: { type: 'application', subType: 'api' },
   mobile_app: { type: 'application', subType: 'mobile_app' },
   compute: { type: 'host', subType: 'compute' },
+  endpoint: { type: 'host', subType: 'workstation' },
   serverless: { type: 'host', subType: 'serverless' },
   kubernetes_cluster: { type: 'kubernetes', subType: 'cluster' },
   kubernetes_namespace: { type: 'kubernetes', subType: 'namespace' },

@@ -74,8 +74,8 @@ func TestStoredAssetTypes_AreTheCoreTypes(t *testing.T) {
 			t.Errorf("alias %s is not an accepted input", alias)
 		}
 	}
-	if len(want) != 17 {
-		t.Errorf("%d core types, RFC-042 §6.3.8 lists 17 until T4a", len(want))
+	if len(want) != 16 {
+		t.Errorf("%d core types, want 16 (endpoint is (host, workstation) since T4a)", len(want))
 	}
 }
 
@@ -97,6 +97,12 @@ func TestResolveInputType_Examples(t *testing.T) {
 		{"host", "kubernetes_cluster", ResolvedType{Type: AssetTypeKubernetes, SubType: "cluster"}},
 		{"container", "deployment", ResolvedType{Type: AssetTypeKubernetes, SubType: "workload", Attributes: map[string]string{"workload_kind": "deployment"}}},
 		{"network", "wireless_ap", ResolvedType{Type: AssetTypeNetwork, SubType: "access_point"}},
+		// T4a: an endpoint is a host, so EDR and network scans meet on one asset.
+		{"endpoint", "", ResolvedType{Type: AssetTypeHost, SubType: "workstation"}},
+		{"host", "workstation", ResolvedType{Type: AssetTypeHost, SubType: "workstation"}},
+		// O3: one web sub-type.
+		{"web_application", "", ResolvedType{Type: AssetTypeApplication, SubType: "website"}},
+		{"application", "web_application", ResolvedType{Type: AssetTypeApplication, SubType: "website"}},
 		// data_store leaves the sub-type open; a kind is still validated.
 		{"data_store", "", ResolvedType{Type: AssetTypeDatabase}},
 		{"data_store", "mongodb", ResolvedType{Type: AssetTypeDatabase, SubType: "document", Attributes: map[string]string{"engine": "mongodb"}}},
