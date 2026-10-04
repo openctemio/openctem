@@ -66,13 +66,6 @@ type dsHarness struct {
 	exposureA, exposureB, group                                  shared.ID
 }
 
-// setPolicy writes the legacy members_without_group_see value of the harness
-// tenant. Nothing reads it for visibility any more.
-func (h *dsHarness) setPolicy(v string) {
-	h.t.Helper()
-	h.exec(`UPDATE tenants SET members_without_group_see = $2 WHERE id = $1`, h.tenant.String(), v)
-}
-
 // dsMemberPerms is what a generous custom "member" role holds: every
 // permission the probed routes need, so a 404 can only come from data scope.
 var dsMemberPerms = []string{ //nolint:gochecknoglobals // test fixture

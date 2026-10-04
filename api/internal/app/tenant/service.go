@@ -88,10 +88,7 @@ type TenantService struct {
 	// warning is logged): the never-lock-out guarantee still holds because the
 	// owner is always break-glass exempt at the enforcement gate.
 	ssoPathChecker SSOPathChecker
-	// dataScopePolicy stores "members without an access group see:
-	// everything | nothing" (tenants.members_without_group_see).
-	dataScopePolicy DataScopePolicyStore
-	logger          *logger.Logger
+	logger         *logger.Logger
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
@@ -309,101 +306,6 @@ func (s *TenantService) bumpPermissionVersion(ctx context.Context, tenantID, use
 }
 
 // logAudit logs an audit event if audit service is configured.
-// DataScopePolicyStore persists the organization's data-scope policy
-// (tenants.members_without_group_see). Implemented by the tenant repository.
-type DataScopePolicyStore interface {
-	GetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID) (string, error)
-	SetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID, value string) error
-	ListMembersWithoutDataScope(ctx context.Context, tenantID shared.ID, limit int) ([]tenantdom.ScopeImpactMember, int, error)
-}
-
-// maxScopeImpactMembers bounds the members listed in the impact report (the
-// total is always exact).
-const maxScopeImpactMembers = 500
-
-// DataScopeImpact is the pre-flight report for switching an organization to
-// "members without a team see nothing" (owner decision D2).
-type DataScopeImpact struct {
-	Policy     string
-	Members    []tenantdom.ScopeImpactMember
-	TotalCount int
-}
-
-// GetDataScopeImpact lists the members who see everything today only
-// because the organization shows everything to members without a team, and
-// so would see nothing after the switch. For a fail-closed organization the
-// same members already see nothing.
-func (s *TenantService) GetDataScopeImpact(ctx context.Context, tenantID string) (*DataScopeImpact, error) {
-	policy, err := s.GetDataScopePolicy(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	tid, _ := shared.IDFromString(tenantID) // validated by GetDataScopePolicy
-	members, total, err := s.dataScopePolicy.ListMembersWithoutDataScope(ctx, tid, maxScopeImpactMembers)
-	if err != nil {
-		return nil, err
-	}
-	return &DataScopeImpact{Policy: policy, Members: members, TotalCount: total}, nil
-}
-
-// SetDataScopePolicyStore wires the data-scope policy store. Without it the
-// policy endpoints report the service as not configured.
-func (s *TenantService) SetDataScopePolicyStore(store DataScopePolicyStore) {
-	s.dataScopePolicy = store
-}
-
-// GetDataScopePolicy returns what members without an access group see in the
-// organization: "everything" or "nothing".
-func (s *TenantService) GetDataScopePolicy(ctx context.Context, tenantID string) (string, error) {
-	if s.dataScopePolicy == nil {
-		return "", fmt.Errorf("%w: data scope policy is not configured", shared.ErrInternal)
-	}
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return "", fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-	return s.dataScopePolicy.GetMembersWithoutGroupSee(ctx, tid)
-}
-
-// UpdateDataScopePolicy sets what members without an access group see
-// ("everything" or "nothing") and records the change in the audit log. Owners
-// and admins are never affected by it. A no-op change is not audited.
-func (s *TenantService) UpdateDataScopePolicy(ctx context.Context, tenantID, value string, actx auditapp.AuditContext) (string, error) {
-	if err := tenantdom.ValidateMembersWithoutGroupSee(value); err != nil {
-		return "", err
-	}
-	old, err := s.GetDataScopePolicy(ctx, tenantID)
-	if err != nil {
-		return "", err
-	}
-	if old == value {
-		return value, nil
-	}
-	// "Everything" is being retired (D2): an organization only ever moves to
-	// "nothing". The setting is never flipped by a migration; each
-	// organization's owner switches it after reviewing the impact report.
-	if value == tenantdom.MembersWithoutGroupSeeEverything {
-		return "", tenantdom.ErrSeeEverythingRetired
-	}
-	tid, _ := shared.IDFromString(tenantID) // validated by GetDataScopePolicy
-	if err := s.dataScopePolicy.SetMembersWithoutGroupSee(ctx, tid, value); err != nil {
-		return "", err
-	}
-
-	s.logger.Info("data scope policy updated", "tenant_id", tenantID, "from", old, "to", value)
-	actx.TenantID = tenantID
-	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
-		WithSeverity(audit.SeverityHigh).
-		WithMessage(fmt.Sprintf("Members without an access group now see %s (was %s)", value, old)).
-		WithChanges(&audit.Changes{
-			Before: map[string]any{"members_without_group_see": old},
-			After:  map[string]any{"members_without_group_see": value},
-		}).
-		WithMetadata("setting", "members_without_group_see")
-	s.logAudit(ctx, actx, event)
-	return value, nil
-}
-
 func (s *TenantService) logAudit(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) {
 	if s.auditService == nil {
 		return

@@ -13,7 +13,6 @@ export * from './types/audit.types'
 export * from './api/use-tenant-settings'
 export * from './api/use-members'
 export * from './api/use-audit-logs'
-export * from './api/use-data-scope-policy'
 
 // Hooks
 export * from './hooks/use-tenant-logo'
