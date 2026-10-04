@@ -117,7 +117,7 @@ func (m *mockScanRepo) Update(_ context.Context, s *scan.Scan) error {
 	return nil
 }
 
-func (m *mockScanRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockScanRepo) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
@@ -146,20 +146,20 @@ func (m *mockScanRepo) ListDueForExecution(_ context.Context, _ time.Time) ([]*s
 	return result, nil
 }
 
-func (m *mockScanRepo) UpdateNextRunAt(_ context.Context, _ shared.ID, _ *time.Time) error {
+func (m *mockScanRepo) UpdateNextRunAt(_ context.Context, _ shared.ID, _ shared.ID, _ *time.Time) error {
 	return nil
 }
 
-func (m *mockScanRepo) RecordRunStarted(_ context.Context, _ shared.ID, runID shared.ID) error {
+func (m *mockScanRepo) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID, runID shared.ID) error {
 	m.startedRuns = append(m.startedRuns, runID)
 	return nil
 }
 
-func (m *mockScanRepo) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
+func (m *mockScanRepo) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID, _ string) error {
 	return nil
 }
 
-func (m *mockScanRepo) RecordTriggerFailure(_ context.Context, _ shared.ID, _ string) error {
+func (m *mockScanRepo) RecordTriggerFailure(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
 	return nil
 }
 
@@ -192,7 +192,7 @@ func (m *mockScanRepo) UpdateStatusByAssetGroupID(_ context.Context, _ shared.ID
 	return nil
 }
 
-func (m *mockScanRepo) ClaimScheduledRun(_ context.Context, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
+func (m *mockScanRepo) ClaimScheduledRun(_ context.Context, _ shared.ID, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
 	return true, nil
 }
 
@@ -550,8 +550,8 @@ func (m *mockCommandRepo) ClaimForSensor(_ context.Context, _, _ shared.ID, _ st
 func (m *mockCommandRepo) List(_ context.Context, _ commanddom.Filter, _ pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
 	return pagination.Result[*commanddom.Command]{}, nil
 }
-func (m *mockCommandRepo) Update(_ context.Context, _ *commanddom.Command) error { return nil }
-func (m *mockCommandRepo) Delete(_ context.Context, _ shared.ID) error           { return nil }
+func (m *mockCommandRepo) Update(_ context.Context, _ *commanddom.Command) error    { return nil }
+func (m *mockCommandRepo) Delete(_ context.Context, _ shared.ID, _ shared.ID) error { return nil }
 func (m *mockCommandRepo) FindExpired(_ context.Context) ([]*commanddom.Command, error) {
 	return nil, nil
 }

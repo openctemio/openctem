@@ -33,6 +33,7 @@ type Scan struct {
 	// Schedule
 	ScheduleType     ScheduleType
 	ScheduleCron     string     // Cron expression (for crontab type)
+	ScheduleRRule    string     // RFC 5545 RRULE (for rrule type), e.g. FREQ=WEEKLY;BYDAY=MO;BYHOUR=2
 	ScheduleDay      *int       // Day of week (0-6) or month (1-31)
 	ScheduleTime     *time.Time // Time of day to run
 	ScheduleTimezone string
@@ -284,6 +285,7 @@ func (s *Scan) SetSchedule(scheduleType ScheduleType, cron string, day *int, t *
 
 	s.ScheduleType = scheduleType
 	s.ScheduleCron = cron
+	s.ScheduleRRule = ""
 	s.ScheduleDay = day
 	s.ScheduleTime = t
 	s.ScheduleTimezone = timezone
@@ -376,6 +378,15 @@ func (s *Scan) occurrenceAfter(t time.Time) *time.Time {
 		next = nextAtWeekday(now, s.ScheduleDay, s.ScheduleTime)
 	case ScheduleMonthly:
 		next = nextAtDayOfMonth(now, s.ScheduleDay, s.ScheduleTime)
+	case ScheduleRRule:
+		r, err := parseScheduleRRule(s.ScheduleRRule, loc)
+		if err != nil {
+			return nil
+		}
+		next = r.After(now, false)
+		if next.IsZero() {
+			return nil
+		}
 	case ScheduleCrontab:
 		// Parse cron expression with timezone-aware schedule. SetSchedule
 		// refuses an unparseable expression; one stored before that check gets
