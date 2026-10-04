@@ -156,32 +156,19 @@ func transitionedIDs(ctx context.Context, tx *sql.Tx, update string, tenantID sh
 	return ids, rows.Err()
 }
 
-// easmDNSLockNamespace namespaces the per-tenant check lock ("EDNS").
-const easmDNSLockNamespace int32 = 0x45444e53
+// easmDNSLeaseTTL bounds how long a crashed replica's per-tenant check
+// lease blocks the others; a live holder renews it every third of it.
+const easmDNSLeaseTTL = 10 * time.Minute
 
 // TryLockTenant serializes one check kind for one tenant across API
-// replicas, on a dedicated connection (see CTMonitorStateRepository).
+// replicas with the controller lease "easm_dns:<tenant>:<kind>" (RFC-046
+// P1.8; it was a session advisory lock on a dedicated connection).
 func (r *EASMDNSRepository) TryLockTenant(ctx context.Context, tenantID shared.ID, kind string) (func(), bool, error) {
-	conn, err := r.db.Conn(ctx)
+	release, ok, err := tryLeaseLock(ctx, NewControllerLeaseRepository(r.db), "easm_dns:"+tenantID.String()+":"+kind, easmDNSLeaseTTL)
 	if err != nil {
 		return nil, false, fmt.Errorf("easm dns lock: %w", err)
 	}
-	key := tenantID.String() + ":" + kind
-	var ok bool
-	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1, hashtext($2))`, easmDNSLockNamespace, key).Scan(&ok); err != nil {
-		_ = conn.Close()
-		return nil, false, fmt.Errorf("easm dns lock: %w", err)
-	}
-	if !ok {
-		_ = conn.Close()
-		return nil, false, nil
-	}
-	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1, hashtext($2))`, easmDNSLockNamespace, key)
-		_ = conn.Close()
-	}, true, nil
+	return release, ok, nil
 }
 
 var _ easmdns.TakeoverStore = (*EASMDNSRepository)(nil)
