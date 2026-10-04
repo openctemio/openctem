@@ -1,6 +1,6 @@
 # RFC-007: License-Aware Continuous Scan Coverage (Tenable Nessus Pro + Tenable.sc)
 
-- **Status**: Paused (owner decision D-14, 2026-10-04). Sensor v0.8.0 removed the Tenable runner, so the connector and the coverage scheduler are switched off and hidden in the UI; code and data are kept. Rebuild: [#989](https://github.com/openctemio/openctem/issues/989).
+- **Status**: Paused (owner decision D-14, 2026-10-04). Sensor v0.8.0 removed the Tenable runner, so the connector and the coverage scheduler are switched off and hidden in the UI; code and data are kept behind one switch (`integration.TenableConnectorEnabled` in the API, `TENABLE_CONNECTOR_ENABLED` in the web). Being rebuilt as a two-way Tenable.sc connector in the sensor: RFC-047.
 - **Created**: 2026-06-04
 - **Owner**: Platform / Discovery
 - **Problem**: A customer must continuously cover a large estate (e.g. **3000 IPs**) with vulnerability scanning, but their scanner license is smaller than the estate (e.g. **500 active IPs**). They want to scan in rolling, license-sized batches, store every result durably in OpenCTEM, free the scanner per cycle, and loop until the whole estate is covered — **without** wrongly resolving findings for the assets that weren't in the current batch. The customer runs **both Nessus Professional (unlimited IPs) and Tenable.sc (active-IP licensed)** and needs *both* supported as first-class engines.

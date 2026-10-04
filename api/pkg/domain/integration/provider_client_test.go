@@ -17,8 +17,12 @@ func TestProviderHasClient(t *testing.T) {
 		ProviderWiz, ProviderSnyk, ProviderCrowdStrike,
 		ProviderAWS, ProviderGCP, ProviderAzure,
 		ProviderLinear, ProviderAsana,
-		// Paused until the runner is rebuilt on the sensor daemon (D-14).
-		ProviderTenable,
+	}
+	if !TenableConnectorEnabled {
+		// Paused until the RFC-047 runner ships (D-14).
+		withoutClient = append(withoutClient, ProviderTenable)
+	} else {
+		withClient = append(withClient, ProviderTenable)
 	}
 	for _, p := range withClient {
 		if !p.IsValid() {
