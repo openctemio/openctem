@@ -101,6 +101,7 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.finding_ids?.length) params.set('id', filters.finding_ids.join(','))
   if (filters.cve_ids?.length) params.set('cve_id', filters.cve_ids.join(','))
   if (filters.finding_types?.length) params.set('finding_type', filters.finding_types.join(','))
+  if (filters.families?.length) params.set('family', filters.families.join(','))
   if (filters.sort) params.set('sort', filters.sort)
   return params
 }

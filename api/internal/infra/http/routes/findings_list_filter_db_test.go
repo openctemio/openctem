@@ -237,10 +237,11 @@ func TestFindingsList_Research17Filters(t *testing.T) {
 	h := newGroupScopeHarness(t)
 	fa, fb, fb2, fp := h.findingA.String(), h.findingB.String(), h.findingB2.String(), h.findingP.String()
 	h.exec(`UPDATE findings SET cvss_score = 9.8, network_port = 443, network_transport = 'tcp', network_service = 'https',
-		assigned_to = $2, metadata = '{"scanner_exploit_available": true}', last_seen_at = now() - interval '2 days',
+		assigned_to = $2, exploit_available = true, family = 'CGI abuses', cve_ids = ARRAY['CVE-2099-0001'],
+		last_seen_at = now() - interval '2 days',
 		first_detected_at = now() - interval '40 days' WHERE id = $1`, fa, h.memberA.String())
 	h.exec(`UPDATE findings SET cvss_score = 5.0, network_port = 22, network_transport = 'tcp', network_service = 'ssh',
-		last_seen_at = now() - interval '90 days', first_detected_at = now() - interval '100 days' WHERE id = $1`, fb)
+		family = 'General', last_seen_at = now() - interval '90 days', first_detected_at = now() - interval '100 days' WHERE id = $1`, fb)
 	h.exec(`UPDATE findings SET last_seen_at = now() - interval '200 days', first_detected_at = now() - interval '300 days' WHERE id IN ($1, $2)`, fb2, fp)
 	h.exec(`UPDATE assets SET criticality = 'critical' WHERE id = $1`, h.assetB.String())
 
@@ -268,6 +269,12 @@ func TestFindingsList_Research17Filters(t *testing.T) {
 		{"asset_criticality_not=critical", sorted(fa, fp), sorted(fa)},
 		{"exploit_available=true", sorted(fa), sorted(fa)},
 		{"exploit_available=false", sorted(fb, fb2, fp), nil},
+		{"family=CGI+abuses", sorted(fa), sorted(fa)},
+		{"family=General", sorted(fb), nil},
+		{"family_not=General", sorted(fa, fb2, fp), sorted(fa)},
+		{"cve_id=CVE-2099-0001", sorted(fa), sorted(fa)},
+		{"cve_id_not=CVE-2099-0001", sorted(fb, fb2, fp), nil},
+		{"sort=family", sorted(fa, fb, fb2, fp), sorted(fa)},
 		{"sort=-cvss_score", sorted(fa, fb, fb2, fp), sorted(fa)},
 		{"sort=-last_seen_at,network_port", sorted(fa, fb, fb2, fp), sorted(fa)},
 	}

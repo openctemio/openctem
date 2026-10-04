@@ -50,6 +50,8 @@ func (h *gsHarness) groupsSum(t *testing.T, c flCaller, groupBy, query string) i
 func TestFindingsCountContract_ListStatsGroupsAgree(t *testing.T) {
 	h := newGroupScopeHarness(t)
 	h.exec(`UPDATE assets SET tags = ARRAY['prod'] WHERE id = $1`, h.assetA.String())
+	// Every finding has a family, so family is a disjoint dimension too.
+	h.exec(`UPDATE findings SET family = CASE WHEN severity = 'critical' THEN 'General' ELSE 'CGI abuses' END WHERE tenant_id = $1`, h.tenant.String())
 	callers := []flCaller{
 		{"owner", h.owner, true},
 		{"memberA", h.memberA, false},
@@ -71,6 +73,7 @@ func TestFindingsCountContract_ListStatsGroupsAgree(t *testing.T) {
 		"status_not=resolved",
 		"id=" + h.findingB.String(),
 		"q=dsB-SECRET",
+		"family=General",
 		"related_to=me",
 	}
 	for _, f := range filters {
@@ -85,7 +88,7 @@ func TestFindingsCountContract_ListStatsGroupsAgree(t *testing.T) {
 				if listTotal != statsTotal {
 					t.Errorf("list total %d != stats total %d", listTotal, statsTotal)
 				}
-				for _, dim := range []string{"severity", "source", "finding_type"} {
+				for _, dim := range []string{"severity", "source", "finding_type", "family"} {
 					if sum := h.groupsSum(t, c, dim, query); sum != listTotal {
 						t.Errorf("groups by %s sum %d != list total %d", dim, sum, listTotal)
 					}
