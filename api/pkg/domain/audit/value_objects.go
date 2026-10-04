@@ -326,6 +326,13 @@ const (
 	ActionCampaignStatusChanged     Action = "campaign.status_changed"
 	ActionCampaignDeleted           Action = "campaign.deleted"
 
+	// Remediation campaign actions (Mobilization). Distinct from the pentest
+	// campaign.* actions above: a different resource with its own lifecycle.
+	ActionRemediationCampaignCreated       Action = "remediation_campaign.created"
+	ActionRemediationCampaignUpdated       Action = "remediation_campaign.updated"
+	ActionRemediationCampaignStatusChanged Action = "remediation_campaign.status_changed"
+	ActionRemediationCampaignDeleted       Action = "remediation_campaign.deleted"
+
 	// Scan config actions
 	ActionScanConfigCreated   Action = "scan_config.created"
 	ActionScanConfigUpdated   Action = "scan_config.updated"
@@ -501,6 +508,8 @@ func (a Action) IsValid() bool {
 		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
+		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted,
 		ActionMCPToolCalled, ActionMCPPromptGotten,
 		ActionAuditChainRebaselined:
 		return true
@@ -588,6 +597,9 @@ func (a Action) Category() string {
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
 		return "pentest_campaign"
+	case ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
+		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted:
+		return "remediation_campaign"
 	case ActionMCPToolCalled, ActionMCPPromptGotten:
 		return "mcp"
 	case ActionAuditChainRebaselined:
@@ -628,25 +640,28 @@ const (
 	ResourceTypeRole             ResourceType = "role"
 	ResourceTypePipelineTemplate ResourceType = "pipeline_template"
 	ResourceTypeCampaign         ResourceType = "pentest_campaign"
-	ResourceTypePipelineStep     ResourceType = "pipeline_step"
-	ResourceTypePipelineRun      ResourceType = "pipeline_run"
-	ResourceTypeScanConfig       ResourceType = "scan_config"
-	ResourceTypeScanProfile      ResourceType = "scan_profile"
-	ResourceTypeCommand          ResourceType = "command"
-	ResourceTypeWorkflow         ResourceType = "workflow"
-	ResourceTypeWorkflowRun      ResourceType = "workflow_run"
-	ResourceTypeCapability       ResourceType = "capability"
-	ResourceTypeTool             ResourceType = "tool"
-	ResourceTypeRuleSource       ResourceType = "rule_source"
-	ResourceTypeRuleOverride     ResourceType = "rule_override"
-	ResourceTypeIngest           ResourceType = "ingest"
-	ResourceTypeAITriage         ResourceType = "ai_triage"
-	ResourceTypeMCPTool          ResourceType = "mcp_tool"
-	ResourceTypeMCPPrompt        ResourceType = "mcp_prompt"
-	ResourceTypeAPIKey           ResourceType = "api_key"
-	ResourceTypeSAMLConfig       ResourceType = "saml_config"
-	ResourceTypeIdentityProvider ResourceType = "identity_provider"
-	ResourceTypeVerifiedDomain   ResourceType = "verified_domain"
+	// ResourceTypeRemediationCampaign is a Mobilization remediation campaign
+	// (table remediation_campaigns), not a pentest campaign.
+	ResourceTypeRemediationCampaign ResourceType = "remediation_campaign"
+	ResourceTypePipelineStep        ResourceType = "pipeline_step"
+	ResourceTypePipelineRun         ResourceType = "pipeline_run"
+	ResourceTypeScanConfig          ResourceType = "scan_config"
+	ResourceTypeScanProfile         ResourceType = "scan_profile"
+	ResourceTypeCommand             ResourceType = "command"
+	ResourceTypeWorkflow            ResourceType = "workflow"
+	ResourceTypeWorkflowRun         ResourceType = "workflow_run"
+	ResourceTypeCapability          ResourceType = "capability"
+	ResourceTypeTool                ResourceType = "tool"
+	ResourceTypeRuleSource          ResourceType = "rule_source"
+	ResourceTypeRuleOverride        ResourceType = "rule_override"
+	ResourceTypeIngest              ResourceType = "ingest"
+	ResourceTypeAITriage            ResourceType = "ai_triage"
+	ResourceTypeMCPTool             ResourceType = "mcp_tool"
+	ResourceTypeMCPPrompt           ResourceType = "mcp_prompt"
+	ResourceTypeAPIKey              ResourceType = "api_key"
+	ResourceTypeSAMLConfig          ResourceType = "saml_config"
+	ResourceTypeIdentityProvider    ResourceType = "identity_provider"
+	ResourceTypeVerifiedDomain      ResourceType = "verified_domain"
 	// ResourceTypeSSOChange is an SSO change waiting for an owner's approval.
 	ResourceTypeSSOChange ResourceType = "sso_change"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
@@ -679,7 +694,8 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
-		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate:
+		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate,
+		ResourceTypeRemediationCampaign:
 		return true
 	}
 	return false
