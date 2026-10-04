@@ -779,6 +779,12 @@ Effort is engineer-weeks across all repos.
 | **P5 — Sources and connectors** | `discovery_source` integrations (Cert Spotter, Censys, Shodan, SecurityTrails, Chaos, urlscan, HIBP, GitHub) with quota + cache; cloud connectors AWS (Route 53, public IPs, ELB, S3), Azure Resource Graph, GCP CAI as authoritative evidence; "cloud public IPs not in inventory" coverage metric | 6–8 (S per source, M per cloud) | Medium (credentials, terms) | P2 | Each source is per-tenant (`ListByProvider`) and isolation-tested. Quota exhaustion degrades to skip + warning. A connector-only asset auto-confirms with w = 1.0 |
 | **P6 — Optional modes** (each its own owner decision) | Lookalike monitoring (Go permutations + UTS #39 skeletons; registration/MX/CT checks; `lookalike_domain` exposure; T0 only); T2 intrusive opt-in with approver + expiry; shared platform sensors with published egress ranges, rDNS, info page, opt-out handling | 3 + 2 + (4 + ops) | Medium (legal/ops for platform sensors) | O2, O3, O5 | Lookalikes never receive active probes. T2 runs refuse without a verified seed and an unexpired approval. Published range document matches the actual egress (automated check) |
 
+**Shipped in P1 so far:** dangling CNAME/NS and email posture checks (#852),
+`GET /easm/summary` and the Overview (#839, #857), the asset ownership section
+(#856), and the review queue with bulk decisions plus the asset-list
+attribution filter (`GET /easm/candidates`, `POST /easm/candidates/decisions`,
+`/assets?attribution=`; [easm.md §4b](../architecture/easm.md)).
+
 **When and where.** The RFC is accepted (§12.3). Implementation of P0, then
 P1, starts now that the api + ui monorepo cutover has merged. It is written
 directly in the monorepo: `api/` for the backend and `web/` for the UI, which

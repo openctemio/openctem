@@ -4672,6 +4672,8 @@ export interface paths {
           last_seen_after?: string
           /** @description Filter assets last seen at/before this time (RFC3339 or YYYY-MM-DD) */
           last_seen_before?: string
+          /** @description Filter by attribution (comma-separated): confirmed (includes assets with no record), needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (confirmed+unknown+dependency+monitor_only) */
+          attribution?: string
           /** @description Sort field (e.g., -created_at, name, -risk_score) */
           sort?: string
           /** @description Page number */
@@ -11376,6 +11378,156 @@ export interface paths {
     }
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/candidates': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * EASM review queue
+     * @description Assets the platform found but could not prove are the organization's (attribution needs_review or candidate by default), most confident first, each with its evidence. Narrowed to the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Attribution states (comma-separated); default needs_review,candidate */
+          states?: string
+          /** @description Asset types (comma-separated) */
+          types?: string
+          /** @description Minimum confidence 0-100 */
+          min_confidence?: number
+          /** @description Substring of the asset name */
+          search?: string
+          /** @description Page number */
+          page?: number
+          /** @description Items per page */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/candidates/decisions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Decide EASM attribution in bulk
+     * @description Record whether each asset is the organization's: confirmed lets scans reach it; rejected, dependency and monitor_only keep it passive. At most 200 assets per call. Assets that are not the organization's, are deleted or are outside the caller's data scope are listed in not_found. Each decision is audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Decision */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMDecisionRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.DecisionResult']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     delete?: never
     options?: never
     head?: never
@@ -32735,6 +32887,15 @@ export interface components {
       rejected?: number
       review_oldest_since?: string
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.Decision': {
+      asset_id?: string
+      from?: string
+      to?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.DecisionResult': {
+      decided?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.Decision'][]
+      not_found?: string[]
+    }
     'github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock': {
       by_severity?: {
         [key: string]: number
@@ -32753,6 +32914,32 @@ export interface components {
       last_7_days?: number
       last_30_days?: number
       since_cycle?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence': {
+      first_observed_at?: string
+      last_observed_at?: string
+      observed?: {
+        [key: string]: unknown
+      }
+      rule?: string
+      source?: string
+      technique?: string
+      weight?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.ReviewItem': {
+      asset_id?: string
+      confidence?: number
+      evidence?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence'][]
+      in_queue_since?: string
+      last_seen?: string
+      name?: string
+      reason?: string
+      state?: string
+      type?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.ReviewPage': {
+      data?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ReviewItem'][]
+      total?: number
     }
     'github_com_openctemio_openctem_api_internal_app_easm.Risk': {
       asset_id?: string
@@ -35459,6 +35646,13 @@ export interface components {
       status_code?: number
       type?: string
       url?: string
+    }
+    'internal_infra_http_handler.EASMDecisionRequest': {
+      asset_ids?: string[]
+      /** @description Note is an optional reason, kept in the audit log. */
+      note?: string
+      /** @description State: confirmed, rejected, dependency, monitor_only or needs_review. */
+      state?: string
     }
     'internal_infra_http_handler.EffectivePermissionsResponse': {
       group_count?: number
