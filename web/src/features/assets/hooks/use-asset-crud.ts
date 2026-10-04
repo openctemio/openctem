@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { createAsset, updateAsset, deleteAsset, bulkDeleteAssets } from './use-assets'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { toastIfDuplicateAsset } from '../lib/duplicate-asset'
 import type { Asset, AssetType, CreateAssetInput, UpdateAssetInput } from '../types'
 
 const MAX_BULK_DELETE = 100
@@ -19,6 +21,7 @@ export function useAssetCRUD(
   mutate: () => Promise<unknown> | void
 ) {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const router = useRouter()
 
   const handleCreate = useCallback(
     async (data: CreateAssetInput, afterCreate?: (asset: Asset) => Promise<void>) => {
@@ -33,13 +36,16 @@ export function useAssetCRUD(
         toast.success(`${label} created successfully`)
         return true
       } catch (err) {
-        toast.error(getErrorMessage(err, `Failed to create ${label.toLowerCase()}`))
+        // A name that already exists is a 409 that may link to the asset.
+        if (!toastIfDuplicateAsset(err, router.push)) {
+          toast.error(getErrorMessage(err, `Failed to create ${label.toLowerCase()}`))
+        }
         return false
       } finally {
         setIsSubmitting(false)
       }
     },
-    [assetType, label, mutate]
+    [assetType, label, mutate, router.push]
   )
 
   const handleUpdate = useCallback(
