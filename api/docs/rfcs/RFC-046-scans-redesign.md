@@ -391,7 +391,18 @@ Plan:
    resolution is an audit entry (`ingest.coverage_auto_resolve.dry_run`).
 2. Review: sample false positives by tool; publish the counts in the run's
    coverage summary.
-3. Switch `INGEST_COVERAGE_AUTO_RESOLVE=enforce`. Per tenant override stays.
+3. ~~Switch `INGEST_COVERAGE_AUTO_RESOLVE=enforce` after the review window
+   (~2026-10-16).~~ **Postponed (owner decision D-22 / O1, 2026-10-04,
+   research 18).** The mode stays `dry_run`. This path proves coverage per
+   tool, profile and asset, but not per check, port or authentication, so a
+   template-pack update or a removed template would read as "fixed".
+   Enforcement waits for the **closure evaluator** (research 18 P2: per-check
+   coverage records, a detector-set digest, `metadata.execution`), and at
+   minimum for an explicit `coverage_type` (absent is not full) and the nuclei
+   exit-code fix. P2-4 (the owner reviews the evaluator's dry-run counts, then
+   enforces per tenant) replaces this step. No code, config or schedule
+   switches it; `INGEST_COVERAGE_AUTO_RESOLVE` defaults to `dry_run` and is
+   unset on live.
 4. Key on `last_seen_tool` (RFC-043 sightings later) instead of `tool_name`.
 5. With `partial` (P1.2): a test proves a partial run's failed tasks never
    resolve and its completed tasks resolve only their own targets (§3.3).
