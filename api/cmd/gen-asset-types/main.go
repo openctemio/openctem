@@ -167,7 +167,11 @@ type config struct {
 	CoreFields       []string     `yaml:"core_fields"`
 	IdentityKinds    []string     `yaml:"identity_kinds"`
 	VirtualTypes     []virtualCfg `yaml:"virtual_types"`
-	Types            []typeCfg    `yaml:"types"`
+	// TypeInputs maps a legacy type name that is still accepted on input,
+	// but is no type of its own, to what it is stored as (RFC-042 §6.3.8:
+	// web_application is stored as (application, website), O3).
+	TypeInputs map[string]inputCfg `yaml:"type_inputs"`
+	Types      []typeCfg           `yaml:"types"`
 }
 
 type idLabel struct {
@@ -862,6 +866,21 @@ func checkTarget(where string, to inputCfg, byType map[string]*typeCfg) error {
 	return nil
 }
 
+// typeInputNames are the `type_inputs` names, in input order.
+func typeInputNames(m *model) []string {
+	isType := make(map[string]bool, len(m.Types))
+	for _, t := range m.Types {
+		isType[t.Type] = true
+	}
+	var out []string
+	for _, in := range m.Inputs {
+		if in.From.SubType == "" && !isType[in.From.Type] {
+			out = append(out, in.From.Type)
+		}
+	}
+	return out
+}
+
 // resolveInputs lists every accepted input that is not stored as such:
 // each alias (keyed by its name, sub_type "") and each legacy sub-type of a
 // core type, in registry order with the sub-type inputs sorted.
@@ -890,6 +909,20 @@ func resolveInputs(cfg *config, byType map[string]*typeCfg) ([]inputOut, error) 
 			}
 			out = append(out, inputOut{From: typeRef{Type: t.Type, SubType: legacy}, To: to})
 		}
+	}
+	for _, name := range sortedKeys(cfg.TypeInputs) {
+		to := cfg.TypeInputs[name]
+		where := fmt.Sprintf("type_inputs %q", name)
+		if _, isType := byType[name]; isType {
+			return nil, fmt.Errorf("%s: is a registry type; a type input names a type that is not one", where)
+		}
+		if to.Type == "" {
+			return nil, fmt.Errorf("%s: needs a type", where)
+		}
+		if err := checkTarget(where, to, byType); err != nil {
+			return nil, err
+		}
+		out = append(out, inputOut{From: typeRef{Type: name}, To: to})
 	}
 	return out, nil
 }
@@ -1059,12 +1092,25 @@ func renderGo(m *model) ([]byte, error) {
 	}
 	w("}\n\n")
 	w("// TypeAliases maps legacy types to their consolidated core type + sub_type,\n")
-	w("// from the `alias_of` entries of the registry. Used by ingest to normalize\n// incoming data.\n")
+	w("// from the `alias_of` entries and the `type_inputs` of the registry. Used by\n// ingest to normalize incoming data.\n")
 	w("var TypeAliases = map[AssetType]struct {\nCoreType AssetType\nSubType  string\n}{\n")
 	for _, t := range m.Types {
 		if t.AliasOf != nil {
 			w("%q: {CoreType: %q, SubType: %q},\n", t.Type, t.AliasOf.Type, t.AliasOf.SubType)
 		}
+	}
+	for _, name := range typeInputNames(m) {
+		for _, in := range m.Inputs {
+			if in.From.Type == name && in.From.SubType == "" {
+				w("%q: {CoreType: %q, SubType: %q},\n", name, in.To.Type, in.To.SubType)
+			}
+		}
+	}
+	w("}\n\n")
+	w("// registryTypeInputs are the legacy type names accepted on input that are no\n")
+	w("// type of their own (`type_inputs`).\nvar registryTypeInputs = []AssetType{")
+	for _, name := range typeInputNames(m) {
+		w("%q, ", name)
 	}
 	w("}\n\n")
 
@@ -1270,6 +1316,20 @@ func renderTS(m *model) string {
 			continue
 		}
 		w("  %s: { type: '%s', subType: '%s' },\n", t.Type, t.AliasOf.Type, t.AliasOf.SubType)
+	}
+	isType := make(map[string]bool, len(m.Types))
+	for _, t := range m.Types {
+		isType[t.Type] = true
+	}
+	for _, in := range m.Inputs {
+		if in.From.SubType != "" || isType[in.From.Type] {
+			continue // a sub-type input, or an alias written above
+		}
+		if in.To.SubType == "" {
+			w("  %s: { type: '%s' },\n", in.From.Type, in.To.Type)
+			continue
+		}
+		w("  %s: { type: '%s', subType: '%s' },\n", in.From.Type, in.To.Type, in.To.SubType)
 	}
 	w("}\n")
 	return b.String()

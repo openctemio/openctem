@@ -23,6 +23,10 @@ Each type entry declares:
   only when the alias has the core type's class (`data_store`);
 - `sub_types`, the closed list of kinds of a core type. A sub-type is a
   kind, never a vendor or an engine;
+- top-level `type_inputs`, legacy type names still accepted on input that
+  are no type of their own (`web_application` → `(application, website)`,
+  owner decision O3). They resolve like an alias but describe no stored
+  pair, so a stored pair keeps exactly one description;
 - `sub_type_inputs`, legacy sub-type values still accepted on input and what
   they are stored as: `{ type, sub_type, provider, attributes }`
   (`postgresql: { sub_type: relational, attributes: { engine: postgresql } }`).
