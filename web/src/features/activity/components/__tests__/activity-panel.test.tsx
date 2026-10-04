@@ -29,7 +29,18 @@ globalThis.ResizeObserver ??= class {
 import { EntityActivity } from '../entity-activity'
 import type { ActivityItem } from '../../types'
 
-const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString()
+// The fixtures span five hours and the feed never folds a run across a day
+// separator, so "now" for the fixtures is moved to just before today's
+// midnight when the suite runs in the first hours of the day (CI in UTC):
+// otherwise the run of three changes splits at midnight and does not fold.
+function fixtureNow(): number {
+  const now = new Date()
+  if (now.getHours() >= 6) return now.getTime()
+  const midnight = new Date(now)
+  midnight.setHours(0, 0, 0, 0)
+  return midnight.getTime() - 60_000
+}
+const ago = (min: number) => new Date(fixtureNow() - min * 60_000).toISOString()
 
 function items(): ActivityItem[] {
   return [
@@ -124,7 +135,7 @@ describe('ActivityTrigger', () => {
   it('shows a "new" dot for items after the last visit, not for your own', () => {
     window.localStorage.setItem(
       'openctem:activity:seen:u-me:finding:f1',
-      String(Date.now() - 150 * 60_000)
+      String(fixtureNow() - 150 * 60_000)
     )
     renderActivity()
     // c1 (Jamie, 2h ago) is new; c2 is mine.

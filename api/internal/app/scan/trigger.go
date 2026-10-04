@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -505,13 +506,23 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 		}
 	}
 
-	payloadMap, err := workflowStepPayload(run, step, stepRunID)
+	// The step's tool is handed only the run's targets it can scan
+	// (RFC-042 §6.3.8 O6); a step left with none fails here, before any
+	// sensor sees it.
+	stepTargets, err := s.FilterStepTargets(ctx, step.Tool, run.Context)
+	failCode := codeIncompatibleTargets
+	var payloadMap map[string]any
+	if err == nil {
+		failCode = "INVALID_STEP_CONFIG"
+		payloadMap, err = workflowStepPayload(run, step, stepRunID, stepTargets)
+	}
 	if err != nil {
-		// A setting the sensor would refuse fails the step here, with the
-		// reason, instead of a command that fails on the sensor.
+		// A setting the sensor would refuse, or targets the tool cannot
+		// scan, fail the step here, with the reason, instead of a command
+		// that fails on the sensor.
 		for _, sr := range stepRuns {
 			if sr.StepID == step.ID {
-				sr.Fail(err.Error(), "INVALID_STEP_CONFIG")
+				sr.Fail(err.Error(), failCode)
 				if uerr := s.stepRunRepo.Update(ctx, sr); uerr != nil {
 					s.logger.Warn("failed to fail step run", "step_key", step.StepKey, "error", uerr)
 				}
@@ -553,7 +564,7 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 // consistent field names for pipeline progression. The step's settings go
 // under PayloadKeyConfig, the key the sensor reads (see
 // pipeline.NormalizeStepConfig).
-func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID string) (map[string]any, error) {
+func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID string, st *StepTargets) (map[string]any, error) {
 	config, err := pipeline.NormalizeStepConfig(step.Tool, step.Config)
 	if err != nil {
 		return nil, err
@@ -567,7 +578,7 @@ func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID strin
 		"required_capabilities":          step.Capabilities,
 		"preferred_tool":                 step.Tool,
 		"timeout_seconds":                step.TimeoutSeconds,
-		"context":                        run.Context,
+		"context":                        StepRunContext(run.Context, st),
 	}
 	// The sensor SDK runs the scanner the payload names in `scanner`
 	// (ScanCommandPayload); without it every step failed on the sensor with
@@ -581,6 +592,9 @@ func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID strin
 	// workflow driven by ad-hoc targets (QuickScan) would receive none.
 	if targets, ok := run.Context["targets"]; ok {
 		payloadMap["targets"] = targets
+		if st != nil && st.Targets != nil {
+			payloadMap["targets"] = st.Targets
+		}
 	}
 	return payloadMap, nil
 }
@@ -654,7 +668,7 @@ func (s *Service) scannerPayload(
 		"routing_tags":                      sc.Tags,
 		"tenant_runner_only":                sc.RunOnTenantRunner,
 		legacyv1.PayloadKeySensorPreference: string(sc.SensorPreference),
-		"context":                           runContext,
+		"context":                           StepRunContext(runContext, nil),
 		// The sensor SDK (ScanCommandPayload) reads `scanner`, `config` and a
 		// single `target`, not `scanner_name`/`scanner_config` — send both sets
 		// so the command dispatches correctly (contract drift previously left
@@ -1121,6 +1135,17 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if r.Unconfirmed > 0 {
 		runContext["unconfirmed_target_count"] = r.Unconfirmed
 	}
+	if r.Incompatible > 0 {
+		runContext["incompatible_target_count"] = r.Incompatible
+	}
+	if len(r.TargetTypes) > 0 {
+		runContext[RunContextKeyTargetTypes] = r.TargetTypes
+	}
+	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
+		return shared.NewDomainError(codeNoCompatibleTargets,
+			fmt.Sprintf("Scan %q has no target its scanner can scan: %s. Pick a scanner for these asset types or change the asset group.", sc.Name, r.IncompatibleReason),
+			shared.ErrValidation)
+	}
 	if len(r.Targets) == 0 && r.Unconfirmed > 0 && r.Excluded == 0 {
 		return shared.NewDomainError("ALL_TARGETS_UNCONFIRMED",
 			fmt.Sprintf("Every target of scan %q is an asset whose ownership is not confirmed yet; nothing to scan. Review their attribution first.", sc.Name),
@@ -1147,6 +1172,8 @@ type groupScanMember struct {
 	ID          shared.ID
 	Name        string
 	MatchValues []string
+	// Type is the stored (type, sub_type) the scanner type gate reads.
+	Type asset.TypeRef
 }
 
 // groupScanMemberPage is the keyset page size for group members; the
@@ -1174,6 +1201,7 @@ func (s *Service) listGroupScanMembers(ctx context.Context, tenantID, groupID sh
 				ID:          m.ID,
 				Name:        m.Name,
 				MatchValues: scope.AssetExclusionValues(m.Type, m.Name, m.Properties),
+				Type:        asset.TypeRef{Type: asset.AssetType(m.Type), SubType: m.SubType},
 			})
 		}
 		// Stop before materializing a huge group: exclusions only remove
@@ -1212,7 +1240,7 @@ func (s *Service) filterAssetsForSingleScan(ctx context.Context, sc *scan.Scan) 
 	}
 
 	// Get asset type counts across every asset group of the scan
-	assetTypeCounts := map[string]int64{}
+	assetTypeCounts := map[asset.TypeRef]int64{}
 	listed := map[shared.ID]bool{}
 	for _, groupID := range sc.GetAllAssetGroupIDs() {
 		if listed[groupID] {

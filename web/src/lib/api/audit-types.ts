@@ -121,6 +121,7 @@ export type AuditAction =
   | 'finding.unassigned'
   | 'finding.commented'
   | 'finding.bulk_updated'
+  | 'finding.duplicate_marked'
   // Branch actions
   | 'branch.created'
   | 'branch.updated'
@@ -359,6 +360,7 @@ export function getActionLabel(action: AuditAction): string {
     'finding.unassigned': 'Finding Unassigned',
     'finding.commented': 'Finding Commented',
     'finding.bulk_updated': 'Findings Bulk Updated',
+    'finding.duplicate_marked': 'Finding Marked Duplicate',
     // Branch actions
     'branch.created': 'Branch Created',
     'branch.updated': 'Branch Updated',

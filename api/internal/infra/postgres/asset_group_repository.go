@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -723,7 +724,7 @@ func (r *AssetGroupRepository) ListScanMembers(ctx context.Context, q assetgroup
 	}
 	//nolint:gosec // G202: cursor and scanMemberMatchProps are fixed SQL with numbered placeholders
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT a.id, a.name, a.asset_type, a.status, `+scanMemberMatchProps+`
+		SELECT a.id, a.name, a.asset_type, COALESCE(a.sub_type, ''), a.status, `+scanMemberMatchProps+`
 		FROM asset_group_members agm
 		JOIN asset_groups ag ON ag.id = agm.asset_group_id
 		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = ag.tenant_id
@@ -737,17 +738,17 @@ func (r *AssetGroupRepository) ListScanMembers(ctx context.Context, q assetgroup
 
 	for rows.Next() {
 		var (
-			id, name, assetType, status string
-			props                       []byte
+			id, name, assetType, subType, status string
+			props                                []byte
 		)
-		if err := rows.Scan(&id, &name, &assetType, &status, &props); err != nil {
+		if err := rows.Scan(&id, &name, &assetType, &subType, &status, &props); err != nil {
 			return nil, fmt.Errorf("scan group scan member: %w", err)
 		}
 		aid, err := shared.IDFromString(id)
 		if err != nil {
 			return nil, fmt.Errorf("group scan member id: %w", err)
 		}
-		m := &assetgroup.ScanMember{ID: aid, Name: name, Type: assetType, Status: status}
+		m := &assetgroup.ScanMember{ID: aid, Name: name, Type: assetType, SubType: subType, Status: status}
 		if len(props) > 0 {
 			if err := json.Unmarshal(props, &m.Properties); err != nil {
 				return nil, fmt.Errorf("group scan member %s properties: %w", id, err)
@@ -764,6 +765,18 @@ func (r *AssetGroupRepository) ListScanMembers(ctx context.Context, q assetgroup
 // RecalculateCounts recalculates asset counts for a group.
 // Note: finding_count is computed in real-time during SELECT queries.
 func (r *AssetGroupRepository) RecalculateCounts(ctx context.Context, groupID shared.ID) error {
+	// The per-kind counters key on assets.asset_class (derived from the
+	// stored (type, sub_type) by trg_assets_registry_class), never on alias
+	// type names, which are not stored (RFC-042 §6.3.8): website_count and
+	// credential_count were always 0.
+	//   domain_count      class domain (domains and subdomains)
+	//   website_count     class application, except mobile apps
+	//   service_count     class service and web_endpoint, plus APIs
+	//   repository_count  class code_repo
+	//   cloud_count       classes cloud_account, function, container, cluster,
+	//                     artifact_registry, plus storage and cloud compute
+	//   credential_count  0: credentials have no asset type yet (secrets are
+	//                     RFC-042 §6.3.8 O4); kept so the column stays honest
 	//nolint:gosec // G202: groupMembersFrom is a fixed SQL fragment
 	query := `
 		UPDATE asset_groups SET
@@ -772,28 +785,31 @@ func (r *AssetGroupRepository) RecalculateCounts(ctx context.Context, groupID sh
 			),
 			domain_count = (
 				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1 AND a.asset_type = 'domain'
+				WHERE agm.asset_group_id = $1 AND a.asset_class = 'domain'
 			),
 			website_count = (
 				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1 AND a.asset_type = 'website'
+				WHERE agm.asset_group_id = $1 AND a.asset_class = 'application'
+				  AND COALESCE(a.sub_type, '') NOT IN ('api', 'mobile_app')
 			),
 			service_count = (
 				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1 AND a.asset_type IN ('api', 'service')
+				WHERE agm.asset_group_id = $1
+				  AND (a.asset_class IN ('service', 'web_endpoint')
+				       OR (a.asset_class = 'application' AND a.sub_type = 'api'))
 			),
 			repository_count = (
 				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1 AND a.asset_type = 'repository'
+				WHERE agm.asset_group_id = $1 AND a.asset_class = 'code_repo'
 			),
 			cloud_count = (
 				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1 AND a.asset_type IN ('cloud_account', 'compute', 'storage', 'serverless', 'container')
+				WHERE agm.asset_group_id = $1
+				  AND (a.asset_class IN ('cloud_account', 'function', 'container', 'cluster', 'artifact_registry')
+				       OR a.asset_type = 'storage'
+				       OR (a.asset_class = 'host' AND a.sub_type = 'compute'))
 			),
-			credential_count = (
-				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1 AND a.asset_type = 'credential'
-			),
+			credential_count = 0,
 			risk_score = COALESCE((
 				SELECT AVG(a.risk_score)::integer FROM ` + groupMembersFrom + `
 				WHERE agm.asset_group_id = $1
@@ -992,13 +1008,15 @@ func (r *AssetGroupRepository) GetDistinctAssetTypesMultiple(ctx context.Context
 	return types, nil
 }
 
-// CountAssetsByType returns count of assets per type in a group.
-func (r *AssetGroupRepository) CountAssetsByType(ctx context.Context, groupID shared.ID) (map[string]int64, error) {
+// CountAssetsByType returns the count of assets per stored (type, sub_type)
+// pair in a group. Scanner compatibility depends on the sub-type too
+// (RFC-042 §6.3.8): an API and a mobile app are both `application`.
+func (r *AssetGroupRepository) CountAssetsByType(ctx context.Context, groupID shared.ID) (map[asset.TypeRef]int64, error) {
 	query := `
-		SELECT a.asset_type, COUNT(*) as count
+		SELECT a.asset_type, COALESCE(a.sub_type, ''), COUNT(*) as count
 		FROM ` + groupMembersFrom + `
 		WHERE agm.asset_group_id = $1
-		GROUP BY a.asset_type
+		GROUP BY a.asset_type, COALESCE(a.sub_type, '')
 		ORDER BY a.asset_type
 	`
 
@@ -1008,14 +1026,14 @@ func (r *AssetGroupRepository) CountAssetsByType(ctx context.Context, groupID sh
 	}
 	defer rows.Close()
 
-	counts := make(map[string]int64)
+	counts := make(map[asset.TypeRef]int64)
 	for rows.Next() {
-		var assetType string
+		var assetType, subType string
 		var count int64
-		if err := rows.Scan(&assetType, &count); err != nil {
-			continue
+		if err := rows.Scan(&assetType, &subType, &count); err != nil {
+			return nil, fmt.Errorf("scan asset type count: %w", err)
 		}
-		counts[assetType] = count
+		counts[asset.TypeRef{Type: asset.AssetType(assetType), SubType: subType}] = count
 	}
 
 	if err := rows.Err(); err != nil {

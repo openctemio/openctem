@@ -485,6 +485,12 @@ func (p *AssetProcessor) processBatch(
 		// ownership, identifiers or reactivation.
 		mergeInto := func(existing *asset.Asset) {
 			id := existing.ID().String()
+			// An upload's actor may not touch an existing asset outside
+			// their data scope at all (Options.Actor).
+			if !isNew[id] && scope.actorDenies(existing.ID()) {
+				skipOutOfScope(output, ctisAsset.ID)
+				return
+			}
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
 				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
@@ -521,6 +527,12 @@ func (p *AssetProcessor) processBatch(
 		}
 		// createNew inserts this report asset as a new asset.
 		createNew := func() {
+			// A restricted upload's actor creates no asset: it could not see
+			// it, and skipping it answers like a hidden existing asset.
+			if scope.actorRestricted() {
+				skipOutOfScope(output, ctisAsset.ID)
+				return
+			}
 			newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
 			if createErr != nil {
 				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, shortName(normalizedName), createErr))
@@ -632,8 +644,7 @@ func (p *AssetProcessor) processBatch(
 			switch coreType {
 			case asset.AssetTypeRepository:
 				result, corrErr = p.correlator.CorrelateRepository(ctx, tenantID, normalizedName, "")
-			case asset.AssetTypeCloudAccount, asset.AssetTypeIdentity,
-				asset.AssetTypeIAMUser, asset.AssetTypeIAMRole, asset.AssetTypeServiceAccount:
+			case asset.AssetTypeCloudAccount, asset.AssetTypeIdentity:
 				// Try external_id from properties (account_id, arn, etc.)
 				props := p.buildPropertiesFromCTIS(ctisAsset)
 				externalID := ""
@@ -1853,10 +1864,11 @@ func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset)
 // normalisation (normalizeHostIPProperties) moves the legacy `ip` string into
 // `ip_addresses` and deletes `ip`, so reading `ip` alone never saw a host's IP.
 func inferAssetExposure(a *asset.Asset) asset.Exposure {
-	switch a.Type() {
-	case asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeCertificate,
-		asset.AssetTypeWebsite, asset.AssetTypeAPI:
-		return asset.ExposurePublic
+	// Internet-facing by nature, declared in the registry (exposure_default):
+	// it used to compare against website/api, which ingest never stores, so
+	// web applications and APIs were never marked public (RFC-042 §6.3.8).
+	if e := asset.DefaultExposure(a.Type(), a.SubType()); e != asset.ExposureUnknown {
+		return e
 	}
 	for _, ip := range ExtractAllIPs(a.Properties(), a.Name()) {
 		if isPublicIP(ip) {

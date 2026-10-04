@@ -653,6 +653,13 @@ func (r *ComponentRepository) buildWhereClause(filter component.Filter) (string,
 			sub += fmt.Sprintf(" AND asset_id = $%d", argIndex)
 			args = append(args, filter.AssetID.String())
 		}
+		if filter.DataScope != nil {
+			// Only components used by an asset the caller may see.
+			argIndex++
+			cond, scopeArgs := dataScopeCondAt("asset_id", filter.DataScope, argIndex)
+			sub += " AND " + cond
+			args = append(args, scopeArgs...)
+		}
 		conditions = append(conditions, fmt.Sprintf("id IN (%s)", sub))
 	} else if filter.AssetID != nil {
 		conditions = append(conditions, fmt.Sprintf("id IN (SELECT component_id FROM asset_components WHERE asset_id = $%d)", argIndex))
@@ -940,9 +947,21 @@ func (r *ComponentRepository) ListAssetUsage(
 	tenantID shared.ID,
 	componentID shared.ID,
 	atRiskOnly bool,
+	scope *shared.DataScope,
 	page pagination.Pagination,
 ) (pagination.Result[component.ComponentAssetUsage], error) {
 	empty := pagination.NewResult([]component.ComponentAssetUsage{}, 0, page)
+
+	// Only the assets the caller may see: the list names them and shows
+	// their criticality and risk ($3, $4 when restricted).
+	args := []any{tenantID.String(), componentID.String()}
+	scopeFilter := ""
+	if scope != nil {
+		var cond string
+		cond, args = dataScopeCond("ac.asset_id", scope, args)
+		scopeFilter = " AND " + cond
+	}
+	limitAt := len(args) + 1
 
 	atRiskFilter := ""
 	if atRiskOnly {
@@ -963,7 +982,7 @@ func (r *ComponentRepository) ListAssetUsage(
 		SELECT COUNT(DISTINCT ac.asset_id)
 		FROM asset_components ac
 		JOIN assets a ON a.id = ac.asset_id
-		WHERE ac.tenant_id = $1 AND ac.component_id = $2` + atRiskFilter
+		WHERE ac.tenant_id = $1 AND ac.component_id = $2` + atRiskFilter + scopeFilter
 
 	listQuery := `
 		SELECT
@@ -976,7 +995,7 @@ func (r *ComponentRepository) ListAssetUsage(
 			ac.created_at
 		FROM asset_components ac
 		JOIN assets a ON a.id = ac.asset_id
-		WHERE ac.tenant_id = $1 AND ac.component_id = $2` + atRiskFilter + `
+		WHERE ac.tenant_id = $1 AND ac.component_id = $2` + atRiskFilter + scopeFilter + `
 		ORDER BY
 			CASE a.criticality
 				WHEN 'critical' THEN 1
@@ -987,19 +1006,17 @@ func (r *ComponentRepository) ListAssetUsage(
 			END,
 			a.risk_score DESC,
 			a.name ASC
-		LIMIT $3 OFFSET $4
-	`
+		` + fmt.Sprintf("LIMIT $%d OFFSET $%d", limitAt, limitAt+1)
 
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String(), componentID.String()).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return empty, fmt.Errorf("failed to count component asset usage: %w", err)
 	}
 	if total == 0 {
 		return empty, nil
 	}
 
-	rows, err := r.db.QueryContext(ctx, listQuery,
-		tenantID.String(), componentID.String(), page.Limit(), page.Offset())
+	rows, err := r.db.QueryContext(ctx, listQuery, append(args, page.Limit(), page.Offset())...)
 	if err != nil {
 		return empty, fmt.Errorf("failed to list component asset usage: %w", err)
 	}

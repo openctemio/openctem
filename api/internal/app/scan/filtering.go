@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
@@ -99,32 +100,19 @@ func (s *AssetFilterService) PreviewCompatibility(
 		}, nil
 	}
 
-	// Get all distinct asset types across groups
-	var allAssetTypes []string
-	var totalCounts = make(map[string]int64)
-
+	// Count assets per stored (type, sub_type) across the groups.
+	totalCounts := make(map[asset.TypeRef]int64)
 	for _, groupID := range groupIDs {
 		counts, err := s.assetGroupRepo.CountAssetsByType(ctx, groupID)
 		if err != nil {
 			return nil, fmt.Errorf("count assets by type for group %s: %w", groupID, err)
 		}
-		for assetType, count := range counts {
-			totalCounts[assetType] += count
-			// Track unique types
-			found := false
-			for _, t := range allAssetTypes {
-				if t == assetType {
-					found = true
-					break
-				}
-			}
-			if !found {
-				allAssetTypes = append(allAssetTypes, assetType)
-			}
+		for ref, count := range counts {
+			totalCounts[ref] += count
 		}
 	}
 
-	if len(allAssetTypes) == 0 {
+	if len(totalCounts) == 0 {
 		return &AssetCompatibilityPreview{
 			IsFullyCompatible:    true,
 			CompatibilityPercent: 100,
@@ -141,38 +129,27 @@ func (s *AssetFilterService) PreviewCompatibility(
 		}, nil
 	}
 
-	// Convert to asset.AssetType for compatibility check
-	assetTypes := make([]asset.AssetType, len(allAssetTypes))
-	for i, t := range allAssetTypes {
-		assetTypes[i] = asset.AssetType(t)
-	}
-
-	// Get compatible asset types
-	compatibleTypes, err := s.targetMappingRepo.GetCompatibleAssetTypes(ctx, toolTargets, assetTypes)
+	compat, err := newTypeCompatibility(ctx, s.targetMappingRepo, toolTargets)
 	if err != nil {
-		return nil, fmt.Errorf("get compatible asset types: %w", err)
-	}
-
-	// Build sets
-	compatibleSet := make(map[string]bool)
-	for _, t := range compatibleTypes {
-		compatibleSet[string(t)] = true
+		return nil, err
 	}
 
 	// Calculate counts
 	var compatibleCount, incompatibleCount, unclassifiedCount int64
 	var compatibleTypesList, incompatibleTypesList []string
 
-	for assetType, count := range totalCounts {
+	for _, ref := range sortedRefs(totalCounts) {
+		count := totalCounts[ref]
+		ok, decidable := compat.decide(ref)
 		switch {
-		case assetType == string(asset.AssetTypeUnclassified):
+		case ref.Type == asset.AssetTypeUnclassified:
 			unclassifiedCount += count
-		case compatibleSet[assetType]:
+		case ok || !decidable:
 			compatibleCount += count
-			compatibleTypesList = append(compatibleTypesList, assetType)
+			compatibleTypesList = append(compatibleTypesList, typeLabel(ref))
 		default:
 			incompatibleCount += count
-			incompatibleTypesList = append(incompatibleTypesList, assetType)
+			incompatibleTypesList = append(incompatibleTypesList, typeLabel(ref))
 		}
 	}
 
@@ -209,13 +186,17 @@ func (s *AssetFilterService) PreviewCompatibility(
 	}, nil
 }
 
-// FilterAssetsForScan filters assets based on tool compatibility.
-// Returns the filtering result showing what was scanned vs skipped.
+// FilterAssetsForScan reports, per stored (type, sub_type), which assets the
+// tool can scan. It reports what dispatch does (the scanner type gate,
+// type_gate.go): an asset whose compatibility cannot be decided (unclassified,
+// a type the registry does not know, or a tool that declares no target type
+// the platform knows) is dispatched, and unclassified ones are also counted
+// in UnclassifiedAssets.
 func (s *AssetFilterService) FilterAssetsForScan(
 	ctx context.Context,
 	toolTargets []string,
 	toolName string,
-	assetTypeCounts map[string]int64,
+	assetTypeCounts map[asset.TypeRef]int64,
 ) (*FilteringResult, error) {
 	result := &FilteringResult{
 		ToolName:         toolName,
@@ -238,53 +219,40 @@ func (s *AssetFilterService) FilterAssetsForScan(
 	if len(toolTargets) == 0 {
 		result.ScannedAssets = result.TotalAssets
 		result.CompatibilityPercent = 100
-		for assetType, count := range assetTypeCounts {
-			result.ScannedByType[assetType] = int(count)
+		for ref, count := range assetTypeCounts {
+			result.ScannedByType[typeLabel(ref)] += int(count)
 		}
 		return result, nil
 	}
 
-	// Get all asset types
-	assetTypes := make([]asset.AssetType, 0, len(assetTypeCounts))
-	for t := range assetTypeCounts {
-		assetTypes = append(assetTypes, asset.AssetType(t))
-	}
-
-	// Get compatible types
-	compatibleTypes, err := s.targetMappingRepo.GetCompatibleAssetTypes(ctx, toolTargets, assetTypes)
+	compat, err := newTypeCompatibility(ctx, s.targetMappingRepo, toolTargets)
 	if err != nil {
-		return nil, fmt.Errorf("get compatible types: %w", err)
+		return nil, err
 	}
 
-	compatibleSet := make(map[string]bool)
-	for _, t := range compatibleTypes {
-		compatibleSet[string(t)] = true
-	}
-
-	// Categorize
-	for assetType, count := range assetTypeCounts {
-		intCount := int(count)
-
+	for _, ref := range sortedRefs(assetTypeCounts) {
+		intCount := int(assetTypeCounts[ref])
+		label := typeLabel(ref)
+		ok, decidable := compat.decide(ref)
 		switch {
-		case assetType == string(asset.AssetTypeUnclassified):
+		case ref.Type == asset.AssetTypeUnclassified:
 			result.UnclassifiedAssets += intCount
-			result.SkippedAssets += intCount
-			result.SkippedByType[assetType] = intCount
-			result.SkipReasons = append(result.SkipReasons, SkipReason{
-				AssetType: assetType,
-				Count:     intCount,
-				Reason:    "Unclassified assets cannot be matched to scanner targets",
-			})
-		case compatibleSet[assetType]:
 			result.ScannedAssets += intCount
-			result.ScannedByType[assetType] = intCount
+			result.ScannedByType[label] += intCount
+		case !decidable:
+			result.ScannedAssets += intCount
+			result.ScannedByType[label] += intCount
+		case ok:
+			result.ScannedAssets += intCount
+			result.ScannedByType[label] += intCount
 		default:
 			result.SkippedAssets += intCount
-			result.SkippedByType[assetType] = intCount
+			result.SkippedByType[label] += intCount
 			result.SkipReasons = append(result.SkipReasons, SkipReason{
-				AssetType: assetType,
+				AssetType: label,
 				Count:     intCount,
-				Reason:    fmt.Sprintf("Asset type '%s' is not compatible with scanner targets %v", assetType, toolTargets),
+				Reason: fmt.Sprintf("Asset type '%s' cannot be scanned by %s (it accepts %v; the type is scannable by %v)",
+					label, toolName, toolTargets, asset.ScannableBy(ref.Type, ref.SubType)),
 			})
 		}
 	}
@@ -297,4 +265,19 @@ func (s *AssetFilterService) FilterAssetsForScan(
 	result.WasFiltered = result.SkippedAssets > 0
 
 	return result, nil
+}
+
+// sortedRefs returns the keys in a stable order (type, then sub-type).
+func sortedRefs(m map[asset.TypeRef]int64) []asset.TypeRef {
+	out := make([]asset.TypeRef, 0, len(m))
+	for ref := range m {
+		out = append(out, ref)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Type != out[j].Type {
+			return out[i].Type < out[j].Type
+		}
+		return out[i].SubType < out[j].SubType
+	})
+	return out
 }

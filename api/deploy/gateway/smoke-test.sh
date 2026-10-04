@@ -107,16 +107,31 @@ for _ in $(seq 1 30); do
 	sleep 1
 done
 
+# Each plane the gateway sends straight to the API (planes.caddy, generated
+# from the API's plane table).
 probe api GET /api/v1/agent/heartbeat
 probe api PUT /api/v2/sensor/results/r1/segments/0
-probe api POST /api/v1/platform/poll
+probe api POST /api/v1/validation/evidence
 probe api GET /scim/v2/Users
 probe api POST /api/v1/mcp
 probe api POST /api/v1/webhooks/incoming/github
+probe api POST /hooks/github
 probe api POST /api/v1/auth/saml/acme/acs
+probe api GET /api/v1/auth/saml/acme/metadata
 probe api POST /api/v1/auth/backchannel-logout
 probe api GET /api/v1/ws
 probe api GET /health
+probe api GET /openapi.yaml
+probe api GET /docs
+# Browser planes reach the API only by credential, never by path.
+probe web GET /api/v1/validation/coverage -H "Cookie: auth_token=abc"
+probe web POST /api/v1/auth/login
+probe web GET /api/v1/me/permissions -H "Cookie: auth_token=abc"
+probe web GET /api/v1/admin/tenants
+probe web GET /api/v1/admin/tenants -H "Cookie: admin_session=abc"
+# The stale protocol-v0 rule is gone (the API serves none of these).
+probe web POST /api/v1/platform/poll
+probe web GET /api/v1/platform/stats -H "Cookie: auth_token=abc"
 probe api GET /api/v1/findings -H "Authorization: Bearer oct_example"
 probe api GET /api/v1/findings -H "X-API-Key: oct_example"
 probe api GET /api/v1/findings -H "Authorization: Bearer eyJ.token"
@@ -127,8 +142,11 @@ probe web GET /api/auth/refresh
 probe web GET /
 probe web GET /login
 probe 404 GET /metrics
+probe 404 GET /metrics -H "Authorization: Bearer oct_example"
 probe 404 GET /ready
+probe 404 GET /ready/detail
 probe 404 GET /debug/pprof/
+probe 404 GET /debug
 
 echo "== Client address is set by the gateway, not the client"
 body="$(docker run --rm --network "$net" curlimages/curl:latest -sk -m 5 \
@@ -171,6 +189,37 @@ if header_present 'strict-transport-security: max-age=31536000'; then ok "HSTS";
 if header_present 'x-content-type-options: nosniff'; then ok "nosniff"; else bad "nosniff missing"; fi
 if header_present 'server:'; then bad "Server header present"; else ok "no Server header"; fi
 if header_present 'via:'; then bad "Via header present"; else ok "no Via header"; fi
+
+echo "== The access log never records an invitation token"
+# Links emailed before RFC-041 and the deprecated API aliases carry the token
+# in the path; the gateway's access log replaces it.
+invtok="Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8"
+probe web GET "/invitations/$invtok"
+probe web GET "/api/v1/invitations/$invtok/preview"
+probe web POST /api/v1/invitations/lookup
+probe api GET "/api/v1/ws?ticket=$invtok&x=1"
+sleep 1
+gwlog="$(docker logs "$run-gw" 2>&1)"
+if grep -q "$invtok" <<<"$gwlog"; then
+	bad "an invitation token reached the access log"
+else
+	ok "no invitation token in the access log"
+fi
+if grep -q "/invitations/REDACTED" <<<"$gwlog" && grep -q "/api/v1/invitations/REDACTED/preview" <<<"$gwlog"; then
+	ok "token paths logged as REDACTED"
+else
+	bad "token paths not logged as REDACTED"
+fi
+if grep -q "/api/v1/ws?ticket=REDACTED&x=1" <<<"$gwlog"; then
+	ok "WebSocket ticket logged as REDACTED"
+else
+	bad "WebSocket ticket not logged as REDACTED"
+fi
+if grep -q "/api/v1/invitations/lookup" <<<"$gwlog"; then
+	ok "body routes logged as is"
+else
+	bad "/api/v1/invitations/lookup missing from the access log"
+fi
 
 echo "== Plain HTTP only redirects to HTTPS"
 gwip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gw")"
