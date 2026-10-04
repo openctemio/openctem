@@ -47,5 +47,5 @@ func (t tenantAssets) AssetIDsInTenant(_ context.Context, tenantID shared.ID, id
 // tenantAssetEnforcer is an enforcer over tenantAssets for a context with no
 // user (unrestricted, tenant check only).
 func tenantAssetEnforcer(owners tenantAssets) *datascope.Enforcer {
-	return datascope.New(owners, nil, nil, logger.NewNop())
+	return datascope.New(owners, nil, logger.NewNop())
 }

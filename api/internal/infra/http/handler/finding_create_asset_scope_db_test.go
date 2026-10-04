@@ -86,7 +86,7 @@ func TestCreateFinding_AssetTenantAndScope_DB(t *testing.T) {
 	}
 
 	db := &postgres.DB{DB: raw}
-	enforcer := datascope.New(postgres.NewDataScopeRepository(db), nil,
+	enforcer := datascope.New(postgres.NewDataScopeRepository(db),
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, logger.NewNop())
