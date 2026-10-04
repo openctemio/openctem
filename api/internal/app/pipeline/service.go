@@ -4,6 +4,7 @@ package pipeline
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -188,6 +189,7 @@ type Service struct {
 	runCompleted      RunCompletedCallback // Optional: fires scan_completed automation
 	db                TransactionDB        // Optional: for transaction support
 	targetGate        TargetGate           // checks run-context targets; nil refuses runs that carry targets
+	assetRefChecker   AssetRefChecker      // tenant + scope check of a run's asset_id; nil refuses runs that carry one
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)
@@ -261,6 +263,25 @@ type StepTargetFilter interface {
 func WithTargetGate(g TargetGate) Option {
 	return func(s *Service) {
 		s.targetGate = g
+	}
+}
+
+// ErrRunAssetNotFound is the one answer for a run asset_id that is unknown,
+// soft-deleted, of another tenant, or outside the caller's data scope.
+var ErrRunAssetNotFound = fmt.Errorf("%w: asset not found", shared.ErrNotFound)
+
+// AssetRefChecker decides whether a caller may start a run on an asset:
+// shared.ErrNotFound unless the asset is a live asset of the tenant and in
+// the caller's data scope. datascope.Enforcer.AssertAssetRef implements it.
+type AssetRefChecker interface {
+	AssertAssetRef(ctx context.Context, tenantID, assetID shared.ID) error
+}
+
+// WithAssetRefChecker wires the check a run's asset_id goes through. Without
+// it a run started with an asset_id is refused (fail closed).
+func WithAssetRefChecker(c AssetRefChecker) Option {
+	return func(s *Service) {
+		s.assetRefChecker = c
 	}
 }
 

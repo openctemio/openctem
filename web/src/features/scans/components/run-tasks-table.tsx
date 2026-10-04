@@ -5,7 +5,7 @@ import useSWRInfinite from 'swr/infinite'
 import { Info, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { RunStatusBadge } from '@/features/shared'
+import { RunStatusBadge, TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import { pipelineRunEndpoints } from '@/lib/api/endpoints'
 import type { RunTask, RunTaskPage } from '@/lib/api/generated'
@@ -122,21 +122,17 @@ export function RunTasksTable({
                   <td className="px-3 py-2">
                     <RunStatusBadge status={t.status ?? ''} />
                     {note?.kind === 'waiting' && (
-                      <p
-                        className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground"
-                        title={note.text}
-                      >
+                      <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground">
                         <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
-                        <span className="truncate">{note.text}</span>
-                      </p>
+                        <TruncatedText value={note.text} label="Waiting" />
+                      </div>
                     )}
                     {note?.kind === 'error' && (
-                      <p
-                        className="mt-1 max-w-[220px] truncate text-xs text-muted-foreground"
-                        title={note.text}
-                      >
-                        {note.text}
-                      </p>
+                      <TruncatedText
+                        value={note.text}
+                        label="Task error"
+                        className="mt-1 max-w-[220px] text-xs text-muted-foreground"
+                      />
                     )}
                   </td>
                   <td className="px-3 py-2">{t.tool || '-'}</td>
