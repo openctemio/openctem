@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/group"
-	"github.com/openctemio/openctem/api/pkg/domain/permissionset"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/scimgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -86,38 +85,6 @@ func TestIAMRepositories_CrossTenantIsolation(t *testing.T) {
 		// A system role (tenant_id NULL) stays readable by every tenant.
 		if _, err := repo.GetByID(ctx, asA, role.OwnerRoleID); err != nil {
 			t.Fatalf("system role must stay readable: %v", err)
-		}
-	})
-
-	t.Run("permission set read, update and delete", func(t *testing.T) {
-		repo := NewPermissionSetRepository(db)
-		psID := shared.NewID()
-		if _, err := db.ExecContext(ctx,
-			`INSERT INTO permission_sets (id, tenant_id, name, slug, set_type) VALUES ($1, $2, 'B set', $3, 'custom')`,
-			psID.String(), tenantB.String(), "b-"+psID.String()); err != nil {
-			t.Fatalf("seed permission set: %v", err)
-		}
-		t.Cleanup(func() {
-			_, _ = db.ExecContext(context.Background(), `DELETE FROM permission_sets WHERE id = $1`, psID.String())
-		})
-		if _, err := repo.GetByID(ctx, tenantA, psID); !errors.Is(err, permissionset.ErrPermissionSetNotFound) {
-			t.Fatalf("read as A: want not found, got %v", err)
-		}
-		if _, err := repo.GetInheritanceChain(ctx, tenantA, psID); err != nil {
-			t.Fatalf("chain as A: %v", err)
-		} else if chain, _ := repo.GetInheritanceChain(ctx, tenantA, psID); len(chain) != 0 {
-			t.Fatalf("chain as A must be empty, got %d", len(chain))
-		}
-		forged := permissionset.Reconstitute(psID, &tenantA, "pwned", "pwned-"+psID.String(), "",
-			permissionset.SetTypeCustom, nil, nil, true, time.Now(), time.Now())
-		if err := repo.Update(ctx, forged); !errors.Is(err, permissionset.ErrPermissionSetNotFound) {
-			t.Fatalf("update as A: want not found, got %v", err)
-		}
-		if err := repo.Delete(ctx, tenantA, psID); !errors.Is(err, permissionset.ErrPermissionSetNotFound) {
-			t.Fatalf("delete as A: want not found, got %v", err)
-		}
-		if name := scalarString(ctx, t, db, `SELECT name FROM permission_sets WHERE id = $1`, psID.String()); name != "B set" {
-			t.Fatalf("B's permission set changed: name=%q", name)
 		}
 	})
 

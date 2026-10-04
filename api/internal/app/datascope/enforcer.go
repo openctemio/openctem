@@ -31,6 +31,10 @@ import (
 type Caller struct {
 	UserID  string
 	IsAdmin bool
+	// APIKey marks a request authenticated with an API key. A key never
+	// inherits its holder's full-data role: full data through a key needs an
+	// explicit full-data key (research doc 15, §5.7), not built yet.
+	APIKey bool
 }
 
 // CallerFunc reads the acting caller from a request context. It is wired at
@@ -52,6 +56,10 @@ type Repository interface {
 	// FindingAssetID returns the asset of a finding in the tenant, or
 	// shared.ErrNotFound.
 	FindingAssetID(ctx context.Context, tenantID, findingID shared.ID) (shared.ID, error)
+	// HasFullDataRole reports whether the user holds, in the tenant, a role
+	// with has_full_data_access (the system Owner and Administrator roles,
+	// and any custom role such as a Global Reader).
+	HasFullDataRole(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 	// FindingIDsInScope returns the subset of findingIDs (in the tenant) whose
 	// asset the user has a scope row for.
 	FindingIDsInScope(ctx context.Context, tenantID, userID shared.ID, findingIDs []shared.ID) ([]shared.ID, error)
@@ -120,6 +128,19 @@ func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller)
 		// An unparseable acting user cannot be matched to any scope row.
 		return nil, fmt.Errorf("%w: invalid acting user", shared.ErrNotFound)
 	}
+	// A role with has_full_data_access is the Layer 2 bypass (owner decision
+	// D3): it sees every asset of the tenant whatever its group rows say.
+	// Owner and Administrator hold it through their system roles; a lookup
+	// error restricts (fail closed).
+	if !c.APIKey {
+		full, ferr := e.repo.HasFullDataRole(ctx, tenantID, userID)
+		if ferr != nil {
+			return nil, fmt.Errorf("resolve full data access: %w", ferr)
+		}
+		if full {
+			return nil, nil
+		}
+	}
 	has, err := e.repo.HasAnyScopeAssignment(ctx, tenantID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
@@ -128,6 +149,31 @@ func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller)
 		return nil, nil // fail-open default: no assignment, sees everything
 	}
 	return &shared.DataScope{TenantID: tenantID, UserID: userID}, nil
+}
+
+// FullData reports whether actingUserID holds a has_full_data_access role in
+// the tenant (false for an API-key request, an empty user, or no
+// repository; an unparseable user is an error). The older list paths use it
+// to apply the same bypass as ResolveFor.
+func (e *Enforcer) FullData(ctx context.Context, tenantID shared.ID, actingUserID string) (bool, error) {
+	if e == nil || e.repo == nil || actingUserID == "" || e.CallerOf(ctx).APIKey {
+		return false, nil
+	}
+	userID, err := shared.IDFromString(actingUserID)
+	if err != nil {
+		// Refuse rather than fall through: a caller that cannot be matched
+		// to a user must not reach any path that skips the scope.
+		return false, fmt.Errorf("%w: invalid acting user", shared.ErrNotFound)
+	}
+	return e.repo.HasFullDataRole(ctx, tenantID, userID)
+}
+
+// ResolveActing is Resolve for the older services that are handed the acting
+// user and the admin flag instead of reading the request: the same decision
+// (admin, full-data role, scope rows, policy), so every path agrees. The
+// API-key marker still comes from the request.
+func (e *Enforcer) ResolveActing(ctx context.Context, tenantID shared.ID, actingUserID string, isAdmin bool) (*shared.DataScope, error) {
+	return e.ResolveFor(ctx, tenantID, Caller{UserID: actingUserID, IsAdmin: isAdmin, APIKey: e.CallerOf(ctx).APIKey})
 }
 
 // ForUser resolves the scope of a user outside a request (no auth context),
@@ -312,6 +358,37 @@ func (e *Enforcer) CanActOnAssets(ctx context.Context, tenantID shared.ID, fallb
 		return nil, false, err
 	}
 	return pred, false, nil
+}
+
+// Delegable returns a predicate admitting the assets the request's caller
+// may hand to others (assign to a group, grant, add a member to a group that
+// holds them). Owner decision D13 (research doc 15 L-09): a caller can only
+// delegate scope they hold themselves. An unrestricted caller (admin,
+// full-data role, member of a fail-open organization with no scope row,
+// internal call) may delegate any asset of the tenant; that is the second
+// return value.
+func (e *Enforcer) Delegable(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, bool, error) {
+	scope, err := e.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, false, err
+	}
+	if scope == nil {
+		return func(shared.ID) bool { return true }, true, nil
+	}
+	admit, err := e.Filter(ctx, scope, assetIDs)
+	return admit, false, err
+}
+
+// FullDataCaller reports whether the request's caller has full data access:
+// an admin, a holder of a has_full_data_access role (not through an API key),
+// or an internal call with no user. Changes that widen the caller's own
+// scope (adding themselves to a group) need it.
+func (e *Enforcer) FullDataCaller(ctx context.Context, tenantID shared.ID) (bool, error) {
+	c := e.CallerOf(ctx)
+	if c.IsAdmin || c.UserID == "" {
+		return true, nil
+	}
+	return e.FullData(ctx, tenantID, c.UserID)
 }
 
 // FilterForCaller is Filter for the request's caller.

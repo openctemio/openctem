@@ -159,12 +159,12 @@ rules. A registry PR that breaks one needs an RFC amendment first.
   `DATABASE_URL`): the `asset_types` rows and CHECK constraints match the
   registry, the trigger agrees with `asset.ClassOf` for every stored pair, the
   backfill repairs stale rows, `chk_assets_core_type` lists exactly the stored
-  types, and the normalisation batch (000490) moves legacy rows of two tenants
+  types, and the normalisation batch (000684) moves legacy rows of two tenants
   onto stored pairs without dropping a value.
 
 ## Only core types are stored
 
-Since migration 000490, `chk_assets_core_type` refuses any `assets.asset_type`
+Since migration 000684, `chk_assets_core_type` refuses any `assets.asset_type`
 that is not a core type. The registry block emits it `NOT VALID`, so a registry
 change updates the list in the same migration; the migration then moves the rows
 the change leaves outside the list (`asset_type_normalise_batch`) and runs

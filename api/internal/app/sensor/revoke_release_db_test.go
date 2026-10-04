@@ -80,7 +80,7 @@ func (h *releaseHarness) hold(sensorID, cmdID shared.ID, start bool) *command.Co
 
 func (h *releaseHarness) get(id shared.ID) *command.Command {
 	h.t.Helper()
-	c, err := h.cmds.GetByID(context.Background(), id)
+	c, err := h.cmds.GetByTenantAndID(context.Background(), h.tenant, id)
 	if err != nil {
 		h.t.Fatal(err)
 	}
