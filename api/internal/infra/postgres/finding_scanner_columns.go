@@ -8,7 +8,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// The scanner-detail columns of the findings table (migration 000660):
+// The scanner-detail columns of the findings table (migration 000665):
 // family, exploit verdict, VPR, CVSS version, every CVE and the patch
 // publication date (research 17 R2). Ingest parsed them and dropped them.
 //
