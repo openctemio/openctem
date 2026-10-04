@@ -1179,7 +1179,7 @@ Tenable.sc's RBAC.
    inherit them. The `/api/v1/permission-sets` and
    `/api/v1/groups/{id}/permission-sets` routes are gone, no code reads or
    writes their tables, and `team:permission_sets:*` left the catalog
-   (migration 000465 archives those catalog rows and role grants in
+   (migration 000516 archives those catalog rows and role grants in
    `access_control_removed_archive`). The tables themselves are dropped by a
    later contract migration, after a release (expand-contract).
    `GET /api/v1/me/permissions` now returns the caller's role-derived
