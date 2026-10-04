@@ -234,13 +234,13 @@ func (s *Service) UpdateSLAPolicy(ctx context.Context, policyID, tenantID string
 		return nil, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
 
-	policy, err := s.repo.GetByID(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	policy, err := s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
-	}
-
-	if policy.TenantID().String() != tenantID {
-		return nil, shared.ErrNotFound
 	}
 
 	if input.Name != nil {
@@ -311,19 +311,20 @@ func (s *Service) DeleteSLAPolicy(ctx context.Context, policyID, tenantID string
 	if tenantID == "" {
 		return fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
-	policy, err := s.repo.GetByID(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return shared.ErrNotFound
+	}
+	policy, err := s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return err
-	}
-	if policy.TenantID().String() != tenantID {
-		return shared.ErrNotFound
 	}
 	// Prevent deletion of default policy
 	if policy.IsDefault() {
 		return fmt.Errorf("%w: cannot delete default SLA policy", shared.ErrValidation)
 	}
 
-	if err := s.repo.Delete(ctx, parsedID); err != nil {
+	if err := s.repo.Delete(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
 

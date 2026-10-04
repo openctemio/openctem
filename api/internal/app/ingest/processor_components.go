@@ -172,7 +172,7 @@ func (p *ComponentProcessor) ProcessBatch(
 		if found && parentID != nil {
 			// Calculate depth and update
 			depth := parentDepth + 1
-			if err := p.repo.UpdateAssetDependencyParent(ctx, assetDepID, *parentID, depth); err != nil {
+			if err := p.repo.UpdateAssetDependencyParent(ctx, tenantID, assetDepID, *parentID, depth); err != nil {
 				p.logger.Warn("failed to update parent reference",
 					"dependency", dep.Name,
 					"parent_id", parentID.String(),
