@@ -48,7 +48,7 @@ var permRenameMigrations = []string{
 // order, after the renames.
 var permRemoveMigrations = []string{
 	"000492_remove_group_permission_sets.up.sql",   // team:permission_sets:* (permissions come only from roles)
-	"000541_remove_meaningless_permissions.up.sql", // export/billing/policies/compliance permissions that gate nothing
+	"000562_remove_meaningless_permissions.up.sql", // export/billing/policies/compliance permissions that gate nothing
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)
