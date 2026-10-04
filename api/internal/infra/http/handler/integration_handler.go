@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -661,6 +662,13 @@ func (h *IntegrationHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Suppress unused variable warning for userID (may be used for audit logging)
 	_ = userID
 
+	// An SCM connection additionally needs integrations:scm:write.
+	if integration.Category(req.Category) == integration.CategorySCM &&
+		!middleware.HasPermission(r.Context(), permission.SCMConnectionsWrite.String()) {
+		apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+		return
+	}
+
 	input := app.CreateIntegrationInput{
 		TenantID:        tenantID,
 		Name:            req.Name,
@@ -782,6 +790,10 @@ func (h *IntegrationHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if !h.allowSCMChange(w, r, id, tenantID, permission.SCMConnectionsWrite) {
+		return
+	}
+
 	input := app.UpdateIntegrationInput{
 		Name:            req.Name,
 		Description:     req.Description,
@@ -823,6 +835,10 @@ func (h *IntegrationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
 		apierror.BadRequest("Integration ID is required").WriteJSON(w)
+		return
+	}
+
+	if !h.allowSCMChange(w, r, id, tenantID, permission.SCMConnectionsDelete) {
 		return
 	}
 
@@ -1692,4 +1708,20 @@ func (h *IntegrationHandler) ImportRepositories(w http.ResponseWriter, r *http.R
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// allowSCMChange refuses a change to an SCM connection when the caller lacks
+// perm (integrations:scm:write or :delete) on top of the route's
+// integrations:manage. A missing or other-tenant integration passes through:
+// the service answers it as not found, in the tenant scope.
+func (h *IntegrationHandler) allowSCMChange(w http.ResponseWriter, r *http.Request, id, tenantID string, perm permission.Permission) bool {
+	intg, err := h.service.GetIntegration(r.Context(), id)
+	if err != nil || intg.TenantID().String() != tenantID || !intg.IsSCM() {
+		return true
+	}
+	if middleware.HasPermission(r.Context(), perm.String()) {
+		return true
+	}
+	apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+	return false
 }
