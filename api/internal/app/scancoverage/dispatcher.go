@@ -21,6 +21,9 @@ type CommandCreator interface {
 // control plane never does.
 type DispatchTenableInput struct {
 	TenantID shared.ID
+	// IntegrationID is the integration that runs the batch (the Tenable.sc
+	// connector, RFC-047), or nil.
+	IntegrationID *shared.ID
 	// Targets are the IPs/CIDRs/hostnames in this batch.
 	Targets []string
 	// SessionID scopes auto-resolve to this batch (tool + session + assets).
