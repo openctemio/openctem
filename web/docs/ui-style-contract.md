@@ -94,6 +94,15 @@ Every page, top to bottom:
     filter icon; label them with `aria-label="Filter by …"`.
   - Enforced by `src/features/shared/components/__tests__/filter-trigger-governance.test.ts`;
     a non-trigger use of a filter icon needs an allowlist entry with a reason.
+- **Context filters** (a deep link's `asset_id`, `scan_id`, `cve_id`, `rule_id`:
+  "View findings" from an asset or a scan run) are `<ContextFilterChips>` from
+  `@/features/shared`, placed in `toolbarStart` after the search box, never as
+  a row of their own above the table (that row pushed the table down when the
+  page opened with the parameter). Each chip shows a human label (resolved
+  through the tenant-scoped hook; a fixed-width placeholder while loading;
+  "Unknown asset" on 404/403) and its X removes only its own parameter. Render
+  the same chips in the page's loading skeleton, so they are there from the
+  first frame. See `features/findings/components/finding-context-chips.tsx`.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
