@@ -432,7 +432,14 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
    `tests/integration/testdata/dedup/`. sdk-go keeps SARIF
    `partialFingerprints` in `FromSARIF` (sdk-go#142).
 12. Pentest `finding_key`; manual recipe with separators; "mark duplicate of"
-   (writes `duplicate_of`). Converter fingerprints (Nessus, DefectDojo) kept as
+   (writes `duplicate_of`).
+   **"Mark duplicate of" done:** `POST /api/v1/findings/{id}/duplicates`
+   (`findings:triage`; `findings:approve` as well when either finding is a
+   false positive or risk acceptance) folds the body's finding into `{id}`
+   through the finding merge (tombstone, references and keys move). Both must
+   be in the caller's tenant and data scope and on the same asset; pentest
+   findings are excluded; audited as `finding.duplicate_marked`. Web: "Mark as
+   duplicate" in the finding page menu. Converter fingerprints (Nessus, DefectDojo) kept as
    sighting keys; SARIF adapter picks `fingerprints` deterministically; one
    parser per tool (retire the in-tree adapters or make them call the sensor
    parsers) (B23).
