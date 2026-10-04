@@ -381,6 +381,12 @@ export const tenantEndpoints = {
   reactivateMember: (tenantIdOrSlug: string, memberId: string) =>
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}/reactivate`,
 
+  /**
+   * Reset a member's two-factor authentication (POST) — owner/admin
+   */
+  resetMemberMfa: (tenantIdOrSlug: string, memberId: string) =>
+    `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}/reset-2fa`,
+
   // ============================================
   // SETTINGS MANAGEMENT
   // ============================================

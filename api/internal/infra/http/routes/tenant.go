@@ -95,6 +95,11 @@ func registerTenantRoutes(
 		r.POST("/members/{userId}/suspend", h.SuspendMember, middleware.RequireTeamAdmin())
 		r.POST("/members/{userId}/reactivate", h.ReactivateMember, middleware.RequireTeamAdmin())
 		r.DELETE("/members/{userId}", h.RemoveMember, middleware.RequireTeamAdmin())
+		// Reset a member's second factor (owner/admin; the service adds the
+		// peer-administrator and other-organization rules).
+		if localAuth != nil {
+			r.POST("/members/{userId}/reset-2fa", localAuth.ResetMemberMFA, middleware.RequireTeamAdmin())
+		}
 		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin())
 		// Administrator-created accounts: create a user with roles and a
 		// one-time set-password link; reissue the link while the account is unused.

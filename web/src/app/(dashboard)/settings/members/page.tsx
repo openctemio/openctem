@@ -78,6 +78,7 @@ import {
   AlertCircle,
   RefreshCw,
   KeyRound,
+  ShieldOff,
 } from 'lucide-react'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useTenant } from '@/context/tenant-provider'
@@ -96,6 +97,8 @@ import {
   type SetupLinkTarget,
   isPeerAdminLocked,
   PEER_ADMIN_LOCK_REASON,
+  canResetMemberMfa,
+  RESET_MFA_OWNER_REASON,
 } from '@/features/organization'
 import { PendingSetupBadge } from '@/features/shared'
 import { useUserRoles, useRoles, useSetUserRoles, type Role } from '@/features/access-control'
@@ -115,11 +118,14 @@ import { MemberMfaBadge } from '@/features/organization/components/member-mfa-ba
  * The management actions of an administrator row, disabled for a caller who
  * is not the owner, each explaining why on hover or focus.
  */
-function PeerAdminLockedItems() {
+function PeerAdminLockedItems({ mfaEnabled }: { mfaEnabled: boolean }) {
   return (
     <>
       <DropdownMenuSeparator />
       <DisabledMenuItem label="Change roles" icon={Pencil} reason={PEER_ADMIN_LOCK_REASON} />
+      {mfaEnabled && (
+        <DisabledMenuItem label="Reset 2FA" icon={ShieldOff} reason={RESET_MFA_OWNER_REASON} />
+      )}
       <DisabledMenuItem label="Suspend" icon={Ban} reason={PEER_ADMIN_LOCK_REASON} />
       <DisabledMenuItem label="Remove member" icon={Trash2} reason={PEER_ADMIN_LOCK_REASON} />
     </>
@@ -494,6 +500,9 @@ export default function UsersPage() {
   // while the request is pending.
   const [suspendConfirmMember, setSuspendConfirmMember] = useState<MemberWithUser | null>(null)
   const [isSuspending, setIsSuspending] = useState(false)
+  // Reset-2FA confirmation: the member awaiting confirmation.
+  const [resetMfaMember, setResetMfaMember] = useState<MemberWithUser | null>(null)
+  const [isResettingMfa, setIsResettingMfa] = useState(false)
   // Remove confirmation: same shape, but for the destructive Remove action.
   // Remove deletes the membership row entirely (and any pending invitations
   // tied to the email) so it deserves at least as much friction as Suspend.
@@ -664,9 +673,23 @@ export default function UsersPage() {
                 <Eye className="me-2 h-4 w-4" />
                 View details
               </DropdownMenuItem>
+              {isOwnerRow && canManageMembers && canResetMemberMfa(member, caller) && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault()
+                      setResetMfaMember(member)
+                    }}
+                  >
+                    <ShieldOff className="me-2 h-4 w-4" />
+                    Reset 2FA
+                  </DropdownMenuItem>
+                </>
+              )}
               {!isOwnerRow && locked && (
                 <Can permission={Permission.MembersManage} minRole="admin">
-                  <PeerAdminLockedItems />
+                  <PeerAdminLockedItems mfaEnabled={member.mfa_status === 'enabled'} />
                 </Can>
               )}
               {!isOwnerRow && !locked && (
@@ -699,6 +722,18 @@ export default function UsersPage() {
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />
+                    {canResetMemberMfa(member, caller) && (
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          // Confirm first; onSelect lets the menu close cleanly.
+                          e.preventDefault()
+                          setResetMfaMember(member)
+                        }}
+                      >
+                        <ShieldOff className="me-2 h-4 w-4" />
+                        Reset 2FA
+                      </DropdownMenuItem>
+                    )}
                     {member.status === 'suspended' ? (
                       <DropdownMenuItem
                         onClick={async () => {
@@ -792,6 +827,26 @@ export default function UsersPage() {
       toast.error(getErrorMessage(error, 'Failed to suspend member'))
     } finally {
       setIsSuspending(false)
+    }
+  }
+
+  // Confirm and execute the pending 2FA reset.
+  const handleConfirmResetMfa = async () => {
+    if (!tenantSlug || !resetMfaMember) return
+    setIsResettingMfa(true)
+    try {
+      await fetcherWithOptions(tenantEndpoints.resetMemberMfa(tenantSlug, resetMfaMember.id), {
+        method: 'POST',
+      })
+      toast.success(
+        `Two-factor authentication reset for ${resetMfaMember.name || resetMfaMember.email}`
+      )
+      setResetMfaMember(null)
+      refreshData()
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to reset two-factor authentication'))
+    } finally {
+      setIsResettingMfa(false)
     }
   }
 
@@ -1200,6 +1255,56 @@ export default function UsersPage() {
           onSuccess={refreshData}
         />
       )}
+
+      {/* Reset 2FA Confirmation Dialog */}
+      <AlertDialog
+        open={!!resetMfaMember}
+        onOpenChange={(open) => {
+          if (!open && !isResettingMfa) setResetMfaMember(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset two-factor authentication?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {resetMfaMember && (
+                <>
+                  <span className="font-medium text-foreground">
+                    {resetMfaMember.name || resetMfaMember.email}
+                  </span>{' '}
+                  will be signed out everywhere and can sign in with their password alone until
+                  they set up two-factor authentication again (required at their next sign-in if
+                  this organization requires it). Use this only after confirming their identity.
+                  They are notified by email, and the reset is recorded in the audit log.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isResettingMfa}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                void handleConfirmResetMfa()
+              }}
+              disabled={isResettingMfa}
+              className="bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20"
+            >
+              {isResettingMfa ? (
+                <>
+                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                  Resetting...
+                </>
+              ) : (
+                <>
+                  <ShieldOff className="me-2 h-4 w-4" />
+                  Reset 2FA
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Suspend Member Confirmation Dialog */}
       <AlertDialog
