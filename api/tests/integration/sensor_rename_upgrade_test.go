@@ -300,12 +300,19 @@ var laterRevocations = map[string][]string{
 	"role:viewer": {"audit:read", "settings:billing:read"},
 }
 
+// laterRemovedPermissions are permission ids a migration after 000230
+// deletes from the catalog with every grant of them (000465: permission sets
+// are gone, so team:permission_sets:* means nothing).
+var laterRemovedPermissions = []string{
+	"team:permission_sets:read", "team:permission_sets:write", "team:permission_sets:delete",
+}
+
 func withoutLaterRevocations(access map[string]string) map[string]string {
 	out := make(map[string]string, len(access))
 	for who, perms := range access {
 		kept := []string{}
 		for _, p := range strings.Split(perms, ",") {
-			if !slices.Contains(laterRevocations[who], p) {
+			if !slices.Contains(laterRevocations[who], p) && !slices.Contains(laterRemovedPermissions, p) {
 				kept = append(kept, p)
 			}
 		}

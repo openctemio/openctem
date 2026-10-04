@@ -306,6 +306,8 @@ const (
 	ActionAssetAccessRevoked Action = "asset.access_revoked"
 
 	// Permission Set actions
+	// Permission sets were removed (permissions come only from roles). The
+	// actions stay so historical audit rows still render.
 	ActionPermissionSetCreated    Action = "permission_set.created"
 	ActionPermissionSetUpdated    Action = "permission_set.updated"
 	ActionPermissionSetDeleted    Action = "permission_set.deleted"

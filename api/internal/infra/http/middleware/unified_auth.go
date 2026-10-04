@@ -558,7 +558,7 @@ func IsOwner(ctx context.Context) bool {
 // RequireOwner creates a middleware that requires owner role.
 // Use this for sensitive operations that only the owner should perform:
 // - TeamDelete: Deleting the tenant
-// - GroupsDelete, PermissionSetsDelete, AssignmentRulesDelete: Deleting access control resources
+// - GroupsDelete, AssignmentRulesDelete: Deleting access control resources
 func RequireOwner() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
