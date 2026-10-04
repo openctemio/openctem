@@ -1,0 +1,42 @@
+{
+  "tool": "semgrep",
+  "asset": {"type": "repository", "value": "github.com/acme/shop"},
+  "cases": [
+    {
+      "name": "code inserted above the match (line shift)",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "SQL injection", "severity": "high", "rule_id": "python.lang.security.audit.formatted-sql-query",
+        "fingerprint": "6c1f0a9f2b7e44d1",
+        "location": {"path": "src/app/db.py", "start_line": 40, "end_line": 40, "snippet": "cursor.execute(\"SELECT * FROM t WHERE id = %s\" % uid)"}},
+      "after": {"type": "vulnerability", "title": "SQL injection", "severity": "high", "rule_id": "python.lang.security.audit.formatted-sql-query",
+        "fingerprint": "a0c3d2b1e4f50697",
+        "location": {"path": "src/app/db.py", "start_line": 43, "end_line": 43, "snippet": "cursor.execute(\"SELECT * FROM t WHERE id = %s\" % uid)"}}
+    },
+    {
+      "name": "re-indented and the message reworded",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "Formatted SQL query", "severity": "high", "rule_id": "python.lang.security.audit.formatted-sql-query",
+        "location": {"path": "./src/app/db.py", "start_line": 12, "snippet": "    cursor.execute(q % uid)"}},
+      "after": {"type": "vulnerability", "title": "SQL built with string formatting", "severity": "high", "rule_id": "python.lang.security.audit.formatted-sql-query",
+        "location": {"path": "src/app/db.py", "start_line": 20, "snippet": "\t\tcursor.execute(q  %  uid)"}}
+    },
+    {
+      "name": "a different statement under the same rule",
+      "expect": "different",
+      "before": {"type": "vulnerability", "title": "SQL injection", "severity": "high", "rule_id": "python.lang.security.audit.formatted-sql-query",
+        "location": {"path": "src/app/db.py", "start_line": 12, "snippet": "cursor.execute(q % uid)"}},
+      "after": {"type": "vulnerability", "title": "SQL injection", "severity": "high", "rule_id": "python.lang.security.audit.formatted-sql-query",
+        "location": {"path": "src/app/db.py", "start_line": 12, "snippet": "cursor.execute(q2 % name)"}}
+    },
+    {
+      "name": "matchBasedId/v1 is the anchor when present",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "XSS", "severity": "medium", "rule_id": "javascript.browser.security.insecure-document-method",
+        "partial_fingerprints": {"matchBasedId/v1": "4f0a1d1c2b3e"},
+        "location": {"path": "web/app.js", "start_line": 5, "snippet": "el.innerHTML = x"}},
+      "after": {"type": "vulnerability", "title": "XSS", "severity": "medium", "rule_id": "javascript.browser.security.insecure-document-method",
+        "partial_fingerprints": {"matchBasedId/v1": "4f0a1d1c2b3e"},
+        "location": {"path": "web/app.js", "start_line": 90, "snippet": "el.innerHTML = y"}}
+    }
+  ]
+}

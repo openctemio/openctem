@@ -6,9 +6,11 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -315,5 +317,57 @@ func TestProviderJWKSURL(t *testing.T) {
 	}
 	if got := identityproviderdom.ProviderOkta.JWKSURL(""); got != "" {
 		t.Errorf("Okta JWKSURL with empty tenant = %q, want empty", got)
+	}
+}
+
+func TestValidateScopes_RequiresOpenID(t *testing.T) {
+	if err := validateScopes(nil); err != nil {
+		t.Fatalf("empty scopes mean the defaults and must pass: %v", err)
+	}
+	if err := validateScopes([]string{"openid", "email"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	err := validateScopes([]string{"email", "profile"})
+	if !errors.Is(err, identityproviderdom.ErrInvalidConfig) || !strings.Contains(err.Error(), `"openid"`) {
+		t.Fatalf("expected a clear openid error, got %v", err)
+	}
+}
+
+func TestWithOpenIDScope(t *testing.T) {
+	got := withOpenIDScope([]string{"email"})
+	if len(got) != 2 || got[0] != "openid" {
+		t.Fatalf("got %v", got)
+	}
+	in := []string{"openid", "email"}
+	if got := withOpenIDScope(in); len(got) != 2 {
+		t.Fatalf("openid must not be duplicated: %v", got)
+	}
+}
+
+func TestOktaAndGoogleIssuerValidators(t *testing.T) {
+	okta := oktaIssuerValidator("https://acme.okta.com/")
+	if err := okta("https://acme.okta.com/oauth2/default", ""); err != nil {
+		t.Fatalf("own issuer rejected: %v", err)
+	}
+	if err := okta("https://evil.okta.com/oauth2/default", ""); err == nil {
+		t.Fatal("another org's issuer accepted")
+	}
+	if err := googleIssuerValidator("https://accounts.google.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := googleIssuerValidator("https://evil.example.com", ""); err == nil {
+		t.Fatal("non-Google issuer accepted")
+	}
+}
+
+func TestVerifyIDToken_MissingTokenOrKeysFailsClosed(t *testing.T) {
+	s := &SSOService{logger: logger.NewNop(), oidcVerifier: newTestVerifier(t)}
+	okta := &resolvedProvider{provider: identityproviderdom.ProviderOkta, tenantIdentifier: "https://acme.okta.com", clientID: testClientID}
+	if c, err := s.verifyIDToken(context.Background(), okta, "", testNonce); err == nil || c != nil {
+		t.Fatalf("missing id_token must fail, got claims=%v err=%v", c, err)
+	}
+	noOrg := &resolvedProvider{provider: identityproviderdom.ProviderOkta, clientID: testClientID}
+	if _, err := s.verifyIDToken(context.Background(), noOrg, "x.y.z", testNonce); err == nil {
+		t.Fatal("a provider without signing keys must fail")
 	}
 }
