@@ -432,7 +432,7 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
    `tests/integration/testdata/dedup/`. sdk-go keeps SARIF
    `partialFingerprints` in `FromSARIF` (sdk-go#142).
    **Re-fingerprint job done** (`cmd/refingerprint`, `internal/app/refingerprint`,
-   migration 000458 `finding_rekey_runs`): per tenant, batched, resumable,
+   migration 000462 `finding_rekey_runs`): per tenant, batched, resumable,
    idempotent. The default is a dry run on a read-only connection that reports
    re-keys, would-merge pairs and the rows it cannot recompute; `-apply` merges
    through the finding merge (earliest wins, tombstone), never across assets,
@@ -443,6 +443,13 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
    sighting keys; SARIF adapter picks `fingerprints` deterministically; one
    parser per tool (retire the in-tree adapters or make them call the sensor
    parsers) (B23).
+   **"Mark duplicate of" done:** `POST /api/v1/findings/{id}/duplicates`
+   (`findings:triage`; `findings:approve` as well when either finding is a
+   false positive or risk acceptance) folds the body's finding into `{id}`
+   through the finding merge (tombstone, references and keys move). Both must
+   be in the caller's tenant and data scope and on the same asset; pentest
+   findings are excluded; audited as `finding.duplicate_marked`. Web: "Mark as
+   duplicate" in the finding page menu.
 
 **P2 — sightings and correlation**
 

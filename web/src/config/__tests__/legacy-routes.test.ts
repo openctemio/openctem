@@ -141,5 +141,10 @@ describe('legacy route redirects', () => {
     expect(redirectOnce('/tools')).toBe('/settings/scanning/tools')
     expect(redirectOnce('/toolsx')).toBeNull()
     expect(redirectOnce('/settings/priority-rules/x?y=1')).toBe('/priority-rules/x?y=1')
+    // Orphaned dashboard-total pages, deleted (D-31).
+    expect(redirectOnce('/trending')).toBe('/insights/executive')
+    expect(redirectOnce('/insights/analytics/mttr')).toBe('/insights/executive')
+    expect(redirectOnce('/progress')).toBe('/remediation')
+    expect(redirectOnce('/simulation/scenarios')).toBe('/attack-simulation')
   })
 })
