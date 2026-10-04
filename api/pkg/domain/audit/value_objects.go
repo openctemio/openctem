@@ -417,6 +417,11 @@ const (
 	// an enforcing run closed.
 	ActionIngestCoverageAutoResolveDryRun Action = "ingest.coverage_auto_resolve_dry_run"
 	ActionIngestCoverageAutoResolved      Action = "ingest.coverage_auto_resolved"
+	// Source-asserted resolve (RFC-047): what a dry run would have closed
+	// because the source (Tenable.sc) reported it mitigated, and what an
+	// enforcing run closed.
+	ActionIngestSourceResolveDryRun Action = "ingest.source_resolve_dry_run"
+	ActionIngestSourceResolved      Action = "ingest.source_resolved"
 
 	// AI Triage actions
 	ActionAITriageRequested       Action = "ai_triage.requested"
@@ -534,6 +539,7 @@ func (a Action) IsValid() bool {
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
 		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
+		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved,
 		ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
 		ActionAITriageBudgetExhausted,
@@ -621,7 +627,8 @@ func (a Action) Category() string {
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted:
 		return "rule"
 	case ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
-		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved:
+		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
+		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved:
 		return "ingest"
 	case ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,

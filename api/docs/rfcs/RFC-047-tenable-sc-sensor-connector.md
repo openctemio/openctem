@@ -2,7 +2,8 @@
 
 > Status: **Proposed** (2026-10-04; design merged in #995). P0 pull path:
 > platform side in this PR's branch `feat/tenable-sc-connector-sync`,
-> sensor side in openctemio/sensor#129. Current build:
+> sensor side in openctemio/sensor#129. P1 scan launch: platform branch
+> `feat/tenable-sc-connector-scan`, sensor openctemio/sensor#131. Current build:
 > [architecture/tenable-sc-connector.md](../architecture/tenable-sc-connector.md). Owner decision D-14 (2026-10-04, final):
 > rebuild the Tenable integration as a **two-way Tenable Security Center
 > (Tenable.sc) connector that runs inside the sensor**. Pull assets,
@@ -475,8 +476,9 @@ into the definition catalog as `namespace: TENABLE` definitions with
 - Gate: `INGEST_SOURCE_RESOLVE=off|dry_run|enforce`, default `dry_run`, which
   logs and counts (`findings_source_would_resolve` on the ingest output);
   enforce resolves with `resolution_method = source_mitigated` and counts
-  `findings_source_resolved`. A per-finding audit entry, as
-  `INGEST_COVERAGE_AUTO_RESOLVE` writes, is a follow-up. Enforce is an
+  `findings_source_resolved`. Each report writes one audit entry
+  (`ingest.source_resolved` / `ingest.source_resolve_dry_run`) with the
+  finding ids, as `INGEST_COVERAGE_AUTO_RESOLVE` does. Enforce is an
   installation opt-in after the dry-run numbers are reviewed.
 - **Reopen.** A cumulative row seen after a resolution reopens the finding by
   the existing rule (auto-reopen only from command-bound reports of the same

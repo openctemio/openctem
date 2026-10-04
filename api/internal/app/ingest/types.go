@@ -192,17 +192,21 @@ type Output struct {
 	FindingsSourceWouldResolve int `json:"findings_source_would_resolve,omitempty"`
 	// FindingsSourceMitigated counts the report's findings its source said
 	// are mitigated; they are never created or updated as sightings.
-	FindingsSourceMitigated int      `json:"findings_source_mitigated,omitempty"`
-	FindingsSuppressed      int      `json:"findings_suppressed,omitempty"`
-	ComponentsCreated       int      `json:"components_created,omitempty"`
-	ComponentsUpdated       int      `json:"components_updated,omitempty"`
-	DependenciesLinked      int      `json:"dependencies_linked,omitempty"`
-	LicensesDiscovered      int      `json:"licenses_discovered,omitempty"`
-	LicensesLinked          int      `json:"licenses_linked,omitempty"`
-	CVEsCreated             int      `json:"cves_created,omitempty"`
-	CVEsUpdated             int      `json:"cves_updated,omitempty"`
-	Errors                  []string `json:"errors,omitempty"`
-	Warnings                []string `json:"warnings,omitempty"`
+	FindingsSourceMitigated int `json:"findings_source_mitigated,omitempty"`
+	// SourceResolveIDs are the findings source-asserted resolve closed (or,
+	// in dry_run, would close); SourceResolveMode is the mode it ran in.
+	SourceResolveIDs   []shared.ID       `json:"-"`
+	SourceResolveMode  SourceResolveMode `json:"-"`
+	FindingsSuppressed int               `json:"findings_suppressed,omitempty"`
+	ComponentsCreated  int               `json:"components_created,omitempty"`
+	ComponentsUpdated  int               `json:"components_updated,omitempty"`
+	DependenciesLinked int               `json:"dependencies_linked,omitempty"`
+	LicensesDiscovered int               `json:"licenses_discovered,omitempty"`
+	LicensesLinked     int               `json:"licenses_linked,omitempty"`
+	CVEsCreated        int               `json:"cves_created,omitempty"`
+	CVEsUpdated        int               `json:"cves_updated,omitempty"`
+	Errors             []string          `json:"errors,omitempty"`
+	Warnings           []string          `json:"warnings,omitempty"`
 
 	// Binding is the authority the report was applied under: command,
 	// unsolicited or trusted (RFC-040 §5.3).

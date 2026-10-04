@@ -1609,6 +1609,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
 		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope)),
+		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
+		scan.WithConnectorScans(s.TenableSC),
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
