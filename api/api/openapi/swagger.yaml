@@ -30331,6 +30331,12 @@ paths:
         in: query
         name: include_ad_hoc
         type: boolean
+      - default: name
+        description: 'One sort key, - for descending: name, created_at, last_run_at,
+          next_run_at, total_runs'
+        in: query
+        name: sort
+        type: string
       - default: 1
         description: Page number
         in: query

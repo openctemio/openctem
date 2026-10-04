@@ -181,7 +181,8 @@ func (r *ScanRepository) List(ctx context.Context, filter scan.Filter, page pagi
 
 	// Apply pagination
 	offset := (page.Page - 1) * page.PerPage
-	baseQuery += fmt.Sprintf(" ORDER BY name LIMIT %d OFFSET %d", page.PerPage, offset)
+	// OrderBy is a constant expression chosen from the domain whitelist.
+	baseQuery += fmt.Sprintf(" ORDER BY %s LIMIT %d OFFSET %d", filter.Sort.OrderBy(), page.PerPage, offset)
 
 	rows, err := r.db.QueryContext(ctx, baseQuery, args...)
 	if err != nil {
