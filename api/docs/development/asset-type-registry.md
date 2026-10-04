@@ -153,5 +153,16 @@ rules. A registry PR that breaks one needs an RFC amendment first.
   legacy categories are unchanged.
 - **`internal/infra/postgres` `TestAssetTypeRegistry_*`** (with
   `DATABASE_URL`): the `asset_types` rows and CHECK constraints match the
-  registry, the trigger agrees with `asset.ClassOf` for every stored pair, and
-  the backfill repairs stale rows.
+  registry, the trigger agrees with `asset.ClassOf` for every stored pair, the
+  backfill repairs stale rows, `chk_assets_core_type` lists exactly the stored
+  types, and the normalisation batch (000402) moves legacy rows of two tenants
+  onto stored pairs without dropping a value.
+
+## Only core types are stored
+
+Since migration 000402, `chk_assets_core_type` refuses any `assets.asset_type`
+that is not a core type. The registry block emits it, so a registry change that
+adds a core type updates the CHECK in the same migration. Rows written before
+were moved by the normalisation (ledger `asset_type_reclassifications`; legacy
+codes kept in `properties.x_native_type`, values that did not fit in
+`properties.x_native_sub_type`).
