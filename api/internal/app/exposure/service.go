@@ -41,6 +41,24 @@ type ExposureService struct {
 // SetDataScope wires the Layer 2 data-scope enforcer.
 func (s *ExposureService) SetDataScope(e *datascope.Enforcer) { s.dataScope = e }
 
+// ErrExposureAssetNotFound is the one answer for an asset id a caller asks to
+// write onto an exposure that is unknown, soft-deleted, of another tenant, or
+// outside the caller's data scope, so the response is no existence oracle.
+var ErrExposureAssetNotFound = fmt.Errorf("%w: asset not found", shared.ErrNotFound)
+
+// assertAssetRef checks an asset id a caller asks to write onto an exposure:
+// a live asset of the tenant (checked for unrestricted and internal callers
+// too) that the caller may see. exposure_events.asset_id references
+// assets(id) without the tenant, so without this a member could point an
+// exposure at another tenant's asset (research doc 21b, C3). An unwired
+// enforcer refuses (fail closed).
+func (s *ExposureService) assertAssetRef(ctx context.Context, tenantID, assetID shared.ID) error {
+	if err := s.dataScope.AssertAssetRef(ctx, tenantID, assetID); err != nil {
+		return ErrExposureAssetNotFound
+	}
+	return nil
+}
+
 // assertExposureScope returns ErrNotFound unless the request's caller may
 // see the exposure's asset. An exposure with no asset is in nobody's asset
 // scope, so it is hidden from restricted members.
@@ -165,6 +183,9 @@ func (s *ExposureService) CreateExposure(ctx context.Context, input CreateExposu
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid asset ID", shared.ErrValidation)
 		}
+		if err := s.assertAssetRef(ctx, tenantID, id); err != nil {
+			return nil, err
+		}
 		event.SetAssetID(&id)
 	}
 
@@ -255,6 +276,9 @@ func (s *ExposureService) IngestExposure(ctx context.Context, input CreateExposu
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid asset ID", shared.ErrValidation)
 		}
+		if err := s.assertAssetRef(ctx, tenantID, id); err != nil {
+			return nil, err
+		}
 		event.SetAssetID(&id)
 	}
 
@@ -305,6 +329,15 @@ func (s *ExposureService) BulkIngestExposuresReport(ctx context.Context, inputs 
 	events := make([]*exposuredom.ExposureEvent, 0, len(inputs))
 	var failures []IngestItemError
 
+	// Every asset id in the batch is resolved up front, per tenant, with one
+	// batched check (AssertAssetRef semantics): an item whose asset is
+	// unknown, deleted, another tenant's or out of the caller's scope is
+	// dropped with the same generic reason.
+	admitAsset, err := s.assetRefFilter(ctx, inputs)
+	if err != nil {
+		return BulkIngestResult{}, err
+	}
+
 	// First pass: validate and create event objects
 	for i, input := range inputs {
 		tenantID, err := shared.IDFromString(input.TenantID)
@@ -346,6 +379,10 @@ func (s *ExposureService) BulkIngestExposuresReport(ctx context.Context, inputs 
 				failures = append(failures, IngestItemError{Index: i, Reason: "invalid asset ID"})
 				continue
 			}
+			if !admitAsset(tenantID, id) {
+				failures = append(failures, IngestItemError{Index: i, Reason: "asset not found"})
+				continue
+			}
 			event.SetAssetID(&id)
 		}
 
@@ -367,6 +404,39 @@ func (s *ExposureService) BulkIngestExposuresReport(ctx context.Context, inputs 
 	}
 
 	return BulkIngestResult{Events: events, Failures: failures}, nil
+}
+
+// assetRefFilter resolves the asset ids of a bulk ingest, grouped by tenant,
+// into one admit predicate. Ids that do not parse are left for the per-item
+// validation to report. A lookup error fails the whole batch (fail closed).
+func (s *ExposureService) assetRefFilter(ctx context.Context, inputs []CreateExposureInput) (func(tenantID, assetID shared.ID) bool, error) {
+	byTenant := map[shared.ID][]shared.ID{}
+	for _, in := range inputs {
+		if in.AssetID == "" {
+			continue
+		}
+		tid, err := shared.IDFromString(in.TenantID)
+		if err != nil {
+			continue
+		}
+		aid, err := shared.IDFromString(in.AssetID)
+		if err != nil {
+			continue
+		}
+		byTenant[tid] = append(byTenant[tid], aid)
+	}
+	admit := make(map[shared.ID]func(shared.ID) bool, len(byTenant))
+	for tid, ids := range byTenant {
+		pred, err := s.dataScope.FilterAssetRefs(ctx, tid, ids)
+		if err != nil {
+			return nil, fmt.Errorf("check exposure assets: %w", err)
+		}
+		admit[tid] = pred
+	}
+	return func(tenantID, assetID shared.ID) bool {
+		pred, ok := admit[tenantID]
+		return ok && pred(assetID)
+	}, nil
 }
 
 // GetExposureSecure retrieves an exposure event by tenant and ID (tenant-scoped access control).
