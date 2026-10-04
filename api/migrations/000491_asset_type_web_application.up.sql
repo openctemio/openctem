@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 000470: one web sub-type (RFC-042 §6.3.8 O3)
+-- Migration 000491: one web sub-type (RFC-042 §6.3.8 O3)
 -- =============================================================================
 -- docs/rfcs/RFC-042-asset-inventory-v2.md, PR T4a. Owner decision O3: a web
 -- application is stored as (application, website) and labelled "Web
@@ -10,8 +10,8 @@
 -- 1. The registry block below drops web_application from application's
 --    closed sub-types and maps both inputs to (application, website).
 -- 2. Every asset stored as (application, web_application) moves to
---    (application, website) through asset_type_normalise_batch (000467): the
---    move is ledgered (asset_type_reclassifications, migration 470), recorded
+--    (application, website) through asset_type_normalise_batch (000490): the
+--    move is ledgered (asset_type_reclassifications, migration 491), recorded
 --    as a `reclassified` history entry, and nothing the asset has is
 --    overwritten. Names do not change, so ids and every reference stay.
 -- 3. Threat-model applicability rows keyed by (application, web_application)
@@ -192,12 +192,12 @@ DECLARE
     b         record;
 BEGIN
     LOOP
-        SELECT * INTO b FROM asset_type_normalise_batch(cursor_id, 5000, 470);
+        SELECT * INTO b FROM asset_type_normalise_batch(cursor_id, 5000, 491);
         EXIT WHEN b.last_id IS NULL;
         total := total + b.moved;
         cursor_id := b.last_id;
     END LOOP;
-    RAISE NOTICE '000470: % asset row(s) moved to application/website', total;
+    RAISE NOTICE '000491: % asset row(s) moved to application/website', total;
 END $$;
 ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;
 
@@ -237,7 +237,7 @@ WITH moved AS (
 INSERT INTO technique_applicability_subtype_moves
     (migration, technique_id, asset_type, old_sub_type, new_sub_type, dataset_version,
      edge_type, min_network, min_credential, requires_persistence, inserted)
-SELECT 470, mv.technique_id, mv.asset_type, mv.old_sub_type, 'website', mv.dataset_version,
+SELECT 491, mv.technique_id, mv.asset_type, mv.old_sub_type, 'website', mv.dataset_version,
        mv.edge_type, mv.min_network, mv.min_credential, mv.requires_persistence,
        (i.technique_id IS NOT NULL)
 FROM moved mv
