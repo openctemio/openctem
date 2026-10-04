@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -92,16 +92,18 @@ export function PlatformIdPForm({
   const [confirmRequire, setConfirmRequire] = useState(false)
 
   // Reset the editable copy to the server record only when that record actually
-  // changes. Keying on the `idp` object re-fires this effect whenever the parent
-  // hands down a fresh reference (SWR revalidation returns a new object on focus
-  // with identical contents), which both discards in-progress edits and — paired
-  // with `toForm` building a new object each time — risks a render loop. A stable
-  // primitive signature of the server fields avoids both.
-  const idpKey = JSON.stringify(idp)
+  // changes. The parent hands down a fresh `idp` reference on every SWR
+  // revalidation (focus refetch returns a new object with identical contents);
+  // resetting on the reference alone discards in-progress edits and — paired with
+  // `toForm` building a new object each time — risks a render loop. Gate on a
+  // content signature so the reset fires once per real server change.
+  const appliedIdpKey = useRef<string>('')
   useEffect(() => {
+    const key = JSON.stringify(idp)
+    if (appliedIdpKey.current === key) return
+    appliedIdpKey.current = key
     setForm(toForm(idp))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- key off idpKey, not the object
-  }, [idpKey])
+  }, [idp])
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
