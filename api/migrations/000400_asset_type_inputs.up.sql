@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 000378: asset type inputs and closed sub-types
+-- Migration 000400: asset type inputs and closed sub-types
 -- =============================================================================
 -- RFC-042 §6.3.8 (docs/rfcs/RFC-042-asset-inventory-v2.md), PR T1 "close the
 -- writers". Only core types are stored; aliases (website, firewall, s3_bucket
@@ -203,3 +203,44 @@ BEGIN
 END $$;
 ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;
 -- END asset-type-registry
+
+-- Pre-flight report for the data normalisation (T3). Nothing is changed or
+-- dropped here: every stored (asset_type, sub_type) pair that is neither a
+-- core type with a declared sub-type nor an accepted input in
+-- asset_type_input_map is reported, so T3 can map it before it adds the
+-- core-type CHECK. Only type names and counts are logged (no tenant, no
+-- asset name).
+DO $$
+DECLARE
+    r record;
+    mappable bigint;
+    unknown bigint := 0;
+BEGIN
+    SELECT count(*) INTO mappable
+    FROM assets a
+    JOIN asset_type_input_map m
+      ON m.from_type = a.asset_type AND m.from_sub_type = COALESCE(a.sub_type, '');
+    RAISE NOTICE '000400: % asset row(s) hold an input name that T3 will map to a stored pair', mappable;
+
+    FOR r IN
+        SELECT a.asset_type, COALESCE(a.sub_type, '') AS sub_type, count(*) AS n
+        FROM assets a
+        LEFT JOIN asset_types t ON t.code = a.asset_type
+        WHERE NOT (
+                COALESCE(t.is_storable, false)
+                AND (COALESCE(a.sub_type, '') = '' OR a.sub_type = ANY (t.sub_types))
+              )
+          AND NOT EXISTS (
+                SELECT 1 FROM asset_type_input_map m
+                WHERE m.from_type = a.asset_type
+                  AND m.from_sub_type = COALESCE(a.sub_type, '')
+              )
+        GROUP BY 1, 2
+        ORDER BY 1, 2
+    LOOP
+        unknown := unknown + r.n;
+        RAISE WARNING '000400: % asset row(s) with type % and sub_type % are not in the registry; they are kept unchanged and T3 must map them',
+            r.n, quote_literal(r.asset_type), quote_literal(r.sub_type);
+    END LOOP;
+    RAISE NOTICE '000400: % asset row(s) outside the registry (kept unchanged)', unknown;
+END $$;
