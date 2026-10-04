@@ -317,6 +317,48 @@ func (e *Exclusion) UpdateExpiresAt(expiresAt *time.Time) {
 	e.updatedAt = time.Now()
 }
 
+// Reviewer is the person changing an exclusion and whether they hold the
+// exclusion approval permission (attack_surface:scope:exclusions:approve).
+type Reviewer struct {
+	UserID     string
+	CanApprove bool
+}
+
+// InEffect reports whether the exclusion currently stops scans: approved and
+// active (an expired one is marked expired by the sweeper).
+func (e *Exclusion) InEffect() bool {
+	return e.status == StatusActive && e.IsApproved()
+}
+
+// AuthorizeReduction decides whether r may take this exclusion out of effect
+// (deactivate, delete) or shorten its window. An approved exclusion was put
+// into effect by two people, so taking that protection away needs the same:
+// the approval permission, and someone other than the requester. Without it
+// scope:write (a member default) could switch off the exclusion protecting a
+// production system and scan it. An exclusion not in effect protects nothing
+// now, so any change to it is allowed.
+func (e *Exclusion) AuthorizeReduction(r Reviewer) error {
+	if !e.InEffect() {
+		return nil
+	}
+	if !r.CanApprove {
+		return ErrExclusionReduceNeedsApprover
+	}
+	if r.UserID == "" {
+		return fmt.Errorf("%w: reviewer is required", shared.ErrValidation)
+	}
+	if e.createdBy != "" && r.UserID == e.createdBy {
+		return ErrExclusionSelfReduce
+	}
+	return nil
+}
+
+// ShortensWindow reports whether setting expiresAt would end the exclusion
+// earlier than now configured (a date in the past included).
+func (e *Exclusion) ShortensWindow(expiresAt *time.Time) bool {
+	return extendsWindow(expiresAt, e.expiresAt)
+}
+
 // extendsWindow reports whether next ends later than prev (nil = never).
 func extendsWindow(prev, next *time.Time) bool {
 	switch {
