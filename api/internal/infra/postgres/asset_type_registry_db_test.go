@@ -447,7 +447,7 @@ func TestAssetTypeNormalise_Batch(t *testing.T) {
 	moved := 0
 	for {
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 3)`, cursor).Scan(&cursor, &n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 3, 467)`, cursor).Scan(&cursor, &n); err != nil {
 			t.Fatalf("normalise: %v", err)
 		}
 		if !cursor.Valid {
@@ -488,7 +488,7 @@ func TestAssetTypeNormalise_Batch(t *testing.T) {
 	total := 0
 	for {
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500)`, again).Scan(&again, &n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500, 467)`, again).Scan(&again, &n); err != nil {
 			t.Fatal(err)
 		}
 		if !again.Valid {

@@ -96,7 +96,9 @@ CREATE TABLE IF NOT EXISTS asset_types_legacy_removed (
 
 COMMENT ON TABLE asset_types_legacy_removed IS 'RFC-042 §6.3.8: legacy asset_types rows removed by 000467, restored by its down migration';
 
-CREATE OR REPLACE FUNCTION asset_type_normalise_batch(p_after UUID, p_batch INT,
+-- p_migration names the migration that runs it: the boundary fixes of
+-- RFC-042 §6.3.8 (T4a) reuse this function, each with its own ledger rows.
+CREATE OR REPLACE FUNCTION asset_type_normalise_batch(p_after UUID, p_batch INT, p_migration INT,
                                                       OUT last_id UUID, OUT moved INT)
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -219,7 +221,7 @@ BEGIN
         INSERT INTO asset_type_reclassifications
             (migration, tenant_id, asset_id, rule, old_type, old_sub_type, old_provider,
              new_type, new_sub_type, new_provider, added)
-        VALUES (467, r.tenant_id, r.id, rule, r.asset_type, r.sub_type, r.provider,
+        VALUES (p_migration, r.tenant_id, r.id, rule, r.asset_type, r.sub_type, r.provider,
                 new_type, new_sub, new_provider, added);
 
         label_old := r.asset_type || COALESCE('/' || r.sub_type, '');
@@ -228,7 +230,7 @@ BEGIN
             (tenant_id, asset_id, change_type, field, old_value, new_value, reason, source, metadata)
         VALUES (r.tenant_id, r.id, 'reclassified', 'asset_type', label_old, label_new,
                 'Asset type normalised to the asset type registry (RFC-042 §6.3.8)', 'system',
-                jsonb_build_object('migration', 467, 'rule', rule));
+                jsonb_build_object('migration', p_migration, 'rule', rule));
 
         moved := moved + 1;
     END LOOP;
@@ -260,7 +262,7 @@ DECLARE
     b         record;
 BEGIN
     LOOP
-        SELECT * INTO b FROM asset_type_normalise_batch(cursor_id, 5000);
+        SELECT * INTO b FROM asset_type_normalise_batch(cursor_id, 5000, 467);
         EXIT WHEN b.last_id IS NULL;
         total := total + b.moved;
         cursor_id := b.last_id;
