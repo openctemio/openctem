@@ -2781,6 +2781,34 @@ definitions:
       type:
         type: string
     type: object
+  github_com_openctemio_openctem_api_internal_app_easm.SeedView:
+    properties:
+      attested_at:
+        type: string
+      attested_by:
+        type: string
+      created_at:
+        type: string
+      discovery_enabled:
+        type: boolean
+      id:
+        type: string
+      kind:
+        type: string
+      label:
+        type: string
+      updated_at:
+        type: string
+      value:
+        type: string
+      verification:
+        description: |-
+          Verification: dns_txt when the organization proved control of the
+          domain (or a parent) with a DNS TXT record; none otherwise.
+        type: string
+      verified_domain:
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_easm.Summary:
     properties:
       attribution:
@@ -8327,6 +8355,40 @@ definitions:
         type: string
       state:
         description: 'State: confirmed, rejected, dependency, monitor_only or needs_review.'
+        type: string
+    type: object
+  internal_infra_http_handler.EASMSeedCreateRequest:
+    properties:
+      attested:
+        description: |-
+          Attested must be true: the caller states the organization is authorized
+          to have this seed discovered and checked. Recorded with the user and time.
+        type: boolean
+      discovery_enabled:
+        description: DiscoveryEnabled defaults to true.
+        type: boolean
+      kind:
+        description: |-
+          Kind: root_domain (other RFC-036 kinds are accepted once their
+          collectors exist).
+        type: string
+      label:
+        type: string
+      value:
+        type: string
+    type: object
+  internal_infra_http_handler.EASMSeedListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
+        type: array
+    type: object
+  internal_infra_http_handler.EASMSeedUpdateRequest:
+    properties:
+      discovery_enabled:
+        type: boolean
+      label:
         type: string
     type: object
   internal_infra_http_handler.EmbeddedCategoryResponse:
@@ -21383,6 +21445,136 @@ paths:
       security:
       - BearerAuth: []
       summary: Decide EASM attribution in bulk
+      tags:
+      - Attack Surface
+  /easm/seeds:
+    get:
+      description: 'The organization''s seeds: what external-surface discovery expands
+        from. A root_domain seed is verified (dns_txt) while the organization has
+        a verified DNS TXT record for it or a parent.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.EASMSeedListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List EASM seeds
+      tags:
+      - Attack Surface
+    post:
+      consumes:
+      - application/json
+      description: Adds a seed discovery expands from. The caller must attest that
+        the organization is authorized to have it discovered and checked (recorded
+        with the user and time). Public suffixes and providers' shared domains are
+        refused. Audited.
+      parameters:
+      - description: Seed
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMSeedCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Add an EASM seed
+      tags:
+      - Attack Surface
+  /easm/seeds/{id}:
+    delete:
+      description: Removes a seed. Assets already discovered from it stay in the inventory
+        with their evidence. Audited.
+      parameters:
+      - description: Seed ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Remove an EASM seed
+      tags:
+      - Attack Surface
+    patch:
+      consumes:
+      - application/json
+      description: 'Changes a seed''s label or turns discovery from it on or off.
+        The kind and value cannot change: delete and add instead. Audited.'
+      parameters:
+      - description: Seed ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Changes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMSeedUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change an EASM seed
       tags:
       - Attack Surface
   /easm/summary:

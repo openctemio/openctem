@@ -11534,6 +11534,234 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/easm/seeds': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List EASM seeds
+     * @description The organization's seeds: what external-surface discovery expands from. A root_domain seed is verified (dns_txt) while the organization has a verified DNS TXT record for it or a parent.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMSeedListResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Add an EASM seed
+     * @description Adds a seed discovery expands from. The caller must attest that the organization is authorized to have it discovered and checked (recorded with the user and time). Public suffixes and providers' shared domains are refused. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Seed */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMSeedCreateRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/seeds/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Remove an EASM seed
+     * @description Removes a seed. Assets already discovered from it stay in the inventory with their evidence. Audited.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Seed ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    /**
+     * Change an EASM seed
+     * @description Changes a seed's label or turns discovery from it on or off. The kind and value cannot change: delete and add instead. Audited.
+     */
+    patch: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Seed ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Changes */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMSeedUpdateRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    trace?: never
+  }
   '/easm/summary': {
     parameters: {
       query?: never
@@ -33181,6 +33409,23 @@ export interface components {
       title?: string
       type?: string
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.SeedView': {
+      attested_at?: string
+      attested_by?: string
+      created_at?: string
+      discovery_enabled?: boolean
+      id?: string
+      kind?: string
+      label?: string
+      updated_at?: string
+      value?: string
+      /**
+       * @description Verification: dns_txt when the organization proved control of the
+       *     domain (or a parent) with a DNS TXT record; none otherwise.
+       */
+      verification?: string
+      verified_domain?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_easm.Summary': {
       attribution?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock']
       exposures?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock']
@@ -35923,6 +36168,29 @@ export interface components {
       note?: string
       /** @description State: confirmed, rejected, dependency, monitor_only or needs_review. */
       state?: string
+    }
+    'internal_infra_http_handler.EASMSeedCreateRequest': {
+      /**
+       * @description Attested must be true: the caller states the organization is authorized
+       *     to have this seed discovered and checked. Recorded with the user and time.
+       */
+      attested?: boolean
+      /** @description DiscoveryEnabled defaults to true. */
+      discovery_enabled?: boolean
+      /**
+       * @description Kind: root_domain (other RFC-036 kinds are accepted once their
+       *     collectors exist).
+       */
+      kind?: string
+      label?: string
+      value?: string
+    }
+    'internal_infra_http_handler.EASMSeedListResponse': {
+      data?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SeedView'][]
+    }
+    'internal_infra_http_handler.EASMSeedUpdateRequest': {
+      discovery_enabled?: boolean
+      label?: string
     }
     'internal_infra_http_handler.EmbeddedCategoryResponse': {
       color?: string

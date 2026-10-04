@@ -110,7 +110,7 @@ No EASM page is a `useDashboardStats` scaffold. The planned pages (§7) must
 each have their own endpoint. The UI CI test `sidebar-no-scaffolds` enforces
 this for the sidebar.
 
-## 3. Seeds and authorization (planned)
+## 3. Seeds and authorization (partly built)
 
 A **seed** is a fact the tenant asserts about itself, and discovery starts from
 it. Seed kinds: organisation name, brand, root domain, ASN, CIDR, cloud
@@ -125,6 +125,27 @@ hash. Seeds sit in Scoping › Boundaries next to targets and exclusions.
 Exclusions always win, as today. An asset is actively scanned only when it is
 attributed `confirmed` and either inside a scope target or derived from a seed.
 Candidates and dependencies get passive (T0) checks only.
+
+**Built (P2 slice 1, migration 000700).** `easm_seeds` holds one row per
+(tenant, kind, value) with a label, `discovery_enabled`, and who attested the
+organisation's authority over it and when. The schema lists every RFC kind;
+the API accepts only kinds something consumes, today **`root_domain`**: the
+Certificate Transparency monitor watches it (origin `easm_seed`, asserted:
+names under it get `fqdn_under_asserted_root` and wait for review unless a
+verified domain covers them). CIDR, ASN and organisation seeds arrive with
+their collectors, so no seed sits unused.
+
+| Route | Permission | |
+|---|---|---|
+| `GET /api/v1/easm/seeds` | `attack_surface:scope:read` | with `verification` (`dns_txt` while the tenant has a verified DNS TXT record for the domain or a parent; computed on read, never taken from the client) |
+| `POST /api/v1/easm/seeds` `{kind, value, label?, discovery_enabled?, attested: true}` | `attack_surface:scope:write` | refuses public suffixes, providers' shared domains (private PSL suffixes) and names without an ICANN suffix; at most 500 per tenant; audited `easm_seed.created` (high) |
+| `PATCH /api/v1/easm/seeds/{id}` `{label?, discovery_enabled?}` | `attack_surface:scope:write` | audited `easm_seed.updated` |
+| `DELETE /api/v1/easm/seeds/{id}` | `attack_surface:scope:delete` | assets found from it stay; audited `easm_seed.deleted` |
+
+All behind the `attack_surface` module. Two tenants may seed the same domain:
+nothing about another tenant's seed or verification is ever shown. Code:
+`pkg/domain/easmseed`, `internal/app/easm/seeds.go`,
+`internal/infra/postgres/easm_seed_repository.go`.
 
 ## 4. Attribution
 
