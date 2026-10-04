@@ -86,7 +86,7 @@ func TestOwnerModelMigration_CopiesOwnerID(t *testing.T) {
 	addTenantMember(ctx, t, db, tenant, alice)
 	addTenantMember(ctx, t, db, tenant, bob)
 
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := testdb.OpenMigrator(t).BeginTx(ctx, nil) // the migration is DDL: schema owner
 	if err != nil {
 		t.Fatal(err)
 	}

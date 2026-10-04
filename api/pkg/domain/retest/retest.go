@@ -149,6 +149,7 @@ var eligibleStatuses = map[vulnerability.FindingStatus]bool{ //nolint:gochecknog
 	vulnerability.FindingStatusInProgress:     true,
 	vulnerability.FindingStatusFixApplied:     true,
 	vulnerability.FindingStatusValidatedFixed: true,
+	vulnerability.FindingStatusNotObserved:    true, // a retest is the proof a stale finding needs
 	vulnerability.FindingStatusResolved:       true,
 }
 
@@ -160,7 +161,8 @@ func EligibleStatuses() []string {
 	return []string{
 		string(vulnerability.FindingStatusNew), string(vulnerability.FindingStatusConfirmed),
 		string(vulnerability.FindingStatusInProgress), string(vulnerability.FindingStatusFixApplied),
-		string(vulnerability.FindingStatusValidatedFixed), string(vulnerability.FindingStatusResolved),
+		string(vulnerability.FindingStatusValidatedFixed), string(vulnerability.FindingStatusNotObserved),
+		string(vulnerability.FindingStatusResolved),
 	}
 }
 
@@ -168,9 +170,9 @@ func EligibleStatuses() []string {
 // and whether it changes. Unknown never moves a finding; neither does an
 // ineligible status.
 //
-//	fixed:          open / fix_applied / validated_fixed → resolved; resolved stays
+//	fixed:          open / fix_applied / validated_fixed / not_observed → resolved; resolved stays
 //	still_present:  resolved → confirmed (regression); fix_applied → in_progress;
-//	                validated_fixed → confirmed; open stays
+//	                validated_fixed / not_observed → confirmed; open stays
 func NextStatus(prior vulnerability.FindingStatus, outcome Outcome) (vulnerability.FindingStatus, bool) {
 	if !EligibleStatus(prior) {
 		return prior, false
@@ -183,7 +185,8 @@ func NextStatus(prior vulnerability.FindingStatus, outcome Outcome) (vulnerabili
 		return vulnerability.FindingStatusResolved, true
 	case OutcomeStillPresent:
 		switch prior {
-		case vulnerability.FindingStatusResolved, vulnerability.FindingStatusValidatedFixed:
+		case vulnerability.FindingStatusResolved, vulnerability.FindingStatusValidatedFixed,
+			vulnerability.FindingStatusNotObserved:
 			return vulnerability.FindingStatusConfirmed, true
 		case vulnerability.FindingStatusFixApplied:
 			return vulnerability.FindingStatusInProgress, true
