@@ -11,7 +11,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import Link from 'next/link'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef, SortingState } from '@tanstack/react-table'
 
 import {
   DataTable,
@@ -28,13 +28,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useUrlFilter } from '@/hooks/use-url-param'
+import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
 import { Can, Permission } from '@/lib/permissions'
 import { usePipelineRuns, useScanManagementStats } from '@/lib/api/pipeline-hooks'
 import type { PipelineRun, PipelineRunListFilters } from '@/lib/api/pipeline-types'
-import { useScanConfigs } from '@/lib/api/scan-hooks'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs, runTaskProgress } from '@/features/scans/lib/run-display'
+import {
+  DEFAULT_RUN_SORT,
+  DEFAULT_SCAN_PAGE_SIZE,
+  RUN_SORT_FIELDS,
+  SCAN_PAGE_SIZES,
+  parsePageSize,
+  parseSortParam,
+  toSortParam,
+} from '@/features/scans/lib/scans-url'
 import { RunDetailSheet } from './run-detail-sheet'
 
 /** Run statuses as the API stores them (pipeline.RunStatus). */
@@ -51,7 +59,7 @@ export const RUN_STATUS_FILTERS = [
 
 type RunStatusFilterValue = (typeof RUN_STATUS_FILTERS)[number]['value']
 
-export const RUNS_PAGE_SIZE = 25
+export const RUNS_PAGE_SIZE = DEFAULT_SCAN_PAGE_SIZE
 
 export function ScanRunsTab() {
   return (
@@ -73,7 +81,17 @@ function ScanRunsTable() {
     RunStatusFilterValue,
     (v: RunStatusFilterValue) => void,
   ]
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: RUNS_PAGE_SIZE })
+  // Page, page size and sort live in the URL (prefixed: the Configurations
+  // tab shares it) so a paged, sorted view of runs can be linked.
+  const [pageParam, setPageParam] = useUrlFilterNumber('run_page', 1)
+  const [perPageParam, setPerPageParam] = useUrlFilterNumber('run_per_page', RUNS_PAGE_SIZE)
+  const perPage = parsePageSize(perPageParam)
+  const [sortParam, setSortParam] = useUrlFilter('run_sort', DEFAULT_RUN_SORT)
+  const sorting = useMemo<SortingState>(
+    () => parseSortParam(sortParam, RUN_SORT_FIELDS, DEFAULT_RUN_SORT),
+    [sortParam]
+  )
+  const pagination = { pageIndex: pageParam - 1, pageSize: perPage }
   const [openRunId, setOpenRunId] = useState<string | null>(null)
 
   const swrConfig = useMemo(
@@ -85,30 +103,22 @@ function ScanRunsTable() {
   // takes the stored value, so the status goes through as a string.
   const filters = {
     status: statusFilter === 'all' ? undefined : statusFilter,
-    page: pagination.pageIndex + 1,
-    per_page: pagination.pageSize,
+    sort: toSortParam(sorting, RUN_SORT_FIELDS, DEFAULT_RUN_SORT),
+    page: pageParam,
+    per_page: perPage,
   } as PipelineRunListFilters
 
   const { data, isLoading, error } = usePipelineRuns(filters, swrConfig)
   const { data: overview, isLoading: isLoadingStats } = useScanManagementStats(swrConfig)
-  // Names for the Scan column; one page of configurations is enough to label
-  // the runs on screen, and an unknown id falls back to "Scan".
-  const { data: configs } = useScanConfigs({ per_page: 100 }, { revalidateOnFocus: false })
-  const scanNames = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const c of configs?.items ?? []) m.set(c.id, c.name)
-    return m
-  }, [configs?.items])
-
   const runs = data?.items ?? []
   const counts = overview?.pipelines
 
   const setStatus = useCallback(
     (v: RunStatusFilterValue) => {
       setStatusFilter(v)
-      setPagination((p) => ({ ...p, pageIndex: 0 }))
+      setPageParam(1)
     },
-    [setStatusFilter]
+    [setStatusFilter, setPageParam]
   )
   const toggleStatus = (v: RunStatusFilterValue) => setStatus(statusFilter === v ? 'all' : v)
 
@@ -123,13 +133,18 @@ function ScanRunsTable() {
           if (!run.scan_id) {
             return <span className="text-muted-foreground">Pipeline run</span>
           }
+          // Named by the server (quick scans and every page included); a run
+          // whose scan was deleted keeps its row.
+          if (!run.scan_name) {
+            return <span className="text-muted-foreground">Deleted scan</span>
+          }
           return (
             <Link
-              href={`/scans/${run.scan_id}`}
+              href={`/scans/${encodeURIComponent(run.scan_id)}`}
               className="font-medium hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
-              {scanNames.get(run.scan_id) ?? 'Scan'}
+              {run.scan_name}
             </Link>
           )
         },
@@ -188,9 +203,9 @@ function ScanRunsTable() {
         },
       },
       {
+        id: 'total_findings',
         accessorKey: 'total_findings',
-        header: 'Findings',
-        enableSorting: false,
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
         cell: ({ row }) =>
           row.original.total_findings > 0 ? (
             <span className="tabular-nums">{row.original.total_findings}</span>
@@ -222,9 +237,9 @@ function ScanRunsTable() {
         },
       },
       {
-        id: 'started',
+        id: 'started_at',
+        accessorKey: 'started_at',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Started" />,
-        enableSorting: false,
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {formatScanDate(row.original.started_at || row.original.created_at)}
@@ -242,7 +257,7 @@ function ScanRunsTable() {
         ),
       },
     ],
-    [scanNames]
+    []
   )
 
   const metrics: MetricStripItem[] = [
@@ -335,8 +350,21 @@ function ScanRunsTable() {
             rowCount={data?.total ?? 0}
             pageCount={data?.total_pages}
             pagination={pagination}
-            onPaginationChange={setPagination}
-            pageSize={pagination.pageSize}
+            onPaginationChange={(next) => {
+              if (next.pageSize !== perPage) {
+                setPerPageParam(next.pageSize)
+                setPageParam(1)
+              } else {
+                setPageParam(next.pageIndex + 1)
+              }
+            }}
+            pageSize={perPage}
+            pageSizeOptions={[...SCAN_PAGE_SIZES]}
+            sorting={sorting}
+            onSortingChange={(next) => {
+              setSortParam(toSortParam(next, RUN_SORT_FIELDS, DEFAULT_RUN_SORT))
+              setPageParam(1)
+            }}
             paginationNoun="runs"
             emptyMessage={filtered ? 'No runs with this status' : 'No scan runs yet'}
             emptyDescription={
