@@ -860,7 +860,7 @@ same migration removed any such row written before (research doc 15, L-01).
   `{"members_without_group_see": "everything"|"nothing", "deprecated": bool}`.
 - **`everything` is being retired** (owner decision D2, research doc 15 L-04).
   It is never flipped by a migration; each organization's owner switches:
-  - `GET /api/v1/tenants/{tenant}/settings/data-scope/impact` (owner/admin) is
+  - `GET /api/v1/organization/settings/data-scope/impact` (owner/admin) is
     the pre-flight report: the active members who are not owner or admin, hold
     no `has_full_data_access` role and have no scope row, i.e. who see
     everything today only because of the policy and would see nothing after
