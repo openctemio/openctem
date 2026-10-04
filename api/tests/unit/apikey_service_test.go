@@ -128,7 +128,7 @@ func (m *mockAPIKeyRepo) RehashKey(_ context.Context, id shared.ID, oldHash, new
 
 func (m *mockAPIKeyRepo) CountKeysNotUnderPepper(context.Context) (int, error) { return 0, nil }
 
-func (m *mockAPIKeyRepo) TouchLastUsed(_ context.Context, id shared.ID, _ string) error {
+func (m *mockAPIKeyRepo) TouchLastUsed(_ context.Context, _ shared.ID, id shared.ID, _ string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.touchCalls++

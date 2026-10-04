@@ -97,19 +97,19 @@ func ReconstructSCMExtension(
 
 // Getters
 
-func (s *SCMExtension) IntegrationID() ID            { return s.integrationID }
-func (s *SCMExtension) SCMOrganization() string      { return s.scmOrganization }
-func (s *SCMExtension) RepositoryCount() int         { return s.repositoryCount }
-func (s *SCMExtension) WebhookID() string                { return s.webhookID }
-func (s *SCMExtension) WebhookSecretEncrypted() []byte   { return s.webhookSecretEncrypted }
-func (s *SCMExtension) WebhookURL() string               { return s.webhookURL }
-func (s *SCMExtension) DefaultBranchPattern() string { return s.defaultBranchPattern }
-func (s *SCMExtension) AutoImportRepos() bool        { return s.autoImportRepos }
-func (s *SCMExtension) ImportPrivateRepos() bool     { return s.importPrivateRepos }
-func (s *SCMExtension) ImportArchivedRepos() bool    { return s.importArchivedRepos }
-func (s *SCMExtension) IncludePatterns() []string    { return s.includePatterns }
-func (s *SCMExtension) ExcludePatterns() []string    { return s.excludePatterns }
-func (s *SCMExtension) LastRepoSyncAt() *time.Time   { return s.lastRepoSyncAt }
+func (s *SCMExtension) IntegrationID() ID              { return s.integrationID }
+func (s *SCMExtension) SCMOrganization() string        { return s.scmOrganization }
+func (s *SCMExtension) RepositoryCount() int           { return s.repositoryCount }
+func (s *SCMExtension) WebhookID() string              { return s.webhookID }
+func (s *SCMExtension) WebhookSecretEncrypted() []byte { return s.webhookSecretEncrypted }
+func (s *SCMExtension) WebhookURL() string             { return s.webhookURL }
+func (s *SCMExtension) DefaultBranchPattern() string   { return s.defaultBranchPattern }
+func (s *SCMExtension) AutoImportRepos() bool          { return s.autoImportRepos }
+func (s *SCMExtension) ImportPrivateRepos() bool       { return s.importPrivateRepos }
+func (s *SCMExtension) ImportArchivedRepos() bool      { return s.importArchivedRepos }
+func (s *SCMExtension) IncludePatterns() []string      { return s.includePatterns }
+func (s *SCMExtension) ExcludePatterns() []string      { return s.excludePatterns }
+func (s *SCMExtension) LastRepoSyncAt() *time.Time     { return s.lastRepoSyncAt }
 
 // Setters
 

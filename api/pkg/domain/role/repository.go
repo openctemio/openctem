@@ -11,8 +11,9 @@ type Repository interface {
 	// Create creates a new role.
 	Create(ctx context.Context, role *Role) error
 
-	// GetByID retrieves a role by its ID.
-	GetByID(ctx context.Context, id ID) (*Role, error)
+	// GetByID retrieves a role visible to tenantID: a system role or one of
+	// tenantID's custom roles. Another tenant's role is ErrRoleNotFound.
+	GetByID(ctx context.Context, tenantID, id ID) (*Role, error)
 
 	// GetBySlug retrieves a role by slug within a tenant or system.
 	// For system roles, tenantID should be nil.
@@ -25,11 +26,13 @@ type Repository interface {
 	// ListSystemRoles returns only system roles.
 	ListSystemRoles(ctx context.Context) ([]*Role, error)
 
-	// Update updates a role (only custom roles can be updated).
+	// Update updates a role (only custom roles can be updated); the row must
+	// belong to role.TenantID().
 	Update(ctx context.Context, role *Role) error
 
-	// Delete deletes a role (only custom roles can be deleted).
-	Delete(ctx context.Context, id ID) error
+	// Delete deletes a custom role of tenantID. Another tenant's role is
+	// ErrRoleNotFound.
+	Delete(ctx context.Context, tenantID, id ID) error
 
 	// === User-Role Assignments (Multiple Roles per User) ===
 

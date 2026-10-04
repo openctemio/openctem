@@ -12968,31 +12968,66 @@ export interface paths {
     }
     /**
      * List findings
-     * @description Retrieves a paginated list of findings for the current tenant
+     * @description Retrieves a paginated list of findings for the current tenant.
+     *     Filters follow the list query contract (RFC-048): every param is ANDed, a comma list is OR
+     *     within one field, and operators are suffixes (`_not`, `_gte`, `_gt`, `_lte`, `_lt`, `_contains`).
+     *     A bad value or an unsortable field is 400 INVALID_FILTER. Old names (severities, statuses,
+     *     exclude_statuses, sources, priority_classes, finding_ids, cve_ids, finding_types, asset_tags,
+     *     epss_min, search, assigned_to_me) still work and answer with Deprecation and Sunset headers.
      */
     get: {
       parameters: {
         query?: {
-          /** @description Filter by asset ID */
-          asset_id?: string
-          /** @description Filter by branch ID */
-          branch_id?: string
-          /** @description Filter by component ID */
-          component_id?: string
-          /** @description Filter by vulnerability ID */
-          vulnerability_id?: string
-          /** @description Filter by severities (comma-separated) */
-          severities?: string
-          /** @description Filter by statuses (comma-separated) */
-          statuses?: string
-          /** @description Exclude statuses (comma-separated) */
-          exclude_statuses?: string
-          /** @description Filter by sources */
-          sources?: string
-          /** @description Filter by SLA status (comma-separated: on_track,warning,overdue,exceeded,not_applicable) */
-          sla_status?: string
-          /** @description Filter by tool name */
-          tool_name?: string
+          /** @description Finding IDs */
+          id?: string[]
+          /** @description Asset IDs */
+          asset_id?: string[]
+          /** @description Branch IDs the finding occurs on */
+          branch_id?: string[]
+          /** @description Component IDs */
+          component_id?: string[]
+          /** @description Vulnerability IDs */
+          vulnerability_id?: string[]
+          /** @description Severities */
+          severity?: string[]
+          /** @description Statuses */
+          status?: string[]
+          /** @description Statuses to exclude */
+          status_not?: string[]
+          /** @description Sources */
+          source?: string[]
+          /** @description SLA statuses */
+          sla_status?: string[]
+          /** @description CTEM priority classes (P0..P3) */
+          priority_class?: string[]
+          /** @description CVE IDs */
+          cve_id?: string[]
+          /** @description Finding types */
+          finding_type?: string[]
+          /** @description Tags of the finding's asset (any of) */
+          asset_tag?: string[]
+          /** @description In CISA KEV */
+          is_in_kev?: boolean
+          /** @description Reachable */
+          is_reachable?: boolean
+          /** @description Minimum EPSS score */
+          epss_score_gte?: number
+          /** @description Tool names */
+          tool_name?: string[]
+          /** @description Rule IDs */
+          rule_id?: string[]
+          /** @description Scan IDs */
+          scan_id?: string[]
+          /** @description File path contains */
+          file_path?: string
+          /** @description me: assigned to, owned by or group-assigned to the caller */
+          related_to?: string
+          /** @description Created at or after (RFC 3339, YYYY-MM-DD or -P30D) */
+          created_at_gte?: string
+          /** @description Free text over title, description and file path */
+          q?: string
+          /** @description Sort keys, - for descending (default priority_class,severity,-created_at) */
+          sort?: string
           /** @description Page number */
           page?: number
           /** @description Items per page */
@@ -13021,9 +13056,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': {
-              [key: string]: string
-            }
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Unauthorized */
@@ -33782,6 +33815,7 @@ export interface components {
       | 'UPSTREAM_ERROR'
       | 'MFA_ENROLLMENT_REQUIRED'
       | 'APPROVAL_REQUIRED'
+      | 'INVALID_FILTER'
     'github_com_openctemio_openctem_api_pkg_apierror.Error': {
       /** @description Machine-readable error code */
       code?: components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Code']
