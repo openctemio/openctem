@@ -6,6 +6,8 @@
  */
 
 // Scan types
+import type { RunTask, RunTaskSummary } from './generated'
+
 export const SCAN_TYPES = ['workflow', 'single'] as const
 export type ScanType = (typeof SCAN_TYPES)[number]
 
@@ -296,6 +298,12 @@ export interface PipelineRun {
   created_at: string
   /** What the trigger dispatched (scope exclusions, zone routing). RFC-023. */
   dispatch?: RunDispatch
+  /** Tasks (dispatched commands) by status, once the run has any. RFC-046. */
+  task_summary?: RunTaskSummary
+  /** The run's tasks, in dispatch order (GET /pipeline-runs/{id} only). */
+  tasks?: RunTask[]
+  /** True when the run has more tasks than `tasks` lists. */
+  tasks_truncated?: boolean
 }
 
 /** A target a run did not scan, with the reason. */

@@ -1044,6 +1044,57 @@ func (s *Service) GetRunWithSteps(ctx context.Context, runID string) (*pipeline.
 	return s.runRepo.GetWithStepRuns(ctx, rid)
 }
 
+// GetRunWithStepsForTenant returns a run of tenantID with its step runs. A
+// run of another tenant is not found.
+func (s *Service) GetRunWithStepsForTenant(ctx context.Context, tenantID, runID string) (*pipeline.Run, error) {
+	if _, err := s.GetRun(ctx, tenantID, runID); err != nil {
+		return nil, err
+	}
+	return s.GetRunWithSteps(ctx, runID)
+}
+
+// RunTasks is a run's tasks as the runs page shows them.
+type RunTasks struct {
+	Summary pipeline.TaskSummary
+	Items   []pipeline.Task
+	// Truncated is true when the run has more tasks than Items holds.
+	Truncated bool
+}
+
+// GetRunTasks returns up to pipeline.MaxRunTasks tasks of a run of tenantID
+// and the summary of all of them. Nil when the repository cannot read tasks.
+// The caller must already have read the run for tenantID.
+func (s *Service) GetRunTasks(ctx context.Context, run *pipeline.Run) (*RunTasks, error) {
+	reader, ok := s.commandRepo.(pipeline.TaskReader)
+	if !ok || run == nil {
+		return nil, nil
+	}
+	items, sum, err := reader.ListRunTasks(ctx, run.TenantID, run.ID, pipeline.MaxRunTasks)
+	if err != nil {
+		return nil, err
+	}
+	return &RunTasks{Summary: sum, Items: items, Truncated: sum.Total > len(items)}, nil
+}
+
+// RunTaskSummaries returns the task summary of each run in runs that has
+// tasks, keyed by run id. Every run must belong to tenantID; the read is
+// scoped to it.
+func (s *Service) RunTaskSummaries(ctx context.Context, tenantID string, runs []*pipeline.Run) (map[shared.ID]pipeline.TaskSummary, error) {
+	reader, ok := s.commandRepo.(pipeline.TaskReader)
+	if !ok || len(runs) == 0 {
+		return nil, nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	ids := make([]shared.ID, 0, len(runs))
+	for _, r := range runs {
+		ids = append(ids, r.ID)
+	}
+	return reader.TaskSummaries(ctx, tid, ids)
+}
+
 // ListRunsInput represents the input for listing runs.
 type ListRunsInput struct {
 	TenantID   string `json:"tenant_id" validate:"required,uuid"`
