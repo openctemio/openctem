@@ -51,8 +51,7 @@ export function useUpdateDataScopePolicy(tenantIdOrSlug: string | undefined) {
  */
 export function useDataScopeImpact(tenantIdOrSlug: string | undefined, enabled: boolean) {
   const { isAdmin } = usePermissions()
-  const key =
-    tenantIdOrSlug && enabled && isAdmin() ? tenantEndpoints.dataScopeImpact(tenantIdOrSlug) : null
+  const key = tenantIdOrSlug && enabled && isAdmin() ? tenantEndpoints.dataScopeImpact() : null
   const { data, error, isLoading, mutate } = useSWR<DataScopeImpact>(key, fetcher, {
     revalidateOnFocus: false,
   })
