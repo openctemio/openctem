@@ -646,3 +646,28 @@ func assertPlaceholders(t testing.TB, w *Where, first int) {
 		}
 	}
 }
+
+func TestRebase(t *testing.T) {
+	reg := MustRegistry(Registry{Name: "x", TenantSQL: "findings.tenant_id", ScopeAssetSQL: "findings.asset_id", IDSQL: "findings.id",
+		MemberVisibility: "findings.source <> 'pentest' OR x_findings.y = {user}",
+		Search:           &Search{Template: "findings.title ILIKE {arg}"}},
+		Field{Name: "tag", Type: TypeString, Ops: []Op{OpIn}, SQL: "findings.tag",
+			Templates: map[Op]string{OpIn: "findings.asset_id IN (SELECT a.id FROM assets a WHERE a.tenant_id = findings.tenant_id AND a.tags && {arg})"}})
+	rb := reg.Rebase("findings", "f")
+	w, err := Compile(&Spec{Root: &Node{All: []*Node{{Leaf: &Leaf{Field: "tag", Op: OpIn, Values: []any{"a"}}}}}, Q: "q"}, rb, memberActor(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(w.SQL, "findings.") && !strings.Contains(w.SQL, "x_findings.") {
+		t.Fatalf("rebase left a qualifier: %s", w.SQL)
+	}
+	if !strings.HasPrefix(w.SQL, "f.tenant_id = $1 AND f.asset_id IN") || !strings.Contains(w.SQL, "x_findings.y") {
+		t.Fatalf("rebase: %s", w.SQL)
+	}
+	if reg.TenantSQL != "findings.tenant_id" {
+		t.Fatal("rebase must not change the original")
+	}
+	if w.First != 1 {
+		t.Fatalf("First = %d", w.First)
+	}
+}

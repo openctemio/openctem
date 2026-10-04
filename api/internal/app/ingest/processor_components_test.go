@@ -57,7 +57,7 @@ func (m *MockComponentRepository) LinkAsset(ctx context.Context, dep *component.
 	return args.Error(0)
 }
 
-func (m *MockComponentRepository) GetDependency(ctx context.Context, id shared.ID) (*component.AssetDependency, error) {
+func (m *MockComponentRepository) GetDependency(ctx context.Context, _, id shared.ID) (*component.AssetDependency, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -70,7 +70,7 @@ func (m *MockComponentRepository) UpdateDependency(ctx context.Context, dep *com
 	return args.Error(0)
 }
 
-func (m *MockComponentRepository) DeleteDependency(ctx context.Context, id shared.ID) error {
+func (m *MockComponentRepository) DeleteDependency(ctx context.Context, _, id shared.ID) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
 }
@@ -104,7 +104,7 @@ func (m *MockComponentRepository) GetAssetDependency(ctx context.Context, tenant
 	return args.Get(0).(*component.AssetDependency), args.Error(1)
 }
 
-func (m *MockComponentRepository) UpdateAssetDependencyParent(ctx context.Context, id shared.ID, parentID shared.ID, depth int) error {
+func (m *MockComponentRepository) UpdateAssetDependencyParent(ctx context.Context, _, id shared.ID, parentID shared.ID, depth int) error {
 	args := m.Called(ctx, id, parentID, depth)
 	return args.Error(0)
 }
