@@ -50,6 +50,8 @@ type (
 	TestIntegrationCredentialsInput    = integration.TestIntegrationCredentialsInput
 	TestIntegrationCredentialsResult   = integration.TestIntegrationCredentialsResult
 	UpdateCredentialInput              = integration.UpdateCredentialInput
+	RotateCredentialInput              = integration.RotateCredentialInput
+	OptionalTime                       = integration.OptionalTime
 	UpdateIntegrationInput             = integration.UpdateIntegrationInput
 	UpdateNotificationIntegrationInput = integration.UpdateNotificationIntegrationInput
 	UpdatePreferencesInput             = integration.UpdatePreferencesInput
