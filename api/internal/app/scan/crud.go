@@ -798,7 +798,7 @@ func (s *Service) DeleteScan(ctx context.Context, tenantID, scanID string) error
 
 	scanName := sc.Name
 
-	if err := s.scanRepo.Delete(ctx, sc.ID); err != nil {
+	if err := s.scanRepo.Delete(ctx, sc.TenantID, sc.ID); err != nil {
 		return err
 	}
 

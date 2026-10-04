@@ -96,13 +96,6 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 	return nil
 }
 
-// GetByID retrieves a command by its ID.
-func (r *CommandRepository) GetByID(ctx context.Context, id shared.ID) (*command.Command, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanCommand(row)
-}
-
 // GetByTenantAndID retrieves a command by tenant and ID.
 func (r *CommandRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*command.Command, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
@@ -451,10 +444,11 @@ func (r *CommandRepository) Update(ctx context.Context, cmd *command.Command) er
 	return nil
 }
 
-// Delete deletes a command.
-func (r *CommandRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM commands WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete deletes a command of tenantID. A command of another tenant is not
+// found.
+func (r *CommandRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM commands WHERE tenant_id = $1 AND id = $2"
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete command: %w", err)
 	}
@@ -1010,9 +1004,17 @@ func (r *CommandRepository) GetNextPlatformJob(ctx context.Context, sensorID sha
 		return nil, nil
 	}
 
-	// Fetch the full command object
-	id, _ := shared.IDFromString(commandID.String)
-	return r.GetByID(ctx, id)
+	// Fetch the full command object, in the tenant the queue function claimed
+	// it for (commands.tenant_id is NOT NULL).
+	id, err := shared.IDFromString(commandID.String)
+	if err != nil {
+		return nil, fmt.Errorf("platform job returned an invalid command id: %w", err)
+	}
+	tid, err := shared.IDFromString(tenantID.String)
+	if err != nil {
+		return nil, fmt.Errorf("platform job %s returned an invalid tenant id: %w", id, err)
+	}
+	return r.GetByTenantAndID(ctx, tid, id)
 }
 
 // UpdateQueuePriorities recalculates queue priorities for all pending platform jobs.

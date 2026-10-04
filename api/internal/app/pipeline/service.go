@@ -51,7 +51,7 @@ type ScanDeactivator interface {
 // the scan it belongs to still read last_run_status NULL, i.e. "never run",
 // after a scan that had just finished and produced findings.
 type ScanRunRecorder interface {
-	RecordRun(ctx context.Context, scanID shared.ID, runID shared.ID, status string) error
+	RecordRun(ctx context.Context, tenantID, scanID shared.ID, runID shared.ID, status string) error
 }
 
 // SecurityValidator interface for security validation.

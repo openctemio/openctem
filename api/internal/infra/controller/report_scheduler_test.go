@@ -22,7 +22,7 @@ type fakeStore struct {
 func (f *fakeStore) ListDue(_ context.Context, _ time.Time) ([]*reportschedule.ReportSchedule, error) {
 	return f.due, nil
 }
-func (f *fakeStore) ClaimDue(_ context.Context, _ shared.ID, _ *time.Time, _ time.Time) (bool, error) {
+func (f *fakeStore) ClaimDue(_ context.Context, _, _ shared.ID, _ *time.Time, _ time.Time) (bool, error) {
 	return !f.lostClaims, nil
 }
 func (f *fakeStore) Update(_ context.Context, s *reportschedule.ReportSchedule) error {
