@@ -99,14 +99,15 @@ func ResolveTypeAlias(t AssetType) (coreType AssetType, subType string) {
 }
 
 // AllAssetTypes returns every name the registry accepts as an asset type
-// on input: the core types and the aliases, in registry order. Only the
-// core types are stored (StoredAssetTypes).
+// on input: the core types and the aliases, in registry order, then the
+// legacy type inputs (web_application). Only the core types are stored
+// (StoredAssetTypes).
 func AllAssetTypes() []AssetType {
-	out := make([]AssetType, len(registryTypes))
-	for i, d := range registryTypes {
-		out[i] = d.Type
+	out := make([]AssetType, 0, len(registryTypes)+len(registryTypeInputs))
+	for _, d := range registryTypes {
+		out = append(out, d.Type)
 	}
-	return out
+	return append(out, registryTypeInputs...)
 }
 
 // IsRepository returns true if the asset type is a code repository.

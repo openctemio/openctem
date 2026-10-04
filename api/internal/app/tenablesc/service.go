@@ -146,6 +146,13 @@ type SyncState struct {
 	OpenVulns          int        `json:"open,omitempty"`
 	MitigatedVulns     int        `json:"mitigated,omitempty"`
 	Plugins            int        `json:"plugins,omitempty"`
+	// Catalog is what the sensor last reported it allows (names for the
+	// scan pickers); nil until a sync reports one.
+	Catalog *Catalog `json:"catalog,omitempty"`
+	// CoverageCommandID is the open coverage batch (RFC-047 §9), if any;
+	// LastCoverageOutcome the final status of the previous one.
+	CoverageCommandID   string `json:"coverage_command_id,omitempty"`
+	LastCoverageOutcome string `json:"last_coverage_outcome,omitempty"`
 }
 
 // Outcomes recorded in SyncState.LastOutcome.
@@ -335,6 +342,9 @@ func (s *Service) ValidateConnector(ctx context.Context, tenantID shared.ID, cfg
 	if err != nil {
 		return err
 	}
+	if err := validateCoverageConfig(cfg); err != nil {
+		return err
+	}
 	sn, err := s.sensors.GetByTenantAndID(ctx, tenantID, cc.SensorID)
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
@@ -500,6 +510,9 @@ func (s *Service) finish(ctx context.Context, intg *integration.Integration, sta
 		state.TenableVersion = res.Version
 		state.LicensedIPs, state.ActiveIPs = res.LicensedIPs, res.ActiveIPs
 		state.Hosts, state.OpenVulns, state.MitigatedVulns, state.Plugins = res.Hosts, res.Open, res.Mitigated, res.Plugins
+		if res.Catalog != nil {
+			state.Catalog = res.Catalog
+		}
 		writeState(intg, state)
 		stats := intg.Stats()
 		stats.TotalAssets, stats.TotalFindings = res.Hosts, res.Open
@@ -534,6 +547,7 @@ type syncResult struct {
 	Version                         string
 	LicensedIPs, ActiveIPs          int
 	Hosts, Open, Mitigated, Plugins int
+	Catalog                         *Catalog
 }
 
 func parseSyncResult(cmd *command.Command) syncResult {
@@ -555,6 +569,7 @@ func parseSyncResult(cmd *command.Command) syncResult {
 	out.Open = clampCount(m["open"])
 	out.Mitigated = clampCount(m["mitigated"])
 	out.Plugins = clampCount(m["plugins"])
+	out.Catalog = parseCatalog(m["catalog"])
 	return out
 }
 
