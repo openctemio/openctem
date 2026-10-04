@@ -1551,7 +1551,14 @@ export const OWNERSHIP_TYPE_COLORS: Record<
 }
 
 /**
- * Asset owner returned from the API
+ * Who created an owner row: a person (`manual`), a group scope rule
+ * (`scope_rule`), or the match of the asset's owner reference to a member's
+ * email (`owner_ref`; removing it clears the owner reference).
+ */
+export type OwnerAssignmentSource = 'manual' | 'scope_rule' | 'owner_ref'
+
+/**
+ * Asset owner returned from the API. asset_owners is the only owner model.
  */
 export interface AssetOwner {
   id: string
@@ -1563,6 +1570,7 @@ export interface AssetOwner {
   ownershipType: OwnershipType
   assignedAt: string
   assignedByName?: string
+  assignmentSource: OwnerAssignmentSource
 }
 
 /**

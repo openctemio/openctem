@@ -24,7 +24,7 @@ export type SurfaceCell =
   | 'ip'
   /** CNAME targets with "+N". */
   | 'cname'
-  /** A DNS name's CNAMEs and IPs, or "Not resolved". */
+  /** A DNS name's CNAMEs and IPs. */
   | 'dns'
   /** ASN of an IP. */
   | 'asn'

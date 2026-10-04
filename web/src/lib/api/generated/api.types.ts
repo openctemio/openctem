@@ -5040,6 +5040,264 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/assets/{id}/access-grants': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List an asset's access grants
+     * @description Lists the users given explicit data-scope access to the asset. Owners are not listed: being an owner gives no access.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AssetAccessGrantListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Grant a member access to an asset
+     * @description Puts the asset in the user's data scope. The user must be a member of the organization. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description User to grant */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CreateAssetAccessGrantRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AssetAccessGrantResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/assets/{id}/access-grants/{grant_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Revoke an access grant
+     * @description Removes the asset from the user's data scope unless one of the user's groups still gives access. Audited.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+          /** @description Grant ID */
+          grant_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: string
+            }
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/assets/{id}/activate': {
     parameters: {
       query?: never
@@ -8074,56 +8332,6 @@ export interface paths {
         }
       }
     }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/auth/ws-token': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get WebSocket token
-     * @description Returns a short-lived token for WebSocket authentication
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.WSTokenResponse']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': {
-              [key: string]: string
-            }
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
     delete?: never
     options?: never
     head?: never
@@ -13039,6 +13247,131 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/{id}/retests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * A finding's retests
+     * @description The finding's retest history, newest first (RFC-039).
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Max items (1-100, default 20) */
+          limit?: number
+        }
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingRetestListResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Retest a finding now
+     * @description Re-runs the nuclei template that produced the finding against its own target, with a reachability probe of the same target (RFC-039). The result is applied asynchronously: fixed resolves the finding, still present keeps it (or reopens a resolved one), and an unreachable target is "unknown" and changes nothing. Requires findings:verify; out-of-scope findings are 404.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Accepted */
+        202: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingRetestResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/{id}/severity': {
     parameters: {
       query?: never
@@ -17089,6 +17422,109 @@ export interface paths {
       }
     }
     put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/settings/retest': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get auto-retest settings
+     * @description The tenant's auto-retest settings (RFC-039). auto_enabled is false until an admin turns it on; zero interval/cap mean the defaults (24 h, 200 per day).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Update auto-retest settings
+     * @description Turns auto-retest on or off and sets its interval (6–168 h) and daily cap (1–2000). Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Auto-retest settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     post?: never
     delete?: never
     options?: never
@@ -33140,6 +33576,19 @@ export interface components {
       /** @description For cross-account */
       role_arn?: string
     }
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings': {
+      auto_enabled?: boolean
+      /**
+       * @description DailyCap bounds the auto retests queued for the tenant per 24 h.
+       *     0 = DefaultRetestDailyCap.
+       */
+      daily_cap?: number
+      /**
+       * @description IntervalHours is how often each eligible finding is retested.
+       *     0 = DefaultRetestIntervalHours.
+       */
+      interval_hours?: number
+    }
     'github_com_openctemio_openctem_api_pkg_domain_tenant.RiskLevelConfig': {
       critical_min?: number
       high_min?: number
@@ -33540,6 +33989,20 @@ export interface components {
       fixed?: string
       introduced?: string
       package?: string
+    }
+    'internal_infra_http_handler.AssetAccessGrantListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.AssetAccessGrantResponse'][]
+      total?: number
+    }
+    'internal_infra_http_handler.AssetAccessGrantResponse': {
+      granted_at?: string
+      granted_by_name?: string
+      id?: string
+      /** @enum {string} */
+      source?: 'manual' | 'migration'
+      user_email?: string
+      user_id?: string
+      user_name?: string
     }
     'internal_infra_http_handler.AssetAttributionDecisionRequest': {
       /** @description State: confirmed, rejected, dependency, monitor_only or needs_review. */
@@ -34385,6 +34848,9 @@ export interface components {
       /** @description UpdatedAt / UpdatedBy are null while the tenant uses the defaults. */
       updated_at?: string
       updated_by?: string
+    }
+    'internal_infra_http_handler.CreateAssetAccessGrantRequest': {
+      user_id: string
     }
     'internal_infra_http_handler.CreateAssetGroupRequest': {
       business_unit?: string
@@ -35274,6 +35740,12 @@ export interface components {
       misconfig_resource_name?: string
       misconfig_resource_path?: string
       misconfig_resource_type?: string
+      /** @description Port the finding was observed on (CTIS Finding.Network); absent when not port-specific */
+      network_port?: number
+      /** @description Service on the port as the scanner named it (https, ssh, ...) */
+      network_service?: string
+      /** @description tcp, udp or sctp */
+      network_transport?: string
       occurrence_count?: number
       owasp_ids?: string[]
       partial_fingerprints?: {
@@ -35349,6 +35821,25 @@ export interface components {
       web3_swc_id?: string
       web3_tx_hash?: string
       work_item_uris?: string[]
+    }
+    'internal_infra_http_handler.FindingRetestListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.FindingRetestResponse'][]
+    }
+    'internal_infra_http_handler.FindingRetestResponse': {
+      completed_at?: string
+      created_at?: string
+      deadline_at?: string
+      finding_id?: string
+      id?: string
+      outcome?: string
+      prior_status?: string
+      reason?: string
+      requested_by?: string
+      result_status?: string
+      status?: string
+      target?: string
+      template_id?: string
+      trigger?: string
     }
     'internal_infra_http_handler.FindingSeverityResponse': {
       critical?: number
@@ -35704,6 +36195,11 @@ export interface components {
        *     allowed to change, because no command covering them stood behind it.
        */
       assets_limited?: number
+      /**
+       * @description AssetsSkippedExcluded counts new assets not added because they match
+       *     an active scope exclusion; their findings are in findings_skipped.
+       */
+      assets_skipped_excluded?: number
       assets_updated?: number
       /**
        * @description Binding is "command" when the report named a command assigned to this
@@ -36642,6 +37138,8 @@ export interface components {
       quality_gate_result?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult']
       scan_id?: string
       scan_profile_id?: string
+      /** @description ScheduledFor is the schedule occurrence this run serves (scheduled runs only). */
+      scheduled_for?: string
       skipped_steps?: number
       started_at?: string
       status?: string
@@ -36793,6 +37291,8 @@ export interface components {
       max_retries?: number
       name?: string
       next_run_at?: string
+      /** @description PartialRuns: runs that kept results but lost some work (RFC-046 D5). */
+      partial_runs?: number
       pipeline_id?: string
       profile_id?: string
       retry_backoff_seconds?: number
@@ -38399,11 +38899,6 @@ export interface components {
       status?: string
       title?: string
       updated_at?: string
-    }
-    'internal_infra_http_handler.WSTokenResponse': {
-      /** @description Seconds until expiration */
-      expires_in?: number
-      token?: string
     }
     'internal_infra_http_handler.remediationGroupsResponse': {
       groups?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_remediation.Group'][]

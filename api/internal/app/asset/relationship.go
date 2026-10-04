@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -15,6 +16,38 @@ type AssetRelationshipService struct {
 	relRepo   assetdom.RelationshipRepository
 	assetRepo assetdom.Repository
 	logger    *logger.Logger
+
+	// Layer 2 data scope (nil = unrestricted). A relationship names both of
+	// its assets, so a scoped member sees and changes only relationships
+	// whose source and target are both in scope.
+	dataScope *datascope.Enforcer
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer.
+func (s *AssetRelationshipService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
+}
+
+// assertPairInScope returns shared.ErrNotFound unless the caller may see
+// both assets of a relationship.
+func (s *AssetRelationshipService) assertPairInScope(ctx context.Context, tenantID, sourceID, targetID shared.ID) error {
+	if err := s.dataScope.AssertAsset(ctx, tenantID, sourceID); err != nil {
+		return err
+	}
+	return s.dataScope.AssertAsset(ctx, tenantID, targetID)
+}
+
+// getInScope fetches a relationship and hides it (ErrNotFound) when either
+// end is outside the caller's data scope.
+func (s *AssetRelationshipService) getInScope(ctx context.Context, tenantID, id shared.ID) (*assetdom.RelationshipWithAssets, error) {
+	rel, err := s.relRepo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.assertPairInScope(ctx, tenantID, rel.Relationship.SourceAssetID(), rel.Relationship.TargetAssetID()); err != nil {
+		return nil, fmt.Errorf("%w: relationship not found", shared.ErrNotFound)
+	}
+	return rel, nil
 }
 
 // NewAssetRelationshipService creates a new AssetRelationshipService.
@@ -139,6 +172,9 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 	if _, err := s.assetRepo.GetByID(ctx, parsedTenantID, parsedSourceID); err != nil {
 		return nil, fmt.Errorf("source asset: %w", err)
 	}
+	if err := s.dataScope.AssertAsset(ctx, parsedTenantID, parsedSourceID); err != nil {
+		return nil, fmt.Errorf("source asset: %w", err)
+	}
 
 	result := &BatchCreateRelationshipResult{
 		Results: make([]BatchCreateRelationshipResultItem, 0, len(items)),
@@ -181,7 +217,9 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 		}
 
 		// Verify the target asset belongs to the tenant
-		if _, gerr := s.assetRepo.GetByID(ctx, parsedTenantID, parsedTargetID); gerr != nil {
+		// An out-of-scope target answers exactly like a missing one.
+		if _, gerr := s.assetRepo.GetByID(ctx, parsedTenantID, parsedTargetID); gerr != nil ||
+			s.dataScope.AssertAsset(ctx, parsedTenantID, parsedTargetID) != nil {
 			fail(BatchCreateStatusError, "target asset not found")
 			continue
 		}
@@ -291,6 +329,13 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 	if _, err := s.assetRepo.GetByID(ctx, tenantID, targetID); err != nil {
 		return nil, fmt.Errorf("target asset: %w", err)
 	}
+	// The caller must see both assets; an out-of-scope one is "not found".
+	if err := s.dataScope.AssertAsset(ctx, tenantID, sourceID); err != nil {
+		return nil, fmt.Errorf("source asset: %w", err)
+	}
+	if err := s.dataScope.AssertAsset(ctx, tenantID, targetID); err != nil {
+		return nil, fmt.Errorf("target asset: %w", err)
+	}
 
 	// Placement mutex: `runs_on` and `deployed_to` describe overlapping
 	// concepts ("where this thing lives") so we forbid both existing for
@@ -382,7 +427,7 @@ func (s *AssetRelationshipService) GetRelationship(ctx context.Context, tenantID
 		return nil, shared.ErrNotFound
 	}
 
-	return s.relRepo.GetByID(ctx, parsedTenantID, parsedID)
+	return s.getInScope(ctx, parsedTenantID, parsedID)
 }
 
 // UpdateRelationship updates a relationship's mutable fields.
@@ -397,7 +442,7 @@ func (s *AssetRelationshipService) UpdateRelationship(ctx context.Context, tenan
 	}
 
 	// Fetch existing
-	existing, err := s.relRepo.GetByID(ctx, parsedTenantID, parsedID)
+	existing, err := s.getInScope(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -450,6 +495,9 @@ func (s *AssetRelationshipService) DeleteRelationship(ctx context.Context, tenan
 	if err != nil {
 		return shared.ErrNotFound
 	}
+	if _, err := s.getInScope(ctx, parsedTenantID, parsedID); err != nil {
+		return err
+	}
 
 	return s.relRepo.Delete(ctx, parsedTenantID, parsedID)
 }
@@ -474,6 +522,15 @@ func (s *AssetRelationshipService) ListAssetRelationships(
 	if _, err := s.assetRepo.GetByID(ctx, parsedTenantID, parsedAssetID); err != nil {
 		return nil, 0, err
 	}
+	if err := s.dataScope.AssertAsset(ctx, parsedTenantID, parsedAssetID); err != nil {
+		return nil, 0, err
+	}
+	// Only relationships whose other end is in scope too.
+	scope, err := s.dataScope.Resolve(ctx, parsedTenantID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("resolve data scope: %w", err)
+	}
+	filter.Scope = scope
 
 	return s.relRepo.ListByAsset(ctx, parsedTenantID, parsedAssetID, filter)
 }
@@ -505,7 +562,11 @@ func (s *AssetRelationshipService) GetRelationshipTypeUsage(
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	counts, err := s.relRepo.CountByType(ctx, parsedTenantID)
+	scope, err := s.dataScope.Resolve(ctx, parsedTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	counts, err := s.relRepo.CountByType(ctx, parsedTenantID, scope)
 	if err != nil {
 		return nil, fmt.Errorf("count relationships by type: %w", err)
 	}

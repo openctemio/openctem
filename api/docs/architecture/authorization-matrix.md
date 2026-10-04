@@ -242,6 +242,23 @@ two-person control:
   so they stay in effect; inactive and expired ones need an approval to come
   back.
 
+Where an exclusion in effect applies (RFC-042 F16). A failed exclusion
+lookup stops the path; nothing is scanned or discovered without it (fail
+closed):
+
+| Path | Effect of a match |
+|------|-------------------|
+| Scan trigger (direct targets and asset-group members) | Target dropped from the run; a run whose every target is excluded is refused (`ALL_TARGETS_EXCLUDED`) |
+| `POST /api/v1/pipelines/runs`, the `trigger_pipeline` workflow action | Target dropped from `context.targets`, the rest run; every target excluded is refused. The same run is refused (400 `TARGET_REFUSED`) for a target the scan target validator or zone routing refuses (private address outside every zone, loopback, link-local/metadata, uncovered). `scan_zone_id` in the caller's context is ignored and set from the routing |
+| Tenable rolling coverage dispatcher | Asset skipped this rotation (its cursor still moves, so it does not hold the top of every batch); same for a target the validator or zone routing refuses. A batch stays in one zone and the command is stamped with it |
+| Certificate Transparency discovery | An excluded watched domain is not queried; an excluded host gets no exposure |
+| Ingest | A NEW asset matching by name, repository URL or address (and a root domain or resolved IP derived from one) is not added: counted as `assets_skipped_excluded`, named in the warnings, its findings skipped and never attached to another asset. An asset already in the inventory is not changed or deleted |
+
+All of them go through the same matcher (`scope.Service.ExcludedTargets` /
+`LoadExclusionMatcher`); the pipeline and coverage paths go through
+`scan.Service.ResolveDispatchTargets`, which applies a scan's checks (scan
+create's target validator, exclusions, zone routing) in one call.
+
 #### Scan zones (`/api/v1/scan-zones`, RFC-023)
 
 | Endpoint | Permission Required |
@@ -495,28 +512,49 @@ cannot fingerprint the build. Release images stamp it with `-ldflags` from the
 tag; the dev container's air build stamps `<highest tag>-dev`; an unstamped
 binary reads the checkout's `.git` (`pkg/version`).
 
-### Real-time WebSocket (`/api/v1/auth/ws-token`, `/api/v1/ws`)
+### Real-time WebSocket (`/api/v1/ws`)
 
-A WebSocket ticket opens the tenant's real-time stream, so it is held to the
-same tenant gates as any JWT-tenant route.
+The socket opens the tenant's real-time stream, so the upgrade is held to the
+same tenant gates as any session tenant route ([RFC-045](../rfcs/RFC-045-websocket-auth.md)).
 
 | Endpoint | Required Auth |
 |----------|---------------|
-| `GET /api/v1/auth/ws-token` | JWT session (no `oct_` keys) + tenant chain: SSO enforcement, organization IP allowlist, `RequireTenant`, active membership (`wsTokenMiddlewares`) |
-| `GET /api/v1/ws/?ticket=…` | Single-use ticket (Redis `GETDEL`, 30 s), bound to the user + tenant it was issued for; **active membership re-checked at upgrade** (`WSTicketAuth`) |
+| `GET /api/v1/ws` | Session access token from the `auth_token` cookie (browser, same origin) or `Authorization: Bearer`; no `oct_` keys. Tenant chain: revoked-session check, SSO enforcement, organization IP allowlist, `RequireTenant`, active membership, read rate limit (`realtimeMiddlewares`). Origin must be in `CORS_ALLOWED_ORIGINS` (exact match); a cookie-authenticated upgrade without an Origin is refused |
 
+- No credential travels in the URL. The single-use ticket
+  (`GET /api/v1/auth/ws-token`) and the short-lived JWT fallback were
+  removed; a `?ticket=` parameter is ignored.
 - A suspended member, a user who is not a member of the token's tenant, a
-  caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`) and a
-  password session in an SSO-enforced tenant get no ticket.
-- A member suspended or removed between issue and upgrade gets 403 on the
-  upgrade. The upgrade does not re-run the IP allowlist (the ticket is
-  single-use and lives 30 s).
-- Without Redis (no ticket service) `/ws` falls back to a short-lived JWT and
-  the full `buildTokenTenantMiddlewares` chain.
+  caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`), a
+  password session in an SSO-enforced tenant and a revoked session are
+  refused at the upgrade.
+- The browser always opens the socket on the UI's own origin: the gateway
+  routes `/api/v1/ws` to the API, and the web server (`server-with-ws.mjs`,
+  all-in-one image and Helm) or `next dev` forwards it with the `Cookie` and
+  `Origin` headers. Cross-site WebSocket deployments are not supported; serve
+  the path on the UI origin.
 - After the upgrade, every channel subscription is authorized by
   `websocket.Hub.defaultAuthorize` against the connection's user and tenant
   (own `user:{tenant}:{user}` only, own `tenant:{id}` only, permission +
   data scope for `finding:`/`triage:`, `scans:read` for `scan:`).
+- **The socket is bound to its session** ([RFC-045](../rfcs/RFC-045-websocket-auth.md)).
+  The server closes it with code `4401`:
+  - at the expiry of the access token it was opened with, and at most 15 minutes
+    (less up to 60 s of jitter) after it opened, so gates that publish no
+    event (IP allowlist edits, SSO enforcement, data scope) are re-applied
+    on the reconnect;
+  - when its session is signed out or revoked: every path that writes the
+    session revocation store (logout, sign out device / everywhere,
+    password change, 2FA enrolment, user or member suspension, session-limit
+    eviction, OIDC back-channel logout) also publishes on Redis `ws:revoke`,
+    and every API instance closes its matching sockets;
+  - when the user's membership or role in its tenant changes (permission
+    version bumped or dropped: role assigned, removed or redefined, member
+    role changed, member removed or suspended).
+- Limits: 10 sockets per user per instance (more → `4429`), 50 subscriptions
+  per socket, 10 messages/s (burst 60; abuse → `1008`), 4 KiB frames, 60 s
+  read deadline with server pings. Nothing is delivered after the server's
+  close frame.
 
 ### Platform Admin Routes (`/api/v1/admin/*`)
 
@@ -743,8 +781,32 @@ owner-managed) are enforced, not just stored. See
 
 Permissions decide what *kind* of thing a member may do; the data scope decides
 *which* assets — and so which findings, exposures and other asset-bound rows —
-they may see and change. Scope rows live in `user_accessible_assets` (group
-membership × group-owned assets, plus assets a user owns directly).
+they may see and change. Scope rows live in `user_accessible_assets`, computed
+from exactly two sources:
+
+| Source | Managed with | Rows |
+|---|---|---|
+| **Group assignment**: the assets assigned to the user's active groups | `team:groups:write` (Groups → Assets, scope rules, or a *group* owner on an asset's Owners tab) | `asset_owners` rows with `group_id` × `group_members` |
+| **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`) | `asset_access_grants` (migration `000372`) |
+
+**Being an owner is not an access grant** (owner decision O1, 2026-10-03).
+Naming a user as an owner of an asset, in any RACI role or through the
+`owner_ref` email match, is an assignment (accountability, finding
+assignment, notifications) and never changes what that user can see. Before
+O1 it did: `assets:write` alone could narrow a fail-open member to that one
+asset, or widen a fail-closed one. Migration `000372` turned every such
+owner-derived access row into an explicit grant (source `migration`), so
+nobody lost an asset at the upgrade; administrators review and revoke them
+on the asset's Owners tab (*Direct access*). A group owner remains the
+group's assignment, which is why adding or removing one needs
+`team:groups:write` on top of `assets:write`/`assets:delete`.
+
+| Route | Gate |
+|---|---|
+| `GET /api/v1/assets/{id}/access-grants` | `team:groups:read` + data scope on the asset |
+| `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 409 when the grant exists; audited `asset.access_granted` |
+| `DELETE /api/v1/assets/{id}/access-grants/{grant_id}` | `team:groups:write`; the grant must be on that asset of the caller's organization (404); audited `asset.access_revoked`. The user keeps the asset only if a group still holds it |
+| `POST /api/v1/assets/{id}/owners` with `group_id` · `DELETE /api/v1/assets/{id}/owners/{id}` of a group owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise) |
 
 **Who is restricted:**
 

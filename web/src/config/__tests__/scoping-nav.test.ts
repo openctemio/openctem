@@ -3,7 +3,8 @@
  * row per ctem.org scoping artifact. Business context and Threat model are rows
  * whose route tabs belong to different modules, so a tab is gated on its own
  * module and the row is shown while any tab is. Every URL that used to be a
- * Scoping row still opens and lights up a row.
+ * Scoping row still opens and lights up a row; Asset groups and Relationships
+ * moved to /assets/groups and /assets/suggestions (assets-nav.test.ts).
  */
 import { describe, expect, it } from 'vitest'
 import { existsSync, readdirSync, statSync } from 'node:fs'
@@ -115,8 +116,8 @@ describe('moves out of Scoping', () => {
     const discovery = links('Discovery')
     expect(discovery.map((i) => i.url)).toContain('/attack-surface')
     const assetTabs = row('Discovery', 'Assets').sections!.map((s) => s.href)
-    expect(assetTabs).toContain('/asset-groups')
-    expect(assetTabs).toContain('/relationships/suggestions')
+    expect(assetTabs).toContain('/assets/groups')
+    expect(assetTabs).toContain('/assets/suggestions')
   })
 
   it('Compliance is an Insights row', () => {
@@ -124,7 +125,8 @@ describe('moves out of Scoping', () => {
   })
 
   // Every URL that was a Scoping row before the regroup still lights up a row
-  // in the expected group (no redirects: none of these URLs changed).
+  // in the expected group. Asset groups and suggestions are listed at their
+  // current URL.
   it.each([
     ['/cycles', 'Scoping', 'Cycles'],
     ['/crown-jewels', 'Scoping', 'Business context'],
@@ -135,9 +137,9 @@ describe('moves out of Scoping', () => {
     ['/attacker-profiles', 'Scoping', 'Threat model'],
     ['/attack-surface', 'Discovery', 'Attack surface'],
     ['/attack-surface/external', 'Discovery', 'Attack surface'],
-    ['/asset-groups', 'Discovery', 'Assets'],
-    ['/asset-groups/abc', 'Discovery', 'Assets'],
-    ['/relationships/suggestions', 'Discovery', 'Assets'],
+    ['/assets/groups', 'Discovery', 'Assets'],
+    ['/assets/groups/abc', 'Discovery', 'Assets'],
+    ['/assets/suggestions', 'Discovery', 'Assets'],
     ['/compliance', 'Insights', 'Compliance'],
   ])('%s is active on %s > %s', (path, groupTitle, title) => {
     const active = sidebarData.navGroups.flatMap((g) =>

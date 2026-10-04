@@ -68,7 +68,7 @@ type CreateAssetGroupRequest struct {
 	Owner        string   `json:"owner" validate:"max=255"`
 	OwnerEmail   string   `json:"owner_email" validate:"omitempty,email,max=255"`
 	Tags         []string `json:"tags" validate:"max=20,dive,max=50"`
-	AssetIDs     []string `json:"existing_asset_ids" validate:"dive,uuid"`
+	AssetIDs     []string `json:"existing_asset_ids" validate:"max=1000,dive,uuid"`
 }
 
 // UpdateAssetGroupRequest represents the request to update an asset group.
@@ -89,12 +89,12 @@ type UpdateAssetGroupRequest struct {
 
 // AddAssetsRequest represents the request to add assets to a group.
 type AddAssetsRequest struct {
-	AssetIDs []string `json:"asset_ids" validate:"required,min=1,dive,uuid"`
+	AssetIDs []string `json:"asset_ids" validate:"required,min=1,max=1000,dive,uuid"`
 }
 
 // RemoveAssetsRequest represents the request to remove assets from a group.
 type RemoveAssetsRequest struct {
-	AssetIDs []string `json:"asset_ids" validate:"required,min=1,dive,uuid"`
+	AssetIDs []string `json:"asset_ids" validate:"required,min=1,max=1000,dive,uuid"`
 }
 
 // BulkUpdateRequest represents bulk update request.

@@ -51,6 +51,8 @@ func (d *stubDispatcher) Submit(_ context.Context, job validation.ValidationJob)
 		Technique:    job.Technique,
 		Outcome:      d.outcome,
 		Summary:      "stub evidence",
+		// The re-run reached the target (RFC-039 D3: a miss only counts then).
+		RawMeta: map[string]any{"reachable": true},
 	}, nil
 }
 
@@ -136,10 +138,10 @@ func TestCTEM_F4_OutcomeNotDetectedResolves(t *testing.T) {
 	disp := &stubDispatcher{outcome: validation.OutcomeNotDetected}
 	notif := &captureNotifier{}
 
-	svc := newProofSvc(disp, staticCapability{kinds: []validation.ExecutorKind{validation.KindSafeCheck}}, notif, repo)
+	svc := newProofSvc(disp, staticCapability{kinds: []validation.ExecutorKind{validation.KindNuclei}}, notif, repo)
 
 	ev, stood, err := svc.Retest(context.Background(), f.TenantID(), f.ID(),
-		validation.TechniqueID("T1"), validation.Target{}, validation.KindSafeCheck, nil)
+		validation.TechniqueID("T1"), validation.Target{}, validation.KindNuclei, nil)
 	if err != nil {
 		t.Fatalf("retest: %v", err)
 	}
@@ -166,10 +168,10 @@ func TestCTEM_F4_OutcomeDetectedRevertsAndNotifies(t *testing.T) {
 	disp := &stubDispatcher{outcome: validation.OutcomeDetected}
 	notif := &captureNotifier{}
 
-	svc := newProofSvc(disp, staticCapability{kinds: []validation.ExecutorKind{validation.KindSafeCheck}}, notif, repo)
+	svc := newProofSvc(disp, staticCapability{kinds: []validation.ExecutorKind{validation.KindNuclei}}, notif, repo)
 
 	_, stood, err := svc.Retest(context.Background(), f.TenantID(), f.ID(),
-		validation.TechniqueID("T1"), validation.Target{}, validation.KindSafeCheck, nil)
+		validation.TechniqueID("T1"), validation.Target{}, validation.KindNuclei, nil)
 	if err != nil {
 		t.Fatalf("retest: %v", err)
 	}

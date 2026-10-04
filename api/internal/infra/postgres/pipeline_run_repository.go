@@ -50,9 +50,9 @@ func (r *PipelineRunRepository) Create(ctx context.Context, run *pipeline.Run) e
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at
+			created_at, scheduled_for
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -77,8 +77,12 @@ func (r *PipelineRunRepository) Create(ctx context.Context, run *pipeline.Run) e
 		nullBytes(qualityGateResult),
 		run.RetryAttempt,
 		run.CreatedAt,
+		nullTime(run.ScheduledFor),
 	)
 
+	if isOccurrenceConflict(err) {
+		return pipeline.ErrOccurrenceAlreadyRun
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create pipeline run: %w", err)
 	}
@@ -203,7 +207,7 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 }
 
 // terminalRunStatusesSQL lists the statuses a run never leaves.
-const terminalRunStatusesSQL = `('completed', 'failed', 'canceled', 'timeout')`
+const terminalRunStatusesSQL = `('completed', 'partial', 'failed', 'canceled', 'timeout')`
 
 // notUpdatedError explains a guarded UPDATE that touched no row: the run is
 // missing, or it already finished.
@@ -377,26 +381,54 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Lock the scan config row to serialize concurrent triggers for the same scan
-	// This prevents race conditions where multiple triggers check limits simultaneously
+	// Serialize concurrent triggers and count the active runs they compete
+	// with: per scan config for a scan's run; per pipeline for a run started
+	// directly (POST /pipelines/runs, the trigger_pipeline action), which has
+	// no scan. Dereferencing the nil scan id made every direct start panic.
 	lockQuery := `SELECT id FROM scans WHERE id = $1 FOR UPDATE`
-	if _, err := tx.ExecContext(ctx, lockQuery, run.ScanID.String()); err != nil {
-		return fmt.Errorf("failed to lock scan config: %w", err)
-	}
-
-	// Count active runs for this scan (no FOR UPDATE needed - we already hold lock on scans row)
-	var scanActiveCount int
-	scanCountQuery := `
+	countQuery := `
 		SELECT COUNT(*) FROM pipeline_runs
 		WHERE scan_id = $1 AND status IN ('pending', 'running')
 	`
-	if err := tx.QueryRowContext(ctx, scanCountQuery, run.ScanID.String()).Scan(&scanActiveCount); err != nil {
-		return fmt.Errorf("failed to count active runs for scan: %w", err)
+	lockID, limitMsg := "", "maximum concurrent runs (%d) reached for this scan config"
+	if run.ScanID != nil {
+		lockID = run.ScanID.String()
+	} else {
+		lockQuery = `SELECT id FROM pipeline_templates WHERE id = $1 FOR UPDATE`
+		countQuery = `
+			SELECT COUNT(*) FROM pipeline_runs
+			WHERE pipeline_id = $1 AND scan_id IS NULL AND status IN ('pending', 'running')
+		`
+		lockID, limitMsg = run.PipelineID.String(), "maximum concurrent runs (%d) reached for this pipeline"
 	}
-	if scanActiveCount >= maxPerScan {
+	if _, err := tx.ExecContext(ctx, lockQuery, lockID); err != nil {
+		return fmt.Errorf("failed to lock run owner: %w", err)
+	}
+
+	// One run per schedule occurrence. Checked under the scan row lock so a
+	// second trigger of the same slot gets this answer rather than a
+	// concurrency-limit error; the unique index is the guarantee either way.
+	if run.ScanID != nil && run.ScheduledFor != nil {
+		var exists bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM pipeline_runs WHERE scan_id = $1 AND scheduled_for = $2)`,
+			run.ScanID.String(), *run.ScheduledFor).Scan(&exists); err != nil {
+			return fmt.Errorf("failed to check the schedule occurrence: %w", err)
+		}
+		if exists {
+			return pipeline.ErrOccurrenceAlreadyRun
+		}
+	}
+
+	// Count active runs (no FOR UPDATE needed - we already hold the lock above)
+	var ownerActiveCount int
+	if err := tx.QueryRowContext(ctx, countQuery, lockID).Scan(&ownerActiveCount); err != nil {
+		return fmt.Errorf("failed to count active runs: %w", err)
+	}
+	if ownerActiveCount >= maxPerScan {
 		return shared.NewDomainError(
 			"MAX_CONCURRENT_RUNS",
-			fmt.Sprintf("maximum concurrent runs (%d) reached for this scan config", maxPerScan),
+			fmt.Sprintf(limitMsg, maxPerScan),
 			shared.ErrValidation,
 		)
 	}
@@ -440,9 +472,9 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at
+			created_at, scheduled_for
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
@@ -467,7 +499,11 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 		nullBytes(qualityGateResult),
 		run.RetryAttempt,
 		run.CreatedAt,
+		nullTime(run.ScheduledFor),
 	)
+	if isOccurrenceConflict(err) {
+		return pipeline.ErrOccurrenceAlreadyRun
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create pipeline run: %w", err)
 	}
@@ -477,6 +513,16 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 	}
 
 	return nil
+}
+
+// occurrenceIndex is the unique index that keeps one run per schedule
+// occurrence of a scan (migration 000351).
+const occurrenceIndex = "uq_pipeline_runs_scan_occurrence"
+
+// isOccurrenceConflict reports whether err is a violation of occurrenceIndex.
+func isOccurrenceConflict(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == occurrenceIndex
 }
 
 // AbsoluteRunTimeoutSeconds is the longest any pipeline run may stay
@@ -807,7 +853,7 @@ func (r *PipelineRunRepository) selectQuery() string {
 		       total_steps, completed_steps, failed_steps, skipped_steps, total_findings,
 		       started_at, completed_at, error_message,
 		       scan_profile_id, quality_gate_result, retry_attempt,
-		       created_at
+		       created_at, scheduled_for
 		FROM pipeline_runs
 	`
 }
@@ -864,6 +910,7 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		scanProfileID     sql.NullString
 		qualityGateResult []byte
 		retryAttempt      sql.NullInt64
+		scheduledFor      sql.NullTime
 	)
 
 	var triggeredBy, errorMessage sql.NullString
@@ -889,6 +936,7 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		&qualityGateResult,
 		&retryAttempt,
 		&run.CreatedAt,
+		&scheduledFor,
 	)
 	_ = retryAttempt // populated below
 
@@ -943,6 +991,10 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 	if retryAttempt.Valid {
 		run.RetryAttempt = int(retryAttempt.Int64)
 	}
+	if scheduledFor.Valid {
+		t := scheduledFor.Time
+		run.ScheduledFor = &t
+	}
 
 	return run, nil
 }
@@ -963,6 +1015,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		scanProfileID     sql.NullString
 		qualityGateResult []byte
 		retryAttempt      sql.NullInt64
+		scheduledFor      sql.NullTime
 	)
 
 	var triggeredBy, errorMessage sql.NullString
@@ -988,6 +1041,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		&qualityGateResult,
 		&retryAttempt,
 		&run.CreatedAt,
+		&scheduledFor,
 	)
 
 	if err != nil {
@@ -1038,6 +1092,10 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 	if retryAttempt.Valid {
 		run.RetryAttempt = int(retryAttempt.Int64)
 	}
+	if scheduledFor.Valid {
+		t := scheduledFor.Time
+		run.ScheduledFor = &t
+	}
 
 	return run, nil
 }
@@ -1054,6 +1112,7 @@ func (r *PipelineRunRepository) GetStatsByTenant(ctx context.Context, tenantID s
 			COUNT(*) FILTER (WHERE status = 'pending') as pending,
 			COUNT(*) FILTER (WHERE status = 'running') as running,
 			COUNT(*) FILTER (WHERE status = 'completed') as completed,
+			COUNT(*) FILTER (WHERE status = 'partial') as partial,
 			COUNT(*) FILTER (WHERE status = 'failed' OR status = 'timeout') as failed,
 			COUNT(*) FILTER (WHERE status = 'canceled') as canceled
 		FROM pipeline_runs
@@ -1065,6 +1124,7 @@ func (r *PipelineRunRepository) GetStatsByTenant(ctx context.Context, tenantID s
 		&stats.Pending,
 		&stats.Running,
 		&stats.Completed,
+		&stats.Partial,
 		&stats.Failed,
 		&stats.Canceled,
 	)
@@ -1318,7 +1378,11 @@ func (r *StepRunRepository) List(ctx context.Context, filter pipeline.StepRunFil
 	return stepRuns, nil
 }
 
-// Update updates a step run.
+// Update updates a step run. A terminal step run is final, the same rule as
+// PipelineRunRepository.Update: a stale in-memory copy written back after a
+// cancel, the timeout reaper or a duplicate result settled the step must not
+// re-queue it, reopen it or overwrite its outcome. Such a write changes
+// nothing and returns pipeline.ErrStepRunAlreadyFinished.
 func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) error {
 	output, err := json.Marshal(sr.Output)
 	if err != nil {
@@ -1333,6 +1397,7 @@ func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) er
 		    queued_at = $11, started_at = $12, completed_at = $13,
 		    error_message = $14, error_code = $15
 		WHERE id = $1
+		  AND status NOT IN ` + terminalStepRunStatusesSQL + `
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -1357,12 +1422,28 @@ func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) er
 		return fmt.Errorf("failed to update step run: %w", err)
 	}
 
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return shared.ErrNotFound
+	if n, _ := result.RowsAffected(); n == 0 {
+		return r.notUpdatedError(ctx, sr.ID)
 	}
 
 	return nil
+}
+
+// terminalStepRunStatusesSQL lists the statuses a step run never leaves.
+const terminalStepRunStatusesSQL = `('completed', 'partial', 'failed', 'skipped', 'canceled', 'timeout')`
+
+// notUpdatedError explains a guarded UPDATE that touched no row: the step run
+// is missing, or it already finished.
+func (r *StepRunRepository) notUpdatedError(ctx context.Context, id shared.ID) error {
+	var exists bool
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM step_runs WHERE id = $1)`, id.String()).Scan(&exists); err != nil {
+		return fmt.Errorf("failed to check step run: %w", err)
+	}
+	if !exists {
+		return shared.ErrNotFound
+	}
+	return pipeline.ErrStepRunAlreadyFinished
 }
 
 // Delete deletes a step run.
@@ -1381,16 +1462,25 @@ func (r *StepRunRepository) Delete(ctx context.Context, id shared.ID) error {
 	return nil
 }
 
-// UpdateStatus updates step run status.
+// UpdateStatus updates step run status. Only a step run that has not finished
+// moves; for a terminal one it returns pipeline.ErrStepRunAlreadyFinished and
+// changes nothing.
 func (r *StepRunRepository) UpdateStatus(ctx context.Context, id shared.ID, status pipeline.StepRunStatus, errorMessage, errorCode string) error {
 	query := `
 		UPDATE step_runs
 		SET status = $2, error_message = $3, error_code = $4,
-		    completed_at = CASE WHEN $2::varchar IN ('completed', 'failed', 'skipped', 'canceled', 'timeout') THEN NOW() ELSE completed_at END
+		    completed_at = CASE WHEN $2::varchar IN ` + terminalStepRunStatusesSQL + ` THEN NOW() ELSE completed_at END
 		WHERE id = $1
+		  AND status NOT IN ` + terminalStepRunStatusesSQL + `
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage, errorCode)
-	return err
+	result, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage, errorCode)
+	if err != nil {
+		return fmt.Errorf("failed to update step run status: %w", err)
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return r.notUpdatedError(ctx, id)
+	}
+	return nil
 }
 
 // AssignSensor records that a sensor started the step run with the command.
@@ -1407,7 +1497,8 @@ func (r *StepRunRepository) AssignSensor(ctx context.Context, id shared.ID, sens
 	return err
 }
 
-// Complete marks a step run as completed.
+// Complete marks a step run as completed. A step run that already finished is
+// left alone and pipeline.ErrStepRunAlreadyFinished is returned.
 func (r *StepRunRepository) Complete(ctx context.Context, id shared.ID, findingsCount int, output map[string]any) error {
 	outputJSON, err := json.Marshal(output)
 	if err != nil {
@@ -1418,9 +1509,16 @@ func (r *StepRunRepository) Complete(ctx context.Context, id shared.ID, findings
 		UPDATE step_runs
 		SET status = 'completed', findings_count = $2, output = $3, completed_at = NOW()
 		WHERE id = $1
+		  AND status NOT IN ` + terminalStepRunStatusesSQL + `
 	`
-	_, err = r.db.ExecContext(ctx, query, id.String(), findingsCount, outputJSON)
-	return err
+	result, err := r.db.ExecContext(ctx, query, id.String(), findingsCount, outputJSON)
+	if err != nil {
+		return fmt.Errorf("failed to complete step run: %w", err)
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return r.notUpdatedError(ctx, id)
+	}
+	return nil
 }
 
 // GetPendingByDependencies gets step runs that are pending and have their dependencies completed.
@@ -1460,6 +1558,7 @@ func (r *StepRunRepository) GetStatsByTenant(ctx context.Context, tenantID share
 			COUNT(*) FILTER (WHERE sr.status = 'pending') as pending,
 			COUNT(*) FILTER (WHERE sr.status IN ('queued', 'running')) as running,
 			COUNT(*) FILTER (WHERE sr.status = 'completed') as completed,
+			COUNT(*) FILTER (WHERE sr.status = 'partial') as partial,
 			COUNT(*) FILTER (WHERE sr.status IN ('failed', 'timeout')) as failed,
 			COUNT(*) FILTER (WHERE sr.status IN ('canceled', 'skipped')) as canceled
 		FROM step_runs sr
@@ -1472,6 +1571,7 @@ func (r *StepRunRepository) GetStatsByTenant(ctx context.Context, tenantID share
 		&stats.Pending,
 		&stats.Running,
 		&stats.Completed,
+		&stats.Partial,
 		&stats.Failed,
 		&stats.Canceled,
 	)

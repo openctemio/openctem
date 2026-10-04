@@ -1440,3 +1440,31 @@ func TestPermissionService_HasPermission_NoGroups(t *testing.T) {
 func (m *mockAccessControlRepoForPermission) BatchListFindingGroupIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID][]shared.ID, error) {
 	return make(map[shared.ID][]shared.ID), nil
 }
+
+func (m *mockAccessControlRepoForPermission) GetPrimaryUserOwnersByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]shared.ID, error) {
+	return map[shared.ID]shared.ID{}, nil
+}
+
+func (m *mockAccessControlRepoForPermission) FilterAssetsOwnedByUser(_ context.Context, _, _ shared.ID, _ []shared.ID) (map[shared.ID]bool, error) {
+	return map[shared.ID]bool{}, nil
+}
+
+func (m *mockAccessControlRepoForPermission) SyncOwnerRefOwner(_ context.Context, _, _ shared.ID, _ *shared.ID) error {
+	return nil
+}
+
+func (m *mockAccessControlRepoForPermission) GetAssetOwnerSource(_ context.Context, _ shared.ID) (string, error) {
+	return accesscontrol.AssignmentSourceManual, nil
+}
+
+func (m *mockAccessControlRepoForPermission) ListAssetAccessGrants(_ context.Context, _, _ shared.ID) ([]*accesscontrol.AssetAccessGrant, error) {
+	return nil, nil
+}
+
+func (m *mockAccessControlRepoForPermission) CreateAssetAccessGrant(_ context.Context, _, _, _ shared.ID, _ *shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	return nil, nil
+}
+
+func (m *mockAccessControlRepoForPermission) DeleteAssetAccessGrant(_ context.Context, _, _, _ shared.ID) (*accesscontrol.AssetAccessGrant, error) {
+	return nil, accesscontrol.ErrAccessGrantNotFound
+}

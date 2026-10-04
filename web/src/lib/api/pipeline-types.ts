@@ -55,6 +55,7 @@ export const PIPELINE_RUN_STATUSES = [
   'pending',
   'running',
   'completed',
+  'partial',
   'failed',
   'cancelled',
   'timeout',
@@ -65,6 +66,7 @@ export const PIPELINE_RUN_STATUS_LABELS: Record<PipelineRunStatus, string> = {
   pending: 'Pending',
   running: 'Running',
   completed: 'Completed',
+  partial: 'Partial',
   failed: 'Failed',
   cancelled: 'Cancelled',
   timeout: 'Timeout',
@@ -75,6 +77,7 @@ export const STEP_RUN_STATUSES = [
   'queued',
   'running',
   'completed',
+  'partial',
   'failed',
   'skipped',
   'cancelled',
@@ -250,6 +253,8 @@ export interface PipelineRun {
   /** Display name of the user in triggered_by, when it is a user id (API fills it). */
   triggered_by_name?: string
   status: PipelineRunStatus
+  /** The schedule occurrence this run serves (scheduled runs only); one run per occurrence. */
+  scheduled_for?: string
   started_at?: string
   completed_at?: string
   total_steps: number

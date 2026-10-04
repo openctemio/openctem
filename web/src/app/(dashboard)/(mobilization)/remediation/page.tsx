@@ -12,7 +12,6 @@ import {
   FacetSection,
   FacetOption,
   type MetricStripItem,
-  SeverityBadge,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
@@ -106,6 +105,12 @@ import {
 } from '@/features/remediation/api/use-remediation-campaigns'
 import { fetchAllPages } from '@/lib/api/fetch-all-pages'
 import { CreateJiraEpicDialog } from '@/features/remediation/components/create-jira-epic-dialog'
+import { useConfirmCampaignCompletion } from '@/features/remediation/components/complete-campaign-confirm'
+import {
+  openFindingCount,
+  progressPercent,
+  type CampaignCounts,
+} from '@/features/remediation/lib/campaign-completion'
 import { FindingPickerPanel } from '@/features/remediation/components/finding-picker-dialog'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { patch, del } from '@/lib/api/client'
@@ -395,6 +400,17 @@ export default function RemediationPage() {
     })
   }, [campaignData, memberNameById])
 
+  // Completing a task with findings still open asks first and says how many.
+  const { confirmCompletion, completionDialog } = useConfirmCampaignCompletion()
+  // The list's counts, used when a campaign's live counts cannot be read.
+  const listCounts = useMemo(() => {
+    const m: Record<string, CampaignCounts> = {}
+    for (const c of campaignData?.data ?? []) {
+      m[c.id] = { finding_count: c.finding_count, resolved_count: c.resolved_count }
+    }
+    return m
+  }, [campaignData])
+
   // Which campaigns each finding is linked to. A finding CAN belong to more than
   // one campaign (a finding_id may appear in several campaigns' filters — there's
   // no uniqueness), so we surface the overlap in the picker rather than silently
@@ -638,20 +654,27 @@ export default function RemediationPage() {
       }
       const apiStatus = statusMap[action]
       if (apiStatus) {
-        try {
-          await patch(`/api/v1/remediation/campaigns/${task.id}/status`, { status: apiStatus })
-          // The open drawer follows the refreshed list (the effect that syncs
-          // viewTask with tasks). It used to be overwritten here from
-          // campaignData captured before the refresh, which put the old status
-          // back: after "Start Task" the drawer still said Open.
-          await refreshCampaigns()
-          toast.success('Task updated')
-        } catch (err) {
-          toast.error(getErrorMessage(err, `Failed to ${action} task`))
+        const apply = async () => {
+          try {
+            await patch(`/api/v1/remediation/campaigns/${task.id}/status`, { status: apiStatus })
+            // The open drawer follows the refreshed list (the effect that syncs
+            // viewTask with tasks). It used to be overwritten here from
+            // campaignData captured before the refresh, which put the old status
+            // back: after "Start Task" the drawer still said Open.
+            await refreshCampaigns()
+            toast.success('Task updated')
+          } catch (err) {
+            toast.error(getErrorMessage(err, `Failed to ${action} task`))
+          }
+        }
+        if (apiStatus === 'completed') {
+          await confirmCompletion([task.id], apply, listCounts)
+        } else {
+          await apply()
         }
       }
     },
-    [router, refreshCampaigns]
+    [router, refreshCampaigns, confirmCompletion, listCounts]
   )
 
   const handleBulkAction = useCallback(
@@ -664,13 +687,14 @@ export default function RemediationPage() {
           Completed: 'completed',
         }
         const apiStatus = statusMap[value]
-        if (apiStatus) {
-          // Some selected tasks may be in a state where this transition is illegal
-          // (e.g. an already-active task → "In Progress"). Don't let one rejection
-          // abort the batch or skip the refresh — settle all, then report the split.
+        const ids = [...selectedIds]
+        // Some selected tasks may be in a state where this transition is illegal
+        // (e.g. an already-active task → "In Progress"). Don't let one rejection
+        // abort the batch or skip the refresh — settle all, then report the split.
+        const apply = async () => {
           try {
             const results = await Promise.allSettled(
-              selectedIds.map((id) =>
+              ids.map((id) =>
                 patch(`/api/v1/remediation/campaigns/${id}/status`, { status: apiStatus })
               )
             )
@@ -687,6 +711,11 @@ export default function RemediationPage() {
             await refreshCampaigns()
           }
         }
+        if (apiStatus === 'completed') {
+          await confirmCompletion(ids, apply, listCounts)
+        } else if (apiStatus) {
+          await apply()
+        }
         setSelectedIds([])
         setSelectionEpoch((n) => n + 1)
         return
@@ -695,7 +724,7 @@ export default function RemediationPage() {
       setSelectedIds([])
       setSelectionEpoch((n) => n + 1)
     },
-    [selectedIds, refreshCampaigns]
+    [selectedIds, refreshCampaigns, confirmCompletion, listCounts]
   )
 
   const handleDelete = useCallback(async () => {
@@ -848,11 +877,6 @@ export default function RemediationPage() {
             {TASK_STATUS_LABELS[row.original.status]}
           </Badge>
         ),
-      },
-      {
-        accessorKey: 'severity',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Severity" />,
-        cell: ({ row }) => <SeverityBadge severity={row.original.severity} />,
       },
       {
         accessorKey: 'assigneeName',
@@ -1235,7 +1259,6 @@ export default function RemediationPage() {
                                     >
                                       {TASK_PRIORITY_LABELS[task.priority]}
                                     </Badge>
-                                    <SeverityBadge severity={task.severity} />
                                     {overdue && (
                                       <Badge variant="destructive" className="text-[11px]">
                                         Overdue
@@ -1352,6 +1375,8 @@ export default function RemediationPage() {
         }}
       />
 
+      {completionDialog}
+
       {/* ─── Delete Confirmation ──────────────────────────────────────── */}
       <ConfirmDialog
         open={!!deleteTask}
@@ -1446,17 +1471,17 @@ function TaskDetailSheet({
     if (descDraft !== (task.description || '')) onPatch(task, { description: descDraft })
   }
 
-  // Get progress from API data or estimate from status
-  const taskProgress =
-    (task as unknown as Record<string, unknown>).progress != null
-      ? Number((task as unknown as Record<string, unknown>).progress)
-      : task.status === 'completed'
-        ? 100
-        : task.status === 'review'
-          ? 75
-          : task.status === 'in_progress'
-            ? 50
-            : 0
+  // Closed findings over all findings in scope (the API's number). Completing
+  // does not change it: a task completed with nothing closed reads 0%.
+  const counts = task as unknown as {
+    progress?: number
+    finding_count?: number
+    resolved_count?: number
+  }
+  const taskProgress = progressPercent(counts.progress)
+  const inScope = counts.finding_count ?? 0
+  const closed = counts.resolved_count ?? 0
+  const stillOpen = openFindingCount({ finding_count: inScope, resolved_count: closed })
 
   const linked = task.findingIds ?? []
   const menu: DetailMenuItem[] = [
@@ -1534,7 +1559,6 @@ function TaskDetailSheet({
               <Badge variant={statusVariants[task.status]} className="h-5 text-xs">
                 {TASK_STATUS_LABELS[task.status]}
               </Badge>
-              <SeverityBadge severity={task.severity} />
             </>
           }
           meta={[task.findingTitle]}
@@ -1589,10 +1613,22 @@ function TaskDetailSheet({
             </DetailCallout>
           )}
 
+          {task.status === 'completed' && stillOpen > 0 && (
+            <DetailCallout
+              tone="warning"
+              icon={AlertCircle}
+              title={`Completed with ${stillOpen} ${stillOpen === 1 ? 'finding' : 'findings'} still open`}
+            >
+              Progress counts closed findings, so it shows {taskProgress}%. Resolve the open
+              findings to close them out.
+            </DetailCallout>
+          )}
+
           <DetailStatGrid aria-label="Key numbers">
             <DetailStat
               label="Progress"
               value={`${taskProgress}%`}
+              caption={inScope > 0 ? `${closed} of ${inScope} findings closed` : undefined}
               meter={{ value: taskProgress, max: 100, label: 'Task progress' }}
             />
             <DetailStat label="Linked findings" value={linked.length} />

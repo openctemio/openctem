@@ -22,8 +22,7 @@ type Asset struct {
 	id                    shared.ID
 	tenantID              shared.ID
 	parentID              *shared.ID // For hierarchical assets (e.g., subdomain -> domain)
-	ownerID               *shared.ID // User who owns this asset (resolved)
-	ownerRef              string     // Raw owner text from external source (email, username, team)
+	ownerRef              string     // Raw owner hint (email, username, team); a member's email becomes a primary owner in asset_owners
 	name                  string
 	assetType             AssetType
 	subType               string
@@ -190,7 +189,6 @@ func Reconstitute(
 	assetID shared.ID,
 	tenantID shared.ID,
 	parentID *shared.ID,
-	ownerID *shared.ID,
 	name string,
 	assetType AssetType,
 	criticality Criticality,
@@ -241,7 +239,6 @@ func Reconstitute(
 		id:              assetID,
 		tenantID:        tenantID,
 		parentID:        parentID,
-		ownerID:         ownerID,
 		name:            name,
 		assetType:       assetType,
 		criticality:     criticality,
@@ -729,11 +726,6 @@ func (a *Asset) ParentID() *shared.ID {
 	return a.parentID
 }
 
-// OwnerID returns the owner user ID.
-func (a *Asset) OwnerID() *shared.ID {
-	return a.ownerID
-}
-
 // OwnerRef returns the raw owner text from external sources.
 func (a *Asset) OwnerRef() string {
 	return a.ownerRef
@@ -793,12 +785,6 @@ func (a *Asset) SetParentID(parentID *shared.ID) error {
 	a.parentID = parentID
 	a.updatedAt = time.Now().UTC()
 	return nil
-}
-
-// SetOwnerID sets the owner user ID.
-func (a *Asset) SetOwnerID(ownerID *shared.ID) {
-	a.ownerID = ownerID
-	a.updatedAt = time.Now().UTC()
 }
 
 // SetProvider sets the external provider.

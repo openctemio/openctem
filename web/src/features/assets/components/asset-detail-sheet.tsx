@@ -32,7 +32,7 @@ import { AssetAttributionSection } from './asset-attribution-section'
 import { RelationshipPreview } from './relationships'
 import { AssetRelationshipsTab } from './asset-relationships-tab'
 import { AssetOwnersTab } from './asset-owners-tab'
-import { SurfaceFacts, cellsForType } from './service-cells'
+import { SurfaceFactsDetail, cellsForType } from './service-cells'
 import {
   RiskSummarySection,
   OwnershipSection,
@@ -374,10 +374,11 @@ export function AssetDetailSheet<T extends Asset>({
 
             {/* The typed pages pass their own curated sections; the mixed
                 lists (/assets) get the shared service cells for the
-                external-surface types, above the raw properties. */}
+                external-surface types, above the raw properties: the known
+                facts, then one "Not collected yet: …" line for the rest. */}
             {overviewContent === undefined && cellsForType(asset.type, asset.subType) && (
               <DetailSection title="Service facts" icon={Radar}>
-                <SurfaceFacts asset={asset} />
+                <SurfaceFactsDetail asset={asset} />
               </DetailSection>
             )}
 

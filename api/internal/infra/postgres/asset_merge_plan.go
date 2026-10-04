@@ -57,6 +57,9 @@ var assetMergeRefs = []mergeRef{
 	{table: "threat_model_threats", column: "entry_point_asset_id", tenantCol: "tenant_id"},
 	{table: "threat_model_threats", column: "hop_asset_id", tenantCol: "tenant_id"},
 	{table: "threat_model_threats", column: "target_asset_id", tenantCol: "tenant_id"},
+	// A retest's asset follows its finding (RFC-039): the per-asset in-flight
+	// cap counts by asset_id.
+	{table: "finding_retests", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
@@ -73,6 +76,10 @@ var assetMergeRefs = []mergeRef{
 	{table: "asset_owners", column: "asset_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"user_id"}}, {cols: []string{"group_id"}}}},
 	{table: "user_accessible_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"user_id"}}}},
+	// Explicit data-scope grants follow the asset: whoever could see a merged
+	// asset by a grant sees the kept one.
+	{table: "asset_access_grants", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"user_id"}}}},
 	{table: "asset_sources", column: "asset_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"source_type", "source_id"}}}},
@@ -92,6 +99,10 @@ var assetMergeRefs = []mergeRef{
 	// evidence, and the kept row keeps the earliest first sighting.
 	{table: "easm_evidence", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"rule", "source"}}}},
+	// DNS-check rotation state (RFC-036): the kept asset's own state wins;
+	// a merged asset's state for a check the kept one never ran moves.
+	{table: "easm_dns_check_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"check_kind"}}}},
 }
 
 // assetMergeEdgeRefs are directed edges between two assets. An edge between

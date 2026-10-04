@@ -2,6 +2,12 @@
 
 > **Last Updated**: January 20, 2026
 > **Status**: Production Ready
+>
+> **Being replaced.** The target model (Scan → Run → Task, `partial` runs,
+> rrule schedules, engines, Automations) and the current state are in
+> [scan-lifecycle.md](scan-lifecycle.md) and
+> [RFC-046](../rfcs/RFC-046-scans-redesign.md). Parts of this page predate
+> zones, leases and the P0 fixes; prefer those documents where they differ.
 
 ## Overview
 

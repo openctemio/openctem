@@ -131,6 +131,10 @@ export type FindingStatsResponse = Schemas['internal_infra_http_handler.FindingS
 export type VulnerabilityResponse = Schemas['internal_infra_http_handler.VulnerabilityResponse']
 export type DataFlowResponse = Schemas['internal_infra_http_handler.DataFlowResponse']
 export type BulkUpdateResponse = Schemas['internal_infra_http_handler.BulkUpdateResponse']
+// Continuous retest (RFC-039)
+export type FindingRetestResponse = Schemas['internal_infra_http_handler.FindingRetestResponse']
+export type FindingRetestListResponse =
+  Schemas['internal_infra_http_handler.FindingRetestListResponse']
 
 // Scope (targets / exclusions / schedules)
 export type ScopeTargetResponse = Schemas['internal_infra_http_handler.ScopeTargetResponse']

@@ -12,6 +12,7 @@ import { devLog } from '@/lib/logger'
 import { useTenant } from '@/context/tenant-provider'
 import { useFindingChannel, type ConnectionState } from '@/hooks/use-websocket'
 import type { Activity, ActivityType } from '../types'
+import { retestActivity } from '../lib/retest-activity'
 
 // ============================================
 // WEBSOCKET EVENT TYPES
@@ -117,11 +118,13 @@ function mapWSActivity(event: WSActivityEvent): Activity {
     previousAssigneeName,
   }
 
+  const retest = retestActivity(api.activity_type, changes)
+
   return {
     id: api.id,
-    type: mapActivityType(api.activity_type),
+    type: retest?.type ?? mapActivityType(api.activity_type),
     actor,
-    content,
+    content: retest?.content ?? content,
     metadata,
     previousValue,
     newValue,

@@ -107,6 +107,8 @@ export interface ScanConfig {
   total_runs: number
   successful_runs: number
   failed_runs: number
+  /** Runs that kept results but lost some work; neither a success nor a failure. */
+  partial_runs?: number
   created_by?: string
   created_by_name?: string
   created_at: string
@@ -281,6 +283,8 @@ export interface PipelineRun {
   /** Display name of the user in triggered_by, when it is a user id (API fills it). */
   triggered_by_name?: string
   status: string
+  /** The schedule occurrence this run serves (scheduled runs only); one run per occurrence. */
+  scheduled_for?: string
   started_at?: string
   completed_at?: string
   total_steps: number
