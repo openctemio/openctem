@@ -33,7 +33,7 @@
 -- Live-database safety: asset_owners rows are inserted in keyset batches of
 -- 5000 assets; assets is only read. No lock beyond ROW EXCLUSIVE on
 -- asset_owners. Re-runnable (ON CONFLICT DO NOTHING plus NOT EXISTS).
--- The column itself is dropped by a later contract migration, after a
+-- The column itself is dropped by 000359 (contract step), after a
 -- release (expand-contract: pods of the previous release still read it).
 -- =============================================================================
 
