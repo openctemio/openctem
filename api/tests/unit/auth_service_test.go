@@ -2955,3 +2955,21 @@ func TestAuthService_ResetPassword_RepoInvalidTokenErrorIsInvalidResetToken(t *t
 		t.Fatalf("expected ErrInvalidResetToken, got %v", err)
 	}
 }
+
+// The services mutate the user they hold before calling these targeted
+// updates, and this mock stores that same pointer, so there is nothing more to
+// write here.
+func (m *mockAuthUserRepo) RecordFailedLogin(_ context.Context, _ shared.ID, _ int, _ time.Duration) (*time.Time, error) {
+	m.updateCalls++
+	return nil, m.updateErr
+}
+
+func (m *mockAuthUserRepo) RecordSuccessfulLogin(_ context.Context, _ shared.ID) error {
+	m.updateCalls++
+	return m.updateErr
+}
+
+func (m *mockAuthUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ string) error {
+	m.updateCalls++
+	return m.updateErr
+}

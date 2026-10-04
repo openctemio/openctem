@@ -41,17 +41,21 @@ passwords. The counter is reset only after the second step succeeds. The
 |---|---|---|---|
 | GET | `/2fa` | | `{supported, enabled, enabled_at, recovery_codes_remaining, required_by_organization}` |
 | POST | `/2fa/setup` | | New pending secret `{secret, otpauth_uri}`. 409 if already enabled. Changes nothing until enable. |
-| POST | `/2fa/enable` | `{code}` | Confirms the pending secret, returns 10 recovery codes, **signs out every other session**. |
+| POST | `/2fa/enable` | `{password, code}` | Needs the current password (a stolen session alone cannot bind an authenticator and lock the user out). Confirms the pending secret, returns 10 recovery codes, **signs out every other session**. |
 | POST | `/2fa/disable` | `{password, code}` | `code` = TOTP or unused recovery code. E-mails the user. |
 | POST | `/2fa/recovery-codes` | `{code}` | TOTP only. Replaces all codes, returns the new ones. |
-| POST | `/change-password` | `{current_password, new_password}` | Keeps the current session, revokes the others immediately, e-mails the user. |
+| POST | `/change-password` | `{current_password, new_password}` | Keeps the current session, revokes the others immediately, e-mails the user. Password rate limiter; a wrong current password counts against the account lockout (as do wrong passwords on 2FA enable/disable), and a locked account takes no guesses. |
 | GET | `/sessions` | | `{sessions:[{id, ip_address, user_agent, created_at, last_activity_at, is_current}]}` |
 | DELETE | `/sessions/{id}` | | Revoke one session (immediate). |
 | DELETE | `/sessions` | | Revoke all except the current one (immediate). |
 
 The mutating 2FA routes carry the CSRF check and an auth rate limiter (`setup`/`enable`:
 5/min, `disable`/`recovery-codes`: 3/min per IP). Responses that contain secrets or
-codes are sent with `Cache-Control: no-store`. Federated accounts get
+codes are sent with `Cache-Control: no-store`. Failed-attempt counters and the
+password hash are written by targeted atomic updates (`RecordFailedLogin`,
+`RecordSuccessfulLogin`, `UpdatePasswordHash`); the whole-row user update never
+writes them, so parallel failures all count and a profile save cannot restore
+an old password hash. Federated accounts get
 `supported:false`, and the mutating calls return 400.
 
 ## Organization policy ("Require MFA")
