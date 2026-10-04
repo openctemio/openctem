@@ -44,8 +44,7 @@ export const WORKFLOW_TRIGGER_TYPES = [
 export const WORKFLOW_UNSUPPORTED_TRIGGER_TYPES = ['schedule', 'finding_age'] as const
 
 export type WorkflowTriggerType =
-  | (typeof WORKFLOW_TRIGGER_TYPES)[number]
-  | (typeof WORKFLOW_UNSUPPORTED_TRIGGER_TYPES)[number]
+  (typeof WORKFLOW_TRIGGER_TYPES)[number] | (typeof WORKFLOW_UNSUPPORTED_TRIGGER_TYPES)[number]
 
 export const WORKFLOW_TRIGGER_LABELS: Record<WorkflowTriggerType, string> = {
   manual: 'Manual',
@@ -86,8 +85,7 @@ export const WORKFLOW_ACTION_TYPES = [
 export const WORKFLOW_UNSUPPORTED_ACTION_TYPES = ['assign_team', 'update_priority'] as const
 
 export type WorkflowActionType =
-  | (typeof WORKFLOW_ACTION_TYPES)[number]
-  | (typeof WORKFLOW_UNSUPPORTED_ACTION_TYPES)[number]
+  (typeof WORKFLOW_ACTION_TYPES)[number] | (typeof WORKFLOW_UNSUPPORTED_ACTION_TYPES)[number]
 
 export const WORKFLOW_ACTION_LABELS: Record<WorkflowActionType, string> = {
   assign_user: 'Assign User',

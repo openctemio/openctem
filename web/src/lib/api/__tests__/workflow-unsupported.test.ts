@@ -38,7 +38,10 @@ describe('workflow picker lists', () => {
 
   it('match the API unsupported sets exactly', () => {
     expect([...WORKFLOW_UNSUPPORTED_TRIGGER_TYPES].sort()).toEqual(['finding_age', 'schedule'])
-    expect([...WORKFLOW_UNSUPPORTED_ACTION_TYPES].sort()).toEqual(['assign_team', 'update_priority'])
+    expect([...WORKFLOW_UNSUPPORTED_ACTION_TYPES].sort()).toEqual([
+      'assign_team',
+      'update_priority',
+    ])
   })
 })
 
