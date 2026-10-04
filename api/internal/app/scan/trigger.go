@@ -50,8 +50,7 @@ type TriggerScanExecInput struct {
 
 // ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
 // the scan's previous run still active.
-var ErrScanRunInProgress = shared.NewDomainError("SCAN_RUN_IN_PROGRESS",
-	"the scan's previous run is still active", shared.ErrConflict)
+var ErrScanRunInProgress = pipeline.ErrScanRunActive
 
 // TriggerScan triggers a scan execution.
 func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (*pipeline.Run, error) {
@@ -78,6 +77,9 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// NOTE: Concurrent run limits are now checked atomically in CreateRunIfUnderLimit
 	// to prevent race conditions where multiple triggers bypass the limit.
+	// This early check only saves the work of resolving targets for an
+	// occurrence that will be skipped; the guarantee is the same check in
+	// CreateRunIfUnderLimit, under the scan row lock, for every scheduled run.
 	if input.SkipIfRunning {
 		active, err := s.runRepo.CountActiveByScanID(ctx, sc.ID)
 		if err != nil {

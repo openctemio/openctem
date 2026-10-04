@@ -131,7 +131,7 @@ func (f *roleFixture) teamRole(uid string) string {
 	if err != nil {
 		f.t.Fatalf("GetMembership: %v", err)
 	}
-	byID, err := f.tenants.GetMembershipByID(f.ctx, m.ID())
+	byID, err := f.tenants.GetMembershipByID(f.ctx, tid, m.ID())
 	if err != nil {
 		f.t.Fatalf("GetMembershipByID: %v", err)
 	}

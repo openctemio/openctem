@@ -212,13 +212,19 @@ func (s *Service) checkDanglingTarget(ctx context.Context, tenantID shared.ID, t
 	if err != nil {
 		return OutcomeUnknown, nil, nil, err
 	}
+	// A confirmed takeover of this name stays open while the CNAME dangles,
+	// and is resolved with it once the record is fixed or removed.
+	takeover, err := takeoverEvent(tenantID, t, nil, nil)
+	if err != nil {
+		return OutcomeUnknown, nil, nil, err
+	}
 	switch d.Outcome {
 	case OutcomeDanglingCNAME:
 		return d.Outcome, []*exposuredom.ExposureEvent{cname}, []string{ns.Fingerprint()}, nil
 	case OutcomeDanglingNS:
-		return d.Outcome, []*exposuredom.ExposureEvent{ns}, []string{cname.Fingerprint()}, nil
+		return d.Outcome, []*exposuredom.ExposureEvent{ns}, []string{cname.Fingerprint(), takeover.Fingerprint()}, nil
 	default:
-		return OutcomeOK, nil, []string{cname.Fingerprint(), ns.Fingerprint()}, nil
+		return OutcomeOK, nil, []string{cname.Fingerprint(), ns.Fingerprint(), takeover.Fingerprint()}, nil
 	}
 }
 
@@ -252,6 +258,10 @@ func danglingEvent(tenantID shared.ID, t Target, typ exposuredom.EventType, d Da
 		details["missing_name_servers"] = d.Missing
 		details["name_servers_total"] = d.Total
 	}
+	if len(d.Lame) > 0 {
+		details["lame_name_servers"] = d.Lame
+		details["name_servers_total"] = d.Total
+	}
 	ev, err := exposuredom.NewExposureEvent(tenantID, typ, sev, title, Source, details)
 	if err != nil {
 		return nil, err
@@ -260,6 +270,10 @@ func danglingEvent(tenantID shared.ID, t Target, typ exposuredom.EventType, d Da
 	if typ == exposuredom.EventTypeDanglingNS {
 		desc = fmt.Sprintf("%s is delegated to name servers that do not exist (%s): %s. Remove the delegation or fix the name servers.",
 			t.Name, strings.Join(d.Missing, ", "), d.Reason)
+		if len(d.Lame) > 0 {
+			desc = fmt.Sprintf("%s is delegated to name servers that do not serve the zone (%s): %s. Remove the delegation or recreate the zone at the provider.",
+				t.Name, strings.Join(append(append([]string{}, d.Missing...), d.Lame...), ", "), d.Reason)
+		}
 	}
 	ev.UpdateDescription(desc)
 	id := t.AssetID

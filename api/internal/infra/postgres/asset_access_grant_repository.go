@@ -131,7 +131,7 @@ func (r *AccessControlRepository) CreateAssetAccessGrant(ctx context.Context, te
 	}
 
 	g, err := scanAssetAccessGrant(tx.QueryRowContext(ctx,
-		`SELECT `+assetAccessGrantColumns+assetAccessGrantFrom+` WHERE g.id = $1`, id).Scan)
+		`SELECT `+assetAccessGrantColumns+assetAccessGrantFrom+` WHERE g.id = $1 AND g.tenant_id = $2`, id, tenantID.String()).Scan)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read access grant: %w", err)
 	}
@@ -161,7 +161,7 @@ func (r *AccessControlRepository) DeleteAssetAccessGrant(ctx context.Context, te
 		return nil, fmt.Errorf("failed to load access grant: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_access_grants WHERE id = $1`, grantID.String()); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_access_grants WHERE id = $1 AND tenant_id = $2`, grantID.String(), tenantID.String()); err != nil {
 		return nil, fmt.Errorf("failed to delete access grant: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `SELECT refresh_access_for_grant_remove($1, $2)`, g.AssetID.String(), g.UserID.String()); err != nil {
