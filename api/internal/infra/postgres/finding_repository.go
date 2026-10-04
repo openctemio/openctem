@@ -1840,17 +1840,26 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 
 // UpdateStatusBatch updates the status of multiple findings.
 // Security: Requires tenantID to prevent cross-tenant status modification.
-func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {
+//
+// A move to resolved must name how the finding was resolved (method), so every
+// closure carries its evidence class; any other status clears
+// resolution_method, so a reopened or dispositioned finding never keeps a
+// stale "fixed" claim.
+func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod) error {
 	if len(ids) == 0 {
 		return nil
+	}
+	methodArg, err := resolutionMethodArg(status, method)
+	if err != nil {
+		return err
 	}
 
 	// Security: tenant_id is first parameter for isolation
 	placeholders := make([]string, len(ids))
-	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy)}
+	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg}
 
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+5)
+		placeholders[i] = fmt.Sprintf("$%d", i+6)
 		args = append(args, id.String())
 	}
 
@@ -1865,16 +1874,27 @@ func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shar
 	// Security: Exclude pentest findings — they must be managed via the pentest module
 	query := fmt.Sprintf(`
 		UPDATE findings
-		SET status = $2, resolution = $3, resolved_by = $4%s, updated_at = NOW()
+		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5%s, updated_at = NOW()
 		WHERE tenant_id = $1 AND source != 'pentest' AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
-	_, err := r.db.ExecContext(ctx, query, args...)
-	if err != nil {
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("failed to update findings status: %w", err)
 	}
 
 	return nil
+}
+
+// resolutionMethodArg is the resolution_method value a status write stores:
+// the (required, valid) method for resolved, NULL for everything else.
+func resolutionMethodArg(status vulnerability.FindingStatus, method vulnerability.ResolutionMethod) (any, error) {
+	if status != vulnerability.FindingStatusResolved {
+		return nil, nil
+	}
+	if !method.IsValid() {
+		return nil, fmt.Errorf("%w: resolving a finding needs a valid resolution method, got %q", shared.ErrValidation, method)
+	}
+	return method.String(), nil
 }
 
 // DeleteByScanID removes all findings for a scan.

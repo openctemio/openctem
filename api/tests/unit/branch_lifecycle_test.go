@@ -138,7 +138,7 @@ func (m *MockFindingRepoForLifecycle) BatchCountByAssetIDs(ctx context.Context, 
 }
 
 // Security: UpdateStatusBatch now requires tenantID for tenant isolation
-func (m *MockFindingRepoForLifecycle) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {
+func (m *MockFindingRepoForLifecycle) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, _ vulnerability.ResolutionMethod) error {
 	return nil
 }
 
@@ -396,7 +396,7 @@ func (m *MockFindingRepoForLifecycle) ListFindingGroups(_ context.Context, _ sha
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *MockFindingRepoForLifecycle) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *MockFindingRepoForLifecycle) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 
