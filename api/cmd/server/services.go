@@ -2187,10 +2187,15 @@ func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, er
 // NewJobClient creates a new job client for background processing.
 func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) {
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
+	redisTLS, err := redis.TLSConfig(&cfg.Redis)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure job client redis TLS: %w", err)
+	}
 	jobClientCfg := jobs.ClientConfig{
 		RedisAddr:     redisAddr,
 		RedisPassword: cfg.Redis.Password,
 		RedisDB:       cfg.Redis.DB,
+		RedisTLS:      redisTLS,
 	}
 
 	client, err := jobs.NewClient(jobClientCfg, log)
@@ -2212,10 +2217,15 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 // left those queues with no consumer in a default deployment.
 func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
+	redisTLS, err := redis.TLSConfig(&cfg.Redis)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure job worker redis TLS: %w", err)
+	}
 	workerCfg := jobs.WorkerConfig{
 		RedisAddr:     redisAddr,
 		RedisPassword: cfg.Redis.Password,
 		RedisDB:       cfg.Redis.DB,
+		RedisTLS:      redisTLS,
 		Concurrency:   5,
 	}
 
