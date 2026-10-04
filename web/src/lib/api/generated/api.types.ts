@@ -22513,6 +22513,8 @@ export interface paths {
           search?: string
           /** @description Also list unsaved quick scans (ad_hoc) */
           include_ad_hoc?: boolean
+          /** @description One sort key, - for descending: name, created_at, last_run_at, next_run_at, total_runs */
+          sort?: string
           /** @description Page number */
           page?: number
           /** @description Items per page */

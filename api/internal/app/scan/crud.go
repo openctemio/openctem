@@ -560,8 +560,11 @@ type ListScansInput struct {
 	// IncludeAdHoc also lists unsaved quick scans (Scan.AdHoc); by default the
 	// list holds saved configurations only.
 	IncludeAdHoc bool `json:"include_ad_hoc"`
-	Page         int  `json:"page"`
-	PerPage      int  `json:"per_page"`
+	// Sort is one sort key, `field` or `-field` (scan.ListSortFields); an
+	// unknown field is a validation error.
+	Sort    string `json:"sort"`
+	Page    int    `json:"page"`
+	PerPage int    `json:"per_page"`
 }
 
 // ListScans lists scans with filters.
@@ -571,11 +574,17 @@ func (s *Service) ListScans(ctx context.Context, input ListScansInput) (paginati
 		return pagination.Result[*scan.Scan]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
+	sort, err := scan.ParseListSort(input.Sort)
+	if err != nil {
+		return pagination.Result[*scan.Scan]{}, err
+	}
+
 	filter := scan.Filter{
 		TenantID:     &tenantID,
 		Tags:         input.Tags,
 		Search:       input.Search,
 		ExcludeAdHoc: !input.IncludeAdHoc,
+		Sort:         sort,
 	}
 
 	if input.AssetGroupID != "" {
