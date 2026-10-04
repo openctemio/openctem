@@ -155,6 +155,9 @@ func (denyScopeRepo) FindingAssetID(context.Context, shared.ID, shared.ID) (shar
 func (denyScopeRepo) FindingIDsInScope(context.Context, shared.ID, shared.ID, []shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
+func (denyScopeRepo) AssetIDsInTenant(context.Context, shared.ID, []shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
 
 // --- fixture -----------------------------------------------------------------
 

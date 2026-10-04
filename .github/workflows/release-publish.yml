@@ -78,7 +78,7 @@ jobs:
         run: |
           if [ -n "$RELEASE_TOKEN" ]; then echo "has_release_token=true" >> "$GITHUB_OUTPUT"; else echo "has_release_token=false" >> "$GITHUB_OUTPUT"; fi
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
@@ -133,7 +133,7 @@ jobs:
         run: |
           if [ -n "$RELEASE_TOKEN" ]; then echo "has_release_token=true" >> "$GITHUB_OUTPUT"; else echo "has_release_token=false" >> "$GITHUB_OUTPUT"; fi
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: develop
           fetch-depth: 0

@@ -282,6 +282,10 @@ func registerVulnerabilityRoutes(
 
 		// Triage and verification
 		r.PATCH("/{id}/triage", h.TriageFinding, middleware.Require(permission.FindingsTriage))
+		// Mark duplicate (RFC-043 §9): a triage decision that folds the finding
+		// in the body into this one; merging with an approval disposition
+		// also needs findings:approve (checked in the service).
+		r.POST("/{id}/duplicates", h.AddFindingDuplicate, middleware.Require(permission.FindingsTriage))
 		// Verification is a segregation-of-duties control: moving a finding to
 		// resolved must require FindingsVerify (security/scanner), NOT the
 		// broader FindingsWrite that a developer role holds — otherwise a member
