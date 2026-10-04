@@ -16,7 +16,7 @@ func TestStepCommandPayload_NamesTheScanner(t *testing.T) {
 	stepRun := &pipeline.StepRun{ID: shared.NewID()}
 	step := &pipeline.Step{ID: shared.NewID(), StepKey: "subfinder_enum", Tool: "subfinder", Capabilities: []string{"recon", "subdomain"}}
 
-	p, err := stepCommandPayload(run, step, stepRun, pipeline.Settings{})
+	p, err := stepCommandPayload(run, step, stepRun, pipeline.Settings{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestStepCommandPayload_NamesTheScanner(t *testing.T) {
 
 	// A tool-less step names no scanner, and no targets appear from nowhere.
 	toolless := &pipeline.Step{ID: shared.NewID(), StepKey: "merge"}
-	p, err = stepCommandPayload(&pipeline.Run{ID: shared.NewID()}, toolless, stepRun, pipeline.Settings{})
+	p, err = stepCommandPayload(&pipeline.Run{ID: shared.NewID()}, toolless, stepRun, pipeline.Settings{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestStepCommandPayload_SettingsUnderTheKeyTheSensorReads(t *testing.T) {
 	stepRun := &pipeline.StepRun{ID: shared.NewID()}
 	step := &pipeline.Step{ID: shared.NewID(), StepKey: "ports", Tool: "naabu",
 		Config: map[string]any{"ports": "80"}}
-	p, err := stepCommandPayload(run, step, stepRun, pipeline.Settings{})
+	p, err := stepCommandPayload(run, step, stepRun, pipeline.Settings{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestStepCommandPayload_SettingsUnderTheKeyTheSensorReads(t *testing.T) {
 	// Values are sent in the form the sensor's schema takes.
 	step = &pipeline.Step{ID: shared.NewID(), StepKey: "vulns", Tool: "nuclei",
 		Config: map[string]any{"tags": "CVE, exposure", "severity": []any{"high", "critical"}}}
-	p, err = stepCommandPayload(run, step, stepRun, pipeline.Settings{})
+	p, err = stepCommandPayload(run, step, stepRun, pipeline.Settings{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestStepCommandPayload_SettingsUnderTheKeyTheSensorReads(t *testing.T) {
 	// command exists.
 	step = &pipeline.Step{ID: shared.NewID(), StepKey: "ports", Tool: "naabu",
 		Config: map[string]any{"ports": "80 -nmap-cli id"}}
-	if _, err := stepCommandPayload(run, step, stepRun, pipeline.Settings{}); err == nil {
+	if _, err := stepCommandPayload(run, step, stepRun, pipeline.Settings{}, nil); err == nil {
 		t.Fatal("flag injection in ports reached a command payload")
 	}
 }
