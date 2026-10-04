@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -270,6 +271,8 @@ func (h *ScopeRuleHandler) handleServiceError(w http.ResponseWriter, err error) 
 		apierror.NotFound("Scope rule").WriteJSON(w)
 	case shared.IsValidation(err):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, scope.ErrRuleNeedsFullScope):
+		apierror.Forbidden("Scope rules can add any matching asset; only someone who sees every asset can create or change them").WriteJSON(w)
 	default:
 		h.logger.Error("scope rule handler error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)

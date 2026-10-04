@@ -111,6 +111,7 @@ describe('FindingGroupsTable', () => {
       'confirmed',
       'in_progress',
       'fix_applied',
+      'not_observed',
       'resolved',
     ])
 
