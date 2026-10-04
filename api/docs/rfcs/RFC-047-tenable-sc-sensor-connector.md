@@ -473,9 +473,11 @@ into the definition catalog as `namespace: TENABLE` definitions with
   person's `false_positive`, `accepted` or `resolved` is never changed. A
   mitigated row that matches no finding creates nothing.
 - Gate: `INGEST_SOURCE_RESOLVE=off|dry_run|enforce`, default `dry_run`, which
-  logs, counts and writes a "would resolve" audit entry, as
-  `INGEST_COVERAGE_AUTO_RESOLVE` does. Enforce is a tenant opt-in after the
-  dry-run numbers are reviewed.
+  logs and counts (`findings_source_would_resolve` on the ingest output);
+  enforce resolves with `resolution_method = source_mitigated` and counts
+  `findings_source_resolved`. A per-finding audit entry, as
+  `INGEST_COVERAGE_AUTO_RESOLVE` writes, is a follow-up. Enforce is an
+  installation opt-in after the dry-run numbers are reviewed.
 - **Reopen.** A cumulative row seen after a resolution reopens the finding by
   the existing rule (auto-reopen only from command-bound reports of the same
   tool, RFC-040 §5.3).
