@@ -369,16 +369,6 @@ func (s *ExposureService) BulkIngestExposuresReport(ctx context.Context, inputs 
 	return BulkIngestResult{Events: events, Failures: failures}, nil
 }
 
-// GetExposure retrieves an exposure event by ID.
-func (s *ExposureService) GetExposure(ctx context.Context, eventID string) (*exposuredom.ExposureEvent, error) {
-	parsedID, err := shared.IDFromString(eventID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	return s.repo.GetByID(ctx, parsedID)
-}
-
 // GetExposureSecure retrieves an exposure event by tenant and ID (tenant-scoped access control).
 func (s *ExposureService) GetExposureSecure(ctx context.Context, tenantID, eventID string) (*exposuredom.ExposureEvent, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
@@ -741,24 +731,19 @@ func (s *ExposureService) DeleteExposure(ctx context.Context, exposureID, tenant
 		return shared.ErrNotFound
 	}
 
-	event, err := s.repo.GetByID(ctx, parsedID)
-	if err != nil {
-		return err
-	}
-
-	// Verify the event belongs to the caller's tenant. Tenant is REQUIRED — an
-	// empty tenant must never skip this ownership check (that would be an IDOR),
-	// so fail closed on a missing/invalid tenant.
+	// Tenant is REQUIRED: an empty tenant must never skip the ownership check
+	// (that would be an IDOR), so fail closed on a missing/invalid tenant.
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
-	if event.TenantID() != parsedTenantID {
-		return shared.ErrNotFound
+	event, err := s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return err
 	}
 	if err := s.assertExposureScope(ctx, parsedTenantID, event); err != nil {
 		return err
 	}
 
-	return s.repo.Delete(ctx, parsedID)
+	return s.repo.Delete(ctx, parsedTenantID, parsedID)
 }

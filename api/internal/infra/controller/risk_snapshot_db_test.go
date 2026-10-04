@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	_ "github.com/lib/pq"
 
@@ -72,5 +73,62 @@ func TestRiskSnapshot_ActiveExposuresSkipDeletedAssets_DB(t *testing.T) {
 		if got != want {
 			t.Errorf("tenant %s exposures_active = %d, want %d", id, got, want)
 		}
+	}
+}
+
+// A tenant deleted while Reconcile runs is skipped, not a foreign key error
+// that fails every other tenant's snapshot (seen when tests delete tenants
+// concurrently; a live tenant deletion during the nightly run is the same).
+func TestRiskSnapshot_TenantDeletedDuringReconcile_DB(t *testing.T) {
+	url := testdb.URL()
+	if url == "" {
+		t.Skip("DATABASE_URL not set; skipping risk snapshot DB test")
+	}
+	db, err := sql.Open("postgres", url)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		testdb.Skipf(t, "cannot reach DATABASE_URL: %v", err)
+	}
+	doomed := shared.NewID()
+	if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, 'risk snapshot race', $2)`,
+		doomed.String(), "rs-race-"+doomed.String()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, doomed.String())
+	})
+
+	// Delete the tenant in an open transaction, start Reconcile (its snapshot
+	// still sees the tenant), then commit the delete.
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, doomed.String()); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := NewRiskSnapshotController(db, logger.NewNop()).Reconcile(ctx)
+		done <- err
+	}()
+	time.Sleep(300 * time.Millisecond) // let Reconcile reach the locked row
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("Reconcile failed on a tenant deleted mid-run: %v", err)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM risk_snapshots WHERE tenant_id = $1`, doomed.String()).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("a snapshot was written for the deleted tenant")
 	}
 }

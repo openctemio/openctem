@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/pkg/domain/ctemcycle"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -25,7 +27,8 @@ import (
 //   - findings_resolved   COUNT(findings) resolved in window
 //   - p_class_churn        COUNT(priority_class_audit_log) rows in window
 //   - validation_coverage  % of findings resolved in window with ≥1 validation_evidence row
-//   - scope_drift_size     0 — scope-change event emitter deferred (see scope_delta.go)
+//   - scope_drift_size     COUNT(external-surface assets: domain, subdomain, ip_address,
+//     certificate) first seen in window, not deleted, not rejected (RFC-036 §6.9)
 type CTEMCycleMetricsRepository struct {
 	db *DB
 }
@@ -142,10 +145,23 @@ func (r *CTEMCycleMetricsRepository) Compute(
 	}
 	out[ctemcycle.MetricValidationCoverage] = coverage
 
-	// scope_drift_size — deferred: no scope-change event source is wired
-	// yet (ctem_cycle_scope_changes table + emitter). Record 0 so the
-	// metric exists and the series is complete.
-	out[ctemcycle.MetricScopeDriftSize] = 0
+	// scope_drift_size — new external attack surface this cycle (RFC-036
+	// §6.9): external-surface assets first seen in the window. Names a person
+	// marked as not the tenant's are not drift.
+	var drift int64
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		  FROM assets a
+		 WHERE a.tenant_id = $1
+		   AND a.deleted_at IS NULL
+		   AND a.asset_type = ANY($4)
+		   AND a.first_seen >= $2 AND a.first_seen < $3
+		   AND NOT EXISTS (SELECT 1 FROM asset_attributions rj
+		                    WHERE rj.asset_id = a.id AND rj.tenant_id = a.tenant_id AND rj.state = 'rejected')
+	`, tid, start, end, pq.Array(EASMSurfaceTypes)).Scan(&drift); err != nil {
+		return nil, fmt.Errorf("scope_drift_size: %w", err)
+	}
+	out[ctemcycle.MetricScopeDriftSize] = float64(drift)
 
 	// p0_resolved / p1_resolved — findings of that priority class resolved
 	// within the window. Priority class is read as it is now; a finding

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -99,7 +100,7 @@ func TestMigration000301_CVEIDNormalizeLink_DB(t *testing.T) {
 	long := seedUnlinkedCVEFinding(ctx, t, db, tenantID, assetID, "openSUSE-SU-2023:0123-1")
 	blank := seedUnlinkedCVEFinding(ctx, t, db, tenantID, assetID, "  ")
 
-	if _, err := db.ExecContext(ctx, string(up)); err != nil {
+	if _, err := testdb.OpenMigrator(t).ExecContext(ctx, string(up)); err != nil { // DDL: schema owner
 		t.Fatalf("run 000301 up: %v", err)
 	}
 	if got, link := readCVELink(ctx, t, db, lower); got.String != cve || link.String != v.ID().String() {

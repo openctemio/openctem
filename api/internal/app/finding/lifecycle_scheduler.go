@@ -172,7 +172,7 @@ func (s *FindingLifecycleScheduler) expireFeatureBranchFindings() {
 				"count", expired,
 			)
 			// Record metric
-			metrics.FindingsExpired.WithLabelValues(tenantID.String(), "feature_branch").Add(float64(expired))
+			metrics.FindingsExpired.WithLabelValues("feature_branch").Add(float64(expired))
 		}
 
 		totalExpired += expired

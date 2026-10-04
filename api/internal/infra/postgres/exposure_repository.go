@@ -121,14 +121,6 @@ func (r *ExposureRepository) CreateInTx(ctx context.Context, tx *sql.Tx, event *
 	return nil
 }
 
-// GetByID retrieves an exposure event by its ID.
-func (r *ExposureRepository) GetByID(ctx context.Context, id shared.ID) (*exposure.ExposureEvent, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanExposureEvent(row, id)
-}
-
 // GetByTenantAndID retrieves an exposure event by tenant and ID.
 func (r *ExposureRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*exposure.ExposureEvent, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
@@ -157,7 +149,7 @@ func (r *ExposureRepository) Update(ctx context.Context, event *exposure.Exposur
 		SET asset_id = $2, severity = $3, state = $4,
 		    description = $5, details = $6, fingerprint = $7, last_seen_at = $8,
 		    resolved_at = $9, resolved_by = $10, resolution_notes = $11, updated_at = $12
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $13
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -174,6 +166,7 @@ func (r *ExposureRepository) Update(ctx context.Context, event *exposure.Exposur
 		nullIDPtr(event.ResolvedBy()),
 		nullString(event.ResolutionNotes()),
 		event.UpdatedAt(),
+		event.TenantID().String(),
 	)
 
 	if err != nil {
@@ -192,11 +185,11 @@ func (r *ExposureRepository) Update(ctx context.Context, event *exposure.Exposur
 	return nil
 }
 
-// Delete removes an exposure event by its ID.
-func (r *ExposureRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM exposure_events WHERE id = $1`
+// Delete removes an exposure event of the tenant.
+func (r *ExposureRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM exposure_events WHERE tenant_id = $1 AND id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete exposure event: %w", err)
 	}
