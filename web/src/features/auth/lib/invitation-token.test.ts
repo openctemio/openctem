@@ -54,10 +54,13 @@ describe('invitation token', () => {
   })
 
   it('works without storage (private mode)', () => {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    // The instance's own prototype: on Node 25+ the global `Storage` is Node's
+    // Web Storage, not the jsdom class behind window.sessionStorage.
+    const proto = Object.getPrototypeOf(window.sessionStorage) as Storage
+    vi.spyOn(proto, 'setItem').mockImplementation(() => {
       throw new Error('blocked')
     })
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    vi.spyOn(proto, 'getItem').mockImplementation(() => {
       throw new Error('blocked')
     })
     window.history.replaceState(null, '', `/invitations#token=${TOKEN}`)
