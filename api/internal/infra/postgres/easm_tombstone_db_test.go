@@ -8,7 +8,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Rejection tombstones against the real schema (migration 000487): a
+// Rejection tombstones against the real schema (migration 000550): a
 // rejection (single or bulk) records the name with its rules, a changed
 // decision removes it, a deleted asset keeps it, expired rows are ignored and
 // purged, and no tenant sees or changes another tenant's tombstones.
