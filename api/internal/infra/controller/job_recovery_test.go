@@ -64,7 +64,7 @@ func (r *recordingCommandRepo) List(context.Context, command.Filter, pagination.
 	return pagination.Result[*command.Command]{}, nil
 }
 func (r *recordingCommandRepo) Update(context.Context, *command.Command) error { return nil }
-func (r *recordingCommandRepo) Delete(context.Context, shared.ID) error        { return nil }
+func (r *recordingCommandRepo) Delete(context.Context, shared.ID, shared.ID) error { return nil }
 func (r *recordingCommandRepo) FindExpired(context.Context) ([]*command.Command, error) {
 	return nil, nil
 }

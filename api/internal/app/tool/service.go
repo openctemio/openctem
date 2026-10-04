@@ -1345,6 +1345,7 @@ func (s *Service) RecordToolExecution(ctx context.Context, input RecordToolExecu
 
 // CompleteToolExecutionInput represents the input for completing a tool execution.
 type CompleteToolExecutionInput struct {
+	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
 	ExecutionID   string         `json:"execution_id" validate:"required,uuid"`
 	FindingsCount int            `json:"findings_count"`
 	OutputSummary map[string]any `json:"output_summary"`
@@ -1354,12 +1355,16 @@ type CompleteToolExecutionInput struct {
 func (s *Service) CompleteToolExecution(ctx context.Context, input CompleteToolExecutionInput) (*tooldom.ToolExecution, error) {
 	s.logger.Info("completing tool execution", "execution_id", input.ExecutionID)
 
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	executionID, err := shared.IDFromString(input.ExecutionID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid execution id", shared.ErrValidation)
 	}
 
-	execution, err := s.executionRepo.GetByID(ctx, executionID)
+	execution, err := s.executionRepo.GetByIDInTenant(ctx, tenantID, executionID)
 	if err != nil {
 		return nil, err
 	}
@@ -1375,6 +1380,7 @@ func (s *Service) CompleteToolExecution(ctx context.Context, input CompleteToolE
 
 // FailToolExecutionInput represents the input for failing a tool execution.
 type FailToolExecutionInput struct {
+	TenantID     string `json:"tenant_id" validate:"required,uuid"`
 	ExecutionID  string `json:"execution_id" validate:"required,uuid"`
 	ErrorMessage string `json:"error_message" validate:"required,max=2000"`
 }
@@ -1383,12 +1389,16 @@ type FailToolExecutionInput struct {
 func (s *Service) FailToolExecution(ctx context.Context, input FailToolExecutionInput) (*tooldom.ToolExecution, error) {
 	s.logger.Info("failing tool execution", "execution_id", input.ExecutionID)
 
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	executionID, err := shared.IDFromString(input.ExecutionID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid execution id", shared.ErrValidation)
 	}
 
-	execution, err := s.executionRepo.GetByID(ctx, executionID)
+	execution, err := s.executionRepo.GetByIDInTenant(ctx, tenantID, executionID)
 	if err != nil {
 		return nil, err
 	}
@@ -1403,15 +1413,19 @@ func (s *Service) FailToolExecution(ctx context.Context, input FailToolExecution
 }
 
 // TimeoutToolExecution marks a tool execution as timed out.
-func (s *Service) TimeoutToolExecution(ctx context.Context, executionID string) (*tooldom.ToolExecution, error) {
+func (s *Service) TimeoutToolExecution(ctx context.Context, tenantID, executionID string) (*tooldom.ToolExecution, error) {
 	s.logger.Info("timing out tool execution", "execution_id", executionID)
 
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	eid, err := shared.IDFromString(executionID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid execution id", shared.ErrValidation)
 	}
 
-	execution, err := s.executionRepo.GetByID(ctx, eid)
+	execution, err := s.executionRepo.GetByIDInTenant(ctx, tid, eid)
 	if err != nil {
 		return nil, err
 	}

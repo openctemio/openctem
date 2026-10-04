@@ -568,5 +568,5 @@ func (s *Service) DeleteCommand(ctx context.Context, tenantID, commandID string)
 		return err
 	}
 
-	return s.repo.Delete(ctx, cid)
+	return s.repo.Delete(ctx, tid, cid)
 }
