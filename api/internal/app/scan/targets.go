@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -57,7 +58,15 @@ type resolvedTargets struct {
 	Unconfirmed int
 	// Archived counts group members left out because the asset is archived.
 	Archived int
-	Warnings []string
+	// Incompatible counts group members left out because the run's scanner
+	// cannot scan their type (RFC-042 §6.3.8 O6); IncompatibleReason names
+	// them.
+	Incompatible       int
+	IncompatibleReason string
+	// TargetTypes is the stored pair of every dispatched group member
+	// (target name -> "type" or "type/sub_type"), for the workflow step gate.
+	TargetTypes map[string]string
+	Warnings    []string
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
@@ -78,6 +87,14 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	names := make(map[shared.ID]string)
 	var warnings []string
 	archived := 0
+	types := make(map[shared.ID]asset.TypeRef)
+	// A single-scanner run hands every target to one tool: members whose
+	// type it cannot scan are left out here. A workflow gates each step at
+	// its own dispatch (FilterStepTargets).
+	gate, err := s.newScannerTypeGate(ctx, sc.ScannerName)
+	if err != nil {
+		return nil, err
+	}
 
 	add := func(id shared.ID, value string) {
 		v := strings.TrimSpace(value)
@@ -128,10 +145,14 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 				warnings = append(warnings, fmt.Sprintf("asset group %s has no assets that can be scanned; nothing from it is scanned", groupID))
 			}
 			for _, m := range members {
+				if !gate.admits(m.Type) {
+					continue
+				}
 				before := len(candidates)
 				add(m.ID, m.Name)
 				if len(candidates) > before {
 					memberIDs[m.ID] = true
+					types[m.ID] = m.Type
 				}
 				alsoMatch(m.Name, m.MatchValues)
 			}
@@ -172,6 +193,11 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		warnings = append(warnings, fmt.Sprintf("%d archived asset(s) in the group(s) were skipped", archived))
 	}
 	out := &resolvedTargets{Targets: make([]string, 0, len(candidates)), Archived: archived, Warnings: warnings}
+	if n := gate.total(); n > 0 {
+		out.Incompatible = n
+		out.IncompatibleReason = gate.describe()
+		out.Warnings = append(out.Warnings, fmt.Sprintf("%d asset(s) in the group(s) were skipped: %s", n, out.IncompatibleReason))
+	}
 	for _, c := range candidates {
 		if excluded[c.ID] {
 			out.Excluded++
@@ -185,6 +211,12 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 			}
 		}
 		out.Targets = append(out.Targets, names[c.ID])
+		if ref, typed := types[c.ID]; typed && ref.Type != "" {
+			if out.TargetTypes == nil {
+				out.TargetTypes = make(map[string]string)
+			}
+			out.TargetTypes[names[c.ID]] = typeLabel(ref)
+		}
 	}
 	if out.Unconfirmed > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
