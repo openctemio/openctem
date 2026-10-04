@@ -100,7 +100,7 @@ func (m *MockFindingRepoForLifecycle) ListAffectedAssetsByVulnerabilityID(_ cont
 func (m *MockFindingRepoForLifecycle) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.Result[vulnerability.ActiveCVE]{}, nil
 }
-func (m *MockFindingRepoForLifecycle) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+func (m *MockFindingRepoForLifecycle) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 func (m *MockFindingRepoForLifecycle) Count(ctx context.Context, filter vulnerability.FindingFilter) (int64, error) {

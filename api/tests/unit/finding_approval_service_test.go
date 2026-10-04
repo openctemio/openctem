@@ -193,7 +193,7 @@ func (m *mockFindingRepository) ListAffectedAssetsByVulnerabilityID(_ context.Co
 func (m *mockFindingRepository) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.Result[vulnerability.ActiveCVE]{}, nil
 }
-func (m *mockFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+func (m *mockFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 func (m *mockFindingRepository) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
