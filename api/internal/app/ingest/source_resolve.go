@@ -137,7 +137,7 @@ func (p *FindingProcessor) applySourceMitigations(ctx context.Context, tenantID 
 	tool := strings.ToLower(strings.TrimSpace(report.Tool.Name))
 	ids, err := repo.ResolveSourceMitigated(ctx, tenantID, tool, items, mode != SourceResolveEnforce)
 	if err != nil {
-		p.logger.Warn("source-asserted resolve failed", "tenant_id", tenantID.String(), "tool", tool, "error", err)
+		p.logger.Warn("source-asserted resolve failed", "tenant_id", tenantID.String(), "tool", logValue(tool), "error", err)
 		addError(output, "source-asserted resolve failed")
 		return
 	}
@@ -147,7 +147,7 @@ func (p *FindingProcessor) applySourceMitigations(ctx context.Context, tenantID 
 		output.FindingsSourceWouldResolve += len(ids)
 	}
 	if len(ids) > 0 {
-		p.logger.Info("source-asserted resolve", "tenant_id", tenantID.String(), "tool", tool,
+		p.logger.Info("source-asserted resolve", "tenant_id", tenantID.String(), "tool", logValue(tool),
 			"mode", string(mode), "findings", len(ids), "mitigated_rows", len(items))
 	}
 }
