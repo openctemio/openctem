@@ -409,6 +409,11 @@ export const tenantEndpoints = {
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/data-scope`,
 
   /**
+   * Members who would see nothing after switching off "everything" (GET, owner/admin)
+   */
+  dataScopeImpact: () => `/api/v1/organization/settings/data-scope/impact`,
+
+  /**
    * Update API settings
    */
   updateAPISettings: (tenantIdOrSlug: string) =>

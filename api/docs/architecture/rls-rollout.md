@@ -12,6 +12,14 @@
   "shadow" state: policies are reviewable + tested but don't change
   behaviour.
 
+## Prerequisite: a role RLS applies to
+
+Row-level security never applies to a superuser or a `BYPASSRLS` role, and by
+default not to a table's owner either. Enabling it is only meaningful once the
+API connects as `openctem_app` (no superuser, no `BYPASSRLS`, owns nothing) and
+migrations run as `openctem_migrator`. See
+[`../deployment/database-roles.md`](../deployment/database-roles.md) (D-6).
+
 ## Why shadow-first
 
 Turning on RLS without auditing every read path is the fastest way

@@ -65,14 +65,14 @@ auto-retest scheduler logs the refusal and moves on.
 
 Owner decision D9 (research/15 L-06) limits scan targets to what the actor may
 act on. The rule lives in `internal/app/actscope` and uses one helper,
-`datascope.Enforcer.CanActOnAssets`. Today that helper treats an
-administrator as unrestricted. When `has_full_data_access` becomes the Layer 2
-bypass, only the helper changes.
+`datascope.Enforcer.CanActOnAssets`. That helper resolves through
+`ResolveFor`, so an administrator and any holder of a `has_full_data_access`
+role (not through an API key) are unrestricted.
 
 | Actor | Inventory asset (a typed name that is an asset, or a group member) | Free text that is not an asset |
 |---|---|---|
 | Restricted member | only assets in their data scope | refused |
-| Unrestricted (admin, member of a fail-open organization with no scope row, system) | any asset of the tenant | only if it matches an active scope target of the tenant (the allowlist); exclusions still apply |
+| Unrestricted (admin, a `has_full_data_access` role, member of a fail-open organization with no scope row, system) | any asset of the tenant | only if it matches an active scope target of the tenant (the allowlist); exclusions still apply |
 
 **The actor** is the request's caller. With no user in the context (a
 scheduled run, a workflow action) the actor is the scan owner

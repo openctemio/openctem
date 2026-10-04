@@ -296,6 +296,9 @@ func (h *RemediationCampaignHandler) handleError(w http.ResponseWriter, err erro
 		apierror.NotFound("campaign not found").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		// e.g. resolving the campaign's findings without findings:verify.
+		apierror.Forbidden(err.Error()).WriteJSON(w)
 	default:
 		h.logger.Error("remediation campaign error", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)

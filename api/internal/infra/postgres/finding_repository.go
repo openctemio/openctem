@@ -1250,12 +1250,19 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 	// Build dynamic WHERE for outer filters
 	var whereClauses []string
 	args := []any{tenantID.String()}
-	argN := 2
 
 	statusFilter := ""
 	if !filter.IncludeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
 	}
+	// Layer 2: a restricted caller's CVEs, counts and dates come only from
+	// findings on assets in their scope ($2, $3).
+	if filter.DataScope != nil {
+		var cond string
+		cond, args = dataScopeCond("f.asset_id", filter.DataScope, args)
+		statusFilter += " AND " + cond
+	}
+	argN := len(args) + 1
 
 	if len(filter.SeverityIn) > 0 {
 		placeholders := make([]string, 0, len(filter.SeverityIn))
@@ -1411,10 +1418,17 @@ func (r *FindingRepository) GetActiveCVEStats(
 	ctx context.Context,
 	tenantID shared.ID,
 	includeResolved bool,
+	scope *shared.DataScope,
 ) (*vulnerability.ActiveCVEStats, error) {
 	statusFilter := ""
 	if !includeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+	args := []any{tenantID.String()}
+	if scope != nil {
+		var cond string
+		cond, args = dataScopeCond("f.asset_id", scope, args)
+		statusFilter += " AND " + cond
 	}
 
 	query := `
@@ -1439,7 +1453,7 @@ func (r *FindingRepository) GetActiveCVEStats(
 
 	var stats vulnerability.ActiveCVEStats
 	var crit, high, med, low, info int
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&stats.Total, &crit, &high, &med, &low, &info,
 		&stats.KEVCount, &stats.ExploitAvailableCount,
 	); err != nil {
@@ -1840,17 +1854,26 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 
 // UpdateStatusBatch updates the status of multiple findings.
 // Security: Requires tenantID to prevent cross-tenant status modification.
-func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {
+//
+// A move to resolved must name how the finding was resolved (method), so every
+// closure carries its evidence class; any other status clears
+// resolution_method, so a reopened or dispositioned finding never keeps a
+// stale "fixed" claim.
+func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod) error {
 	if len(ids) == 0 {
 		return nil
+	}
+	methodArg, err := resolutionMethodArg(status, method)
+	if err != nil {
+		return err
 	}
 
 	// Security: tenant_id is first parameter for isolation
 	placeholders := make([]string, len(ids))
-	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy)}
+	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg}
 
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+5)
+		placeholders[i] = fmt.Sprintf("$%d", i+6)
 		args = append(args, id.String())
 	}
 
@@ -1865,16 +1888,27 @@ func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shar
 	// Security: Exclude pentest findings — they must be managed via the pentest module
 	query := fmt.Sprintf(`
 		UPDATE findings
-		SET status = $2, resolution = $3, resolved_by = $4%s, updated_at = NOW()
+		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5%s, updated_at = NOW()
 		WHERE tenant_id = $1 AND source != 'pentest' AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
-	_, err := r.db.ExecContext(ctx, query, args...)
-	if err != nil {
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("failed to update findings status: %w", err)
 	}
 
 	return nil
+}
+
+// resolutionMethodArg is the resolution_method value a status write stores:
+// the (required, valid) method for resolved, NULL for everything else.
+func resolutionMethodArg(status vulnerability.FindingStatus, method vulnerability.ResolutionMethod) (any, error) {
+	if status != vulnerability.FindingStatusResolved {
+		return nil, nil
+	}
+	if !method.IsValid() {
+		return nil, fmt.Errorf("%w: resolving a finding needs a valid resolution method, got %q", shared.ErrValidation, method)
+	}
+	return method.String(), nil
 }
 
 // DeleteByScanID removes all findings for a scan.
@@ -2800,45 +2834,9 @@ func (r *FindingRepository) DeleteByAssetID(ctx context.Context, tenantID, asset
 // dataScopeUserID: if non-nil, only count findings for assets accessible to this user.
 // filter: optional asset / source narrowing, applied to every number returned.
 func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, filter vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
-	stats := vulnerability.NewFindingStats()
-
 	// Query for total and counts by severity, status, source in one go
 	// Statuses: new, confirmed, in_progress, resolved, false_positive, accepted, duplicate
-	query := `
-		SELECT
-			COUNT(*) as total,
-			COALESCE(SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END), 0) as critical,
-			COALESCE(SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END), 0) as high,
-			COALESCE(SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END), 0) as medium,
-			COALESCE(SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END), 0) as low,
-			COALESCE(SUM(CASE WHEN severity IN ('info', 'none') THEN 1 ELSE 0 END), 0) as info,
-			COALESCE(SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END), 0) as status_new,
-			COALESCE(SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END), 0) as status_confirmed,
-			COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) as status_in_progress,
-			COALESCE(SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END), 0) as status_resolved,
-			COALESCE(SUM(CASE WHEN status = 'false_positive' THEN 1 ELSE 0 END), 0) as status_false_positive,
-			COALESCE(SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END), 0) as status_accepted,
-			COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0) as status_duplicate,
-			COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as status_draft,
-			COALESCE(SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END), 0) as status_in_review,
-			COALESCE(SUM(CASE WHEN status = 'remediation' THEN 1 ELSE 0 END), 0) as status_remediation,
-			COALESCE(SUM(CASE WHEN status = 'retest' THEN 1 ELSE 0 END), 0) as status_retest,
-			COALESCE(SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END), 0) as status_verified,
-			COALESCE(SUM(CASE WHEN status = 'accepted_risk' THEN 1 ELSE 0 END), 0) as status_accepted_risk,
-			COALESCE(SUM(CASE WHEN source = 'sast' THEN 1 ELSE 0 END), 0) as source_sast,
-			COALESCE(SUM(CASE WHEN source = 'dast' THEN 1 ELSE 0 END), 0) as source_dast,
-			COALESCE(SUM(CASE WHEN source = 'sca' THEN 1 ELSE 0 END), 0) as source_sca,
-			COALESCE(SUM(CASE WHEN source = 'secret' THEN 1 ELSE 0 END), 0) as source_secret,
-			COALESCE(SUM(CASE WHEN source = 'iac' THEN 1 ELSE 0 END), 0) as source_iac,
-			COALESCE(SUM(CASE WHEN source = 'container' THEN 1 ELSE 0 END), 0) as source_container,
-			COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0) as source_manual,
-			COALESCE(SUM(CASE WHEN source = 'pentest' THEN 1 ELSE 0 END), 0) as source_pentest,
-			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external,
-			-- Risk posture, open findings only (status not in a closed category).
-			COALESCE(SUM(CASE WHEN is_in_kev AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as kev_open,
-			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
-			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached
-		FROM findings
+	query := findingStatsSelect + `
 		WHERE tenant_id = $1
 	`
 
@@ -2877,6 +2875,53 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		}
 		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
 	}
+
+	return r.queryFindingStats(ctx, query, args)
+}
+
+// findingStatsSelect is the one aggregate behind every findings stats read:
+// totals by severity, status and source, and the open risk posture. Callers
+// append the WHERE clause.
+const findingStatsSelect = `
+		SELECT
+			COUNT(*) as total,
+			COALESCE(SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END), 0) as critical,
+			COALESCE(SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END), 0) as high,
+			COALESCE(SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END), 0) as medium,
+			COALESCE(SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END), 0) as low,
+			COALESCE(SUM(CASE WHEN severity IN ('info', 'none') THEN 1 ELSE 0 END), 0) as info,
+			COALESCE(SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END), 0) as status_new,
+			COALESCE(SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END), 0) as status_confirmed,
+			COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) as status_in_progress,
+			COALESCE(SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END), 0) as status_resolved,
+			COALESCE(SUM(CASE WHEN status = 'false_positive' THEN 1 ELSE 0 END), 0) as status_false_positive,
+			COALESCE(SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END), 0) as status_accepted,
+			COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0) as status_duplicate,
+			COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as status_draft,
+			COALESCE(SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END), 0) as status_in_review,
+			COALESCE(SUM(CASE WHEN status = 'remediation' THEN 1 ELSE 0 END), 0) as status_remediation,
+			COALESCE(SUM(CASE WHEN status = 'retest' THEN 1 ELSE 0 END), 0) as status_retest,
+			COALESCE(SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END), 0) as status_verified,
+			COALESCE(SUM(CASE WHEN status = 'accepted_risk' THEN 1 ELSE 0 END), 0) as status_accepted_risk,
+			COALESCE(SUM(CASE WHEN source = 'sast' THEN 1 ELSE 0 END), 0) as source_sast,
+			COALESCE(SUM(CASE WHEN source = 'dast' THEN 1 ELSE 0 END), 0) as source_dast,
+			COALESCE(SUM(CASE WHEN source = 'sca' THEN 1 ELSE 0 END), 0) as source_sca,
+			COALESCE(SUM(CASE WHEN source = 'secret' THEN 1 ELSE 0 END), 0) as source_secret,
+			COALESCE(SUM(CASE WHEN source = 'iac' THEN 1 ELSE 0 END), 0) as source_iac,
+			COALESCE(SUM(CASE WHEN source = 'container' THEN 1 ELSE 0 END), 0) as source_container,
+			COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0) as source_manual,
+			COALESCE(SUM(CASE WHEN source = 'pentest' THEN 1 ELSE 0 END), 0) as source_pentest,
+			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external,
+			-- Risk posture, open findings only (status not in a closed category).
+			COALESCE(SUM(CASE WHEN is_in_kev AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as kev_open,
+			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
+			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached
+		FROM findings
+`
+
+// queryFindingStats runs a findingStatsSelect query and maps its row.
+func (r *FindingRepository) queryFindingStats(ctx context.Context, query string, args []any) (*vulnerability.FindingStats, error) {
+	stats := vulnerability.NewFindingStats()
 
 	var (
 		total, critical, high, medium, low, info                     int64

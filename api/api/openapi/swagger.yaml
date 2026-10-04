@@ -8268,8 +8268,41 @@ definitions:
           $ref: '#/definitions/internal_infra_http_handler.DataFlowStepResponse'
         type: array
     type: object
+  internal_infra_http_handler.DataScopeImpactMember:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      role:
+        type: string
+      user_id:
+        type: string
+    type: object
+  internal_infra_http_handler.DataScopeImpactResponse:
+    properties:
+      members:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.DataScopeImpactMember'
+        type: array
+      members_without_group_see:
+        enum:
+        - everything
+        - nothing
+        type: string
+      total_count:
+        description: |-
+          TotalCount is the number of members who would see nothing (exact);
+          Members lists at most 500 of them.
+        type: integer
+    type: object
   internal_infra_http_handler.DataScopePolicyResponse:
     properties:
+      deprecated:
+        description: |-
+          Deprecated is true while the organization still shows everything: that
+          mode is being retired and only the owner can switch it off.
+        type: boolean
       members_without_group_see:
         description: |-
           MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
@@ -22151,47 +22184,164 @@ paths:
       - Configuration
   /findings:
     get:
-      description: Retrieves a paginated list of findings for the current tenant
+      description: |-
+        Retrieves a paginated list of findings for the current tenant.
+        Filters follow the list query contract (RFC-048): every param is ANDed, a comma list is OR
+        within one field, and operators are suffixes (`_not`, `_gte`, `_gt`, `_lte`, `_lt`, `_contains`).
+        A bad value or an unsortable field is 400 INVALID_FILTER. Old names (severities, statuses,
+        exclude_statuses, sources, priority_classes, finding_ids, cve_ids, finding_types, asset_tags,
+        epss_min, search, assigned_to_me) still work and answer with Deprecation and Sunset headers.
       parameters:
-      - description: Filter by asset ID
+      - collectionFormat: csv
+        description: Finding IDs
         in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: Asset IDs
+        in: query
+        items:
+          type: string
         name: asset_id
-        type: string
-      - description: Filter by branch ID
+        type: array
+      - collectionFormat: csv
+        description: Branch IDs the finding occurs on
         in: query
+        items:
+          type: string
         name: branch_id
-        type: string
-      - description: Filter by component ID
+        type: array
+      - collectionFormat: csv
+        description: Component IDs
         in: query
+        items:
+          type: string
         name: component_id
-        type: string
-      - description: Filter by vulnerability ID
+        type: array
+      - collectionFormat: csv
+        description: Vulnerability IDs
         in: query
+        items:
+          type: string
         name: vulnerability_id
-        type: string
-      - description: Filter by severities (comma-separated)
+        type: array
+      - collectionFormat: csv
+        description: Severities
         in: query
-        name: severities
-        type: string
-      - description: Filter by statuses (comma-separated)
+        items:
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: Statuses
         in: query
-        name: statuses
-        type: string
-      - description: Exclude statuses (comma-separated)
+        items:
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: Statuses to exclude
         in: query
-        name: exclude_statuses
-        type: string
-      - description: Filter by sources
+        items:
+          type: string
+        name: status_not
+        type: array
+      - collectionFormat: csv
+        description: Sources
         in: query
-        name: sources
-        type: string
-      - description: 'Filter by SLA status (comma-separated: on_track,warning,overdue,exceeded,not_applicable)'
+        items:
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: SLA statuses
         in: query
+        items:
+          type: string
         name: sla_status
-        type: string
-      - description: Filter by tool name
+        type: array
+      - collectionFormat: csv
+        description: CTEM priority classes (P0..P3)
         in: query
+        items:
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: CVE IDs
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: Finding types
+        in: query
+        items:
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: Tags of the finding's asset (any of)
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - description: In CISA KEV
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: Reachable
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: Minimum EPSS score
+        in: query
+        name: epss_score_gte
+        type: number
+      - collectionFormat: csv
+        description: Tool names
+        in: query
+        items:
+          type: string
         name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: Rule IDs
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: Scan IDs
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - description: File path contains
+        in: query
+        name: file_path
+        type: string
+      - description: 'me: assigned to, owned by or group-assigned to the caller'
+        in: query
+        name: related_to
+        type: string
+      - description: Created at or after (RFC 3339, YYYY-MM-DD or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: Free text over title, description and file path
+        in: query
+        name: q
+        type: string
+      - description: Sort keys, - for descending (default priority_class,severity,-created_at)
+        in: query
+        name: sort
         type: string
       - default: 1
         description: Page number
@@ -22214,9 +22364,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
         "401":
           description: Unauthorized
           schema:
@@ -22999,6 +23147,44 @@ paths:
       summary: Bulk update finding status
       tags:
       - Findings
+  /findings/groups:
+    get:
+      description: |-
+        Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
+        (RFC-048), so a grouped view counts exactly the rows the list shows.
+      parameters:
+      - description: cve_id (default), rule_id, asset_id, owner_id, component_id,
+          severity, source, finding_type
+        in: query
+        name: group_by
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Groups per page
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
+      security:
+      - BearerAuth: []
+      summary: Group findings
+      tags:
+      - Findings
   /findings/remediation-groups:
     get:
       description: Groups the tenant's open findings by the fix that resolves them
@@ -23038,23 +23224,41 @@ paths:
   /findings/stats:
     get:
       description: |-
-        Returns aggregated statistics for findings. Optional asset_id query
-        parameter scopes the stats to a single asset (used by the Findings
-        page when filtered by `?assetId=…` so the severity cards match the
-        filtered table instead of showing global tenant counts).
-        Optional sources query parameter (comma-separated, same values and
-        validation as the list endpoint's sources filter) scopes every
-        number to those sources; the Exposures type pages use it to get
-        their counts in one request instead of walking the list.
+        Aggregated statistics over the findings a filter selects. Takes every filter param of
+        GET /findings (RFC-048) and compiles the same WHERE, so the numbers always match the table
+        (the old asset_id and sources params are part of that filter).
       parameters:
-      - description: Restrict stats to a single asset
+      - collectionFormat: csv
+        description: Asset IDs
         in: query
+        items:
+          type: string
         name: asset_id
-        type: string
-      - description: Restrict stats to these finding sources (comma-separated, max
-          25)
+        type: array
+      - collectionFormat: csv
+        description: Sources
         in: query
-        name: sources
+        items:
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: Severities
+        in: query
+        items:
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: Statuses
+        in: query
+        items:
+          type: string
+        name: status
+        type: array
+      - description: Free text
+        in: query
+        name: q
         type: string
       produces:
       - application/json
@@ -23066,9 +23270,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
         "401":
           description: Unauthorized
           schema:
@@ -25197,6 +25399,37 @@ paths:
       summary: Get unread notification count
       tags:
       - notifications
+  /organization/settings/data-scope/impact:
+    get:
+      description: 'Lists the active members who are not owner or admin, hold no role
+        with full data access, and are in no access group and have no grant: they
+        see everything today only because the organization shows everything to members
+        without a team, and would see nothing after the switch. Owners and admins
+        only.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.DataScopeImpactResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Members who would see nothing after switching to "nothing"
+      tags:
+      - Tenants
   /organization/settings/retest:
     get:
       description: The tenant's auto-retest settings (RFC-039). auto_enabled is false
@@ -31882,9 +32115,10 @@ paths:
     patch:
       consumes:
       - application/json
-      description: 'Sets what members who are in no access group see: everything (all
-        assets and findings) or nothing. Owners and admins always see everything.
-        The change is audited.'
+      description: 'Switches what members who are in no access group see to nothing.
+        "everything" is being retired: an organization that sees nothing cannot switch
+        back (400). Owners only; owners and admins always see everything. The change
+        is audited.'
       parameters:
       - description: Tenant ID or slug
         in: path
