@@ -220,10 +220,11 @@ func newRelTestLogger() *logger.Logger {
 // createRelTestAsset creates a test asset and adds it to the mock repo.
 func createRelTestAsset(t *testing.T, repo *MockAssetRepository, tenantID shared.ID, name string) *asset.Asset {
 	t.Helper()
-	a, err := asset.NewAssetWithTenant(tenantID, name, asset.AssetTypeWebsite, asset.CriticalityMedium)
+	a, err := asset.NewAssetWithSubType(name, asset.AssetTypeApplication, "website", asset.CriticalityMedium)
 	if err != nil {
 		t.Fatalf("failed to create test asset %q: %v", name, err)
 	}
+	a.SetTenantID(tenantID)
 	repo.assets[a.ID().String()] = a
 	return a
 }

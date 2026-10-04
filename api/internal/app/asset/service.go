@@ -314,6 +314,7 @@ type CreateAssetInput struct {
 	TenantID    string         `validate:"omitempty,uuid"`
 	Name        string         `validate:"required,min=1,max=255"`
 	Type        string         `validate:"required,asset_type"`
+	SubType     string         `validate:"omitempty,max=50"` // kind from the type's closed list, or a legacy input
 	Criticality string         `validate:"required,criticality"`
 	Scope       string         `validate:"omitempty,scope"`
 	Exposure    string         `validate:"omitempty,exposure"`
@@ -371,10 +372,20 @@ func (s *AssetService) createAsset(ctx context.Context, input CreateAssetInput) 
 
 	s.logger.Info("creating asset", "name", input.Name)
 
-	assetType, err := assetdom.ParseAssetType(input.Type)
-	if err != nil {
-		return nil, false, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+	// Resolve the input type (core type, alias or legacy sub-type) to the
+	// stored (type, sub_type): aliases are never stored (RFC-042 §6.3.8).
+	// A sub_type in the request wins over one promoted from properties.
+	promotedSubType, _ := input.Properties["__promoted_sub_type"].(string)
+	delete(input.Properties, "__promoted_sub_type")
+	subTypeIn := input.SubType
+	if subTypeIn == "" {
+		subTypeIn = promotedSubType
 	}
+	resolved, err := assetdom.ResolveInputType(input.Type, subTypeIn)
+	if err != nil {
+		return nil, false, nil, err
+	}
+	assetType, subType := resolved.Type, resolved.SubType
 
 	criticality, err := assetdom.ParseCriticality(input.Criticality)
 	if err != nil {
@@ -393,8 +404,7 @@ func (s *AssetService) createAsset(ctx context.Context, input CreateAssetInput) 
 	// Normalize name before lookup so it matches existing normalized assets
 	// (RFC-001). The sub-type is part of the identity key (RFC-043 section 10):
 	// normalize, look up and create with the same (type, sub-type).
-	promotedSubType, _ := input.Properties["__promoted_sub_type"].(string)
-	normalizedName := assetdom.NormalizeName(input.Name, assetType, promotedSubType)
+	normalizedName := assetdom.NormalizeName(input.Name, assetType, subType)
 	if normalizedName != "" {
 		input.Name = normalizedName
 	}
@@ -406,11 +416,11 @@ func (s *AssetService) createAsset(ctx context.Context, input CreateAssetInput) 
 		return nil, false, nil, err
 	}
 	if existing != nil {
-		merged, changed, err := s.mergeAndUpdateExisting(ctx, existing, input, tenantID)
+		merged, changed, err := s.mergeAndUpdateExisting(ctx, existing, input, resolved, tenantID)
 		return merged, true, changed, err
 	}
 
-	a, err := assetdom.NewAssetWithSubType(input.Name, assetType, promotedSubType, criticality)
+	a, err := assetdom.NewAssetWithSubType(input.Name, assetType, subType, criticality)
 	if err != nil {
 		return nil, false, nil, err
 	}
@@ -445,15 +455,12 @@ func (s *AssetService) createAsset(ctx context.Context, input CreateAssetInput) 
 		a.AddTag(tag)
 	}
 
-	// Set properties (already cleaned by promoteKnownProperties)
+	// Set properties (already cleaned by promoteKnownProperties), then what
+	// the input type implied (provider, attributes) where nothing is set.
 	if len(input.Properties) > 0 {
-		// Extract promoted sub_type before setting properties
-		if st, ok := input.Properties["__promoted_sub_type"].(string); ok && st != "" {
-			a.SetSubType(st)
-			delete(input.Properties, "__promoted_sub_type")
-		}
 		a.SetProperties(input.Properties)
 	}
+	a.ApplyResolvedType(resolved)
 
 	// Owner reference from an external source. The matching tenant member
 	// becomes the primary owner once the asset is stored (syncOwnerRefOwner).
@@ -541,14 +548,13 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 		input.Properties["__promoted_sub_type"] = st
 	}
 
-	// type: if properties contains a type alias (e.g., "firewall"), resolve it
-	if propType := extractStr("type"); propType != "" {
-		if resolved, subType := assetdom.ResolveTypeAlias(assetdom.AssetType(propType)); resolved != "" {
-			// Override input.Type with resolved core type
-			input.Type = string(resolved)
-			if subType != "" {
-				input.Properties["__promoted_sub_type"] = subType
-			}
+	// type: a registry alias in properties (e.g. "firewall") names the type.
+	// Any other value (a vendor's own type such as "lan") stays a property:
+	// it used to overwrite input.Type and fail the request.
+	if propType, ok := input.Properties["type"].(string); ok && propType != "" {
+		if _, isAlias := assetdom.TypeAliases[assetdom.AssetType(strings.ToLower(strings.TrimSpace(propType)))]; isAlias {
+			delete(input.Properties, "type")
+			input.Type = propType
 		}
 	}
 
@@ -887,9 +893,21 @@ func (s *AssetService) mergeAndUpdateExisting(
 	ctx context.Context,
 	existing *assetdom.Asset,
 	input CreateAssetInput,
+	resolved assetdom.ResolvedType,
 	tenantID shared.ID,
 ) (*assetdom.Asset, []string, error) {
 	var changed []string
+
+	// Fill the sub-type and provider the input implied when the existing
+	// asset is of the same type and has none; never change its type.
+	subTypeBefore, providerBefore := existing.SubType(), existing.Provider()
+	existing.ApplyResolvedType(resolved)
+	if existing.SubType() != subTypeBefore {
+		changed = append(changed, "sub_type")
+	}
+	if existing.Provider() != providerBefore {
+		changed = append(changed, "provider")
+	}
 
 	// Hostname correlation found an IP-named asset: the hostname is the more
 	// descriptive name.
@@ -1029,6 +1047,9 @@ type UpdateAssetInput struct {
 	Description *string  `validate:"omitempty,max=1000"`
 	OwnerRef    *string  `validate:"omitempty,max=500"` // Free-text owner reference
 	Tags        []string `validate:"omitempty,max=20,dive,max=50"`
+	// SubType changes the kind within the asset's type (closed list, or a
+	// legacy input of the same type). "" clears it. Nil = leave unchanged.
+	SubType *string `validate:"omitempty,max=50"`
 	// Properties patches per-type metadata. Merged (not replaced) into the
 	// asset's existing properties so keys like is_crown_jewel are preserved.
 	Properties map[string]any
@@ -1115,6 +1136,13 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		a.SetOwnerRef(*input.OwnerRef)
 	}
 
+	oldSubType := a.SubType()
+	if input.SubType != nil {
+		if err := applySubTypeChange(a, *input.SubType); err != nil {
+			return nil, err
+		}
+	}
+
 	// CIA impact rating (CTEM Scoping critical-asset register).
 	if input.ImpactConfidentiality != nil {
 		rating, err := assetdom.ParseImpactRating(*input.ImpactConfidentiality)
@@ -1192,6 +1220,10 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		s.recordStateChange(ctx, assetdom.RecordFieldChange(parsedTenantID, parsedID,
 			assetdom.StateChangeRenamed, "name", oldName, a.Name(), assetdom.ChangeSourceManual, nil))
 	}
+	if a.SubType() != oldSubType {
+		s.recordStateChange(ctx, assetdom.RecordFieldChange(parsedTenantID, parsedID,
+			assetdom.StateChangeReclassified, "sub_type", oldSubType, a.SubType(), assetdom.ChangeSourceManual, nil))
+	}
 
 	// A manual exposure change (e.g. an operator marking an asset public) is
 	// part of "what changed" in the attack surface, same as a scan-driven one.
@@ -1228,6 +1260,29 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 
 	s.logger.Info("asset updated", "id", a.ID().String())
 	return a, nil
+}
+
+// applySubTypeChange sets a requested sub-type on an existing asset. The
+// value is resolved against the asset's own type: a legacy input of that
+// type is mapped, anything that would change the type is refused (the type
+// of an existing asset is not editable).
+func applySubTypeChange(a *assetdom.Asset, requested string) error {
+	if strings.TrimSpace(requested) == "" {
+		return a.ChangeSubType("")
+	}
+	resolved, err := assetdom.ResolveInputType(string(a.Type()), requested)
+	if err != nil {
+		return err
+	}
+	if resolved.Type != a.Type() {
+		return fmt.Errorf("%w: sub_type %q belongs to asset type %q, not %q; the type of an asset cannot be changed",
+			shared.ErrValidation, requested, resolved.Type, a.Type())
+	}
+	if err := a.ChangeSubType(resolved.SubType); err != nil {
+		return err
+	}
+	a.ApplyResolvedType(resolved)
+	return nil
 }
 
 // SaveAsset persists changes to an asset entity directly.

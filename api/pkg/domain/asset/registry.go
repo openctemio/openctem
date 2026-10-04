@@ -273,3 +273,14 @@ func TypesInCategory(c Category) []AssetType {
 	}
 	return types
 }
+
+// TypeInput is what an accepted input is stored as (RFC-042 §6.3.8): a core
+// type, a sub-type from its closed list ("" for none), a provider and
+// attribute values. Provider and Attributes apply only where the asset has
+// no value yet.
+type TypeInput struct {
+	Type       AssetType
+	SubType    string
+	Provider   Provider
+	Attributes map[string]string
+}

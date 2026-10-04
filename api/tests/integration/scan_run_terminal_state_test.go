@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	_ "github.com/lib/pq"
@@ -10,6 +11,7 @@ import (
 	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -134,6 +136,58 @@ func TestScanRun_CancelStopsTheDispatchedCommand(t *testing.T) {
 	if got.lastStatus.String != "canceled" || got.total != 1 || got.succeeded != 0 || got.failed != 0 {
 		t.Errorf("scan summary after cancel = {last=%q total=%d ok=%d failed=%d}, want {canceled 1 0 0}",
 			got.lastStatus.String, got.total, got.succeeded, got.failed)
+	}
+}
+
+// Canceling twice is the same as canceling once: the second call succeeds,
+// the scan counts the run once, and the run's open step ends canceled. A user
+// of another tenant cannot cancel it: not found, nothing changes.
+func TestScanRun_CancelIsIdempotentTenantScopedAndClosesSteps(t *testing.T) {
+	db := openLifecycleDB(t)
+	ctx := context.Background()
+	svc := newTriggerService(db)
+	pipeSvc := newRecordingPipelineService(db)
+
+	tenantID := seedLifecycleTenant(ctx, t, db)
+	scanID := seedLifecycleScan(ctx, t, db, tenantID)
+	stranger := seedLifecycleTenant(ctx, t, db)
+
+	run, err := svc.TriggerScan(ctx, scansvc.TriggerScanExecInput{TenantID: tenantID.String(), ScanID: scanID.String()})
+	if err != nil {
+		t.Fatalf("TriggerScan: %v", err)
+	}
+
+	err = pipeSvc.CancelRun(ctx, stranger.String(), run.ID.String())
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant CancelRun err = %v, want not found", err)
+	}
+	if status, _, _ := runState(ctx, t, db, run.ID.String()); status == "canceled" {
+		t.Fatalf("another tenant canceled the run")
+	}
+	if got := commandStatusForRun(ctx, t, db, run.ID.String()); got == "canceled" {
+		t.Fatalf("another tenant canceled the command")
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := pipeSvc.CancelRun(ctx, tenantID.String(), run.ID.String()); err != nil {
+			t.Fatalf("CancelRun #%d: %v", i+1, err)
+		}
+	}
+	if got := commandStatusForRun(ctx, t, db, run.ID.String()); got != "canceled" {
+		t.Errorf("command = %q, want canceled", got)
+	}
+	var openSteps int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM step_runs
+		WHERE pipeline_run_id = $1 AND status NOT IN ('canceled', 'completed', 'partial', 'failed', 'skipped', 'timeout')`,
+		run.ID.String()).Scan(&openSteps); err != nil {
+		t.Fatal(err)
+	}
+	if openSteps != 0 {
+		t.Errorf("%d step run(s) still open after the cancel, want 0", openSteps)
+	}
+	if got := readScanSummary(ctx, t, db, scanID.String()); got.total != 1 || got.lastStatus.String != "canceled" {
+		t.Errorf("scan summary = {last=%q total=%d}, want {canceled 1}: a second cancel must not count again",
+			got.lastStatus.String, got.total)
 	}
 }
 
