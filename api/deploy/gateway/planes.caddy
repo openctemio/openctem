@@ -1,0 +1,69 @@
+# Code generated from api/internal/infra/http/routes/plane (plane.go, edge.go).
+# DO NOT EDIT. Regenerate with:
+#   cd api && UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/ -run TestGatewayPlanesFile
+# CI fails when this file and the plane table disagree (RFC-041,
+# api/docs/rfcs/RFC-041-api-path-design.md).
+#
+# The gateway routes by plane, from the same table the route-style lint checks
+# every route against. Each plane the gateway sends straight to the API has its
+# own matcher, so a per-plane policy (body limit, rate limit, IP allowlist) is
+# one block. Browser planes (user, self, auth, admin) are not listed: they fall
+# through to the Caddyfile's credential rules and the web app.
+
+(planes) {
+	# Never public.
+	#   /ready: readiness detail
+	#   /metrics: Prometheus metrics
+	@edge_internal path /ready /ready/* /metrics /metrics/*
+	handle @edge_internal {
+		respond 404
+	}
+
+	# Plane auth: straight to the API.
+	#   /api/v1/auth/saml: SAML metadata, login redirect and the IdP's form POST to the ACS
+	#   /api/v1/auth/backchannel-logout: OIDC back-channel logout, called by the IdP
+	@plane_auth path /api/v1/auth/saml /api/v1/auth/saml/* /api/v1/auth/backchannel-logout /api/v1/auth/backchannel-logout/*
+	handle @plane_auth {
+		import to_api
+	}
+
+	# Plane inbound: straight to the API.
+	#   /api/v1/webhooks/incoming: deprecated, successor /hooks
+	@plane_inbound path /hooks /hooks/* /api/v1/webhooks/incoming /api/v1/webhooks/incoming/*
+	handle @plane_inbound {
+		import to_api
+	}
+
+	# Plane mcp: straight to the API.
+	@plane_mcp path /api/v1/mcp /api/v1/mcp/*
+	handle @plane_mcp {
+		import to_api
+	}
+
+	# Plane ops: straight to the API.
+	@plane_ops path /health /health/* /openapi.yaml /openapi.yaml/* /docs /docs/*
+	handle @plane_ops {
+		import to_api
+	}
+
+	# Plane scim: straight to the API.
+	@plane_scim path /scim/v2 /scim/v2/*
+	handle @plane_scim {
+		import to_api
+	}
+
+	# Plane self: straight to the API.
+	#   /api/v1/ws: browser WebSocket (same origin, session cookie); the web BFF does not proxy upgrades
+	@plane_self path /api/v1/ws /api/v1/ws/*
+	handle @plane_self {
+		import to_api
+	}
+
+	# Plane sensor: straight to the API.
+	#   /api/v1/agent: deprecated, successor /api/v2/sensor
+	#   /api/v1/validation/evidence: deprecated, successor /api/v2/sensor/evidence
+	@plane_sensor path /api/v2/sensor /api/v2/sensor/* /api/v1/agent /api/v1/agent/* /api/v1/validation/evidence /api/v1/validation/evidence/*
+	handle @plane_sensor {
+		import to_api
+	}
+}

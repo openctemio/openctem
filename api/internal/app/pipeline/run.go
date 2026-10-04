@@ -1139,13 +1139,26 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 	return s.runRepo.List(ctx, filter, page)
 }
 
-// CancelRun cancels a pipeline run and all its in-flight commands.
+// CancelRun cancels a pipeline run, its open step runs and its open commands
+// (RFC-046 §8, D12). The sensors holding those commands are told to stop on
+// their next heartbeat (cancel_command_ids); an offline sensor is told when
+// it comes back and reports what it runs, and its canceled commands are never
+// re-queued by the expired-lease sweep.
+//
+// Idempotent: canceling a run that is already canceled succeeds and closes
+// anything a previous attempt left open, without recording the run again.
+// Canceling a run that finished otherwise is INVALID_STATE. A run of another
+// tenant is not found.
 func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	run, err := s.GetRun(ctx, tenantID, runID)
 	if err != nil {
 		return err
 	}
 
+	if run.Status == pipeline.RunStatusCanceled {
+		s.closeCanceledRun(ctx, run)
+		return nil
+	}
 	if run.IsComplete() {
 		return shared.NewDomainError("INVALID_STATE", "pipeline run is already complete", shared.ErrValidation)
 	}
@@ -1156,6 +1169,11 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	// on the scan a second time).
 	err = s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusCanceled, "Canceled by user")
 	if errors.Is(err, pipeline.ErrRunAlreadyFinished) {
+		// Another cancel won the race: same outcome, nothing more to record.
+		if cur, gerr := s.GetRun(ctx, tenantID, runID); gerr == nil && cur.Status == pipeline.RunStatusCanceled {
+			s.closeCanceledRun(ctx, cur)
+			return nil
+		}
 		return shared.NewDomainError("INVALID_STATE", "pipeline run is already complete", shared.ErrValidation)
 	}
 	if err != nil {
@@ -1166,25 +1184,48 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), string(pipeline.RunStatusCanceled)).Inc()
 	s.recordScanRun(ctx, run, string(pipeline.RunStatusCanceled))
 
-	// Cancel all in-flight commands belonging to this run so sensors stop work.
-	if s.commandRepo != nil {
-		canceled, cancelErr := s.commandRepo.CancelByPipelineRunID(ctx, run.TenantID, run.ID)
-		if cancelErr != nil {
-			// Non-fatal: run is already canceled, commands will eventually be reaped by JobRecoveryController
-			s.logger.Warn("failed to cancel commands for pipeline run",
-				"run_id", runID,
-				"error", cancelErr)
-		} else if canceled > 0 {
-			s.logger.Info("canceled in-flight commands", "run_id", runID, "count", canceled)
-		}
-	}
+	closure := s.closeCanceledRun(ctx, run)
 
-	// Audit log: run canceled
-	s.logAudit(ctx, AuditContext{TenantID: tenantID},
-		NewSuccessEvent(audit.ActionPipelineRunCanceled, audit.ResourceTypePipelineRun, runID).
-			WithMessage("Pipeline run canceled"))
+	event := NewSuccessEvent(audit.ActionPipelineRunCanceled, audit.ResourceTypePipelineRun, runID).
+		WithMessage("Pipeline run canceled").
+		WithMetadata("canceled_steps", closure.Steps).
+		WithMetadata("canceled_commands", closure.Commands).
+		WithMetadata("sensors_told_to_stop", len(closure.Sensors))
+	if run.ScanID != nil {
+		event = event.WithMetadata("scan_id", run.ScanID.String())
+	}
+	s.logAudit(ctx, AuditContext{TenantID: tenantID}, event)
 
 	return nil
+}
+
+// closeCanceledRun ends the open step runs and commands of a canceled run.
+// Best effort: the run is already canceled, and a failure here is retried by
+// canceling again (idempotent) or settled by the timeout reaper.
+func (s *Service) closeCanceledRun(ctx context.Context, run *pipeline.Run) pipeline.CanceledRunClosure {
+	if closer, ok := s.runRepo.(pipeline.CanceledRunCloser); ok {
+		closure, err := closer.CloseCanceledRun(ctx, run.TenantID, run.ID)
+		if err != nil {
+			s.logger.Warn("failed to close the canceled run's steps and commands",
+				"run_id", run.ID.String(), "error", err)
+			return pipeline.CanceledRunClosure{}
+		}
+		if closure.Steps > 0 || closure.Commands > 0 {
+			s.logger.Info("closed canceled run", "run_id", run.ID.String(),
+				"steps", closure.Steps, "commands", closure.Commands, "sensors", len(closure.Sensors))
+		}
+		return closure
+	}
+	// Repositories without the closer: commands only, as before.
+	if s.commandRepo == nil {
+		return pipeline.CanceledRunClosure{}
+	}
+	n, err := s.commandRepo.CancelByPipelineRunID(ctx, run.TenantID, run.ID)
+	if err != nil {
+		s.logger.Warn("failed to cancel commands for pipeline run", "run_id", run.ID.String(), "error", err)
+		return pipeline.CanceledRunClosure{}
+	}
+	return pipeline.CanceledRunClosure{Commands: n}
 }
 
 // CompleteStepRun marks a step run as completed (called by sensor).

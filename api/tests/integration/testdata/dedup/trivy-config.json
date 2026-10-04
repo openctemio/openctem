@@ -1,0 +1,26 @@
+{
+  "tool": "trivy",
+  "asset": {"type": "repository", "value": "github.com/acme/terraform"},
+  "cases": [
+    {
+      "name": "message and line change, same resource and policy",
+      "expect": "same",
+      "before": {"type": "misconfiguration", "title": "S3 bucket without encryption", "severity": "high", "rule_id": "AVD-AWS-0088",
+        "location": {"path": "main.tf", "start_line": 10},
+        "misconfiguration": {"policy_id": "AVD-AWS-0088", "resource_type": "aws_s3_bucket", "resource_name": "logs"}},
+      "after": {"type": "misconfiguration", "title": "Bucket does not encrypt data", "severity": "high", "rule_id": "AVD-AWS-0088",
+        "location": {"path": "./main.tf", "start_line": 25},
+        "misconfiguration": {"policy_id": "AVD-AWS-0088", "resource_type": "aws_s3_bucket", "resource_name": "logs"}}
+    },
+    {
+      "name": "another resource",
+      "expect": "different",
+      "before": {"type": "misconfiguration", "title": "S3", "severity": "high", "rule_id": "AVD-AWS-0088",
+        "location": {"path": "main.tf"},
+        "misconfiguration": {"policy_id": "AVD-AWS-0088", "resource_type": "aws_s3_bucket", "resource_name": "logs"}},
+      "after": {"type": "misconfiguration", "title": "S3", "severity": "high", "rule_id": "AVD-AWS-0088",
+        "location": {"path": "main.tf"},
+        "misconfiguration": {"policy_id": "AVD-AWS-0088", "resource_type": "aws_s3_bucket", "resource_name": "assets"}}
+    }
+  ]
+}

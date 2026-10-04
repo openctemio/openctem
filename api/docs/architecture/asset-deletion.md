@@ -37,8 +37,9 @@ click.
      business units and services, compensating controls, identity
      identifiers, scan coverage state, its discovered services and
      components, pending dedup reviews, and its children's `parent_id`;
-   - its history stays: state history, exposure events (not listed any
-     more), attribution evidence.
+   - its history stays: state history, exposure events (not listed and not
+     counted as active any more: the exposure list and stats, the EASM
+     overview and the daily risk snapshot skip them), attribution evidence.
 3. An unknown or already deleted asset, or one of another tenant: 404.
 
 **Every read excludes a deleted asset**: lists, counts, facets, stats,
@@ -47,8 +48,12 @@ and coverage selection, lifecycle, EASM, dashboards and metrics. Reads of
 `assets` carry `deleted_at IS NULL`; reads that reach assets through a
 membership table (groups, owners, relationships, business links) are covered
 by the detach in step 2, and reads that reach them through findings are
-covered because a deleted asset has none. `asset_soft_delete_db_test.go`
-checks the repository reads.
+covered because a deleted asset has none. Rows that point at an asset and
+are read on their own (exposure events) carry `notOfDeletedAssetSQL`.
+`asset_soft_delete_db_test.go` and `asset_soft_delete_reads_db_test.go` check
+the repository reads: lookups, lists, counts, search, graph nodes, tag facets,
+ingest correlation, groups, scope rules, bulk status, exposures and EASM, with
+another tenant's reads unaffected.
 
 **The purge.** `AssetPurgeController` hard-deletes, daily, soft-deleted
 assets older than 30 days that still have no findings (a finding that raced

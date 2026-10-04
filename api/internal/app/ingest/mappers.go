@@ -15,6 +15,59 @@ import (
 // Asset Type Mapping
 // =============================================================================
 
+// ctisResolvedType is a CTIS asset's type resolved to what is stored, plus
+// the (type, sub_type) its name is normalized with.
+type ctisResolvedType struct {
+	stored asset.ResolvedType
+	// normType/normSubType key the name normalization: the stored type and
+	// the sub-type the CTIS type itself implies (an alias's sub-type), as
+	// ingest has always normalized, so lookups keep finding existing names.
+	// A legacy sub-type that moves the asset to another type keys by the
+	// new pair.
+	normType    asset.AssetType
+	normSubType string
+}
+
+// resolveCTISAssetType resolves a CTIS asset's type and properties.sub_type
+// to the stored pair (RFC-042 §6.3.8). Machine input is resolved leniently:
+// an unknown sub-type is kept in x_native_sub_type, never refused, and an
+// unknown type is `unclassified`.
+func resolveCTISAssetType(ca *ctis.Asset) ctisResolvedType {
+	raw := mapCTISAssetType(ca.Type)
+	sub, _ := ca.Properties["sub_type"].(string)
+	if ca.Type == ctis.AssetTypeKubernetes && strings.TrimSpace(sub) == "" {
+		sub = kubernetesSubType(ca.Properties)
+	}
+	typeOnly, err := asset.ResolveInputTypeLenient(string(raw), "")
+	if err != nil {
+		typeOnly = asset.ResolvedType{Type: asset.AssetTypeUnclassified}
+	}
+	full, err := asset.ResolveInputTypeLenient(string(raw), sub)
+	if err != nil {
+		full = typeOnly
+	}
+	out := ctisResolvedType{stored: full, normType: full.Type, normSubType: typeOnly.SubType}
+	if full.Type != typeOnly.Type {
+		out.normSubType = full.SubType
+	}
+	return out
+}
+
+// kubernetesSubType reads the kind of a CTIS `kubernetes` asset from
+// properties.kind: cluster, namespace, otherwise a workload. No kind keeps
+// the old reading (a cluster).
+func kubernetesSubType(props map[string]any) string {
+	kind, _ := props["kind"].(string)
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "", "cluster":
+		return "cluster"
+	case "namespace":
+		return "namespace"
+	default:
+		return "workload"
+	}
+}
+
 // mapCTISAssetType maps CTIS asset type to domain asset type.
 //
 //nolint:cyclop // Type mapping switch requires a case per asset type
@@ -68,7 +121,9 @@ func mapCTISAssetType(ctisType ctis.AssetType) asset.AssetType {
 	case ctis.AssetTypeContainer:
 		return asset.AssetTypeContainer
 	case ctis.AssetTypeKubernetes:
-		return asset.AssetTypeKubernetesCluster
+		// The kind comes from properties.kind (resolveCTISAssetType); it
+		// used to be read as a cluster whatever it was.
+		return asset.AssetTypeKubernetes
 	case ctis.AssetTypeKubernetesCluster:
 		return asset.AssetTypeKubernetesCluster
 	case ctis.AssetTypeKubernetesNamespace:

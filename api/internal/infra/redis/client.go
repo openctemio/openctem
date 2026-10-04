@@ -47,7 +47,7 @@ func New(cfg *config.RedisConfig, log *logger.Logger) (*Client, error) {
 
 	// Configure TLS if enabled
 	if cfg.TLSEnabled {
-		tlsConfig, err := buildRedisTLSConfig(cfg)
+		tlsConfig, err := TLSConfig(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to configure redis TLS: %w", err)
 		}
@@ -292,9 +292,15 @@ func (c *Client) Logger() *logger.Logger {
 	return c.logger
 }
 
-// buildRedisTLSConfig creates a TLS configuration for the Redis connection.
-// Supports optional client certificates (mTLS) and custom CA certificates.
-func buildRedisTLSConfig(cfg *config.RedisConfig) (*tls.Config, error) {
+// TLSConfig returns the TLS configuration for a Redis connection, or nil when
+// REDIS_TLS_ENABLED is off. Every Redis client must use it (the cache/session
+// client here and the asynq job client and worker), so none of them falls back
+// to plaintext against a TLS-only Redis. Supports optional client certificates
+// (mTLS) and custom CA certificates.
+func TLSConfig(cfg *config.RedisConfig) (*tls.Config, error) {
+	if !cfg.TLSEnabled {
+		return nil, nil
+	}
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: cfg.TLSSkipVerify, //nolint:gosec // configurable for dev environments
 		MinVersion:         tls.VersionTLS12,
