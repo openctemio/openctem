@@ -307,19 +307,35 @@ Every data-driven `href` and `src` goes through `src/lib/safe-href.ts`:
 
 ## 5. WebSocket & SSE Security
 
-### 5.1 Same-Origin WebSocket
+### 5.1 Same-origin WebSocket, session cookie
 
-For same-origin WebSocket connections, httpOnly cookies are sent automatically during the upgrade handshake. No additional token is needed.
+The browser opens the socket on the UI's own origin
+(`wss://<ui-host>/api/v1/ws`, `src/context/websocket-provider.tsx`) and sends
+the httpOnly access-token cookie with the upgrade. No credential is put in the
+URL and there is no ticket or token endpoint (the former `/auth/ws-token` and
+its JWT fallback were removed, RFC-045). The API:
 
-### 5.2 Cross-Origin WebSocket
+- authenticates the upgrade through the same tenant gates as every tenant
+  route (revoked session, SSO enforcement, organization IP allowlist, active
+  membership);
+- requires an Origin from `CORS_ALLOWED_ORIGINS` (exact match), and refuses a
+  cookie-authenticated upgrade with no Origin (cross-site WebSocket hijacking);
+- binds the socket to the session: it closes it with code `4401` when the
+  access token expires (15 minutes at most), when the session is signed out or
+  revoked, and when the user's membership or role changes.
 
-For cross-origin connections (`src/context/websocket-provider.tsx`):
+The client reconnects with full-jitter backoff. After a `4401` it reconnects
+and, if that is refused, refreshes the session once under a cross-tab lock
+(`src/lib/auth-refresh-lock.ts`: the refresh token rotates and its reuse
+revokes the session family), then reconnects. It reconnects when the active
+organization changes.
 
-1. Client fetches token from `/api/ws-token` (authenticated endpoint, reads httpOnly cookie).
-2. Token appended as query parameter: `wss://api.example.com/ws?token=<jwt>`.
-3. Protocol auto-selects `wss:` for HTTPS origins, `ws:` for HTTP.
+### 5.2 Other hosts
 
-**Trade-off**: JWT appears in URL for cross-origin WebSocket (common pattern due to WebSocket API limitations). The `/api/ws-token` endpoint only returns the token to the same browser session that owns the httpOnly cookie.
+Serving the WebSocket from another host (`NEXT_PUBLIC_WS_BASE_URL`) needs the
+session cookie on that host (same site and a cookie `Domain`). A cross-site
+host never gets the cookie and is not supported: proxy `/api/v1/ws` onto the
+UI origin instead (the gateway, `server-with-ws.mjs` and `next dev` all do).
 
 ### 5.3 No token endpoint
 
@@ -375,7 +391,7 @@ Baked into the client bundle at build time. Safe to expose:
 | --------------------------------- | ----------------------- | ------------------------------------- |
 | `NEXT_PUBLIC_APP_URL`             | `http://localhost:3000` | Frontend URL                          |
 | `NEXT_PUBLIC_AUTH_PROVIDER`       | `local`                 | Auth mode (`local`, `oidc`, `hybrid`) |
-| `NEXT_PUBLIC_WS_BASE_URL`         | (empty)                 | WebSocket URL (if cross-origin)       |
+| `NEXT_PUBLIC_WS_BASE_URL`         | (empty)                 | WebSocket host override (same site)   |
 | `NEXT_PUBLIC_SSE_BASE_URL`        | (empty)                 | SSE URL (if cross-origin)             |
 | `NEXT_PUBLIC_AUTH_COOKIE_NAME`    | `auth_token`            | Access token cookie name              |
 | `NEXT_PUBLIC_REFRESH_COOKIE_NAME` | `refresh_token`         | Refresh token cookie name             |

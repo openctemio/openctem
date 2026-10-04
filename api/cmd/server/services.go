@@ -499,25 +499,6 @@ type wsHubBroadcaster struct {
 	hub *websocket.Hub
 }
 
-// wsTicketStore is an adapter exposing only the Get/Set/Del surface that the
-// WS ticket service needs — keeps that service decoupled from the full Redis
-// client surface. F-8.
-type wsTicketStore struct {
-	rc *redis.Client
-}
-
-func newWSTicketStore(rc *redis.Client) *wsTicketStore {
-	return &wsTicketStore{rc: rc}
-}
-
-func (s *wsTicketStore) Set(ctx context.Context, key, value string, ttl time.Duration) error {
-	return s.rc.Set(ctx, key, value, ttl)
-}
-
-func (s *wsTicketStore) GetDel(ctx context.Context, key string) (string, bool, error) {
-	return s.rc.GetDel(ctx, key)
-}
-
 func (b *wsHubBroadcaster) BroadcastActivity(channel string, data any, tenantID string) {
 	b.hub.BroadcastEvent(channel, data, tenantID)
 }
@@ -745,7 +726,6 @@ type Services struct {
 	// WebSocket
 	WebSocketHub *websocket.Hub
 	// F-8: Single-use ticket service used by WS upgrade auth.
-	WSTicket *app.WSTicketService
 	// SessionRevocations rejects access tokens of signed-out sessions
 	// immediately (nil without Redis).
 	SessionRevocations *redis.SessionRevocationStore
@@ -1996,11 +1976,6 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
 	s.Auth.SetPermissionVersionService(s.PermVersion)
-
-	// F-8: single-use WebSocket ticket service, Redis-backed.
-	if redisClient != nil {
-		s.WSTicket = app.NewWSTicketService(newWSTicketStore(redisClient), 30*time.Second, log)
-	}
 
 	// Two-factor authentication (TOTP). Secrets are encrypted with the same
 	// AES-GCM key as integration credentials.

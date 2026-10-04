@@ -86,10 +86,18 @@ func NewHandler(hub *Hub, log *logger.Logger, allowedOrigins []string, appEnv st
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
 				origin := r.Header.Get("Origin")
-				// Non-browser clients (CLI/SDK) send no Origin and
-				// authenticate via API key / single-use ticket, not
-				// cookies, so they are not a CSWSH vector.
 				if origin == "" {
+					// Browsers always send Origin on a WebSocket handshake
+					// (RFC 6455 §4.1). With the ambient session cookie as
+					// the credential, a missing Origin is not a browser we
+					// serve: refuse it. A client that sent its own Bearer
+					// token is not a CSWSH vector and may omit it.
+					if middleware.IsCookieAuthenticated(r.Context()) {
+						metrics.WSUpgradeRejectionsTotal.WithLabelValues("origin").Inc()
+						log.Warn("websocket upgrade rejected: cookie session without Origin",
+							"remote_addr", r.RemoteAddr)
+						return false
+					}
 					return true
 				}
 				if allowAll || allowed[origin] {

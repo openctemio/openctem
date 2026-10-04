@@ -1,12 +1,12 @@
 # RFC-045: Real-time WebSocket authentication and session binding
 
-> Status: **Accepted** (owner decisions 2026-10-03, §7).
+> Status: **Implemented** (owner decisions 2026-10-03, §7; implemented by #934 and #950).
 > Scope: `api/` (`internal/infra/websocket`, `/api/v1/ws` route chain, auth
 > services' session revocation, permission version), `web/`
 > (`src/lib/websocket`, `src/context/websocket-provider.tsx`,
 > `server-with-ws.mjs`), the gateway Caddyfile.
 > Related: RFC-022 (admin console sessions), RFC-041 (route chains),
-> [architecture/authorization-matrix.md](../architecture/authorization-matrix.md#real-time-websocket-apiv1authws-token-apiv1ws),
+> [architecture/authorization-matrix.md](../architecture/authorization-matrix.md#real-time-websocket-apiv1ws),
 > [architecture/notification-system.md](../architecture/notification-system.md#real-time-push).
 >
 > Owner's question (2026-10-03): `GET /api/v1/auth/ws-token` looks redundant;
