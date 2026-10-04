@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = '8527e50b8a6ab17a'
+export const ASSET_REGISTRY_VERSION = '86e61f2533871e72'
 
 export type AssetLens =
   | 'external_surface'
@@ -299,6 +299,44 @@ export const ASSET_SUB_TYPES: Readonly<Record<StoredAssetType, readonly string[]
     'ids_ips',
   ],
   unclassified: [],
+}
+
+/**
+ * Every non-core name the relationship constraints use (aliases and virtual
+ * names), resolved to the stored (core type, sub-type). A core type name
+ * stands for itself with any sub-type.
+ */
+export const ASSET_RELATIONSHIP_NAMES: Readonly<
+  Record<string, { type: StoredAssetType; subType?: string }>
+> = {
+  http_service: { type: 'service', subType: 'http' },
+  open_port: { type: 'service', subType: 'open_port' },
+  discovered_url: { type: 'service', subType: 'discovered_url' },
+  website: { type: 'application', subType: 'website' },
+  web_application: { type: 'application', subType: 'web_application' },
+  api: { type: 'application', subType: 'api' },
+  mobile_app: { type: 'application', subType: 'mobile_app' },
+  compute: { type: 'host', subType: 'compute' },
+  serverless: { type: 'host', subType: 'serverless' },
+  kubernetes_cluster: { type: 'kubernetes', subType: 'cluster' },
+  kubernetes_namespace: { type: 'kubernetes', subType: 'namespace' },
+  container_registry: { type: 'storage', subType: 'container_registry' },
+  iam_user: { type: 'identity', subType: 'iam_user' },
+  iam_role: { type: 'identity', subType: 'iam_role' },
+  service_account: { type: 'identity', subType: 'service_account' },
+  data_store: { type: 'database' },
+  s3_bucket: { type: 'storage', subType: 'bucket' },
+  vpc: { type: 'network', subType: 'vpc' },
+  subnet: { type: 'network', subType: 'subnet' },
+  firewall: { type: 'network', subType: 'firewall' },
+  load_balancer: { type: 'network', subType: 'load_balancer' },
+  k8s_cluster: { type: 'kubernetes', subType: 'cluster' },
+  k8s_workload: { type: 'kubernetes', subType: 'workload' },
+  container_image: { type: 'container', subType: 'image' },
+  api_collection: { type: 'application', subType: 'api' },
+  api_endpoint: { type: 'service', subType: 'discovered_url' },
+  identity_provider: { type: 'identity', subType: 'identity_provider' },
+  mobile: { type: 'application', subType: 'mobile_app' },
 }
 
 /** Input-only alias names and the (core type, sub-type) they are stored as. */

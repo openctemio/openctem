@@ -2419,6 +2419,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			a.id,
 			a.name,
 			a.asset_type,
+			COALESCE(a.sub_type, ''),
 			a.exposure,
 			a.criticality,
 			a.risk_score,
@@ -2445,7 +2446,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 	for rows.Next() {
 		var n asset.AssetNode
 		if scanErr := rows.Scan(
-			&n.ID, &n.Name, &n.AssetType, &n.Exposure,
+			&n.ID, &n.Name, &n.AssetType, &n.SubType, &n.Exposure,
 			&n.Criticality, &n.RiskScore, &n.IsCrownJewel, &n.FindingCount,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan node: %w", scanErr)

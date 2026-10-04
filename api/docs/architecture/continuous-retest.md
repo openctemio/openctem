@@ -124,7 +124,7 @@ reopened.
 | Piece | Where |
 |---|---|
 | Outcome and transition rules (pure) | `pkg/domain/retest/retest.go` (`Decide`, `NextStatus`) |
-| Service: request, gates, limits, dispatch, settle, sweep | `internal/app/retest/service.go`, `gates.go` |
+| Service: request, gate preflight, limits, dispatch, settle, sweep | `internal/app/retest/service.go`; the gate: [active-probe-gate.md](active-probe-gate.md) |
 | Auto-retest tick (claim once) | `internal/app/retest/auto.go` |
 | Persistence + settle transaction + cursors | `internal/infra/postgres/finding_retest_repository.go`, migration `000281_finding_retests` |
 | Completion hooks | `internal/infra/http/handler/command_handler.go` (`triggerValidationEvidence`, `triggerRetestSettle`) |

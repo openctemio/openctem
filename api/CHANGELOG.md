@@ -120,7 +120,7 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 - **The crown-jewel flag is the `assets.is_crown_jewel` column** (owner
   decision O5). It was written into `properties.is_crown_jewel`, while the
-  scoping summary read the column, so the two disagreed. Migration 000456
+  scoping summary read the column, so the two disagreed. Migration 000462
   backfills the column from the property (JSON `true` or the string `"true"`,
   any case; anything else reads as false), removes the key from properties
   and makes the column `NOT NULL DEFAULT FALSE`. Priority classification, the
@@ -132,6 +132,19 @@ published at https://docs.openctem.io (operations/release-notes-*).
   reserved key, so a create, update, import or sensor report cannot set it
   through properties. **Upgrade note:** a crown jewel marked by a pod of the
   previous release while the migration runs must be marked again.
+
+- **`POST /api/v1/assets` for an asset that already exists is a 409** (owner
+  decision O4). A name, or an address the name correlates to (IP/hostname),
+  that matches an asset of the organization used to merge the request into
+  that asset; it now creates and changes nothing. The 409 carries
+  `details.existing_asset_id` only when that asset is in the caller's data
+  scope; otherwise it is the same generic conflict for every match, so it
+  reveals nothing about an asset the caller cannot see. Another
+  organization's assets never match. The web offers to open the existing
+  asset. Sensor ingest and the SCM repository import
+  (`POST /api/v1/assets/repository`) keep their merge paths. **Upgrade
+  note:** an API client that relied on the create upserting must handle the
+  409 (update the named asset) or send its data through ingest.
 
 - **Tenable rolling coverage of private addresses needs a scan zone.**
   The coverage dispatcher now applies scan create's private-range policy:
