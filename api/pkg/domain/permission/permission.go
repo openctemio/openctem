@@ -221,11 +221,6 @@ const (
 	RolesDelete Permission = "team:roles:delete"
 	RolesAssign Permission = "team:roles:assign"
 
-	// Permission Set permissions (team:permission_sets:*)
-	PermissionSetsRead   Permission = "team:permission_sets:read"
-	PermissionSetsWrite  Permission = "team:permission_sets:write"
-	PermissionSetsDelete Permission = "team:permission_sets:delete"
-
 	// Assignment Rules permissions (team:assignment_rules:*)
 	AssignmentRulesRead   Permission = "team:assignment_rules:read"
 	AssignmentRulesWrite  Permission = "team:assignment_rules:write"
@@ -412,9 +407,6 @@ const (
 	PentestRead  Permission = "validation:read"
 	PentestWrite Permission = "validation:write"
 
-	// GroupsPermissions is an alias for GroupsWrite (team:groups:write)
-	GroupsPermissions Permission = "team:groups:write"
-
 	// TemplateSources are aliases for Sources (same permission strings)
 	TemplateSourcesRead   Permission = "scans:sources:read"
 	TemplateSourcesWrite  Permission = "scans:sources:write"
@@ -464,9 +456,8 @@ func AllPermissions() []Permission {
 		// Team module
 		TeamRead, TeamUpdate, TeamDelete,
 		MembersRead, MembersInvite, MembersWrite, MembersManage,
-		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets, GroupsPermissions,
+		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets,
 		RolesRead, RolesWrite, RolesDelete, RolesAssign,
-		PermissionSetsRead, PermissionSetsWrite, PermissionSetsDelete,
 		AssignmentRulesRead, AssignmentRulesWrite, AssignmentRulesDelete,
 
 		// Integrations module
