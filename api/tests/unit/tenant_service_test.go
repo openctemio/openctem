@@ -194,12 +194,12 @@ func (m *mockTenantRepo) GetMembership(_ context.Context, userID shared.ID, tena
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockTenantRepo) GetMembershipByID(_ context.Context, id shared.ID) (*tenant.Membership, error) {
+func (m *mockTenantRepo) GetMembershipByID(_ context.Context, tenantID, id shared.ID) (*tenant.Membership, error) {
 	if m.getMembershipByIDErr != nil {
 		return nil, m.getMembershipByIDErr
 	}
 	ms, ok := m.memberships[id.String()]
-	if !ok {
+	if !ok || ms.TenantID() != tenantID {
 		return nil, shared.ErrNotFound
 	}
 	return ms, nil
@@ -213,7 +213,7 @@ func (m *mockTenantRepo) UpdateMembership(_ context.Context, membership *tenant.
 	return nil
 }
 
-func (m *mockTenantRepo) DeleteMembership(_ context.Context, id shared.ID) error {
+func (m *mockTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, id shared.ID) error {
 	m.deleteMembershipCalls++
 	if m.deleteMembershipErr != nil {
 		return m.deleteMembershipErr
@@ -311,12 +311,12 @@ func (m *mockTenantRepo) GetInvitationByToken(_ context.Context, token string) (
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockTenantRepo) GetInvitationByID(_ context.Context, id shared.ID) (*tenant.Invitation, error) {
+func (m *mockTenantRepo) GetInvitationByID(_ context.Context, tenantID, id shared.ID) (*tenant.Invitation, error) {
 	if m.getInvitationByIDErr != nil {
 		return nil, m.getInvitationByIDErr
 	}
 	inv, ok := m.invitations[id.String()]
-	if !ok {
+	if !ok || inv.TenantID() != tenantID {
 		return nil, shared.ErrNotFound
 	}
 	return inv, nil
@@ -330,9 +330,12 @@ func (m *mockTenantRepo) UpdateInvitation(_ context.Context, inv *tenant.Invitat
 	return nil
 }
 
-func (m *mockTenantRepo) DeleteInvitation(_ context.Context, id shared.ID) error {
+func (m *mockTenantRepo) DeleteInvitation(_ context.Context, tenantID, id shared.ID) error {
 	if m.deleteInvitationErr != nil {
 		return m.deleteInvitationErr
+	}
+	if inv, ok := m.invitations[id.String()]; !ok || inv.TenantID() != tenantID {
+		return shared.ErrNotFound
 	}
 	delete(m.invitations, id.String())
 	return nil

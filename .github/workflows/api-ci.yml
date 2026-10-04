@@ -156,6 +156,12 @@ jobs:
       - name: Security Gates (tenant-scope analyzer)
         run: go test ./tools/lint/getbyid/... -count=1
 
+      # D-11: no SELECT/UPDATE/DELETE of a tenant-scoped row by id without a
+      # tenant predicate (shrink-only allowlist). The schema half of this test
+      # (tenant_tables.txt vs the migrated DB) runs on the Postgres tier.
+      - name: Security Gates (tenantless SQL guard)
+        run: go test ./tools/lint/tenantsql/... -count=1
+
       - name: Security Gates (sensor vocabulary guard)
         run: go test ./tools/lint/sensorvocab/... -count=1
 
