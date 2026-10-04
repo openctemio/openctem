@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
@@ -220,6 +221,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // end filterspec-params
+// @Param        view   query  string  false  "Saved view ID: its filter, with the other params overriding it field by field"
 // @Param        q       query  string  false  "Free text"
 // @Success      200  {string}  string  "CSV or NDJSON stream"
 // @Failure      400  {object}  map[string]interface{}  "INVALID_FILTER"
@@ -252,6 +254,9 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 		spec, ok = route.ParseValues(w, r, q)
 	}
 	if !ok {
+		return
+	}
+	if spec, ok = applySavedView(h.savedViews, savedview.PageFindings, w, r, spec); !ok {
 		return
 	}
 

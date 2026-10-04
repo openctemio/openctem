@@ -502,6 +502,8 @@ export interface FindingApiFilters {
   /** One finding group's rows (group by CVE / type). Sent as `cve_ids` / `finding_types`. */
   cve_ids?: string[]
   finding_types?: string[]
+  /** A saved view the request runs (its filter, with these filters on top). */
+  view?: string
   /** Scanner rule families (Nessus / Tenable.sc plugin family). Sent as `family`. */
   families?: string[]
   /** Sort spec, e.g. 'priority_class,severity,-created_at'. */

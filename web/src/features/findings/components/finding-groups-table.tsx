@@ -218,7 +218,13 @@ export function GroupStatusSummary({ stats }: { stats: FindingGroupStats }) {
 export interface FindingGroupsTableProps<TRow extends { id: string }> {
   dimension: GroupByDimension
   /** The page's facet filters the groups API understands. */
-  filters?: { severities?: string; statuses?: string; sources?: string; assignedToMe?: boolean }
+  filters?: {
+    severities?: string
+    statuses?: string
+    sources?: string
+    assignedToMe?: boolean
+    view?: string
+  }
   /** Status scope for groups and rows; defaults to the facet statuses, else open-to-resolved. */
   statuses?: string
   columns: ColumnDef<TRow>[]
@@ -274,6 +280,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   const severities = filters?.severities
   const sources = filters?.sources
   const assignedToMe = !!filters?.assignedToMe
+  const savedView = filters?.view
   const {
     data,
     error,
@@ -285,6 +292,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
     severities: filters?.severities || undefined,
     sources: filters?.sources || undefined,
     assigned_to_me: !!filters?.assignedToMe,
+    view: filters?.view,
     page: pagination.pageIndex + 1,
     per_page: pagination.pageSize,
   })
@@ -308,6 +316,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
     filters?.severities ?? '',
     filters?.sources ?? '',
     filters?.assignedToMe ? 'mine' : '',
+    savedView ?? '',
     pagination.pageIndex,
     pagination.pageSize,
   ].join('|')
@@ -335,6 +344,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
           sources: sources.split(',') as NonNullable<FindingApiFilters['sources']>,
         }),
         ...(assignedToMe && { assigned_to_me: true }),
+        ...(savedView && { view: savedView }),
         ...groupFilter,
         page: 1,
         per_page: limit,
@@ -344,7 +354,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       if (rows.some((f) => !belongsToGroup(dimension, key, f))) throw new GroupFilterUnsupported()
       return { rows, total: res.total ?? rows.length }
     },
-    [dimension, statuses, severities, sources, assignedToMe]
+    [dimension, statuses, severities, sources, assignedToMe, savedView]
   )
 
   const lazy = useLazyGroupRows<ApiFinding>({

@@ -11849,6 +11849,72 @@ definitions:
     required:
     - name
     type: object
+  internal_infra_http_handler.SavedViewRequest:
+    properties:
+      columns:
+        items:
+          type: string
+        type: array
+      density:
+        type: string
+      description:
+        type: string
+      filter:
+        type: object
+      from_view_id:
+        description: |-
+          FromViewID duplicates a view the caller can see into a new personal
+          view (how a team member changes a shared view, decision A1); the
+          other fields are ignored then, except name.
+        type: string
+      group_by:
+        type: string
+      group_id:
+        type: string
+      name:
+        type: string
+      page:
+        type: string
+      query:
+        type: string
+    type: object
+  internal_infra_http_handler.SavedViewResponse:
+    properties:
+      columns:
+        items:
+          type: string
+        type: array
+      created_at:
+        type: string
+      density:
+        type: string
+      description:
+        type: string
+      filter:
+        type: object
+      group_by:
+        type: string
+      group_id:
+        type: string
+      group_name:
+        type: string
+      id:
+        type: string
+      is_owner:
+        description: IsOwner says whether the caller may edit or delete it (decision
+          A1).
+        type: boolean
+      name:
+        type: string
+      owner_id:
+        type: string
+      owner_name:
+        type: string
+      page:
+        type: string
+      updated_at:
+        type: string
+    type: object
   internal_infra_http_handler.ScanDetailResponse:
     properties:
       ad_hoc:
@@ -22827,6 +22893,11 @@ paths:
         in: query
         name: updated_at_lt
         type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
+        type: string
       - description: Free text over title, description and file path
         in: query
         name: q
@@ -24245,6 +24316,11 @@ paths:
         in: query
         name: updated_at_lt
         type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
+        type: string
       - description: Free text
         in: query
         name: q
@@ -24915,6 +24991,11 @@ paths:
       - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: updated_at_lt
+        type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
         type: string
       - description: Free text
         in: query
@@ -26249,6 +26330,11 @@ paths:
       - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: updated_at_lt
+        type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
         type: string
       - description: Free text
         in: query
@@ -36216,6 +36302,156 @@ paths:
       summary: API version
       tags:
       - System
+  /views:
+    get:
+      description: The caller's saved views of a page and the ones shared with their
+        groups.
+      parameters:
+      - description: Page
+        enum:
+        - findings
+        in: query
+        name: page
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List saved views
+      tags:
+      - Saved views
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Saves a filter (a FilterDocument, or the page's flat query) and page state. Validated against
+        the page's filter fields (400 INVALID_FILTER). group_id shares it with one of the caller's groups.
+        from_view_id instead copies a view the caller can see into a new personal view (A1).
+      parameters:
+      - description: View
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SavedViewRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SavedViewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Limit reached
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save a view
+      tags:
+      - Saved views
+  /views/{id}:
+    delete:
+      parameters:
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a saved view
+      tags:
+      - Saved views
+    get:
+      parameters:
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SavedViewResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a saved view
+      tags:
+      - Saved views
+    put:
+      consumes:
+      - application/json
+      description: Only the owner may change a view (403 for a shared view of someone
+        else; duplicate it instead).
+      parameters:
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: View
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SavedViewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SavedViewResponse'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a saved view
+      tags:
+      - Saved views
   /vulnerabilities:
     get:
       description: Retrieves a paginated list of CVE vulnerabilities

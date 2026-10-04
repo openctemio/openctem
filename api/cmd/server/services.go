@@ -23,6 +23,7 @@ import (
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
+	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/internal/app/tool"
@@ -67,6 +68,8 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -594,6 +597,7 @@ type Services struct {
 
 	// Per-user customizable dashboards (RFC-021)
 	UserDashboard *dashboardapp.Service
+	SavedView     *savedviewapp.Service
 
 	// Integrations & Notifications
 	Integration    *app.IntegrationService
@@ -911,6 +915,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.SBOMImport.SetDataScope(s.DataScope)
 	s.ReportSchedule = app.NewReportScheduleService(repos.ReportSchedule, log)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
+	// Saved list views (D15): one page config per page that has views.
+	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
+		savedview.PageFindings: {
+			Registry:   vulnerability.FindingFields,
+			Permission: permission.FindingsRead.String(),
+			GroupBy:    vulnerability.FindingGroupDimensions(),
+			Extra:      []string{"branch_status"},
+		},
+	}, log)
+	s.SavedView.SetAuditService(s.Audit)
 	s.Branch = app.NewBranchService(repos.Branch, log)
 
 	// Initialize vulnerability & exposure services
