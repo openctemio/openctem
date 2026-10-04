@@ -180,6 +180,9 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		return nil, err
 	}
 	input.Targets = validatedTargets
+	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), input.Targets); err != nil {
+		return nil, err
+	}
 
 	// Determine scan type
 	scanType := scan.ScanTypeSingle
