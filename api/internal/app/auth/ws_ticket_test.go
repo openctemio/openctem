@@ -64,7 +64,7 @@ func TestWSTicketService_IssueAndRedeem(t *testing.T) {
 	svc, _ := newTestTicketService()
 	ctx := context.Background()
 
-	ticket, err := svc.IssueTicket(ctx, "user-1", "tenant-A")
+	ticket, err := svc.IssueTicket(ctx, "user-1", "tenant-A", "", time.Time{})
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestWSTicketService_DoubleRedeem_Rejects(t *testing.T) {
 	svc, _ := newTestTicketService()
 	ctx := context.Background()
 
-	ticket, err := svc.IssueTicket(ctx, "user-1", "tenant-A")
+	ticket, err := svc.IssueTicket(ctx, "user-1", "tenant-A", "", time.Time{})
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestWSTicketService_Expired_Rejects(t *testing.T) {
 	svc := NewWSTicketService(store, 1*time.Millisecond, logger.NewNop())
 	ctx := context.Background()
 
-	ticket, err := svc.IssueTicket(ctx, "user-1", "tenant-A")
+	ticket, err := svc.IssueTicket(ctx, "user-1", "tenant-A", "", time.Time{})
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -155,10 +155,10 @@ func TestWSTicketService_EmptyUserOrTenant_Rejects(t *testing.T) {
 	svc, _ := newTestTicketService()
 	ctx := context.Background()
 
-	if _, err := svc.IssueTicket(ctx, "", "t"); err == nil {
+	if _, err := svc.IssueTicket(ctx, "", "t", "", time.Time{}); err == nil {
 		t.Fatal("empty user should error")
 	}
-	if _, err := svc.IssueTicket(ctx, "u", ""); err == nil {
+	if _, err := svc.IssueTicket(ctx, "u", "", "", time.Time{}); err == nil {
 		t.Fatal("empty tenant should error")
 	}
 }

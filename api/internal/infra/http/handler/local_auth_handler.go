@@ -1137,7 +1137,10 @@ func (h *LocalAuthHandler) GetWSToken(w http.ResponseWriter, r *http.Request) {
 	// redemption is useless because it has already been DEL'd from Redis.
 	// Clients pass it as ?ticket=<ticket> on the WS upgrade.
 	if h.wsTicketService != nil {
-		ticket, err := h.wsTicketService.IssueTicket(r.Context(), userID, tenantID)
+		// Bind the ticket to the requesting session and its access-token
+		// expiry, so the socket it opens is closed when either ends.
+		ticket, err := h.wsTicketService.IssueTicket(r.Context(), userID, tenantID,
+			middleware.GetSessionID(r.Context()), middleware.GetCredentialExpiry(r.Context()))
 		if err != nil {
 			h.logger.Error("failed to issue WS ticket", "error", err)
 			apierror.InternalError(err).WriteJSON(w)
