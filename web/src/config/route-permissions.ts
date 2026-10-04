@@ -690,6 +690,19 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.IntegrationsRead,
     module: Module.Integrations,
   },
+  // Delivery history and the outbox queue show every event of the
+  // organization (finding messages, asset names, owner emails) regardless of
+  // data scope: channel managers only, as in the API (integrations:manage).
+  '/settings/integrations/notifications/history': {
+    permission: Permission.IntegrationsManage,
+    module: Module.Integrations,
+    message: 'Only people who manage notification channels can see delivery history.',
+  },
+  '/settings/integrations/notifications/outbox': {
+    permission: Permission.IntegrationsManage,
+    module: Module.Integrations,
+    message: 'Only people who manage notification channels can see the delivery queue.',
+  },
 
   // ========================================
   // Settings — scanner orchestration (each its own module post-000161)

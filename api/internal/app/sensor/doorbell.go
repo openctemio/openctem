@@ -176,7 +176,9 @@ func (d *Doorbell) Ring(ctx context.Context, req DoorbellRequest) sensordom.Hear
 		h.PendingJobs = work.Count
 		zones = work.ZoneFingerprint
 		switch {
-		case work.Count > 0:
+		case work.Count > 0, work.RecentlyCanceled > 0:
+			// Work waiting, or a command it claimed was canceled and it may
+			// still be running it: ring again soon.
 			interval = d.seconds(d.cfg.BusyInterval)
 		case elapsed >= d.cfg.SlowQuery:
 			interval = d.seconds(d.cfg.LoadedInterval)

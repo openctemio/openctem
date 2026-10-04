@@ -118,6 +118,19 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Changed (behaviour change)
 
+- **`POST /api/v1/assets` for an asset that already exists is a 409** (owner
+  decision O4). A name, or an address the name correlates to (IP/hostname),
+  that matches an asset of the organization used to merge the request into
+  that asset; it now creates and changes nothing. The 409 carries
+  `details.existing_asset_id` only when that asset is in the caller's data
+  scope; otherwise it is the same generic conflict for every match, so it
+  reveals nothing about an asset the caller cannot see. Another
+  organization's assets never match. The web offers to open the existing
+  asset. Sensor ingest and the SCM repository import
+  (`POST /api/v1/assets/repository`) keep their merge paths. **Upgrade
+  note:** an API client that relied on the create upserting must handle the
+  409 (update the named asset) or send its data through ingest.
+
 - **Tenable rolling coverage of private addresses needs a scan zone.**
   The coverage dispatcher now applies scan create's private-range policy:
   a private address is dispatched only when a scan zone of the tenant

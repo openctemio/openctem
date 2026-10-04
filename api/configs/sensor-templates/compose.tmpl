@@ -19,6 +19,8 @@
 #        sudo install -D -m 0644 -o root sensor-policy.yaml policy/sensor-policy.yaml
 #   3. Save this file as compose.yaml and run: docker compose up -d
 #   Kill switch (no job runs while the file exists): sudo touch policy/STOP
+#   The policy and the kill switch need a sensor release later than v0.8.0;
+#   v0.8.0 and older ignore them and scan without a local policy.
 {{- else}}
 #   2. Save this file as compose.yaml and run: docker compose up -d
 {{- end}}

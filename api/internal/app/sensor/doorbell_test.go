@@ -78,6 +78,17 @@ func TestDoorbell_PendingWorkRingsWithShortInterval(t *testing.T) {
 	}
 }
 
+// A command the sensor claimed was canceled: it may still be running it, so it
+// rings again soon and gets the cancel within the busy interval, not after an
+// idle one. Nothing is pending, so it is not told there is work.
+func TestDoorbell_RecentlyCanceledRingsWithShortInterval(t *testing.T) {
+	src := &fakeWork{work: sensordom.PendingWork{RecentlyCanceled: 1}}
+	h := newTestDoorbell(src).Ring(context.Background(), DoorbellRequest{Identity: SensorIdentity{Sensor: testSensor()}})
+	if h.PendingJobs != 0 || h.NextHeartbeatSeconds != 5 {
+		t.Fatalf("got pending=%d next=%d, want 0 and the 5s busy interval", h.PendingJobs, h.NextHeartbeatSeconds)
+	}
+}
+
 func TestDoorbell_SlowQueryAdvisesLoadedInterval(t *testing.T) {
 	cfg := DefaultDoorbellConfig()
 	cfg.SlowQuery = 20 * time.Millisecond

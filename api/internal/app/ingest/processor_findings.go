@@ -247,6 +247,12 @@ func (p *FindingProcessor) processBatch(
 		branchID    *shared.ID // FK to asset_branches
 		fingerprint string
 		base        string // pre-composite base, persisted for post-merge recompute
+		// v1 is the version-1 key (composite of asset and base). A finding
+		// stored under it is re-keyed to identity on its next sighting.
+		v1 string
+		// identity is the version-2 identity (RFC-043 §4.2), nil when no
+		// recipe applies and the finding keeps its version-1 key.
+		identity *vulnerability.IdentityKey
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -292,70 +298,83 @@ func (p *FindingProcessor) processBatch(
 		p.logger.Warn("asset map is empty - all findings will be skipped")
 	}
 
-	for i, ctisFinding := range report.Findings {
-		if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
-			// Its asset matches a scope exclusion and was not added.
-			output.FindingsSkipped++
-			continue
-		}
-		if output.OutOfScopeAssetRefs[ctisFinding.AssetRef] {
-			// The upload's actor may not change its asset.
-			output.FindingsSkipped++
-			continue
-		}
-		// Determine target asset
-		var targetAssetID shared.ID
-		if ctisFinding.AssetRef != "" {
-			// Try to find by asset reference
-			if id, ok := assetMap[ctisFinding.AssetRef]; ok {
-				targetAssetID = id
-			} else {
-				p.logger.Debug("finding AssetRef not found in assetMap",
-					"finding_index", i,
-					"asset_ref", ctisFinding.AssetRef,
-				)
+	for i, reported := range report.Findings {
+		// A network finding that names several CVEs is one finding per CVE
+		// (RFC-043 decision D3).
+		for _, ctisFinding := range splitMultiCVENetworkFinding(reported) {
+			if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
+				// Its asset matches a scope exclusion and was not added.
+				output.FindingsSkipped++
+				continue
 			}
+			if output.OutOfScopeAssetRefs[ctisFinding.AssetRef] {
+				// The upload's actor may not change its asset.
+				output.FindingsSkipped++
+				continue
+			}
+			// Determine target asset
+			var targetAssetID shared.ID
+			if ctisFinding.AssetRef != "" {
+				// Try to find by asset reference
+				if id, ok := assetMap[ctisFinding.AssetRef]; ok {
+					targetAssetID = id
+				} else {
+					p.logger.Debug("finding AssetRef not found in assetMap",
+						"finding_index", i,
+						"asset_ref", logValue(ctisFinding.AssetRef),
+					)
+				}
+			}
+
+			if targetAssetID.IsZero() && !defaultAssetID.IsZero() {
+				targetAssetID = defaultAssetID
+			}
+
+			if targetAssetID.IsZero() {
+				p.logger.Warn("finding skipped: no target asset",
+					"finding_index", i,
+					"asset_ref", logValue(ctisFinding.AssetRef),
+					"default_asset_available", !defaultAssetID.IsZero(),
+					"asset_map_size", len(assetMap),
+				)
+				addError(output, fmt.Sprintf("finding %d: no target asset", i))
+				output.FindingsSkipped++
+				continue
+			}
+
+			// Generate fingerprint (+ the base, persisted so the composite can be
+			// recomputed for a new asset_id after an asset merge).
+			fp, base := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
+
+			// Get branch ID for this asset (if available)
+			var branchID *shared.ID
+			if bid, ok := branchMap[targetAssetID]; ok {
+				branchID = &bid
+			}
+
+			candidates = append(candidates, findingMeta{
+				index:       i,
+				finding:     ctisFinding,
+				assetID:     targetAssetID,
+				branchID:    branchID,
+				fingerprint: fp,
+				base:        base,
+				v1:          fp,
+			})
 		}
-
-		if targetAssetID.IsZero() && !defaultAssetID.IsZero() {
-			targetAssetID = defaultAssetID
-		}
-
-		if targetAssetID.IsZero() {
-			p.logger.Warn("finding skipped: no target asset",
-				"finding_index", i,
-				"asset_ref", ctisFinding.AssetRef,
-				"default_asset_available", !defaultAssetID.IsZero(),
-				"asset_map_size", len(assetMap),
-			)
-			addError(output, fmt.Sprintf("finding %d: no target asset", i))
-			output.FindingsSkipped++
-			continue
-		}
-
-		// Generate fingerprint (+ the base, persisted so the composite can be
-		// recomputed for a new asset_id after an asset merge).
-		fp, base := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
-
-		// Get branch ID for this asset (if available)
-		var branchID *shared.ID
-		if bid, ok := branchMap[targetAssetID]; ok {
-			branchID = &bid
-		}
-
-		candidates = append(candidates, findingMeta{
-			index:       i,
-			finding:     ctisFinding,
-			assetID:     targetAssetID,
-			branchID:    branchID,
-			fingerprint: fp,
-			base:        base,
-		})
 	}
 
 	if len(candidates) == 0 {
 		return nil
 	}
+
+	// Step 1a: the version-2 identity, computed on the server (RFC-043 §4.2).
+	applyIdentityV2Of(p, tenantID, report.Tool, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
+		func(fm *findingMeta, k vulnerability.IdentityKey) {
+			fm.identity = &k
+			fm.fingerprint = k.Fingerprint()
+			fm.base = ""
+		})
 
 	// Step 1b: a network finding without a CVE used to be keyed without its
 	// port (RFC-043 P0). Hand a row stored under that old key to the first port
@@ -363,8 +382,13 @@ func (p *FindingProcessor) processBatch(
 	// existence check below sees the new key.
 	p.adoptLegacyPortlessFingerprints(ctx, tenantID, validFindingsLegacy(candidates, func(fm findingMeta) (string, string, string) {
 		legacy := legacyPortlessFingerprint(fm.assetID, &fm.finding)
-		return legacy, fm.fingerprint, fm.base
+		_, base := generateFindingFingerprint(fm.assetID, &fm.finding, report.Tool)
+		return legacy, fm.v1, base
 	}))
+
+	// Step 1b': a finding still keyed by its version-1 key takes its
+	// version-2 key on this sighting; the old key stays its alias (RFC-043 §6).
+	adoptV1KeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) (string, *vulnerability.IdentityKey) { return fm.v1, fm.identity })
 
 	// Step 1c: a key a finding gave up (an asset merge, a duplicate folded
 	// into another finding, an older recipe) is an alias of the finding that
@@ -429,6 +453,7 @@ func (p *FindingProcessor) processBatch(
 			// Build Finding from scan data for enrichment
 			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
+				applyIdentityToFinding(newData, fm.identity, &fm.finding)
 				existingNewData = append(existingNewData, newData)
 			} else {
 				// buildFinding failed — fall back to scan-id-only update for this fingerprint
@@ -436,6 +461,9 @@ func (p *FindingProcessor) processBatch(
 			}
 		} else {
 			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
+			if err == nil {
+				applyIdentityToFinding(f, fm.identity, &fm.finding)
+			}
 			if err != nil {
 				addError(output, fmt.Sprintf("finding %d: %v", fm.index, err))
 				output.FindingsSkipped++
