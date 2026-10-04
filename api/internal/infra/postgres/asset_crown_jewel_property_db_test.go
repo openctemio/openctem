@@ -113,11 +113,11 @@ func TestCrownJewelReads_UseTheColumn(t *testing.T) {
 func TestCrownJewelMigration_Backfill(t *testing.T) {
 	ctx := context.Background()
 	db := openGroupsDB(t)
-	up, err := os.ReadFile("../../../migrations/000463_assets_crown_jewel_column.up.sql")
+	up, err := os.ReadFile("../../../migrations/000487_assets_crown_jewel_column.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	down, err := os.ReadFile("../../../migrations/000463_assets_crown_jewel_column.down.sql")
+	down, err := os.ReadFile("../../../migrations/000487_assets_crown_jewel_column.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
