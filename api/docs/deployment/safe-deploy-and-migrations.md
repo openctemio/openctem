@@ -126,7 +126,7 @@ UPDATE findings SET owner_email = owner WHERE owner_email IS NULL;
 ```
 
 ```sql
--- Release N+1 (000561_drop_owner.up.sql) — CONTRACT, destructive but now safe
+-- Release N+1 (000671_drop_owner.up.sql) — CONTRACT, destructive but now safe
 -- because no running code references `owner` anymore.
 -- expand-contract-ok: contract step; `owner` unused since v0.5.0 (replaced by owner_email)
 ALTER TABLE findings DROP COLUMN owner;
