@@ -27,6 +27,15 @@ export const SCAN_CONFIG_SORT_FIELDS = [
 export type ScanConfigSortField = (typeof SCAN_CONFIG_SORT_FIELDS)[number]
 export const DEFAULT_SCAN_CONFIG_SORT = 'name'
 
+/** Sortable fields of GET /pipeline-runs (api pkg/domain/pipeline/run_sort.go). */
+export const RUN_SORT_FIELDS = [
+  'created_at',
+  'started_at',
+  'completed_at',
+  'total_findings',
+] as const
+export const DEFAULT_RUN_SORT = '-created_at'
+
 /** A page size from the URL, snapped to the offered sizes. */
 export function parsePageSize(value: number): number {
   return (SCAN_PAGE_SIZES as readonly number[]).includes(value) ? value : DEFAULT_SCAN_PAGE_SIZE

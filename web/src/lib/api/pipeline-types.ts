@@ -250,6 +250,8 @@ export interface PipelineRun {
   pipeline_id: string
   asset_id?: string
   scan_id?: string
+  /** The run's scan, named by the server on list rows (empty when deleted). */
+  scan_name?: string
   trigger_type: PipelineTriggerType
   triggered_by?: string
   /** Display name of the user in triggered_by, when it is a user id (API fills it). */
@@ -370,6 +372,8 @@ export interface PipelineRunListFilters {
   asset_id?: string
   status?: PipelineRunStatus
   trigger_type?: PipelineTriggerType
+  /** One sort key, `-` for descending (created_at, started_at, completed_at, total_findings). */
+  sort?: string
   page?: number
   per_page?: number
 }
