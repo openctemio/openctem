@@ -120,7 +120,7 @@ func TestNotObservedMigration_RelabelsOnlyBranchExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := testdb.OpenMigrator(t).BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
