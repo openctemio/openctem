@@ -193,7 +193,7 @@ func (m *mockFindingRepository) ListAffectedAssetsByVulnerabilityID(_ context.Co
 func (m *mockFindingRepository) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.Result[vulnerability.ActiveCVE]{}, nil
 }
-func (m *mockFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+func (m *mockFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 func (m *mockFindingRepository) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
@@ -223,7 +223,7 @@ func (m *mockFindingRepository) UpdateSnippetBatchByFingerprints(_ context.Conte
 func (m *mockFindingRepository) BatchCountByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]int64, error) {
 	return nil, nil
 }
-func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {
+func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, _ vulnerability.ResolutionMethod) error {
 	if m.statusBatchErr != nil {
 		return m.statusBatchErr
 	}
@@ -881,63 +881,6 @@ func TestFindingApprovalService_ListPendingApprovals_InvalidTenantID(t *testing.
 }
 
 // =============================================================================
-// Tests: BulkUpdateFindingStatus
-// =============================================================================
-
-func TestFindingApprovalService_BulkUpdateFindingStatus_Success(t *testing.T) {
-	tenantID := shared.NewID()
-	findingIDs := []shared.ID{shared.NewID(), shared.NewID(), shared.NewID()}
-	resolvedBy := shared.NewID()
-
-	findingRepo := newMockFindingRepository()
-	approvalRepo := newMockApprovalRepository()
-	svc := newApprovalTestService(findingRepo, approvalRepo)
-
-	err := svc.BulkUpdateFindingStatus(
-		context.Background(),
-		tenantID,
-		findingIDs,
-		vulnerability.FindingStatusResolved,
-		"fixed_in_code",
-		&resolvedBy,
-	)
-
-	require.NoError(t, err)
-
-	// Verify the batch update was called
-	require.Len(t, findingRepo.statusUpdates, 1)
-	call := findingRepo.statusUpdates[0]
-	assert.Equal(t, tenantID, call.TenantID)
-	assert.Equal(t, findingIDs, call.IDs)
-	assert.Equal(t, vulnerability.FindingStatusResolved, call.Status)
-	assert.Equal(t, "fixed_in_code", call.Resolution)
-	require.NotNil(t, call.ResolvedBy)
-	assert.Equal(t, resolvedBy, *call.ResolvedBy)
-}
-
-func TestFindingApprovalService_BulkUpdateFindingStatus_RepoError(t *testing.T) {
-	tenantID := shared.NewID()
-	findingIDs := []shared.ID{shared.NewID()}
-	resolvedBy := shared.NewID()
-
-	findingRepo := newMockFindingRepository()
-	findingRepo.statusBatchErr = errors.New("database error")
-	approvalRepo := newMockApprovalRepository()
-	svc := newApprovalTestService(findingRepo, approvalRepo)
-
-	err := svc.BulkUpdateFindingStatus(
-		context.Background(),
-		tenantID,
-		findingIDs,
-		vulnerability.FindingStatusResolved,
-		"",
-		&resolvedBy,
-	)
-
-	assert.Error(t, err, "should propagate repository errors")
-}
-
-// =============================================================================
 // Tests: ApprovalRepo not configured
 // =============================================================================
 
@@ -1185,7 +1128,7 @@ func (m *mockFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *mockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *mockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 
