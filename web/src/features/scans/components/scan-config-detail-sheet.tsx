@@ -24,6 +24,7 @@ import {
   DetailStatGrid,
   DetailTabs,
   StatusBadge,
+  TruncatedText,
   type DetailMenuItem,
   type DetailTab,
 } from '@/features/shared'
@@ -321,8 +322,8 @@ function Details({ config }: { config: ScanConfig }) {
               <DetailField label={`Direct targets (${targets.length})`} full>
                 <span className="flex flex-wrap gap-1">
                   {targets.slice(0, 5).map((target, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs break-all" title={target}>
-                      {target.length > 30 ? `${target.slice(0, 30)}…` : target}
+                    <Badge key={i} variant="secondary" className="max-w-[16rem] text-xs">
+                      <TruncatedText value={target} label="Target" />
                     </Badge>
                   ))}
                   {targets.length > 5 && (
