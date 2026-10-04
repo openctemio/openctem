@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import SecurityScannersPage from '../page'
+import { TenableConnectorView } from '@/features/integrations/components/scanners/tenable-connector-view'
+import { TENABLE_CONNECTOR_ENABLED } from '@/features/integrations/config/feature-gates'
 
 /**
  * Owner decision D-14: the live Tenable connector and rolling coverage are
@@ -14,7 +16,12 @@ const mockUseIntegrations = vi.fn()
 vi.mock('@/features/integrations/api/use-integrations-api', () => ({
   useIntegrationsApi: () => mockUseIntegrations(),
   useDeleteIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
+  useCreateIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
+  useUpdateIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
   invalidateIntegrationsCache: vi.fn(),
+}))
+vi.mock('@/lib/api/scan-coverage-hooks', () => ({
+  useScanCoverage: () => ({ data: undefined, isLoading: false }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/permissions', () => ({
@@ -75,5 +82,17 @@ describe('SecurityScannersPage while the Tenable connector is paused', () => {
     expect(screen.getByRole('button', { name: 'Remove Legacy Tenable' })).toBeTruthy()
     // Non-Tenable security rows are not this page's connectors.
     expect(screen.queryByText('DD')).toBeNull()
+  })
+})
+
+describe('Tenable connector gate', () => {
+  it('is off until the RFC-047 runner ships', () => {
+    expect(TENABLE_CONNECTOR_ENABLED).toBe(false)
+  })
+
+  it('keeps the connector view, ready to flip back on', () => {
+    withRows([])
+    render(<TenableConnectorView />)
+    expect(screen.getAllByText(/Connect (Scanner|Tenable)/i).length).toBeGreaterThan(0)
   })
 })

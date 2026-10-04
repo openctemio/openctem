@@ -1302,6 +1302,9 @@ func TestListIntegrations_SearchFilter(t *testing.T) {
 // Tenable runner, so a new Tenable integration would never run (owner decision
 // D-14). Creating one is refused in every execution mode, and nothing is stored.
 func TestCreateIntegration_Tenable_RefusedWhilePaused(t *testing.T) {
+	if integration.TenableConnectorEnabled {
+		t.Skip("Tenable connector is enabled")
+	}
 	repo := newMockIntegrationRepo()
 	scmRepo := newMockSCMExtRepo()
 	svc := newTestIntegrationService(repo, scmRepo, nil)
