@@ -249,7 +249,11 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 // httpDataScopeCaller reads the acting user and the admin decision from the
 // HTTP auth context for the Layer 2 data-scope enforcer.
 func httpDataScopeCaller(ctx context.Context) datascope.Caller {
-	return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
+	return datascope.Caller{
+		UserID:  middleware.GetUserID(ctx),
+		IsAdmin: middleware.IsAdmin(ctx),
+		APIKey:  middleware.GetAuthProvider(ctx) == middleware.AuthProviderAPIKey,
+	}
 }
 
 // membershipAdminLookup decides admin status outside a request (WebSocket
@@ -964,6 +968,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 	}
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
+	s.CredentialImport.SetDataScope(s.DataScope)
 	// Leaked-credential secrets are sealed with the platform credential key
 	// on every write path, and the fingerprint HMAC is keyed from it.
 	s.CredentialSecrets = credential.NewSecretProtector(s.Encryptor, []byte(cfg.Encryption.Key))
@@ -1790,6 +1795,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithGroupAuditService(s.Audit),
 		app.WithPermissionSetRepository(repos.PermissionSet),
 		app.WithAccessControlRepository(repos.AccessControl),
+		app.WithGroupDataScope(s.DataScope),
 	)
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)

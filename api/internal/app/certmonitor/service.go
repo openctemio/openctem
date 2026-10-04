@@ -184,6 +184,9 @@ type Service struct {
 
 	// tombstones lets promotion skip rejected names (nil: no check).
 	tombstones TombstoneChecker
+
+	// maxBody bounds one CT response (maxBodyBytes; tests lower it).
+	maxBody int64
 }
 
 // NewService constructs the CT discovery service. An empty feedBaseURL defaults
@@ -211,6 +214,7 @@ func NewService(
 		recheckAfter:    DefaultRecheckAfter,
 		sweepBudget:     DefaultSweepBudget,
 		maxPromotions:   DefaultMaxPromotionsPerRun,
+		maxBody:         maxBodyBytes,
 		now:             func() time.Time { return time.Now().UTC() },
 		logger:          log.With("service", "cert_monitor"),
 	}

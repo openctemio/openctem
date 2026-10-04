@@ -350,7 +350,7 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 		res.AutoResolve = protov2.AutoResolveApplied
 		res.AutoResolved = len(resolved)
 		if len(resolved) > 0 {
-			app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolved)))
+			app.FindingsAutoResolved.WithLabelValues().Add(float64(len(resolved)))
 			if s.activityService != nil {
 				if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, resolved, toolName, prov.ReportID); err != nil {
 					s.logger.Warn("failed to record auto-resolve activities", "error", err)
