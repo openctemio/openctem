@@ -185,7 +185,7 @@ export const GENERATED_RELATIONSHIP_CONSTRAINTS: Record<
   runs_on: [
     {
       sourceTypes: ['service', 'api', 'website'],
-      targetTypes: ['host', 'container', 'k8s_workload', 'cloud_account'],
+      targetTypes: ['host', 'endpoint', 'container', 'k8s_workload', 'cloud_account'],
     },
     {
       sourceTypes: ['database'],
@@ -224,7 +224,7 @@ export const GENERATED_RELATIONSHIP_CONSTRAINTS: Record<
       targetTypes: ['host', 'cloud_account', 'load_balancer'],
     },
     {
-      sourceTypes: ['host'],
+      sourceTypes: ['host', 'endpoint'],
       targetTypes: ['container', 'service', 'database'],
     },
     {
@@ -250,7 +250,7 @@ export const GENERATED_RELATIONSHIP_CONSTRAINTS: Record<
   ],
   exposes: [
     {
-      sourceTypes: ['host', 'k8s_workload', 'container'],
+      sourceTypes: ['host', 'endpoint', 'ip_address', 'k8s_workload', 'container'],
       targetTypes: ['api_endpoint', 'service', 'api'],
     },
     {
@@ -298,8 +298,8 @@ export const GENERATED_RELATIONSHIP_CONSTRAINTS: Record<
       targetTypes: ['database'],
     },
     {
-      sourceTypes: ['host', 'container'],
-      targetTypes: ['host', 'container'],
+      sourceTypes: ['host', 'endpoint', 'container'],
+      targetTypes: ['host', 'endpoint', 'container'],
     },
   ],
   replicates_to: [

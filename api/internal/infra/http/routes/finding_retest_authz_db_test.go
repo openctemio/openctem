@@ -23,6 +23,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -87,7 +89,7 @@ func newRetestAuthzHarness(t *testing.T) *rtHarness {
 
 	cmds := postgres.NewCommandRepository(pg)
 	svc := retestapp.NewService(postgres.NewFindingRetestRepository(pg), postgres.NewFindingRepository(pg),
-		postgres.NewAssetRepository(pg), cmds, validation.NewCommandDispatcher(cmds, log), rtNucleiOnline{}, log)
+		postgres.NewAssetRepository(pg), cmds, validation.NewCommandDispatcher(cmds, realProbeGate(pg, log), log), rtNucleiOnline{}, log)
 
 	router := infrahttp.NewChiRouter()
 	registerFindingRetestRoutes(router, handler.NewFindingRetestHandler(svc, log), Middleware(h.auth), nil)
@@ -292,4 +294,12 @@ func TestRetestSettingsAuthz_AdminOnlyAndTokenTenant(t *testing.T) {
 	if enabledA.String != "true" || enabledB.String == "true" {
 		t.Fatalf("settings written to the wrong organization: A=%q B=%q", enabledA.String, enabledB.String)
 	}
+}
+
+// realProbeGate is the production active-probe gate over the test database:
+// scope exclusions, attribution and scan zones.
+func realProbeGate(pg *postgres.DB, log *logger.Logger) *scanapp.Service {
+	scope := scopeapp.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg),
+		nil, postgres.NewAssetRepository(pg), log)
+	return scanapp.NewTargetGate(scope, postgres.NewAttributionRepository(pg), postgres.NewScanZoneRepository(pg), nil, log)
 }

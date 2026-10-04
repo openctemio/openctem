@@ -141,6 +141,7 @@ the inventory changed meaning.
 | Rules, noisy-OR, O4 decision, `Merge` (automation only raises; a human decision stands) | `pkg/domain/attribution` |
 | Storage, tenant-scoped writes (a foreign asset id writes nothing) | `internal/infra/postgres/attribution_repository.go` |
 | First producer: CT promotion (`fqdn_under_verified_root` 0.99 → confirmed; `fqdn_under_asserted_root` 0.85 → needs_review) | `internal/app/certmonitor/promote.go` |
+| Second producer: tenant scans (`tenant_scanned` 0.95, strong; owner decision O8). A report bound to a command the tenant's own sensor ran stamps, on the assets it created or its command's targets cover, one evidence row per (asset, sensor) with the sensor, command, step run, pipeline run, scan, tool, report id and time; an automatic record is re-evaluated (needs_review + tenant_scanned → confirmed), a human decision is never touched, and a legacy asset gets evidence only. Unsolicited reports and server-side ingests (CT promotion, uploads) never fire the rule | `internal/app/ingest/scan_attribution.go`, `internal/app/easm/scanned.go`, `internal/infra/postgres/easm_scan_evidence_repository.go` |
 | Scan gate: asset-group members that are not confirmed are skipped; a group of only unconfirmed assets is refused; a failed lookup stops the dispatch | `internal/app/scan/targets.go` (`WithAttributionGate`) |
 | `GET /api/v1/assets/{id}/attribution` (assets:read) and `PUT` (assets:write, audited `asset.attribution_decided`) | `internal/infra/http/handler/asset_attribution_handler.go` |
 

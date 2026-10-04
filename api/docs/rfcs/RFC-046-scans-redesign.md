@@ -2,7 +2,9 @@
 
 > Status: **Accepted.** Product decisions D1–D13 approved by the owner on
 > 2026-10-02; backend decisions B1–B12 approved on 2026-10-03. P0 shipped
-> (§2.3); P1 in progress (§9).
+> (§2.3); P1 in progress (§16): merged P1.1 (#940), P1.2 `partial` (#946)
+> and the P1.5 occurrence key `UNIQUE(scan_id, scheduled_for)` (#949; the
+> rrule part of P1.5 is open).
 > Scope: api + web, with sdk-go and sensor changes where a phase says so.
 > Builds on and does not duplicate:
 > [RFC-030](RFC-030-scan-work-distribution.md) (pull, chunks, leases, fair
@@ -568,7 +570,7 @@ means a test against a migrated Postgres (skips without `DATABASE_URL`).
 | **P1.4** | **Runs read model (D2 step 1)**: `GET /scans/{id}/runs` and `/runs/{id}` return trigger, `scheduled_for`, status incl. partial, task summary (done/failed/running/queued, sensors), coverage summary; trigger types `ci`, `retest`, `automation`, `rollover`; CI ingest creates a `trigger=ci` run instead of a `scan_sessions` row; dead `useScanSessions` removed | Route tests incl. cross-tenant 404; CI ingest creates exactly one run per report; web vitest for the runs tab |
 | **P1.5** | **Occurrence key + rrule**: `scheduled_for` + `UNIQUE(scan_id, scheduled_for)`; rrule + tz with backfill from daily/weekly/monthly/crontab; minimum interval 15 min; stable jitter; misfire grace | DB: two inserts for one occurrence → one run, the second gets a conflict; rrule property tests (DST, month ends, every-15-min ok, every-5-min refused); backfill test per legacy type |
 | **P1.6** | Overlap check and run insert in one transaction | Race test: manual trigger and scheduler for the same scan concurrently → one active run |
-| **P1.7** | **Claim-N** with `FOR UPDATE SKIP LOCKED`, server capacity, priority classes with ageing, per-run round-robin | DB: two sensors × N polls never claim the same command; capacity respected; class order; round-robin across two runs; tenant/zone predicates hold |
+| **P1.7** | *(Shipped for tenant sensors: v2 `capacity` feature, fair order by class with aging then round-robin per run; platform-sensor tenant fair share in #991.)* **Claim-N** with `FOR UPDATE SKIP LOCKED`, server capacity, priority classes with ageing, per-run round-robin | DB: two sensors × N polls never claim the same command; capacity respected; class order; round-robin across two runs; tenant/zone predicates hold |
 | **P1.8** | **`controller_leases`** + non-idempotent sweeps converted; remove the two session advisory locks | DB: two holders, one wins, epoch increments, expiry hands over; each converted sweep runs once with two instances |
 | **P1.9** | Observability: `tenant_id` out of metric labels, inert metrics written or deleted, `traceparent` in payloads, `run_id` log key, `/runs/{id}/explain` | Metric label test; explain route tests incl. cross-tenant; trace propagation unit test |
 | **P1.10** | Cancel completeness: sdk-go cancel without doorbell; command cancel on scan commands needs `scans:write`; automation cancel stops steps; cancel audited | sdk-go conformance test; route permission test; DB test that automation cancel stops pending steps |

@@ -321,7 +321,7 @@ func (s *Service) enumerate(
 				if hopIndex > 0 {
 					et = edgeType[edgeKey(ch.Hops[hopIndex-1].AssetID, hop.AssetID)]
 				}
-				techs := applicableTechniques(hop.AssetType, et, prof.Capabilities, applic)
+				techs := applicableTechniques(hop.AssetType, hop.SubType, et, prof.Capabilities, applic)
 				if len(techs) > maxTechniquesPerHop {
 					sort.SliceStable(techs, func(i, j int) bool { return techs[i].Weight > techs[j].Weight })
 					techs = techs[:maxTechniquesPerHop]
