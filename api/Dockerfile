@@ -93,6 +93,13 @@ RUN CGO_ENABLED=0 \
     GOARCH=${TARGETARCH:-$(go env GOARCH)} \
     go build -ldflags="-s -w" -o /app/bin/bootstrap-admin ./cmd/bootstrap-admin
 
+# Build refingerprint (re-keys findings to the current identity recipe; a dry
+# run by default, RFC-043 §6)
+RUN CGO_ENABLED=0 \
+    GOOS=${TARGETOS:-linux} \
+    GOARCH=${TARGETARCH:-$(go env GOARCH)} \
+    go build -ldflags="-s -w" -o /app/bin/refingerprint ./cmd/refingerprint
+
 
 # -----------------------------------------------------------------------------
 # Production stage
@@ -113,6 +120,7 @@ RUN addgroup -g 1000 -S openctem && \
 # Copy binaries from builder
 COPY --from=builder /app/bin/server .
 COPY --from=builder /app/bin/bootstrap-admin .
+COPY --from=builder /app/bin/refingerprint .
 
 # Copy migrations if exist
 COPY --from=builder /app/migrations ./migrations

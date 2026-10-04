@@ -56,7 +56,10 @@ func (h *BranchHandler) ensureRepoOwnedByTenant(w http.ResponseWriter, r *http.R
 		apierror.BadRequest("Invalid repository ID").WriteJSON(w)
 		return false
 	}
-	if _, err := h.assetService.GetAsset(r.Context(), tenantID, repoIDStr); err != nil {
+	// The repository must also be in the caller's data scope (Layer 2):
+	// its branches carry commit authors and scan state, and the writes
+	// change it. Out of scope answers 404, like a missing repository.
+	if _, err := h.assetService.GetAssetInCallerScope(r.Context(), tenantID, repoIDStr); err != nil {
 		// Asset service returns shared.ErrNotFound when the repo doesn't exist
 		// OR isn't owned by this tenant. Either way the answer is 404 — never
 		// 403 (would leak that the resource exists in another tenant).
