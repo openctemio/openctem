@@ -112,8 +112,8 @@ used: this is a public repository, and a fork PR would run code on the host.
 
 | Tier | Events | API CI | Web CI | All-in-one CI | CodeQL |
 |------|--------|--------|--------|---------------|--------|
-| Fast | `pull_request` | `API static checks` + `Unit tests` (`go test -race`, no database: DB-backed tests skip themselves without `DATABASE_URL`) | `Web checks` | build skipped | changed language(s) |
-| Full | `merge_group`, push to `develop`/`main` | `API static checks` + `Tests (Postgres + Redis)` + `Protocol v1 Compatibility` (+ release binaries); Docker build on `main` | `Web checks`; `next build` on push | images built and smoke-tested | queue: none (the PR head was analysed); push: both |
+| Fast | `pull_request` | `API static checks` + `Tests (Postgres + Redis)` (the whole suite with `-race` against Postgres and Redis, so isolation tests fail on the PR; owner decision D-30) | `Web checks` | build skipped | changed language(s) |
+| Full | `merge_group`, push to `develop`/`main` | the fast tier + `Protocol v1 Compatibility` (+ release binaries); Docker build on `main` | `Web checks`; `next build` on push | images built and smoke-tested | queue: none (the PR head was analysed); push: both |
 
 The `… OK` aggregators pass when a job was skipped because its area did not
 change, but when the area did change they also require that **this event's
@@ -187,8 +187,7 @@ make check            # both contract checks, as CI runs them
 | OpenAPI Contract | See above. |
 | Gateway Routing | `api/deploy/gateway/smoke-test.sh` + renders the production compose files. |
 | Lint | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
-| Unit tests | PRs. `go test -race -timeout 20m ./...` with no database (DB-backed tests skip). |
-| Tests (Postgres + Redis) | Merge queue and pushes. The same suite against Postgres 17 + Redis 7 service containers. |
+| Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -race -timeout 20m ./...` against Postgres 17 + Redis 7 service containers, with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
 | Protocol v1 Compatibility | Merge queue and pushes. Runs the pinned, last-released sdk-go against a freshly built server (`api/scripts/compat-v1.sh`), then builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
 | Docker Build | Pushes to `main` only; builds the image, does not push it. |
 
