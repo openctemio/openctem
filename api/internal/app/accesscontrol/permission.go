@@ -85,7 +85,10 @@ func (s *PermissionService) logAudit(ctx context.Context, actx auditapp.AuditCon
 // tenant so that the caller's existing IsSystem() guard can reject mutations
 // with its specific error while keeping them readable.
 func (s *PermissionService) permissionSetForTenant(ctx context.Context, id shared.ID, callerTenantID string) (*permissionsetdom.PermissionSet, error) {
-	ps, err := s.permissionSetRepo.GetByID(ctx, id)
+	// An empty or malformed caller tenant becomes the zero ID: only system
+	// sets are visible to it.
+	tid, _ := shared.IDFromString(callerTenantID)
+	ps, err := s.permissionSetRepo.GetByID(ctx, tid, id)
 	if err != nil {
 		return nil, err
 	}
@@ -104,14 +107,10 @@ func (s *PermissionService) permissionSetForTenant(ctx context.Context, id share
 // cross-tenant group management (custom permission overrides) via a guessed
 // group ID.
 func (s *PermissionService) groupForTenant(ctx context.Context, id shared.ID, callerTenantID string) (*groupdom.Group, error) {
-	g, err := s.groupRepo.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if callerTenantID == "" || g.TenantID().String() != callerTenantID {
-		return nil, shared.ErrNotFound
-	}
-	return g, nil
+	// An empty or malformed caller tenant becomes the zero ID, which owns no
+	// group, so the lookup answers not-found.
+	tid, _ := shared.IDFromString(callerTenantID)
+	return s.groupRepo.GetByTenantAndID(ctx, tid, id)
 }
 
 // =============================================================================
@@ -230,16 +229,6 @@ func (s *PermissionService) CreatePermissionSet(ctx context.Context, input Creat
 	return ps, nil
 }
 
-// GetPermissionSet retrieves a permission set by ID.
-func (s *PermissionService) GetPermissionSet(ctx context.Context, permissionSetID string) (*permissionsetdom.PermissionSet, error) {
-	id, err := shared.IDFromString(permissionSetID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid permission set id format", shared.ErrValidation)
-	}
-
-	return s.permissionSetRepo.GetByID(ctx, id)
-}
-
 // GetPermissionSetWithItems retrieves a permission set with its items.
 func (s *PermissionService) GetPermissionSetWithItems(ctx context.Context, permissionSetID, callerTenantID string) (*permissionsetdom.PermissionSetWithItems, error) {
 	id, err := shared.IDFromString(permissionSetID)
@@ -252,8 +241,12 @@ func (s *PermissionService) GetPermissionSetWithItems(ctx context.Context, permi
 	if _, err := s.permissionSetForTenant(ctx, id, callerTenantID); err != nil {
 		return nil, err
 	}
+	tid, err := shared.IDFromString(callerTenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
 
-	return s.permissionSetRepo.GetWithItems(ctx, id)
+	return s.permissionSetRepo.GetWithItems(ctx, tid, id)
 }
 
 // UpdatePermissionSetInput represents the input for updating a permission set.
@@ -348,7 +341,10 @@ func (s *PermissionService) DeletePermissionSet(ctx context.Context, permissionS
 		tenantIDStr = ps.TenantID().String()
 	}
 
-	if err := s.permissionSetRepo.Delete(ctx, id); err != nil {
+	if ps.TenantID() == nil {
+		return fmt.Errorf("%w: cannot delete system permission set", shared.ErrValidation)
+	}
+	if err := s.permissionSetRepo.Delete(ctx, *ps.TenantID(), id); err != nil {
 		return err
 	}
 
@@ -544,7 +540,7 @@ func (s *PermissionService) ResolveUserPermissionsWithCount(ctx context.Context,
 	// Collect permissions from all groups
 	allGroupPermissions := make([][]permissiondom.Permission, 0, len(userGroups))
 	for _, ug := range userGroups {
-		groupPerms, err := s.ResolveGroupPermissions(ctx, ug.Group.ID().String())
+		groupPerms, err := s.ResolveGroupPermissions(ctx, ug.Group.TenantID(), ug.Group.ID().String())
 		if err != nil {
 			s.logger.Error("failed to resolve group permissions", "group_id", ug.Group.ID().String(), "error", err)
 			continue
@@ -557,7 +553,9 @@ func (s *PermissionService) ResolveUserPermissionsWithCount(ctx context.Context,
 }
 
 // ResolveGroupPermissions resolves all effective permissions for a group.
-func (s *PermissionService) ResolveGroupPermissions(ctx context.Context, groupID string) ([]permissiondom.Permission, error) {
+// tenantID is the group's tenant: an inherited set is followed only through
+// that tenant's own sets and system sets.
+func (s *PermissionService) ResolveGroupPermissions(ctx context.Context, tenantID shared.ID, groupID string) ([]permissiondom.Permission, error) {
 	gid, err := shared.IDFromString(groupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
@@ -574,7 +572,7 @@ func (s *PermissionService) ResolveGroupPermissions(ctx context.Context, groupID
 	parentChains := make(map[shared.ID][]*permissionsetdom.PermissionSetWithItems)
 
 	for _, psID := range permSetIDs {
-		psWithItems, err := s.permissionSetRepo.GetWithItems(ctx, psID)
+		psWithItems, err := s.permissionSetRepo.GetWithItems(ctx, tenantID, psID)
 		if err != nil {
 			s.logger.Error("failed to get permission set", "id", psID.String(), "error", err)
 			continue
@@ -583,14 +581,14 @@ func (s *PermissionService) ResolveGroupPermissions(ctx context.Context, groupID
 
 		// Get parent chain for extended sets
 		if psWithItems.PermissionSet.IsExtended() {
-			chainSets, err := s.permissionSetRepo.GetInheritanceChain(ctx, psID)
+			chainSets, err := s.permissionSetRepo.GetInheritanceChain(ctx, tenantID, psID)
 			if err != nil {
 				s.logger.Error("failed to get inheritance chain", "id", psID.String(), "error", err)
 			} else {
 				// Convert []*PermissionSet to []*PermissionSetWithItems
 				var chainWithItems []*permissionsetdom.PermissionSetWithItems
 				for _, chainPS := range chainSets {
-					chainPSWithItems, err := s.permissionSetRepo.GetWithItems(ctx, chainPS.ID())
+					chainPSWithItems, err := s.permissionSetRepo.GetWithItems(ctx, tenantID, chainPS.ID())
 					if err != nil {
 						s.logger.Error("failed to get chain set items", "id", chainPS.ID().String(), "error", err)
 						continue

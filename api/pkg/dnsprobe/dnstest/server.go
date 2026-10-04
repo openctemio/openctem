@@ -27,6 +27,11 @@ type Entry struct {
 	RCode dnsmessage.RCode
 	// Truncate forces a truncated UDP answer so the client retries over TCP.
 	Truncate bool
+	// Referral answers like a parent zone's server: no answer, NOERROR, and
+	// these name servers in the authority section.
+	Referral []string
+	// Authoritative sets the AA bit on answers for this name.
+	Authoritative bool
 }
 
 // Server is a running fake resolver.
@@ -46,14 +51,32 @@ func Start(zone map[string]Entry) (*Server, error) {
 }
 
 // StartOn serves zone on addr (port 0 picks one).
+//
+// UDP and TCP share one port. With port 0 the UDP port is picked first and
+// the same TCP port may already be taken by another process, so the pair is
+// retried a few times instead of failing the test on a busy machine.
 func StartOn(addr string, zone map[string]Entry) (*Server, error) {
-	pc, err := net.ListenPacket("udp", addr)
-	if err != nil {
-		return nil, err
-	}
-	l, err := net.Listen("tcp", pc.LocalAddr().String())
-	if err != nil {
+	var (
+		pc  net.PacketConn
+		l   net.Listener
+		err error
+	)
+	_, port, _ := net.SplitHostPort(addr)
+	for attempt := 0; attempt < 20; attempt++ {
+		pc, err = net.ListenPacket("udp", addr)
+		if err != nil {
+			return nil, err
+		}
+		l, err = net.Listen("tcp", pc.LocalAddr().String())
+		if err == nil {
+			break
+		}
 		_ = pc.Close()
+		if port != "0" {
+			return nil, err
+		}
+	}
+	if err != nil {
 		return nil, err
 	}
 	s := &Server{Addr: pc.LocalAddr().String(), zone: map[string]Entry{}, udp: pc, tcp: l}
@@ -161,6 +184,13 @@ func (s *Server) answer(q []byte, udp bool) []byte {
 			resp.Truncated = true
 			break
 		}
+		if len(e.Referral) > 0 {
+			for _, n := range e.Referral {
+				resp.Authorities = append(resp.Authorities, rr(cur, &dnsmessage.NSResource{NS: mustName(n)}))
+			}
+			break
+		}
+		resp.Authoritative = e.Authoritative
 		if e.CNAME != "" {
 			resp.Answers = append(resp.Answers, rr(cur, &dnsmessage.CNAMEResource{CNAME: mustName(e.CNAME)}))
 			if question.Type == dnsmessage.TypeCNAME {
