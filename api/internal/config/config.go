@@ -133,6 +133,12 @@ type IngestConfig struct {
 	// "would resolve" audit entry, no state change) or "enforce".
 	// INGEST_COVERAGE_AUTO_RESOLVE.
 	CoverageAutoResolve string
+
+	// SourceResolve is the mode of source-asserted resolve: a connector
+	// source (Tenable.sc) reporting a finding as mitigated resolves the
+	// matching open finding (RFC-047 §7.6): "off", "dry_run" (default: count
+	// and log, no state change) or "enforce". INGEST_SOURCE_RESOLVE.
+	SourceResolve string
 }
 
 // AsyncEnabled reports whether async ingest mode is on.
@@ -1192,6 +1198,7 @@ func Load() (*Config, error) {
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
 			CoverageAutoResolve:   getEnv("INGEST_COVERAGE_AUTO_RESOLVE", "dry_run"),
+			SourceResolve:         getEnv("INGEST_SOURCE_RESOLVE", "dry_run"),
 		},
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.
