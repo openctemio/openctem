@@ -14165,6 +14165,64 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/groups': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Group findings
+     * @description Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
+     *     (RFC-048), so a grouped view counts exactly the rows the list shows.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type */
+          group_by?: string
+          /** @description Page number */
+          page?: number
+          /** @description Groups per page */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/remediation-groups': {
     parameters: {
       query?: never
@@ -14257,22 +14315,23 @@ export interface paths {
     }
     /**
      * Get finding statistics
-     * @description Returns aggregated statistics for findings. Optional asset_id query
-     *     parameter scopes the stats to a single asset (used by the Findings
-     *     page when filtered by `?assetId=…` so the severity cards match the
-     *     filtered table instead of showing global tenant counts).
-     *     Optional sources query parameter (comma-separated, same values and
-     *     validation as the list endpoint's sources filter) scopes every
-     *     number to those sources; the Exposures type pages use it to get
-     *     their counts in one request instead of walking the list.
+     * @description Aggregated statistics over the findings a filter selects. Takes every filter param of
+     *     GET /findings (RFC-048) and compiles the same WHERE, so the numbers always match the table
+     *     (the old asset_id and sources params are part of that filter).
      */
     get: {
       parameters: {
         query?: {
-          /** @description Restrict stats to a single asset */
-          asset_id?: string
-          /** @description Restrict stats to these finding sources (comma-separated, max 25) */
-          sources?: string
+          /** @description Asset IDs */
+          asset_id?: string[]
+          /** @description Sources */
+          source?: string[]
+          /** @description Severities */
+          severity?: string[]
+          /** @description Statuses */
+          status?: string[]
+          /** @description Free text */
+          q?: string
         }
         header?: never
         path?: never
@@ -14295,9 +14354,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': {
-              [key: string]: string
-            }
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Unauthorized */
