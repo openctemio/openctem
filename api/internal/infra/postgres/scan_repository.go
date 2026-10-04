@@ -145,13 +145,6 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 	return nil
 }
 
-// GetByID retrieves a scan by ID.
-func (r *ScanRepository) GetByID(ctx context.Context, id shared.ID) (*scan.Scan, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanFromRow(row)
-}
-
 // GetByTenantAndID retrieves a scan by tenant and ID.
 func (r *ScanRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*scan.Scan, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
@@ -315,10 +308,10 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 	return nil
 }
 
-// Delete deletes a scan.
-func (r *ScanRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM scans WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete deletes a scan of tenantID. A scan of another tenant is not found.
+func (r *ScanRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM scans WHERE tenant_id = $1 AND id = $2"
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete scan: %w", err)
 	}
@@ -402,9 +395,9 @@ func (r *ScanRepository) ListDueForExecution(ctx context.Context, now time.Time)
 }
 
 // UpdateNextRunAt updates the next run time for a scan.
-func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, id shared.ID, nextRunAt *time.Time) error {
-	query := "UPDATE scans SET next_run_at = $2, updated_at = NOW() WHERE id = $1"
-	_, err := r.db.ExecContext(ctx, query, id.String(), nextRunAt)
+func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, tenantID, id shared.ID, nextRunAt *time.Time) error {
+	query := "UPDATE scans SET next_run_at = $2, updated_at = NOW() WHERE id = $1 AND tenant_id = $3"
+	_, err := r.db.ExecContext(ctx, query, id.String(), nextRunAt, tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to update next_run_at: %w", err)
 	}
@@ -417,16 +410,16 @@ func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, id shared.ID, next
 // any edit made meanwhile (a pause, a config change) and never stored the
 // 'running' status anyway. Counters are not touched here; RecordRun counts
 // the run when it finishes.
-func (r *ScanRepository) RecordRunStarted(ctx context.Context, id shared.ID, runID shared.ID) error {
+func (r *ScanRepository) RecordRunStarted(ctx context.Context, tenantID, id shared.ID, runID shared.ID) error {
 	const query = `
 		UPDATE scans
 		SET last_run_id = $2,
 		    last_run_at = NOW(),
 		    last_run_status = 'running',
 		    updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $3
 	`
-	if _, err := r.db.ExecContext(ctx, query, id.String(), runID.String()); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), tenantID.String()); err != nil {
 		return fmt.Errorf("failed to record run start: %w", err)
 	}
 	return nil
@@ -435,7 +428,7 @@ func (r *ScanRepository) RecordRunStarted(ctx context.Context, id shared.ID, run
 // RecordRun records a run's terminal outcome on its scan and counts the run.
 // last_run_status follows only while this run is still the scan's latest: an
 // older run finishing late must not relabel a newer one that is running.
-func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error {
+func (r *ScanRepository) RecordRun(ctx context.Context, tenantID, id shared.ID, runID shared.ID, status string) error {
 	var successIncrement, failedIncrement, partialIncrement int
 	switch status {
 	case "completed", "success":
@@ -456,9 +449,9 @@ func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shar
 		    failed_runs = failed_runs + $5,
 		    partial_runs = partial_runs + $6,
 		    updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $7
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), status, successIncrement, failedIncrement, partialIncrement)
+	_, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), status, successIncrement, failedIncrement, partialIncrement, tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to record run: %w", err)
 	}
@@ -470,15 +463,15 @@ func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shar
 // (there is no run) and no counter changes (there was no run to count). Makes a
 // scan that failed to dispatch visible instead of indistinguishable from one
 // that has not run yet.
-func (r *ScanRepository) RecordTriggerFailure(ctx context.Context, id shared.ID, status string) error {
+func (r *ScanRepository) RecordTriggerFailure(ctx context.Context, tenantID, id shared.ID, status string) error {
 	const query = `
 		UPDATE scans
 		SET last_run_at = NOW(),
 		    last_run_status = $2,
 		    updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $3
 	`
-	if _, err := r.db.ExecContext(ctx, query, id.String(), status); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, id.String(), status, tenantID.String()); err != nil {
 		return fmt.Errorf("failed to record trigger failure: %w", err)
 	}
 	return nil
@@ -638,13 +631,13 @@ func (r *ScanRepository) UpdateStatusByAssetGroupID(ctx context.Context, assetGr
 // (its result was ignored), and the lock stayed held by the first session
 // until that connection closed — from then on every attempt to schedule that
 // scan, on every replica, saw "locked by another instance" and skipped it.
-func (r *ScanRepository) ClaimScheduledRun(ctx context.Context, id shared.ID, dueAt time.Time, next *time.Time) (bool, error) {
+func (r *ScanRepository) ClaimScheduledRun(ctx context.Context, tenantID, id shared.ID, dueAt time.Time, next *time.Time) (bool, error) {
 	const query = `
 		UPDATE scans
 		SET next_run_at = $3, updated_at = NOW()
-		WHERE id = $1 AND next_run_at = $2 AND status = 'active'
+		WHERE id = $1 AND next_run_at = $2 AND status = 'active' AND tenant_id = $4
 	`
-	res, err := r.db.ExecContext(ctx, query, id.String(), dueAt, next)
+	res, err := r.db.ExecContext(ctx, query, id.String(), dueAt, next, tenantID.String())
 	if err != nil {
 		return false, fmt.Errorf("failed to claim scheduled run for scan %s: %w", id.String(), err)
 	}

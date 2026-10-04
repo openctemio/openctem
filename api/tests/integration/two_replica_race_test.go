@@ -80,8 +80,8 @@ func TestTwoReplicas_SchedulerClaimsEachOccurrenceOnce(t *testing.T) {
 		var okA, okB bool
 		var errA, errB error
 		race(
-			func() { okA, errA = scansA.ClaimScheduledRun(ctx, scanID, occurrence, &next) },
-			func() { okB, errB = scansB.ClaimScheduledRun(ctx, scanID, occurrence, &next) },
+			func() { okA, errA = scansA.ClaimScheduledRun(ctx, tenantID, scanID, occurrence, &next) },
+			func() { okB, errB = scansB.ClaimScheduledRun(ctx, tenantID, scanID, occurrence, &next) },
 		)
 		if errA != nil || errB != nil {
 			t.Fatalf("round %d: claim errors %v / %v", round, errA, errB)
