@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -216,6 +217,16 @@ type RunResponse struct {
 	Tasks []RunTaskResponse `json:"tasks,omitempty"`
 	// TasksTruncated is true when the run has more tasks than Tasks lists.
 	TasksTruncated bool `json:"tasks_truncated,omitempty"`
+	// TasksNextCursor continues the task list after Tasks
+	// (GET /pipeline-runs/{id}/tasks?cursor=) when TasksTruncated.
+	TasksNextCursor string `json:"tasks_next_cursor,omitempty"`
+}
+
+// RunTaskPageResponse is one page of a run's tasks.
+type RunTaskPageResponse struct {
+	Data []RunTaskResponse `json:"data"`
+	// NextCursor continues after Data; absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 // RunTaskSummaryResponse counts a run's tasks by status (RFC-046 §4.1).
@@ -947,6 +958,7 @@ func (h *PipelineHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		resp.TaskSummary = toRunTaskSummaryResponse(tasks.Summary)
 		resp.Tasks = toRunTaskResponses(tasks.Items)
 		resp.TasksTruncated = tasks.Truncated
+		resp.TasksNextCursor = tasks.NextCursor
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -994,6 +1006,47 @@ func (h *PipelineHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		"total_pages": result.TotalPages,
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// ListRunTasks handles GET /api/v1/pipeline-runs/{id}/tasks
+// @Summary      List a run's tasks
+// @Description  One page of the run's tasks (one dispatched command each) in dispatch order. Page with next_cursor. Targets are counted, not listed.
+// @Tags         Pipelines
+// @Produce      json
+// @Param        id        path      string  true   "Run ID"
+// @Param        cursor    query     string  false  "next_cursor of the previous page"
+// @Param        per_page  query     int     false  "Tasks per page (1-200)" default(50)
+// @Success      200  {object}  RunTaskPageResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /pipeline-runs/{id}/tasks [get]
+func (h *PipelineHandler) ListRunTasks(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+	runID := chi.URLParam(r, "id")
+	q := r.URL.Query()
+
+	perPage := 0
+	if raw := q.Get("per_page"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			apierror.BadRequest("per_page must be a number").WriteJSON(w)
+			return
+		}
+		perPage = n
+		if perPage == 0 {
+			perPage = -1 // explicit 0 is out of range, not "default"
+		}
+	}
+
+	page, err := h.service.ListRunTasksPage(r.Context(), tenantID, runID, q.Get("cursor"), perPage)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	resp := RunTaskPageResponse{Data: toRunTaskResponses(page.Items), NextCursor: page.NextCursor}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }

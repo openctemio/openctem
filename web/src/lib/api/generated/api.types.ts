@@ -19836,6 +19836,71 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pipeline-runs/{id}/tasks': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List a run's tasks
+     * @description One page of the run's tasks (one dispatched command each) in dispatch order. Page with next_cursor. Targets are counted, not listed.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description next_cursor of the previous page */
+          cursor?: string
+          /** @description Tasks per page (1-200) */
+          per_page?: number
+        }
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.RunTaskPageResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/repositories/{repository_id}/branches': {
     parameters: {
       query?: never
@@ -39464,6 +39529,11 @@ export interface components {
       task_summary?: components['schemas']['internal_infra_http_handler.RunTaskSummaryResponse']
       /** @description Tasks lists the run's tasks (GET /pipeline-runs/{id} only). */
       tasks?: components['schemas']['internal_infra_http_handler.RunTaskResponse'][]
+      /**
+       * @description TasksNextCursor continues the task list after Tasks
+       *     (GET /pipeline-runs/{id}/tasks?cursor=) when TasksTruncated.
+       */
+      tasks_next_cursor?: string
       /** @description TasksTruncated is true when the run has more tasks than Tasks lists. */
       tasks_truncated?: boolean
       tenant_id?: string
@@ -39478,6 +39548,11 @@ export interface components {
        *     was settled at its deadline; the next scheduled run plans them first.
        */
       unfinished_target_count?: number
+    }
+    'internal_infra_http_handler.RunTaskPageResponse': {
+      data?: components['schemas']['internal_infra_http_handler.RunTaskResponse'][]
+      /** @description NextCursor continues after Data; absent on the last page. */
+      next_cursor?: string
     }
     'internal_infra_http_handler.RunTaskResponse': {
       attempts?: number

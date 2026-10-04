@@ -167,6 +167,8 @@ export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_
 /** A scan run's tasks (RFC-046): GET /api/v1/pipeline-runs and /pipeline-runs/{id}. */
 export type RunTaskSummary = Schemas['internal_infra_http_handler.RunTaskSummaryResponse']
 export type RunTask = Schemas['internal_infra_http_handler.RunTaskResponse']
+/** GET /api/v1/pipeline-runs/{id}/tasks — one cursor page of a run's tasks. */
+export type RunTaskPage = Schemas['internal_infra_http_handler.RunTaskPageResponse']
 /** GET /api/v1/easm/candidates — the attribution review queue. */
 export type EASMReviewPage =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']
