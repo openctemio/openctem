@@ -60,13 +60,9 @@ func (r *FindingRepository) ListWhere(ctx context.Context, w *filterspec.Where, 
 		return empty, fmt.Errorf("failed to query findings: %w", err)
 	}
 	defer rows.Close()
-	// pagination.New caps the page at 100 rows; the cap is restated so the
-	// allocation never depends on a request value.
-	capacity := page.Limit()
-	if capacity < 0 || capacity > maxFindingPageRows {
-		capacity = maxFindingPageRows
-	}
-	findings := make([]*vulnerability.Finding, 0, capacity)
+	// A constant capacity: pagination.New caps a page at maxFindingPageRows,
+	// and the allocation must not depend on a request value.
+	findings := make([]*vulnerability.Finding, 0, maxFindingPageRows)
 	for rows.Next() {
 		f, err := r.scanFindingFromRows(rows)
 		if err != nil {

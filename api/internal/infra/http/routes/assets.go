@@ -379,6 +379,10 @@ func registerEASMRoutes(
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 	router.Group("/api/v1/easm", func(r Router) {
 		r.GET("/summary", h.Summary, middleware.Require(permission.AssetsRead))
+		if h.HasReview() {
+			r.GET("/candidates", h.Candidates, middleware.Require(permission.AssetsRead))
+			r.POST("/candidates/decisions", h.Decide, middleware.Require(permission.AssetsWrite))
+		}
 	}, tenantMiddlewares...)
 }
 

@@ -3,9 +3,12 @@ package sarif
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/openctemio/ctis"
@@ -96,6 +99,42 @@ func (a *Adapter) Convert(ctx context.Context, input []byte, opts *core.AdapterO
 	return report, nil
 }
 
+// semgrepRequiresLogin is what Semgrep OSS writes instead of a fingerprint
+// when its pro features are unavailable; it is never a fingerprint.
+const semgrepRequiresLogin = "requires login"
+
+// resultFingerprint picks one of a result's fingerprints, the same way every
+// time: matchBasedId/v1 when usable, else the usable value under the lowest
+// key, with values over 64 characters hashed (SHA-256) — the rule
+// github.com/openctemio/ctis FromSARIF applies, so the two SARIF entry points
+// agree. Ranging over the map (the old code) gave a random entry when a
+// result carried several, and a re-scan could then look like a new finding
+// (RFC-043 B23). "" when there is none.
+func resultFingerprint(fps map[string]string) string {
+	usable := func(v string) bool { return v != "" && v != semgrepRequiresLogin }
+	fp := ""
+	if v := fps["matchBasedId/v1"]; usable(v) {
+		fp = v
+	} else {
+		keys := make([]string, 0, len(fps))
+		for k, v := range fps {
+			if usable(v) {
+				keys = append(keys, k)
+			}
+		}
+		if len(keys) == 0 {
+			return ""
+		}
+		sort.Strings(keys)
+		fp = fps[keys[0]]
+	}
+	if len(fp) > 64 {
+		sum := sha256.Sum256([]byte(fp))
+		return hex.EncodeToString(sum[:])
+	}
+	return fp
+}
+
 // convertResult converts a SARIF result to a CTIS finding.
 func (a *Adapter) convertResult(result SARIFResult, ruleIndex map[string]*SARIFRule, opts *core.AdapterOptions, runIdx, resultIdx int) *ctis.Finding {
 	rule := ruleIndex[result.RuleID]
@@ -167,21 +206,8 @@ func (a *Adapter) convertResult(result SARIFResult, ruleIndex map[string]*SARIFR
 	// Set message from SARIF result message (primary display text)
 	finding.Message = result.Message.Text
 
-	// Fingerprint from result fingerprints
-	if len(result.Fingerprints) > 0 {
-		// Prefer matchBasedId/v1
-		if fp, ok := result.Fingerprints["matchBasedId/v1"]; ok && fp != "requires login" {
-			finding.Fingerprint = fp
-		} else {
-			// Use first available fingerprint
-			for _, fp := range result.Fingerprints {
-				if fp != "requires login" {
-					finding.Fingerprint = fp
-					break
-				}
-			}
-		}
-	}
+	// Fingerprint from result fingerprints, picked deterministically.
+	finding.Fingerprint = resultFingerprint(result.Fingerprints)
 
 	// Generate fingerprint if not available
 	if finding.Fingerprint == "" {

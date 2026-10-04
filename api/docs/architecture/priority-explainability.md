@@ -96,6 +96,18 @@ Beyond the classic inputs, the explanation now also surfaces:
 - `is_network_accessible` — network-reachability input distinct from
   internet-facing exposure.
 - `asset_unowned` — surfaced when the tenant's ownership floor is enabled.
+- `attribution_unconfirmed` — the asset's attribution state (`needs_review`,
+  `candidate` or `rejected`) when it caps the class (RFC-036 §6.8, decision
+  T5): a finding on an asset the platform has not confirmed as the tenant's
+  is held at **P2**, whatever the base class, bumps or override rules say. The
+  cap runs last (`vulnerability.ApplyAttributionCap`, also applied to rule
+  results) and adds "capped at P2 until ownership is confirmed (was P0; asset
+  attribution: needs_review)" to the reason; the finding page shows a
+  "Verify ownership" note linking to the asset. `dependency` and
+  `monitor_only` (a person's decision that the name is the tenant's), confirmed
+  and legacy assets (no record) are never capped. One tenant-scoped lookup per
+  batch (`AttributionRepository.ActiveCheckBlocked`); a lookup error means no
+  cap, never a failed classification.
 
 > Reachability inputs are populated from the asset's exposure level and
 > attack-path membership. `reachable` follows the engine formula
