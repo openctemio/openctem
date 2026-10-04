@@ -136,6 +136,11 @@ func TestRelationshipAllowed_StoredPairs(t *testing.T) {
 		{RelTypeRunsOn, TypeRef{Type: AssetTypeWebsite}, TypeRef{Type: AssetTypeHost}, true}, // legacy alias row
 		{RelTypeContains, TypeRef{Type: AssetTypeService}, TypeRef{Type: AssetTypeService}, false},
 		{RelTypeRunsOn, TypeRef{Type: AssetTypeHost}, TypeRef{Type: AssetTypeApplication, SubType: "website"}, false},
+		// an application whose kind was never recorded matches the rules of
+		// every kind; a different recorded kind does not
+		{RelTypeRunsOn, TypeRef{Type: AssetTypeApplication}, TypeRef{Type: AssetTypeHost}, true},
+		{RelTypeRunsOn, TypeRef{Type: AssetTypeApplication, SubType: "mobile_app"}, TypeRef{Type: AssetTypeHost}, false},
+		{RelTypeAuthenticatesTo, TypeRef{Type: AssetTypeApplication, SubType: "website"}, TypeRef{Type: AssetTypeIdentity}, true},
 	}
 	for _, c := range cases {
 		if got := RelationshipAllowed(c.rel, c.src, c.tgt); got != c.want {

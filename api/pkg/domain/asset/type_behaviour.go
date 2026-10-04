@@ -78,9 +78,19 @@ func ScannableBy(t AssetType, subType string) []string {
 	return slices.Clone(d.ScannableBy)
 }
 
+// subTypeMatches reports whether an asset's sub-type satisfies a rule's.
+// A rule without a sub-type matches every asset of the type. An asset
+// without a sub-type (its kind was never recorded, e.g. an application
+// created before the typed pages sent one) matches every rule of its type:
+// refusing it would block edges the registry allows for each of its kinds.
+func subTypeMatches(rule, asset string) bool {
+	return rule == "" || asset == "" || rule == asset
+}
+
 // RelationshipAllowed reports whether the registry allows a relationship of
 // type rel from source to target (both stored pairs). A rule with a peer
-// sub-type matches only that sub-type; a rule without one matches any.
+// sub-type matches only that sub-type (or an asset with none); a rule
+// without one matches any.
 func RelationshipAllowed(rel RelationshipType, source, target TypeRef) bool {
 	src := CanonicalPair(source.Type, source.SubType)
 	tgt := CanonicalPair(target.Type, target.SubType)
@@ -89,11 +99,11 @@ func RelationshipAllowed(rel RelationshipType, source, target TypeRef) bool {
 		return false
 	}
 	for _, r := range d.Relationships.Out {
-		if r.Relationship != rel || (r.SubType != "" && r.SubType != src.SubType) {
+		if r.Relationship != rel || !subTypeMatches(r.SubType, src.SubType) {
 			continue
 		}
 		for _, p := range r.Peers {
-			if p.Type == tgt.Type && (p.SubType == "" || p.SubType == tgt.SubType) {
+			if p.Type == tgt.Type && subTypeMatches(p.SubType, tgt.SubType) {
 				return true
 			}
 		}
@@ -111,7 +121,7 @@ func AllowedRelationshipTargets(rel RelationshipType, source TypeRef) []TypeRef 
 	}
 	var out []TypeRef
 	for _, r := range d.Relationships.Out {
-		if r.Relationship != rel || (r.SubType != "" && r.SubType != src.SubType) {
+		if r.Relationship != rel || !subTypeMatches(r.SubType, src.SubType) {
 			continue
 		}
 		for _, p := range r.Peers {

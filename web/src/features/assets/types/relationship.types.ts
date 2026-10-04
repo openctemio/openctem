@@ -20,6 +20,10 @@
 
 import type { AssetType } from './asset.types'
 import {
+  ASSET_RELATIONSHIP_NAMES,
+  ASSET_TYPE_ALIASES,
+} from '@/features/asset-types/registry.generated'
+import {
   type GeneratedRelationshipType,
   GENERATED_RELATIONSHIP_LABELS,
   GENERATED_RELATIONSHIP_CONSTRAINTS,
@@ -253,28 +257,62 @@ export const ALL_RELATIONSHIP_TYPES: RelationshipType[] = ALL_GENERATED_RELATION
 // ============================================
 
 /**
- * Check if a relationship type is valid between two asset types
+ * An asset as the constraint table sees it: its stored type and sub-type.
+ * A plain string is a type with no sub-type.
+ */
+export interface AssetTypeRef {
+  type: string
+  subType?: string
+}
+
+function toRef(ref: AssetTypeRef | string): AssetTypeRef {
+  const r = typeof ref === 'string' ? { type: ref } : ref
+  // A row still stored under a legacy alias name (before the RFC-042 §6.3.8
+  // data normalisation) reads as the pair the alias stands for.
+  const alias = ASSET_TYPE_ALIASES[r.type]
+  if (alias) return { type: alias.type, subType: r.subType || alias.subType }
+  return r
+}
+
+/**
+ * Whether a constraint name (`website`, `k8s_cluster`, `host` ...) covers an
+ * asset. The names resolve to stored (type, sub-type) pairs through the
+ * registry, the same resolution the API enforces. A name without a sub-type
+ * covers every asset of the type; an asset without a sub-type (its kind was
+ * never recorded) is covered by every name of its type.
+ */
+export function constraintNameMatches(name: string, ref: AssetTypeRef | string): boolean {
+  const asset = toRef(ref)
+  const resolved = ASSET_RELATIONSHIP_NAMES[name] ?? { type: name }
+  if (resolved.type !== asset.type) return false
+  return !resolved.subType || !asset.subType || resolved.subType === asset.subType
+}
+
+/**
+ * Check if a relationship type is valid between two assets
  */
 export function isValidRelationship(
   relationshipType: RelationshipType,
-  sourceType: ExtendedAssetType,
-  targetType: ExtendedAssetType
+  source: AssetTypeRef | string,
+  target: AssetTypeRef | string
 ): boolean {
   const constraints = VALID_RELATIONSHIP_CONSTRAINTS[relationshipType]
   if (!constraints) return false
 
   return constraints.some(
     (constraint) =>
-      constraint.sourceTypes.includes(sourceType) && constraint.targetTypes.includes(targetType)
+      constraint.sourceTypes.some((n) => constraintNameMatches(n, source)) &&
+      constraint.targetTypes.some((n) => constraintNameMatches(n, target))
   )
 }
 
 /**
- * Get valid target types for a given relationship and source type
+ * Get the constraint names of the valid targets for a relationship and a
+ * source asset (for labels; filter candidates with isValidRelationship)
  */
 export function getValidTargetTypes(
   relationshipType: RelationshipType,
-  sourceType: ExtendedAssetType
+  source: AssetTypeRef | string
 ): ExtendedAssetType[] {
   const constraints = VALID_RELATIONSHIP_CONSTRAINTS[relationshipType]
   if (!constraints) return []
@@ -282,7 +320,7 @@ export function getValidTargetTypes(
   const validTargets = new Set<ExtendedAssetType>()
 
   constraints.forEach((constraint) => {
-    if (constraint.sourceTypes.includes(sourceType)) {
+    if (constraint.sourceTypes.some((n) => constraintNameMatches(n, source))) {
       constraint.targetTypes.forEach((t) => validTargets.add(t))
     }
   })
@@ -291,14 +329,14 @@ export function getValidTargetTypes(
 }
 
 /**
- * Get valid relationship types for a given source type
+ * Get valid relationship types for a source asset
  */
-export function getValidRelationshipTypes(sourceType: ExtendedAssetType): RelationshipType[] {
+export function getValidRelationshipTypes(source: AssetTypeRef | string): RelationshipType[] {
   const validTypes: RelationshipType[] = []
 
   ;(Object.keys(VALID_RELATIONSHIP_CONSTRAINTS) as RelationshipType[]).forEach((relType) => {
     const constraints = VALID_RELATIONSHIP_CONSTRAINTS[relType]
-    if (constraints.some((c) => c.sourceTypes.includes(sourceType))) {
+    if (constraints.some((c) => c.sourceTypes.some((n) => constraintNameMatches(n, source)))) {
       validTypes.push(relType)
     }
   })

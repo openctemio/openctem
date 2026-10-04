@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "bb622401b4786a67"
+const RegistryVersion = "86e61f2533871e72"
 
 // Lenses.
 const (
@@ -191,7 +191,9 @@ var registryTypes = []TypeDefinition{
 		Card:     "ip_address",
 		Sections: []string{"overview", "attributes", "services", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{},
+			Out: []RelationshipRule{
+				{Relationship: "exposes", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+			},
 			In: []RelationshipRule{
 				{Relationship: "resolves_to", Peers: []TypeRef{{Type: "domain"}, {Type: "subdomain"}}},
 			},
@@ -269,7 +271,7 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "technologies", "certificate", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
-				{Relationship: "runs_on", Peers: []TypeRef{{Type: "host"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
+				{Relationship: "runs_on", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
 				{Relationship: "depends_on", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}}},
 				{Relationship: "peer_of", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}}},
 				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "cloud_account"}}},
@@ -281,10 +283,10 @@ var registryTypes = []TypeDefinition{
 				{Relationship: "monitors", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "cluster"}, {Type: "cloud_account"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "database"}, {Type: "network"}}},
 			},
 			In: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}}},
+				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}}},
 				{Relationship: "contains", SubType: "discovered_url", Peers: []TypeRef{{Type: "application", SubType: "api"}}},
-				{Relationship: "exposes", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}, {Type: "domain"}, {Type: "network", SubType: "load_balancer"}}},
-				{Relationship: "exposes", SubType: "discovered_url", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}}},
+				{Relationship: "exposes", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "ip_address"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}, {Type: "domain"}, {Type: "network", SubType: "load_balancer"}}},
+				{Relationship: "exposes", SubType: "discovered_url", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "ip_address"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}}},
 				{Relationship: "depends_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "kubernetes", SubType: "workload"}, {Type: "application", SubType: "mobile_app"}}},
 				{Relationship: "peer_of", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}}},
 				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "application", SubType: "mobile_app"}}},
@@ -432,8 +434,8 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "technologies", "findings", "services", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
-				{Relationship: "runs_on", SubType: "api", Peers: []TypeRef{{Type: "host"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
-				{Relationship: "runs_on", SubType: "website", Peers: []TypeRef{{Type: "host"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
+				{Relationship: "runs_on", SubType: "api", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
+				{Relationship: "runs_on", SubType: "website", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
 				{Relationship: "contains", SubType: "api", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}}},
 				{Relationship: "depends_on", SubType: "api", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}}},
 				{Relationship: "depends_on", SubType: "mobile_app", Peers: []TypeRef{{Type: "application", SubType: "api"}, {Type: "service"}}},
@@ -451,7 +453,7 @@ var registryTypes = []TypeDefinition{
 				{Relationship: "protected_by", SubType: "website", Peers: []TypeRef{{Type: "network", SubType: "load_balancer"}, {Type: "service"}}},
 			},
 			In: []RelationshipRule{
-				{Relationship: "exposes", SubType: "api", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}, {Type: "domain"}, {Type: "network", SubType: "load_balancer"}}},
+				{Relationship: "exposes", SubType: "api", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "ip_address"}, {Type: "kubernetes", SubType: "workload"}, {Type: "container"}, {Type: "domain"}, {Type: "network", SubType: "load_balancer"}}},
 				{Relationship: "exposes", SubType: "website", Peers: []TypeRef{{Type: "domain"}, {Type: "network", SubType: "load_balancer"}}},
 				{Relationship: "depends_on", SubType: "api", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "kubernetes", SubType: "workload"}, {Type: "application", SubType: "mobile_app"}}},
 				{Relationship: "peer_of", SubType: "api", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}}},
@@ -633,7 +635,7 @@ var registryTypes = []TypeDefinition{
 			Out: []RelationshipRule{
 				{Relationship: "contains", Peers: []TypeRef{{Type: "container"}, {Type: "service"}, {Type: "database"}}},
 				{Relationship: "exposes", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "container"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
 				{Relationship: "protected_by", Peers: []TypeRef{{Type: "service"}}},
 				{Relationship: "protected_by", SubType: "compute", Peers: []TypeRef{{Type: "service"}}},
 			},
@@ -642,7 +644,7 @@ var registryTypes = []TypeDefinition{
 				{Relationship: "deployed_to", Peers: []TypeRef{{Type: "repository"}, {Type: "container", SubType: "image"}}},
 				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "network"}}},
 				{Relationship: "contains", SubType: "serverless", Peers: []TypeRef{{Type: "cloud_account"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "container"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
 				{Relationship: "load_balances", Peers: []TypeRef{{Type: "network", SubType: "load_balancer"}, {Type: "service"}, {Type: "cloud_account"}}},
 				{Relationship: "monitors", Peers: []TypeRef{{Type: "service"}}},
 				{Relationship: "manages", Peers: []TypeRef{{Type: "cloud_account"}}},
@@ -711,8 +713,15 @@ var registryTypes = []TypeDefinition{
 		Card:     "host",
 		Sections: []string{"overview", "attributes", "findings", "components", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
-			Out: []RelationshipRule{},
-			In:  []RelationshipRule{},
+			Out: []RelationshipRule{
+				{Relationship: "contains", Peers: []TypeRef{{Type: "container"}, {Type: "service"}, {Type: "database"}}},
+				{Relationship: "exposes", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
+			},
+			In: []RelationshipRule{
+				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
+			},
 		},
 		ScannableBy: []string{"host", "ip"},
 	},
@@ -825,14 +834,14 @@ var registryTypes = []TypeDefinition{
 				{Relationship: "runs_on", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}}},
 				{Relationship: "deployed_to", SubType: "image", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}, {Type: "host"}}},
 				{Relationship: "exposes", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "container"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
 			},
 			In: []RelationshipRule{
 				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "database"}}},
-				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}, {Type: "kubernetes", SubType: "workload"}}},
+				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "kubernetes", SubType: "workload"}}},
 				{Relationship: "contains", SubType: "image", Peers: []TypeRef{{Type: "repository"}}},
 				{Relationship: "depends_on", SubType: "image", Peers: []TypeRef{{Type: "kubernetes", SubType: "workload"}}},
-				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "container"}}},
+				{Relationship: "peer_of", Peers: []TypeRef{{Type: "host"}, {Type: "endpoint"}, {Type: "container"}}},
 				{Relationship: "load_balances", Peers: []TypeRef{{Type: "network", SubType: "load_balancer"}, {Type: "service"}, {Type: "cloud_account"}}},
 				{Relationship: "manages", Peers: []TypeRef{{Type: "kubernetes", SubType: "cluster"}}},
 			},
@@ -1194,7 +1203,7 @@ var registryTypes = []TypeDefinition{
 				{Relationship: "replicates_to", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}}},
 			},
 			In: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "host"}}},
+				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "host"}, {Type: "endpoint"}}},
 				{Relationship: "depends_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "kubernetes", SubType: "workload"}}},
 				{Relationship: "peer_of", Peers: []TypeRef{{Type: "database"}}},
 				{Relationship: "replicates_to", Peers: []TypeRef{{Type: "database"}, {Type: "storage"}}},
