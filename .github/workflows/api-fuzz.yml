@@ -42,3 +42,37 @@ jobs:
           name: fuzz-strict-ctis-crasher
           path: api/internal/app/ingest/testdata/fuzz/
           if-no-files-found: ignore
+
+  # The list query decoders (RFC-048) read untrusted query strings and JSON
+  # filter documents and turn them into SQL. Invariants: no panic, errors are
+  # always INVALID_FILTER, limits hold, the tenant and scope predicates are
+  # always compiled in, and the SQL text never depends on a request value.
+  filterspec:
+    name: Fuzz${{ matrix.target }} (5 min)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [ParseValues, ParseDocument]
+    env:
+      GOWORK: 'off'
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+      - name: Fuzz the list filter decoder
+        run: go test ./pkg/filterspec/ -run '^$' -fuzz '^Fuzz${{ matrix.target }}$' -fuzztime 5m
+      - name: Upload the failing input
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-filterspec-${{ matrix.target }}-crasher
+          path: api/pkg/filterspec/testdata/fuzz/
+          if-no-files-found: ignore
