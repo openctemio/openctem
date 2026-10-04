@@ -851,7 +851,7 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 	// already refuses these; this keeps the rule if the mapping code changes.
 	if !newFindingStatus.IsTicketInboundTarget() {
 		s.logger.Warn("jira webhook: refused a closing status from a ticket",
-			"issue_key", payload.Issue.Key, "target_status", newFindingStatus)
+			"issue_key", logger.SanitizeValue(payload.Issue.Key), "target_status", logger.SanitizeValue(string(newFindingStatus)))
 		return nil
 	}
 
@@ -911,13 +911,6 @@ func (s *SyncService) inboundMapping(ctx context.Context, tenantID shared.ID) Ma
 		}
 	}
 	return DefaultMappingConfig()
-}
-
-// mapJiraStatusToFinding maps a Jira status name to a FindingStatus using the
-// default mapping. Returns (status, true) when a mapping exists, (_, false)
-// otherwise.
-func mapJiraStatusToFinding(jiraStatus string) (vulnerability.FindingStatus, bool) {
-	return DefaultMappingConfig().FindingStatusForJira(jiraStatus)
 }
 
 // StatusActivityRecorder records a status change whose actor is an
