@@ -724,7 +724,7 @@ func (r *AssetGroupRepository) ListScanMembers(ctx context.Context, q assetgroup
 	}
 	//nolint:gosec // G202: cursor and scanMemberMatchProps are fixed SQL with numbered placeholders
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT a.id, a.name, a.asset_type, a.status, `+scanMemberMatchProps+`
+		SELECT a.id, a.name, a.asset_type, COALESCE(a.sub_type, ''), a.status, `+scanMemberMatchProps+`
 		FROM asset_group_members agm
 		JOIN asset_groups ag ON ag.id = agm.asset_group_id
 		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = ag.tenant_id
@@ -738,17 +738,17 @@ func (r *AssetGroupRepository) ListScanMembers(ctx context.Context, q assetgroup
 
 	for rows.Next() {
 		var (
-			id, name, assetType, status string
-			props                       []byte
+			id, name, assetType, subType, status string
+			props                                []byte
 		)
-		if err := rows.Scan(&id, &name, &assetType, &status, &props); err != nil {
+		if err := rows.Scan(&id, &name, &assetType, &subType, &status, &props); err != nil {
 			return nil, fmt.Errorf("scan group scan member: %w", err)
 		}
 		aid, err := shared.IDFromString(id)
 		if err != nil {
 			return nil, fmt.Errorf("group scan member id: %w", err)
 		}
-		m := &assetgroup.ScanMember{ID: aid, Name: name, Type: assetType, Status: status}
+		m := &assetgroup.ScanMember{ID: aid, Name: name, Type: assetType, SubType: subType, Status: status}
 		if len(props) > 0 {
 			if err := json.Unmarshal(props, &m.Properties); err != nil {
 				return nil, fmt.Errorf("group scan member %s properties: %w", id, err)
