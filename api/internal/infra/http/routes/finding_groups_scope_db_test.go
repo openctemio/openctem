@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -85,6 +86,7 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	vulnSvc.SetDataScopePolicy(dsStrictPolicy{ds})
 	vulnSvc.SetDataScope(enforcer)
 	vulnSvc.SetAssetRepository(assetRepo)
+	vulnSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	h.vuln = vulnSvc
 
 	actionsSvc := app.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)

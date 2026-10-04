@@ -2781,6 +2781,34 @@ definitions:
       type:
         type: string
     type: object
+  github_com_openctemio_openctem_api_internal_app_easm.SeedView:
+    properties:
+      attested_at:
+        type: string
+      attested_by:
+        type: string
+      created_at:
+        type: string
+      discovery_enabled:
+        type: boolean
+      id:
+        type: string
+      kind:
+        type: string
+      label:
+        type: string
+      updated_at:
+        type: string
+      value:
+        type: string
+      verification:
+        description: |-
+          Verification: dns_txt when the organization proved control of the
+          domain (or a parent) with a DNS TXT record; none otherwise.
+        type: string
+      verified_domain:
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_easm.Summary:
     properties:
       attribution:
@@ -8327,6 +8355,40 @@ definitions:
         type: string
       state:
         description: 'State: confirmed, rejected, dependency, monitor_only or needs_review.'
+        type: string
+    type: object
+  internal_infra_http_handler.EASMSeedCreateRequest:
+    properties:
+      attested:
+        description: |-
+          Attested must be true: the caller states the organization is authorized
+          to have this seed discovered and checked. Recorded with the user and time.
+        type: boolean
+      discovery_enabled:
+        description: DiscoveryEnabled defaults to true.
+        type: boolean
+      kind:
+        description: |-
+          Kind: root_domain (other RFC-036 kinds are accepted once their
+          collectors exist).
+        type: string
+      label:
+        type: string
+      value:
+        type: string
+    type: object
+  internal_infra_http_handler.EASMSeedListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
+        type: array
+    type: object
+  internal_infra_http_handler.EASMSeedUpdateRequest:
+    properties:
+      discovery_enabled:
+        type: boolean
+      label:
         type: string
     type: object
   internal_infra_http_handler.EmbeddedCategoryResponse:
@@ -21453,6 +21515,136 @@ paths:
       summary: Decide EASM attribution in bulk
       tags:
       - Attack Surface
+  /easm/seeds:
+    get:
+      description: 'The organization''s seeds: what external-surface discovery expands
+        from. A root_domain seed is verified (dns_txt) while the organization has
+        a verified DNS TXT record for it or a parent.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.EASMSeedListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List EASM seeds
+      tags:
+      - Attack Surface
+    post:
+      consumes:
+      - application/json
+      description: Adds a seed discovery expands from. The caller must attest that
+        the organization is authorized to have it discovered and checked (recorded
+        with the user and time). Public suffixes and providers' shared domains are
+        refused. Audited.
+      parameters:
+      - description: Seed
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMSeedCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Add an EASM seed
+      tags:
+      - Attack Surface
+  /easm/seeds/{id}:
+    delete:
+      description: Removes a seed. Assets already discovered from it stay in the inventory
+        with their evidence. Audited.
+      parameters:
+      - description: Seed ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Remove an EASM seed
+      tags:
+      - Attack Surface
+    patch:
+      consumes:
+      - application/json
+      description: 'Changes a seed''s label or turns discovery from it on or off.
+        The kind and value cannot change: delete and add instead. Audited.'
+      parameters:
+      - description: Seed ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Changes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMSeedUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change an EASM seed
+      tags:
+      - Attack Surface
   /easm/summary:
     get:
       description: 'The external attack surface in one call: surface assets by type
@@ -22177,210 +22369,583 @@ paths:
         epss_min, search, assigned_to_me) still work and answer with Deprecation and Sunset headers.
       parameters:
       - collectionFormat: csv
-        description: Finding IDs
+        description: 'id: any of (comma list)'
         in: query
         items:
           type: string
         name: id
         type: array
       - collectionFormat: csv
-        description: Asset IDs
+        description: 'id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: any of (comma list)'
         in: query
         items:
           type: string
         name: asset_id
         type: array
       - collectionFormat: csv
-        description: Branch IDs the finding occurs on
+        description: 'asset id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'branch id: any of (comma list)'
         in: query
         items:
           type: string
         name: branch_id
         type: array
       - collectionFormat: csv
-        description: Component IDs
+        description: 'open on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: open_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'fixed on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: fixed_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: any of (comma list)'
         in: query
         items:
           type: string
         name: component_id
         type: array
       - collectionFormat: csv
-        description: Vulnerability IDs
+        description: 'component id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: any of (comma list)'
         in: query
         items:
           type: string
         name: vulnerability_id
         type: array
       - collectionFormat: csv
-        description: Severities
+        description: 'vulnerability id: none of (comma list)'
         in: query
         items:
+          type: string
+        name: vulnerability_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'severity: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
           type: string
         name: severity
         type: array
       - collectionFormat: csv
-        description: Statuses
+        description: 'severity: none of (comma list)'
         in: query
         items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity_not
+        type: array
+      - collectionFormat: csv
+        description: 'status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
           type: string
         name: status
         type: array
       - collectionFormat: csv
-        description: Statuses to exclude
+        description: 'status: none of (comma list)'
         in: query
         items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
           type: string
         name: status_not
         type: array
       - collectionFormat: csv
-        description: Sources
+        description: 'source: any of (comma list)'
         in: query
         items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
           type: string
         name: source
         type: array
       - collectionFormat: csv
-        description: SLA statuses
+        description: 'source: none of (comma list)'
         in: query
         items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source_not
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
           type: string
         name: sla_status
         type: array
       - collectionFormat: csv
-        description: CTEM priority classes (P0..P3)
+        description: 'sla status: none of (comma list)'
         in: query
         items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status_not
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
           type: string
         name: priority_class
         type: array
       - collectionFormat: csv
-        description: CVE IDs
+        description: 'priority class: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class_not
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: any of (comma list)'
         in: query
         items:
           type: string
         name: cve_id
         type: array
       - collectionFormat: csv
-        description: Finding types
+        description: 'cve id: none of (comma list)'
         in: query
         items:
+          type: string
+        name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
           type: string
         name: finding_type
         type: array
       - collectionFormat: csv
-        description: Tags of the finding's asset (any of)
+        description: 'finding type: none of (comma list)'
         in: query
         items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
           type: string
-        name: asset_tag
+        name: finding_type_not
         type: array
-      - description: In CISA KEV
+      - description: is in kev equals
         in: query
         name: is_in_kev
         type: boolean
-      - description: Reachable
+      - description: is reachable equals
         in: query
         name: is_reachable
         type: boolean
-      - description: Minimum EPSS score
+      - description: epss score at least
         in: query
         name: epss_score_gte
         type: number
+      - description: epss score at most
+        in: query
+        name: epss_score_lte
+        type: number
+      - description: epss score greater than
+        in: query
+        name: epss_score_gt
+        type: number
+      - description: epss score less than
+        in: query
+        name: epss_score_lt
+        type: number
       - collectionFormat: csv
-        description: Tool names
+        description: 'tool name: any of (comma list)'
         in: query
         items:
           type: string
         name: tool_name
         type: array
       - collectionFormat: csv
-        description: Rule IDs
+        description: 'tool name: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name_not
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: any of (comma list)'
         in: query
         items:
           type: string
         name: rule_id
         type: array
       - collectionFormat: csv
-        description: Scan IDs
+        description: 'rule id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: any of (comma list)'
         in: query
         items:
           type: string
         name: scan_id
         type: array
-      - description: File path contains
+      - collectionFormat: csv
+        description: 'scan id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id_not
+        type: array
+      - description: file path contains
         in: query
         name: file_path
         type: string
-      - description: 'me: assigned to, owned by or group-assigned to the caller'
+      - description: file path contains
+        in: query
+        name: file_path_contains
+        type: string
+      - collectionFormat: csv
+        description: 'asset tag: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - collectionFormat: csv
+        description: 'asset tag: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag_not
+        type: array
+      - description: related to equals
+        enum:
+        - me
         in: query
         name: related_to
         type: string
-      - description: Minimum CVSS score
+      - description: cvss score at least
         in: query
         name: cvss_score_gte
         type: number
-      - description: Maximum CVSS score
+      - description: cvss score at most
         in: query
         name: cvss_score_lte
         type: number
-      - description: First seen at or after (RFC 3339, YYYY-MM-DD or -P30D)
+      - description: cvss score greater than
+        in: query
+        name: cvss_score_gt
+        type: number
+      - description: cvss score less than
+        in: query
+        name: cvss_score_lt
+        type: number
+      - description: first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: first_detected_at_gte
         type: string
-      - description: Last seen at or after (RFC 3339, YYYY-MM-DD or -P30D)
+      - description: first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lte
+        type: string
+      - description: first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gt
+        type: string
+      - description: first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lt
+        type: string
+      - description: last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_gte
         type: string
-      - description: Last seen before
+      - description: last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lte
+        type: string
+      - description: last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gt
+        type: string
+      - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
         type: string
       - collectionFormat: csv
-        description: Ports the finding was observed on
+        description: 'network port: any of (comma list)'
         in: query
         items:
           type: integer
         name: network_port
         type: array
       - collectionFormat: csv
-        description: tcp, udp, sctp
+        description: 'network port: none of (comma list)'
         in: query
         items:
+          type: integer
+        name: network_port_not
+        type: array
+      - description: network port at least
+        in: query
+        name: network_port_gte
+        type: integer
+      - description: network port at most
+        in: query
+        name: network_port_lte
+        type: integer
+      - collectionFormat: csv
+        description: 'network transport: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
           type: string
         name: network_transport
         type: array
       - collectionFormat: csv
-        description: Services on the port (https, ssh, ...)
+        description: 'network transport: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport_not
+        type: array
+      - collectionFormat: csv
+        description: 'network service: any of (comma list)'
         in: query
         items:
           type: string
         name: network_service
         type: array
       - collectionFormat: csv
-        description: Assignee user IDs
+        description: 'network service: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service_not
+        type: array
+      - collectionFormat: csv
+        description: 'assigned to: any of (comma list)'
         in: query
         items:
           type: string
         name: assigned_to
         type: array
-      - description: 'true: unassigned; false: assigned'
+      - description: assigned to is unset (true) or set (false)
         in: query
         name: assigned_to_null
         type: boolean
       - collectionFormat: csv
-        description: The asset's own criticality (critical, high, medium, low)
+        description: 'assigned to: none of (comma list)'
         in: query
         items:
           type: string
+        name: assigned_to_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
         name: asset_criticality
         type: array
-      - description: A public exploit is known (scanner or CVE catalog)
+      - collectionFormat: csv
+        description: 'asset criticality: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality_not
+        type: array
+      - description: exploit available equals
         in: query
         name: exploit_available
         type: boolean
-      - description: Created at or after (RFC 3339, YYYY-MM-DD or -P30D)
+      - description: created at at least (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: created_at_gte
+        type: string
+      - description: created at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lte
+        type: string
+      - description: created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gt
+        type: string
+      - description: created at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lt
+        type: string
+      - description: updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gte
+        type: string
+      - description: updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lte
+        type: string
+      - description: updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gt
+        type: string
+      - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lt
         type: string
       - description: Free text over title, description and file path
         in: query
@@ -23194,6 +23759,669 @@ paths:
       summary: Bulk update finding status
       tags:
       - Findings
+  /findings/export:
+    get:
+      description: |-
+        Streams every finding the list's filter selects as CSV (default) or NDJSON (`format=ndjson`),
+        in id order, at most 100,000 rows; the X-Export-Truncated trailer says whether rows were left
+        out. Same scope as GET /findings. Needs findings:export. One export per user at a time (429
+        otherwise). Audit-logged without filter values. CSV formula cells are neutralized.
+      parameters:
+      - description: csv (default) or ndjson
+        enum:
+        - csv
+        - ndjson
+        in: query
+        name: format
+        type: string
+      - collectionFormat: csv
+        description: 'id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: 'id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'open on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: open_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'fixed on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: fixed_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'severity: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: 'severity: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity_not
+        type: array
+      - collectionFormat: csv
+        description: 'status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: 'status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status_not
+        type: array
+      - collectionFormat: csv
+        description: 'source: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: 'source: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source_not
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status_not
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class_not
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type_not
+        type: array
+      - description: is in kev equals
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: is reachable equals
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: epss score at least
+        in: query
+        name: epss_score_gte
+        type: number
+      - description: epss score at most
+        in: query
+        name: epss_score_lte
+        type: number
+      - description: epss score greater than
+        in: query
+        name: epss_score_gt
+        type: number
+      - description: epss score less than
+        in: query
+        name: epss_score_lt
+        type: number
+      - collectionFormat: csv
+        description: 'tool name: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: 'tool name: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name_not
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id_not
+        type: array
+      - description: file path contains
+        in: query
+        name: file_path
+        type: string
+      - description: file path contains
+        in: query
+        name: file_path_contains
+        type: string
+      - collectionFormat: csv
+        description: 'asset tag: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - collectionFormat: csv
+        description: 'asset tag: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag_not
+        type: array
+      - description: related to equals
+        enum:
+        - me
+        in: query
+        name: related_to
+        type: string
+      - description: cvss score at least
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: cvss score at most
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: cvss score greater than
+        in: query
+        name: cvss_score_gt
+        type: number
+      - description: cvss score less than
+        in: query
+        name: cvss_score_lt
+        type: number
+      - description: first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lte
+        type: string
+      - description: first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gt
+        type: string
+      - description: first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lt
+        type: string
+      - description: last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lte
+        type: string
+      - description: last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gt
+        type: string
+      - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - collectionFormat: csv
+        description: 'network port: any of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: 'network port: none of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port_not
+        type: array
+      - description: network port at least
+        in: query
+        name: network_port_gte
+        type: integer
+      - description: network port at most
+        in: query
+        name: network_port_lte
+        type: integer
+      - collectionFormat: csv
+        description: 'network transport: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: 'network transport: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport_not
+        type: array
+      - collectionFormat: csv
+        description: 'network service: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: 'network service: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service_not
+        type: array
+      - collectionFormat: csv
+        description: 'assigned to: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: assigned to is unset (true) or set (false)
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: 'assigned to: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality_not
+        type: array
+      - description: exploit available equals
+        in: query
+        name: exploit_available
+        type: boolean
+      - description: created at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: created at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lte
+        type: string
+      - description: created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gt
+        type: string
+      - description: created at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lt
+        type: string
+      - description: updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gte
+        type: string
+      - description: updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lte
+        type: string
+      - description: updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gt
+        type: string
+      - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lt
+        type: string
+      - description: Free text
+        in: query
+        name: q
+        type: string
+      produces:
+      - text/csv
+      - application/x-ndjson
+      responses:
+        "200":
+          description: CSV or NDJSON stream
+          schema:
+            type: string
+        "400":
+          description: INVALID_FILTER
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export findings
+      tags:
+      - Findings
+    post:
+      consumes:
+      - application/json
+      description: POST /findings/search's FilterDocument body, streamed like GET
+        /findings/export.
+      parameters:
+      - description: csv (default) or ndjson
+        enum:
+        - csv
+        - ndjson
+        in: query
+        name: format
+        type: string
+      - description: Filter document
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.FindingSearchRequest'
+      produces:
+      - text/csv
+      - application/x-ndjson
+      responses:
+        "200":
+          description: CSV or NDJSON stream
+          schema:
+            type: string
+        "400":
+          description: INVALID_FILTER
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export findings selected by a filter document
+      tags:
+      - Findings
   /findings/groups:
     get:
       description: |-
@@ -23204,6 +24432,593 @@ paths:
           severity, source, finding_type
         in: query
         name: group_by
+        type: string
+      - collectionFormat: csv
+        description: 'id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: 'id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'open on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: open_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'fixed on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: fixed_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'severity: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: 'severity: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity_not
+        type: array
+      - collectionFormat: csv
+        description: 'status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: 'status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status_not
+        type: array
+      - collectionFormat: csv
+        description: 'source: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: 'source: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source_not
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status_not
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class_not
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type_not
+        type: array
+      - description: is in kev equals
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: is reachable equals
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: epss score at least
+        in: query
+        name: epss_score_gte
+        type: number
+      - description: epss score at most
+        in: query
+        name: epss_score_lte
+        type: number
+      - description: epss score greater than
+        in: query
+        name: epss_score_gt
+        type: number
+      - description: epss score less than
+        in: query
+        name: epss_score_lt
+        type: number
+      - collectionFormat: csv
+        description: 'tool name: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: 'tool name: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name_not
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id_not
+        type: array
+      - description: file path contains
+        in: query
+        name: file_path
+        type: string
+      - description: file path contains
+        in: query
+        name: file_path_contains
+        type: string
+      - collectionFormat: csv
+        description: 'asset tag: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - collectionFormat: csv
+        description: 'asset tag: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag_not
+        type: array
+      - description: related to equals
+        enum:
+        - me
+        in: query
+        name: related_to
+        type: string
+      - description: cvss score at least
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: cvss score at most
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: cvss score greater than
+        in: query
+        name: cvss_score_gt
+        type: number
+      - description: cvss score less than
+        in: query
+        name: cvss_score_lt
+        type: number
+      - description: first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lte
+        type: string
+      - description: first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gt
+        type: string
+      - description: first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lt
+        type: string
+      - description: last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lte
+        type: string
+      - description: last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gt
+        type: string
+      - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - collectionFormat: csv
+        description: 'network port: any of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: 'network port: none of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port_not
+        type: array
+      - description: network port at least
+        in: query
+        name: network_port_gte
+        type: integer
+      - description: network port at most
+        in: query
+        name: network_port_lte
+        type: integer
+      - collectionFormat: csv
+        description: 'network transport: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: 'network transport: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport_not
+        type: array
+      - collectionFormat: csv
+        description: 'network service: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: 'network service: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service_not
+        type: array
+      - collectionFormat: csv
+        description: 'assigned to: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: assigned to is unset (true) or set (false)
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: 'assigned to: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality_not
+        type: array
+      - description: exploit available equals
+        in: query
+        name: exploit_available
+        type: boolean
+      - description: created at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: created at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lte
+        type: string
+      - description: created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gt
+        type: string
+      - description: created at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lt
+        type: string
+      - description: updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gte
+        type: string
+      - description: updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lte
+        type: string
+      - description: updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gt
+        type: string
+      - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lt
+        type: string
+      - description: Free text
+        in: query
+        name: q
+        type: string
+      - description: Ignored by groups (accepted for URL parity with the list)
+        in: query
+        name: sort
         type: string
       - default: 1
         description: Page number
@@ -23316,33 +25131,584 @@ paths:
         (the old asset_id and sources params are part of that filter).
       parameters:
       - collectionFormat: csv
-        description: Asset IDs
+        description: 'id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: 'id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: any of (comma list)'
         in: query
         items:
           type: string
         name: asset_id
         type: array
       - collectionFormat: csv
-        description: Sources
+        description: 'asset id: none of (comma list)'
         in: query
         items:
           type: string
-        name: source
+        name: asset_id_not
         type: array
       - collectionFormat: csv
-        description: Severities
+        description: 'branch id: any of (comma list)'
         in: query
         items:
+          type: string
+        name: branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'open on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: open_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'fixed on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: fixed_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'severity: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
           type: string
         name: severity
         type: array
       - collectionFormat: csv
-        description: Statuses
+        description: 'severity: none of (comma list)'
         in: query
         items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity_not
+        type: array
+      - collectionFormat: csv
+        description: 'status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
           type: string
         name: status
         type: array
+      - collectionFormat: csv
+        description: 'status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status_not
+        type: array
+      - collectionFormat: csv
+        description: 'source: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: 'source: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source_not
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status_not
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class_not
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type_not
+        type: array
+      - description: is in kev equals
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: is reachable equals
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: epss score at least
+        in: query
+        name: epss_score_gte
+        type: number
+      - description: epss score at most
+        in: query
+        name: epss_score_lte
+        type: number
+      - description: epss score greater than
+        in: query
+        name: epss_score_gt
+        type: number
+      - description: epss score less than
+        in: query
+        name: epss_score_lt
+        type: number
+      - collectionFormat: csv
+        description: 'tool name: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: 'tool name: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name_not
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id_not
+        type: array
+      - description: file path contains
+        in: query
+        name: file_path
+        type: string
+      - description: file path contains
+        in: query
+        name: file_path_contains
+        type: string
+      - collectionFormat: csv
+        description: 'asset tag: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - collectionFormat: csv
+        description: 'asset tag: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag_not
+        type: array
+      - description: related to equals
+        enum:
+        - me
+        in: query
+        name: related_to
+        type: string
+      - description: cvss score at least
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: cvss score at most
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: cvss score greater than
+        in: query
+        name: cvss_score_gt
+        type: number
+      - description: cvss score less than
+        in: query
+        name: cvss_score_lt
+        type: number
+      - description: first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lte
+        type: string
+      - description: first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gt
+        type: string
+      - description: first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lt
+        type: string
+      - description: last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lte
+        type: string
+      - description: last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gt
+        type: string
+      - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - collectionFormat: csv
+        description: 'network port: any of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: 'network port: none of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port_not
+        type: array
+      - description: network port at least
+        in: query
+        name: network_port_gte
+        type: integer
+      - description: network port at most
+        in: query
+        name: network_port_lte
+        type: integer
+      - collectionFormat: csv
+        description: 'network transport: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: 'network transport: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport_not
+        type: array
+      - collectionFormat: csv
+        description: 'network service: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: 'network service: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service_not
+        type: array
+      - collectionFormat: csv
+        description: 'assigned to: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: assigned to is unset (true) or set (false)
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: 'assigned to: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality_not
+        type: array
+      - description: exploit available equals
+        in: query
+        name: exploit_available
+        type: boolean
+      - description: created at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: created at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lte
+        type: string
+      - description: created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gt
+        type: string
+      - description: created at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lt
+        type: string
+      - description: updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gte
+        type: string
+      - description: updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lte
+        type: string
+      - description: updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gt
+        type: string
+      - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lt
+        type: string
       - description: Free text
         in: query
         name: q
