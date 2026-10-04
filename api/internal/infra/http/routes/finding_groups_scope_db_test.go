@@ -34,7 +34,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -70,7 +69,7 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	db := &postgres.DB{DB: ds.db}
 	log := logger.NewNop()
 	tenantRepo := postgres.NewTenantRepository(db)
-	enforcer := datascope.New(postgres.NewDataScopeRepository(db), dsStrictPolicy{ds},
+	enforcer := datascope.New(postgres.NewDataScopeRepository(db),
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, log)
@@ -88,7 +87,6 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 
 	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetAccessControlRepository(accessRepo)
-	vulnSvc.SetDataScopePolicy(dsStrictPolicy{ds})
 	vulnSvc.SetDataScope(enforcer)
 	vulnSvc.SetAssetRepository(assetRepo)
 	vulnSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
@@ -277,7 +275,7 @@ func TestFindingGroups_AdminAndUnrestrictedMemberUnchanged(t *testing.T) {
 		name  string
 		user  shared.ID
 		admin bool
-	}{{"owner", h.owner, true}, {"member without group", h.memberFree, false}} {
+	}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
 		for _, d := range h.dimensions() {
 			res, _ := h.groups(who.user, who.admin, "group_by="+d.groupBy)
 			if got := gsKeys(res); strings.Join(got, ",") != strings.Join(d.all, ",") {
@@ -299,7 +297,6 @@ func TestFindingGroups_AdminAndUnrestrictedMemberUnchanged(t *testing.T) {
 
 func TestFindingGroups_PolicyNothing_MemberWithoutGroupSeesNoGroups(t *testing.T) {
 	h := newGroupScopeHarness(t)
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
 	for _, d := range h.dimensions() {
 		res, _ := h.groups(h.memberStrict, false, "group_by="+d.groupBy)
 		if len(res.Data) != 0 || res.Pagination.Total != 0 {
@@ -343,7 +340,7 @@ func TestFindingGroups_RelatedCVEsScoped(t *testing.T) {
 		name  string
 		user  shared.ID
 		admin bool
-	}{{"owner", h.owner, true}, {"member without group", h.memberFree, false}} {
+	}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
 		if status, body := h.do(who.user, who.admin, http.MethodGet, path, nil); status != http.StatusOK || !strings.Contains(body, h.cveB2) {
 			t.Errorf("%s related CVEs of %s = %d, want %s listed: %.300s", who.name, h.cveA, status, h.cveB2, body)
 		}

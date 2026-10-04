@@ -361,6 +361,10 @@ func (m *mockAssetRepo) GetPropertyFacets(_ context.Context, _ shared.ID, _ asse
 	return nil, nil
 }
 
+func (m *mockAssetRepo) SetCrownJewel(_ context.Context, _, _ shared.ID, _ bool, _ float64, _ string) error {
+	return nil
+}
+
 func (m *mockAssetRepo) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
 	return nil, nil
 }

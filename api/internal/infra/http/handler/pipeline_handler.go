@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -179,11 +180,14 @@ type TriggerRunRequest struct {
 
 // RunResponse represents the response for a pipeline run.
 type RunResponse struct {
-	ID                string                         `json:"id"`
-	TenantID          string                         `json:"tenant_id"`
-	PipelineID        string                         `json:"pipeline_id"`
-	AssetID           *string                        `json:"asset_id,omitempty"`
-	ScanID            *string                        `json:"scan_id,omitempty"`
+	ID         string  `json:"id"`
+	TenantID   string  `json:"tenant_id"`
+	PipelineID string  `json:"pipeline_id"`
+	AssetID    *string `json:"asset_id,omitempty"`
+	ScanID     *string `json:"scan_id,omitempty"`
+	// ScanName names the run's scan (list rows only; empty when the scan was
+	// deleted).
+	ScanName          string                         `json:"scan_name,omitempty"`
 	ScanProfileID     *string                        `json:"scan_profile_id,omitempty"`
 	TriggerType       string                         `json:"trigger_type"`
 	TriggeredBy       string                         `json:"triggered_by,omitempty"`
@@ -216,6 +220,16 @@ type RunResponse struct {
 	Tasks []RunTaskResponse `json:"tasks,omitempty"`
 	// TasksTruncated is true when the run has more tasks than Tasks lists.
 	TasksTruncated bool `json:"tasks_truncated,omitempty"`
+	// TasksNextCursor continues the task list after Tasks
+	// (GET /pipeline-runs/{id}/tasks?cursor=) when TasksTruncated.
+	TasksNextCursor string `json:"tasks_next_cursor,omitempty"`
+}
+
+// RunTaskPageResponse is one page of a run's tasks.
+type RunTaskPageResponse struct {
+	Data []RunTaskResponse `json:"data"`
+	// NextCursor continues after Data; absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 // RunTaskSummaryResponse counts a run's tasks by status (RFC-046 §4.1).
@@ -947,6 +961,7 @@ func (h *PipelineHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		resp.TaskSummary = toRunTaskSummaryResponse(tasks.Summary)
 		resp.Tasks = toRunTaskResponses(tasks.Items)
 		resp.TasksTruncated = tasks.Truncated
+		resp.TasksNextCursor = tasks.NextCursor
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -962,6 +977,7 @@ func (h *PipelineHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		PipelineID: r.URL.Query().Get("pipeline_id"),
 		AssetID:    r.URL.Query().Get("asset_id"),
 		Status:     r.URL.Query().Get("status"),
+		Sort:       r.URL.Query().Get("sort"),
 		Page:       parseQueryInt(r.URL.Query().Get("page"), 1),
 		PerPage:    parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
@@ -978,11 +994,20 @@ func (h *PipelineHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to read the runs' tasks").WriteJSON(w)
 		return
 	}
+	scanNames, err := h.service.RunScanNames(r.Context(), tenantID, result.Data)
+	if err != nil {
+		h.logger.Error("failed to name run scans", "error", err)
+		apierror.InternalServerError("failed to read the runs' scans").WriteJSON(w)
+		return
+	}
 	items := make([]*RunResponse, len(result.Data))
 	for i, run := range result.Data {
 		items[i] = toRunResponse(run)
 		if sum, ok := summaries[run.ID]; ok {
 			items[i].TaskSummary = toRunTaskSummaryResponse(sum)
+		}
+		if run.ScanID != nil {
+			items[i].ScanName = scanNames[*run.ScanID]
 		}
 	}
 
@@ -994,6 +1019,47 @@ func (h *PipelineHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		"total_pages": result.TotalPages,
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// ListRunTasks handles GET /api/v1/pipeline-runs/{id}/tasks
+// @Summary      List a run's tasks
+// @Description  One page of the run's tasks (one dispatched command each) in dispatch order. Page with next_cursor. Targets are counted, not listed.
+// @Tags         Pipelines
+// @Produce      json
+// @Param        id        path      string  true   "Run ID"
+// @Param        cursor    query     string  false  "next_cursor of the previous page"
+// @Param        per_page  query     int     false  "Tasks per page (1-200)" default(50)
+// @Success      200  {object}  RunTaskPageResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /pipeline-runs/{id}/tasks [get]
+func (h *PipelineHandler) ListRunTasks(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+	runID := chi.URLParam(r, "id")
+	q := r.URL.Query()
+
+	perPage := 0
+	if raw := q.Get("per_page"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			apierror.BadRequest("per_page must be a number").WriteJSON(w)
+			return
+		}
+		perPage = n
+		if perPage == 0 {
+			perPage = -1 // explicit 0 is out of range, not "default"
+		}
+	}
+
+	page, err := h.service.ListRunTasksPage(r.Context(), tenantID, runID, q.Get("cursor"), perPage)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	resp := RunTaskPageResponse{Data: toRunTaskResponses(page.Items), NextCursor: page.NextCursor}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }

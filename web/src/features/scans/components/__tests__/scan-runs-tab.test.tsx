@@ -30,9 +30,6 @@ vi.mock('@/lib/api/pipeline-hooks', () => ({
     isLoading: false,
   }),
 }))
-vi.mock('@/lib/api/scan-hooks', () => ({
-  useScanConfigs: () => ({ data: { items: [{ id: 's1', name: 'Daily external recon' }] } }),
-}))
 vi.mock('../run-detail-sheet', () => ({
   RunDetailSheet: ({ runId }: { runId: string | null }) =>
     runId ? <div data-testid="run-sheet">{runId}</div> : null,
@@ -50,7 +47,15 @@ vi.mock('@/hooks/use-url-param', () => ({
   useUrlFilter: (key: string, fallback: string) => [
     urlState[key] ?? fallback,
     (v: string) => {
-      urlState[key] = v
+      if (v === fallback || v === '') delete urlState[key]
+      else urlState[key] = v
+    },
+  ],
+  useUrlFilterNumber: (key: string, fallback: number) => [
+    urlState[key] ? Number(urlState[key]) : fallback,
+    (v: number) => {
+      if (v === fallback) delete urlState[key]
+      else urlState[key] = String(v)
     },
   ],
 }))
@@ -66,6 +71,7 @@ const run = (over: Record<string, unknown>) => ({
   tenant_id: 't',
   pipeline_id: 'p',
   scan_id: 's1',
+  scan_name: 'Daily external recon',
   trigger_type: 'manual',
   triggered_by_name: 'Admin',
   status: 'failed',
@@ -146,6 +152,53 @@ describe('ScanRunsTab', () => {
     urlState.run_status = 'canceled'
     render(<ScanRunsTab />)
     expect(pipelineRunsCalls.at(-1)).toMatchObject({ status: 'canceled', page: 1 })
+  })
+
+  it('keeps page, page size and sort in the URL and sends them to the API', async () => {
+    urlState.run_page = '2'
+    urlState.run_sort = '-total_findings'
+    render(<ScanRunsTab />)
+    expect(pipelineRunsCalls.at(-1)).toMatchObject({
+      page: 2,
+      per_page: 25,
+      sort: '-total_findings',
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Previous page' }))
+    expect(urlState.run_page).toBeUndefined()
+  })
+
+  it('sorts on the server from a column header and returns to page 1', async () => {
+    urlState.run_page = '2'
+    render(<ScanRunsTab />)
+    await userEvent.click(screen.getByRole('button', { name: /^Started/ }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Asc/ }))
+    expect(urlState.run_sort).toBe('started_at')
+    expect(urlState.run_page).toBeUndefined()
+  })
+
+  it('falls back to newest first for a stale sort link', () => {
+    urlState.run_sort = 'status'
+    render(<ScanRunsTab />)
+    expect(pipelineRunsCalls.at(-1)).toMatchObject({ sort: '-created_at' })
+  })
+
+  it('names a quick-scan run from the server and marks a deleted scan', () => {
+    runsResponse = {
+      items: [
+        run({ id: 'q1', scan_id: 'adhoc', scan_name: 'Quick Scan - 20261004-101010' }),
+        run({ id: 'd1', scan_id: 'gone', scan_name: undefined, error_message: undefined }),
+      ],
+      total: 2,
+      page: 1,
+      per_page: 25,
+      total_pages: 1,
+    }
+    render(<ScanRunsTab />)
+    const table = screen.getByRole('table')
+    expect(
+      within(table).getByRole('link', { name: 'Quick Scan - 20261004-101010' })
+    ).toHaveAttribute('href', '/scans/adhoc')
+    expect(within(table).getByText('Deleted scan')).toBeInTheDocument()
   })
 
   it('explains the missing permission instead of showing an empty table', () => {

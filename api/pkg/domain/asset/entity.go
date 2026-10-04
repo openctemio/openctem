@@ -66,6 +66,10 @@ type Asset struct {
 	impactIntegrity       ImpactRating
 	impactAvailability    ImpactRating
 
+	// Crown-jewel flag (assets.is_crown_jewel). Loaded with the asset and
+	// written only by the crown-jewel endpoint, never by a generic save.
+	isCrownJewel bool
+
 	// CTEM: Enhanced Exposure Tracking
 	isInternetAccessible bool       // Directly reachable from internet
 	exposureChangedAt    *time.Time // When exposure level last changed
@@ -1043,6 +1047,17 @@ func (a *Asset) SetRegulatoryOwnerID(ownerID *shared.ID) {
 // =============================================================================
 // CTEM: CIA Impact Rating Methods (Scoping critical-asset register)
 // =============================================================================
+
+// IsCrownJewel reports whether the asset is a crown jewel.
+func (a *Asset) IsCrownJewel() bool {
+	return a.isCrownJewel
+}
+
+// SetCrownJewel records the crown-jewel flag as loaded from storage. The
+// repository writes the flag only through its crown-jewel method.
+func (a *Asset) SetCrownJewel(v bool) {
+	a.isCrownJewel = v
+}
 
 // ImpactConfidentiality returns the confidentiality impact rating.
 func (a *Asset) ImpactConfidentiality() ImpactRating {

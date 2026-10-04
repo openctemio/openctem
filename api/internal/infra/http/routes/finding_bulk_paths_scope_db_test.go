@@ -20,7 +20,6 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -115,12 +114,18 @@ func TestListFindingIDs_CallerScoped(t *testing.T) {
 	if got := ids(callerCtx(h.memberA, false)); !eq(got, want(h.findingA, h.findingP)) {
 		t.Errorf("memberA on the campaign = %v, want FA and FP", got)
 	}
-	// A member without a group follows the organization's policy.
-	if got := ids(callerCtx(h.memberFree, false)); !eq(got, want(h.findingA, h.findingB, h.findingB2)) {
-		t.Errorf("policy everything: member without group = %v, want every non-pentest finding", got)
+	// A member without a scope row sees nothing, although the organization
+	// is still stored as 'everything'.
+	for _, u := range []shared.ID{h.memberFree, h.memberStrict} {
+		if got := ids(callerCtx(u, false)); len(got) != 0 {
+			t.Errorf("member without scope row = %v, want none", got)
+		}
 	}
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
-	if got := ids(callerCtx(h.memberStrict, false)); len(got) != 0 {
-		t.Errorf("policy nothing: member without group = %v, want none", got)
+	// A full-data role sees every finding outside pentest campaigns.
+	got := strings.Join(ids(callerCtx(h.memberFull, false)), ",")
+	for _, f := range []shared.ID{h.findingA, h.findingB, h.findingB2} {
+		if !strings.Contains(got, f.String()) {
+			t.Errorf("full-data role = %v, missing %s", got, f)
+		}
 	}
 }

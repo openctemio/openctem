@@ -90,3 +90,14 @@ func sameJSON(a, b any) bool {
 	y, errY := json.Marshal(b)
 	return errX == nil && errY == nil && bytes.Equal(x, y)
 }
+
+// pickProperties returns the entries of props named by keys.
+func pickProperties(props map[string]any, keys ...string) map[string]any {
+	out := make(map[string]any, len(keys))
+	for _, k := range keys {
+		if v, ok := props[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
+}

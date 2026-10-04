@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 const (
@@ -83,14 +82,13 @@ func TestRemediationGroups_ListScoped(t *testing.T) {
 		name  string
 		user  shared.ID
 		admin bool
-	}{{"owner", h.owner, true}, {"member without group", h.memberFree, false}} {
+	}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
 		got, _ := h.remediationGroups(who.user, who.admin)
 		if len(got) != 2 || got[rgKeyA].FindingCount != 2 || got[rgKeyB].FindingCount != 1 {
 			t.Errorf("%s groups = %+v, want A (2 findings) and B (1)", who.name, got)
 		}
 	}
 
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
 	if got, _ := h.remediationGroups(h.memberStrict, false); len(got) != 0 {
 		t.Errorf("policy nothing: member without group sees %+v, want none", got)
 	}
@@ -161,7 +159,6 @@ func TestAssignToOwners_Scoped(t *testing.T) {
 	}
 
 	// Policy "nothing": a member without a group assigns nothing.
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
 	if status, body := assign(h.memberStrict, false, h.cveB); status != http.StatusOK || !strings.Contains(body, `"assigned":0`) {
 		t.Errorf("policy nothing: member without group assign = %d %.200s, want assigned 0", status, body)
 	}
