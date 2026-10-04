@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { toast } from 'sonner'
 import { useAssetCRUD } from '../use-asset-crud'
+import { ApiClientError } from '@/lib/api/error-handler'
 import type { CreateAssetInput, UpdateAssetInput } from '../../types'
 
 // Mock sonner
@@ -25,10 +26,14 @@ vi.mock('../use-assets', () => ({
   bulkDeleteAssets: (...args: unknown[]) => mockBulkDeleteAssets(...args),
 }))
 
-// Mock error handler
-vi.mock('@/lib/api/error-handler', () => ({
+// Mock error handler (the real ApiClientError, so a 409 can be recognized)
+vi.mock('@/lib/api/error-handler', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api/error-handler')>()),
   getErrorMessage: (_err: unknown, fallback: string) => fallback,
 }))
+
+const mockPush = vi.fn()
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mockPush }) }))
 
 describe('useAssetCRUD', () => {
   const mockMutate = vi.fn()
@@ -84,6 +89,40 @@ describe('useAssetCRUD', () => {
       expect(toast.error).toHaveBeenCalledWith('Failed to create domain')
       expect(returnValue).toBe(false)
       expect(mockMutate).not.toHaveBeenCalled()
+    })
+
+    it('links a duplicate name to the existing asset the API named', async () => {
+      const id = '019f5efa-3cd1-75cc-8804-0b00ff896af8'
+      mockCreateAsset.mockRejectedValue(
+        new ApiClientError('Asset already exists', 'CONFLICT', 409, { existing_asset_id: id })
+      )
+      const { result } = renderHook(() => useAssetCRUD('domain', 'Domain', mockMutate))
+
+      let returnValue: boolean | undefined
+      await act(async () => {
+        returnValue = await result.current.handleCreate({ name: 'test.com', type: 'domain' })
+      })
+
+      expect(returnValue).toBe(false)
+      const [message, opts] = vi.mocked(toast.error).mock.calls[0] as [
+        string,
+        { action?: { onClick: () => void } },
+      ]
+      expect(message).toBe('An asset with this name already exists')
+      opts.action?.onClick()
+      expect(mockPush).toHaveBeenCalledWith(`/assets/${id}`)
+    })
+
+    it('shows a generic conflict without a link when the API named no asset', async () => {
+      mockCreateAsset.mockRejectedValue(new ApiClientError('Asset already exists', 'CONFLICT', 409))
+      const { result } = renderHook(() => useAssetCRUD('domain', 'Domain', mockMutate))
+
+      await act(async () => {
+        await result.current.handleCreate({ name: 'test.com', type: 'domain' })
+      })
+
+      const opts = vi.mocked(toast.error).mock.calls[0][1] as { action?: unknown }
+      expect(opts.action).toBeUndefined()
     })
   })
 
