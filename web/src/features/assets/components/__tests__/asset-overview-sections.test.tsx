@@ -97,6 +97,14 @@ describe('ExposureSection', () => {
     render(<ExposureSection asset={makeAsset({ piiDataExposed: false, phiDataExposed: false })} />)
     expect(screen.getByText('None flagged')).toBeInTheDocument()
   })
+
+  it('shows the crown-jewel flag from the asset column, not from properties', () => {
+    const { unmount } = render(<ExposureSection asset={makeAsset({ isCrownJewel: true })} />)
+    expect(screen.getByText('Crown jewel').nextSibling).toHaveTextContent('Yes')
+    unmount()
+    render(<ExposureSection asset={makeAsset({ metadata: { is_crown_jewel: true } })} />)
+    expect(screen.queryByText('Crown jewel')).not.toBeInTheDocument()
+  })
 })
 
 describe('DiscoverySection', () => {

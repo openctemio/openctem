@@ -323,7 +323,14 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 
 	// Touch the keep asset. Finding counts are computed on read (JOIN), not
 	// stored on the assets row — there is no assets.finding_count column.
-	_, err = tx.ExecContext(ctx, `UPDATE assets SET updated_at = NOW() WHERE id = $1 AND tenant_id = $2`, keepID, tenantID)
+	// A crown-jewel designation on a merged asset carries over to the kept
+	// one, so a merge never silently demotes a crown jewel.
+	_, err = tx.ExecContext(ctx, `
+		UPDATE assets SET updated_at = NOW(),
+		       is_crown_jewel = is_crown_jewel OR EXISTS (
+		           SELECT 1 FROM assets m
+		            WHERE m.tenant_id = $2 AND m.id = ANY($3::uuid[]) AND m.is_crown_jewel)
+		 WHERE id = $1 AND tenant_id = $2`, keepID, tenantID, pq.Array(mergeIDs))
 	if err != nil {
 		return fmt.Errorf("touch keep asset: %w", err)
 	}
