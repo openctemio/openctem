@@ -54,7 +54,6 @@ type AssetService struct {
 	repoExtRepo       assetdom.RepositoryExtensionRepository
 	assetGroupRepo    assetgroupdom.Repository // For recalculating group stats
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
-	dataScopePolicy   DataScopePolicy          // Layer 2: fail-open vs fail-closed per tenant (nil = fail-open)
 	dataScope         *datascope.Enforcer      // Layer 2 enforcement on bulk-by-id paths (nil = unrestricted)
 	scoringProvider   assetdom.ScoringConfigProvider
 	redisClient       *redis.Client
@@ -155,21 +154,6 @@ func (s *AssetService) SetAssetGroupRepository(repo assetgroupdom.Repository) {
 // SetAccessControlRepository sets the access control repository for Layer 2 data scope checks.
 func (s *AssetService) SetAccessControlRepository(repo accesscontrol.Repository) {
 	s.accessControlRepo = repo
-}
-
-// DataScopePolicy reports whether a tenant enforces restricted (fail-closed)
-// data scope. Nil (or false) preserves the default fail-open behavior.
-type DataScopePolicy interface {
-	RestrictedDataScope(ctx context.Context, tenantID string) bool
-}
-
-// SetDataScopePolicy wires the per-tenant fail-open/closed policy. Nil-safe.
-func (s *AssetService) SetDataScopePolicy(p DataScopePolicy) {
-	s.dataScopePolicy = p
-}
-
-func (s *AssetService) dataScopeStrict(ctx context.Context, tenantID string) bool {
-	return s.dataScopePolicy != nil && s.dataScopePolicy.RestrictedDataScope(ctx, tenantID)
 }
 
 // SetScoringConfigProvider sets the scoring config provider for configurable risk scoring.
@@ -964,29 +948,16 @@ func (s *AssetService) GetAssetWithScope(ctx context.Context, tenantID, assetID,
 			return nil, shared.ErrNotFound // fail-closed
 		}
 
-		// Check if user has any scope assignments (1 EXISTS query, no memory load)
-		hasScope, scopeErr := s.accessControlRepo.HasAnyScopeAssignment(ctx, parsedTenantID, userID)
-		if scopeErr != nil {
-			s.logger.Error("failed to check scope assignment", "error", scopeErr)
+		// The asset must be in the user's scope rows; a member with none
+		// sees nothing (fail closed). 404, so existence is not confirmed.
+		canAccess, accessErr := s.accessControlRepo.CanAccessAsset(ctx, userID, parsedID)
+		if accessErr != nil {
+			s.logger.Error("failed to check asset access", "error", accessErr)
 			return nil, shared.ErrNotFound // fail-closed
 		}
-
-		if hasScope {
-			// User has scope assignments — verify access to this specific asset
-			canAccess, accessErr := s.accessControlRepo.CanAccessAsset(ctx, userID, parsedID)
-			if accessErr != nil {
-				s.logger.Error("failed to check asset access", "error", accessErr)
-				return nil, shared.ErrNotFound // fail-closed
-			}
-			if !canAccess {
-				return nil, shared.ErrNotFound // don't leak asset existence
-			}
-		} else if s.dataScopeStrict(ctx, tenantID) {
-			// Fail-CLOSED (tenant RestrictedDataScope): no scope assignment ⇒ no
-			// access. Don't leak the asset's existence.
+		if !canAccess {
 			return nil, shared.ErrNotFound
 		}
-		// Else (fail-OPEN default): no scope assignments → show all (backward compat)
 	}
 
 	return a, nil
@@ -1507,7 +1478,6 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		return pagination.Result[*assetdom.Asset]{}, err
 	}
 	filter.DataScopeUserID = access.DataScopeUserID
-	filter.DataScopeStrict = access.DataScopeStrict
 
 	// Build list options with sorting
 	opts := assetdom.NewListOptions()
@@ -1538,10 +1508,7 @@ func (s *AssetService) listAccessScope(ctx context.Context, tenantID, actingUser
 	} else if full {
 		return assetdom.AccessScope{}, nil
 	}
-	return assetdom.AccessScope{
-		DataScopeUserID: &userID,
-		DataScopeStrict: s.dataScopeStrict(ctx, tenantID),
-	}, nil
+	return assetdom.AccessScope{DataScopeUserID: &userID}, nil
 }
 
 // GetPropertyFacets returns distinct property keys and values for faceted

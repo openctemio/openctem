@@ -30,15 +30,16 @@ func (h *dsHarness) memberFreeView(t *testing.T) (findingStatus int, listsB bool
 	return findingStatus, strings.Contains(body, dsMarkerExpB)
 }
 
-func TestDataScopePolicy_BothModes(t *testing.T) {
+// The stored value no longer changes visibility (owner decision D2): a
+// member without a scope row sees nothing under 'everything' and 'nothing'.
+func TestDataScopePolicy_StoredValueIsIgnored(t *testing.T) {
 	h := newDSHarness(t)
 
-	// everything (organizations that existed before the new default).
-	if st, listed := h.memberFreeView(t); st != http.StatusOK || !listed {
-		t.Errorf("everything: member without group got finding=%d listedB=%v, want 200/true", st, listed)
+	// The harness organization is stored as the retired 'everything'.
+	if st, listed := h.memberFreeView(t); st != http.StatusNotFound || listed {
+		t.Errorf("everything: member without group got finding=%d listedB=%v, want 404/false", st, listed)
 	}
 
-	// nothing.
 	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
 	if st, listed := h.memberFreeView(t); st != http.StatusNotFound || listed {
 		t.Errorf("nothing: member without group got finding=%d listedB=%v, want 404/false", st, listed)
