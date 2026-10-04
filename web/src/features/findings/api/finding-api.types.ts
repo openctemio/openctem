@@ -22,6 +22,7 @@ export type FindingStatus =
   | 'confirmed' // Verified as real issue, needs fix
   | 'in_progress' // Developer working on fix
   | 'fix_applied' // Dev/owner marked as fixed — awaiting scan verification
+  | 'not_observed' // Not seen by recent scans, no coverage proof: stale, not fixed
   | 'resolved' // Verified fixed (by scan or security review)
   | 'false_positive' // Not a real issue (requires approval)
   | 'accepted' // Risk accepted (requires approval, has expiration)
