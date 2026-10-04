@@ -4,10 +4,14 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 
 	_ "github.com/lib/pq" // the "postgres" driver
@@ -32,6 +36,14 @@ import (
 // CI job sets it to the superuser) the private database is created, migrated
 // and used through it; otherwise through DATABASE_URL as before.
 func PrivateDatabase(t testing.TB, prefix, migrationsDir string) *sql.DB {
+	t.Helper()
+	return PrivateDatabaseThrough(t, prefix, migrationsDir, math.MaxInt)
+}
+
+// PrivateDatabaseThrough is PrivateDatabase that stops after migration
+// version through, for a test that seeds data in the old schema and then
+// applies (and reverts) newer migrations with Migrate.
+func PrivateDatabaseThrough(t testing.TB, prefix, migrationsDir string, through int) *sql.DB {
 	t.Helper()
 	base := AdminURL()
 	if base == "" {
@@ -67,19 +79,47 @@ func PrivateDatabase(t testing.TB, prefix, migrationsDir string) *sql.DB {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	files, err := filepath.Glob(filepath.Join(migrationsDir, "*.up.sql"))
+	Migrate(t, db, migrationsDir, 0, through, false)
+	return db
+}
+
+// Migrate applies, one file per statement batch as golang-migrate does, the
+// migrations of migrationsDir whose version lies in [from, to]: the up files
+// in ascending order, or with down the down files in descending order.
+func Migrate(t testing.TB, db *sql.DB, migrationsDir string, from, to int, down bool) {
+	t.Helper()
+	suffix := ".up.sql"
+	if down {
+		suffix = ".down.sql"
+	}
+	files, err := filepath.Glob(filepath.Join(migrationsDir, "*"+suffix))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("testdb: no migrations in %s: %v", migrationsDir, err)
 	}
 	sort.Strings(files)
+	if down {
+		slices.Reverse(files)
+	}
+	applied := 0
 	for _, f := range files {
+		name := filepath.Base(f)
+		version, err := strconv.Atoi(name[:strings.IndexByte(name, '_')])
+		if err != nil {
+			t.Fatalf("testdb: migration %s has no numeric version: %v", name, err)
+		}
+		if version < from || version > to {
+			continue
+		}
 		body, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err := db.Exec(string(body)); err != nil {
-			t.Fatalf("testdb: migrate %s: %v", filepath.Base(f), err)
+			t.Fatalf("testdb: migrate %s: %v", name, err)
 		}
+		applied++
 	}
-	return db
+	if applied == 0 {
+		t.Fatalf("testdb: no %s migration in [%d, %d] in %s", suffix, from, to, migrationsDir)
+	}
 }

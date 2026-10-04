@@ -69,11 +69,23 @@ var findingMergeRefs = []mergeRef{
 		keys: []mergeKey{{}}},
 }
 
+// findingMergeKeptRefs reference findings.id and deliberately stay on the
+// tombstone.
+var findingMergeKeptRefs = map[string]string{
+	// The definitions a finding is linked to describe what that finding
+	// reported (RFC-044 §5.7); the survivor keeps its own. The tombstone's
+	// findings.definition_id names one of these links, so they cannot move.
+	"finding_definitions.finding_id": "kept on the tombstone; the survivor keeps its own definitions",
+}
+
 // FindingMergeReferenceHandling returns "table.column" for every reference to
-// findings.id that a finding merge re-points. The schema-coverage test
+// findings.id and what a finding merge does with it. The schema-coverage test
 // compares it with the migrated schema.
 func FindingMergeReferenceHandling() map[string]string {
-	out := make(map[string]string, len(findingMergeRefs))
+	out := make(map[string]string, len(findingMergeRefs)+len(findingMergeKeptRefs))
+	for ref, handling := range findingMergeKeptRefs {
+		out[ref] = handling
+	}
 	for _, r := range findingMergeRefs {
 		if len(r.keys) == 0 {
 			out[r.table+"."+r.column] = "moved to the survivor"
