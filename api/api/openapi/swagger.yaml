@@ -5065,6 +5065,35 @@ definitions:
       package:
         type: string
     type: object
+  internal_infra_http_handler.AssetAccessGrantListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.AssetAccessGrantResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_infra_http_handler.AssetAccessGrantResponse:
+    properties:
+      granted_at:
+        type: string
+      granted_by_name:
+        type: string
+      id:
+        type: string
+      source:
+        enum:
+        - manual
+        - migration
+        type: string
+      user_email:
+        type: string
+      user_id:
+        type: string
+      user_name:
+        type: string
+    type: object
   internal_infra_http_handler.AssetAttributionDecisionRequest:
     properties:
       state:
@@ -6697,6 +6726,13 @@ definitions:
         type: string
       updated_by:
         type: string
+    type: object
+  internal_infra_http_handler.CreateAssetAccessGrantRequest:
+    properties:
+      user_id:
+        type: string
+    required:
+    - user_id
     type: object
   internal_infra_http_handler.CreateAssetGroupRequest:
     properties:
@@ -8695,6 +8731,16 @@ definitions:
       misconfig_resource_path:
         type: string
       misconfig_resource_type:
+        type: string
+      network_port:
+        description: Port the finding was observed on (CTIS Finding.Network); absent
+          when not port-specific
+        type: integer
+      network_service:
+        description: Service on the port as the scanner named it (https, ssh, ...)
+        type: string
+      network_transport:
+        description: tcp, udp or sctp
         type: string
       occurrence_count:
         type: integer
@@ -17516,6 +17562,158 @@ paths:
       security:
       - BearerAuth: []
       summary: Update asset
+      tags:
+      - Assets
+  /assets/{id}/access-grants:
+    get:
+      description: 'Lists the users given explicit data-scope access to the asset.
+        Owners are not listed: being an owner gives no access.'
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AssetAccessGrantListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List an asset's access grants
+      tags:
+      - Assets
+    post:
+      consumes:
+      - application/json
+      description: Puts the asset in the user's data scope. The user must be a member
+        of the organization. Audited.
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User to grant
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CreateAssetAccessGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AssetAccessGrantResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Grant a member access to an asset
+      tags:
+      - Assets
+  /assets/{id}/access-grants/{grant_id}:
+    delete:
+      description: Removes the asset from the user's data scope unless one of the
+        user's groups still gives access. Audited.
+      parameters:
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Grant ID
+        in: path
+        name: grant_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke an access grant
       tags:
       - Assets
   /assets/{id}/activate:

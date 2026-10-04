@@ -5040,6 +5040,264 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/assets/{id}/access-grants': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List an asset's access grants
+     * @description Lists the users given explicit data-scope access to the asset. Owners are not listed: being an owner gives no access.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AssetAccessGrantListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Grant a member access to an asset
+     * @description Puts the asset in the user's data scope. The user must be a member of the organization. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description User to grant */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CreateAssetAccessGrantRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AssetAccessGrantResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/assets/{id}/access-grants/{grant_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Revoke an access grant
+     * @description Removes the asset from the user's data scope unless one of the user's groups still gives access. Audited.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Asset ID */
+          id: string
+          /** @description Grant ID */
+          grant_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: string
+            }
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/assets/{id}/activate': {
     parameters: {
       query?: never
@@ -33732,6 +33990,20 @@ export interface components {
       introduced?: string
       package?: string
     }
+    'internal_infra_http_handler.AssetAccessGrantListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.AssetAccessGrantResponse'][]
+      total?: number
+    }
+    'internal_infra_http_handler.AssetAccessGrantResponse': {
+      granted_at?: string
+      granted_by_name?: string
+      id?: string
+      /** @enum {string} */
+      source?: 'manual' | 'migration'
+      user_email?: string
+      user_id?: string
+      user_name?: string
+    }
     'internal_infra_http_handler.AssetAttributionDecisionRequest': {
       /** @description State: confirmed, rejected, dependency, monitor_only or needs_review. */
       state?: string
@@ -34572,6 +34844,9 @@ export interface components {
       /** @description UpdatedAt / UpdatedBy are null while the tenant uses the defaults. */
       updated_at?: string
       updated_by?: string
+    }
+    'internal_infra_http_handler.CreateAssetAccessGrantRequest': {
+      user_id: string
     }
     'internal_infra_http_handler.CreateAssetGroupRequest': {
       business_unit?: string
@@ -35467,6 +35742,12 @@ export interface components {
       misconfig_resource_name?: string
       misconfig_resource_path?: string
       misconfig_resource_type?: string
+      /** @description Port the finding was observed on (CTIS Finding.Network); absent when not port-specific */
+      network_port?: number
+      /** @description Service on the port as the scanner named it (https, ssh, ...) */
+      network_service?: string
+      /** @description tcp, udp or sctp */
+      network_transport?: string
       occurrence_count?: number
       owasp_ids?: string[]
       partial_fingerprints?: {

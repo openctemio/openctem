@@ -781,8 +781,32 @@ owner-managed) are enforced, not just stored. See
 
 Permissions decide what *kind* of thing a member may do; the data scope decides
 *which* assets — and so which findings, exposures and other asset-bound rows —
-they may see and change. Scope rows live in `user_accessible_assets` (group
-membership × group-owned assets, plus assets a user owns directly).
+they may see and change. Scope rows live in `user_accessible_assets`, computed
+from exactly two sources:
+
+| Source | Managed with | Rows |
+|---|---|---|
+| **Group assignment**: the assets assigned to the user's active groups | `team:groups:write` (Groups → Assets, scope rules, or a *group* owner on an asset's Owners tab) | `asset_owners` rows with `group_id` × `group_members` |
+| **Explicit grant**: one user, one asset | `team:groups:write` (`/api/v1/assets/{id}/access-grants`) | `asset_access_grants` (migration `000372`) |
+
+**Being an owner is not an access grant** (owner decision O1, 2026-10-03).
+Naming a user as an owner of an asset, in any RACI role or through the
+`owner_ref` email match, is an assignment (accountability, finding
+assignment, notifications) and never changes what that user can see. Before
+O1 it did: `assets:write` alone could narrow a fail-open member to that one
+asset, or widen a fail-closed one. Migration `000372` turned every such
+owner-derived access row into an explicit grant (source `migration`), so
+nobody lost an asset at the upgrade; administrators review and revoke them
+on the asset's Owners tab (*Direct access*). A group owner remains the
+group's assignment, which is why adding or removing one needs
+`team:groups:write` on top of `assets:write`/`assets:delete`.
+
+| Route | Gate |
+|---|---|
+| `GET /api/v1/assets/{id}/access-grants` | `team:groups:read` + data scope on the asset |
+| `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 409 when the grant exists; audited `asset.access_granted` |
+| `DELETE /api/v1/assets/{id}/access-grants/{grant_id}` | `team:groups:write`; the grant must be on that asset of the caller's organization (404); audited `asset.access_revoked`. The user keeps the asset only if a group still holds it |
+| `POST /api/v1/assets/{id}/owners` with `group_id` · `DELETE /api/v1/assets/{id}/owners/{id}` of a group owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise) |
 
 **Who is restricted:**
 
