@@ -188,3 +188,65 @@ func TestDataScopePolicyMigration_ExistingOrganizationsKeepEverything(t *testing
 		t.Errorf("organization created after the migration: %q, want nothing", v)
 	}
 }
+
+// Retiring "everything" (owner decision D2, research doc 15 L-04): the impact
+// report names exactly the members who would see nothing after the switch,
+// the switch goes one way only, and is never made for an organization that
+// did not choose it.
+func TestDataScopePolicy_RetireEverything(t *testing.T) {
+	h := newDSHarness(t)
+	ctx := context.Background()
+	db := &postgres.DB{DB: h.db}
+	repo := postgres.NewTenantRepository(db)
+	svc := app.NewTenantService(repo, logger.NewNop())
+	svc.SetDataScopePolicyStore(repo)
+	actx := app.AuditContext{ActorID: h.owner.String()}
+
+	// A member holding a full-data role is not affected either.
+	reader := shared.NewID()
+	role := shared.NewID()
+	h.exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'reader')`, reader.String(), reader.String()+"@ds.test")
+	t.Cleanup(func() {
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, reader.String())
+	})
+	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, reader.String(), h.tenant.String())
+	h.exec(`INSERT INTO roles (id, tenant_id, slug, name, hierarchy_level, has_full_data_access) VALUES ($1, $2, $3, 'Reader', 30, TRUE)`,
+		role.String(), h.tenant.String(), "ds-reader-"+role.String()[:8])
+	h.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, reader.String(), h.tenant.String(), role.String())
+
+	impact, err := svc.GetDataScopeImpact(ctx, h.tenant.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, m := range impact.Members {
+		got[m.UserID] = true
+	}
+	want := map[string]bool{h.memberFree.String(): true, h.memberStrict.String(): true}
+	if impact.Policy != tenant.MembersWithoutGroupSeeEverything || impact.TotalCount != len(want) || len(got) != len(want) {
+		t.Fatalf("impact = %+v, want policy everything and exactly memberFree and memberStrict", impact)
+	}
+	for id := range want {
+		if !got[id] {
+			t.Errorf("impact misses %s", id)
+		}
+	}
+	for _, id := range []shared.ID{h.owner, h.memberA, reader} {
+		if got[id.String()] {
+			t.Errorf("impact lists %s, who keeps access", id)
+		}
+	}
+
+	// The switch goes one way: to nothing, never back to everything.
+	if _, err := svc.UpdateDataScopePolicy(ctx, h.tenant.String(), tenant.MembersWithoutGroupSeeNothing, actx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateDataScopePolicy(ctx, h.tenant.String(), tenant.MembersWithoutGroupSeeEverything, actx); !errors.Is(err, tenant.ErrSeeEverythingRetired) {
+		t.Errorf("switching back to everything: err = %v, want ErrSeeEverythingRetired", err)
+	}
+	var stored string
+	_ = h.db.QueryRow(`SELECT members_without_group_see FROM tenants WHERE id = $1`, h.tenant.String()).Scan(&stored)
+	if stored != tenant.MembersWithoutGroupSeeNothing {
+		t.Errorf("stored policy = %s, want nothing", stored)
+	}
+}
