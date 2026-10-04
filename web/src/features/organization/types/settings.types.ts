@@ -263,8 +263,8 @@ export interface PentestConfigOption {
 }
 
 export interface PentestSettings {
-  campaign_types?: PentestConfigOption[]
-  methodologies?: PentestConfigOption[]
+  campaign_types?: PentestConfigOption[] | null
+  methodologies?: PentestConfigOption[] | null
 }
 
 export interface TenantSettings {
