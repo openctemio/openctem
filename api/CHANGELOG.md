@@ -21,6 +21,10 @@ published at https://docs.openctem.io (operations/release-notes-*).
   finding and finding-group SQL has no `NOT EXISTS … OR` bypass left.
 - Real-time finding/asset pushes now also reach full-data roles, and no
   longer reach members without a scope row.
+- **Removed endpoints:** `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`
+  and `GET /api/v1/organization/settings/data-scope/impact` (404 now). The web
+  console's "see everything" banner and the "Members without a team" settings
+  card are gone; Settings → Teams states the rule.
 
 ### Behaviour change: only a proven scan run closes repository findings
 
