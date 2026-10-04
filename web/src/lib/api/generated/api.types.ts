@@ -37522,8 +37522,12 @@ export interface components {
       correlation_id?: string
       created_at?: string
       cve_id?: string
+      /** @description Every CVE the scanner named, primary first */
+      cve_ids?: string[]
       cvss_score?: number
       cvss_vector?: string
+      /** @description Version of cvss_score (2.0, 3.x, 3.1, 4.0) */
+      cvss_version?: string
       cwe_ids?: string[]
       data_exposure_risk?: string
       /** @description Full data when fetching single finding */
@@ -37537,8 +37541,12 @@ export interface components {
       /** @description Threat Intel Enrichment (RFC-004) */
       epss_score?: number
       estimated_fix_time?: number
+      /** @description The scanner reported a public exploit */
+      exploit_available?: boolean
       /** @description CTEM Fields */
       exposure_vector?: string
+      /** @description Scanner details kept since research 17 R2 (not priority inputs). */
+      family?: string
       file_path?: string
       /** @description Finding Type discriminator */
       finding_type?: string
@@ -37593,6 +37601,8 @@ export interface components {
       partial_fingerprints?: {
         [key: string]: string
       }
+      /** @description When the vendor published the fix */
+      patch_published_at?: string
       /** @description Priority Classification (RFC-004) */
       priority_class?: string
       priority_class_override?: boolean
@@ -37649,6 +37659,8 @@ export interface components {
       updated_at?: string
       verified_at?: string
       verified_by?: string
+      /** @description Tenable VPR 0.1-10, display only */
+      vpr_score?: number
       /** @description Embedded CVE record (single-finding response) */
       vulnerability?: components['schemas']['internal_infra_http_handler.FindingVulnerabilityInfo']
       vulnerability_class?: string[]

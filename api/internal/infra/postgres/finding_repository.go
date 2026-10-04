@@ -183,7 +183,8 @@ var findingCreateSQL = `
 			sla_deadline, sla_status, tags, rule_name,
 			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
-			` + findingNetworkColumnsSQL + `
+			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
@@ -191,7 +192,8 @@ var findingCreateSQL = `
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
 			$83, $84, $85, $86, $87, $88,
 			$89, $90, $91, $92, $93, $94` + findingTypePlaceholders(95) +
-	findingNetworkPlaceholders(95+findingTypeColumnCount) + `)
+	findingNetworkPlaceholders(95+findingTypeColumnCount) +
+	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -318,6 +320,7 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 	}
 	args = append(args, findingTypeArgs(finding)...) // $95…
 	args = append(args, findingNetworkArgs(finding)...)
+	args = append(args, findingScannerArgs(finding)...)
 	return args, nil
 }
 
@@ -583,7 +586,8 @@ func findingInsertColumnsSQL() string {
 			last_seen_tool,
 			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
-			` + findingNetworkColumnsSQL + `
+			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `
 		)`
 }
 
@@ -699,7 +703,7 @@ func findingUpsertConflictSQL() string {
 			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
 			-- Rule name: first non-empty one wins, as in EnrichFrom.
 			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
-		findingTypeConflictSQL() + findingNetworkConflictSQL() + "\n\t"
+		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + "\n\t"
 }
 
 // findingTagsMergeSQL is the SQL expression merging a stored and an incoming
@@ -732,7 +736,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount
+const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -867,7 +871,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Identity recipe version and tuple (RFC-043 §6).
 		finding.FingerprintVersion(),
 		nullJSON(finding.IdentityKey()),
-	}, append(findingTypeArgs(finding), findingNetworkArgs(finding)...)...), nil
+	}, append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...)...), nil
 }
 
 // IsPentestCampaignMember reports whether the user belongs to the given
@@ -2072,6 +2076,7 @@ func (r *FindingRepository) selectQuery() string {
 			remediation, created_by, ingest_channel,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2208,6 +2213,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 
 	var typeCols findingTypeScan
 	var netCols findingNetworkScan
+	var scanCols findingScannerScan
 	dests := []any{
 		&idStr, &tenantIDStr, &vulnerabilityID, &assetIDStr, &branchID, &componentID, &source,
 		&toolName, &toolID, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
@@ -2236,6 +2242,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	}
 	dests = append(dests, typeCols.dests()...)
 	dests = append(dests, netCols.dests()...)
+	dests = append(dests, scanCols.dests()...)
 	dests = append(dests, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
@@ -2282,6 +2289,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	}
 	f.RestoreTypeDetails(typeCols.details())
 	f.RestoreNetwork(netCols.location())
+	f.RestoreScannerDetails(scanCols.details())
 	return f, nil
 }
 
@@ -3794,13 +3802,14 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			remediation, created_by, ingest_channel,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `,
 			FALSE AS has_data_flow
 		FROM findings
 	`
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 67
+const enrichColumnsPerRow = 73
 
 // enrichBatchChunkSize limits rows per batch UPDATE to stay under PostgreSQL's 65535 parameter limit.
 // 1000 rows × 50 columns = 50,000 params (safely under limit).
@@ -3884,6 +3893,12 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"network_port", "int"},
 	{"network_transport", "text"},
 	{"network_service", "text"},
+	{"family", "text"},
+	{"exploit_available", "boolean"},
+	{"vpr_score", "numeric"},
+	{"cvss_version", "text"},
+	{"cve_ids", "text[]"},
+	{"patch_published_at", "timestamptz"},
 }
 
 // EnrichBatchByFingerprints enriches existing findings with new scan data using domain EnrichFrom() rules.
@@ -4069,7 +4084,7 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		f.SLAStatus().String(),
 		nullString(f.LastSeenTool()),
 		// Network location — EnrichFrom fills it first-wins (enrichNetwork).
-	}, findingNetworkArgs(f)...), nil
+	}, append(findingNetworkArgs(f), findingScannerArgs(f)...)...), nil
 }
 
 // buildBatchEnrichQuery builds a VALUES-based UPDATE query for the given number of rows.
