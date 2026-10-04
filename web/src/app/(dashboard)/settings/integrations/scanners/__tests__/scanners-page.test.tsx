@@ -18,7 +18,11 @@ vi.mock('@/features/integrations/api/use-integrations-api', () => ({
   useDeleteIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
   useCreateIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
   useUpdateIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
+  useSyncIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
   invalidateIntegrationsCache: vi.fn(),
+}))
+vi.mock('@/lib/api/sensor-hooks', () => ({
+  useAllSensors: () => ({ data: { items: [] }, isLoading: false }),
 }))
 vi.mock('@/lib/api/scan-coverage-hooks', () => ({
   useScanCoverage: () => ({ data: undefined, isLoading: false }),

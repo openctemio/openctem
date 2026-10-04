@@ -82,8 +82,9 @@ func buildSuppFinding(t *testing.T, tenantID, assetID shared.ID, toolName, ruleI
 
 // --- tests -------------------------------------------------------------------
 
-// An active (approved, non-expired) rule matching a new finding stamps it
-// resolved+suppressed BEFORE persist and returns the finding→rule decision.
+// An active (approved, non-expired) false-positive rule matching a new finding
+// marks it false_positive (resolution "suppressed") BEFORE persist and returns
+// the finding→rule decision. Never resolved: a suppression is not a fix.
 func TestApplySuppressions_ActiveRuleSuppressesMatch(t *testing.T) {
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
@@ -101,8 +102,8 @@ func TestApplySuppressions_ActiveRuleSuppressesMatch(t *testing.T) {
 	if len(decisions) != 1 {
 		t.Fatalf("expected 1 suppression decision, got %d", len(decisions))
 	}
-	if f.Status() != vulnerability.FindingStatusResolved {
-		t.Fatalf("status = %q, want resolved", f.Status())
+	if f.Status() != vulnerability.FindingStatusFalsePositive {
+		t.Fatalf("status = %q, want false_positive", f.Status())
 	}
 	if !f.Status().IsClosed() {
 		t.Fatal("suppressed finding must be in the closed category (out of the open backlog)")
@@ -208,7 +209,40 @@ func TestApplySuppressions_ListError_SkipsGracefully(t *testing.T) {
 	}
 }
 
-// The disposition (resolved + resolution="suppressed") is exactly the sentinel
+// Each rule type gives its own disposition, and none of them is resolved
+// (research 18 F7, owner decision O9).
+func TestApplySuppressions_DispositionByRuleType(t *testing.T) {
+	tenantID := shared.NewID()
+	for typ, want := range map[suppression.SuppressionType]vulnerability.FindingStatus{
+		suppression.SuppressionTypeFalsePositive: vulnerability.FindingStatusFalsePositive,
+		suppression.SuppressionTypeAcceptedRisk:  vulnerability.FindingStatusAccepted,
+		suppression.SuppressionTypeWontFix:       vulnerability.FindingStatusAccepted,
+	} {
+		rule := buildRule(tenantID, suppression.RuleStatusApproved, "semgrep", "sql-injection", nil)
+		d := ruleData(rule)
+		d.SuppressionType = typ
+		p := NewFindingProcessor(&stubFindingRepository{}, nil, nil, logger.NewNop())
+		p.SetSuppressionChecker(&stubSuppressionChecker{rules: []*suppression.Rule{suppression.ReconstituteRule(d)}})
+		f := buildSuppFinding(t, tenantID, shared.NewID(), "semgrep", "sql-injection", "fp-"+string(typ))
+		p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f})
+		if f.Status() != want || f.Status() == vulnerability.FindingStatusResolved || f.ResolvedAt() == nil {
+			t.Errorf("%s rule: status %q (resolved_at %v), want %q with a closing time", typ, f.Status(), f.ResolvedAt(), want)
+		}
+	}
+}
+
+// ruleData copies a built rule back into its data form so a test can vary one field.
+func ruleData(r *suppression.Rule) suppression.RuleData {
+	approvedBy, approvedAt := r.ApprovedBy(), r.ApprovedAt()
+	return suppression.RuleData{
+		ID: r.ID(), TenantID: r.TenantID(), ToolName: r.ToolName(), RuleID: r.RuleID(), Name: r.Name(),
+		SuppressionType: r.SuppressionType(), Status: r.Status(), RequestedBy: r.RequestedBy(),
+		RequestedAt: r.RequestedAt(), ApprovedBy: approvedBy, ApprovedAt: approvedAt,
+		ExpiresAt: r.ExpiresAt(), CreatedAt: r.CreatedAt(), UpdatedAt: r.UpdatedAt(),
+	}
+}
+
+// The disposition (resolution="suppressed") is exactly the sentinel
 // the auto-reopen query excludes, so a re-ingested suppressed finding stays
 // suppressed. This asserts the domain-level contract the SQL predicate relies on.
 func TestApplySuppressions_DispositionSurvivesReopenPredicate(t *testing.T) {
