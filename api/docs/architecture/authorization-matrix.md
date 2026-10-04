@@ -1000,6 +1000,23 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `GET /vulnerabilities/active`, `/active/stats`, MCP `list_active_cves` | bypass (CVE ids, affected counts) | aggregated only over findings on in-scope assets (L-10) |
 | `GET /groups/{g}/assets` (`groups:read`, a member default) | **bypass** (any team's asset names) | only the group's assets in the caller's scope are listed and counted (L-10) |
 
+### Scheduled report recipients
+
+A scheduled report mails organization posture out, so its recipients are
+limited (owner decision D12, research doc 15 L-19): an **active member of the
+organization**, or an address in one of its **`Security.AllowedDomains`**
+(exact domain, case-insensitive; no allowed domains means members only).
+
+- `POST /reports/schedules` refuses (400) any other recipient; activating a
+  schedule (`PATCH /reports/schedules/{id}/toggle`) re-checks, so a schedule
+  written before the rule, or whose recipient has left, is not switched back
+  on with them.
+- The scheduler re-checks every recipient at send time and skips the ones no
+  longer allowed (logged); with nobody left it sends nothing (`no_recipients`).
+- Create, activate and delete are audited (`report_schedule.*`, with the
+  recipients on create).
+- The report body is still tenant-wide; rendering under the creator's scope is
+  part of P1-4 (D6).
 ### Scheduled reports render under their creator's scope
 
 Owner decision D6 (research doc 15 P1-4): a scheduled report shows what its
