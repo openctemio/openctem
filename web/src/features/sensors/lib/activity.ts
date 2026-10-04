@@ -19,6 +19,7 @@ import {
   PowerOff,
   RotateCcw,
   Trash2,
+  Undo2,
   User,
   Wifi,
   WifiOff,
@@ -99,6 +100,7 @@ const AUDIT_ICONS: Record<string, LucideIcon> = {
   'sensor.key_regenerated': KeyRound,
   'sensor.key_renewed': KeyRound,
   'sensor.key_renewal_refused': Ban,
+  'sensor.commands_released': Undo2,
   'sensor.connected': Wifi,
   'sensor.disconnected': WifiOff,
 }
@@ -113,6 +115,7 @@ const AUDIT_LABELS: Record<string, string> = {
   'sensor.key_regenerated': 'API key rotated',
   'sensor.key_renewed': 'API key renewed',
   'sensor.key_renewal_refused': 'API key renewal refused (the key was revoked)',
+  'sensor.commands_released': 'Jobs it held taken back (re-queued or failed)',
   'sensor.connected': 'Sensor connected',
   'sensor.disconnected': 'Sensor disconnected',
 }

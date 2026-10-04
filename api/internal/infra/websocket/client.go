@@ -1,13 +1,16 @@
 package websocket
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/time/rate"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -21,12 +24,46 @@ const (
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
 
+	// After the server sends a close frame it waits this long for the peer's
+	// answering close before dropping the TCP connection. Dropping it at once
+	// can reset the connection while the peer is still sending, and the reset
+	// discards the close frame (and its code) on the peer's side.
+	closeGrace = 2 * time.Second
+
 	// Maximum message size allowed from peer.
 	maxMessageSize = 4096
 
 	// Rate limiting: max subscriptions per client
 	maxSubscriptionsPerClient = 50
+
+	// Client message rate limit (subscribe/unsubscribe/ping). Every subscribe
+	// costs a permission lookup, so an unthrottled socket could turn into a
+	// database amplifier. The burst covers a reconnect that re-subscribes the
+	// maximum number of channels at once.
+	messagesPerSecond = 10
+	messageBurst      = maxSubscriptionsPerClient + 10
+
+	// A client that keeps sending past the limit is closed (1008) after this
+	// many dropped messages instead of being answered forever.
+	maxThrottledMessages = 50
 )
+
+// Identity is who a connection authenticated as, and until when it may stay
+// open. It is fixed for the life of the connection: a change of session,
+// membership or role closes the socket (Hub.RevokeSession/RevokeAccess)
+// rather than mutating it.
+type Identity struct {
+	UserID   string
+	TenantID string
+	// SessionID is the server-side session the credential belongs to. Empty
+	// for credentials that carry none (OIDC access tokens); such sockets end
+	// at ExpiresAt or on a user/tenant revocation only.
+	SessionID string
+	// ExpiresAt is when the connection is closed with CloseUnauthorized. The
+	// handler sets it to the credential's expiry, capped by the maximum
+	// connection lifetime.
+	ExpiresAt time.Time
+}
 
 // Client represents a single WebSocket connection.
 type Client struct {
@@ -36,37 +73,155 @@ type Client struct {
 	logger *logger.Logger
 
 	// Identity
-	ID       string
-	UserID   string
-	TenantID string
+	ID        string
+	UserID    string
+	TenantID  string
+	SessionID string
+	ExpiresAt time.Time
+
+	// expiry closes the connection at ExpiresAt.
+	expiry *time.Timer
+
+	// Per-connection message rate limit; throttled is touched only by
+	// ReadPump's goroutine.
+	limiter   *rate.Limiter
+	throttled int
+
+	// registered is closed once the hub has accepted (or refused) the
+	// client, so the handler can run checks that must observe it registered.
+	registered chan struct{}
+	regOnce    sync.Once
 
 	// Subscriptions (channel -> true)
 	subscriptions map[string]bool
 	subMu         sync.RWMutex
 
-	// State
-	closed bool
-	mu     sync.Mutex
+	// State. closing is set when the server has sent a close frame: from
+	// then on nothing is delivered to the client or processed from it, and
+	// closed follows once the peer answers or closeGrace passes.
+	closed  bool
+	closing bool
+	mu      sync.Mutex
 }
 
 // NewClient creates a new WebSocket client.
-func NewClient(hub *Hub, conn *websocket.Conn, userID, tenantID string, log *logger.Logger) *Client {
+func NewClient(hub *Hub, conn *websocket.Conn, id Identity, log *logger.Logger) *Client {
 	return &Client{
 		hub:           hub,
 		conn:          conn,
 		send:          make(chan []byte, 256),
 		logger:        log,
 		ID:            generateClientID(),
-		UserID:        userID,
-		TenantID:      tenantID,
+		UserID:        id.UserID,
+		TenantID:      id.TenantID,
+		SessionID:     id.SessionID,
+		ExpiresAt:     id.ExpiresAt,
+		limiter:       rate.NewLimiter(rate.Limit(messagesPerSecond), messageBurst),
 		subscriptions: make(map[string]bool),
+		registered:    make(chan struct{}),
 	}
 }
 
-// generateClientID creates a unique client ID.
+// generateClientID creates a random connection id for logs.
 func generateClientID() string {
-	// Simple unique ID for our purposes
-	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), time.Now().Nanosecond()%10000)
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return time.Now().Format("150405.000000000")
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// markRegistered signals that the hub has handled the register request.
+func (c *Client) markRegistered() {
+	if c.registered == nil {
+		return
+	}
+	c.regOnce.Do(func() { close(c.registered) })
+}
+
+// armExpiry closes the connection with CloseUnauthorized at ExpiresAt. A
+// deadline already in the past closes it at once. Zero ExpiresAt arms nothing
+// (the handler never registers a client without one).
+func (c *Client) armExpiry(now time.Time) {
+	if c.ExpiresAt.IsZero() {
+		return
+	}
+	d := c.ExpiresAt.Sub(now)
+	if d <= 0 {
+		c.closeWith(CloseUnauthorized, "session expired", "session_expired")
+		return
+	}
+	t := time.AfterFunc(d, func() {
+		c.closeWith(CloseUnauthorized, "session expired", "session_expired")
+	})
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		t.Stop()
+		return
+	}
+	c.expiry = t
+	c.mu.Unlock()
+}
+
+// closeWith sends a close frame with code and reason, then closes the
+// connection. metricReason labels openctem_ws_forced_closes_total. Safe to call
+// from any goroutine and more than once: gorilla allows WriteControl
+// concurrently with the write pump, and Close is idempotent.
+func (c *Client) closeWith(code int, reason, metricReason string) {
+	c.mu.Lock()
+	if c.closed || c.closing {
+		c.mu.Unlock()
+		return
+	}
+	c.closing = true
+	c.mu.Unlock()
+
+	if c.conn == nil {
+		c.Close()
+	} else {
+		_ = c.conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(code, reason), time.Now().Add(writeWait))
+		// ReadPump returns when the peer answers the close (or at the
+		// deadline) and closes the connection; the timer is the backstop.
+		_ = c.conn.SetReadDeadline(time.Now().Add(closeGrace))
+		time.AfterFunc(closeGrace, c.Close)
+	}
+	if metricReason != "" {
+		metrics.WSForcedClosesTotal.WithLabelValues(metricReason).Inc()
+	}
+	c.logger.Info("websocket connection closed by server",
+		"client_id", c.ID,
+		"user_id", c.UserID,
+		"tenant_id", c.TenantID,
+		"code", code,
+		"reason", reason,
+	)
+}
+
+// allowMessage applies the per-connection rate limit to one client message.
+// It reports whether the message may be processed; false with a closed
+// connection means the client kept flooding and was disconnected.
+func (c *Client) allowMessage() bool {
+	if c.limiter == nil || c.limiter.Allow() {
+		return true
+	}
+	c.throttled++
+	metrics.WSMessagesThrottledTotal.Inc()
+	if c.throttled >= maxThrottledMessages {
+		c.closeWith(websocket.ClosePolicyViolation, "rate limit exceeded", "rate_limited")
+		return false
+	}
+	c.sendError("RATE_LIMITED", "Too many messages")
+	return false
+}
+
+// isDone reports whether the connection is closed or being closed by the
+// server; such a client gets no more messages and has none processed.
+func (c *Client) isDone() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed || c.closing
 }
 
 // Subscribe adds a channel subscription.
@@ -142,7 +297,7 @@ func (c *Client) SendMessage(msg *Message) error {
 	// holding the lock here cannot deadlock against Close.
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.closed {
+	if c.closed || c.closing {
 		return nil
 	}
 
@@ -168,16 +323,22 @@ func (c *Client) Close() {
 	}
 	c.closed = true
 
+	if c.expiry != nil {
+		c.expiry.Stop()
+	}
+
 	// close(c.send) happens under c.mu so it can never race a send in
 	// SendMessage (which also holds c.mu across its send) — see comment there.
 	close(c.send)
-	c.conn.Close()
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
 }
 
 // ReadPump pumps messages from the WebSocket connection to the hub.
 func (c *Client) ReadPump() {
 	defer func() {
-		c.hub.unregister <- c
+		c.hub.UnregisterClient(c)
 		c.Close()
 	}()
 
@@ -198,6 +359,15 @@ func (c *Client) ReadPump() {
 				)
 			}
 			break
+		}
+
+		// Once the server has sent its close frame, keep reading (and
+		// discarding) until the peer answers it.
+		if c.isDone() {
+			continue
+		}
+		if !c.allowMessage() {
+			continue
 		}
 
 		// Parse message
@@ -233,6 +403,11 @@ func (c *Client) WritePump() {
 				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
+			if c.isDone() {
+				// Queued before the server closed the connection: never
+				// delivered after a revocation or expiry.
+				continue
+			}
 
 			// Send message in its own frame (don't batch to avoid JSON parse issues on client)
 			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
@@ -240,6 +415,9 @@ func (c *Client) WritePump() {
 			}
 
 		case <-ticker.C:
+			if c.isDone() {
+				continue
+			}
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
@@ -278,6 +456,7 @@ func (c *Client) handleSubscribe(msg *Message) {
 
 	// Check authorization
 	if !c.hub.authorizeSubscription(c, req.Channel) {
+		metrics.WSSubscribeDeniedTotal.Inc()
 		c.sendErrorWithRequestID("FORBIDDEN", "Access denied to channel", req.RequestID)
 		return
 	}

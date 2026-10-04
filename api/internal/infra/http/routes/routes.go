@@ -225,7 +225,6 @@ type Handlers struct {
 
 	// F-8: Optional single-use WebSocket ticket redeemer. When non-nil,
 	// the /ws route uses ticket auth instead of the JWT chain.
-	WSTicketRedeemer middleware.WSTicketRedeemer
 
 	// AuthRateLimitBackend is the shared store (Redis) the public auth rate
 	// limits count in, so every API replica spends one budget. nil keeps them
@@ -289,6 +288,7 @@ func Register(
 		Logger:                log,
 		SessionTimeoutMinutes: cfg.Server.SessionTimeoutMinutes,
 		RevokedSessions:       authCfg.RevokedSessions,
+		CookieName:            cfg.Auth.AccessTokenCookieName,
 	}
 	authMiddleware := middleware.UnifiedAuth(unifiedAuthCfg)
 
@@ -398,8 +398,7 @@ func Register(
 	}
 
 	// Auth routes - based on provider (some protected, some public).
-	// Registered AFTER the tenant-chain middlewares above are initialized:
-	// /auth/ws-token mounts wsTokenMiddlewares, which reads them.
+	// Registered AFTER the tenant-chain middlewares above are initialized.
 	registerAuthRoutes(router, h, cfg, authCfg, authMiddleware, userSync, log)
 
 	// Build identity for Help > About (any signed-in user).
@@ -875,13 +874,7 @@ func Register(
 	// ==========================================================================
 	// WebSocket endpoint for real-time features (activities, scans, notifications)
 	if h.WebSocket != nil {
-		var wsTicketMW Middleware
-		if h.WSTicketRedeemer != nil {
-			// Re-checks active membership at upgrade (same reader as the
-			// tenant chain) for the user+tenant the ticket is bound to.
-			wsTicketMW = middleware.WSTicketAuth(h.WSTicketRedeemer, membershipReader, log)
-		}
-		registerWebSocketRoutes(router, h.WebSocket, authMiddleware, userSync, wsTicketMW)
+		registerWebSocketRoutes(router, h.WebSocket, authMiddleware, userSync)
 	}
 }
 
@@ -1081,13 +1074,15 @@ func tenantOverlayMiddlewares() []Middleware {
 	return mws
 }
 
-// wsTokenMiddlewares is the chain for GET /api/v1/auth/ws-token. A WebSocket
-// ticket opens the tenant's real-time stream, so issuing one must pass the
-// same tenant gates as any tenant route: SSO enforcement and the organization
-// IP allowlist (buildBaseMiddlewares), then RequireTenant + active membership
-// (tenantOverlayMiddlewares). It stays session-only: unlike
+// realtimeMiddlewares is the chain for the WebSocket upgrade,
+// GET /api/v1/ws (RFC-045). The socket opens the tenant's real-time stream,
+// so the upgrade passes the same tenant gates as any tenant route: the
+// session (Authorization header or the auth_token cookie, revoked-session
+// check), SSO enforcement and the organization IP allowlist
+// (buildBaseMiddlewares), then RequireTenant, active membership and the read
+// rate limit (tenantOverlayMiddlewares). It stays session-only: unlike
 // buildTokenTenantMiddlewares it does not accept `oct_` API keys.
-func wsTokenMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middleware {
+func realtimeMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middleware {
 	return append(buildBaseMiddlewares(authMiddleware, userSyncMiddleware), tenantOverlayMiddlewares()...)
 }
 

@@ -31,6 +31,13 @@ describe('sensor audit events before and after the rename', () => {
     expect(formatAction('agent.key_regenerated')).toBe('Sensor Key Regenerated')
   })
 
+  it('labels sensor.commands_released (jobs taken back on revoke/disable, RFC-040)', () => {
+    expect(getActionLabel('sensor.commands_released')).toBe(
+      'Sensor Jobs Taken Back (Revoked or Disabled)'
+    )
+    expect(formatAction('sensor.commands_released')).toBe('Sensor Commands Released')
+  })
+
   it('labels the scan zone actions (RFC-023)', () => {
     expect(getActionLabel('scan_zone.created')).toBe('Scan Zone Created')
     expect(getActionLabel('scan_zone.sensor_assigned')).toBe('Sensor Assigned to Scan Zone')

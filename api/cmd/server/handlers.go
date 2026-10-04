@@ -445,10 +445,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
 
-		// F-8: wire the single-use ticket redeemer when configured so the
-		// /ws route uses ticket auth instead of the JWT chain.
-		WSTicketRedeemer: svc.WSTicket,
-
 		// Login, MFA, password, SSO and invitation limits count in Redis so
 		// every replica spends one budget (in-memory fallback on a Redis error).
 		AuthRateLimitBackend: middleware.NewRedisAuthRateLimitBackend(deps.RedisClient, log),
@@ -547,10 +543,6 @@ func InitLocalAuthHandler(
 			cfg.Auth,
 			log,
 		)
-		// F-8: wire the single-use ticket service (may be nil if Redis not configured).
-		if svc.WSTicket != nil {
-			handlers.LocalAuth.SetWSTicketService(svc.WSTicket)
-		}
 		log.Info("local auth handler initialized")
 	}
 }

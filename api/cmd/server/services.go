@@ -499,25 +499,6 @@ type wsHubBroadcaster struct {
 	hub *websocket.Hub
 }
 
-// wsTicketStore is an adapter exposing only the Get/Set/Del surface that the
-// WS ticket service needs — keeps that service decoupled from the full Redis
-// client surface. F-8.
-type wsTicketStore struct {
-	rc *redis.Client
-}
-
-func newWSTicketStore(rc *redis.Client) *wsTicketStore {
-	return &wsTicketStore{rc: rc}
-}
-
-func (s *wsTicketStore) Set(ctx context.Context, key, value string, ttl time.Duration) error {
-	return s.rc.Set(ctx, key, value, ttl)
-}
-
-func (s *wsTicketStore) GetDel(ctx context.Context, key string) (string, bool, error) {
-	return s.rc.GetDel(ctx, key)
-}
-
 func (b *wsHubBroadcaster) BroadcastActivity(channel string, data any, tenantID string) {
 	b.hub.BroadcastEvent(channel, data, tenantID)
 }
@@ -745,7 +726,6 @@ type Services struct {
 	// WebSocket
 	WebSocketHub *websocket.Hub
 	// F-8: Single-use ticket service used by WS upgrade auth.
-	WSTicket *app.WSTicketService
 	// SessionRevocations rejects access tokens of signed-out sessions
 	// immediately (nil without Redis).
 	SessionRevocations *redis.SessionRevocationStore
@@ -1898,6 +1878,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
 	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group, scope: s.DataScope})
+	// A role assigned, removed or redefined, or a membership removed or
+	// suspended, closes the user's live sockets in that tenant; the client
+	// reconnects through every upgrade gate again (RFC-045).
+	if s.PermVersion != nil {
+		hub := s.WebSocketHub
+		s.PermVersion.SetChangeListener(func(ctx context.Context, tenantID, userID string) {
+			hub.RevokeAccess(ctx, tenantID, userID)
+		})
+	}
 	log.Info("websocket hub initialized")
 
 	// Wire WebSocket broadcasters - must be done AFTER WebSocketHub is initialized
@@ -1988,11 +1977,6 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
 	s.Auth.SetPermissionVersionService(s.PermVersion)
 
-	// F-8: single-use WebSocket ticket service, Redis-backed.
-	if redisClient != nil {
-		s.WSTicket = app.NewWSTicketService(newWSTicketStore(redisClient), 30*time.Second, log)
-	}
-
 	// Two-factor authentication (TOTP). Secrets are encrypted with the same
 	// AES-GCM key as integration credentials.
 	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.App.Name)
@@ -2002,6 +1986,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// this device", password change, enabling 2FA, suspension) records its id
 	// in Redis so the auth middleware rejects its still-unexpired access
 	// tokens on the next request. Without Redis they expire naturally.
+	var revocationStore app.SessionRevocationStore
 	if redisClient != nil {
 		if tokens, err := redis.NewTokenStore(redisClient, log); err != nil {
 			log.Warn("session revocation store unavailable", "error", err)
@@ -2009,10 +1994,16 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			log.Warn("session revocation store unavailable", "error", err)
 		} else {
 			s.SessionRevocations = store
-			s.Auth.SetSessionRevocationStore(store)
-			s.Session.SetRevocationStore(store, cfg.Auth.AccessTokenDuration+time.Minute)
+			revocationStore = store
 		}
 	}
+	// Every session revocation also closes the session's live WebSocket
+	// connections, on every API instance (RFC-045). Wired even without Redis,
+	// so a single instance still closes its own sockets on logout.
+	sessionRevocations := websocket.SessionRevocationNotifier{Store: revocationStore, Hub: s.WebSocketHub}
+	revocationTTL := cfg.Auth.AccessTokenDuration + time.Minute
+	s.Auth.SetSessionRevocationStore(sessionRevocations)
+	s.Session.SetRevocationStore(sessionRevocations, revocationTTL)
 
 	// Wire permission services to session service
 	tenantMembershipAdapter := app.NewTenantMembershipAdapter(repos.Tenant)
@@ -2039,6 +2030,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log,
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
+	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
 	// auto-provisioning gate — a non-member is auto-joined only when the email

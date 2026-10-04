@@ -7,8 +7,9 @@
  * so this entry forwards that one upgrade itself to BACKEND_API_URL, read when
  * the container starts. Every other request and upgrade goes to Next unchanged.
  *
- * Authentication is the single-use ticket in the query string, checked by the
- * API; this hop adds no trust of its own.
+ * The API authenticates the upgrade with the browser's session cookie and
+ * checks its Origin (RFC-045), so the Cookie and Origin headers are forwarded
+ * unchanged; this hop adds no trust of its own.
  */
 import http from 'node:http'
 import net from 'node:net'
