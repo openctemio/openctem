@@ -128,8 +128,12 @@ Base URL: `http://localhost:8080/api/v1`
 | GET | `/tenants/:tenant/invitations` | List invitations | Team member |
 | POST | `/tenants/:tenant/invitations` | Create invitation | Team admin+ |
 | DELETE | `/tenants/:tenant/invitations/:id` | Cancel invitation | Team admin+ |
-| GET | `/invitations/:token` | Get invitation details | JWT |
-| POST | `/invitations/:token/accept` | Accept invitation | JWT |
+| POST | `/invitations/lookup` | What an invitation grants (`{"token"}` in the body) | Public, rate limited |
+| POST | `/invitations/accept` | Accept invitation (`{"token"}` in the body) | JWT, invited email |
+| POST | `/invitations/accept-with-refresh` | Accept with the refresh token (no organization yet) | Refresh token |
+| POST | `/invitations/decline` | Decline invitation (`{"token"}` in the body) | Public, rate limited |
+
+The `/invitations/:token/...` paths are deprecated aliases (RFC-041; `Deprecation`/`Sunset` headers, removal 2027-01-15).
 
 ### Team Settings
 

@@ -13,7 +13,6 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   AlertTriangle,
   Shield,
-  Zap,
   Target,
   Search as SearchIcon,
   Download,
@@ -61,7 +60,6 @@ export default function VulnerableComponentsPage() {
       total: apiStats?.vulnerable_components ?? vulnerableComponents.length,
       critical: criticalCount,
       high: highCount,
-      exploitable: 0,
       kev: kevCount,
     }
   }, [apiStats, vulnerableComponents.length])
@@ -173,7 +171,7 @@ export default function VulnerableComponentsPage() {
         </PageHeader>
 
         {/* Stats Cards */}
-        <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Card
             className={`cursor-pointer hover:border-red-500 transition-colors ${
               severityFilter === 'all' ? 'border-red-500' : ''
@@ -215,23 +213,6 @@ export default function VulnerableComponentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground">CVSS 9.0+ vulnerabilities</p>
-            </CardContent>
-          </Card>
-
-          <Card className="transition-colors opacity-60 cursor-not-allowed" title="Coming soon">
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2">
-                <Zap className="h-4 w-4 text-orange-500" />
-                Exploitable
-              </CardDescription>
-              {isLoading ? (
-                <Skeleton className="h-9 w-16" />
-              ) : (
-                <CardTitle className="text-3xl text-orange-500">{stats.exploitable}</CardTitle>
-              )}
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">Public exploits available</p>
             </CardContent>
           </Card>
 

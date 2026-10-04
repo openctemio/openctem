@@ -260,7 +260,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
-		EASM:          handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log),
+		EASM:          newEASMHandler(repos, svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -714,6 +714,17 @@ func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Ser
 	return handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
 }
 
+// newEASMHandler builds the EASM overview and review queue handler; every
+// review decision is audited (RFC-036).
+func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMHandler {
+	h := handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log)
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return h.SetReview(easmapp.NewReviewService(repos.Attribution, svc.DataScope), audit)
+}
+
 // newAssetAttributionHandler builds the attribution handler with its audit
 // trail (RFC-036: every human attribution decision is audited).
 func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.AssetAttributionHandler {
@@ -728,5 +739,6 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
 	h := handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log)
 	h.SetAuditService(svc.Audit)
+	h.SetDataScope(svc.DataScope)
 	return h
 }

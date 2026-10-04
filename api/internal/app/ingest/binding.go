@@ -12,6 +12,7 @@ package ingest
 // person resolved.
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/netip"
@@ -49,13 +50,16 @@ type Binding struct {
 	// Tool is the bound command's tool ("" when it names none); a bound
 	// report must be from that tool.
 	Tool string
+	// StepRunID is the pipeline step run the bound command belongs to (nil
+	// for a command outside a pipeline): the scan run its results came from.
+	StepRunID *shared.ID
 }
 
 // CommandBinding binds a report to cmd, which the caller has checked is
 // assigned to the submitting sensor and open.
 func CommandBinding(cmd *command.Command) Binding {
 	id := cmd.ID
-	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd)}
+	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd), StepRunID: cmd.StepRunID}
 }
 
 // TrustedBinding is the binding of a server-side ingest.
@@ -209,6 +213,47 @@ type alterScope struct {
 	// allowed are the persisted ids of the assets this report may change:
 	// those it created and the existing ones its command covers.
 	allowed map[shared.ID]bool
+	// actor, when set, is the data scope of the person behind an upload
+	// (Options.Actor): it reports whether they may change an existing asset.
+	actor func(shared.ID) bool
+}
+
+// withActor limits the scope to the assets the upload's actor may change.
+// Each decision is looked up once; a lookup error denies (fail closed).
+func (s *alterScope) withActor(ctx context.Context, a ActorScope) *alterScope {
+	if a == nil {
+		return s
+	}
+	memo := map[shared.ID]bool{}
+	s.actor = func(id shared.ID) bool {
+		if ok, seen := memo[id]; seen {
+			return ok
+		}
+		ids, err := a.AssetsInScope(ctx, []shared.ID{id})
+		ok := err == nil && len(ids) == 1 && ids[0] == id
+		memo[id] = ok
+		return ok
+	}
+	return s
+}
+
+// actorRestricted reports whether an upload's actor limits this ingest.
+func (s *alterScope) actorRestricted() bool { return s != nil && s.actor != nil }
+
+// actorDenies reports whether the upload's actor may not change asset id.
+func (s *alterScope) actorDenies(id shared.ID) bool {
+	return s != nil && s.actor != nil && !s.actor(id)
+}
+
+// skipOutOfScope records a report asset the upload's actor may not change.
+func skipOutOfScope(output *Output, ref string) {
+	output.AssetsSkippedOutOfScope++
+	if ref != "" {
+		if output.OutOfScopeAssetRefs == nil {
+			output.OutOfScopeAssetRefs = map[string]bool{}
+		}
+		output.OutOfScopeAssetRefs[ref] = true
+	}
 }
 
 func newAlterScope(b Binding) *alterScope {
@@ -227,6 +272,9 @@ func fullScope() *alterScope { return &alterScope{all: true, allowed: map[shared
 
 // mayAlter reports whether the report may change the existing asset a.
 func (s *alterScope) mayAlter(a *asset.Asset) bool {
+	if a != nil && s.actorDenies(a.ID()) {
+		return false
+	}
 	if s == nil || s.all {
 		return true
 	}
@@ -258,5 +306,8 @@ func (s *alterScope) allow(id shared.ID) {
 // allowedAsset reports whether findings on the persisted asset id may be
 // reopened after a person resolved them.
 func (s *alterScope) allowedAsset(id shared.ID) bool {
+	if s.actorDenies(id) {
+		return false
+	}
 	return s == nil || s.all || s.allowed[id]
 }

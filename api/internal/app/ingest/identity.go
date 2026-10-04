@@ -112,6 +112,28 @@ type identifierSet struct {
 	name string
 	out  []asset.Identifier
 	seen map[asset.IdentifierKey]bool
+	// typed are the kinds the typed CTIS fields (the identifiers block,
+	// technical.cloud) carried; free-form properties are read for a kind
+	// only when no typed field carried it.
+	typed map[asset.IdentifierKind]bool
+}
+
+// addTyped adds a value from a typed CTIS field and marks its kind typed.
+func (s *identifierSet) addTyped(k asset.IdentifierKind, raw string) {
+	before := len(s.out)
+	s.add(k, raw)
+	if len(s.out) > before || s.hasKind(k) {
+		s.typed[k] = true
+	}
+}
+
+func (s *identifierSet) hasKind(k asset.IdentifierKind) bool {
+	for _, id := range s.out {
+		if id.Kind == k {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *identifierSet) add(k asset.IdentifierKind, raw string) {
@@ -165,49 +187,52 @@ func (s *identifierSet) addBlock(ids *ctis.AssetIdentifiers, coreType asset.Asse
 		return
 	}
 	if hardwareType(coreType) {
-		s.add(asset.IdentifierHostID, ids.MachineID)
-		s.add(asset.IdentifierBIOSUUID, ids.BIOSUUID)
-		s.add(asset.IdentifierSerial, ids.SerialNumber)
+		s.addTyped(asset.IdentifierHostID, ids.MachineID)
+		s.addTyped(asset.IdentifierBIOSUUID, ids.BIOSUUID)
+		s.addTyped(asset.IdentifierSerial, ids.SerialNumber)
 		for _, m := range ids.MACAddresses {
-			s.add(asset.IdentifierMAC, m)
+			s.addTyped(asset.IdentifierMAC, m)
 		}
 	}
-	s.add(asset.IdentifierCloudID, ids.CloudResourceID)
+	s.addTyped(asset.IdentifierCloudID, ids.CloudResourceID)
 	if coreType == asset.AssetTypeRepository {
-		s.add(asset.IdentifierSCMRepoID, ids.SCMRepoID)
+		s.addTyped(asset.IdentifierSCMRepoID, ids.SCMRepoID)
 	}
 }
 
 // identifiersFor extracts the identifiers an incoming CTIS asset carries:
-// the CTIS identifiers block, the same values under their usual property
-// names (scanners that predate the block, such as the Nessus parser's
-// mac_address), the cloud block, and, for hosts, names and IP addresses.
+// the CTIS identifiers block and the cloud block first, then, only for a
+// strong kind neither of them carried, the same value under its usual
+// property name (scanners that predate the block, such as the Nessus
+// parser's mac_address), and, for hosts, names and IP addresses. A typed
+// field wins over free-form properties: a report cannot add a second,
+// untyped merge identity of a kind its typed block already states.
 // AssetID is left unset.
 func identifiersFor(ca *ctis.Asset, coreType asset.AssetType, name string) []asset.Identifier {
 	if !identityApplies(coreType) {
 		return nil
 	}
-	s := &identifierSet{name: name, seen: map[asset.IdentifierKey]bool{}}
+	s := &identifierSet{name: name, seen: map[asset.IdentifierKey]bool{}, typed: map[asset.IdentifierKind]bool{}}
 	props := map[string]any(ca.Properties)
 	hw := hardwareType(coreType)
 
 	s.addBlock(ca.Identifiers, coreType)
 	if ca.Technical != nil && ca.Technical.Cloud != nil {
 		if ca.Technical.Cloud.ARN != "" {
-			s.add(asset.IdentifierCloudID, ca.Technical.Cloud.ARN)
+			s.addTyped(asset.IdentifierCloudID, ca.Technical.Cloud.ARN)
 		} else {
-			s.add(asset.IdentifierCloudID, ca.Technical.Cloud.ResourceID)
+			s.addTyped(asset.IdentifierCloudID, ca.Technical.Cloud.ResourceID)
 		}
 	}
 	for _, p := range identifierProps {
-		if p.hw && !hw {
+		if (p.hw && !hw) || s.typed[p.kind] {
 			continue
 		}
 		for _, k := range p.keys {
 			s.addProp(p.kind, props[k])
 		}
 	}
-	if coreType == asset.AssetTypeRepository {
+	if coreType == asset.AssetTypeRepository && !s.typed[asset.IdentifierSCMRepoID] {
 		for _, k := range propRepoID {
 			s.addProp(asset.IdentifierSCMRepoID, props[k])
 		}
