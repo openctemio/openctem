@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
@@ -49,6 +50,11 @@ type DispatchTargetsInput struct {
 	// like an asset-group member of a scan. A target the tenant typed itself
 	// has no entry (O8). Keys match targets case-insensitively.
 	Assets map[string]DispatchAsset
+	// ActScope limits the targets to what the actor may scan (research/15
+	// L-06, D9): the request caller, else FallbackUser. Set it on every path
+	// a person starts; system paths (coverage, validation) leave it off.
+	ActScope     bool
+	FallbackUser *shared.ID
 }
 
 // RefusedTarget is a target the gate will not dispatch, with the reason.
@@ -201,6 +207,11 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 		return nil, err
 	}
 
+	kept, err = s.refuseOutOfActScopeTargets(ctx, in, kept, out)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := s.routeDispatchTargets(ctx, in, kept, out); err != nil {
 		return nil, err
 	}
@@ -262,6 +273,54 @@ func unconfirmedState(assets map[string]DispatchAsset, target string, blocked ma
 		}
 	}
 	return "", false
+}
+
+// refuseOutOfActScopeTargets moves every kept target the actor may not scan
+// to Refused, when the input asks for the act-scope check. The caller scope
+// seam of the gate: one call per dispatch, before any command exists.
+func (s *Service) refuseOutOfActScopeTargets(ctx context.Context, in DispatchTargetsInput, kept []string, out *DispatchTargets) ([]string, error) {
+	if !in.ActScope || len(kept) == 0 {
+		return kept, nil
+	}
+	if s.actScope == nil {
+		return nil, ErrActScopeUnavailable
+	}
+	check := actscope.Input{TenantID: in.TenantID, FallbackUser: in.FallbackUser, Targets: kept}
+	for _, t := range kept {
+		if a, ok := assetOf(in.Assets, t); ok {
+			for _, id := range a.IDs {
+				if pid, err := shared.IDFromString(id); err == nil {
+					check.AssetIDs = append(check.AssetIDs, pid)
+				}
+			}
+		}
+	}
+	d, err := s.actScope.Check(ctx, check)
+	if err != nil {
+		return nil, fmt.Errorf("act-scope check failed, nothing dispatched: %w", err)
+	}
+	allowed := make([]string, 0, len(kept))
+	for _, t := range kept {
+		if reason, no := d.RefusedTargets[t]; no {
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: reason})
+			continue
+		}
+		if a, ok := assetOf(in.Assets, t); ok && anyRefused(a.IDs, d.RefusedAssets) {
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: actscope.ReasonOutOfDataScope})
+			continue
+		}
+		allowed = append(allowed, t)
+	}
+	return allowed, nil
+}
+
+func anyRefused(ids []string, refused map[shared.ID]bool) bool {
+	for _, id := range ids {
+		if pid, err := shared.IDFromString(id); err == nil && refused[pid] {
+			return true
+		}
+	}
+	return false
 }
 
 // assetOf finds the inventory asset behind a target (case-insensitive).
