@@ -327,13 +327,20 @@ func (s *Scheduler) gateBatch(ctx context.Context, cfg CoverageConfig, batch []C
 		return nil, nil, nil, errNoTargetGate
 	}
 	targets := make([]string, 0, len(batch))
+	// Each candidate is an inventory asset: the gate refuses one whose
+	// ownership is not confirmed (RFC-036 O4), as a scan does.
+	assets := make(map[string]scanapp.DispatchAsset, len(batch))
 	for _, c := range batch {
 		targets = append(targets, c.Target)
+		a := assets[c.Target]
+		a.IDs = append(a.IDs, c.AssetID)
+		assets[c.Target] = a
 	}
 	gated, err := s.gate.ResolveDispatchTargets(ctx, scanapp.DispatchTargetsInput{
 		TenantID: cfg.TenantID,
 		Targets:  targets,
 		SensorID: cfg.SensorID,
+		Assets:   assets,
 	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("target gate: %w", err)

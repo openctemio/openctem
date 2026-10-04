@@ -167,6 +167,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     source: api.source as FindingDetail['source'],
     scanner: api.tool_name,
     scanId: api.scan_id,
+    duplicateOf: api.duplicate_of || undefined,
     relatedFindings: [],
 
     assignee: api.assigned_to

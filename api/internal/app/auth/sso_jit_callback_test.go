@@ -2,13 +2,20 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
+
+	jwtv5 "github.com/golang-jwt/jwt/v5"
 
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -97,9 +104,30 @@ func (m *cbMembers) CreateMembership(_ context.Context, ms *tenantdom.Membership
 	return nil
 }
 
-// mockOkta serves the token and userinfo endpoints for one email.
-func mockOkta(t *testing.T, email string) *httptest.Server {
+// idTokenMode selects what the mock Okta token endpoint returns as id_token.
+type idTokenMode int
+
+const (
+	idTokenValid       idTokenMode = iota // signed, right issuer/audience/nonce
+	idTokenNone                           // no id_token (provider without "openid")
+	idTokenWrongIssuer                    // signed by the org's keys but another issuer
+)
+
+// mockOktaIdP is a mock Okta org: token, userinfo and JWKS endpoints. nonce
+// is the authorize request's nonce, set by the test before the callback.
+type mockOktaIdP struct {
+	srv   *httptest.Server
+	nonce string
+}
+
+// mockOkta serves the token, userinfo and JWKS endpoints for one email.
+func mockOkta(t *testing.T, email string, mode idTokenMode) *mockOktaIdP {
 	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa key: %v", err)
+	}
+	idp := &mockOktaIdP{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/oauth2/default/v1/token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -107,7 +135,32 @@ func mockOkta(t *testing.T, email string) *httptest.Server {
 			http.Error(w, "bad grant", http.StatusBadRequest)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "at", "token_type": "Bearer", "expires_in": 3600})
+		resp := map[string]any{"access_token": "at", "token_type": "Bearer", "expires_in": 3600}
+		if mode != idTokenNone {
+			iss := idp.srv.URL + "/oauth2/default"
+			if mode == idTokenWrongIssuer {
+				iss = "https://evil.example.com/oauth2/default"
+			}
+			resp["id_token"] = signIDToken(t, key, oidcClaims{
+				Nonce: idp.nonce,
+				Email: email,
+				RegisteredClaims: jwtv5.RegisteredClaims{
+					Issuer:    iss,
+					Subject:   "okta-sub-" + email,
+					Audience:  jwtv5.ClaimStrings{"client-id"},
+					ExpiresAt: jwtv5.NewNumericDate(time.Now().Add(time.Hour)),
+					IssuedAt:  jwtv5.NewNumericDate(time.Now()),
+				},
+			})
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/oauth2/default/v1/keys", func(w http.ResponseWriter, _ *http.Request) {
+		n := base64.RawURLEncoding.EncodeToString(key.N.Bytes())
+		e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes())
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []map[string]string{
+			{"kty": "RSA", "kid": testKID, "use": "sig", "n": n, "e": e},
+		}})
 	})
 	mux.HandleFunc("/oauth2/default/v1/userinfo", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer at" {
@@ -116,9 +169,9 @@ func mockOkta(t *testing.T, email string) *httptest.Server {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"email": email, "email_verified": true, "name": "JIT Person"})
 	})
-	srv := httptest.NewTLSServer(mux)
-	t.Cleanup(srv.Close)
-	return srv
+	idp.srv = httptest.NewTLSServer(mux)
+	t.Cleanup(idp.srv.Close)
+	return idp
 }
 
 func runOktaCallback(t *testing.T, email string, verified map[string]bool, autoProvision bool) (*SSOCallbackResult, *cbUserRepo, *cbMembers, error) {
@@ -130,14 +183,23 @@ func runOktaCallback(t *testing.T, email string, verified map[string]bool, autoP
 // the callback creates to sessions (when non-nil).
 func runOktaCallbackRecording(t *testing.T, email string, verified map[string]bool, autoProvision bool, sessions *[]*sessiondom.Session) (*SSOCallbackResult, *cbUserRepo, *cbMembers, error) {
 	t.Helper()
-	idpSrv := mockOkta(t, email)
+	return runOktaCallbackWith(t, email, verified, autoProvision, sessions, idTokenValid, []string{"openid", "email", "profile"})
+}
+
+// runOktaCallbackWith runs the full authorize + callback flow against a mock
+// Okta org that returns the given id_token mode, with the provider saved with
+// the given scopes.
+func runOktaCallbackWith(t *testing.T, email string, verified map[string]bool, autoProvision bool, sessions *[]*sessiondom.Session, mode idTokenMode, scopes []string) (*SSOCallbackResult, *cbUserRepo, *cbMembers, error) {
+	t.Helper()
+	idp := mockOkta(t, email, mode)
+	idpSrv := idp.srv
 	tn, _ := tenantdom.NewTenant("Acme", "acme", shared.NewID().String())
 
 	enc := crypto.NewNoOpEncryptor()
 	secret, _ := enc.EncryptString("client-secret")
 	ip := identityproviderdom.New(shared.NewID().String(), tn.ID().String(), identityproviderdom.ProviderOkta, "Okta", "client-id", secret)
 	ip.SetTenantIdentifier(idpSrv.URL) // mock org URL (validation of the URL is the create path's job)
-	ip.SetScopes([]string{"openid", "email", "profile"})
+	ip.SetScopes(scopes)
 	ip.SetAutoProvision(autoProvision)
 
 	users := &cbUserRepo{byEmail: map[string]*userdom.User{}}
@@ -164,6 +226,10 @@ func runOktaCallbackRecording(t *testing.T, email string, verified map[string]bo
 	if u.Query().Get("code_challenge") == "" {
 		t.Fatal("PKCE challenge expected")
 	}
+	if !strings.Contains(" "+u.Query().Get("scope")+" ", " openid ") {
+		t.Fatalf("authorize request must ask for the openid scope, got %q", u.Query().Get("scope"))
+	}
+	idp.nonce = u.Query().Get("nonce")
 	res, err := svc.HandleCallback(context.Background(), SSOCallbackInput{
 		Provider: string(identityproviderdom.ProviderOkta), Code: "the-code", State: auth.State,
 		RedirectURI: "https://app.example.com/auth/sso/callback",
@@ -205,5 +271,46 @@ func TestOIDCCallback_JIT_AutoProvisionOffRefused(t *testing.T) {
 	}
 	if len(users.byEmail) != 0 {
 		t.Fatal("no account may be created")
+	}
+}
+
+// A provider that returns no id_token is refused, and no account is created:
+// the federated identity that binds the account comes only from it.
+func TestOIDCCallback_NoIDTokenRefused(t *testing.T) {
+	_, users, members, err := runOktaCallbackWith(t, "new@corp.com", map[string]bool{"corp.com": true}, true, nil, idTokenNone, []string{"openid", "email", "profile"})
+	if !errors.Is(err, ErrSSOInvalidIDToken) {
+		t.Fatalf("expected ErrSSOInvalidIDToken, got %v", err)
+	}
+	if len(users.byEmail) != 0 || len(members.created) != 0 {
+		t.Fatalf("nothing may be created without a verified id_token (users=%d members=%d)", len(users.byEmail), len(members.created))
+	}
+}
+
+// An id_token from another issuer is refused even when its signature checks
+// out against the org's keys.
+func TestOIDCCallback_WrongIssuerRefused(t *testing.T) {
+	_, users, _, err := runOktaCallbackWith(t, "new@corp.com", map[string]bool{"corp.com": true}, true, nil, idTokenWrongIssuer, []string{"openid", "email", "profile"})
+	if !errors.Is(err, ErrSSOInvalidIDToken) {
+		t.Fatalf("expected ErrSSOInvalidIDToken, got %v", err)
+	}
+	if len(users.byEmail) != 0 {
+		t.Fatal("no user may be created from a wrong-issuer id_token")
+	}
+}
+
+// A provider saved before "openid" was required (scopes without it) still
+// signs in: the authorize request adds the scope (asserted in the runner) and
+// the issued id_token is verified and bound.
+func TestOIDCCallback_LegacyScopesWithoutOpenIDStillSignIn(t *testing.T) {
+	res, users, _, err := runOktaCallbackWith(t, "new@corp.com", map[string]bool{"corp.com": true}, true, nil, idTokenValid, []string{"email", "profile"})
+	if err != nil {
+		t.Fatalf("expected sign-in to succeed, got %v", err)
+	}
+	if res == nil || res.AccessToken == "" {
+		t.Fatal("expected a session")
+	}
+	u := users.byEmail["new@corp.com"]
+	if u == nil {
+		t.Fatal("expected the user to be provisioned")
 	}
 }

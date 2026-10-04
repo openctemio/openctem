@@ -65,8 +65,8 @@ COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 # Bind :443 (and the optional :80 redirect) as non-root, on Kubernetes too.
 RUN setcap cap_net_bind_service=+ep /usr/bin/caddy
 
-# The gateway: api/deploy/gateway (Caddyfile + modes/ + entrypoint.sh).
-COPY --from=gateway Caddyfile entrypoint.sh /etc/caddy/
+# The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + entrypoint.sh).
+COPY --from=gateway Caddyfile planes.caddy entrypoint.sh /etc/caddy/
 COPY --from=gateway modes /etc/caddy/modes
 COPY supervise.sh /usr/local/bin/openctem-supervise
 COPY healthcheck.sh /usr/local/bin/openctem-healthcheck

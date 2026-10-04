@@ -158,6 +158,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	vulnSvc.SetDataScopePolicy(dsStrictPolicy{h})
 	vulnSvc.SetDataScope(enforcer)
 	vulnSvc.SetAssetRepository(assetRepo)
+	vulnSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 
 	groupSvc := app.NewAssetGroupService(postgres.NewAssetGroupRepository(db), log)
 	groupSvc.SetDataScope(enforcer)

@@ -484,6 +484,7 @@ export default function NotificationIntegrationsPage() {
                 router.push(
                   `/settings/integrations/notifications/history?integration=${integration.id}`
                 ),
+              permission: Permission.IntegrationsManage,
             },
             {
               label: 'Delete',
@@ -523,22 +524,24 @@ export default function NotificationIntegrationsPage() {
           title="Notification channels"
           description="Send security alerts to Slack, Microsoft Teams, Telegram and custom webhooks."
         >
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push('/settings/integrations/notifications/history')}
-          >
-            <History className="me-2 h-4 w-4" />
-            View events
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push('/settings/integrations/notifications/outbox')}
-          >
-            <Inbox className="me-2 h-4 w-4" />
-            Queue
-          </Button>
+          <Can permission={Permission.IntegrationsManage}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/settings/integrations/notifications/history')}
+            >
+              <History className="me-2 h-4 w-4" />
+              View events
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/settings/integrations/notifications/outbox')}
+            >
+              <Inbox className="me-2 h-4 w-4" />
+              Queue
+            </Button>
+          </Can>
           <Can permission={Permission.NotificationsWrite}>
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
