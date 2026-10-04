@@ -107,16 +107,31 @@ for _ in $(seq 1 30); do
 	sleep 1
 done
 
+# Each plane the gateway sends straight to the API (planes.caddy, generated
+# from the API's plane table).
 probe api GET /api/v1/agent/heartbeat
 probe api PUT /api/v2/sensor/results/r1/segments/0
-probe api POST /api/v1/platform/poll
+probe api POST /api/v1/validation/evidence
 probe api GET /scim/v2/Users
 probe api POST /api/v1/mcp
 probe api POST /api/v1/webhooks/incoming/github
+probe api POST /hooks/github
 probe api POST /api/v1/auth/saml/acme/acs
+probe api GET /api/v1/auth/saml/acme/metadata
 probe api POST /api/v1/auth/backchannel-logout
 probe api GET /api/v1/ws
 probe api GET /health
+probe api GET /openapi.yaml
+probe api GET /docs
+# Browser planes reach the API only by credential, never by path.
+probe web GET /api/v1/validation/coverage -H "Cookie: auth_token=abc"
+probe web POST /api/v1/auth/login
+probe web GET /api/v1/me/permissions -H "Cookie: auth_token=abc"
+probe web GET /api/v1/admin/tenants
+probe web GET /api/v1/admin/tenants -H "Cookie: admin_session=abc"
+# The stale protocol-v0 rule is gone (the API serves none of these).
+probe web POST /api/v1/platform/poll
+probe web GET /api/v1/platform/stats -H "Cookie: auth_token=abc"
 probe api GET /api/v1/findings -H "Authorization: Bearer oct_example"
 probe api GET /api/v1/findings -H "X-API-Key: oct_example"
 probe api GET /api/v1/findings -H "Authorization: Bearer eyJ.token"
@@ -127,8 +142,11 @@ probe web GET /api/auth/refresh
 probe web GET /
 probe web GET /login
 probe 404 GET /metrics
+probe 404 GET /metrics -H "Authorization: Bearer oct_example"
 probe 404 GET /ready
+probe 404 GET /ready/detail
 probe 404 GET /debug/pprof/
+probe 404 GET /debug
 
 echo "== Client address is set by the gateway, not the client"
 body="$(docker run --rm --network "$net" curlimages/curl:latest -sk -m 5 \
