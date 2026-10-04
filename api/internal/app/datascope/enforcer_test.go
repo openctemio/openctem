@@ -183,3 +183,49 @@ func TestEnforcer_ForUserUsesAdminLookup(t *testing.T) {
 		t.Error("admin lookup error must deny")
 	}
 }
+
+// CanActOnAssets: the request caller acts; with no user in the context the
+// fallback user (a scheduled scan owner) acts; with neither the system acts,
+// unrestricted. A lookup error is returned (the caller refuses).
+func TestEnforcer_CanActOnAssets(t *testing.T) {
+	tenant := shared.NewID()
+	scoped, admin := shared.NewID(), shared.NewID()
+	assetA, assetB := shared.NewID(), shared.NewID()
+	repo := &fakeRepo{rows: map[shared.ID]map[shared.ID]bool{scoped: {assetA: true}}}
+	e := New(repo, policy(false), ctxCaller, nil)
+	e.SetAdminLookup(func(_ context.Context, _, user shared.ID) (bool, error) { return user == admin, nil })
+	ids := []shared.ID{assetA, assetB}
+
+	type want struct{ a, b, unrestricted bool }
+	cases := []struct {
+		name     string
+		ctx      context.Context
+		fallback *shared.ID
+		want     want
+	}{
+		{"restricted caller", withCaller(Caller{UserID: scoped.String()}), nil, want{true, false, false}},
+		{"admin caller", withCaller(Caller{UserID: admin.String(), IsAdmin: true}), &scoped, want{true, true, true}},
+		{"no caller, restricted owner", context.Background(), &scoped, want{true, false, false}},
+		{"no caller, admin owner", context.Background(), &admin, want{true, true, true}},
+		{"system", context.Background(), nil, want{true, true, true}},
+		// The caller wins over the owner: a restricted member triggering an
+		// admin scan acts with their own scope.
+		{"restricted caller, admin owner", withCaller(Caller{UserID: scoped.String()}), &admin, want{true, false, false}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			can, unrestricted, err := e.CanActOnAssets(tc.ctx, tenant, tc.fallback, ids)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := (want{can(assetA), can(assetB), unrestricted}); got != tc.want {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+
+	failing := New(&fakeRepo{err: errors.New("db down")}, policy(false), ctxCaller, nil)
+	if _, _, err := failing.CanActOnAssets(withCaller(Caller{UserID: scoped.String()}), tenant, nil, ids); err == nil {
+		t.Fatal("a failed scope lookup must be returned")
+	}
+}
