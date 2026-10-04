@@ -295,6 +295,11 @@ const (
 	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
 	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
 
+	// EASM seeds (RFC-036 §6.3): what discovery expands from.
+	ActionEASMSeedCreated Action = "easm_seed.created"
+	ActionEASMSeedUpdated Action = "easm_seed.updated"
+	ActionEASMSeedDeleted Action = "easm_seed.deleted"
+
 	// Scanner template actions: custom templates are code a sensor runs.
 	ActionScannerTemplateCreated    Action = "scanner_template.created"
 	ActionScannerTemplateUpdated    Action = "scanner_template.updated"
@@ -515,6 +520,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
@@ -621,7 +627,8 @@ func (a Action) Category() string {
 		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
-		ActionScopeExclusionApproved, ActionScopeExclusionRejected:
+		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted:
@@ -715,6 +722,7 @@ const (
 	ResourceTypeScopeExclusion  ResourceType = "scope_exclusion"
 	ResourceTypeScannerTemplate ResourceType = "scanner_template"
 	ResourceTypeIntegration     ResourceType = "integration"
+	ResourceTypeEASMSeed        ResourceType = "easm_seed"
 )
 
 // String returns the string representation of the resource type.
@@ -739,7 +747,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate, ResourceTypeIntegration,
-		ResourceTypeRemediationCampaign:
+		ResourceTypeRemediationCampaign, ResourceTypeEASMSeed:
 		return true
 	}
 	return false
@@ -819,7 +827,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTemplateSourceCredentialAttached,
 		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
 		// Widening what sensors scan, and the code they run.
-		ActionScopeTargetCreated, ActionScopeTargetActivated,
+		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		// Deleting an asset also deletes its findings.
@@ -853,6 +861,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeTargetUpdated, ActionScopeTargetDeleted, ActionScopeTargetDeactivated,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
