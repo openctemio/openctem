@@ -12,6 +12,7 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
+	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -67,6 +68,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -607,6 +609,8 @@ type Services struct {
 	Command  *command.Service
 	// SensorContent is the scanner content policy and refresh (RFC-031).
 	SensorContent *sensorapp.ContentService
+	// TenableSC queues and follows Tenable.sc connector syncs (RFC-047).
+	TenableSC *tenablesc.Service
 	// SensorPlatformHealth is the platform-health guard (RFC-035 D3): the
 	// heartbeat handlers feed it their latency, the sensor health controller
 	// holds offline convictions while it reports the platform degraded.
@@ -1461,6 +1465,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
+	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
+	// the integration's sensor, followed to keep the sync cursor.
+	s.TenableSC = tenablesc.NewService(repos.Integration, repos.Sensor, repos.Command, repos.Finding, s.Audit, log)
+	s.TenableSC.SetSyncClaimer(repos.Integration)
+	// Tenable integrations can be created only once the connector ships
+	// (integrationdom.TenableConnectorEnabled, owner decision D-14): without
+	// the validator the integration service refuses them.
+	if integrationdom.TenableConnectorEnabled {
+		s.Integration.SetTenableConnector(s.TenableSC)
+	}
 	s.SensorPlatformHealth = sensorapp.NewPlatformHealth(sensorapp.PlatformHealthConfig{
 		SlowHeartbeat: cfg.SensorConfig.HealthSlowHeartbeat,
 		StartupGrace:  cfg.SensorConfig.HealthStartupGrace,
@@ -1500,6 +1514,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
 		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
 	})
+	// Source-asserted resolve (Tenable.sc mitigated rows, RFC-047; default dry_run).
+	s.Ingest.SetSourceResolveMode(ingest.ParseSourceResolveMode(cfg.Ingest.SourceResolve))
 	// Ingest audit events are tenant-scoped, so they must go through the SAME
 	// audit service instance as every other tenant-scoped event: LogEvent also
 	// extends the per-tenant tamper-evident hash chain, and its chainMu is what
@@ -1795,11 +1811,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithPermissionSetRepository(repos.PermissionSet),
 		app.WithAccessControlRepository(repos.AccessControl),
 		app.WithGroupDataScope(s.DataScope),
+		app.WithScopeDelegationCap(s.DataScope),
 	)
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule = scope.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule.SetAssetGroupValidator(repos.AccessControl)
+	s.ScopeRule.SetScopeDelegationCap(s.DataScope)
 
 	// Wire scope rule hooks for real-time evaluation
 	s.Asset.SetScopeRuleEvaluator(s.ScopeRule.EvaluateAsset)
