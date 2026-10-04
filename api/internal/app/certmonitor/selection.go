@@ -16,6 +16,7 @@ import (
 const (
 	OriginVerified = "verified_domain"
 	OriginAsset    = "domain_asset"
+	OriginSeed     = "easm_seed" // a root_domain seed (RFC-036 §6.3): asserted, like an asset
 	OriginScope    = "scope_target"
 )
 
@@ -23,7 +24,7 @@ func originRank(o string) int {
 	switch o {
 	case OriginVerified:
 		return 3
-	case OriginAsset:
+	case OriginAsset, OriginSeed:
 		return 2
 	case OriginScope:
 		return 1

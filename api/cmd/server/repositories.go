@@ -187,6 +187,7 @@ type Repositories struct {
 	CTMonitorState *postgres.CTMonitorStateRepository
 	Attribution    *postgres.AttributionRepository
 	EASMDNS        *postgres.EASMDNSRepository
+	EASMSeed       *postgres.EASMSeedRepository
 	EASMSummary    *postgres.EASMSummaryRepository
 
 	// KEV Escalation
@@ -417,6 +418,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 		Attribution:      postgres.NewAttributionRepository(db),
 		EASMDNS:          postgres.NewEASMDNSRepository(db),
+		EASMSeed:         postgres.NewEASMSeedRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 
 		// KEV Escalation
