@@ -134,12 +134,25 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 		return nil, err
 	}
 
+	// The run's asset_id is stored on the run and copied into every step
+	// command's payload, so it must be a live asset of this tenant that the
+	// caller may see (pipeline_runs.asset_id references assets(id) without
+	// the tenant; research doc 21b, C4). A workflow trigger has no user in
+	// the context and gets the tenant check only. A malformed id is refused
+	// rather than silently dropped; a refused one answers like an unknown one.
 	var assetID *shared.ID
 	if input.AssetID != "" {
 		aid, err := shared.IDFromString(input.AssetID)
-		if err == nil {
-			assetID = &aid
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid asset id", shared.ErrValidation)
 		}
+		if s.assetRefChecker == nil {
+			return nil, ErrRunAssetNotFound
+		}
+		if err := s.assetRefChecker.AssertAssetRef(ctx, tenantID, aid); err != nil {
+			return nil, ErrRunAssetNotFound
+		}
+		assetID = &aid
 	}
 
 	triggerType := pipeline.TriggerType(input.TriggerType)
