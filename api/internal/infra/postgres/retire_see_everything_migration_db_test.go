@@ -9,18 +9,18 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Migration 000800 retires "members without an access group see everything"
+// Migration 000910 retires "members without an access group see everything"
 // (research doc 15 L-04, owner decision D2): every organization is stored as
 // "nothing", "everything" can no longer be stored, and the down migration
 // relaxes the CHECK without flipping any organization back. Replayed on
 // populated rows in a rolled-back transaction, up -> down -> up.
 func TestRetireSeeEverythingMigration_UpDownUp(t *testing.T) {
 	ctx := context.Background()
-	up, err := os.ReadFile("../../../migrations/000800_retire_see_everything_data_scope.up.sql")
+	up, err := os.ReadFile("../../../migrations/000910_retire_see_everything_data_scope.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	down, err := os.ReadFile("../../../migrations/000800_retire_see_everything_data_scope.down.sql")
+	down, err := os.ReadFile("../../../migrations/000910_retire_see_everything_data_scope.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestRetireSeeEverythingMigration_UpDownUp(t *testing.T) {
 		return exec(`RELEASE SAVEPOINT ins`)
 	}
 
-	// The state before 000800: the 000247 CHECK, organizations on both values.
+	// The state before 000910: the 000247 CHECK, organizations on both values.
 	must(string(down))
 	legacy, closed := shared.NewID(), shared.NewID()
 	must(`INSERT INTO tenants (id, name, slug, members_without_group_see) VALUES ($1, 'legacy', $2, 'everything')`, legacy.String(), "mig800-l-"+legacy.String())

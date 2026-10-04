@@ -11,7 +11,7 @@ package routes
 // tenant) and as members with no scope row, who see nothing: there is no
 // "see everything" mode for them, whatever the organization's legacy
 // members_without_group_see value says (owner decision D2, research doc 15
-// L-04). Migration 000800 made 'everything' impossible to store; that the
+// L-04). Migration 000910 made 'everything' impossible to store; that the
 // value is not read is pinned by the SQL builder tests.
 
 import (

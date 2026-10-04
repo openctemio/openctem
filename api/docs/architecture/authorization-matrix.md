@@ -914,12 +914,12 @@ and every by-id read answers 404. There is no per-organization switch back.
   Settings → Teams states the rule instead.
 - The column itself is retired in steps:
   1. no code reads it for visibility;
-  2. migration `000800` (expand) stores `nothing` in every organization, keeps
+  2. migration `000910` (expand) stores `nothing` in every organization, keeps
      the `nothing` default and replaces the CHECK with
      `members_without_group_see = 'nothing'`, so `everything` can never be
      stored again; its down migration restores the `000247` CHECK and does
      **not** flip any organization back;
-  3. **follow-up (contract), after the release that ships `000800`:** drop the
+  3. **follow-up (contract), after the release that ships `000910`:** drop the
      column and its CHECK (`ALTER TABLE tenants DROP COLUMN
      members_without_group_see`), once no deployed binary can still select
      it.
