@@ -77,7 +77,6 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/tenants":                {classConfig, "organization administration (team roles)"},
 	"/api/v1/organization":           {classConfig, "organization settings"},
 	"/api/v1/roles":                  {classConfig, "roles"},
-	"/api/v1/permission-sets":        {classConfig, "permission sets"},
 	"/api/v1/groups":                 {classConfig, "access groups: membership and scope administration (D13 cap)"},
 	"/api/v1/scim-tokens":            {classConfig, "SCIM tokens"},
 	"/api/v1/api-keys":               {classConfig, "API keys"},
