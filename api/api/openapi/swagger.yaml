@@ -3054,6 +3054,7 @@ definitions:
     - UPSTREAM_ERROR
     - MFA_ENROLLMENT_REQUIRED
     - APPROVAL_REQUIRED
+    - INVALID_FILTER
     type: string
     x-enum-varnames:
     - CodeBadRequest
@@ -3070,6 +3071,7 @@ definitions:
     - CodeUpstreamError
     - CodeMFAEnrollmentRequired
     - CodeApprovalRequired
+    - CodeInvalidFilter
   github_com_openctemio_openctem_api_pkg_apierror.Error:
     properties:
       code:
