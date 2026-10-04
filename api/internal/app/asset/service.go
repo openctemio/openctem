@@ -323,8 +323,38 @@ type CreateAssetInput struct {
 	Properties  map[string]any // JSONB properties (known fields auto-promoted to columns)
 }
 
-// CreateAsset creates a new asset.
+// CreateOutcome says what a create request did.
+type CreateOutcome struct {
+	// Merged is true when the name or address matched an existing asset,
+	// which was updated and returned instead of creating a new one.
+	Merged bool
+	// ChangedFields names the fields of the existing asset the merge
+	// changed (never values).
+	ChangedFields []string
+}
+
+// errCreateConflict answers a create whose name or address matches an asset
+// the caller may not see: a plain conflict that reveals nothing about it.
+var errCreateConflict = fmt.Errorf("%w: an asset with this name already exists", shared.ErrAlreadyExists)
+
+// CreateAsset creates a new asset (see CreateAssetWithOutcome).
 func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) (*assetdom.Asset, error) {
+	a, _, err := s.CreateAssetWithOutcome(ctx, input)
+	return a, err
+}
+
+// CreateAssetWithOutcome creates a new asset. When the name (or an address
+// the name correlates to) matches an existing asset, that asset is updated
+// with the fields the request sent and returned instead, provided the caller
+// may see it; otherwise the request is a conflict and the existing asset is
+// neither changed nor returned. A merge never changes the existing
+// criticality: that is a deliberate field, changed only by an update.
+func (s *AssetService) CreateAssetWithOutcome(ctx context.Context, input CreateAssetInput) (*assetdom.Asset, CreateOutcome, error) {
+	a, merged, changed, err := s.createAsset(ctx, input)
+	return a, CreateOutcome{Merged: merged, ChangedFields: changed}, err
+}
+
+func (s *AssetService) createAsset(ctx context.Context, input CreateAssetInput) (*assetdom.Asset, bool, []string, error) {
 	// Strip null bytes early — PostgreSQL rejects 0x00 in UTF-8
 	input.Name = strings.ReplaceAll(input.Name, "\x00", "")
 	input.Description = strings.ReplaceAll(input.Description, "\x00", "")
@@ -332,7 +362,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	// Platform-owned keys (crown jewel, business impact, aliases, discovery
 	// fields) have their own endpoints and are never taken from properties.
 	if err := RejectReservedProperties(input.Properties); err != nil {
-		return nil, err
+		return nil, false, nil, err
 	}
 
 	// Promote known fields from properties into proper columns.
@@ -343,12 +373,12 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 
 	assetType, err := assetdom.ParseAssetType(input.Type)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, false, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 	}
 
 	criticality, err := assetdom.ParseCriticality(input.Criticality)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, false, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 	}
 
 	// Parse tenant ID for existence check
@@ -356,7 +386,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	if input.TenantID != "" {
 		tenantID, err = shared.IDFromString(input.TenantID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+			return nil, false, nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 		}
 	}
 
@@ -369,27 +399,20 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		input.Name = normalizedName
 	}
 
-	// Upsert: if asset with same name already exists, merge and update instead of rejecting.
-	// This handles re-ingestion, manual re-creation, and multi-source discovery gracefully.
-	existing, err := s.repo.GetByName(ctx, tenantID, input.Name)
-	if err != nil && !errors.Is(err, shared.ErrNotFound) {
-		return nil, fmt.Errorf("failed to check asset existence: %w", err)
+	// Upsert: if an asset with the same name (or a correlated address)
+	// already exists, merge and update instead of rejecting.
+	existing, err := s.findMergeTarget(ctx, tenantID, input)
+	if err != nil {
+		return nil, false, nil, err
 	}
 	if existing != nil {
-		return s.mergeAndUpdateExisting(ctx, existing, input, assetType, criticality, tenantID)
-	}
-
-	// IP/hostname correlation: if input.Name looks like an IP, check if a host with
-	// that IP already exists. If input.Name looks like a hostname, check if an
-	// IP-named asset has that hostname in properties. This correlates ESXi hosts
-	// with Splunk IPs, CMDB records, etc.
-	if correlated := s.correlateByIPOrHostname(ctx, tenantID, input); correlated != nil {
-		return s.mergeAndUpdateExisting(ctx, correlated, input, assetType, criticality, tenantID)
+		merged, changed, err := s.mergeAndUpdateExisting(ctx, existing, input, tenantID)
+		return merged, true, changed, err
 	}
 
 	a, err := assetdom.NewAssetWithSubType(input.Name, assetType, promotedSubType, criticality)
 	if err != nil {
-		return nil, err
+		return nil, false, nil, err
 	}
 
 	// Set tenant ID if provided (already parsed above)
@@ -401,7 +424,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	if input.Scope != "" {
 		scope, err := assetdom.ParseScope(input.Scope)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, false, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		_ = a.UpdateScope(scope)
 	}
@@ -410,7 +433,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	if input.Exposure != "" {
 		exposure, err := assetdom.ParseExposure(input.Exposure)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, false, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		_ = a.UpdateExposure(exposure)
 	}
@@ -445,7 +468,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	a.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, tenantID))
 
 	if err := s.repo.Create(ctx, a); err != nil {
-		return nil, fmt.Errorf("failed to create asset: %w", err)
+		return nil, false, nil, fmt.Errorf("failed to create asset: %w", err)
 	}
 
 	if input.OwnerRef != "" {
@@ -482,7 +505,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	}
 
 	s.logger.Info("asset created", "id", a.ID().String(), "name", logger.SanitizeValue(a.Name()))
-	return a, nil
+	return a, false, nil, nil
 }
 
 // promoteKnownProperties extracts well-known fields from Properties JSONB into their
@@ -798,12 +821,10 @@ func (s *AssetService) correlateByIPOrHostname(ctx context.Context, tenantID sha
 			return nil
 		}
 		if found != nil {
-			// Hostname is more descriptive than IP — update the asset name
-			if looksLikeIP(found.Name()) {
-				_ = found.UpdateName(name)
-				s.logger.Info("asset correlated by hostname, renamed from IP",
-					"hostname", logger.SanitizeValue(name), "old_name", logger.SanitizeValue(found.Name()), "id", found.ID().String())
-			}
+			// The rename from IP to hostname happens in mergeAndUpdateExisting,
+			// once the caller is known to be allowed to change this asset.
+			s.logger.Info("asset correlated by hostname",
+				"hostname", logger.SanitizeValue(name), "id", found.ID().String())
 			return found
 		}
 	}
@@ -835,51 +856,81 @@ func looksLikeIP(s string) bool {
 	return true
 }
 
-// mergeAndUpdateExisting updates an existing asset with new data from CreateAssetInput.
-// Only non-empty fields from input override the existing values.
-// This implements the "create-or-update" (upsert) pattern for manual asset creation.
+// findMergeTarget returns the existing asset a create request matches, by
+// name or by address (IP/hostname correlation: an IP-named request finds a
+// host with that IP, a hostname finds an IP-named asset with that hostname;
+// this correlates ESXi hosts with Splunk IPs, CMDB records, etc.), or nil.
+// Only an asset the caller may see is a merge target: a match outside the
+// caller's data scope is a plain conflict that reveals nothing about it.
+func (s *AssetService) findMergeTarget(ctx context.Context, tenantID shared.ID, input CreateAssetInput) (*assetdom.Asset, error) {
+	existing, err := s.repo.GetByName(ctx, tenantID, input.Name)
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
+		return nil, fmt.Errorf("failed to check asset existence: %w", err)
+	}
+	if existing == nil {
+		existing = s.correlateByIPOrHostname(ctx, tenantID, input)
+	}
+	if existing == nil {
+		return nil, nil
+	}
+	if s.dataScope.AssertAsset(ctx, tenantID, existing.ID()) != nil {
+		return nil, errCreateConflict
+	}
+	return existing, nil
+}
+
+// mergeAndUpdateExisting applies a create request to the existing asset it
+// matched: only the fields the request sent, never the criticality (a create
+// is not an edit of a deliberate field). It returns the asset and the names
+// of the fields that changed.
 func (s *AssetService) mergeAndUpdateExisting(
 	ctx context.Context,
 	existing *assetdom.Asset,
 	input CreateAssetInput,
-	_ assetdom.AssetType,
-	criticality assetdom.Criticality,
 	tenantID shared.ID,
-) (*assetdom.Asset, error) {
-	// Update criticality if provided and different
-	if criticality != existing.Criticality() {
-		_ = existing.UpdateCriticality(criticality)
-	}
+) (*assetdom.Asset, []string, error) {
+	var changed []string
 
-	// Update description if provided
-	if input.Description != "" {
-		existing.UpdateDescription(input.Description)
-	}
-
-	// Update scope if provided
-	if input.Scope != "" {
-		scope, err := assetdom.ParseScope(input.Scope)
-		if err == nil {
-			_ = existing.UpdateScope(scope)
+	// Hostname correlation found an IP-named asset: the hostname is the more
+	// descriptive name.
+	if input.Name != "" && !looksLikeIP(input.Name) && looksLikeIP(existing.Name()) {
+		if err := existing.UpdateName(input.Name); err == nil {
+			changed = append(changed, "name")
 		}
 	}
 
-	// Update exposure if provided
+	if input.Description != "" && input.Description != existing.Description() {
+		existing.UpdateDescription(input.Description)
+		changed = append(changed, "description")
+	}
+
+	if input.Scope != "" {
+		if scope, err := assetdom.ParseScope(input.Scope); err == nil && scope != existing.Scope() {
+			_ = existing.UpdateScope(scope)
+			changed = append(changed, "scope")
+		}
+	}
+
 	if input.Exposure != "" {
-		exposure, err := assetdom.ParseExposure(input.Exposure)
-		if err == nil {
+		if exposure, err := assetdom.ParseExposure(input.Exposure); err == nil && exposure != existing.Exposure() {
 			_ = existing.UpdateExposure(exposure)
+			changed = append(changed, "exposure")
 		}
 	}
 
 	// Merge tags (add new, keep existing)
+	tagsBefore := len(existing.Tags())
 	for _, tag := range input.Tags {
 		existing.AddTag(tag)
 	}
+	if len(existing.Tags()) != tagsBefore {
+		changed = append(changed, "tags")
+	}
 
 	// Update owner ref if provided (its owner is synced after the update)
-	if input.OwnerRef != "" {
+	if input.OwnerRef != "" && input.OwnerRef != existing.OwnerRef() {
 		existing.SetOwnerRef(input.OwnerRef)
+		changed = append(changed, "owner_ref")
 	}
 
 	// Mark as seen (updates last_seen)
@@ -891,14 +942,14 @@ func (s *AssetService) mergeAndUpdateExisting(
 	s.scoreAsset(ctx, tenantID, existing)
 
 	if err := s.repo.Update(ctx, existing); err != nil {
-		return nil, fmt.Errorf("failed to update existing asset: %w", err)
+		return nil, nil, fmt.Errorf("failed to update existing asset: %w", err)
 	}
 	if input.OwnerRef != "" {
 		s.syncOwnerRefOwner(ctx, tenantID, existing.ID(), input.OwnerRef)
 	}
 
 	s.logger.Info("asset upserted (updated existing)", "id", existing.ID().String(), "name", logger.SanitizeValue(existing.Name()))
-	return existing, nil
+	return existing, changed, nil
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer used on bulk-by-id
@@ -1729,15 +1780,25 @@ type CreateRepositoryAssetInput struct {
 // CreateRepositoryAsset creates a new repository asset with its extension.
 // If an existing asset matches (by name or fullName), it will be updated with SCM data.
 func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRepositoryAssetInput) (*assetdom.Asset, *assetdom.RepositoryExtension, error) {
+	a, ext, _, err := s.CreateRepositoryAssetWithOutcome(ctx, input)
+	return a, ext, err
+}
+
+// CreateRepositoryAssetWithOutcome is CreateRepositoryAsset that also says
+// whether the request merged into an existing asset. As for CreateAsset, an
+// existing asset outside the caller's data scope is a plain conflict, and a
+// merge never changes the existing criticality.
+func (s *AssetService) CreateRepositoryAssetWithOutcome(ctx context.Context, input CreateRepositoryAssetInput) (*assetdom.Asset, *assetdom.RepositoryExtension, CreateOutcome, error) {
+	var none CreateOutcome
 	if s.repoExtRepo == nil {
-		return nil, nil, fmt.Errorf("%w: repository extension repository not configured", shared.ErrInternal)
+		return nil, nil, none, fmt.Errorf("%w: repository extension repository not configured", shared.ErrInternal)
 	}
 
 	s.logger.Info("creating repository asset", "name", input.Name, "fullName", input.FullName)
 
 	criticality, err := assetdom.ParseCriticality(input.Criticality)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, nil, none, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 	}
 
 	// Parse tenant ID early for searching
@@ -1745,7 +1806,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 	if input.TenantID != "" {
 		tenantID, err = shared.IDFromString(input.TenantID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+			return nil, nil, none, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 		}
 	}
 
@@ -1758,22 +1819,26 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 			"existing_name", existingAsset.Name(),
 			"new_fullName", input.FullName,
 		)
-		return s.updateExistingRepositoryAsset(ctx, existingAsset, input, criticality)
+		if s.dataScope.AssertAsset(ctx, tenantID, existingAsset.ID()) != nil {
+			return nil, nil, none, errCreateConflict
+		}
+		a, ext, err := s.updateExistingRepositoryAsset(ctx, existingAsset, input)
+		return a, ext, CreateOutcome{Merged: true}, err
 	}
 
 	// Check if asset with same name exists (strict check for new assets)
 	exists, err := s.repo.ExistsByName(ctx, tenantID, input.Name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to check asset existence: %w", err)
+		return nil, nil, none, fmt.Errorf("failed to check asset existence: %w", err)
 	}
 	if exists {
-		return nil, nil, assetdom.AlreadyExistsError(input.Name)
+		return nil, nil, none, assetdom.AlreadyExistsError(input.Name)
 	}
 
 	// Create the base asset with Repository type
 	a, err := assetdom.NewAsset(input.Name, assetdom.AssetTypeRepository, criticality)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, none, err
 	}
 
 	// Set tenant ID if provided (already parsed above)
@@ -1785,7 +1850,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 	if input.Scope != "" {
 		scope, err := assetdom.ParseScope(input.Scope)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, nil, none, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		_ = a.UpdateScope(scope)
 	}
@@ -1794,7 +1859,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 	if input.Exposure != "" {
 		exposure, err := assetdom.ParseExposure(input.Exposure)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return nil, nil, none, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 		_ = a.UpdateExposure(exposure)
 	}
@@ -1829,7 +1894,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 
 	// Create the asset first
 	if err := s.repo.Create(ctx, a); err != nil {
-		return nil, nil, fmt.Errorf("failed to create asset: %w", err)
+		return nil, nil, none, fmt.Errorf("failed to create asset: %w", err)
 	}
 
 	// Parse visibility
@@ -1845,7 +1910,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 		if deleteErr := s.repo.Delete(ctx, tenantID, a.ID()); deleteErr != nil {
 			s.logger.Error("rollback delete failed after extension creation error", "assetID", a.ID(), "error", deleteErr)
 		}
-		return nil, nil, fmt.Errorf("failed to create repository extension: %w", err)
+		return nil, nil, none, fmt.Errorf("failed to create repository extension: %w", err)
 	}
 
 	// Apply optional repository extension fields
@@ -1856,11 +1921,11 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 		if deleteErr := s.repo.Delete(ctx, tenantID, a.ID()); deleteErr != nil {
 			s.logger.Error("rollback delete failed after repo extension save error", "assetID", a.ID(), "error", deleteErr)
 		}
-		return nil, nil, fmt.Errorf("failed to create repository extension: %w", err)
+		return nil, nil, none, fmt.Errorf("failed to create repository extension: %w", err)
 	}
 
 	s.logger.Info("repository asset created", "id", a.ID().String(), "name", logger.SanitizeValue(a.Name()), "fullName", logger.SanitizeValue(input.FullName))
-	return a, repoExt, nil
+	return a, repoExt, none, nil
 }
 
 // applyRepoExtensionFields applies optional fields to a repository extension.
@@ -2315,7 +2380,6 @@ func (s *AssetService) updateExistingRepositoryAsset(
 	ctx context.Context,
 	existingAsset *assetdom.Asset,
 	input CreateRepositoryAssetInput,
-	criticality assetdom.Criticality,
 ) (*assetdom.Asset, *assetdom.RepositoryExtension, error) {
 	// Update asset fields with SCM data
 	// Only update name if the existing name looks like a sensor-generated name
@@ -2329,8 +2393,8 @@ func (s *AssetService) updateExistingRepositoryAsset(
 		}
 	}
 
-	// Update criticality
-	_ = existingAsset.UpdateCriticality(criticality)
+	// The criticality is left alone: a create is not an edit of a deliberate
+	// field (change it with an update).
 
 	// Update description if provided
 	if input.Description != "" {

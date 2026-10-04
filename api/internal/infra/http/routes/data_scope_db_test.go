@@ -25,6 +25,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/attack"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -149,6 +150,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	assetSvc.SetAccessControlRepository(accessRepo)
 	assetSvc.SetDataScopePolicy(dsStrictPolicy{h})
 	assetSvc.SetDataScope(enforcer)
+	assetSvc.SetRepositoryExtensionRepository(postgres.NewRepositoryExtensionRepository(db))
 
 	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
@@ -180,7 +182,9 @@ func newDSHarness(t *testing.T) *dsHarness {
 
 	router := infrahttp.NewChiRouter()
 	auth := Middleware(h.dsAuth)
-	registerAssetRoutes(router, handler.NewAssetHandler(assetSvc, v, log), auth, nil)
+	assetHandler := handler.NewAssetHandler(assetSvc, v, log)
+	assetHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
+	registerAssetRoutes(router, assetHandler, auth, nil)
 	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, v, log), nil, nil, nil, auth, nil)
 	registerAssetGroupRoutes(router, handler.NewAssetGroupHandler(groupSvc, v, log), auth, nil)
 	registerAttackSurfaceRoutes(router, handler.NewAttackSurfaceHandler(surfaceSvc, log), auth, nil, passthrough)
