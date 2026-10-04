@@ -486,6 +486,12 @@ func (p *AssetProcessor) processBatch(
 		// ownership, identifiers or reactivation.
 		mergeInto := func(existing *asset.Asset) {
 			id := existing.ID().String()
+			// An upload's actor may not touch an existing asset outside
+			// their data scope at all (Options.Actor).
+			if !isNew[id] && scope.actorDenies(existing.ID()) {
+				skipOutOfScope(output, ctisAsset.ID)
+				return
+			}
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
 				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
@@ -522,6 +528,12 @@ func (p *AssetProcessor) processBatch(
 		}
 		// createNew inserts this report asset as a new asset.
 		createNew := func() {
+			// A restricted upload's actor creates no asset: it could not see
+			// it, and skipping it answers like a hidden existing asset.
+			if scope.actorRestricted() {
+				skipOutOfScope(output, ctisAsset.ID)
+				return
+			}
 			newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
 			if createErr != nil {
 				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, shortName(normalizedName), createErr))
