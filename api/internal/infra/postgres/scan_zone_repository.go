@@ -359,7 +359,7 @@ const coverageAddresses = `
 	WITH addrs AS (
 		SELECT DISTINCT a.name::inet AS ip
 		FROM assets a
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		  AND a.asset_type IN ('ip_address', 'host')
 		  AND position('/' IN a.name) = 0
 		  AND pg_input_is_valid(a.name, 'inet')

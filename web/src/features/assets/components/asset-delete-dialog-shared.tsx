@@ -1,5 +1,10 @@
 'use client'
 
+/**
+ * The one confirmation for deleting an asset, used by every page that
+ * deletes one. Deletes go through features/assets/lib/safe-delete.
+ */
+
 import { ConfirmDialog } from '@/components/confirm-dialog'
 
 interface AssetDeleteDialogSharedProps {
@@ -26,9 +31,9 @@ export function AssetDeleteDialogShared({
       title={`Delete ${typeName}`}
       desc={
         <>
-          Are you sure you want to delete{' '}
-          {assetName ? `"${assetName}"` : `this ${typeName.toLowerCase()}`}? This action cannot be
-          undone.
+          Delete {assetName ? `"${assetName}"` : `this ${typeName.toLowerCase()}`}? It leaves every
+          list and its name can be used again. An asset that has findings is not deleted: archive it
+          instead, so its finding history is kept.
         </>
       }
       confirmText={isSubmitting ? 'Deleting...' : 'Delete'}

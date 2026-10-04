@@ -45,7 +45,8 @@ const ownerResolutionQuery = `
 	FROM assets a
 	JOIN users u ON LOWER(u.email) = LOWER(a.owner_ref)
 	JOIN tenant_members tm ON tm.user_id = u.id AND tm.tenant_id = a.tenant_id
-	WHERE a.owner_ref IS NOT NULL
+	WHERE a.deleted_at IS NULL
+	  AND a.owner_ref IS NOT NULL
 	  AND a.owner_ref LIKE '%@%'
 	  AND NOT EXISTS (
 	      SELECT 1 FROM asset_owners ao
