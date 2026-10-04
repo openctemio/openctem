@@ -39453,6 +39453,15 @@ export interface components {
       started_at?: string
       status?: string
       step_runs?: components['schemas']['internal_infra_http_handler.StepRunResponse'][]
+      /**
+       * @description TaskSummary counts the run's tasks (the commands it dispatched) by
+       *     status. Present on list rows and on the run, once it has tasks.
+       */
+      task_summary?: components['schemas']['internal_infra_http_handler.RunTaskSummaryResponse']
+      /** @description Tasks lists the run's tasks (GET /pipeline-runs/{id} only). */
+      tasks?: components['schemas']['internal_infra_http_handler.RunTaskResponse'][]
+      /** @description TasksTruncated is true when the run has more tasks than Tasks lists. */
+      tasks_truncated?: boolean
       tenant_id?: string
       total_findings?: number
       total_steps?: number
@@ -39465,6 +39474,37 @@ export interface components {
        *     was settled at its deadline; the next scheduled run plans them first.
        */
       unfinished_target_count?: number
+    }
+    'internal_infra_http_handler.RunTaskResponse': {
+      attempts?: number
+      completed_at?: string
+      created_at?: string
+      error_message?: string
+      id?: string
+      /**
+       * @description Platform is true when a shared platform sensor runs the task; it is
+       *     never named.
+       */
+      platform?: boolean
+      sensor_id?: string
+      sensor_name?: string
+      started_at?: string
+      /** @description Status is queued, running, completed, failed or canceled. */
+      status?: string
+      step_key?: string
+      step_run_id?: string
+      targets?: number
+      tool?: string
+    }
+    'internal_infra_http_handler.RunTaskSummaryResponse': {
+      canceled?: number
+      completed?: number
+      failed?: number
+      queued?: number
+      running?: number
+      /** @description Sensors is how many distinct sensors claimed one of the tasks. */
+      sensors?: number
+      total?: number
     }
     'internal_infra_http_handler.RunUncoveredTarget': {
       reason?: string
