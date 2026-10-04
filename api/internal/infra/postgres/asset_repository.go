@@ -1230,6 +1230,31 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
+	// Attribution filter (RFC-036 §6.4). asset_attributions is a side table;
+	// an asset with no row is a legacy asset, matched only when the filter
+	// admits unrecorded assets. The join is pinned to the asset's tenant.
+	if af := filter.Attribution; af != nil {
+		var parts []string
+		if len(af.States) > 0 {
+			states := make([]string, len(af.States))
+			for i, st := range af.States {
+				states[i] = string(st)
+			}
+			parts = append(parts, fmt.Sprintf(
+				"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d))",
+				argIndex))
+			args = append(args, pq.Array(states))
+			argIndex++
+		}
+		if af.Unrecorded {
+			parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id)")
+		}
+		if len(parts) == 0 {
+			parts = append(parts, "FALSE")
+		}
+		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
+	}
+
 	// Data classification filter.
 	if len(filter.DataClassifications) > 0 {
 		placeholders := make([]string, len(filter.DataClassifications))
