@@ -23,11 +23,19 @@ import (
 
 func newBindingV2Rig(t *testing.T) (*v2Rig, *postgres.SensorResultRepository) {
 	t.Helper()
+	return newBindingV2RigGuard(t, ingest.DefaultBlindingGuard())
+}
+
+func newBindingV2RigGuard(t *testing.T, guard ingest.BlindingGuard) (*v2Rig, *postgres.SensorResultRepository) {
+	t.Helper()
 	var results *postgres.SensorResultRepository
-	r := newV2RigWith(t, ingest.DefaultBlindingGuard(), func(svc *ingest.Service, db *postgres.DB) {
+	r := newV2RigWith(t, guard, func(svc *ingest.Service, db *postgres.DB) {
 		results = postgres.NewSensorResultRepository(db)
 		svc.SetResultQuarantine(results, sensorresult.DefaultLimits())
 		svc.SetCommandReader(postgres.NewCommandRepository(db))
+		// One blinding guard for the commit and the command-completion
+		// evaluation, as in production.
+		svc.SetCoverageAutoResolve(ingest.CoverageAutoResolveDryRun, guard)
 	})
 	return r, results
 }
@@ -58,6 +66,43 @@ func (r *v2Rig) sendWhole(tn v2Tenant, rep *ingestreport.Report, seg *ctis.Repor
 		r.t.Fatal("commit refused")
 	}
 	return r.status(rep)
+}
+
+// runCommand is a scan command for the tenant's sensor that targets its
+// repository, optionally queued by a scan with the given profile ("" = no
+// scan), with the given status and exit code: one run of the scanner.
+func (r *v2Rig) runCommand(tn v2Tenant, tool, profileID, status string, exitCode int) shared.ID {
+	r.t.Helper()
+	cmdID := shared.NewID()
+	payload := map[string]any{"scanner": tool, "targets": []string{"https://" + tn.repo + ".git"}}
+	if profileID != "" {
+		scanID := shared.NewID()
+		if _, err := r.db.Exec(`INSERT INTO scans (id, tenant_id, name, scan_type, scanner_name, targets, profile_id)
+			VALUES ($1, $2, $3, 'single', $4, ARRAY[$5], $6)`, scanID.String(), tn.tenant.String(), "scan-"+scanID.String(),
+			tool, tn.repo, profileID); err != nil {
+			r.t.Fatalf("seed scan: %v", err)
+		}
+		payload["scan_id"] = scanID.String()
+	}
+	body, _ := json.Marshal(payload)
+	result, _ := json.Marshal(map[string]any{"exit_code": exitCode})
+	if _, err := r.db.Exec(`INSERT INTO commands (id, tenant_id, sensor_id, type, priority, payload, status, result, created_at, expires_at)
+		VALUES ($1, $2, $3, 'scan', 'normal', $4, $5, $6, NOW(), NOW() + interval '1 hour')`,
+		cmdID.String(), tn.tenant.String(), tn.sensor.String(), string(body), status, string(result)); err != nil {
+		r.t.Fatalf("seed command: %v", err)
+	}
+	return cmdID
+}
+
+// scanProfile seeds a scan profile for the tenant.
+func (r *v2Rig) scanProfile(tn v2Tenant, name string) string {
+	r.t.Helper()
+	id := shared.NewID()
+	if _, err := r.db.Exec(`INSERT INTO scan_profiles (id, tenant_id, name) VALUES ($1, $2, $3)`,
+		id.String(), tn.tenant.String(), name+"-"+id.String()); err != nil {
+		r.t.Fatalf("seed scan profile: %v", err)
+	}
+	return id.String()
 }
 
 func (r *v2Rig) setSensorType(tn v2Tenant, typ string) {
@@ -100,8 +145,7 @@ func TestIngestV2Binding_UnsolicitedWorkerQuarantined(t *testing.T) {
 }
 
 // A CI runner's report without a command is applied on a new tenant, but its
-// commit never auto-resolves there; once the tenant is on warn (every tenant
-// that existed before RFC-040) it auto-resolves as before.
+// commit never auto-resolves there, nor on a warn-mode tenant.
 func TestIngestV2Binding_RunnerAppliedNoAutoResolveInQuarantineMode(t *testing.T) {
 	r, results := newBindingV2Rig(t)
 	tn := r.newTenant("semgrep")
@@ -117,13 +161,15 @@ func TestIngestV2Binding_RunnerAppliedNoAutoResolveInQuarantineMode(t *testing.T
 		t.Fatalf("an unsolicited report auto-resolved on a quarantine-mode tenant: %+v", st)
 	}
 
+	// Warn mode still applies the upload, but a report without a command
+	// never closes a finding (owner decision O11, research 18 F3).
 	p := sensorresult.Policy{TenantID: tn.tenant, Mode: sensorresult.ModeWarn}
 	if err := results.SavePolicy(context.Background(), &p); err != nil {
 		t.Fatal(err)
 	}
 	st = r.sendWhole(tn, r.openAs(tn, reportID(4), "runner", nil, next), next)
-	if st.AutoResolve != protov2.AutoResolveApplied || r.countFindings(tn, "resolved") != 1 {
-		t.Fatalf("warn-mode CI upload no longer auto-resolves: %+v", st)
+	if st.AutoResolve != protov2.AutoResolveSkipped || r.countFindings(tn, "resolved") != 0 {
+		t.Fatalf("a warn-mode upload without a command closed findings: %+v", st)
 	}
 }
 
@@ -134,13 +180,8 @@ func TestIngestV2Binding_BoundCommitResolvesOnlyCoveredAssets(t *testing.T) {
 	r, _ := newBindingV2Rig(t)
 	tn := r.newTenant("semgrep")
 	other := "github.com/acme/other-" + tn.tenant.String()[:8]
-	cmdID := shared.NewID()
-	payload, _ := json.Marshal(map[string]any{"scanner": "semgrep", "targets": []string{"https://" + tn.repo + ".git"}})
-	if _, err := r.db.Exec(`INSERT INTO commands (id, tenant_id, sensor_id, type, priority, payload, status, created_at, expires_at)
-		VALUES ($1, $2, $3, 'scan', 'normal', $4, 'running', NOW(), NOW() + interval '1 hour')`,
-		cmdID.String(), tn.tenant.String(), tn.sensor.String(), string(payload)); err != nil {
-		t.Fatal(err)
-	}
+	first := r.runCommand(tn, "semgrep", "", "completed", 0)
+	second := r.runCommand(tn, "semgrep", "", "completed", 0)
 
 	withOther := func(seg *ctis.Report, otherRules ...string) *ctis.Report {
 		seg.Assets = append(seg.Assets, ctis.Asset{ID: "other", Type: ctis.AssetTypeRepository, Value: other})
@@ -152,11 +193,11 @@ func TestIngestV2Binding_BoundCommitResolvesOnlyCoveredAssets(t *testing.T) {
 		return seg
 	}
 	base := withOther(tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}, v2Finding{rule: "gone", assetRef: "repo"}), "o1")
-	if st := r.sendWhole(tn, r.openAs(tn, reportID(5), "worker", &cmdID, base), base); st.Accepted.Findings != 3 {
+	if st := r.sendWhole(tn, r.openAs(tn, reportID(5), "worker", &first, base), base); st.Accepted.Findings != 3 {
 		t.Fatalf("bound baseline: %+v", st)
 	}
 	next := withOther(tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}))
-	st := r.sendWhole(tn, r.openAs(tn, reportID(6), "worker", &cmdID, next), next)
+	st := r.sendWhole(tn, r.openAs(tn, reportID(6), "worker", &second, next), next)
 	if st.AutoResolve != protov2.AutoResolveApplied || st.AutoResolved != 1 {
 		t.Fatalf("bound commit: %+v, want exactly the covered stale finding resolved", st)
 	}

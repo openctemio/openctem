@@ -27,6 +27,7 @@ import (
 
 type v2Rig struct {
 	t       *testing.T
+	svc     *ingest.Service
 	db      *sql.DB
 	reports *postgres.IngestReportRepository
 	jobs    *postgres.IngestJobRepository
@@ -59,7 +60,7 @@ func newV2RigWith(t *testing.T, guard ingest.BlindingGuard, configure func(*inge
 	if configure != nil {
 		configure(svc, db)
 	}
-	r := &v2Rig{t: t, db: sqldb, reports: postgres.NewIngestReportRepository(db), jobs: postgres.NewIngestJobRepository(db)}
+	r := &v2Rig{t: t, svc: svc, db: sqldb, reports: postgres.NewIngestReportRepository(db), jobs: postgres.NewIngestJobRepository(db)}
 	r.proc = ingest.NewV2JobProcessor(svc, r.reports, r.jobs, protov2.DefaultLimits(), guard, log)
 	return r
 }
@@ -222,15 +223,18 @@ func (r *v2Rig) countAssets(tn v2Tenant) int {
 	return n
 }
 
-// A 3-segment report arrives out of order; findings are stored as segments
-// are processed, but nothing is auto-resolved until the commit, and the
-// commit resolves exactly the findings the report no longer contains.
+// A 3-segment report of a bound, cleanly completed run arrives out of order;
+// findings are stored as segments are processed, but nothing is auto-resolved
+// until the commit, and the commit resolves exactly the findings the report no
+// longer contains.
 func TestIngestV2_SegmentsOutOfOrderAutoResolveOnlyOnCommit(t *testing.T) {
-	r := newV2Rig(t, ingest.DefaultBlindingGuard())
+	r, _ := newBindingV2Rig(t)
 	tn := r.newTenant("semgrep")
+	baseCmd := r.runCommand(tn, "semgrep", "", "completed", 0)
+	nextCmd := r.runCommand(tn, "semgrep", "", "completed", 0)
 
 	// Baseline report: rules a, b, gone.
-	base := r.open(tn, "0192a3b4-0000-7000-8000-000000000001", tn.segment("semgrep", true))
+	base := r.openAs(tn, "0192a3b4-0000-7000-8000-000000000001", "worker", &baseCmd, tn.segment("semgrep", true))
 	r.put(tn, base, 0, tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}, v2Finding{rule: "b", assetRef: "repo"}, v2Finding{rule: "gone", assetRef: "repo"}))
 	r.process(base, 0)
 	if !r.commit(tn, base, 1) {
@@ -245,7 +249,7 @@ func TestIngestV2_SegmentsOutOfOrderAutoResolveOnlyOnCommit(t *testing.T) {
 	}
 
 	// Next scan in 3 segments without "gone": a, b, c.
-	rep := r.open(tn, "0192a3b4-0000-7000-8000-000000000002", tn.segment("semgrep", true))
+	rep := r.openAs(tn, "0192a3b4-0000-7000-8000-000000000002", "worker", &nextCmd, tn.segment("semgrep", true))
 	r.put(tn, rep, 2, tn.segment("semgrep", true, v2Finding{rule: "c", assetRef: "repo"}))
 	r.put(tn, rep, 0, tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}))
 	r.put(tn, rep, 1, tn.segment("semgrep", true, v2Finding{rule: "b"})) // no asset_ref: the single asset
@@ -343,13 +347,15 @@ func TestIngestV2_AssetlessFindingRejectedNoFallbackAsset(t *testing.T) {
 // the stored header names it (the accept side refuses it first; this is the
 // defense in depth for a sensor whose tools changed in between).
 func TestIngestV2_UndeclaredToolDoesNotAutoResolve(t *testing.T) {
-	r := newV2Rig(t, ingest.DefaultBlindingGuard())
+	r, _ := newBindingV2Rig(t)
 	tn := r.newTenant("trivy")
-	base := r.open(tn, "0192a3b4-0000-7000-8000-000000000031", tn.segment("semgrep", true))
+	baseCmd := r.runCommand(tn, "semgrep", "", "completed", 0)
+	nextCmd := r.runCommand(tn, "semgrep", "", "completed", 0)
+	base := r.openAs(tn, "0192a3b4-0000-7000-8000-000000000031", "worker", &baseCmd, tn.segment("semgrep", true))
 	r.put(tn, base, 0, tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}, v2Finding{rule: "b", assetRef: "repo"}))
 	r.process(base, 0)
 	r.commit(tn, base, 1)
-	rep := r.open(tn, "0192a3b4-0000-7000-8000-000000000032", tn.segment("semgrep", true))
+	rep := r.openAs(tn, "0192a3b4-0000-7000-8000-000000000032", "worker", &nextCmd, tn.segment("semgrep", true))
 	r.put(tn, rep, 0, tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}))
 	r.process(rep, 0)
 	r.commit(tn, rep, 1)
@@ -363,14 +369,16 @@ func TestIngestV2_UndeclaredToolDoesNotAutoResolve(t *testing.T) {
 
 // The blinding guard holds a commit that would resolve too much at once.
 func TestIngestV2_BlindingGuardHolds(t *testing.T) {
-	r := newV2Rig(t, ingest.BlindingGuard{Ratio: 0.5, MinFindings: 1})
+	r, _ := newBindingV2RigGuard(t, ingest.BlindingGuard{Ratio: 0.5, MinFindings: 1})
 	tn := r.newTenant("semgrep")
-	base := r.open(tn, "0192a3b4-0000-7000-8000-000000000041", tn.segment("semgrep", true))
+	baseCmd := r.runCommand(tn, "semgrep", "", "completed", 0)
+	nextCmd := r.runCommand(tn, "semgrep", "", "completed", 0)
+	base := r.openAs(tn, "0192a3b4-0000-7000-8000-000000000041", "worker", &baseCmd, tn.segment("semgrep", true))
 	r.put(tn, base, 0, tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}, v2Finding{rule: "b", assetRef: "repo"}, v2Finding{rule: "c", assetRef: "repo"}))
 	r.process(base, 0)
 	r.commit(tn, base, 1)
 	// The next report sees only "a": resolving b and c is 2 of 3 open.
-	rep := r.open(tn, "0192a3b4-0000-7000-8000-000000000042", tn.segment("semgrep", true))
+	rep := r.openAs(tn, "0192a3b4-0000-7000-8000-000000000042", "worker", &nextCmd, tn.segment("semgrep", true))
 	r.put(tn, rep, 0, tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}))
 	r.process(rep, 0)
 	r.commit(tn, rep, 1)
