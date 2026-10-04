@@ -22342,6 +22342,69 @@ paths:
         in: query
         name: related_to
         type: string
+      - description: Minimum CVSS score
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: Maximum CVSS score
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: First seen at or after (RFC 3339, YYYY-MM-DD or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: Last seen at or after (RFC 3339, YYYY-MM-DD or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: Last seen before
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - collectionFormat: csv
+        description: Ports the finding was observed on
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: tcp, udp, sctp
+        in: query
+        items:
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: Services on the port (https, ssh, ...)
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: Assignee user IDs
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: 'true: unassigned; false: assigned'
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: The asset's own criticality (critical, high, medium, low)
+        in: query
+        items:
+          type: string
+        name: asset_criticality
+        type: array
+      - description: A public exploit is known (scanner or CVE catalog)
+        in: query
+        name: exploit_available
+        type: boolean
       - description: Created at or after (RFC 3339, YYYY-MM-DD or -P30D)
         in: query
         name: created_at_gte
