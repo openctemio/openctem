@@ -305,7 +305,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// (otherwise every run would fail delivery). This is the controller that was
 	// missing — schedules could be created in the UI but never executed.
 	if svc.Email != nil && svc.Email.IsConfigured() {
-		w.ControllerManager.Register(controller.NewReportScheduler(
+		reportScheduler := controller.NewReportScheduler(
 			repos.ReportSchedule,
 			repos.Finding,
 			svc.Email,
@@ -313,7 +313,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.Module, // ModuleGuard: skip tenants without the reports module
 			controller.ReportSchedulerConfig{Interval: time.Minute},
 			log,
-		))
+		)
+		// Each report renders under its creator's data scope (D6).
+		reportScheduler.SetScopeResolver(svc.DataScope)
+		w.ControllerManager.Register(reportScheduler)
 	}
 
 	// Continuous retest (RFC-039): settle stale retests and serve due

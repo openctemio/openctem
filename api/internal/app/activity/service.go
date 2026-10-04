@@ -267,8 +267,12 @@ func (s *FindingActivityService) RecordBatchAutoReopened(
 			"new_status":      string(vulnerability.FindingStatusConfirmed),
 			"previous_status": string(rf.PreviousStatus),
 		}
-		if rf.PreviousStatus == vulnerability.FindingStatusValidatedFixed {
+		switch rf.PreviousStatus {
+		case vulnerability.FindingStatusValidatedFixed:
 			changes["reason"] = "validation_downgrade_refuted_by_scan"
+		case vulnerability.FindingStatusNotObserved:
+			// Not a regression: it was never counted as fixed.
+			changes["reason"] = "observed_again"
 		}
 		if rf.PreviousResolution != "" {
 			changes["previous_resolution"] = rf.PreviousResolution
