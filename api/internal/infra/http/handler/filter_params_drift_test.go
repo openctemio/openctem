@@ -27,6 +27,7 @@ var filterOperations = []struct {
 	{"/findings/stats", "get", "findings", []string{"q"}},
 	{"/findings/groups", "get", "findings", []string{"q", "sort", "page", "per_page", "group_by"}},
 	{"/findings/export", "get", "findings", []string{"q", "format"}},
+	{"/findings/related-cves/{cveId}", "get", "findings", []string{"q"}},
 }
 
 func TestFilterParamBlocksAreGenerated(t *testing.T) {
