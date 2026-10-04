@@ -1,6 +1,6 @@
 package asset
 
-// Behaviour declared in the registry, not coded (RFC-042 §6.3.8 R5,
+// Behavior declared in the registry, not coded (RFC-042 §6.3.8 R5,
 // docs/rfcs/RFC-042-asset-inventory-v2.md): the default exposure of a type,
 // which tool target types can scan it, and which relationships it may take
 // part in. Every lookup takes a stored (type, sub_type) pair. A row still
