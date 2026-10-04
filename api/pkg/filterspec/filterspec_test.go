@@ -697,3 +697,62 @@ func TestBoolTemplate(t *testing.T) {
 		t.Fatal("BoolTemplate on a string field must be rejected")
 	}
 }
+
+func TestDescribeHidesPermissionFields(t *testing.T) {
+	reg := testRegistry(t)
+	names := func(d Description) string {
+		var n []string
+		for _, f := range d.Fields {
+			n = append(n, f.Name)
+		}
+		return strings.Join(n, ",")
+	}
+	if strings.Contains(names(reg.Describe(nil)), "pentest_note") {
+		t.Fatal("a permission-gated field must be hidden without the permission")
+	}
+	d := reg.Describe(func(p string) bool { return p == "pentest:read" })
+	if !strings.Contains(names(d), "pentest_note") || d.Aliases["severities"] != "severity" || d.Limits["leaves"] != MaxLeaves {
+		t.Fatalf("describe: %+v", d)
+	}
+	for _, f := range d.Fields {
+		if f.Name == "epss_score" && strings.Join(f.Params, ",") != "epss_score_gte,epss_score_lte,epss_score_gt,epss_score_lt" {
+			t.Fatalf("epss params: %v", f.Params)
+		}
+	}
+}
+
+func TestSwagParamsAndRewrite(t *testing.T) {
+	reg := testRegistry(t)
+	params := map[string]SwagParam{}
+	for _, p := range reg.SwagParams() {
+		params[p.Name] = p
+	}
+	for name, p := range params {
+		if _, _, err := reg.resolveParam(name); err != nil {
+			t.Errorf("documented param %q is not accepted by the parser", name)
+		}
+		_ = p
+	}
+	for _, name := range reg.Params() {
+		if _, isAlias := reg.Aliases[name]; isAlias || reserved[name] {
+			continue
+		}
+		if _, ok := params[name]; !ok {
+			t.Errorf("accepted param %q is not documented", name)
+		}
+	}
+	if p := params["severity"]; !p.Array || len(p.Enum) == 0 || p.Type != "string" {
+		t.Fatalf("severity: %+v", p)
+	}
+	src := "a\n\t// filterspec-params: x GET /x\n\t// stale\n\t// end filterspec-params\nb"
+	out, blocks, err := RewriteParamBlocks(src, map[string]*Registry{"x": reg})
+	if err != nil || len(blocks) != 1 || strings.Contains(out, "stale") || !strings.Contains(out, "@Param  severity  query  []string") {
+		t.Fatalf("rewrite: %v %v %s", err, blocks, out)
+	}
+	if _, _, err := RewriteParamBlocks("// filterspec-params: x\n", map[string]*Registry{"x": reg}); err == nil {
+		t.Fatal("a block without an end marker must fail")
+	}
+	if _, _, err := RewriteParamBlocks("// filterspec-params: nope\n// end filterspec-params", nil); err == nil {
+		t.Fatal("an unknown registry must fail")
+	}
+}

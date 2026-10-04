@@ -22,6 +22,19 @@ describe('scannerOptions', () => {
     expect(out.map((t) => t.name)).toEqual(['nuclei', 'semgrep', 'trivy'])
   })
 
+  it('offers a connector scanner only when asked (the wizard, while the connector is on)', () => {
+    const tools = [
+      tool({ name: 'nuclei', display_name: 'Nuclei' }),
+      tool({
+        name: 'tenable_sc',
+        display_name: 'Tenable Security Center',
+        metadata: { kind: 'connector' },
+      }),
+    ]
+    expect(scannerOptions(tools).map((t) => t.name)).toEqual(['nuclei'])
+    expect(scannerOptions(tools, true).map((t) => t.name)).toEqual(['nuclei', 'tenable_sc'])
+  })
+
   it('is empty without data', () => {
     expect(scannerOptions(undefined)).toEqual([])
   })
