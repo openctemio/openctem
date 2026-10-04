@@ -174,9 +174,7 @@ func RequireActiveMembershipFromJWT(reader MembershipReader) func(http.Handler) 
 
 // activeMembershipDenial returns the error to send when userID is not an
 // ACTIVE member of tenantID (not a member, removed, or suspended), or nil
-// when the membership is active. Shared by RequireActiveMembershipFromJWT and
-// the WebSocket ticket upgrade (WSTicketAuth) so both refuse the same cases
-// with the same responses.
+// when the membership is active.
 func activeMembershipDenial(ctx context.Context, reader MembershipReader, userID, tenantID shared.ID) *apierror.Error {
 	membership, err := reader.GetMembership(ctx, userID, tenantID)
 	if err != nil {

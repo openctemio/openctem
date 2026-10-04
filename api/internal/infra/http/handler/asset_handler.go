@@ -150,6 +150,23 @@ func (h *AssetHandler) buildAuditContext(r *http.Request) auditapp.AuditContext 
 	}
 }
 
+// auditCreateMerged records that a create request updated an existing asset
+// instead of creating one. Only field names are recorded, never values.
+func (h *AssetHandler) auditCreateMerged(r *http.Request, a *asset.Asset, changed []string) {
+	if h.auditService == nil {
+		return
+	}
+	if changed == nil {
+		changed = []string{}
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionAssetCreateMerged, auditdom.ResourceTypeAsset, a.ID().String()).
+		WithResourceName(a.Name()).
+		WithMessage("Create request matched an existing asset and updated it").
+		WithMetadata("changed_fields", changed).
+		WithSeverity(auditdom.SeverityMedium)
+	_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+}
+
 // SnoozeLifecycleRequest is the body for POST /assets/{id}/lifecycle/snooze.
 // Duration is expressed in days so the HTTP contract is simple;
 // service layer converts to an absolute timestamp on the server
@@ -715,10 +732,13 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Properties:  req.Properties,
 	}
 
-	a, err := h.service.CreateAsset(r.Context(), input)
+	a, outcome, err := h.service.CreateAssetWithOutcome(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+	if outcome.Merged {
+		h.auditCreateMerged(r, a, outcome.ChangedFields)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1064,10 +1084,13 @@ func (h *AssetHandler) CreateRepository(w http.ResponseWriter, r *http.Request) 
 		RepoPushedAt:    req.RepoPushedAt,
 	}
 
-	a, ext, err := h.service.CreateRepositoryAsset(r.Context(), input)
+	a, ext, outcome, err := h.service.CreateRepositoryAssetWithOutcome(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+	if outcome.Merged {
+		h.auditCreateMerged(r, a, outcome.ChangedFields)
 	}
 
 	response := AssetWithRepositoryResponse{

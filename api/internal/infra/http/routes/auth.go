@@ -102,12 +102,6 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			logoutHandler := ChainFunc(h.LocalAuth.Logout, authMiddleware)
 			r.POST("/logout", logoutHandler.ServeHTTP)
 
-			// Protected: WebSocket ticket for the token's tenant. The ticket
-			// opens the tenant's real-time stream, so it gets the tenant gates
-			// (SSO enforcement, IP allowlist, active membership) — a suspended
-			// member or a caller outside the allowlist gets no ticket.
-			wsTokenHandler := ChainFunc(h.LocalAuth.GetWSToken, wsTokenMiddlewares(authMiddleware, userSyncMiddleware)...)
-			r.GET("/ws-token", wsTokenHandler.ServeHTTP)
 		}
 
 		// OIDC token endpoint (deprecated - returns Keycloak redirect info)

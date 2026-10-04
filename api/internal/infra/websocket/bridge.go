@@ -41,11 +41,19 @@ import (
 // enforced on receive.
 const redisBroadcastChannel = "ws:broadcast"
 
+// redisRevokeChannel carries socket revocations (RFC-045): a signed-out
+// session, or a user whose membership or role changed in a tenant. Every pod
+// closes its own matching sockets. A message can only close connections,
+// never open or widen one, so a forged message is at worst a forced reconnect.
+const redisRevokeChannel = "ws:revoke"
+
 // BridgeConfig configures the Redis bridge.
 type BridgeConfig struct {
 	// Channel overrides the default pubsub channel. Leave empty to use
 	// the standard value.
 	Channel string
+	// RevokeChannel overrides the revocation pubsub channel.
+	RevokeChannel string
 	// Logger for bridge diagnostics.
 	Logger *logger.Logger
 }
@@ -53,10 +61,11 @@ type BridgeConfig struct {
 // RedisBridge publishes local broadcasts to Redis and fans incoming
 // Redis messages back into the local Hub.
 type RedisBridge struct {
-	rc      *redislib.Client
-	hub     *Hub
-	channel string
-	logger  *logger.Logger
+	rc            *redislib.Client
+	hub           *Hub
+	channel       string
+	revokeChannel string
+	logger        *logger.Logger
 }
 
 // NewRedisBridge constructs a bridge. The caller is expected to call
@@ -68,16 +77,21 @@ func NewRedisBridge(rc *redislib.Client, hub *Hub, cfg *BridgeConfig) *RedisBrid
 	if cfg.Channel == "" {
 		cfg.Channel = redisBroadcastChannel
 	}
+	if cfg.RevokeChannel == "" {
+		cfg.RevokeChannel = redisRevokeChannel
+	}
 	if cfg.Logger == nil {
 		cfg.Logger = logger.NewNop()
 	}
 	b := &RedisBridge{
-		rc:      rc,
-		hub:     hub,
-		channel: cfg.Channel,
-		logger:  cfg.Logger.With("component", "ws-bridge"),
+		rc:            rc,
+		hub:           hub,
+		channel:       cfg.Channel,
+		revokeChannel: cfg.RevokeChannel,
+		logger:        cfg.Logger.With("component", "ws-bridge"),
 	}
 	hub.SetPublisher(b)
+	hub.SetRevocationPublisher(b)
 	return b
 }
 
@@ -114,6 +128,18 @@ func (b *RedisBridge) Publish(ctx context.Context, msg *BroadcastMessage) error 
 	return nil
 }
 
+// PublishRevocation implements RevocationPublisher.
+func (b *RedisBridge) PublishRevocation(ctx context.Context, r Revocation) error {
+	payload, err := json.Marshal(&r)
+	if err != nil {
+		return fmt.Errorf("marshal ws revocation: %w", err)
+	}
+	if err := b.rc.Publish(ctx, b.revokeChannel, payload).Err(); err != nil {
+		return fmt.Errorf("redis publish: %w", err)
+	}
+	return nil
+}
+
 // Start subscribes to the Redis channel and fans incoming messages into
 // the local Hub's broadcast queue. Returns when ctx is cancelled.
 //
@@ -121,7 +147,7 @@ func (b *RedisBridge) Publish(ctx context.Context, msg *BroadcastMessage) error 
 // transient failures. For non-transient errors (pubsub closed) we log
 // and return so the caller can restart us.
 func (b *RedisBridge) Start(ctx context.Context) error {
-	sub := b.rc.Subscribe(ctx, b.channel)
+	sub := b.rc.Subscribe(ctx, b.channel, b.revokeChannel)
 	defer func() { _ = sub.Close() }()
 
 	// Wait for subscription confirmation so we know we are actually
@@ -129,7 +155,7 @@ func (b *RedisBridge) Start(ctx context.Context) error {
 	if _, err := sub.Receive(ctx); err != nil {
 		return fmt.Errorf("ws bridge subscribe: %w", err)
 	}
-	b.logger.Info("ws redis bridge subscribed", "channel", b.channel)
+	b.logger.Info("ws redis bridge subscribed", "channel", b.channel, "revoke_channel", b.revokeChannel)
 
 	ch := sub.Channel(
 		redislib.WithChannelSize(256),
@@ -143,6 +169,10 @@ func (b *RedisBridge) Start(ctx context.Context) error {
 		case rm, ok := <-ch:
 			if !ok {
 				return fmt.Errorf("ws bridge channel closed")
+			}
+			if rm.Channel == b.revokeChannel {
+				b.handleRevocation(rm.Payload)
+				continue
 			}
 			b.handleIncoming(rm.Payload)
 		}
@@ -167,4 +197,16 @@ func (b *RedisBridge) handleIncoming(payload string) {
 		Message:  &m,
 		TenantID: env.TenantID,
 	})
+}
+
+// handleRevocation decodes a revocation and closes the matching local
+// sockets. ApplyRevocation ignores anything that does not name a session or a
+// user+tenant with a known reason.
+func (b *RedisBridge) handleRevocation(payload string) {
+	var r Revocation
+	if err := json.Unmarshal([]byte(payload), &r); err != nil {
+		b.logger.Warn("ws bridge received malformed revocation", "error", err)
+		return
+	}
+	b.hub.ApplyRevocation(r)
 }

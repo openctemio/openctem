@@ -12,6 +12,7 @@ import { IP_NOT_ALLOWED_MESSAGE, isIpNotAllowed, notifyIpNotAllowed } from './ip
 import { dispatchPermissionStaleEvent } from '@/context/permission-provider'
 import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
+import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
 
 // ============================================
 // CONFIGURATION
@@ -133,14 +134,18 @@ async function tryRefreshToken(): Promise<boolean> {
     return refreshPromise
   }
 
-  // Create a new refresh promise
+  // Create a new refresh promise. The cross-tab lock keeps two tabs from
+  // spending the same rotating refresh token at once (reuse revokes the
+  // whole token family).
   refreshPromise = (async () => {
     try {
       devLog.log('[API Client] Starting token refresh...')
-      const response = await csrfFetch('/api/auth/refresh', {
-        method: 'POST',
-        credentials: 'include',
-      })
+      const response = await withAuthRefreshLock(() =>
+        csrfFetch('/api/auth/refresh', {
+          method: 'POST',
+          credentials: 'include',
+        })
+      )
 
       const data = await response.json()
 
@@ -165,6 +170,17 @@ async function tryRefreshToken(): Promise<boolean> {
   })()
 
   return refreshPromise
+}
+
+/**
+ * Refreshes the session (access-token cookie) once, shared with the REST
+ * client's 401 handling: concurrent callers in a tab share one refresh, and
+ * tabs take turns (withAuthRefreshLock). The WebSocket client calls it when a
+ * reconnect after a 4401 close fails (RFC-045). Resolves false when the
+ * session cannot be refreshed.
+ */
+export function refreshSession(): Promise<boolean> {
+  return tryRefreshToken()
 }
 
 /**
