@@ -14330,6 +14330,77 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/search': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Search findings with a filter document
+     * @description Lists findings selected by a FilterDocument (RFC-048): all/any/not groups with field/op/value
+     *     leaves, for OR, nesting and id lists of up to 500. Same fields, permission, scope and
+     *     response as GET /findings. Limits: 50 leaves, depth 3, 32 KB body. A bad document is 400
+     *     INVALID_FILTER with the JSON path of each problem. Read-only.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Filter document */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.FindingSearchRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description INVALID_FILTER with details[].path */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/stats': {
     parameters: {
       query?: never
@@ -17291,6 +17362,49 @@ export interface paths {
           }
           content: {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/meta/filters/findings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Findings filter contract
+     * @description The machine-readable filter contract of the findings list (RFC-048): fields, types, operators,
+     *     flat param names, enums, sortability, old param aliases and limits, plus the FilterDocument
+     *     JSON Schema. Fields the caller may not use are left out.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
           }
         }
       }
@@ -36207,6 +36321,31 @@ export interface components {
       target?: string
       template_id?: string
       trigger?: string
+    }
+    'internal_infra_http_handler.FindingSearchPage': {
+      page?: number
+      per_page?: number
+    }
+    'internal_infra_http_handler.FindingSearchRequest': {
+      /**
+       * @description Filter is a node ({"all":[...]}, {"any":[...]}, {"not":{...}} or a
+       *     {"field","op","value"} leaf) or the flat-name shorthand
+       *     ({"severity":["critical"],"epss_score_gte":0.1}).
+       */
+      filter?: {
+        [key: string]: unknown
+      }
+      /** @description Page selects the page: {"page": 1, "per_page": 50}. */
+      page?: components['schemas']['internal_infra_http_handler.FindingSearchPage']
+      /** @description Q is free text over title, description and file path. */
+      q?: string
+      /** @description Sort keys, "-" for descending. */
+      sort?: string[]
+      /**
+       * @description V is the document version (1).
+       * @example 1
+       */
+      v?: number
     }
     'internal_infra_http_handler.FindingSeverityResponse': {
       critical?: number
