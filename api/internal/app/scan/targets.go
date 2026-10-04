@@ -60,7 +60,7 @@ type resolvedTargets struct {
 	// OutOfScope counts targets left out because the actor may not scan them
 	// (research/15 L-06, D9).
 	OutOfScope int
-	Warnings []string
+	Warnings   []string
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
