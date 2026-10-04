@@ -300,7 +300,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}(),
 
 		// Integration
-		Integration: handler.NewIntegrationHandler(svc.Integration, v, log),
+		Integration: func() *handler.IntegrationHandler {
+			h := handler.NewIntegrationHandler(svc.Integration, v, log)
+			// A sync of a Tenable.sc connector queues connector_sync (RFC-047).
+			h.SetTenableSCConnector(svc.TenableSC)
+			return h
+		}(),
 		DefectDojo:  handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Sensors & Commands
@@ -386,7 +391,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Access Control
 		Group:          handler.NewGroupHandler(svc.Group, v, log),
-		PermissionSet:  handler.NewPermissionSetHandler(svc.Permission, v, log),
 		Role:           handler.NewRoleHandler(svc.Role, v, log),
 		Permission:     handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
 		AssignmentRule: handler.NewAssignmentRuleHandler(svc.AssignmentRule, v, log),
