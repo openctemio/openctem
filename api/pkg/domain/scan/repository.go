@@ -21,6 +21,8 @@ type Filter struct {
 	// ExcludeAdHoc leaves out quick scans that were never saved (Scan.AdHoc):
 	// the Configurations list shows saved configurations only.
 	ExcludeAdHoc bool
+	// Sort orders the list; the zero value is by name.
+	Sort ListSort
 }
 
 // Stats represents aggregated statistics for scans.
