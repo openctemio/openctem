@@ -427,6 +427,13 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 	if err := tx.QueryRowContext(ctx, countQuery, lockID).Scan(&ownerActiveCount); err != nil {
 		return fmt.Errorf("failed to count active runs: %w", err)
 	}
+	// Overlap policy skip (RFC-046 D4, §6.2): a scheduled run never starts
+	// while the scan has an active run. Checked here, under the scan row
+	// lock every trigger of the scan takes, so a manual trigger committed
+	// between the scheduler's own check and this insert is seen.
+	if run.ScanID != nil && run.ScheduledFor != nil && ownerActiveCount > 0 {
+		return pipeline.ErrScanRunActive
+	}
 	if ownerActiveCount >= maxPerScan {
 		return shared.NewDomainError(
 			"MAX_CONCURRENT_RUNS",

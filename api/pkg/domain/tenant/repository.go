@@ -29,12 +29,14 @@ type Repository interface {
 	// Membership operations
 	CreateMembership(ctx context.Context, membership *Membership) error
 	GetMembership(ctx context.Context, userID shared.ID, tenantID shared.ID) (*Membership, error)
-	GetMembershipByID(ctx context.Context, id shared.ID) (*Membership, error)
+	// GetMembershipByID returns a membership of tenantID; another tenant's is ErrNotFound.
+	GetMembershipByID(ctx context.Context, tenantID, id shared.ID) (*Membership, error)
 	UpdateMembership(ctx context.Context, membership *Membership) error
 	// UpdateMembershipStatus persists the lifecycle status change
 	// (active ↔ suspended). Used by Suspend/Reactivate service methods.
 	UpdateMembershipStatus(ctx context.Context, membership *Membership) error
-	DeleteMembership(ctx context.Context, id shared.ID) error
+	// DeleteMembership removes a membership of tenantID.
+	DeleteMembership(ctx context.Context, tenantID, id shared.ID) error
 	ListMembersByTenant(ctx context.Context, tenantID shared.ID) ([]*Membership, error)
 	ListMembersWithUserInfo(ctx context.Context, tenantID shared.ID) ([]*MemberWithUser, error)
 	SearchMembersWithUserInfo(ctx context.Context, tenantID shared.ID, filters MemberSearchFilters) (*MemberSearchResult, error)
@@ -60,9 +62,11 @@ type Repository interface {
 	// Invitation operations
 	CreateInvitation(ctx context.Context, invitation *Invitation) error
 	GetInvitationByToken(ctx context.Context, token string) (*Invitation, error)
-	GetInvitationByID(ctx context.Context, id shared.ID) (*Invitation, error)
+	// GetInvitationByID returns an invitation of tenantID; another tenant's is ErrNotFound.
+	GetInvitationByID(ctx context.Context, tenantID, id shared.ID) (*Invitation, error)
 	UpdateInvitation(ctx context.Context, invitation *Invitation) error
-	DeleteInvitation(ctx context.Context, id shared.ID) error
+	// DeleteInvitation removes an invitation of tenantID.
+	DeleteInvitation(ctx context.Context, tenantID, id shared.ID) error
 	ListPendingInvitationsByTenant(ctx context.Context, tenantID shared.ID) ([]*Invitation, error)
 	GetPendingInvitationByEmail(ctx context.Context, tenantID shared.ID, email string) (*Invitation, error)
 	DeleteExpiredInvitations(ctx context.Context) (int64, error)

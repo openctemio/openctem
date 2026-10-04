@@ -2,6 +2,7 @@ package sarif
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/ctis"
@@ -1048,5 +1049,29 @@ func TestConvert_ReferencesFromHelp(t *testing.T) {
 
 	if !foundMarkdownURL {
 		t.Errorf("expected markdown URL reference, got %v", f.References)
+	}
+}
+
+// A result with several fingerprints yields the same one on every conversion
+// (RFC-043 B23): matchBasedId/v1 first, else the lowest key; long values are
+// hashed; Semgrep's "requires login" placeholder is never used.
+func TestResultFingerprint_Deterministic(t *testing.T) {
+	many := map[string]string{"zeta/v1": "z", "alpha/v1": "a", "mid/v1": "m", "beta/v1": "b"}
+	for i := 0; i < 50; i++ {
+		if got := resultFingerprint(many); got != "a" {
+			t.Fatalf("run %d: got %q, want the lowest key's value", i, got)
+		}
+	}
+	if got := resultFingerprint(map[string]string{"alpha/v1": "a", "matchBasedId/v1": "mb"}); got != "mb" {
+		t.Fatalf("matchBasedId/v1 not preferred: %q", got)
+	}
+	if got := resultFingerprint(map[string]string{"matchBasedId/v1": "requires login", "x/v1": "x"}); got != "x" {
+		t.Fatalf("placeholder used: %q", got)
+	}
+	if got := resultFingerprint(map[string]string{"a": strings.Repeat("f", 65)}); len(got) != 64 {
+		t.Fatalf("long value not hashed: %q", got)
+	}
+	if got := resultFingerprint(nil); got != "" {
+		t.Fatalf("none: %q", got)
 	}
 }

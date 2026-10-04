@@ -87,7 +87,7 @@ func (s *RuleService) CreateRule(ctx context.Context, input CreateRuleInput, cre
 	}
 
 	// Verify group exists, belongs to tenant, and is active
-	grp, err := s.groupRepo.GetByID(ctx, groupID)
+	grp, err := s.groupRepo.GetByTenantAndID(ctx, tenantID, groupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: group not found", shared.ErrValidation)
 	}
