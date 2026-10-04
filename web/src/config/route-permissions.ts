@@ -371,10 +371,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.PentestRead,
     module: Module.AttackSimulation,
   },
-  '/simulation/scenarios': {
-    permission: Permission.PentestRead,
-    module: Module.AttackSimulation,
-  },
   '/control-testing': {
     permission: Permission.PentestRead,
     module: Module.ControlTesting,
@@ -491,17 +487,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // data-quality endpoint — gated on dashboard read only (no dedicated module),
   // exactly like Program Health, so it is always available with the dashboard.
   '/insights/data-quality': {
-    permission: Permission.DashboardRead,
-  },
-  // Analytics facades over shared dashboard data — not linked in nav but
-  // reachable by URL, so gate on dashboard read instead of leaving fail-open.
-  '/trending': {
-    permission: Permission.DashboardRead,
-  },
-  '/progress': {
-    permission: Permission.DashboardRead,
-  },
-  '/insights/analytics/mttr': {
     permission: Permission.DashboardRead,
   },
   '/insights/executive': {
