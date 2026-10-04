@@ -108,6 +108,7 @@ func TestIngest_FindingStoresNetworkPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var p int64
 		if err := rows.Scan(&p); err != nil {
@@ -118,7 +119,6 @@ func TestIngest_FindingStoresNetworkPort(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	_ = rows.Close()
 	if len(ports) != 2 || ports[0] != 443 || ports[1] != 8443 {
 		t.Fatalf("another port should be another finding, got ports %v", ports)
 	}
