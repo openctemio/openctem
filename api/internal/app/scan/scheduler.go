@@ -187,13 +187,25 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 	// the move also keeps the next polling cycle from picking it up again.
 	occurrence := *sc.NextRunAt
 	nextRunAt := sc.CalculateNextRunAt()
-	claimed, err := s.scanRepo.ClaimScheduledRun(ctx, sc.ID, occurrence, nextRunAt)
+	claimed, err := s.scanRepo.ClaimScheduledRun(ctx, sc.TenantID, sc.ID, occurrence, nextRunAt)
 	if err != nil {
 		s.logger.Error("failed to claim scheduled run", "scan_id", sc.ID.String(), "error", err)
 		return
 	}
 	if !claimed {
 		s.logger.Debug("scheduled run already claimed (another instance, or the scan changed)", "scan_id", sc.ID.String())
+		return
+	}
+
+	// Misfire grace (RFC-046 §6.1): an occurrence so late that the next one
+	// is also already due (the API was down) is skipped and recorded, not
+	// run late; the claim above already moved next_run_at to the future.
+	if isMisfire(sc, occurrence, time.Now()) {
+		metrics.ScanScheduleOutcomes.WithLabelValues("skipped_misfire").Inc()
+		s.logger.Info("scheduled run skipped: the occurrence was missed by more than one interval",
+			"scan_id", sc.ID.String(), "scheduled_for", occurrence, "next_run_at", nextRunAt)
+		s.scanService.recordScheduledOutcome(ctx, sc,
+			"Scheduled run skipped: its time was missed by more than one interval (the platform was unavailable)", nil)
 		return
 	}
 
@@ -242,7 +254,7 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 		// for three nights on the demo deployment — looks identical to one that
 		// simply has not run yet: next run scheduled, last run blank. Best-effort;
 		// a failure to record must not mask the original trigger error.
-		if recErr := s.scanRepo.RecordTriggerFailure(ctx, sc.ID, "failed"); recErr != nil {
+		if recErr := s.scanRepo.RecordTriggerFailure(ctx, sc.TenantID, sc.ID, "failed"); recErr != nil {
 			s.logger.Error("failed to record scan trigger failure",
 				"scan_id", sc.ID.String(), "error", recErr)
 		}
@@ -266,4 +278,12 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 func (s *ScanScheduler) isRunning(scanID shared.ID) bool {
 	_, ok := s.runningRuns.Load(scanID)
 	return ok
+}
+
+// isMisfire reports whether occurrence is more than one interval late at now:
+// the schedule's following occurrence (at least MinScheduleInterval later)
+// is due too.
+func isMisfire(sc *scan.Scan, occurrence, now time.Time) bool {
+	following := sc.OccurrenceAfter(occurrence.Add(scan.MinScheduleInterval - time.Second))
+	return following != nil && !following.After(now)
 }

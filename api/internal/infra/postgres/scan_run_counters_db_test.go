@@ -66,7 +66,7 @@ func TestScanRunCounters_OneRunCountsOnce(t *testing.T) {
 	tenantID, scanID := seedCounterScan(ctx, t, db)
 	run := seedCounterRun(ctx, t, runs, tenantID, scanID)
 
-	if err := scans.RecordRunStarted(ctx, scanID, run.ID); err != nil {
+	if err := scans.RecordRunStarted(ctx, tenantID, scanID, run.ID); err != nil {
 		t.Fatalf("RecordRunStarted: %v", err)
 	}
 	total, _, _, status, _ := readCounters(ctx, t, db, scanID)
@@ -74,7 +74,7 @@ func TestScanRunCounters_OneRunCountsOnce(t *testing.T) {
 		t.Fatalf("after start: total_runs=%d status=%q, want 0 running (counted when it finishes)", total, status)
 	}
 
-	if err := scans.RecordRun(ctx, scanID, run.ID, "completed"); err != nil {
+	if err := scans.RecordRun(ctx, tenantID, scanID, run.ID, "completed"); err != nil {
 		t.Fatalf("RecordRun: %v", err)
 	}
 	total, ok, failed, status, _ := readCounters(ctx, t, db, scanID)
@@ -91,15 +91,15 @@ func TestScanRunCounters_LateOlderRunDoesNotRelabelNewerRun(t *testing.T) {
 	runs := NewPipelineRunRepository(&DB{DB: db})
 	tenantID, scanID := seedCounterScan(ctx, t, db)
 	older := seedCounterRun(ctx, t, runs, tenantID, scanID)
-	if err := scans.RecordRunStarted(ctx, scanID, older.ID); err != nil {
+	if err := scans.RecordRunStarted(ctx, tenantID, scanID, older.ID); err != nil {
 		t.Fatal(err)
 	}
 	newer := seedCounterRun(ctx, t, runs, tenantID, scanID)
-	if err := scans.RecordRunStarted(ctx, scanID, newer.ID); err != nil {
+	if err := scans.RecordRunStarted(ctx, tenantID, scanID, newer.ID); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := scans.RecordRun(ctx, scanID, older.ID, "failed"); err != nil {
+	if err := scans.RecordRun(ctx, tenantID, scanID, older.ID, "failed"); err != nil {
 		t.Fatal(err)
 	}
 	total, ok, failed, status, last := readCounters(ctx, t, db, scanID)
