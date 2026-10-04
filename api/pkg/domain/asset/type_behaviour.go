@@ -8,7 +8,10 @@ package asset
 // as the pair that alias stands for, so these answers never depend on which
 // spelling the row has.
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // registryDefFor returns the registry entry that describes a stored pair:
 // the alias whose (type, sub_type) it is, else the type's own entry.
@@ -144,4 +147,21 @@ func WithLegacyNames(types ...AssetType) []AssetType {
 		}
 	}
 	return out
+}
+
+// TypeNameMatches reports whether a type name a person wrote in a rule (a
+// core type such as `host`, or an alias such as `website` or `firewall`)
+// covers an asset's stored pair. The name is resolved through the registry,
+// never compared as a string: a rule on `website` matches a stored
+// (application, website). A core name covers every sub-type; an asset whose
+// kind was never recorded is covered by every name of its type. An unknown
+// name matches nothing.
+func TypeNameMatches(name string, ref TypeRef) bool {
+	n := AssetType(strings.ToLower(strings.TrimSpace(name)))
+	if _, known := registryTypeIndex[n]; !known {
+		return false
+	}
+	want := CanonicalPair(n, "")
+	got := CanonicalPair(ref.Type, ref.SubType)
+	return want.Type == got.Type && subTypeMatches(want.SubType, got.SubType)
 }
