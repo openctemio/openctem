@@ -1,4 +1,4 @@
--- Reverts 000356: findings cascade with their asset again. Soft-deleted assets
+-- Reverts 000373: findings cascade with their asset again. Soft-deleted assets
 -- (no findings by construction) are hard-deleted first, so they do not come
 -- back as live assets once the column is gone.
 SET lock_timeout = '5s';

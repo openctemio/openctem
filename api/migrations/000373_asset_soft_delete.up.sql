@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 000356: safe asset delete
+-- Migration 000373: safe asset delete
 -- =============================================================================
 -- Owner decision O3 (research 12, 2026-10-03). Deleting an asset used to hard
 -- delete it, and findings.asset_id ON DELETE CASCADE erased every finding of
@@ -21,7 +21,7 @@
 -- Live-database safety:
 --   * ADD COLUMN with no default is a catalog-only change;
 --   * the new foreign key is added NOT VALID (no scan of findings) and swapped
---     in one transaction; 000357 validates it without blocking writes;
+--     in one transaction; 000374 validates it without blocking writes;
 --   * lock_timeout makes the brief ACCESS EXCLUSIVE / SHARE ROW EXCLUSIVE
 --     locks fail fast instead of queueing behind a long transaction.
 -- =============================================================================

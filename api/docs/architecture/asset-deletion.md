@@ -9,9 +9,9 @@ click.
 
 | Where | What |
 |---|---|
-| `migrations/000356_asset_soft_delete.up.sql` | `assets.deleted_at` / `deleted_by`; findings FK becomes `ON DELETE NO ACTION` (added `NOT VALID`) |
-| `migrations/000357_findings_asset_fk_validate.up.sql` | Validates that FK without blocking writes |
-| `migrations/000358_assets_deleted_index.up.sql` | Partial index for the purge |
+| `migrations/000373_asset_soft_delete.up.sql` | `assets.deleted_at` / `deleted_by`; findings FK becomes `ON DELETE NO ACTION` (added `NOT VALID`) |
+| `migrations/000374_findings_asset_fk_validate.up.sql` | Validates that FK without blocking writes |
+| `migrations/000375_assets_deleted_index.up.sql` | Partial index for the purge |
 | `internal/infra/postgres/asset_soft_delete.go` | The refused-or-soft delete, the detach list, the purge |
 | `internal/infra/controller/asset_purge.go` | Purges soft-deleted assets after 30 days |
 | `web/src/features/assets/lib/safe-delete.ts` | Every UI delete: refusal message, Archive offer, bulk report |
