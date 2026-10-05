@@ -255,10 +255,10 @@ func (m *mockAuthTenantRepo) GetBySlug(_ context.Context, _ string) (*tenant.Ten
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockAuthTenantRepo) Update(_ context.Context, _ *tenant.Tenant) error {
-	if m.updateErr != nil {
-		return m.updateErr
-	}
+func (m *mockAuthTenantRepo) UpdateProfile(_ context.Context, _ *tenant.Tenant) error {
+	return m.updateErr
+}
+func (m *mockAuthTenantRepo) UpdateSettingsSection(_ context.Context, _ shared.ID, _ string, _ any, _ bool, _ any) error {
 	return nil
 }
 

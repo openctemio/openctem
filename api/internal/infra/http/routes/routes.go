@@ -991,7 +991,9 @@ func (a tenantSecurityPolicyAdapter) SecuritySettings(ctx context.Context, tenan
 	if err != nil {
 		return tenant.SecuritySettings{}, err
 	}
-	return t.TypedSettings().Security, nil
+	// Strict: an unreadable security section is an error (the IP allowlist
+	// gate then denies), never the permissive defaults.
+	return t.SecuritySettingsStrict()
 }
 
 // tenantSSOEnforcedAdapter adapts tenant.Repository to
@@ -1011,7 +1013,11 @@ func (a tenantSSOEnforcedAdapter) IsSSOEnforced(ctx context.Context, tenantID st
 	if err != nil {
 		return false, err
 	}
-	return t.TypedSettings().Security.SSOEnforced, nil
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return false, err
+	}
+	return sec.SSOEnforced, nil
 }
 
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.
