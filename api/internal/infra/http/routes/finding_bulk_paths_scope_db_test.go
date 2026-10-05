@@ -114,8 +114,7 @@ func TestListFindingIDs_CallerScoped(t *testing.T) {
 	if got := ids(callerCtx(h.memberA, false)); !eq(got, want(h.findingA, h.findingP)) {
 		t.Errorf("memberA on the campaign = %v, want FA and FP", got)
 	}
-	// A member without a scope row sees nothing, although the organization
-	// is still stored as 'everything'.
+	// A member without a scope row sees nothing.
 	for _, u := range []shared.ID{h.memberFree, h.memberStrict} {
 		if got := ids(callerCtx(u, false)); len(got) != 0 {
 			t.Errorf("member without scope row = %v, want none", got)

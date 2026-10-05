@@ -342,10 +342,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewDataExpirationController(
 		repos.Suppression,
 		repos.ScopeExcl,
-		repos.Audit,
+		svc.Audit,
 		&controller.DataExpirationControllerConfig{
 			Interval:           1 * time.Hour,
-			AuditRetentionDays: 365,
+			AuditRetentionDays: cfg.AuditRetention.Days,
+			AuditArchiveDir:    cfg.AuditRetention.ArchiveDir,
 			Logger:             log.With("controller", "data-expiration"),
 		},
 	))
@@ -576,6 +577,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Interval:      24 * time.Hour,
 				RetentionDays: 30,
 				Logger:        log.With("controller", "asset-purge"),
+			},
+		))
+	}
+
+	// Scanner output retention: plugin output of findings closed more than
+	// 365 days ago is dropped (research 24 P0-2, owner decision C9).
+	if repos.Finding != nil {
+		w.ControllerManager.Register(controller.NewScannerOutputRetentionController(
+			repos.Finding,
+			&controller.ScannerOutputRetentionConfig{
+				Logger: log.With("controller", "finding-scanner-output-retention"),
 			},
 		))
 	}

@@ -35,6 +35,7 @@ import {
   invalidateSecretStoreCache,
 } from '@/lib/api/secret-store-hooks'
 import {
+  expiryDateToRFC3339,
   CREDENTIAL_TYPE_DISPLAY_NAMES,
   CREDENTIAL_TYPE_DESCRIPTIONS,
   CREDENTIAL_TYPES,
@@ -153,7 +154,7 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
       name: data.name,
       description: data.description || undefined,
       credential_type: data.credential_type,
-      expires_at: data.expires_at || undefined,
+      expires_at: expiryDateToRFC3339(data.expires_at) ?? undefined,
     }
 
     // Add credential-specific data as flat fields
