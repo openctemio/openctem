@@ -920,6 +920,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, easmExposures, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
 	s.CertMonitor.SetSeedSource(repos.EASMSeed)
+	// Stored CT exposures follow their host to its own asset (research/22 P0-9).
+	s.CertMonitor.SetRelinker(repos.Exposure)
 	// Excluded names are neither queried nor discovered (RFC-042 F16).
 	s.CertMonitor.SetExclusions(s.Scope)
 	s.CertMonitor.SetStateStore(repos.CTMonitorState)
@@ -1926,6 +1928,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// key suffix in any future Redis payload cache. Bumped on every
 	// toggle / preset apply / reset via notifyModuleChange.
 	s.Module.SetVersionService(app.NewModuleVersionService(deps.RedisClient, log))
+	// Ingest honors the suppressions module toggle: with the module off (or
+	// left out of the tenant's bundles) findings land as reported.
+	s.Ingest.SetSuppressionModuleGuard(s.Module)
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
