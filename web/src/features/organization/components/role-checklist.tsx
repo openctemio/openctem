@@ -20,13 +20,32 @@ interface RoleChecklistProps {
   disabled?: boolean
   /** Upper bound on how many roles may be selected. */
   max?: number
+  /**
+   * Whether the caller may make someone an administrator. Only the owner may
+   * (settings decision B2); for everyone else the system admin role is left
+   * out of the picker unless it is already selected, so an administrator
+   * editing their own roles can keep it.
+   */
+  canGrantAdmin?: boolean
   className?: string
 }
 
-/** The picker hides the owner role (ownership is not assigned through roles) and junk rows. */
-export function selectableRoles<T extends RoleChecklistItem>(roles: T[]): T[] {
+/**
+ * The picker hides the owner role (ownership is not assigned through roles)
+ * and junk rows, and the system admin role from anyone but the owner, unless
+ * it is already in `keep` (the current selection).
+ */
+export function selectableRoles<T extends RoleChecklistItem>(
+  roles: T[],
+  opts: { canGrantAdmin?: boolean; keep?: string[] } = {}
+): T[] {
   return roles.filter(
-    (r) => r.slug !== 'owner' && r.id && typeof r.name === 'string' && r.name.length > 0
+    (r) =>
+      r.slug !== 'owner' &&
+      r.id &&
+      typeof r.name === 'string' &&
+      r.name.length > 0 &&
+      (r.slug !== 'admin' || !r.is_system || opts.canGrantAdmin || opts.keep?.includes(r.id))
   )
 }
 
@@ -118,6 +137,7 @@ export function RoleChecklist({
   loading,
   disabled,
   max,
+  canGrantAdmin = false,
   className,
 }: RoleChecklistProps) {
   if (loading) {
@@ -130,7 +150,7 @@ export function RoleChecklist({
     )
   }
 
-  const available = selectableRoles(roles)
+  const available = selectableRoles(roles, { canGrantAdmin, keep: selected })
   if (available.length === 0) {
     return (
       <div className={cn('py-6 text-center', className)}>
