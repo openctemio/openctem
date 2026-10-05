@@ -24,7 +24,7 @@ decode), `internal/app/tenant/settings_write.go` (the write path),
   absent for other roles (owner decision B20).
 - The legacy `api` section (API key switch, outbound webhook URL and a
   plaintext `webhook_secret`) was never read by anything. `PATCH
-  /settings/api` is removed and migration 000944 deletes the stored key.
+  /settings/api` is removed and migration 001011 deletes the stored key.
 
 ## Organization slug
 
