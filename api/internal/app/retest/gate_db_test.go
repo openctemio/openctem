@@ -230,3 +230,23 @@ func TestGateDB_OtherTenantsPolicyDoesNotApply(t *testing.T) {
 		t.Fatalf("tenant A commands = %d, want still 1", n)
 	}
 }
+
+// An internet-facing asset with no attribution record outside every scope
+// target and seed is not probed (RFC-036 §6.3, research/22b S1); the same
+// asset is probed once a person confirms it.
+func TestGateDB_UnattributedAssetIsNotProbed(t *testing.T) {
+	fx := newFixture(t)
+	asset := fx.newAsset("shop.unlisted.net")
+	f := fx.newFinding(asset, "confirmed", "tpl-unlisted")
+	if _, err := fx.runService().ValidateFinding(context.Background(), fx.tenant, f); err == nil {
+		t.Fatal("an unattributed asset was probed")
+	}
+	if n := fx.commandCount(); n != 0 {
+		t.Fatalf("%d command(s) created for an unattributed asset", n)
+	}
+	fx.exec(`INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, decided_at) VALUES ($1, $2, 'confirmed', 0, now())`,
+		asset.String(), fx.tenant.String())
+	if _, err := fx.runService().ValidateFinding(context.Background(), fx.tenant, f); err != nil {
+		t.Fatalf("a confirmed asset was refused: %v", err)
+	}
+}
