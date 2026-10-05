@@ -1081,13 +1081,28 @@ the full graph on purpose (`GetExposureChains` stays unscoped).
 **Asset references a caller writes** go through `datascope.Enforcer.AssertAssetRef`:
 the asset must be a live asset of the tenant (checked for unrestricted callers
 too) **and** in the caller's scope; a foreign, unknown, deleted or out-of-scope
-id all answer 404. It fails closed when not wired. The referencing columns
-point at `assets(id)` without the tenant, so this check is what keeps a
-foreign id out (research doc 15, L-02; research doc 21b, C1). Used by:
+id all answer 404. It fails closed when not wired (research doc 15, L-02;
+research doc 21b, C1/C3/C4). Used by:
 
 - `POST /pentest/campaigns/{id}/findings` (`asset_id`);
 - `POST /findings` (`asset_id`; a `branch_id` must also be a branch of that
-  asset, which pins it to the tenant).
+  asset, which pins it to the tenant);
+- `POST /exposures` and `POST /exposures/ingest` (`asset_id`; the bulk ingest
+  uses the batch form `FilterAssetRefs` and drops refused items with the one
+  reason `asset not found`);
+- `POST /pipelines/{id}/runs` (`asset_id`, which is copied into every step
+  command; a workflow trigger with no user gets the tenant check).
+
+**Database backstop** (migrations 000920-000922): every column that references
+`assets(id)` from a table with a `tenant_id` also has a composite foreign key
+`(tenant_id, <asset column>) → assets(tenant_id, id)`, so a cross-tenant
+reference is refused by the database whatever code writes it, including
+internal writers (ingest, EASM, CT monitor). A new table that references
+assets must add one; `TestAssetRefTenantFKs_Schema` fails otherwise. Tables
+without a `tenant_id` (`asset_owners`, which has its own same-tenant trigger,
+`asset_repositories`, `asset_group_members`, `asset_sources`,
+`attack_path_nodes`, `compensating_control_assets`) are not covered; their
+writers join the asset in the caller's tenant.
 
 Pre-delete counts are tenant-scoped: `DELETE /assets/{id}` counts only the
 tenant's own findings, so a row another tenant pointed at the asset neither
