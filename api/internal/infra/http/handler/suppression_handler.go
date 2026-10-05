@@ -646,6 +646,8 @@ func writeActiveRulesResponse(w http.ResponseWriter, rules []*suppression.Rule) 
 // handleServiceError converts service errors to HTTP responses.
 func (h *SuppressionHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, suppression.ErrRuleAssetNotFound):
+		apierror.NotFound("Asset").WriteJSON(w)
 	case errors.Is(err, suppression.ErrRuleNotFound):
 		apierror.NotFound("Suppression rule not found").WriteJSON(w)
 	case errors.Is(err, suppression.ErrRuleNotPending):
