@@ -32,6 +32,10 @@ import (
 // for a verified token, to the tenant's audit log.
 var ErrExchangeRefused = errors.New("ci token exchange refused")
 
+// errPipelineRate is a pipeline over MaxPipelineRunsPerHour (refused as
+// ErrExchangeRefused, audited).
+var errPipelineRate = errors.New("pipeline run rate exceeded")
+
 // ErrReportOutOfScope refuses a report that names an asset other than the
 // run's repository.
 var ErrReportOutOfScope = fmt.Errorf("%w: a CI run reports only on its own repository", shared.ErrValidation)
@@ -246,6 +250,11 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		}
 	} else {
 		out, err = s.createRun(ctx, tenantID, cfg, claims, key, in.UserAgent)
+		if errors.Is(err, errPipelineRate) {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "pipeline_rate",
+				Detail: fmt.Sprintf("the pipeline started %d or more runs in the last hour", cirun.MaxPipelineRunsPerHour)}})
+			return nil, ErrExchangeRefused
+		}
 		if errors.Is(err, cirun.ErrPipelineCap) {
 			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "pipeline_cap",
 				Detail: "the organization or the trust configuration has the most CI pipelines it may have"}})
@@ -337,6 +346,13 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 	}, c.IsForkEvent(), cfg)
 	if err != nil {
 		return nil, err
+	}
+	recent, err := s.repo.CountPipelineRunsSince(ctx, tenantID, pipeline.ID, now.Add(-time.Hour))
+	if err != nil {
+		return nil, fmt.Errorf("count pipeline runs: %w", err)
+	}
+	if recent >= cirun.MaxPipelineRunsPerHour {
+		return nil, errPipelineRate
 	}
 	_, sensorVersion := sensor.ResolveBuild(sensor.BuildReport{}, "", userAgent, now)
 	token, hash, err := cirun.NewToken()
@@ -579,6 +595,9 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 	}
 	if run.Status == cirun.StatusEvaluated {
 		return nil, fmt.Errorf("%w: the run was already evaluated", shared.ErrConflict)
+	}
+	if run.ReportsCount >= cirun.MaxRunReports {
+		return nil, cirun.ErrRunReportCap
 	}
 	if err := ScopeReport(report, run); err != nil {
 		return nil, err
