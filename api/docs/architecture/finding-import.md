@@ -14,8 +14,9 @@ finding keeps of its source, and `INGEST_VEX`), [deduplication.md](deduplication
 The pinned ctis module decides which formats are read
 (`importer.AllFormats()`; the response lists them as `supported_formats`):
 Nessus v2 XML, Qualys host detection XML with an optional KnowledgeBase,
-CycloneDX (SBOM, VDR, VEX), SPDX, osv-scanner results, CSAF 2.0, OpenVEX and
-DefectDojo Generic Findings JSON. Each importer has a mapping spec, golden
+SARIF 2.1.0, trivy, grype, semgrep, gitleaks (and betterleaks), nuclei, ZAP
+(JSON and XML), vuls, CycloneDX (SBOM, VDR, VEX), SPDX, osv-scanner results,
+CSAF 2.0, OpenVEX and DefectDojo Generic Findings JSON. Each importer has a mapping spec, golden
 fixtures and a field-coverage test in the ctis repository
 (`docs/importers/`). The API never branches on the format: it calls
 `importer.Detect`, `importer.Parse` and `importer.OpenZip` only, through one entry
@@ -85,7 +86,7 @@ matched against the tenant's findings:
 - the candidates are filtered by the uploader's data scope.
 
 Then, outside a preview, the statement is stored on every matched finding
-(the `vex_*` columns of migration 001078). A `not_affected` statement closes
+(the `vex_*` columns of migration 001105). A `not_affected` statement closes
 a finding (`false_positive`, `resolution_method = vex_not_affected`, the
 justification and source as the resolution) only when all of these hold:
 

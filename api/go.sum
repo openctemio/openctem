@@ -137,14 +137,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/onsi/gomega v1.34.1 h1:EUMJIKUjM8sKjYbtxQI9A4z2o+rruxnzNvpknOXie6k=
 github.com/onsi/gomega v1.34.1/go.mod h1:kU1QgUvBDLXBJq618Xvm2LUX6rSAfRaFRTcdOeDLwwY=
-github.com/openctemio/ctis v1.2.1-0.20261005113559-08f5754bec87 h1:rS2mm4akH3M5zCxaeNCTyUwQQIONp5TlwSxejlpu5sU=
-github.com/openctemio/ctis v1.2.1-0.20261005113559-08f5754bec87/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
-github.com/openctemio/ctis v1.2.1-0.20261005145940-e634ba0ee6ad h1:J5UP31LhnTCqlvP8pw2FutZ7BKXuW4Y4t36IezksL7Q=
-github.com/openctemio/ctis v1.2.1-0.20261005145940-e634ba0ee6ad/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
-github.com/openctemio/ctis v1.2.1-0.20261005150953-0ceb707e225b h1:nuQfWkVJfdoJX999KLGatLMT5O5DY0X0LZY5gGthGF4=
-github.com/openctemio/ctis v1.2.1-0.20261005150953-0ceb707e225b/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
-github.com/openctemio/ctis v1.2.1-0.20261005152615-624ea18f1519 h1:bgpr4IOqPsqkdfdorBlNHDykx08j74w35Yd0IlhPfmM=
-github.com/openctemio/ctis v1.2.1-0.20261005152615-624ea18f1519/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
+github.com/openctemio/ctis v1.2.1-0.20261005175905-762fb51c0369 h1:9m9A/FM7lYvEYDs6+xjpEnBvPSVGTK/VJwJF5b/Xu8A=
+github.com/openctemio/ctis v1.2.1-0.20261005175905-762fb51c0369/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
 github.com/pjbgf/sha1cd v0.6.0 h1:3WJ8Wz8gvDz29quX1OcEmkAlUg9diU4GxJHqs0/XiwU=
 github.com/pjbgf/sha1cd v0.6.0/go.mod h1:lhpGlyHLpQZoxMv8HcgXvZEhcGs0PG/vsZnEJ7H0iCM=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=

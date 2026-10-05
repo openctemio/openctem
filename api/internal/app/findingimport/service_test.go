@@ -198,7 +198,7 @@ func TestImportFile_RealFixtures(t *testing.T) {
 	n := 0
 	for _, p := range inputs {
 		base := filepath.Base(p)
-		if strings.HasSuffix(base, ".golden.json") || strings.HasSuffix(base, ".result.json") || strings.HasSuffix(base, ".kb.xml") {
+		if strings.HasSuffix(base, ".golden.json") || strings.HasSuffix(base, ".result.json") || strings.HasSuffix(base, ".kb.xml") || strings.HasSuffix(base, ".options.json") || strings.HasSuffix(base, ".legacy.json") {
 			continue
 		}
 		n++
