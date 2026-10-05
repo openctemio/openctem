@@ -43,7 +43,7 @@ REVOKE   Status = revoked  → auth short-circuits immediately        [shipped]
 | Admin hard rotation | `POST /agents/{id}/regenerate-key` (JWT, `AgentsWrite`) | old key dies immediately; tenant-scoped |
 | **Agent self-renew** (Phase 1a) | `POST /api/v2/sensor/keys` (sensor key auth; the v1 `/api/v1/agent/renew` was retired 2026-10-05) → `AgentService.RenewAPIKey` | agent rotates its **own** key; works for tenant **and** platform agents; TOCTOU-safe (re-reads status by id) |
 | **Key expiry** (Phase 1b) | `agents.key_expires_at` (migration `000185`), `Agent.IsKeyExpired()`, enforced in `AuthenticateByAPIKey` | **NULL = never expires** (default + all legacy rows) |
-| Configurable key TTL | `AGENT_KEY_TTL` env → `AgentService.SetKeyTTL` | **default `0` = disabled**; only self-renew honors it |
+| Configurable key TTL | `SENSOR_KEY_TTL` env → `AgentService.SetKeyTTL` | **default `0` = disabled**; only self-renew honors it |
 | **Rotation overlap** (Phase 3) | `AgentAPIKeyRepository` over the `agent_api_keys` table; auth accepts the inline key **or** an active/valid key row | self-renew under a TTL issues the new key as a row; the key the sensor renewed **with** (inline or row) and every other key it still held stop after `SENSOR_KEY_RENEW_GRACE` (default 15 min), so a renewal leaves one long-lived key (see *Renewal retires the presented key*); per-key `use_count`/`last_used` audit |
 | Agent auto-renew (Phase 2, SDK) | `sdk-go` `KeyRenewManager` + agent `-key-autorenew` flag | renews at ~½ TTL, swaps both clients, persists to the creds file; *pending the sdk-go v0.5.0 release |
 
@@ -103,9 +103,9 @@ long-lived key: "older than the new row" means the newer row is never capped by
 the older renewal. `SENSOR_KEY_RENEW_GRACE=0` retires the presented key at once
 (in-flight requests made with it then fail).
 
-### Enabling short-lived credentials (`AGENT_KEY_TTL`)
+### Enabling short-lived credentials (`SENSOR_KEY_TTL`)
 
-Set e.g. `AGENT_KEY_TTL=24h`. Then every call to `/api/v2/sensor/keys` issues a
+Set e.g. `SENSOR_KEY_TTL=24h`. Then every call to `/api/v2/sensor/keys` issues a
 key that expires in 24h, and the renew response includes `expires_at` so the
 agent can schedule its next renewal. With the variable **unset (the default),
 renewed keys never expire** and behavior is identical to before Phase 1b.

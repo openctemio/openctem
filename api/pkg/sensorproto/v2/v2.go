@@ -1,9 +1,8 @@
 // Package v2 is the wire vocabulary of sensor protocol v2 results ingest
 // (RFC-026, docs/rfcs/RFC-026-sensor-results-ingest.md).
 //
-// It is the sibling of pkg/sensorproto/legacyv1 and the only place a v2 wire
-// string is defined: paths, media types, header names, problem types, the
-// status resource and the hello document. Handlers, middleware and the ingest
+// It is the only place a v2 wire string is defined: paths, media types,
+// header names, problem types, the status resource and the hello document. Handlers, middleware and the ingest
 // service import these instead of spelling the strings themselves, and the
 // golden files under testdata pin the bytes. Changing a golden file is a
 // protocol change and is reviewed as one.

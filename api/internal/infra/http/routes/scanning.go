@@ -10,6 +10,26 @@ import (
 // tenant (see middleware.TenantConcurrencyLimiter).
 const IngestMaxConcurrentPerTenant = 8
 
+// ingestMiddlewareChain orders the ingest middlewares so the cheap rejections
+// (per-tenant rate limit, per-tenant concurrency cap) run BEFORE the body is
+// decompressed. Decompression buffers up to 100MB per request; when the limiter
+// ran after it, a throttled tenant still made the server inflate every rejected
+// body. nil limiters are skipped. Used by the CI run upload (routes/ci.go).
+func ingestMiddlewareChain(
+	rateLimiter *middleware.TelemetryRateLimiter,
+	concurrency *middleware.TenantConcurrencyLimiter,
+	bodyLimit, decompress Middleware,
+) []Middleware {
+	chain := make([]Middleware, 0, 4)
+	if rateLimiter != nil {
+		chain = append(chain, rateLimiter.Middleware())
+	}
+	if concurrency != nil {
+		chain = append(chain, concurrency.Middleware())
+	}
+	return append(chain, bodyLimit, decompress)
+}
+
 // registerCommandRoutes registers command management endpoints.
 // Commands are server-side instructions sent to sensors.
 func registerCommandRoutes(

@@ -44,6 +44,11 @@ var gateFuncs = map[string]bool{
 // sensitive change — it declares a route public/self/machine-scoped.
 var routeAuthzAllowlist = map[string]string{
 	"GET /api/v1/version": "any signed-in user (authMiddleware): build identity for Help > About; no tenant data, and kept off the public /health",
+	// CI runner identity (RFC-051): machine credentials, not permissions.
+	"POST /api/v1/ci/oidc/exchange":           "public: a CI provider's signed OIDC token is the credential, verified against the tenant's trust configurations; per-IP rate limit; every refusal is the same 401",
+	"POST /api/v1/ci/runs/{id}/results":       "CI run token (AuthenticateRun): 15-minute token bound to one run on one repository asset; tenant from the token",
+	"POST /api/v1/ci/runs/{id}/baseline-diff": "CI run token (AuthenticateRun): the run's repository only",
+	"POST /api/v1/ci/runs/{id}/evaluate":      "CI run token (AuthenticateRun): the run's own verdict",
 }
 
 // allowlistPrefixes: groups of routes authenticated by a non-permission gate
