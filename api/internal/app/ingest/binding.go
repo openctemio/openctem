@@ -37,6 +37,11 @@ const (
 	// BindingTrusted: not a sensor report: a tenant upload, a platform
 	// import, or a quarantined report a person accepted.
 	BindingTrusted
+	// BindingCIRun: a report uploaded with a CI run's token (RFC-051). The
+	// run was admitted by the tenant's trust configuration for exactly one
+	// repository; the report may change that repository asset and nothing
+	// else, and never resolves findings on a source's say-so.
+	BindingCIRun
 )
 
 // Binding is the authority behind a report.
@@ -53,6 +58,8 @@ type Binding struct {
 	// StepRunID is the pipeline step run the bound command belongs to (nil
 	// for a command outside a pipeline): the scan run its results came from.
 	StepRunID *shared.ID
+	// CIRunID is the CI run the report belongs to (BindingCIRun only).
+	CIRunID *shared.ID
 }
 
 // CommandBinding binds a report to cmd, which the caller has checked is
@@ -65,6 +72,12 @@ func CommandBinding(cmd *command.Command) Binding {
 // TrustedBinding is the binding of a server-side ingest.
 func TrustedBinding() Binding { return Binding{Kind: BindingTrusted} }
 
+// CIRunBinding binds a report to a CI run on one repository (RFC-051).
+func CIRunBinding(runID shared.ID, repository string) Binding {
+	id := runID
+	return Binding{Kind: BindingCIRun, CIRunID: &id, Targets: []string{repository}}
+}
+
 // String is the binding's audit and response label.
 func (b Binding) String() string {
 	switch b.Kind {
@@ -72,6 +85,8 @@ func (b Binding) String() string {
 		return "command"
 	case BindingTrusted:
 		return "trusted"
+	case BindingCIRun:
+		return "ci_run"
 	default:
 		return "unsolicited"
 	}
@@ -327,6 +342,8 @@ func newAlterScope(b Binding) *alterScope {
 	case BindingCommand:
 		s.targets = newCoverTargets(b.Targets)
 		s.commandBound = true
+	case BindingCIRun:
+		s.targets = newCoverTargets(b.Targets)
 	}
 	return s
 }
