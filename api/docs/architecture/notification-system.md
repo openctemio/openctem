@@ -523,3 +523,21 @@ All related code (repository, service methods, API endpoints) has been removed.
 
 - [Clean Architecture](./clean-arch.md)
 - [Security Best Practices](../SECURITY.md)
+
+## Integration safety rules (all categories)
+
+- **Request metadata is an allowlist.** A create or update may only set the
+  non-secret keys `hec_url`, `index`, `sourcetype` and `channel_name` (string,
+  at most 2048 characters). Every other metadata key is written by the server
+  (chat ids, SMTP settings, sync state), and a request that names one is
+  refused with 400. Secrets go in the encrypted credentials field, never in
+  metadata (`internal/app/integration/hardening.go`).
+- **Disabled stays disabled.** A test, a sync or a read (listing an SCM
+  integration's repositories) never moves a disabled integration back to
+  connected or error; only `POST /integrations/{id}/enable` does. Listing the
+  repositories of a disabled SCM integration is refused without calling the
+  provider.
+- **Credentials do not follow a new host.** Changing `base_url` to another
+  scheme, host or port while credentials are stored requires new credentials
+  in the same request (400 otherwise), so a manager cannot point Jira or SCM at
+  their own server and receive the stored token.

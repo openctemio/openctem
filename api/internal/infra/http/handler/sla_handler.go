@@ -33,23 +33,29 @@ func NewSLAHandler(svc *sla.Service, v *validator.Validator, log *logger.Logger)
 
 // SLAPolicyResponse represents an SLA policy in API responses.
 type SLAPolicyResponse struct {
-	ID                  string         `json:"id"`
-	TenantID            string         `json:"tenant_id"`
-	AssetID             string         `json:"asset_id,omitempty"`
-	Name                string         `json:"name"`
-	Description         string         `json:"description,omitempty"`
-	IsDefault           bool           `json:"is_default"`
-	CriticalDays        int            `json:"critical_days"`
-	HighDays            int            `json:"high_days"`
-	MediumDays          int            `json:"medium_days"`
-	LowDays             int            `json:"low_days"`
-	InfoDays            int            `json:"info_days"`
-	WarningThresholdPct int            `json:"warning_threshold_pct"`
-	EscalationEnabled   bool           `json:"escalation_enabled"`
-	EscalationConfig    map[string]any `json:"escalation_config,omitempty"`
-	IsActive            bool           `json:"is_active"`
-	CreatedAt           time.Time      `json:"created_at"`
-	UpdatedAt           time.Time      `json:"updated_at"`
+	ID           string `json:"id"`
+	TenantID     string `json:"tenant_id"`
+	AssetID      string `json:"asset_id,omitempty"`
+	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
+	IsDefault    bool   `json:"is_default"`
+	CriticalDays int    `json:"critical_days"`
+	HighDays     int    `json:"high_days"`
+	MediumDays   int    `json:"medium_days"`
+	LowDays      int    `json:"low_days"`
+	InfoDays     int    `json:"info_days"`
+	// P0Days..P3Days are the remediation windows per CTEM priority class.
+	// They take precedence over the severity windows for every finding that
+	// has a priority class.
+	P0Days              int       `json:"p0_days"`
+	P1Days              int       `json:"p1_days"`
+	P2Days              int       `json:"p2_days"`
+	P3Days              int       `json:"p3_days"`
+	WarningThresholdPct int       `json:"warning_threshold_pct"`
+	EscalationEnabled   bool      `json:"escalation_enabled"`
+	IsActive            bool      `json:"is_active"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // toSLAPolicyResponse converts a domain policy to API response.
@@ -65,9 +71,12 @@ func toSLAPolicyResponse(p *sladom.Policy) SLAPolicyResponse {
 		MediumDays:          p.MediumDays(),
 		LowDays:             p.LowDays(),
 		InfoDays:            p.InfoDays(),
+		P0Days:              p.P0Days(),
+		P1Days:              p.P1Days(),
+		P2Days:              p.P2Days(),
+		P3Days:              p.P3Days(),
 		WarningThresholdPct: p.WarningThresholdPct(),
 		EscalationEnabled:   p.EscalationEnabled(),
-		EscalationConfig:    p.EscalationConfig(),
 		IsActive:            p.IsActive(),
 		CreatedAt:           p.CreatedAt(),
 		UpdatedAt:           p.UpdatedAt(),
@@ -80,34 +89,41 @@ func toSLAPolicyResponse(p *sladom.Policy) SLAPolicyResponse {
 
 // CreateSLAPolicyRequest represents the request to create an SLA policy.
 type CreateSLAPolicyRequest struct {
-	AssetID             string         `json:"asset_id" validate:"omitempty,uuid"`
-	Name                string         `json:"name" validate:"required,min=1,max=100"`
-	Description         string         `json:"description" validate:"max=500"`
-	IsDefault           bool           `json:"is_default"`
-	CriticalDays        int            `json:"critical_days" validate:"required,min=1,max=365"`
-	HighDays            int            `json:"high_days" validate:"required,min=1,max=365"`
-	MediumDays          int            `json:"medium_days" validate:"required,min=1,max=365"`
-	LowDays             int            `json:"low_days" validate:"required,min=1,max=365"`
-	InfoDays            int            `json:"info_days" validate:"required,min=1,max=365"`
-	WarningThresholdPct int            `json:"warning_threshold_pct" validate:"min=0,max=100"`
-	EscalationEnabled   bool           `json:"escalation_enabled"`
-	EscalationConfig    map[string]any `json:"escalation_config"`
+	AssetID      string `json:"asset_id" validate:"omitempty,uuid"`
+	Name         string `json:"name" validate:"required,min=1,max=100"`
+	Description  string `json:"description" validate:"max=500"`
+	IsDefault    bool   `json:"is_default"`
+	CriticalDays int    `json:"critical_days" validate:"required,min=1,max=365"`
+	HighDays     int    `json:"high_days" validate:"required,min=1,max=365"`
+	MediumDays   int    `json:"medium_days" validate:"required,min=1,max=365"`
+	LowDays      int    `json:"low_days" validate:"required,min=1,max=365"`
+	InfoDays     int    `json:"info_days" validate:"required,min=1,max=365"`
+	// P0Days..P3Days are optional; an omitted class keeps its default window.
+	P0Days              *int  `json:"p0_days" validate:"omitempty,min=1,max=365"`
+	P1Days              *int  `json:"p1_days" validate:"omitempty,min=1,max=365"`
+	P2Days              *int  `json:"p2_days" validate:"omitempty,min=1,max=365"`
+	P3Days              *int  `json:"p3_days" validate:"omitempty,min=1,max=365"`
+	WarningThresholdPct int   `json:"warning_threshold_pct" validate:"min=0,max=100"`
+	EscalationEnabled   *bool `json:"escalation_enabled"`
 }
 
 // UpdateSLAPolicyRequest represents the request to update an SLA policy.
 type UpdateSLAPolicyRequest struct {
-	Name                *string        `json:"name" validate:"omitempty,min=1,max=100"`
-	Description         *string        `json:"description" validate:"omitempty,max=500"`
-	IsDefault           *bool          `json:"is_default"`
-	CriticalDays        *int           `json:"critical_days" validate:"omitempty,min=1,max=365"`
-	HighDays            *int           `json:"high_days" validate:"omitempty,min=1,max=365"`
-	MediumDays          *int           `json:"medium_days" validate:"omitempty,min=1,max=365"`
-	LowDays             *int           `json:"low_days" validate:"omitempty,min=1,max=365"`
-	InfoDays            *int           `json:"info_days" validate:"omitempty,min=1,max=365"`
-	WarningThresholdPct *int           `json:"warning_threshold_pct" validate:"omitempty,min=0,max=100"`
-	EscalationEnabled   *bool          `json:"escalation_enabled"`
-	EscalationConfig    map[string]any `json:"escalation_config"`
-	IsActive            *bool          `json:"is_active"`
+	Name                *string `json:"name" validate:"omitempty,min=1,max=100"`
+	Description         *string `json:"description" validate:"omitempty,max=500"`
+	IsDefault           *bool   `json:"is_default"`
+	CriticalDays        *int    `json:"critical_days" validate:"omitempty,min=1,max=365"`
+	HighDays            *int    `json:"high_days" validate:"omitempty,min=1,max=365"`
+	MediumDays          *int    `json:"medium_days" validate:"omitempty,min=1,max=365"`
+	LowDays             *int    `json:"low_days" validate:"omitempty,min=1,max=365"`
+	InfoDays            *int    `json:"info_days" validate:"omitempty,min=1,max=365"`
+	P0Days              *int    `json:"p0_days" validate:"omitempty,min=1,max=365"`
+	P1Days              *int    `json:"p1_days" validate:"omitempty,min=1,max=365"`
+	P2Days              *int    `json:"p2_days" validate:"omitempty,min=1,max=365"`
+	P3Days              *int    `json:"p3_days" validate:"omitempty,min=1,max=365"`
+	WarningThresholdPct *int    `json:"warning_threshold_pct" validate:"omitempty,min=0,max=100"`
+	EscalationEnabled   *bool   `json:"escalation_enabled"`
+	IsActive            *bool   `json:"is_active"`
 }
 
 // handleValidationError converts validation errors to API errors.
@@ -219,7 +235,10 @@ func (h *SLAHandler) Create(w http.ResponseWriter, r *http.Request) {
 		InfoDays:            req.InfoDays,
 		WarningThresholdPct: req.WarningThresholdPct,
 		EscalationEnabled:   req.EscalationEnabled,
-		EscalationConfig:    req.EscalationConfig,
+		P0Days:              req.P0Days,
+		P1Days:              req.P1Days,
+		P2Days:              req.P2Days,
+		P3Days:              req.P3Days,
 	}
 
 	p, err := h.service.CreateSLAPolicy(r.Context(), input)
@@ -308,8 +327,11 @@ func (h *SLAHandler) Update(w http.ResponseWriter, r *http.Request) {
 		InfoDays:            req.InfoDays,
 		WarningThresholdPct: req.WarningThresholdPct,
 		EscalationEnabled:   req.EscalationEnabled,
-		EscalationConfig:    req.EscalationConfig,
 		IsActive:            req.IsActive,
+		P0Days:              req.P0Days,
+		P1Days:              req.P1Days,
+		P2Days:              req.P2Days,
+		P3Days:              req.P3Days,
 	}
 
 	p, err := h.service.UpdateSLAPolicy(r.Context(), policyID, tenantID, input)
