@@ -88,3 +88,11 @@ hand-rolled.
 | Federated-login seam | `internal/app/auth/sso.go` (`SSOService.CompleteFederatedLogin`) |
 | HTTP | `internal/infra/http/handler/saml_handler.go`, routes in `routes/auth.go` |
 | Migration | `000182_saml_providers` |
+
+## Default role of just-in-time members
+
+An SSO provider (OIDC or SAML) and the `SSO_ENTRA_DEFAULT_ROLE` fallback may
+only provision **member** or **viewer** (owner decision B18). `admin` is
+refused when the provider is saved, and a provider stored before this rule
+with `admin` provisions viewers: an IdP misconfiguration must not mint
+administrators. Admins are promoted explicitly.

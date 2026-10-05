@@ -269,9 +269,9 @@ clear inside a job.
 | G8 | Scopes on keys are not enforced (RFC-014 Phase 4) | §3.1 |
 | G9 | The HMAC pepper is the data-encryption key (key reuse across purposes) | §3.1 |
 
-## 4. What the industry does
+## 4. Prior art in machine identity
 
-Only what informed a decision. All links are the vendors' own documentation.
+Only what informed a decision. All links are the projects' own documentation.
 
 | System | Enrollment credential | Machine credential | Rotation / revocation | What we take |
 |---|---|---|---|---|
@@ -283,29 +283,22 @@ Only what informed a decision. All links are the vendors' own documentation.
 | **Kubernetes service accounts** | — | projected token: audience-bound, default 1 h (min 600 s), bound to the pod's UID, refreshed at 80 % of lifetime; issuer discovery serves `/.well-known/openid-configuration` + JWKS | invalid once the pod is gone | the `kubernetes` join method (E11) |
 | **SPIFFE / SPIRE** | node attestors: `join_token` (single-use), `aws_iid`, `azure_msi`, `gcp_iit`, `k8s_psat`, `tpm_devid`, `x509pop`, `sshpop` | X.509-SVID, default TTL 1 h | automatic | attestation-based identity; federation hook later |
 | **Vault AppRole / Nomad** | `role_id` + `secret_id` (num-uses, TTL, `secret_id_bound_cidrs`); response wrapping delivers a secret in a single-use wrapping token, so interception is detectable | Vault token (CIDR-bindable); Nomad signs a per-task workload-identity JWT | `secret-id/destroy` | single-use delivery, CIDR binding as an optional extra |
-| **Elastic Fleet** | enrollment token **per agent policy** | after enrollment, Fleet Server issues the agent its own least-privilege API key | revoking an enrollment token leaves enrolled agents working; unenroll invalidates the agent's key | policy-scoped tokens (E2) |
-| **Tenable** | one linking key per instance for all sensor types; `nessuscli agent link --key --groups --ca-path` | after linking, the sensor uses unique credentials | regenerating the linking key does not affect linked sensors | link-then-own-credential; groups at link time; CA pin in the command |
-| **CrowdStrike Falcon** | customer ID (CID) plus an optional provisioning token | per-sensor | — | the CID alone is not a secret; the provisioning token is the gate |
-| **Datadog** | org API key | agent pulls Remote Configuration, which is signed and validated by the agent (Uptane/TUF in the agent source) | — | signed control-plane messages (RFC-023 P5/P6) |
-| **Wiz sensor** | Helm chart takes a service-account client id + token | — | — | the shared-credential model this RFC moves away from |
 
-Unverified (vendor docs behind a login or silent): the exact GitHub runner
-token exchange, the GitHub OIDC token TTL, whether CrowdStrike can make
-the provisioning token mandatory tenant-wide, Wiz Outpost/Broker auth.
-None of them changes a decision.
+Unverified (docs silent): the exact GitHub runner token exchange and the
+GitHub OIDC token TTL. Neither changes a decision.
 
 ### 4.1 Patterns extracted
 
 | Pattern | Who | Taken here |
 |---|---|---|
-| **Enroll, don't pre-create.** A short-lived or use-limited *enrollment* secret, exchanged once for a per-machine identity; the machine registers itself with its own facts | GitHub runners, Elastic Fleet, Tailscale, Teleport, kubelet bootstrap, Tenable linking key | E1, E2 |
+| **Enroll, don't pre-create.** A short-lived or use-limited *enrollment* secret, exchanged once for a per-machine identity; the machine registers itself with its own facts | GitHub runners, Tailscale, Teleport, kubelet bootstrap | E1, E2 |
 | **Approval queue** for joins that are not pre-authorised; pre-approval as a token property | Tailscale device approval / pre-approved keys, kubelet CSR approval, RFC-023 D10 | E3 |
 | **Machine-generated key, private key never leaves the host** | GitHub runner (RSA key generated at config time, mode 600), kubelet (CSR), SPIRE, Tailscale node key | E4 |
-| **Proof of possession on every request**, not a bearer secret | RFC 9421, DPoP (RFC 9449), mTLS-bound tokens (RFC 8705), Elastic Fleet / Datadog signed messages | E5 |
+| **Proof of possession on every request**, not a bearer secret | RFC 9421, DPoP (RFC 9449), mTLS-bound tokens (RFC 8705), TUF/Uptane-signed remote configuration | E5 |
 | **Short-lived, auto-rotated credentials; revocation by short TTL or per-request check** | kubelet rotation, SPIFFE SVIDs (~1 h), Teleport certs, Tailscale node-key expiry | E7 |
 | **Keyless / delegated joining** with an identity the workload already has | Teleport join methods, SPIRE node attestors, Vault/Nomad workload identity, GitHub OIDC federation | E11 |
 | **Ephemeral identities** auto-removed when gone | GitHub `--ephemeral` / JIT runners, Tailscale ephemeral nodes | E12 |
-| **Tags / policy assigned by the enrollment credential**, not chosen by the joiner | Tailscale tagged keys, Elastic Fleet policy-scoped tokens, Tenable agent groups, Teleport token roles | E2 |
+| **Tags / policy assigned by the enrollment credential**, not chosen by the joiner | Tailscale tagged keys, Teleport token roles | E2 |
 | **Claims from the machine are input, not authority** | every one of the above: a node's labels do not grant it rights (kubelet `NodeRestriction`) | E8, E9 |
 
 ## 5. Threat model
@@ -792,7 +785,7 @@ a log-redaction comment mention it), so no SDK or sensor release is needed for
 
 ## 11. Sources
 
-Vendors and projects (checked 2026-10-02):
+Projects (checked 2026-10-02):
 
 - GitHub self-hosted runners REST API (registration token, JIT config): https://docs.github.com/en/rest/actions/self-hosted-runners
 - GitHub ephemeral runners: https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/autoscaling-with-self-hosted-runners
@@ -803,11 +796,6 @@ Vendors and projects (checked 2026-10-02):
 - Kubernetes bootstrap tokens: https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/ ; kubelet TLS bootstrapping: https://kubernetes.io/docs/reference/access-authn-authz/kubelet-tls-bootstrapping/ ; projected tokens: https://kubernetes.io/docs/concepts/storage/projected-volumes/ ; bound tokens: https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/ ; issuer discovery: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
 - SPIRE server (attestors, TTLs): https://spiffe.io/docs/latest/deploying/spire_server/ ; concepts: https://spiffe.io/docs/latest/spire-about/spire-concepts/
 - Vault AppRole: https://developer.hashicorp.com/vault/api-docs/auth/approle ; response wrapping: https://developer.hashicorp.com/vault/docs/concepts/response-wrapping ; Nomad workload identity: https://developer.hashicorp.com/nomad/docs/concepts/workload-identity
-- Elastic Fleet enrollment tokens: https://www.elastic.co/guide/en/fleet/current/fleet-enrollment-tokens.html ; unenroll: https://www.elastic.co/guide/en/fleet/current/unenroll-elastic-agent.html
-- CrowdStrike installer: https://developer.crowdstrike.com/falcon-sensor/scripts/powershell/install/
-- Datadog Remote Configuration: https://docs.datadoghq.com/remote_configuration/ ; Uptane client: https://pkg.go.dev/github.com/DataDog/datadog-agent/pkg/config/remote/uptane
-- Wiz sensor chart: https://github.com/wiz-sec/charts/blob/master/wiz-sensor/values.yaml
-- Tenable linking key: https://docs.tenable.com/vulnerability-management/Content/Settings/Sensors/RegenerateLinkingKey.htm ; `nessuscli agent link`: https://docs.tenable.com/nessus/command-line-reference/Content/LocalAgentsCommands.htm
 - Sigstore cosign verification: https://docs.sigstore.dev/cosign/verifying/verify/ ; SLSA provenance: https://slsa.dev/spec/v1.0/provenance
 
 Standards:

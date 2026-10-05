@@ -23,3 +23,6 @@ CLAUDE.md — read the one for the directory you are changing:
 - CI, required checks and images: `api/docs/development/ci-cd.md`; repo map:
   `api/docs/development/repositories.md`.
 - No AI attribution lines in commits or PRs (enforced by `.githooks/commit-msg`).
+- Changelog: never edit `api/CHANGELOG.md` for a change; add one file
+  `api/changelog.d/<short-slug>.md` (format in `api/changelog.d/README.md`).
+  API CI refuses an entry under Unreleased and any committed conflict marker.
