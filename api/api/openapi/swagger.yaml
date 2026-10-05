@@ -12284,6 +12284,9 @@ definitions:
           $ref: '#/definitions/internal_infra_http_handler.ScanStageImplementationResponse'
         type: array
       inputs:
+        description: |-
+          Inputs and Outputs are stored type labels: "type" or
+          "type/sub_type" (service/http is an HTTP service).
         items:
           type: string
         type: array

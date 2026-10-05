@@ -34,8 +34,11 @@ platform data: a tenant, a sensor or a report cannot widen it.
 - **Tiers.** T0 sends no traffic to the target beyond DNS (or none at all). T1
   is non-intrusive active checking. T2 is intrusive and needs an approver and
   a verified seed (RFC-036 O3); the P0 router never plans a T2 stage.
-- **Types** are asset-registry types (`configs/asset-types.yaml`). Matching
-  compares canonical pairs, so `http_service` matches a stored `service/http`.
+- **Types** are stored asset-registry pairs (`configs/asset-types.yaml`); the
+  table uses the input names for readability. The catalog names
+  `service/http` (input name `http_service`), `service/open_port`,
+  `service/discovered_url`, `application/website` and `application/api`;
+  matching compares canonical pairs, so a report's `http_service` matches.
 - **Fan-out.** Each stage has `max_fanout` (at most the run cap of 10 000) and a
   per-parent cap (5 000 by default: a domain with more subdomains than that is
   a suspected wildcard). An engine may lower a cap, never raise it.

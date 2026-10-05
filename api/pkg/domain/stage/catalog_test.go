@@ -53,9 +53,15 @@ func TestCatalog_EntriesAreWellFormed(t *testing.T) {
 // are real registry types, so a chain can be type-checked).
 func TestCatalog_TypesAreRegistryTypes(t *testing.T) {
 	for _, s := range All() {
-		for _, typ := range append(slices.Clone(s.Inputs), s.Outputs...) {
-			if _, ok := asset.LookupType(typ); !ok {
-				t.Errorf("%s: %q is not a registry type", s.Key, typ)
+		for _, ref := range append(slices.Clone(s.Inputs), s.Outputs...) {
+			if _, ok := asset.LookupType(ref.Type); !ok {
+				t.Errorf("%s: %q is not a registry type", s.Key, ref.Type)
+			}
+			if c := asset.CanonicalPair(ref.Type, ref.SubType); c != ref {
+				t.Errorf("%s: %s is an input name; the catalog names stored pairs (%s)", s.Key, Label(ref), Label(c))
+			}
+			if ref.SubType != "" && !asset.IsValidSubType(ref.Type, ref.SubType) {
+				t.Errorf("%s: %s is not a sub-type of %s", s.Key, ref.SubType, ref.Type)
 			}
 		}
 	}
@@ -113,8 +119,15 @@ func TestStage_TypeMatchingUsesCanonicalPairs(t *testing.T) {
 	if !crawl.Accepts(asset.TypeRef{Type: "service", SubType: "http"}) {
 		t.Error("service/http is not accepted as http_service")
 	}
-	if !crawl.Accepts(asset.TypeRef{Type: asset.AssetTypeHTTPService}) {
-		t.Error("http_service is not accepted")
+	if !crawl.Accepts(asset.TypeRef{Type: "http_service"}) {
+		t.Error("the input name http_service is not accepted")
+	}
+	if !crawl.Accepts(asset.TypeRef{Type: "discovered_url"}) {
+		t.Error("the input name discovered_url is not accepted")
+	}
+	ports, _ := Lookup(ScanPorts)
+	if !ports.Accepts(asset.TypeRef{Type: asset.AssetTypeIPAddress, SubType: "v4"}) {
+		t.Error("a type without a sub-type in the catalog does not match its sub-types")
 	}
 	if crawl.Accepts(asset.TypeRef{Type: "service", SubType: "open_port"}) {
 		t.Error("an open port is accepted by the crawler")
@@ -138,6 +151,9 @@ func TestOutputTypes(t *testing.T) {
 	want := []string{"domain", "ip_address", "subdomain"}
 	if !slices.Equal(got, want) {
 		t.Errorf("dnsx outputs = %v, want %v", got, want)
+	}
+	if got := OutputTypes("httpx"); !slices.Equal(got, []string{"certificate", "ip_address", "service/http"}) {
+		t.Errorf("httpx outputs = %v", got)
 	}
 	if OutputTypes("nuclei") != nil {
 		t.Errorf("nuclei creates assets: %v", OutputTypes("nuclei"))
@@ -215,10 +231,10 @@ func TestDefaultToolAndTools(t *testing.T) {
 // The catalog cannot be changed through what All or Lookup return.
 func TestCatalog_ReturnsCopies(t *testing.T) {
 	a := All()
-	a[0].Outputs[0] = asset.AssetTypeRepository
+	a[0].Outputs[0] = asset.TypeRef{Type: "repository"}
 	a[0].Implementations[0].Tool = "evil"
 	s, _ := Lookup(a[0].Key)
-	if s.Outputs[0] == asset.AssetTypeRepository || s.Implementations[0].Tool == "evil" {
+	if s.Outputs[0].Type == "repository" || s.Implementations[0].Tool == "evil" {
 		t.Fatal("the catalog was mutated through All")
 	}
 }
