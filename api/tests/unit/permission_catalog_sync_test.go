@@ -50,7 +50,7 @@ var permRenameMigrations = []string{
 var permRemoveMigrations = []string{
 	"000670_remove_group_permission_sets.up.sql",   // team:permission_sets:* (permissions come only from roles)
 	"000772_remove_meaningless_permissions.up.sql", // billing/policies/compliance permissions that gate nothing
-	"001012_remove_outbound_webhooks.up.sql",       // integrations:webhooks:* (outbound webhooks never delivered; owner decision B9)
+	"001016_remove_outbound_webhooks.up.sql",       // integrations:webhooks:* (outbound webhooks never delivered; owner decision B9)
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)

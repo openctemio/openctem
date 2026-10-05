@@ -12,7 +12,7 @@ import (
 // no delivery worker, so nothing was ever sent (owner decision B9). Its API,
 // permissions and module toggle are removed; this keeps them from coming back
 // without a sender. The route side is held by the route baselines
-// (undocumented-routes.txt) and the permission side by migration 001012.
+// (undocumented-routes.txt) and the permission side by migration 001016.
 func TestOutboundWebhooks_StayRemoved(t *testing.T) {
 	for _, p := range permission.AllPermissions() {
 		if strings.HasPrefix(string(p), "integrations:webhooks:") {
