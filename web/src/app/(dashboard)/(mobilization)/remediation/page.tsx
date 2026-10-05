@@ -501,7 +501,7 @@ export default function RemediationPage() {
     setViewTask((prev) => (prev ? (tasks.find((t) => t.id === prev.id) ?? prev) : prev))
   }, [tasks])
 
-  // Inline field edit from the drawer (Jira-style): PATCH one field, refresh.
+  // Inline field edit from the drawer: PATCH one field, refresh.
   const handleInlinePatch = useCallback(
     async (task: RemediationTask, body: Record<string, unknown>) => {
       try {
@@ -1524,7 +1524,7 @@ function TaskDetailSheet({
                 className="h-8 text-base font-semibold"
               />
             ) : (
-              // Click to rename (inline, Jira-style).
+              // Click to rename inline.
               <span
                 className="-mx-1 cursor-text rounded px-1 hover:bg-muted/50"
                 title="Click to rename"
@@ -1645,7 +1645,7 @@ function TaskDetailSheet({
             <DetailSection title="Assignment">
               <DetailFieldGrid>
                 <DetailField label="Assignee">
-                  {/* Inline edit (Jira-style): pick a member → PATCH assigned_to. */}
+                  {/* Inline edit: pick a member → PATCH assigned_to. */}
                   <AssigneeSelect
                     variant="ghost"
                     showFullName
