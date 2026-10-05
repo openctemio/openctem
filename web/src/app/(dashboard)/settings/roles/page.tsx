@@ -234,7 +234,7 @@ export default function RolesPage() {
                 {
                   label: 'Edit role',
                   icon: Pencil,
-                  route: 'PUT /api/v1/roles/{roleId}',
+                  route: 'PUT /api/v1/roles/{roleId}' as const,
                   onClick: () => setEditRole(role),
                 },
                 {
@@ -242,7 +242,7 @@ export default function RolesPage() {
                   icon: Trash2,
                   destructive: true,
                   separatorBefore: true,
-                  route: 'DELETE /api/v1/roles/{roleId}',
+                  route: 'DELETE /api/v1/roles/{roleId}' as const,
                   onClick: () => {
                     setRoleToDelete(role)
                     setDeleteDialogOpen(true)
