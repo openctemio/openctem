@@ -85,8 +85,8 @@ func (s *RuleService) SetBroadcaster(b RuleBroadcaster) {
 type RuleEvaluatorFunc func(ctx context.Context, tenantID, assetID shared.ID, tags []string, assetGroupIDs []shared.ID) error
 
 // RuleGroupReconcilerFunc is the callback type for asset group membership changes.
-// Called when assets are added/removed from an asset group.
-type RuleGroupReconcilerFunc func(ctx context.Context, assetGroupID shared.ID)
+// Called when assets are added/removed from an asset group of tenantID.
+type RuleGroupReconcilerFunc func(ctx context.Context, tenantID, assetGroupID shared.ID)
 
 // CreateRuleInput represents the input for creating a scope rule.
 type CreateRuleInput struct {
@@ -333,15 +333,19 @@ func (s *RuleService) UpdateRule(ctx context.Context, tenantID, ruleID string, i
 		return nil, fmt.Errorf("failed to update scope rule: %w", err)
 	}
 
-	// Only re-reconcile if matching criteria changed and rule is active
-	if matchingChanged && rule.IsActive() {
-		rr, err := s.reconcileRule(ctx, rule)
+	// When the matching criteria or the activation changed, reconcile the
+	// whole group: it adds the new matches AND removes the auto-assignments no
+	// active rule matches any more (a narrowed or deactivated rule used to
+	// keep everything it had granted, research 21b M-2). A deactivation also
+	// drops the rule's rows in the database (migration 001051).
+	if matchingChanged {
+		rr, err := s.ReconcileGroup(ctx, tid.String(), rule.GroupID().String())
 		if err != nil {
 			s.logger.Warn("reconciliation after update failed", "rule_id", rule.ID().String(), "error", err)
-		} else if rr.added > 0 {
-			s.logger.Info("scope rule updated and reconciled", "rule_id", ruleID, "assets_added", rr.added)
+		} else {
+			s.logger.Info("scope rule updated and reconciled", "rule_id", rule.ID().String(),
+				"assets_added", rr.AssetsAdded, "assets_removed", rr.AssetsRemoved)
 		}
-		s.refreshAccessIncremental(ctx, rule.GroupID(), rule.OwnershipType(), rr.newlyAddedIDs)
 	}
 
 	return rule, nil
@@ -906,11 +910,17 @@ func (s *RuleService) validateAssetGroupOwnership(ctx context.Context, tenantID 
 	return s.agValidator.ValidateAssetGroupsBelongToTenant(ctx, tenantID, assetGroupIDs)
 }
 
-// ReconcileByAssetGroup finds all access control groups that have scope rules
-// referencing the given asset group, and reconciles each one.
-// Called when asset group membership changes (assets added/removed).
-func (s *RuleService) ReconcileByAssetGroup(ctx context.Context, assetGroupID shared.ID) {
-	groupIDs, err := s.acRepo.ListGroupsWithAssetGroupMatchRule(ctx, assetGroupID)
+// ReconcileByAssetGroup finds the access groups of tenantID that have scope
+// rules referencing the given asset group, and reconciles each one (adds new
+// matches, removes stale auto-assignments). Called when asset group
+// membership changes (assets added/removed). It used to look the rules up
+// with a zero tenant id, which matched nothing, so asset-group changes waited
+// for the 30-minute reconcile (research 21b M-3).
+func (s *RuleService) ReconcileByAssetGroup(ctx context.Context, tenantID, assetGroupID shared.ID) {
+	if tenantID.IsZero() {
+		return
+	}
+	groupIDs, err := s.acRepo.ListGroupsWithAssetGroupMatchRule(ctx, tenantID, assetGroupID)
 	if err != nil {
 		s.logger.Warn("failed to find groups referencing asset group",
 			"asset_group_id", assetGroupID.String(), "error", err)
@@ -922,12 +932,6 @@ func (s *RuleService) ReconcileByAssetGroup(ctx context.Context, assetGroupID sh
 	}
 
 	for _, gid := range groupIDs {
-		rules, err := s.acRepo.ListActiveScopeRulesByGroup(ctx, shared.ID{}, gid)
-		if err != nil || len(rules) == 0 {
-			continue
-		}
-		tenantID := rules[0].TenantID()
-
 		if _, err := s.ReconcileGroup(ctx, tenantID.String(), gid.String()); err != nil {
 			s.logger.Warn("failed to reconcile group after asset group change",
 				"group_id", gid.String(), "asset_group_id", assetGroupID.String(), "error", err)
