@@ -1820,6 +1820,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Suppression = suppression.NewService(repos.Suppression, log)
 	// Four-eyes on approvals (owner decision B16) reads who may approve.
 	s.Suppression.SetApproverDirectory(repos.Suppression)
+	// An asset-bound rule names an asset of the tenant the requester may see
+	// (RFC-050 W8, 21b M-10).
+	s.Suppression.SetAssetRefChecker(s.DataScope)
 
 	// Enforce approved suppression rules during ingest: a new finding matching an
 	// active (approved, non-expired) rule lands resolved+suppressed (out of the
