@@ -60,6 +60,10 @@ const (
 	// CodeQuarantineFull: as above, but the tenant's quarantine was full; the
 	// segment's items were rejected and not kept.
 	CodeQuarantineFull = "quarantine_full"
+	// CodePushIngestNotGranted: the segment named no command and the
+	// sensor's grant does not allow results without a job (RFC-052 §5.3);
+	// its items were rejected and not kept.
+	CodePushIngestNotGranted = "push_ingest_not_granted"
 )
 
 // Fixed item error details. Details never quote sensor bytes.
@@ -77,6 +81,8 @@ const (
 	DetailProcessingFailed = "the segment could not be processed"
 	DetailQuarantined      = "the report names no command and this sensor's role may not send results on its own: held for review, not applied"
 	DetailQuarantineFull   = "the report names no command and the results quarantine is full: not kept"
+	// DetailPushIngestNotGranted goes with CodePushIngestNotGranted.
+	DetailPushIngestNotGranted = "the report names no command and this sensor's grant does not allow results without a job: not kept"
 )
 
 // Counts are asset and finding counts on the status resource.

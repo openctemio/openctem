@@ -248,6 +248,15 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"sensor_keys": func(*schemaSeeder) map[string]any {
 		return map[string]any{"public_key": strings.Repeat("k", 32), "thumbprint": strings.Repeat("A", 43), "status": "active"}
 	},
+	// profile has a format CHECK (RFC-052 grants). The insert trigger on
+	// sensors already gave the seeded sensor its grant; replace it with one
+	// that names the seeded user (updated_by).
+	"sensor_grants": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM sensor_grants WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear trigger grants: %v", err)
+		}
+		return map[string]any{"profile": "internal-network-scanner"}
+	},
 	// type has a format CHECK, not a list of literals.
 	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
 	// Definitions (RFC-044): namespace has a format CHECK; a tenant
