@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS role_permissions_admin_only_stripped (
 );
 
 COMMENT ON TABLE role_permissions_admin_only_stripped IS
-    'Report of admin-only permissions removed from custom roles by migration 000913 (settings decision B1); read by the down migration';
+    'Report of admin-only permissions removed from custom roles by migration 000945 (settings decision B1); read by the down migration';
 
 INSERT INTO role_permissions_admin_only_stripped (role_id, tenant_id, permission_id, holders)
 SELECT rp.role_id, r.tenant_id, rp.permission_id,

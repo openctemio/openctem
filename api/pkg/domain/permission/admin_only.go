@@ -5,7 +5,7 @@ package permission
 //
 // Only the system owner and admin roles carry these. A custom role may never
 // carry them, whoever creates or edits it: the role service refuses them and a
-// database trigger (migration 000913) refuses a role_permissions row that
+// database trigger (migration 000945) refuses a role_permissions row that
 // would put one on a custom role.
 //
 // Each of them hands out, invalidates or reconfigures a sensor credential or
