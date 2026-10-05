@@ -67,11 +67,11 @@
 | Option | What it means | Verdict |
 |---|---|---|
 | **A** One endpoint per format (v1 today) | `/ingest/sarif`, `/ingest/recon`, `/ingest/scan`, … | Rejected for sensors. Every format is a server parser exposed to every sensor key. The v1 bugs come from here: SARIF parse errors returned 500, SARIF with no asset was filed on a shared per-tool asset, and `/ingest/scan` auto-detects the format by sniffing. |
-| **B** One endpoint, format in a body field | `{"format":"sarif","data":…}` (DefectDojo `scan_type`, v1 `/ingest/scan` `scanner_type`) | Rejected. The body must be parsed before the parser is known, so it is two parsers per request, and rate limits, size limits and metrics cannot see the format before the body is read. It also invites base64 wrapping (v1 chunks), which grows the body by a third and hides it from compression. |
+| **B** One endpoint, format in a body field | `{"format":"sarif","data":…}` (v1 `/ingest/scan` `scanner_type`) | Rejected. The body must be parsed before the parser is known, so it is two parsers per request, and rate limits, size limits and metrics cannot see the format before the body is read. It also invites base64 wrapping (v1 chunks), which grows the body by a third and hides it from compression. |
 | **C** One endpoint, format by `Content-Type` | OTLP, Loki, Prometheus RW 2.0, CloudEvents binary mode | **The selector we use.** It is standard HTTP (RFC 9110 §8.3, §15.5.16), cheap to check before the body is read, and signable. On its own it still lets the server grow N parsers. |
-| **D** One canonical format, conversion in the client | GitHub (SARIF only), Dependency-Track (CycloneDX only), AWS Security Lake (OCSF only) | **The sensor contract.** The smallest parser surface and one validation path. |
+| **D** One canonical format, conversion in the client | SARIF-only, CycloneDX-only or OCSF-only intake | **The sensor contract.** The smallest parser surface and one validation path. |
 | **E** D for sensors + C for human/CI imports | — | **Recommended**, with the refinements in §1. |
-| **F** Multi-item envelope | Sentry envelope, CloudEvents batch, Elastic `_bulk` | Rejected for v2. It mixes data kinds in one request, so per-kind authorization (D21 push scopes), per-kind quotas and metrics move inside the body. Sentry needs it because one in-process SDK batches many kinds at once. Our kinds have different authorization. |
+| **F** Multi-item envelope | CloudEvents batch, generic bulk endpoints | Rejected for v2. It mixes data kinds in one request, so per-kind authorization (D21 push scopes), per-kind quotas and metrics move inside the body. Our kinds have different authorization. |
 
 ### 2.1 Scored comparison
 
@@ -99,34 +99,19 @@ door that does not widen the sensor surface.
 
 ### 2.2 The three strongest pieces of evidence
 
-1. **Mature platforms with one data model accept one format, async, and
-   decide what the data means server-side from authenticated context.**
-   GitHub code scanning takes SARIF 2.1.0 only on one endpoint and answers
-   `202` with a processing status to poll
-   ([REST](https://docs.github.com/en/rest/code-scanning/code-scanning#upload-an-analysis-as-sarif-data),
-   [limits](https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning)).
-   Dependency-Track takes CycloneDX only, validates it against the schema
-   (`400` + RFC 9457) and returns a token to poll
-   ([BomResource](https://github.com/DependencyTrack/dependency-track/blob/master/src/main/java/org/dependencytrack/resources/v1/BomResource.java)).
-   AWS Security Lake requires custom sources to convert to OCSF themselves
-   ([custom sources](https://docs.aws.amazon.com/security-lake/latest/userguide/custom-sources.html)).
-   SonarQube imports SARIF and generic issues **in the scanner** (client side)
-   and has no server endpoint for them
-   ([SARIF import](https://docs.sonarsource.com/sonarqube-server/analyzing-source-code/importing-external-issues/importing-issues-from-sarif-reports)).
-2. **The many-parsers model has a measurable security cost.** DefectDojo
-   selects 500+ parsers with a body parameter
-   ([API v2](https://docs.defectdojo.com/automation/api/api-v2-docs/),
-   [supported tools](https://docs.defectdojo.com/supported_tools/)). It had a
-   decompression-bomb CVE in two parsers (CVE-2026-3816, fixed in 2.56.0;
-   the same class as our ingest-chunk zstd bomb, api#554). It also had three
-   2026-09 advisories where an import could write into an asset or engagement
-   the caller was not authorized for, or leaked an organization name in an
-   import error
-   ([advisories](https://github.com/DefectDojo/django-DefectDojo/security/advisories)).
-   It has documented, per-parser, uneven XML hardening
-   ([#3623](https://github.com/DefectDojo/django-DefectDojo/issues/3623)).
-   Those are our three bug classes (bomb, mis-attribution, error leak), at
-   scale.
+1. **A platform with one data model accepts one format, async, and decides
+   what the data means server-side from authenticated context.** SARIF-only,
+   CycloneDX-only and OCSF-only intake APIs validate against the schema
+   (`400` + RFC 9457), answer `202` with a processing status to poll, and
+   leave conversion to the client.
+2. **The many-parsers model has a measurable security cost.** Importers that
+   select hundreds of parsers with a body parameter have public advisories
+   for decompression bombs in individual parsers (the same class as our
+   ingest-chunk zstd bomb, api#554), for imports that wrote into an asset or
+   engagement the caller was not authorized for, for import errors that
+   leaked another organization's name, and for uneven, per-parser XML
+   hardening. Those are our three bug classes (bomb, mis-attribution, error
+   leak), at scale.
 3. **HTTP and telemetry practice selects the format with `Content-Type`, and
    signatures make it safe only if that header is signed.** OTLP/HTTP has one
    path per signal and picks protobuf or JSON by `Content-Type`
@@ -154,7 +139,7 @@ door that does not widen the sensor surface.
 | `POST /api/v2/sensor/results` | **Partly** | `PUT …/results/{report_id}`. The sensor-chosen id is the idempotency key and is covered by the signature via `@target-uri`. This avoids depending on the Idempotency-Key draft, which expired on 2026-04-18 ([draft-07](https://www.ietf.org/archive/id/draft-ietf-httpapi-idempotency-key-header-07.html)). |
 | "plus chunks" | **Underspecified, and v1's chunk design is the bug** | v1 chunks are base64 in JSON, only the first carries the tool, and each is ingested as an independent report, so report-level steps (auto-resolve, completion) only ever see one part, and chunks after the first lose the tool context. v2 segments are complete CTIS documents plus a `commit` (§3.5). |
 | Raw files go to a user-authenticated import API, format by `Content-Type` | **Right** | Added: context parameters (asset, repository/commit), a closed allow-list, a bounded converter, and the same downstream pipeline (§6). |
-| Example type `application/vnd.openctem.ctis+json;version=1` | **Changed** | `application/vnd.openctem.ctis.v1+json`. RFC 6838 §4.3 says new parameters should not introduce new functionality (written for the standards tree; we follow it). Parameter syntax also has equivalent spellings (`version=1`, `version="1"`, `VERSION=1`), which is a canonicalisation differential between the signer and the router (RFC 9421 §7.5.2). A single token compares exactly. This matches GitHub's `application/vnd.github.v3+json` convention. |
+| Example type `application/vnd.openctem.ctis+json;version=1` | **Changed** | `application/vnd.openctem.ctis.v1+json`. RFC 6838 §4.3 says new parameters should not introduce new functionality (written for the standards tree; we follow it). Parameter syntax also has equivalent spellings (`version=1`, `version="1"`, `VERSION=1`), which is a canonicalisation differential between the signer and the router (RFC 9421 §7.5.2). A single token compares exactly. |
 | "one endpoint" | **Refined** | One endpoint per **data kind**, the way OTLP has one per signal. Results (CTIS) are this RFC. Runtime telemetry and validation evidence keep their own resources under the same envelope rules. |
 | v1 stays frozen | **Right** | Plus a measured retirement lever for ingest (§8.3). |
 
@@ -230,8 +215,8 @@ Order matters; each step is cheaper than the next and runs before it.
 7. **Strict decode** into `ctis.Report`: I-JSON (RFC 7493). Duplicate member
    names, invalid UTF-8, trailing data, depth > 64 and unknown fields are all
    `422`. Go's `encoding/json` silently keeps the last duplicate and replaces
-   invalid UTF-8, which is the parser-differential class Bishop Fox
-   documents, so a token-level pre-pass enforces this. One parser: the Go
+   invalid UTF-8, which is the JSON parser-differential class (two parsers
+   reading one body differently), so a token-level pre-pass enforces this. One parser: the Go
    decoder plus the existing validator. No second runtime JSON-Schema engine
    (a second parser is a second interpretation). Parity between the Go
    structs and `schemas/ctis/v1` is proven in CI instead, by a new test
@@ -337,16 +322,12 @@ SDK sizes segments from the server's numbers, not its own constants.
 ```
 
 - **Whole-report failure** (steps 4–8) is an HTTP error and nothing is stored.
-  This matches GitLab and Dependency-Track, which reject a schema-invalid
-  report whole
-  ([GitLab](https://docs.gitlab.com/development/integrations/secure/)).
 - **Item failure** (worker: asset unresolved, out of scope, tool not
   permitted for that item) is partial success: `state: completed`,
-  `rejected` / `quarantined` counts and `errors[]`. This is OTLP's
-  `partial_success` and Elastic `_bulk`'s per-item status. **The client
-  must not resend** a partially accepted report; it fixes the producer
-  ([OTLP](https://opentelemetry.io/docs/specs/otlp/),
-  [`_bulk`](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-bulk)).
+  `rejected` / `quarantined` counts and `errors[]`, like OTLP's
+  `partial_success`. **The client must not resend** a partially accepted
+  report; it fixes the producer
+  ([OTLP](https://opentelemetry.io/docs/specs/otlp/)).
 - `failed` is a server-side processing failure after acceptance (worker
   retries exhausted). The sensor may re-`PUT` the same id, which re-queues.
 - `detail` strings are fixed templates. They never quote sensor bytes
@@ -376,7 +357,7 @@ fixed per type. Extension members: `errors[]` (`pointer`, `code`,
 
 Retry policy: retry 429, 500, 502, 503, 504 and network errors with
 exponential backoff + jitter, honouring `Retry-After`; never retry other
-4xx. This is the rule OTLP, Prometheus RW and Elastic share. Retries reuse
+4xx. This is the rule OTLP and Prometheus RW share. Retries reuse
 the same `report_id`, so they are safe.
 
 ## 4. Authentication: what ships first and what comes later
@@ -474,15 +455,15 @@ encoding, outcome), never from tool names or ids.
 | Path | `/api/v2/sensor/results/…` | `POST /api/v1/imports`, `GET /api/v1/imports/{id}` |
 | Permission | sensor key scope `results` | new `findings:import` (Go + seed migration + UI constants) |
 | Formats | CTIS only | allow-list by `Content-Type`: `application/vnd.openctem.ctis.v1+json`, `application/sarif+json` (IANA-registered), later `application/vnd.cyclonedx+json` (IANA-registered) and `application/vnd.openctem.import.nessus+xml` |
-| Context | command / sensor | query parameters: `asset_id`, or `repository` + `ref` + `commit`, and `category` (GitHub's separation of analyses for auto-resolve scope); required when the format carries no asset (SARIF without `versionControlProvenance` → `422`) |
+| Context | command / sensor | query parameters: `asset_id`, or `repository` + `ref` + `commit`, and `category` (separates analyses so auto-resolve stays within one); required when the format carries no asset (SARIF without `versionControlProvenance` → `422`) |
 | Conversion | none on the server | on the server, in a bounded converter: own size, time and memory budget, panic recovery, no network, XML with no DTD (Go's `encoding/xml` has no external entities, but depth and size are still capped). Iteration 2 moves it to a separate process (`server convert` subcommand under rlimits/seccomp) or WASM (open question) |
 | After conversion | — | **the same** strict decoder, validation, provenance (`source=import`, `actor=user`), queue and status shape |
 | Rate limit, audit | sensor buckets | user/tenant bucket (10/min, like the existing import routes); audit event `finding.imported` with actor, format, digest, counts |
 
 No auto-detection anywhere: v1's `AutoDetect` sniffing is not carried over.
 `application/json` is `415`, because "JSON" is not a format. Each format
-added to the allow-list needs an owner, a fuzz corpus and a golden test.
-That is the cost DefectDojo pays 500 times.
+added to the allow-list needs an owner, a fuzz corpus and a golden test,
+which is why the list stays short.
 
 CI guidance: the recommended path stays the `openctemio/sensor:ci` image (an
 ephemeral sensor; converts client-side, gets the v2 contract). The import
@@ -522,7 +503,7 @@ token-level pre-pass (duplicate keys, depth, invalid UTF-8, trailing data)
 followed by `DisallowUnknownFields` decode, both reused by v2 and imports;
 `ValidateReportV2` extending `validator.go` (tool required, `metadata.id`
 rule, per-segment limits).
-*Tests:* Bishop Fox cases (duplicate key, `\ud800`, `1E400`, trailing
+*Tests:* parser-differential cases (duplicate key, `\ud800`, `1E400`, trailing
 garbage), depth 65, unknown field; a Go fuzz target `FuzzStrictCTIS`
 seeded from `schemas/ctis/v1` examples.
 *Accept:* fuzzing 10 min in CI nightly without a panic; a new
@@ -797,88 +778,36 @@ inconsistent):
 "One / many" is the endpoint shape; "Format by" is how the payload format
 is chosen. "—" means not documented. Links are in §12.
 
-### 11.1 Security-results platforms
-
-| Platform | One / many | Format by | Sync / async | Size and chunking | Idempotency / dedup | Errors and partial success | Auth |
-|---|---|---|---|---|---|---|---|
-| GitHub code scanning | one (`POST …/code-scanning/sarifs`) | nothing: SARIF 2.1.0 only (gzip + base64 in JSON) | async: `202` + id, poll `processing_status` | 10 MB gzipped (`413`); 20 runs, 25k results/run (only top 5k kept), silent truncation of locations/tags | `partialFingerprints`; runs grouped by `category` (`runAutomationDetails.id`) | `400` invalid; processing `errors[]` on the status | token with `security_events` |
-| GitLab | none (CI artifact) | report keyword (`sast`, `sarif`, `cyclonedx`, …) | async in pipeline | per-type artifact max; SARIF 10 MB | UUIDv5 of type + identifier + location + project | schema-invalid → whole report rejected; SARIF: graded (0–50% dropped items → ingest + warn, >50% → fail) | CI job |
-| DefectDojo | two (`import-scan`, `reimport-scan`) | body field `scan_type` + multipart file, 500+ parsers | sync by default; `background_import` | — | per-parser hash fields; reimport closes absent findings within a Test | statistics; advisories on import authorization and error leaks; CVE-2026-3816 parser bomb | API token |
-| Dependency-Track | one (`/api/v1/bom`, PUT JSON-base64 or POST multipart) | nothing: CycloneDX only | async: token, poll `/event/token/{uuid}` | 20M chars base64 on PUT | replaces the project BOM (inferred) | schema-invalid → `400` RFC 9457 | `X-Api-Key` + `BOM_UPLOAD` |
-| SonarQube | none on the server | scanner properties (`sonar.sarifReportPaths`, generic JSON) | part of analysis | — | — | — | scanner token |
-| Snyk | own CLI only (`snyk monitor`, `code test --report`) | own protocol | — | — | snapshot per project | — | token |
-| Semgrep AppSec | own scan lifecycle (create → results → complete) | own JSON | async, client polls `complete` | — | per scan id | `errors` in response | token |
-| Tenable VM | `scans/import` (native files), `POST /api/v2/vulnerabilities` | Tenable data only | import async; v2 vulns: no job status | 4 GB files; 50 assets / 15 MB per v2 request | — | `409` stale scans, `429` | API keys |
-| Tenable One, Qualys ETM, Orca, Wiz | pull connectors or login-gated APIs | per connector | scheduled | Tenable Open Connector 2 GB/file | — | — | per connector |
-
-### 11.2 Telemetry ingest
+### 11.1 Telemetry ingest
 
 | System | One / many | Format by | Sync / async | Size | Idempotency | Errors and partial success | Auth |
 |---|---|---|---|---|---|---|---|
 | OTLP/HTTP | one per signal (`/v1/traces`, `/v1/metrics`, `/v1/logs`) | `Content-Type` (`application/x-protobuf` / `application/json`), gzip | sync `200` | recommended 64 MiB (`413`) | none (duplicates accepted) | `200` + `partial_success` (rejected counts), client must not retry; `400` final; `429/502/503/504` retry with `Retry-After` | transport |
 | Splunk HEC | path picks the envelope (`/collector/event` JSON vs `/collector/raw`) | path; `sourcetype` picks parsing | `200` = "appears valid"; optional indexer ack (channel + `ackId` poll) | — | none | numeric codes; no per-event partial success | `Authorization: Splunk <token>` |
-| Elasticsearch `_bulk` | one generic | NDJSON action line per item; `?pipeline=` | sync | 100 MB default | `create` with client `_id` | `200` + `errors: true` + per-item status | API key |
-| Datadog | one per kind (logs, series) | path + JSON; gzip/deflate/zstd | `202` | logs 5 MB / 1000 entries; metrics 500 KB compressed | — | metrics `202` + `errors[]` | `DD-API-KEY` |
-| Sentry | one envelope endpoint | item header `type` per item | sync | 200 MiB envelope, 1 MiB per item | `event_id` | per-category rate limits on `200`/`429` (`X-Sentry-Rate-Limits`) | DSN |
 | Loki | one (`/loki/api/v1/push`) | `Content-Type` (protobuf+snappy / JSON) | `204` | — | — | `400` | tenant header |
 | Prometheus RW 2.0 | one | `Content-Type: application/x-protobuf;proto=…`; `415` otherwise | `204` (`202` if async) | — | receivers must be idempotent | written-count headers even on `400` | transport |
 
-### 11.3 What the survey settles
+### 11.2 What the survey settles
 
-- **Shape:** one endpoint per *data kind* dominates (OTLP, Datadog, Loki,
-  GitHub, Dependency-Track). Generic endpoints (Sentry, `_bulk`, HEC) label
-  every item inside the body, because they mix kinds.
+- **Shape:** one endpoint per *data kind* dominates (OTLP, Loki).
+  Generic endpoints (HEC) label every item inside the body, because they mix
+  kinds.
 - **Format selection:** by `Content-Type` for wire formats (OTLP, Loki, PRW,
-  CloudEvents binary mode). Body fields choose *semantic* types (Sentry item
-  `type`, HEC `sourcetype`), not parsers. DefectDojo's `scan_type` is the
-  exception, and it carries the largest parser surface and the documented
-  advisories.
-- **Canonical format:** platforms that own their data model accept exactly
-  one format on push (GitHub, Dependency-Track, Security Lake) or convert in
-  the client (SonarQube, Snyk, Semgrep).
-- **Async:** `202` + a status to poll is the norm for security results
-  (GitHub, Dependency-Track, Tenable import).
+  CloudEvents binary mode). Body fields choose *semantic* types (HEC
+  `sourcetype`), not parsers. A body field that selects a parser carries the
+  largest parser surface.
+- **Canonical format:** a platform that owns its data model accepts exactly
+  one format on push and leaves conversion to the client.
+- **Async:** `202` + a status to poll is the norm for security results.
 - **Partial success:** schema failure rejects the report; item failure is
-  reported inside a success (OTLP, `_bulk`, Datadog, GitLab SARIF), and the
-  client does not resend.
+  reported inside a success (OTLP), and the client does not resend.
 
 ## 12. Sources
-
-**Security-results platforms**
-- GitHub code scanning SARIF upload: https://docs.github.com/en/rest/code-scanning/code-scanning#upload-an-analysis-as-sarif-data
-- GitHub SARIF support and limits: https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning
-- GitLab report artifacts: https://docs.gitlab.com/ci/yaml/artifacts_reports/
-- GitLab security report validation: https://docs.gitlab.com/development/integrations/secure/
-- GitLab SARIF ingestion: https://docs.gitlab.com/user/application_security/detect/sarif/
-- GitLab vulnerability deduplication: https://docs.gitlab.com/user/application_security/detect/vulnerability_deduplication/
-- DefectDojo API v2: https://docs.defectdojo.com/automation/api/api-v2-docs/
-- DefectDojo supported tools: https://docs.defectdojo.com/supported_tools/
-- DefectDojo reimport: https://docs.defectdojo.com/import_data/import_intro/reimport/
-- DefectDojo security advisories: https://github.com/DefectDojo/django-DefectDojo/security/advisories
-- DefectDojo XML parser hardening issue: https://github.com/DefectDojo/django-DefectDojo/issues/3623
-- CVE-2026-3816 (DefectDojo parser decompression bomb): https://nvd.nist.gov/vuln/detail/CVE-2026-3816
-- Dependency-Track BOM resource: https://github.com/DependencyTrack/dependency-track/blob/master/src/main/java/org/dependencytrack/resources/v1/BomResource.java
-- Dependency-Track CI/CD: https://docs.dependencytrack.org/usage/cicd/
-- SonarQube generic issue import: https://docs.sonarsource.com/sonarqube-server/analyzing-source-code/importing-external-issues/generic-issue-import-format
-- SonarQube SARIF import: https://docs.sonarsource.com/sonarqube-server/analyzing-source-code/importing-external-issues/importing-issues-from-sarif-reports
-- Snyk test/monitor in CI: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/snyk-ci-cd-integration-deployment-and-strategies/snyk-test-and-snyk-monitor-in-ci-cd-integration
-- Semgrep CLI scan protocol (source): https://raw.githubusercontent.com/semgrep/semgrep/develop/cli/src/semgrep/app/scans.py
-- Tenable VM scan import: https://developer.tenable.com/reference/scans-import
-- Tenable VM vulnerabilities import v2: https://developer.tenable.com/reference/vulnerabilities-import-v2
-- Tenable One Open Connector: https://docs.tenable.com/exposure-management/Content/connectors/tenable-open-connector.htm
-- Qualys ETM: https://docs.qualys.com/en/etm/latest/about_etm.htm
-- Wiz (secondary, docs are login-gated): https://docs.endorlabs.com/integrations/data-exporters/export-to-wiz
 
 **Telemetry / observability ingest**
 - OpenTelemetry OTLP: https://opentelemetry.io/docs/specs/otlp/
 - Splunk HEC formats: https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/10.4/get-data-with-http-event-collector/format-events-for-http-event-collector
 - Splunk HEC indexer acknowledgement: https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/9.4/get-data-with-http-event-collector/about-http-event-collector-indexer-acknowledgment
-- Elasticsearch `_bulk`: https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-bulk
-- Elastic Agent output settings: https://www.elastic.co/docs/reference/fleet/es-output-settings
-- Datadog logs intake: https://docs.datadoghq.com/api/latest/logs/
-- Datadog metrics intake: https://docs.datadoghq.com/api/latest/metrics/
-- Sentry envelopes: https://develop.sentry.dev/sdk/data-model/envelopes/
-- Sentry rate limiting: https://develop.sentry.dev/sdk/expected-features/rate-limiting/
 - Grafana Loki push API: https://grafana.com/docs/loki/latest/reference/loki-http-api/
 - Prometheus Remote Write 1.0: https://prometheus.io/docs/specs/prw/remote_write_spec/
 - Prometheus Remote Write 2.0: https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/
@@ -897,7 +826,6 @@ is chosen. "—" means not documented. Links are in §12.
 - CloudEvents spec: https://github.com/cloudevents/spec/blob/main/cloudevents/spec.md
 - CloudEvents HTTP binding: https://github.com/cloudevents/spec/blob/main/cloudevents/bindings/http-protocol-binding.md
 - OCSF: https://schema.ocsf.io/
-- AWS Security Lake custom sources: https://docs.aws.amazon.com/security-lake/latest/userguide/custom-sources.html
 - RFC 9562 UUIDs: https://www.rfc-editor.org/rfc/rfc9562.html
 - RFC 9745 Deprecation header: https://www.rfc-editor.org/rfc/rfc9745.html
 - RFC 8594 Sunset header: https://www.rfc-editor.org/rfc/rfc8594.html
@@ -907,7 +835,6 @@ is chosen. "—" means not documented. Links are in §12.
 - Momot et al., "The Seven Turrets of Babel" (IEEE SecDev 2016): https://www.semanticscholar.org/paper/ae4e54c65d5139c21b2a9499d1f24c7e3e14af05
 - RFC 8259 §4 (duplicate names): https://www.rfc-editor.org/rfc/rfc8259.html#section-4
 - RFC 7493 I-JSON: https://www.rfc-editor.org/rfc/rfc7493.html
-- Bishop Fox, JSON interoperability vulnerabilities: https://bishopfox.com/blog/json-interoperability-vulnerabilities
 - OWASP XXE prevention: https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html
 - OWASP file upload: https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html
 - OWASP input validation: https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html

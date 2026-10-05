@@ -24,8 +24,8 @@
 >
 > Owner's request (2026-10-03): redesign how assets are discovered,
 > modelled, labelled, grouped, excluded, governed by policies and presented.
-> Learn from ProjectDiscovery Cloud (PD), keep OpenCTEM's deeper CTEM model,
-> and fix PD's weaknesses. Owner rule for every number on screen: **honest**.
+> Keep OpenCTEM's deeper CTEM model. Owner rule for every number on screen:
+> **honest**.
 > A metric whose inputs are empty says "insufficient data"; it never shows a
 > default.
 
@@ -41,8 +41,8 @@ applies ownership, exclusions, lifecycle and budgets at dispatch time.**
 
 0. **Many types, one registry, several lenses.** OpenCTEM has 37 asset
    types; repositories, hosts and networks are as common as web services.
-   - A fixed **class** sits above each type (16 classes, JupiterOne-style
-     `_class` vs `_type`). The classes are grouped into 8 **lenses**:
+   - A fixed **class** sits above each type (16 classes, an abstract kind
+     above the concrete type). The classes are grouped into 8 **lenses**:
      external surface, applications, cloud & infra, containers & K8s,
      code, identities, data, network.
    - One **type registry** (YAML + codegen, served by the API) declares
@@ -51,7 +51,7 @@ applies ownership, exclusions, lifecycle and budgets at dispatch time.**
    - Every type shares a **unified core**: owner, effective criticality,
      attribution, exposure, labels, first and last seen, sources and
      findings.
-   - The PD-style service card is **one lens** (External surface), next
+   - The service card is **one lens** (External surface), next
      to Code, Cloud, Identities and the others.
    - A typed relationship graph walks from a domain to the repository
      whose code runs behind it (§6.3).
@@ -81,7 +81,7 @@ applies ownership, exclusions, lifecycle and budgets at dispatch time.**
 5. **Groups: static and dynamic, both scannable.** A dynamic group is a
    saved OQL query, resolved **at dispatch**. Every resolved target then
    passes the ownership gate (RFC-036), exclusions and the lifecycle check.
-   PD cannot scan a dynamic group at all. Sharing uses RBAC and data scope,
+   Sharing uses RBAC and data scope,
    never public links.
 6. **One exclusion model, three enforcement points:** discovery (nothing
    new is created or pivoted from), dispatch (nothing is probed), and the
@@ -104,7 +104,7 @@ applies ownership, exclusions, lifecycle and budgets at dispatch time.**
    added, removed or upgraded, title or status changed. These feed alerts,
    policies and daily rollups for the trend charts.
 10. **Source records, correlation and the canonical row stay separate**,
-    following the industry practice in §4.1:
+    following the practice in §4.1:
     - per-source records live in `asset_sources` and a new
       `service_sources`;
     - a single-flight correlation job per tenant and zone joins them,
@@ -337,88 +337,66 @@ named.
 - **Open PRs reserve migrations 000273–000327.** This RFC uses names, not
   numbers; numbers are assigned when each phase is implemented.
 
-## 4. What PD does, and where it falls short
+## 4. Requirements and design practices
 
-The PD Cloud assets docs (overview, associated domains, screenshots,
-labeling, groups, exclusions, policies) were re-read on 2026-10-03. The
-owner's screenshots show the UI.
+The inventory loop is **filter → bulk act (label, status) → save as a
+dynamic group → policy**. Labels and screenshots are asynchronous, driven by
+the change worker (§6.15.4) and a pipeline step (§6.14). Each area has a
+requirement this RFC meets:
 
-| Area | PD | Gap OpenCTEM closes |
+| Area | Requirement |
+|---|---|
+| Model | Services (`host:port`) are the browsing unit with a rich HTTP/TLS card, tied to assets that carry ownership, criticality, attribution and findings (P0–P3) |
+| Associated domains | Evidence-backed candidates with noisy-OR confidence, accept / reject / dependency, tombstones, no artificial cap (RFC-036 P2, §6.10) |
+| Screenshots | Sandbox spec, safe storage, perceptual clusters, 30-day retention, all documented (§6.14) |
+| Auto labels | Versioned rule set, rule version + evidence + confidence on every assignment, reproducible (§6.7) |
+| Bulk label | Filter, then "Label", as one server call with a preview count |
+| Filters | One typed language (OQL) shared by UI, API, groups and policies; faceted menu with counts that honour data scope (§6.5–6.6) |
+| Groups | Static + dynamic, both scannable, resolved at dispatch through the ownership gate and exclusions; per-group cadence; RBAC sharing only, no public links (§6.12) |
+| Exclusions | Discovery + dispatch + graph cut; matched inventory archived with a reason and restored on removal; approval workflow; scoped global / scope target / group (§6.13) |
+| Policies | AND/OR/NOT; no hard delete (archive); preview required; caps, depth limit, circuit breaker; scan action behind approval and budgets (§6.15) |
+| Change | Typed observation diffs per facet, cert expiry, tech version changes, rollups (§6.16–6.17) |
+| Hosting | Self-hosted by default |
+
+### 4.1 Design practices adopted
+
+Sources: research 08, "asset inventory / exposure graph system design", and
+research 09, "multi-type asset inventory" (2026-10-03). Each row says where
+the practice lands in this RFC.
+
+| # | Practice | Where it lands here |
 |---|---|---|
-| Model | Services (`host:port`) are the browsing unit; rich HTTP/TLS card | Same unit, but tied to assets that carry ownership, criticality, attribution and findings (P0–P3) |
-| Associated domains | Evidence fields (CN, org, issuer, serial, registrant, registrar, acquisition source); manual add; no confidence; no accept/reject; capped at 10 on standard plans | Evidence-backed candidates with noisy-OR confidence, accept / reject / dependency, tombstones, no artificial cap (RFC-036 P2, §6.10) |
-| Screenshots | Headless Chrome, gallery; retention and isolation unpublished | Sandbox spec, safe storage, perceptual clusters, 30-day retention, all documented (§6.14) |
-| Auto labels | Rules (login portal, staging, Jenkins …), async, beta; no provenance shown | Versioned rule set, rule version + evidence + confidence on every assignment, reproducible (§6.7) |
-| Bulk label | Filter, then "Label" | Same, as one server call with a preview count |
-| Filters | 14+ attributes, faceted menu with counts | One typed language (OQL) shared by UI, API, groups and policies; counts honour data scope (§6.5–6.6) |
-| Groups | Dynamic only; **cannot be targeted for rescans**; public share links (Enterprise) | Static + dynamic, both scannable, resolved at dispatch through the ownership gate and exclusions; per-group cadence; RBAC sharing only (§6.12) |
-| Exclusions | Global; **discovery only**; already-discovered assets stay until removed by hand; `+` include patterns via API | Discovery + dispatch + graph cut; matched inventory archived with a reason and restored on removal; approval workflow; scoped global / scope target / group (§6.13) |
-| Policies | AND only; delete / add label / remove label / notify; future or existing+future; execution log; **no dry-run**; review step only | AND/OR/NOT; no hard delete (archive); preview required; caps, depth limit, circuit breaker; scan action behind approval and budgets (§6.15) |
-| Change | New asset / new vuln webhooks | Typed observation diffs per facet, cert expiry, tech version changes, rollups (§6.16–6.17) |
-| Hosting | SaaS; on-prem only on Enterprise | Self-hosted by default |
+| I1 | **Three layers.** Per-source records, then a correlation link, then a canonical asset whose "preferred" fields are recomputed from its linked records. Queries can target either the canonical view or one source | §6.4.5. OpenCTEM already has the per-source layer: `asset_sources.contributed_data` (`000014_data_sources.up.sql:52-69`) and RFC-003 source priority (`api/internal/app/ingest/priority_gate.go`). This RFC adds `service_sources`, an `asset_links` view of correlation decisions, the preferred-field recompute, and an OQL `source:` scope |
+| I2 | **Deterministic identity keys in a fixed order** (MAC, then IP within a time window, then hostname). A manual merge exists as the fallback | RFC-028 already matches strong id → name → windowed hostname → windowed IP and never auto-merges. §6.4.5 adds a **split** action with audit, next to merge |
+| I3 | **Correlation is a scheduled, single-flight batch job** after ingest, followed by a history snapshot | §6.4.5. Ingest keeps an inline strong-key match, because findings need an asset id immediately. A single-flight job per tenant and zone runs the windowed matches, recomputes preferred fields and writes the rollup snapshot (D15) |
+| I4 | **Correlation never crosses a hard network boundary** | §6.4.5. Identity keys for private addresses include the scan zone (D16). Public addresses correlate tenant-wide. The tenant is always a hard boundary |
+| I5 | **Change detection without full event sourcing.** Rows carry a run tag and `first_seen`. Stale rows are cleaned up only within the scope that was synced. Assets a scan missed are marked offline, never deleted | §6.16. `last_seen_run_id` on assets, services and source records. "Closed" and "offline" are evaluated only for the targets and zone the run covered. Attribute-level diffs come from the observation hashes, which run tags alone do not give |
+| I6 | **Connectors are get → transform → load → scoped cleanup**, with retries in the framework; cleanup never runs after a failed fetch | §6.9. A connector interface for RFC-036 P5 cloud sources and imports |
+| I7 | **Rules + Facts with mandatory `identity_fields`.** A generated issue keeps a stable identity across runs | §6.15.2. Every policy effect, digest and any future exposure-raising action declares identity fields: `(policy_id, subject_id[, port])`, never volatile values |
+| I8 | **A field/operator/value query grammar** with typed operators, exact vs fuzzy matching, a non-empty test, and **grouping so that several conditions must match the same nested service** | §6.5. OQL adds `=` exact vs `:` fuzzy, `field:*` non-empty, and `services:( … )` same-service grouping compiled to one `EXISTS`. A regex operator is deliberately **not** offered (ReDoS, T8) |
+| I9 | **Five attribution states** (approved, dependency, monitor only, candidate, requires investigation). Ownership and discovery confidence are better stored as two fields | RFC-036 states, and #835 stores `state` and `confidence` separately. OQL exposes both (`attribution`, `attribution.confidence`) |
+| I10 | **Two-level taxonomy.** An abstract class (Host, Domain, CodeRepo, User …) sits above a source-specific type. Lists and queries work at class level across connectors | §6.3.2: 16 classes + `other` in `assets.asset_class` above the 37 types, grouped into 8 lenses; each class records its JupiterOne `_class` equivalent for interoperability (registry field `jupiterone`). The source-native type is kept on the source record. `DnsRecord` and `Image` wait for matching types |
+| I11 | **EASM kinds are a subset of the full model.** Domain, IpAddress, Certificate, Port and ApplicationEndpoint sit next to Cluster, Function, CodeRepo, User and NHI | §6.3: the service list is one lens. External surface is one class of the shared model, not a separate inventory |
+| I12 | **A common core plus per-class schemas**, not a table per type and not table inheritance. OCSF keeps device kind as one `type_id` enum on one object | D19 (a): one `assets` table with core columns and one versioned JSON Schema per type, validated in Go on write. OCSF does **not** endorse an untyped bag; that claim was refuted 0-3 |
+| I13 | **OCSF `resource_details`** gives shared field names: owner, criticality, labels, tags, type, group, region, created/modified, relationships | §6.3.4. The core field names map to OCSF in the SIEM and CTIS exports |
+| I14 | **jsonb, a GIN `jsonb_path_ops` index for containment, and expression indexes for the hot per-type keys.** Facets that are used everywhere or need sorting should be real columns, because planner statistics on jsonb keys are weak (PostgreSQL docs) | §6.3.3: core facets are columns; per-type facets get generated partial expression indexes; a `jsonb_path_ops` GIN on `properties` serves ad-hoc `@>` containment. This replaces the default `jsonb_ops` GIN of `000008:129` once measured |
+| I15 | **No flat "everything" list.** Separate views per entity class, with services and certificates first-class and linked to a parent asset; an "All" view plus per-category tabs, each with its own default columns | §6.3.6 lenses: All assets plus class lenses. Services and certificates are sub-views of External surface |
+| I16 | **Two-layer filters.** Common filters apply to every kind; per-kind filters appear for that kind | §6.3.3. Core facets always show; registry facets appear once a lens, class or type is selected |
+| I17 | **Ownership state is independent of type.** Only approved assets show by default, count in dashboards and get the daily cadence; candidates are hidden until the state filter is cleared | RFC-036 states (#835). The default inventory view shows `attribution` confirmed or legacy, with a banner linking to the needs-review count (D21) |
 
-Research 06 (PD Cloud UX, 2026-10-03, all claims from PD's docs, 3-0)
-confirms the loop to copy: **filter → bulk act (label, status) → save as a
-dynamic group → policy**. In PD, a dynamic group is a saved filter over
-its parent discovery and refreshes when that discovery is rescanned. PD
-says its auto-labels are rules-based pattern matching, in early beta, and
-asynchronous. Screenshots are taken in headless Chrome, asynchronously
-after discovery; PD's docs do not say where the browser runs or how the
-images are stored. This RFC keeps the loop. Labels and screenshots are
-asynchronous here too, driven by the change worker (§6.15.4) and a
-pipeline step (§6.14). It closes the gaps in the table above.
-
-### 4.1 Industry practice (runZero, Axonius, Wiz, Censys)
-
-Source: research 08, "asset inventory / CAASM / exposure graph system
-design" (2026-10-03). It has 10 findings, each verified against vendor or
-project documentation (runZero, Axonius, Cartography, Censys, Defender
-EASM, one Tenable marketing page). Each row says where the finding lands
-in this RFC.
-
-| # | Industry practice | Evidence | Where it lands here |
-|---|---|---|---|
-| I1 | **Three layers.** Per-source records, then a correlation link, then a canonical asset whose "preferred" fields are recomputed from its linked records. Queries can target either the canonical view or one source (Axonius ALL vs ENT scope; runZero adds per-source attributes) | runZero integrations-inbound; Axonius query wizard and aggregation settings (3-0; the normalisation claim 2-1) | §6.4.5. OpenCTEM already has the per-source layer: `asset_sources.contributed_data` (`000014_data_sources.up.sql:52-69`) and RFC-003 source priority (`api/internal/app/ingest/priority_gate.go`). This RFC adds `service_sources`, an `asset_links` view of correlation decisions, the preferred-field recompute, and an OQL `source:` scope |
-| I2 | **Deterministic identity keys in a fixed order.** runZero: MAC, then IP within a 3-day window, then hostname. A manual merge exists as the fallback | runZero (3-0) | RFC-028 already matches strong id → name → windowed hostname → windowed IP and never auto-merges. §6.4.5 adds a **split** action with audit, next to merge |
-| I3 | **Correlation is a scheduled, single-flight batch job** after ingest, followed by a history snapshot (Axonius discovery cycle; Tenable "lake then correlate") | Axonius (3-0); Tenable (marketing) | §6.4.5. Ingest keeps an inline strong-key match, because findings need an asset id immediately. A single-flight job per tenant and zone runs the windowed matches, recomputes preferred fields and writes the rollup snapshot (D15) |
-| I4 | **Correlation never crosses a hard network boundary** (runZero sites) | runZero (3-0) | §6.4.5. Identity keys for private addresses include the scan zone (D16). Public addresses correlate tenant-wide. The tenant is always a hard boundary |
-| I5 | **Change detection without full event sourcing.** Rows carry a run tag and `first_seen`. Stale rows are cleaned up only within the scope that was synced. Assets a scan missed are marked offline, never deleted (Cartography, runZero) | Cartography, runZero (3-0) | §6.16. `last_seen_run_id` on assets, services and source records. "Closed" and "offline" are evaluated only for the targets and zone the run covered. Attribute-level diffs come from the observation hashes, which the research says run tags alone do not give |
-| I6 | **Connectors are get → transform → load → scoped cleanup**, with retries in the framework; cleanup never runs after a failed fetch (Cartography) | Cartography (3-0, one project) | §6.9. A connector interface for RFC-036 P5 cloud sources and imports |
-| I7 | **Rules + Facts with mandatory `identity_fields`.** A generated issue keeps a stable identity across runs (Cartography) | Cartography (3-0) | §6.15.2. Every policy effect, digest and any future exposure-raising action declares identity fields: `(policy_id, subject_id[, port])`, never volatile values |
-| I8 | **A field/operator/value query grammar** with typed operators, exact vs fuzzy matching, a non-empty test, and **grouping so that several conditions must match the same nested service** (CenQL `host.services: (…)`; runZero `=` exact) | Censys, runZero (3-0) | §6.5. OQL adds `=` exact vs `:` fuzzy, `field:*` non-empty, and `services:( … )` same-service grouping compiled to one `EXISTS`. CenQL's regex operator `=~` is deliberately **not** copied (ReDoS, T8) |
-| I9 | **Defender EASM's five states** (approved, dependency, monitor only, candidate, requires investigation). Ownership and discovery confidence are better stored as two fields | Defender EASM (3-0) | RFC-036 states, and #835 stores `state` and `confidence` separately. OQL exposes both (`attribution`, `attribution.confidence`) |
-
-Research 09, "multi-type asset inventory" (2026-10-03), has 8 findings,
-each voted 3-0, from JupiterOne, runZero, Microsoft Defender / Defender
-EASM, OCSF and the PostgreSQL docs. Each row says where the finding
-lands in this RFC.
-
-| # | Industry practice | Evidence | Where it lands here |
-|---|---|---|---|
-| I10 | **Two-level taxonomy.** A vendor-agnostic abstract class (JupiterOne `_class`: Host, Domain, CodeRepo, User …) sits above a source-specific `_type`. Lists and queries work at class level across connectors | JupiterOne data-model README | §6.3.2: 16 classes + `other` in `assets.asset_class`, named after JupiterOne classes, above the 37 types, and grouped into 8 lenses. The source-native type is kept on the source record. `DnsRecord` and `Image` wait for matching types |
-| I11 | **EASM kinds are a subset of the full model.** JupiterOne's 104 class schemas put Domain, IpAddress, Certificate, Port and ApplicationEndpoint next to Cluster, Function, CodeRepo, User and NHI. Defender EASM's Kind facet has only 8 external kinds | JupiterOne `class_schemas`; Defender EASM inventory filters | §6.3: the PD-style list is one lens. External surface is one class of the shared model, not a separate inventory |
-| I12 | **A common core plus per-class schemas**, not a table per type and not table inheritance. OCSF keeps device kind as one `type_id` enum on one object | JupiterOne, OCSF `device`, runZero | D19 (a): one `assets` table with core columns and one versioned JSON Schema per type, validated in Go on write. OCSF does **not** endorse an untyped bag; that claim was refuted 0-3 |
-| I13 | **OCSF `resource_details`** gives shared field names: owner, criticality, labels, tags, type, group, region, created/modified, relationships | OCSF 1.9.0 | §6.3.4. The core field names map to OCSF in the SIEM and CTIS exports |
-| I14 | **jsonb, a GIN `jsonb_path_ops` index for containment, and expression indexes for the hot per-type keys.** Facets that are used everywhere or need sorting should be real columns, because planner statistics on jsonb keys are weak | PostgreSQL docs | §6.3.3: core facets are columns; per-type facets get generated partial expression indexes; a `jsonb_path_ops` GIN on `properties` serves ad-hoc `@>` containment. This replaces the default `jsonb_ops` GIN of `000008:129` once measured |
-| I15 | **No flat "everything" list.** runZero has separate inventories per entity class, with services and certificates first-class and linked to a parent asset. Defender opens on "All devices" and adds per-category tabs, each with its own default columns | runZero docs; Defender device inventory | §6.3.6 lenses: All assets plus class lenses. Services and certificates are sub-views of External surface |
-| I16 | **Two-layer filters.** Common filters apply to every kind; per-kind filters appear for that kind | Defender EASM inventory filters | §6.3.3. Core facets always show; registry facets appear once a lens, class or type is selected |
-| I17 | **Ownership state is independent of type.** Only Approved assets show by default, count in dashboards and get the daily cadence; Candidates are hidden until the State filter is cleared | Defender EASM | RFC-036 states (#835). The default inventory view shows `attribution` confirmed or legacy, with a banner linking to the needs-review count (D21) |
-
-**Not verified by research 09:** Axonius, Wiz, Tenable One, ServiceNow
-and Censys taxonomies; the "attack surface to code" relationship chain;
-connector normalisation. §6.3.5 (the typed path and its edge sources) is
-therefore **our own design inference** from the JupiterOne graph model
-and OCSF `resource_relationship`, not verified vendor practice.
+**Our own design inference, not verified practice:** the "attack surface
+to code" relationship chain (§6.3.5, the typed path and its edge sources,
+built from a graph model and OCSF `resource_relationship`) and connector
+normalisation.
 
 **What research 08 did not verify.** It has no verified evidence on:
 
 - storage engines: Postgres JSONB/GIN, materialised facet tables,
   ClickHouse, OpenSearch, or a graph database;
-- Wiz;
 - multi-tenant storage isolation;
 - retention and its cost.
 
-So these choices in this RFC are **our own reasoning**, not industry
+So these choices in this RFC are **our own reasoning**, not external
 evidence:
 
 - Postgres with typed columns and per-tenant snapshot tables (§6.4.3,
@@ -494,7 +472,7 @@ seed (RFC-036) ──lineage──► asset (identity, owner, criticality, attri
   directly (§6.3.6). A host asset is a domain, subdomain or IP address. A virtual
   host on a shared IP is a service of the *hostname* asset, with `ip`
   recorded, so `a.example.com:443` and `b.example.com:443` on one IP are
-  two rows. This matches PD and what people expect.
+  two rows, which is what people expect.
 - **Observation:** one facet value seen for an asset or service over a
   time span.
 - **Label:** a named tag on an asset or service, either system (from a
@@ -504,12 +482,11 @@ seed (RFC-036) ──lineage──► asset (identity, owner, criticality, attri
 
 ### 6.3 Asset classes and the type registry
 
-OpenCTEM is **not** a web-services inventory. PD's inventory is
-essentially web services found from domains. OpenCTEM has 37 asset types
+OpenCTEM is **not** only a web-services inventory. OpenCTEM has 37 asset types
 (`AllAssetTypes()`, `api/pkg/domain/asset/value_objects.go:126-182`), and
 the live demo tenant uses 21 of them. Repositories are the most common
 type there, followed by hosts, networks, IPs, subdomains, domains and
-services. So the PD-style service card is **one lens** (the external
+services. So the service card is **one lens** (the external
 surface) and not the shape of the whole inventory. This section defines
 what every type shares, what differs per type, and the one place where
 those differences are declared.
@@ -539,17 +516,17 @@ The taxonomy has three levels, each with one job:
 |---|---|---|---|
 | **source-native type** | unbounded | provenance only, on the source record (`asset_sources.native_type`) | `aws_instance`, `github_repo` |
 | **type** (`asset_type`) | 37 today | the normalised OpenCTEM type; drives the attribute schema, renderers, identity keys | `host`, `repository` |
-| **class** (`asset_class`) | 16 + `other` | the abstract kind, JupiterOne's `_class` (I10); used by cross-type queries, relationships and policies | `Host`, `CodeRepo` |
+| **class** (`asset_class`) | 16 + `other` | the abstract kind (I10); used by cross-type queries, relationships and policies | `Host`, `CodeRepo` |
 | **lens** | 8 + All | a fixed group of classes for the UI tabs (I15) | External surface, Code |
 
 Each type has exactly one class, and each class belongs to exactly one
 lens. Exposure is orthogonal: an internal host is still a `host`, and a
 public bucket is still a `data_store`.
 
-The classes follow JupiterOne's names where one exists. OCSF is the
-reference for the shared core fields (I13).
+Each class records its JupiterOne `_class` equivalent for interoperability
+(registry field `jupiterone`). OCSF is the reference for the shared core fields (I13).
 
-| Class (`asset_class`) | JupiterOne analogue | OpenCTEM types | Lens |
+| Class (`asset_class`) | Interop `_class` (`jupiterone`) | OpenCTEM types | Lens |
 |---|---|---|---|
 | `domain` | Domain / DomainRecord | domain, subdomain | External surface |
 | `ip_address` | IpAddress | ip_address | External surface |
@@ -758,8 +735,8 @@ domain ─contains→ subdomain ─resolves_to→ ip_address ─exposes→ [serv
     (3 critical findings)". The reverse view, on a repository, shows
     "reachable from the internet through `api.acme.com:443`".
 - **What this feeds.** It is the input RFC-017 reachability and
-  attack-path work need. **PD cannot do this**, because its inventory
-  stops at the web service.
+  attack-path work need. An inventory that stops at the web service cannot
+  answer it.
 
 #### 6.3.6 Lenses
 
@@ -774,7 +751,7 @@ Lenses are served with the registry from `GET /api/v1/asset-types`.
 | Lens | Base | Row | Default group-by |
 |---|---|---|---|
 | All assets | none | core columns + compact type cell | lens, then class |
-| External surface | `lens:external_surface OR is.public:true`; subject = services for the card view, with Domains, IPs and Certificates sub-views | PD-style service card (§6.19) | tech / port / domain |
+| External surface | `lens:external_surface OR is.public:true`; subject = services for the card view, with Domains, IPs and Certificates sub-views | service card (§6.19) | tech / port / domain |
 | Applications & APIs | `lens:applications` | app card (URL, auth, tech, findings) | type |
 | Cloud & infrastructure | `lens:cloud_infra` | provider, account, region, OS, public IP | cloud_account |
 | Containers & Kubernetes | `lens:containers_k8s` | cluster, namespace, image, registry | cluster |
@@ -830,8 +807,7 @@ resources, `/api/v1/asset-groups` and `/api/v1/relationships` (RFC-041;
 > Implementation status is kept in the table in "The plan" below.
 
 **Why.** The set of classes and core types is about right: 16 classes and
-17 core types, where Tenable Exposure Management has 13 classes, Axonius 8
-fixed categories and JupiterOne about 50 `_class`es. What is wrong is that
+17 core types. What is wrong is that
 the registry is **not yet the source of truth**:
 
 - **Alias types are stored.** `ParseAssetType` accepts all 38 names, so
@@ -1088,7 +1064,7 @@ things keep this cheap:
   move with their asset, and their `service_id` is remapped to the
   surviving service by `(port, transport)`.
 
-#### 6.4.5 Source records, correlation and identity (industry practice I1–I4)
+#### 6.4.5 Source records, correlation and identity (practices I1–I4)
 
 Three layers, built mostly from parts that already exist:
 
@@ -1121,7 +1097,7 @@ Three layers, built mostly from parts that already exist:
 
 **Key order.** The deterministic key order stays RFC-028's (strong id,
 then exact name, then hostname in a window, then IP in a window). The IP
-window is explicit and expires (default 3 days, the runZero value), so a
+window is explicit and expires (default 3 days), so a
 reused cloud or DHCP address does not join two machines.
 
 **The zone boundary (I4).** Identity keys for **private** addresses
@@ -1171,7 +1147,7 @@ text     = quoted | bare ;                         (* free text → search *)
     wildcard (`host:*.staging.acme.com`, `title:*admin*`);
   - *contains* for CIDRs (`ip:10.0.0.0/8`).
 - `=` is **exact, case-sensitive** for strings: `title="Sign In"`. This
-  is the CenQL and runZero split between fuzzy `:` and exact `=` (I8).
+  is the split between fuzzy `:` and exact `=` (I8).
 - `field:*` means the field is present and non-empty, for example
   `screenshot:*` or `tls.issuer:*`.
 - **Same-service grouping (I8).** On an asset query, `port:22 scheme:ssh`
@@ -1181,7 +1157,7 @@ text     = quoted | bare ;                         (* free text → search *)
   `EXISTS (SELECT 1 FROM asset_services s WHERE s.asset_id = a.id AND
   <all inner clauses on s>)`. Service fields used **outside** a group
   each get their own `EXISTS`. `Explain()` says which one applies.
-- CenQL's regex operator `=~` is deliberately not offered (T8).
+- A regex operator (`=~`) is deliberately not offered (T8).
 - Keywords are case-insensitive. Values are case-insensitive for host,
   label and technology names.
 - Examples:
@@ -1324,7 +1300,7 @@ which mode it used (`"mode": "multiselect" | "full"`).
 
 #### 6.6.2 Group-by
 
-The owner's PD screenshots group services by technology, port, label,
+The owner's design screenshots group services by technology, port, label,
 domain, host, IP, CNAME, status code, title or web server. Each group
 needs its value, a count, its own pagination, export and "scan this
 group".
@@ -1464,7 +1440,7 @@ confidence: 70
 evidence: [http_title, http_status]
 ```
 
-- The starting set covers the PD examples:
+- The starting set covers:
   - Login Portal, Staging Environment, API Endpoint;
   - Jenkins CI, GitLab, Grafana, Kibana and other admin consoles;
   - Default Page, Directory Listing, Cloud Storage Bucket, VPN Gateway;
@@ -1489,7 +1465,7 @@ evidence: [http_title, http_status]
 
 #### 6.7.3 Technology catalog
 
-The owner's PD screenshots show technologies with categories (font
+The owner's design screenshots show technologies with categories (font
 scripts, tag managers, analytics, web servers, JS frameworks and
 libraries, …), a short description, an icon and a version ("jQuery
 3.3.1").
@@ -1766,7 +1742,7 @@ implementation, which honestly reverses 000205.
     list into a scan;
   - for display: `member_count` and `service_count` are refreshed by the
     facet-snapshot job, and `counts_as_of` is shown beside them.
-- **"Asset groups as discovery runs"** (PD's group list). A group with
+- **"Asset groups as discovery runs".** A group with
   `origin = auto_discovery` or `seed` shows `last_run_at`, the duration,
   the service count and `verified_root`. These are real values from
   `scan_runs`. When nothing has run, the list shows "never run", not 0.
@@ -2140,8 +2116,7 @@ inventory_observations(id, tenant_id, subject_type asset|service, subject_id,
   resolved targets, ports and zone, recorded on `scan_run_targets`. For
   example, a service the run did not see on a host it did scan, on a
   port range it did scan. A run that failed or was cancelled part-way
-  marks nothing gone, the Cartography rule that cleanup never follows a
-  failed fetch. Gone means `state = closed` for a service and `stale`
+  marks nothing gone: cleanup never follows a failed fetch. Gone means `state = closed` for a service and `stale`
   for an asset, through the lifecycle worker. It never means a delete.
 
 **Change kinds** (derived from the facet diff):
@@ -2170,7 +2145,7 @@ inventory_observations(id, tenant_id, subject_type asset|service, subject_id,
 
 ### 6.17 Rollups, trends and distributions
 
-The owner's PD screenshots (Overview, Dashboard, Asset Groups) need:
+The owner's design screenshots (Overview, Dashboard, Asset Groups) need:
 
 - trends: exposed assets, services and technologies over time;
 - top-10 distributions (asset types, domains, technologies) with export;
@@ -2296,7 +2271,7 @@ under `attack_surface` (RFC-036 O10).
 | `POST /api/v1/asset-policies/preview`, `POST /api/v1/asset-policies/{asset_policy_id}/preview\|enable\|disable\|run\|approve` | `assets:policies:write`; `approve` needs `scans:execute` and ≠ author | P1 |
 | `GET /api/v1/asset-policies/{asset_policy_id}/runs`, `GET /api/v1/asset-policy-runs/{run_id}` (+ effects, cursor) | `assets:policies:read` | P1 |
 | `POST /api/v1/assets/bulk/reactivate`, `POST /api/v1/services/bulk/reactivate` (`selection: {ids \| q \| policy_run_id}`) — restore archived subjects | `assets:write` | P1 |
-| `POST /api/v1/assets/bulk/status` gains `selection.q` (bulk status by filter, PD parity); `POST /api/v1/services/bulk/status` | `assets:write`; archive also needs a preview token like scans | P0 |
+| `POST /api/v1/assets/bulk/status` gains `selection.q` (bulk status by filter); `POST /api/v1/services/bulk/status` | `assets:write`; archive also needs a preview token like scans | P0 |
 | `POST /api/v1/scope/exclusions/preview` | `attack_surface:scope:read` | P1 |
 | `POST /api/v1/assets/{asset_id}/split` (`{source_record_ids[]}`; D17) and `GET /api/v1/assets/{asset_id}/sources` (layer-1 records with `linked_by`) | `assets:write` / `assets:read` | P1 |
 | `GET /api/v1/inventory/changes` (`q`, `kinds`, `from`, `to`, `cursor`) | `assets:read` | P1 |
@@ -2691,21 +2666,21 @@ Every slice that adds a table referencing `assets` also updates
 - Slice 3 owns the §7 performance targets.
 - Slice 5 owns the gate test matrix (T12).
 
-## 10. Where OpenCTEM will beat PD
+## 10. Capabilities summary
 
-| | PD | OpenCTEM v2 |
-|---|---|---|
-| Scan a dynamic group | not possible | yes, resolved at dispatch through the ownership gate, exclusions and budgets, with a preview of what is skipped and why |
-| Exclusions | discovery only; stale inventory stays | discovery + dispatch + graph cut; archived with reason, reversible, approved by a second person |
-| Policies | AND only; hard delete; no preview | AND/OR/NOT; archive not delete; preview required; caps, depth limit, breaker; audited effects with one-click restore |
-| Associated domains | no confidence; manual add; 10-result cap | confidence from independent evidence, review queue, tombstones, no cap |
-| Labels | no provenance shown | rule version, evidence and confidence per assignment; re-evaluated on rule upgrades |
-| Screenshots | unpublished retention and isolation | documented sandbox, re-encoding, CSP, retention, quota; similar-page clusters drive bulk labels |
-| Context | inventory only | services tied to ownership, BU/service criticality, crown jewels, attribution, findings with P0–P3 priority |
-| Breadth | web services from domains | 37 types in 8 classes (cloud, Kubernetes, code, identities, data, network …) with one registry and a lens per class |
-| Attack surface to code | stops at the web service | typed path from domain → IP → service → app → load balancer → workload → container → repository, with findings at each hop |
-| Numbers | — | every count exact, lower-bound or snapshot-dated; `insufficient_data` instead of zeros |
-| Hosting | SaaS; on-prem on Enterprise | self-hosted, GPL-3.0 |
+| Capability | OpenCTEM v2 |
+|---|---|
+| Scan a dynamic group | yes, resolved at dispatch through the ownership gate, exclusions and budgets, with a preview of what is skipped and why |
+| Exclusions | discovery + dispatch + graph cut; archived with reason, reversible, approved by a second person |
+| Policies | AND/OR/NOT; archive not delete; preview required; caps, depth limit, breaker; audited effects with one-click restore |
+| Associated domains | confidence from independent evidence, review queue, tombstones, no cap |
+| Labels | rule version, evidence and confidence per assignment; re-evaluated on rule upgrades |
+| Screenshots | documented sandbox, re-encoding, CSP, retention, quota; similar-page clusters drive bulk labels |
+| Context | services tied to ownership, BU/service criticality, crown jewels, attribution, findings with P0–P3 priority |
+| Breadth | 37 types in 8 classes (cloud, Kubernetes, code, identities, data, network …) with one registry and a lens per class |
+| Attack surface to code | typed path from domain → IP → service → app → load balancer → workload → container → repository, with findings at each hop |
+| Numbers | every count exact, lower-bound or snapshot-dated; `insufficient_data` instead of zeros |
+| Hosting | self-hosted, GPL-3.0 |
 
 ## 11. Alternatives considered
 
@@ -2717,9 +2692,9 @@ Every slice that adds a table referencing `assets` also updates
 | ClickHouse for observations / Neo4j for lineage | Same reasoning, also unverified by research 08. Observations are change-only and small; lineage depth is capped at 8 and fits a recursive CTE. Revisit if the P1/P3 tests miss §7 |
 | Probabilistic (ML) record merging | Research 08 "avoid": opaque merges cannot be explained or reversed. RFC-028's deterministic order + review stays |
 | Materialised views for facets | `REFRESH MATERIALIZED VIEW` is all-tenants and heavy; a per-tenant table refreshed on change is cheaper and states `as_of` |
-| Lucene / KQL-compatible syntax | Bigger grammar, regex and fuzzy operators we would have to refuse; OQL keeps PD/GitHub-search-like ergonomics with a typed registry |
+| Lucene / KQL-compatible syntax | Bigger grammar, regex and fuzzy operators we would have to refuse; OQL keeps search-box ergonomics with a typed registry |
 | Policies as workflows | Workflows are per event, per finding, without preview, apply-to-existing or caps (§6.15.6) |
-| Hard-delete action (PD) | Irreversible, and breaks finding history; archive + restore covers the use |
+| Hard-delete action | Irreversible, and breaks finding history; archive + restore covers the use |
 | Store screenshots as sent by the sensor | A compromised sensor or a hostile page could deliver polyglots; re-encoding is cheap |
 | gowitness | Viable as a separate GPL executable (D7), but its request interception cannot enforce the per-zone private-range policy |
 | Separate tag and label systems | Scope and assignment rules depend on tags; keeping tags as custom labels avoids breaking them |
@@ -2756,45 +2731,28 @@ Every slice that adds a table referencing `assets` also updates
 
 ## 13. Sources
 
-- ProjectDiscovery Cloud docs, re-read 2026-10-03:
-  - assets overview: <https://docs.projectdiscovery.io/cloud/assets/overview>
-  - asset policies: <https://docs.projectdiscovery.io/cloud/assets/asset-policies>
-    ("Conditions use AND logic"; actions notify / delete / add label /
-    remove label; scope future or existing+future; execution logs; review
-    step only)
-  - exclusions: <https://docs.projectdiscovery.io/cloud/assets/exclusions>
-    ("Exclusions only affect the discovery process … will remain in your
-    inventory until manually removed"; `+` allowlist mode;
-    case-insensitive)
-  - associated domains, screenshots, labeling and groups pages under
-    `docs.projectdiscovery.io/cloud/assets/`
-  - the owner's screenshots of Inventory, Overview, Dashboard and Asset
-    Groups
 - Research in the workspace (2026-10-03):
   - `01-easm-best-practices`: lineage and graph-cut exclusions,
     confidence and hop distance, seed groups and cadence,
     observations and diffs;
-  - `01b-projectdiscovery-neo`: R2 template-triggered scans, R5 asset
-    policies;
+  - R2 template-triggered scans, R5 asset policies;
   - `02-scan-orchestration-ha`: transactional outbox, `SKIP LOCKED`
     claims, at-least-once delivery;
   - `08-inventory-system-design`: per-source records → correlation →
     canonical rows; deterministic, windowed identity keys; single-flight
     correlation; zone boundaries; run-tag change detection with scoped
     cleanup; Fetch/Map/Load/ScopedCleanup connectors; identity fields;
-    CenQL/runZero query grammar; Defender EASM states (runZero, Axonius,
-    Cartography, Censys, Microsoft docs);
+    field/operator/value query grammar; attribution states;
   - `09-multi-type-inventory`: two-level class/type taxonomy, EASM as
     a subset of the shared model, one polymorphic table with per-type
     schemas, OCSF `resource_details` core, `jsonb_path_ops` and
     expression indexes, class tabs with per-tab columns, two-layer
-    filters, an ownership state independent of type (JupiterOne
-    data-model, runZero, Microsoft Defender / Defender EASM, OCSF,
-    PostgreSQL docs);
-  - `06-projectdiscovery-ux`: dynamic groups as saved filters over the
-    parent discovery, bulk label and status by filter, rules-based
-    asynchronous auto-labels, asynchronous headless-Chrome screenshots;
-  - `04-ctem-market-2026`: exposure graph, aggregation layer.
+    filters, an ownership state independent of type (OCSF, PostgreSQL
+    docs);
+  - dynamic groups as saved filters over the parent discovery, bulk
+    label and status by filter, rules-based asynchronous auto-labels,
+    asynchronous headless-Chrome screenshots;
+  - exposure graph, aggregation layer.
 - Fingerprint data:
   - `projectdiscovery/wappalyzergo` (MIT), data from
     `enthec/webappanalyzer` (GPL-3.0) and `HTTPArchive/wappalyzer`
