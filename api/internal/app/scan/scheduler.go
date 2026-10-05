@@ -3,11 +3,13 @@ package scan
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
 
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -232,6 +234,12 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 			"scan_id", sc.ID.String(), "scheduled_for", occurrence)
 		return
 	}
+	if fe := AsFrozen(err); fe != nil {
+		// A freeze window is active for this scan: the occurrence is
+		// deferred to the end of the window, not skipped.
+		s.deferFrozen(ctx, sc, nextRunAt, fe)
+		return
+	}
 	if errors.Is(err, ErrScanRunInProgress) {
 		// Overlap policy (D4): skip this occurrence and say so. Not recorded in
 		// last_run_status, which belongs to the run that is still going.
@@ -286,4 +294,39 @@ func (s *ScanScheduler) isRunning(scanID shared.ID) bool {
 func isMisfire(sc *scan.Scan, occurrence, now time.Time) bool {
 	following := sc.OccurrenceAfter(occurrence.Add(scan.MinScheduleInterval - time.Second))
 	return following != nil && !following.After(now)
+}
+
+// scheduleDeferrer moves a scheduled scan's next run (postgres.ScanRepository).
+type scheduleDeferrer interface {
+	DeferScheduledRun(ctx context.Context, tenantID, id shared.ID, from *time.Time, until time.Time) (bool, error)
+}
+
+// deferFrozen moves the scan's next run to the end of the freeze window that
+// stopped this occurrence (next_run_at was already moved to next by the
+// claim). Several occurrences inside one window become one run at its end;
+// the schedule continues from there.
+func (s *ScanScheduler) deferFrozen(ctx context.Context, sc *scan.Scan, next *time.Time, fe *FrozenError) {
+	metrics.ScanScheduleOutcomes.WithLabelValues("deferred_freeze").Inc()
+	d, ok := s.scanRepo.(scheduleDeferrer)
+	if !ok {
+		s.logger.Warn("scheduled run stopped by a freeze window and cannot be deferred", "scan_id", sc.ID.String())
+		return
+	}
+	moved, err := d.DeferScheduledRun(ctx, sc.TenantID, sc.ID, next, fe.Until)
+	if err != nil {
+		s.logger.Error("failed to defer a scheduled run past a freeze window", "scan_id", sc.ID.String(), "error", err)
+		return
+	}
+	if !moved {
+		return // the scan changed meanwhile (edited, paused or claimed elsewhere)
+	}
+	s.logger.Info("scheduled run deferred by a freeze window",
+		"scan_id", sc.ID.String(), "freeze_window_id", fe.WindowID.String(), "until", fe.Until)
+	s.scanService.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
+		NewSuccessEvent(audit.ActionScanFreezeDeferred, audit.ResourceTypeScanConfig, sc.ID.String()).
+			WithResourceName(sc.Name).
+			WithMessage(fmt.Sprintf("Scheduled run deferred to %s: freeze window '%s' is active",
+				fe.Until.UTC().Format(time.RFC3339), fe.WindowName)).
+			WithMetadata("freeze_window_id", fe.WindowID.String()).
+			WithMetadata("deferred_until", fe.Until.UTC().Format(time.RFC3339)))
 }

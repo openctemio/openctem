@@ -91,17 +91,18 @@ type Handlers struct {
 	// and finding route of the token-tenant chain (DataScopeGuard). nil
 	// disables the guard (tests with a minimal handler set).
 	DataScope     middleware.DataScopeAsserter
-	Sensor        *handler.SensorHandler        // nil if not initialized (no database)
-	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
-	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
-	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
-	Pipeline      *handler.PipelineHandler      // nil if not initialized (no database)
-	ScanProfile   *handler.ScanProfileHandler   // nil if not initialized (no database)
-	Tool          *handler.ToolHandler          // nil if not initialized (no database)
-	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
-	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
-	Scan          *handler.ScanHandler          // nil if not initialized (no database)
-	CI            *handler.CIHandler            // nil if not initialized (no database) - CI/CD snippet generator
+	Sensor        *handler.SensorHandler           // nil if not initialized (no database)
+	SensorContent *handler.SensorContentHandler    // scanner content policy + refresh (RFC-031); nil without a database
+	SensorResults *handler.SensorResultHandler     // unsolicited results policy + quarantine review (RFC-040); nil without a database
+	ScanZone      *handler.ScanZoneHandler         // nil if not initialized (no database)
+	ScanFreeze    *handler.ScanFreezeWindowHandler // nil if not initialized (no database)
+	Pipeline      *handler.PipelineHandler         // nil if not initialized (no database)
+	ScanProfile   *handler.ScanProfileHandler      // nil if not initialized (no database)
+	Tool          *handler.ToolHandler             // nil if not initialized (no database)
+	ToolCategory  *handler.ToolCategoryHandler     // nil if not initialized (no database)
+	Capability    *handler.CapabilityHandler       // nil if not initialized (no database)
+	Scan          *handler.ScanHandler             // nil if not initialized (no database)
+	CI            *handler.CIHandler               // nil if not initialized (no database) - CI/CD snippet generator
 	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
 	// without a database.
 	CIAdmin         *handler.CIAdminHandler
@@ -731,6 +732,9 @@ func Register(
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {
 		registerScanZoneRoutes(router, h.ScanZone, authMiddleware, userSync)
+	}
+	if h.ScanFreeze != nil {
+		registerScanFreezeWindowRoutes(router, h.ScanFreeze, authMiddleware, userSync)
 	}
 
 	// Initialize trigger rate limiter for pipeline/scan trigger endpoints

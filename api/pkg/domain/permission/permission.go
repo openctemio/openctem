@@ -177,6 +177,11 @@ const (
 	CIRead     Permission = "scans:ci:read"
 	CIWrite    Permission = "scans:ci:write"
 	CIOverride Permission = "scans:ci:override"
+
+	// ScanFreezeOverride starts a scan by hand while a scan freeze window
+	// is active (audited). Managing the windows themselves needs
+	// sensors:zones:write / sensors:zones:delete.
+	ScanFreezeOverride Permission = "scans:freeze:override"
 )
 
 // =============================================================================
@@ -453,6 +458,7 @@ func AllPermissions() []Permission {
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIOverride,
+		ScanFreezeOverride,
 
 		// Sensors module
 		SensorsRead, SensorsWrite, SensorsDelete,
