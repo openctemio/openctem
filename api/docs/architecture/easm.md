@@ -278,7 +278,7 @@ announces nothing; a rollback leaves neither row.
 
 The **digest** is one `notification_outbox` row per tenant and day
 (`aggregate_type` `easm_digest`, due at 08:00 UTC, unique while pending:
-`uq_notification_outbox_easm_digest`, migration `000980`). Each digest-class
+`uq_notification_outbox_easm_digest`, migration `001014`). Each digest-class
 exposure updates it: exact count, counts by severity and by attribution
 label, up to 25 named items, the highest severity. It goes out as
 `new_exposure` like the immediate alerts, so integrations that receive
