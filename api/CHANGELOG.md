@@ -5,7 +5,6 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
-### Security: deactivating an access group removes its access at once
 ### Security: scheduled scans never run as the system
 
 - A cloned or imported scan now belongs to the person who cloned or imported
