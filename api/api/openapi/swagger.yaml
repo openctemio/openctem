@@ -2588,6 +2588,15 @@ definitions:
       position:
         type: integer
     type: object
+  github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord:
+    properties:
+      host:
+        type: string
+      type:
+        type: string
+      value:
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput:
     properties:
       base_branch:
@@ -9351,6 +9360,50 @@ definitions:
         type: boolean
       dns_interval_hours:
         type: integer
+    type: object
+  internal_infra_http_handler.EASMVerifiedDomain:
+    properties:
+      created_at:
+        type: string
+      domain:
+        type: string
+      id:
+        type: string
+      instructions:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord'
+        description: Instructions is the TXT record to publish (easm rows only).
+      last_checked_at:
+        type: string
+      managed:
+        description: |-
+          Managed is true for an sso row: the organization cannot re-check or
+          delete it here.
+        type: boolean
+      purpose:
+        description: |-
+          Purpose: easm (added by the organization, attribution only) or sso
+          (set up by a platform administrator; admits SSO users, read-only here).
+        type: string
+      status:
+        description: |-
+          Status: pending (TXT not seen yet), verified, or failed (it was
+          verified and the record is gone; names under it stop auto-confirming).
+        type: string
+      verified_at:
+        type: string
+    type: object
+  internal_infra_http_handler.EASMVerifiedDomainCreateRequest:
+    properties:
+      domain:
+        type: string
+    type: object
+  internal_infra_http_handler.EASMVerifiedDomainList:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.EASMVerifiedDomain'
+        type: array
     type: object
   internal_infra_http_handler.EmbeddedCategoryResponse:
     properties:
@@ -23800,6 +23853,113 @@ paths:
       security:
       - BearerAuth: []
       summary: Run discovery and DNS checks now
+      tags:
+      - Attack Surface
+  /easm/verified-domains:
+    get:
+      description: Domains the organization proved it controls with a DNS TXT record.
+        Names under a verified domain are attributed with the strong rule fqdn_under_verified_root.
+        Rows a platform administrator set up for SSO are listed read-only (managed=true).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.EASMVerifiedDomainList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List the organization's verified domains
+      tags:
+      - Attack Surface
+    post:
+      consumes:
+      - application/json
+      description: 'Returns the DNS TXT record to publish. The domain is verified
+        for EASM only: it never admits SSO users (SSO domains are set up by a platform
+        administrator). Public suffixes and shared consumer domains are refused. Audited.'
+      parameters:
+      - description: Domain
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMVerifiedDomainCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.EASMVerifiedDomain'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Add a domain to verify for EASM
+      tags:
+      - Attack Surface
+  /easm/verified-domains/{id}:
+    delete:
+      description: Names under it stop auto-confirming. SSO domains cannot be removed
+        here. Audited.
+      parameters:
+      - description: Verified domain ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Remove a domain the organization verified for EASM
+      tags:
+      - Attack Surface
+  /easm/verified-domains/{id}/verify:
+    post:
+      description: Looks up the TXT record and marks the domain verified when the
+        exact token is present. At most 10 checks per organization per hour (429 with
+        Retry-After). Audited.
+      parameters:
+      - description: Verified domain ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.EASMVerifiedDomain'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Check a domain's TXT record now
       tags:
       - Attack Surface
   /exposures:
