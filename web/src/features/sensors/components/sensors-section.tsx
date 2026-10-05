@@ -52,6 +52,7 @@ import {
   invalidateSensorsCache,
 } from '@/lib/api/sensor-hooks'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
+import { useSensorGrantSummaries } from '@/lib/api/sensor-grant-hooks'
 import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
 import { Tabs, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PlatformSensorsLink } from '@/features/platform'
@@ -185,6 +186,13 @@ export function SensorsSection({
 
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const canWriteSensors = useHasPermission(Permission.SensorsWrite)
+  const canReadSensors = useHasPermission(Permission.SensorsRead)
+  // Grant flags on the list (RFC-052): legacy broad grants and New sensors.
+  const { data: grantSummaries } = useSensorGrantSummaries(canReadSensors)
+  const grants = useMemo(
+    () => new Map((grantSummaries?.data ?? []).map((g) => [g.sensor_id, g])),
+    [grantSummaries?.data]
+  )
   const zonesTab = tabParam === 'zones' && canReadZones && !typeFilter
 
   const filters = useMemo<FleetFilters>(() => {
@@ -641,6 +649,7 @@ export function SensorsSection({
     body = (
       <SensorTable
         sensors={filteredSensors}
+        grants={grants}
         onViewSensor={handleViewSensor}
         onEditSensor={handleEditSensor}
         onActivateSensor={handleActivateSensor}
