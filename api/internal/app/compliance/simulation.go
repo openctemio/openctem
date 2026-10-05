@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/simulation"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -19,8 +20,27 @@ type SafeCheckDispatcher interface {
 	DispatchSimulationCheck(ctx context.Context, tenantID, simRunID, assetID shared.ID, technique string) (shared.ID, error)
 }
 
+// SimulationActScope decides which targets the acting user may probe
+// (*actscope.Checker).
+type SimulationActScope interface {
+	Check(ctx context.Context, in actscope.Input) (*actscope.Decision, error)
+}
+
+// SimulationAssetRefs admits asset ids that are live assets of the tenant the
+// request's caller may see (*datascope.Enforcer).
+type SimulationAssetRefs interface {
+	FilterAssetRefs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (func(shared.ID) bool, error)
+}
+
+// ErrSimulationTargetNotFound is the one answer for a target the caller may
+// not probe: not an asset of the tenant, outside their data scope, or a free
+// text target outside their act scope (research 21b H4, RFC-050 W3).
+var ErrSimulationTargetNotFound = fmt.Errorf("%w: a target asset was not found", shared.ErrNotFound)
+
 // SimulationService manages attack simulations and control tests.
 type SimulationService struct {
+	actScope    SimulationActScope
+	assetRefs   SimulationAssetRefs
 	simRepo     simulation.SimulationRepository
 	runRepo     simulation.RunRepository
 	controlRepo simulation.ControlTestRepository
@@ -31,6 +51,61 @@ type SimulationService struct {
 // NewSimulationService creates a new simulation service.
 func NewSimulationService(simRepo simulation.SimulationRepository, controlRepo simulation.ControlTestRepository, log *logger.Logger) *SimulationService {
 	return &SimulationService{simRepo: simRepo, controlRepo: controlRepo, logger: log}
+}
+
+// SetActScope wires the act-scope rule for simulation targets. Both checks are
+// needed to create, update or run a simulation with targets; without them a
+// simulation with targets is refused (fail closed).
+func (s *SimulationService) SetActScope(c SimulationActScope, refs SimulationAssetRefs) {
+	s.actScope = c
+	s.assetRefs = refs
+}
+
+// refuseTargetsOutOfActScope applies the scan act-scope rule to simulation
+// targets: an asset-id target must be a live asset of the tenant that the
+// acting user may act on; a free-text target goes through the act-scope check
+// (restricted members only inventory assets in scope, unrestricted callers
+// only names inside the scoping allowlist). Checked at create, update and run,
+// so a run after the actor's scope shrank is refused too.
+func (s *SimulationService) refuseTargetsOutOfActScope(ctx context.Context, tenantID shared.ID, actorID string, targets []string) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	if s.actScope == nil || s.assetRefs == nil {
+		return ErrSimulationTargetNotFound
+	}
+	ids := make([]shared.ID, 0, len(targets))
+	names := make([]string, 0, len(targets))
+	for _, t := range targets {
+		if id, err := shared.IDFromString(t); err == nil && !id.IsZero() {
+			ids = append(ids, id)
+			continue
+		}
+		names = append(names, t)
+	}
+	var actor *shared.ID
+	if a, err := shared.IDFromString(actorID); err == nil && !a.IsZero() {
+		actor = &a
+	}
+	if len(ids) > 0 {
+		admit, err := s.assetRefs.FilterAssetRefs(ctx, tenantID, ids)
+		if err != nil {
+			return fmt.Errorf("check simulation targets: %w", err)
+		}
+		for _, id := range ids {
+			if !admit(id) {
+				return ErrSimulationTargetNotFound
+			}
+		}
+	}
+	d, err := s.actScope.Check(ctx, actscope.Input{TenantID: tenantID, FallbackUser: actor, Targets: names, AssetIDs: ids})
+	if err != nil {
+		return fmt.Errorf("check simulation targets: %w", err)
+	}
+	if d.Refused() {
+		return ErrSimulationTargetNotFound
+	}
+	return nil
 }
 
 // SetRunRepo sets the run repository (optional — nil disables run persistence).
@@ -87,6 +162,10 @@ func (s *SimulationService) CreateSimulation(ctx context.Context, input CreateSi
 		return nil, err
 	}
 
+	if err := s.refuseTargetsOutOfActScope(ctx, tid, input.ActorID, input.TargetAssets); err != nil {
+		return nil, err
+	}
+
 	sim.Update(input.Name, input.Description)
 	sim.SetMITRE(input.MitreTactic, input.MitreTechniqueID, input.MitreTechniqueName)
 	if err := sim.SetConfig(input.Config, input.TargetAssets, input.Tags); err != nil {
@@ -131,6 +210,7 @@ type UpdateSimulationInput struct {
 	TargetAssets       []string
 	Config             map[string]any
 	Tags               []string
+	ActorID            string
 }
 
 // UpdateSimulation updates a simulation.
@@ -140,6 +220,9 @@ func (s *SimulationService) UpdateSimulation(ctx context.Context, input UpdateSi
 
 	sim, err := s.simRepo.GetByID(ctx, tid, sid)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.refuseTargetsOutOfActScope(ctx, tid, input.ActorID, input.TargetAssets); err != nil {
 		return nil, err
 	}
 
@@ -303,6 +386,11 @@ func (s *SimulationService) RunSimulation(ctx context.Context, tenantID, simID, 
 
 	if sim.Status() != simulation.SimulationStatusActive {
 		return nil, fmt.Errorf("%w: simulation must be active to run", shared.ErrValidation)
+	}
+	// Re-checked at every run: the actor's scope may have shrunk since the
+	// simulation was saved (research 21b H4).
+	if err := s.refuseTargetsOutOfActScope(ctx, tid, actorID, sim.TargetAssets()); err != nil {
+		return nil, err
 	}
 
 	// Create the run

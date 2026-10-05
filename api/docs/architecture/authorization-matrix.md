@@ -29,7 +29,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
 | Scans | 22 | `scans:read/write/delete/execute`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
-| Sensors | 9 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete` |
+| Sensors | 14 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
 | Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
@@ -292,7 +292,7 @@ create's target validator, exclusions, zone routing) in one call.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/available-capabilities` · `/content-policy` | `sensors:read` |
+| `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/{id}/config-report` (setup checklist, research/26) · `/available-capabilities` · `/content-policy` | `sensors:read` |
 | `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write` |
 | `PUT /api/v1/sensors/content-policy` · `POST /content/refresh` · `POST /{id}/content/refresh` (scanner content, RFC-031) | `sensors:write` |
 | `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
@@ -315,6 +315,25 @@ create's target validator, exclusions, zone routing) in one call.
 > kept the report in `role_permissions_admin_only_stripped`). Custom roles
 > keep the read permissions and `sensors:commands:write`.
 >
+#### Sensor pairing and grants (RFC-052)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `POST /api/v2/sensor/pairing` · `POST /pairing/{id}/reveal` · `GET /pairing/{id}` · `POST /pairing/{id}/confirm` | none by bearer key: every request is RFC 9421-signed by the key being paired; per-address and global caps; no tenant until claimed (RFC-052 §4.4) |
+| `POST /api/v1/sensor-pairings/lookup` · `POST /expectations` · `GET /expectations/{id}` · `POST /{id}/deny` | `sensors:pair` |
+| `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up re-authentication + `fingerprint_confirmed` |
+| `GET /api/v1/sensors/{id}/grant` · `GET /api/v1/sensor-grant-profiles` · `GET /api/v1/sensors/identity-policy` | `sensors:read` |
+| `PUT /api/v1/sensors/{id}/grant` | `sensors:grant:narrow` when every dimension narrows or stays; `sensors:grant:widen` otherwise (checked in the service against the stored grant) |
+| `POST /api/v1/sensors/{id}/trust` | promote: `sensors:grant:widen`; demote: `sensors:grant:narrow` |
+| `PUT /api/v1/sensors/identity-policy` | require key-bound identity: `sensors:grant:narrow`; allow bearer keys again: `sensors:grant:widen` |
+| `POST /api/v1/sensors/{id}/revoke` · `POST /{id}/keys/{keyId}/revoke` | `sensors:write` or `sensors:revoke` |
+
+> `sensors:pair`, `sensors:approve`, `sensors:grant:narrow`,
+> `sensors:grant:widen` and `sensors:revoke` are held by owner and admin and
+> are admin-only (no custom role may carry them). Object level: a pairing has
+> no tenant until an approver binds it to theirs; re-pairing a sensor of
+> another tenant, and reading or changing another tenant's grant, answer 404.
+
 > **Revoking a sensor goes through `POST /{id}/revoke` only**: `PUT /{id}`
 > with `status: revoked` returns 400, so every revocation carries a reason and
 > the Critical `sensor.revoked` audit event.
@@ -420,6 +439,17 @@ the billing page in the UI.
 >   keys, so re-pointing one needs the owner/admin to re-bind.
 > - Every successful bind is audited as `template_source.credential_attached`
 >   (severity high) with the credential id/name and the destination host.
+>
+> **No credentials in the source configuration, https only.** The git, HTTP and
+> S3 configuration is stored as plain JSON and returned to anyone with
+> `scans:sources:read`, and the templates it fetches run on sensors. Create and
+> edit therefore refuse plain `http://` (git and HTTP sources), a URL with a
+> password or token (`https://user:token@host/...`), and HTTP headers that carry
+> a credential (`Authorization`, `Cookie`, `*token*`, `*key*`, `*secret*`,
+> `*auth*`): bind a credential instead. Rows stored before this rule keep
+> syncing and are masked in responses (URL password, credential header values).
+> Downloads stop at 50 MB (HTTP) and clones at 200 MB on disk or 20,000 files
+> (git), so a source cannot fill the API server's disk.
 >
 > The secret store has no per-credential host allowlist; the binding check
 > above is the control. Sources bound before this check existed keep their
@@ -994,6 +1024,11 @@ results an out-of-scope id is reported exactly like an unknown id.
   and full-data decision — the findings list/search, the asset list and
   `/findings/stats`; their SQL gives the same answer as a resolved scope (no
   scope row, nothing).
+- **Attack simulation targets** follow the scan act-scope rule at create,
+  update and run (`SimulationService.refuseTargetsOutOfActScope`: asset ids via
+  `FilterAssetRefs` + `actscope.Check`; 404 otherwise; 21b H4). Simulation
+  list/get are not scoped yet (RFC-050 W3 remainder).
+
 - **Scheduled scans act as their owner, never as the system** (21b H2/H3):
   clone and import set `created_by` to the actor (act scope checked on the
   direct targets); a scheduled run refuses a scan with no owner and pauses a
@@ -1008,6 +1043,11 @@ results an out-of-scope id is reported exactly like an unknown id.
   21b H1): exposure create, ingest and bulk ingest refuse an exposure with no
   `asset_id` from a restricted caller (400), so the fingerprint upsert cannot
   overwrite an asset-less exposure a restricted member cannot see.
+- **Group-modification cap** (RFC-050 W7, 21b M-4): unassign, ownership
+  update and removing another member from an access group need the caller to
+  hold every asset the group holds (`GroupService.requireWholeGroupInScope`,
+  the same check as adding members under D13); unrestricted callers are not
+  capped and leaving a group oneself is always allowed.
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
@@ -1155,11 +1195,14 @@ trend window takes the same scope). A schedule with no recorded creator, or whos
 longer be resolved (left the organization), is not rendered or sent
 (`failed`).
 
-### Deliberately tenant-wide (counts only, no row data)
+### Tenant-wide aggregates still to scope (counts only, no row data)
 
-These return aggregates over the whole tenant to every holder of the read
-permission. Filtering them would need a scoped variant of each aggregate
-query; none exposes a row, name, title or id of an out-of-scope object.
+These still return aggregates over the whole tenant to every holder of the
+read permission; none exposes a row, name, title or id of an out-of-scope
+object. This is **debt, not a decision**: owner decision D6 (2026-10-04) is
+that aggregates follow the viewer's scope, with org-wide totals only through
+`dashboard:aggregate` and a k ≥ 5 floor. Scoping them is RFC-050 W16;
+`/dashboard/stats` already follows D6.
 
 | Endpoint | Why tenant-wide |
 |---|---|
@@ -1434,6 +1477,13 @@ deliberately.
    *product* decision made via seed/migration, never by silently widening a route's
    gate.
 
+5. **Time-limited access is planned, not yet built.** Owner decision D4
+   (2026-10-04, reversing the 2026-09 AUTHZ-16 "won't build") and A2: `expires_at`
+   plus a reason on direct grants, group memberships and engagements, and expiry
+   on role assignments and guest memberships, checked at read time
+   (RFC-050 W22/W23). Until then there is no `expires_at` on any grant, and
+   revocation is immediate: disable or offboard the member (RFC-050 member
+   lifecycle), or remove the grant/role (`RevokeAllSessions` + version bump).
 5. **No time-limited grants.** There is no `expires_at` on role assignments;
    revocation is immediate via `RevokeAllSessions` + version bump. → we will **not** build expiring grants (YAGNI).
 

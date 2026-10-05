@@ -7,6 +7,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
@@ -39,14 +40,14 @@ func TestToolCatalog_SeededToolsReadBack(t *testing.T) {
 		t.Skip("no seeded tools (migrations not applied)")
 	}
 	for _, n := range names {
-		if _, err := repo.GetByName(ctx, n); err != nil {
+		if _, err := repo.GetByName(ctx, shared.ID{}, n); err != nil {
 			t.Errorf("GetByName(%q): %v", n, err)
 		}
 	}
 
 	// The asset collectors (migration 000265) are in the catalog as collectors.
 	for _, n := range []string{"gcp-dns", "vcenter", "ldap", "splunk", "prtg"} {
-		tl, err := repo.GetByName(ctx, n)
+		tl, err := repo.GetByName(ctx, shared.ID{}, n)
 		if err != nil {
 			t.Errorf("collector %q: %v", n, err)
 			continue
@@ -66,7 +67,7 @@ func TestToolCatalog_OutputTypesMatchTheStageCatalog(t *testing.T) {
 	ctx := context.Background()
 
 	for _, name := range []string{"subfinder", "dnsx", "naabu", "httpx", "katana", "nuclei", "semgrep", "trivy"} {
-		tl, err := repo.GetByName(ctx, name)
+		tl, err := repo.GetByName(ctx, shared.ID{}, name)
 		if err != nil {
 			t.Errorf("%s: %v", name, err)
 			continue

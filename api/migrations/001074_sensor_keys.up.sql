@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 001065: key-bound sensor identity (RFC-052 SP1, RFC-032 E4/E5)
+-- Migration 001074: key-bound sensor identity (RFC-052 SP1, RFC-032 E4/E5)
 -- =============================================================================
 -- A paired sensor holds an Ed25519 private key and signs every request
 -- (RFC 9421). The platform keeps only the public key, here. A key is pending
