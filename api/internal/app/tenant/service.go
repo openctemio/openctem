@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -412,7 +413,7 @@ type UpdateTenantInput struct {
 }
 
 // UpdateTenant updates a tenant's information.
-func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input UpdateTenantInput) (*tenantdom.Tenant, error) {
+func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input UpdateTenantInput, actx auditapp.AuditContext) (*tenantdom.Tenant, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -422,6 +423,7 @@ func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input
 	if err != nil {
 		return nil, err
 	}
+	before := profileOf(t)
 
 	if input.Name != nil {
 		if err := t.UpdateName(*input.Name); err != nil {
@@ -456,6 +458,19 @@ func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input
 	}
 
 	s.logger.Info("tenant updated", "id", t.ID().String())
+
+	// The slug keys SAML/SSO sign-in URLs, so renaming it is High.
+	after := profileOf(t)
+	severity := audit.SeverityLow
+	if after.Slug != before.Slug {
+		severity = audit.SeverityHigh
+	}
+	actx.TenantID = tenantID
+	event := auditapp.NewChangeEvent(audit.ActionTenantUpdated, audit.ResourceTypeTenant, tenantID, before, after).
+		WithResourceName(after.Name).
+		WithSeverity(severity).
+		WithMessage("Organization profile updated")
+	s.logAudit(ctx, actx, event)
 	return t, nil
 }
 
@@ -530,6 +545,11 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 	role, ok := tenantdom.ParseRole(input.Role)
 	if !ok {
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
+	}
+	if role == tenantdom.RoleAdmin {
+		if err := s.authorizeAdminPromotion(ctx, parsedTenantID, actx); err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if user is already a member. A suspended membership blocks
@@ -639,6 +659,11 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	// Prevent promoting to owner
 	if role == tenantdom.RoleOwner {
 		return nil, fmt.Errorf("%w: cannot promote to owner", shared.ErrValidation)
+	}
+	if role == tenantdom.RoleAdmin && membership.Role() != tenantdom.RoleAdmin {
+		if err := s.authorizeAdminPromotion(ctx, membership.TenantID(), actx); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := membership.UpdateRole(role); err != nil {
@@ -993,6 +1018,18 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	if err := accesscontrol.ValidateGrantableRoleIDs(input.RoleIDs); err != nil {
 		return nil, err
 	}
+	// Only the owner may invite someone as an administrator (settings
+	// decision B2). Acceptance grants the roles as the inviter, which the role
+	// service would refuse too; refusing here keeps the invitation from being
+	// sent at all.
+	for _, raw := range input.RoleIDs {
+		if raw == roledom.AdminRoleID.String() {
+			if err := s.authorizeAdminPromotion(ctx, parsedID, actx); err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
 	// ...and each must be a system role or one of this tenant's own roles. The
 	// handler's anti-escalation check is skipped for administrators, so this is
 	// the only place an id from another tenant is refused before it is stored.
@@ -1246,7 +1283,7 @@ func (s *TenantService) ListPendingInvitations(ctx context.Context, tenantID str
 }
 
 // DeleteInvitation cancels an invitation.
-func (s *TenantService) DeleteInvitation(ctx context.Context, tenantID, invitationID string) error {
+func (s *TenantService) DeleteInvitation(ctx context.Context, tenantID, invitationID string, actx auditapp.AuditContext) error {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -1260,7 +1297,8 @@ func (s *TenantService) DeleteInvitation(ctx context.Context, tenantID, invitati
 	// ResendInvitation). Without this any team-admin could cancel another
 	// tenant's pending invitations by guessing IDs. Not-found on mismatch to
 	// avoid existence disclosure.
-	if _, err := s.repo.GetInvitationByID(ctx, parsedTenantID, parsedID); err != nil {
+	inv, err := s.repo.GetInvitationByID(ctx, parsedTenantID, parsedID)
+	if err != nil {
 		return err
 	}
 
@@ -1269,6 +1307,19 @@ func (s *TenantService) DeleteInvitation(ctx context.Context, tenantID, invitati
 	}
 
 	s.logger.Info("invitation deleted", "id", invitationID)
+
+	// The actor is empty when the invitee declined through the public link.
+	message := fmt.Sprintf("Invitation for %s canceled", inv.Email())
+	if actx.ActorID == "" {
+		message = fmt.Sprintf("Invitation for %s declined", inv.Email())
+	}
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionInvitationDeleted, audit.ResourceTypeInvitation, invitationID).
+		WithSeverity(audit.SeverityLow).
+		WithMessage(message).
+		WithMetadata("email", inv.Email()).
+		WithMetadata("role_ids", inv.RoleIDs())
+	s.logAudit(ctx, actx, event)
 	return nil
 }
 
@@ -1374,7 +1425,7 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 
 	// Audit
 	actx.TenantID = tenantID
-	event := auditapp.NewSuccessEvent(audit.ActionInvitationCreated, audit.ResourceTypeInvitation, invitationID).
+	event := auditapp.NewSuccessEvent(audit.ActionInvitationResent, audit.ResourceTypeInvitation, invitationID).
 		WithSeverity(audit.SeverityLow).
 		WithMessage(fmt.Sprintf("Invitation email resent to %s", inv.Email())).
 		WithMetadata("email", inv.Email())
@@ -1428,6 +1479,7 @@ func (s *TenantService) UpdateAssetIdentitySettings(ctx context.Context, tenantI
 
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().AssetIdentity)).
 		WithMessage("Asset identity settings updated").
 		WithMetadata("stale_asset_days_before", before.StaleAssetDays).
 		WithMetadata("stale_asset_days_after", ai.StaleAssetDays).
@@ -1456,7 +1508,9 @@ type UpdateGeneralSettingsInput struct {
 
 // UpdateGeneralSettings updates only the general settings.
 func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID string, input UpdateGeneralSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
+	var before tenantdom.GeneralSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionGeneral, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().General
 		// Partial merge: start from the persisted section and overlay only the
 		// fields the client actually sent (non-nil). Omitted fields are preserved.
 		general := t.TypedSettings().General
@@ -1483,6 +1537,7 @@ func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID stri
 	// Log audit event
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().General)).
 		WithMessage("General settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1532,7 +1587,9 @@ var ErrIPAllowlistExcludesRequester = fmt.Errorf("%w: IP allowlist must include 
 
 // UpdateSecuritySettings updates only the security settings.
 func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID string, input UpdateSecuritySettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
+	var before tenantdom.SecuritySettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionSecurity, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().Security
 		// Partial merge: start from the persisted section and overlay only the
 		// fields the client actually sent. Omitted fields are preserved.
 		security := t.TypedSettings().Security
@@ -1599,7 +1656,8 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	// Log audit event
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
-		WithSeverity(audit.SeverityHigh).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Security)).
+		WithSeverity(securityChangeSeverity(before, t.TypedSettings().Security)).
 		WithMessage("Security settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1620,7 +1678,9 @@ type UpdateAPISettingsInput struct {
 
 // UpdateAPISettings updates only the API settings.
 func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, input UpdateAPISettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
+	var before tenantdom.APISettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionAPI, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().API
 		// Check plan limits for API via licensing service. Only gate when this
 		// request explicitly asserts API access enabled.
 		if input.APIKeyEnabled != nil && *input.APIKeyEnabled {
@@ -1664,6 +1724,7 @@ func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, 
 	// Log audit event
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().API)).
 		WithMessage("API settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1682,7 +1743,9 @@ type UpdateBrandingSettingsInput struct {
 
 // UpdateBrandingSettings updates only the branding settings.
 func (s *TenantService) UpdateBrandingSettings(ctx context.Context, tenantID string, input UpdateBrandingSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
+	var before tenantdom.BrandingSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionBranding, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().Branding
 		// Partial merge: start from the persisted section and overlay only the
 		// fields the client actually sent. Omitted fields are preserved.
 		branding := t.TypedSettings().Branding
@@ -1707,6 +1770,7 @@ func (s *TenantService) UpdateBrandingSettings(ctx context.Context, tenantID str
 	// Log audit event
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Branding)).
 		WithMessage("Branding settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1729,7 +1793,9 @@ type BranchTypeRuleInput struct {
 // UpdateBranchSettings updates only the branch naming convention settings.
 func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID string, input UpdateBranchSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	var rules branch.BranchTypeRules
+	var before tenantdom.BranchSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionBranch, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().Branch
 		rules = make(branch.BranchTypeRules, len(input.TypeRules))
 		for i, r := range input.TypeRules {
 			rules[i] = branch.BranchTypeRule{
@@ -1753,6 +1819,7 @@ func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID strin
 
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Branch)).
 		WithMessage("Branch naming convention settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1768,7 +1835,9 @@ type UpdatePentestSettingsInput struct {
 
 // UpdatePentestSettings updates only the pentest settings.
 func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID string, input UpdatePentestSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
+	var before tenantdom.PentestSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionPentest, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().Pentest
 		ps := tenantdom.PentestSettings{
 			CampaignTypes: input.CampaignTypes,
 			Methodologies: input.Methodologies,
@@ -1784,6 +1853,7 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Pentest)).
 		WithMessage("Pentest settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1821,7 +1891,9 @@ func (s *TenantService) GetPentestSettings(ctx context.Context, tenantID string)
 
 // UpdateRiskScoringSettings updates only the risk scoring settings.
 func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID string, rs tenantdom.RiskScoringSettings, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
+	var before tenantdom.RiskScoringSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionRiskScoring, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().RiskScoring
 		return t.UpdateRiskScoringSettings(rs)
 	})
 	if err != nil {
@@ -1832,6 +1904,7 @@ func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID 
 
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantRiskScoringUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().RiskScoring)).
 		WithMessage("Risk scoring settings updated").
 		WithMetadata("preset", rs.Preset)
 	s.logAudit(ctx, actx, event)
@@ -1890,6 +1963,7 @@ func (s *TenantService) UpdateAssetSourceSettings(
 
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantAssetSourceUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().AssetSource)).
 		WithMessage("Asset source priority settings updated").
 		WithMetadata("priority_before", toStrings(before.Priority)).
 		WithMetadata("priority_after", toStrings(as.Priority)).
@@ -1943,6 +2017,7 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantAssetLifecycleUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().AssetLifecycle)).
 		WithMessage("Asset lifecycle settings updated").
 		WithMetadata("enabled_before", before.Enabled).
 		WithMetadata("enabled_after", al.Enabled).
@@ -1992,6 +2067,7 @@ func (s *TenantService) UpdateRetestSettings(
 
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantRetestUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Retest)).
 		WithMessage("Auto-retest settings updated").
 		WithMetadata("auto_enabled_before", before.AutoEnabled).
 		WithMetadata("auto_enabled_after", rs.AutoEnabled).

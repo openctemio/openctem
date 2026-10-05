@@ -14,9 +14,11 @@ package scan
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -47,7 +49,39 @@ func (s *Service) refuseUnownedTargets(ctx context.Context, tenantID shared.ID, 
 		s.logRefusedTarget(ctx, tenantID, path, t, state)
 		refused[t] = ReasonOwnershipNotConfirmed
 	}
+	s.auditRefusedTargets(ctx, tenantID, path, blocked)
 	return actScopeError(refused)
+}
+
+// maxAuditedRefusals bounds how many refused targets one audit entry lists;
+// the count is always exact.
+const maxAuditedRefusals = 50
+
+// auditRefusedTargets writes one audit entry for a refused request, so the
+// tenant's administrators can see who tried to scan what (research/22 §4.0).
+// Unlike the caller's error it keeps the refusing state per target; the
+// audit log is readable only by members with audit access in this tenant.
+func (s *Service) auditRefusedTargets(ctx context.Context, tenantID shared.ID, path string,
+	blocked map[string]attribution.State,
+) {
+	targets := make([]string, 0, len(blocked))
+	for t := range blocked {
+		targets = append(targets, t)
+	}
+	sort.Strings(targets)
+	listed := make([]map[string]string, 0, min(len(targets), maxAuditedRefusals))
+	for _, t := range targets[:min(len(targets), maxAuditedRefusals)] {
+		listed = append(listed, map[string]string{
+			"target":      logger.SanitizeValue(t),
+			"attribution": string(blocked[t]),
+		})
+	}
+	s.logAudit(ctx, AuditContext{TenantID: tenantID.String()},
+		NewFailureEvent(audit.ActionScanTargetRefused, audit.ResourceTypeScan, "", nil).
+			WithMessage(fmt.Sprintf("%d active-scan target(s) refused: ownership not confirmed", len(targets))).
+			WithMetadata("path", path).
+			WithMetadata("refused_count", len(targets)).
+			WithMetadata("refused", listed))
 }
 
 // blockedCandidates asks the gate about a run's candidates that scope

@@ -222,13 +222,13 @@ type campaignKeyResolver struct {
 	group *remediation.GroupService
 }
 
-func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID, key string) (int64, int64, error) {
+func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, int64, error) {
 	closed := vulnerability.ClosedFindingStatuses()
 	closedStrs := make([]string, len(closed))
 	for i, s := range closed {
 		closedStrs[i] = string(s)
 	}
-	return a.keys.CountByKey(ctx, tenantID, key, closedStrs)
+	return a.keys.CountByKeyInScope(ctx, tenantID, key, closedStrs, scope)
 }
 
 func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (int, error) {
@@ -1210,6 +1210,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
 	// progress) is computed from live finding data instead of staying at zero.
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
+	// A restricted reader sees progress over their own findings (L-18).
+	s.RemediationCampaign.SetDataScope(s.DataScope)
 	// Creates, edits, status changes and deletes go to audit_logs.
 	s.RemediationCampaign.SetAuditLogger(s.Audit)
 	s.RemediationCampaign.SetAssigneeChecker(repos.AccessControl) // a campaign owner must be an active member (21b C2)
@@ -1609,6 +1611,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
 		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
 		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),
+		// A batch goes only to a sensor whose reported local policy accepts
+		// it; a trigger no sensor would accept is refused (research/25 §3.6).
+		scan.WithDispatchPolicy(repos.Sensor, s.Tenant),
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
@@ -1777,6 +1782,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize suppression service (platform-controlled false positive management)
 	s.Suppression = suppression.NewService(repos.Suppression, log)
+	// Four-eyes on approvals (owner decision B16) reads who may approve.
+	s.Suppression.SetApproverDirectory(repos.Suppression)
 
 	// Enforce approved suppression rules during ingest: a new finding matching an
 	// active (approved, non-expired) rule lands resolved+suppressed (out of the

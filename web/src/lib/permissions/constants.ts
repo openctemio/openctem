@@ -370,6 +370,19 @@ export const Permission = {
 export type PermissionString = (typeof Permission)[keyof typeof Permission]
 
 /**
+ * Permissions only the system owner and admin roles carry (settings decision
+ * B1): the API refuses them on a custom role. Mirrors
+ * api/pkg/domain/permission/admin_only.go.
+ */
+export const ADMIN_ONLY_PERMISSIONS: readonly string[] = [
+  Permission.SensorsWrite,
+  Permission.SensorsDelete,
+  Permission.CommandsDelete,
+  Permission.ScanZonesWrite,
+  Permission.ScanZonesDelete,
+]
+
+/**
  * All permission values as an array
  */
 export const AllPermissions = Object.values(Permission)
