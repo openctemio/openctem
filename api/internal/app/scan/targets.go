@@ -10,7 +10,6 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -177,19 +176,9 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		}
 	}
 
-	blocked := map[string]attribution.State{}
-	if s.attributionGate != nil && len(memberIDs) > 0 {
-		ids := make([]string, 0, len(memberIDs))
-		for id := range memberIDs {
-			if !excluded[id] {
-				ids = append(ids, id.String())
-			}
-		}
-		var err error
-		blocked, err = s.attributionGate.ActiveCheckBlocked(ctx, sc.TenantID, ids)
-		if err != nil {
-			return nil, fmt.Errorf("attribution check failed, scan not dispatched: %w", err)
-		}
+	blocked, err := s.blockedCandidates(ctx, sc.TenantID, candidates, names, memberIDs, excluded)
+	if err != nil {
+		return nil, err
 	}
 
 	outOfScope, err := s.runActScopeSkips(ctx, sc, candidates, names, memberIDs, excluded, blocked)
@@ -212,11 +201,10 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 			out.ExcludedNames = append(out.ExcludedNames, names[c.ID])
 			continue
 		}
-		if memberIDs[c.ID] {
-			if _, no := blocked[c.ID.String()]; no {
-				out.Unconfirmed++
-				continue
-			}
+		if state, no := blocked[c.ID.String()]; no {
+			out.Unconfirmed++
+			s.logRefusedTarget(ctx, sc.TenantID, "scan_run", names[c.ID], state)
+			continue
 		}
 		if outOfScope[c.ID] {
 			out.OutOfScope++
@@ -236,7 +224,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	}
 	if out.Unconfirmed > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
-			"%d asset(s) in the group were skipped: their ownership is not confirmed yet (review their attribution)", out.Unconfirmed))
+			"%d target(s) were skipped: %s", out.Unconfirmed, ReasonOwnershipNotConfirmed))
 	}
 	if len(out.Targets) > maxResolvedTargets {
 		return nil, fmt.Errorf("%w: scan resolves to %d targets, more than the %d allowed per run",

@@ -231,6 +231,16 @@ func (c *compiler) leaf(l *Leaf) string {
 		}
 		return "(NOT COALESCE((" + c.render(f.BoolTemplate, "") + "), FALSE))"
 	}
+	if f.EnumTemplates != nil && l.Op == OpEq {
+		v, _ := l.Values[0].(string)
+		tpl, ok := f.EnumTemplates[v]
+		if !ok {
+			// The parser checks the enum; this is defense in depth.
+			c.fail(l, "unknown value")
+			return ""
+		}
+		return "(" + c.render(tpl, "") + ")"
+	}
 	if tpl, ok := f.Templates[l.Op]; ok {
 		if strings.Contains(tpl, UserToken) && (c.actor.system || c.actor.userID.IsZero()) {
 			// "related to me" has no meaning without a user.
