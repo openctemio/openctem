@@ -435,7 +435,7 @@ active_allowed(asset) =
   AND tier(asset) <= tier_ceiling(scope_target or tenant default)
 ```
 
-**As built (2026-10-04, PR_GATE).** One gate (`internal/app/easm/active_gate.go`)
+**As built (2026-10-04, #1114).** One gate (`internal/app/easm/active_gate.go`)
 decides `active_allowed` on every active-scan path: typed targets and
 asset-group members, at scan create, clone, import, quick scan, `POST
 /commands`, every run (manual, scheduled, retry, workflow) and the dispatch
