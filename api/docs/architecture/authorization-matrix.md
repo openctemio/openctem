@@ -992,6 +992,10 @@ results an out-of-scope id is reported exactly like an unknown id.
   and full-data decision — the findings list/search, the asset list and
   `/findings/stats`; their SQL gives the same answer as a resolved scope (no
   scope row, nothing).
+- **Attack simulation targets** follow the scan act-scope rule at create,
+  update and run (`SimulationService.refuseTargetsOutOfActScope`: asset ids via
+  `FilterAssetRefs` + `actscope.Check`; 404 otherwise; 21b H4). Simulation
+  list/get are not scoped yet (RFC-050 W3 remainder).
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
