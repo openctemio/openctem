@@ -18,7 +18,8 @@ const rowFor = (page: Page, name: string) =>
   page.getByRole('row').filter({ has: page.getByText(name, { exact: true }) })
 
 async function openSensors(page: Page) {
-  await page.goto('/sensors')
+  // The daemon list carries the row actions (the "All" list does not).
+  await page.goto('/sensors?mode=daemon')
   await expect(page.getByRole('heading', { name: 'Sensors', level: 1 })).toBeVisible()
   await expect(page.getByRole('row').nth(1)).toBeVisible({ timeout: 30_000 })
 }
