@@ -69,36 +69,6 @@ export interface UpdateSecuritySettingsInput {
 }
 
 // ============================================
-// API SETTINGS
-// ============================================
-
-export type WebhookEvent =
-  | 'finding.created'
-  | 'finding.resolved'
-  | 'finding.updated'
-  | 'scan.completed'
-  | 'scan.failed'
-  | 'asset.discovered'
-  | 'asset.updated'
-  | 'member.joined'
-  | 'member.removed'
-
-export interface APISettings {
-  api_key_enabled: boolean
-  webhook_url: string
-  webhook_events: WebhookEvent[]
-  /** The signing secret is write-only: the API reports only whether one is set. */
-  webhook_secret_configured?: boolean
-}
-
-export interface UpdateAPISettingsInput {
-  api_key_enabled?: boolean
-  webhook_url?: string
-  webhook_secret?: string
-  webhook_events?: string[]
-}
-
-// ============================================
 // BRANDING SETTINGS
 // ============================================
 
@@ -250,7 +220,6 @@ export interface PentestSettings {
 export type SettingsSectionKey =
   | 'general'
   | 'security'
-  | 'api'
   | 'branding'
   | 'branch'
   | 'ai'
@@ -263,10 +232,11 @@ export type SettingsSectionKey =
 
 export interface TenantSettings {
   general: GeneralSettings
-  security: SecuritySettings
-  api: APISettings
+  /** Owners and admins only (absent for other roles). */
+  security?: SecuritySettings
   branding: BrandingSettings
-  risk_scoring: RiskScoringSettings
+  /** Owners and admins only (absent for other roles). */
+  risk_scoring?: RiskScoringSettings
   pentest?: PentestSettings
   /**
    * Entity tag of each section as stored. Sent back as If-Match on the
@@ -321,35 +291,3 @@ export const SESSION_TIMEOUT_OPTIONS = [
   { value: 240, label: '4 hours' },
   { value: 480, label: '8 hours' },
 ] as const
-
-export const WEBHOOK_EVENTS: { value: WebhookEvent; label: string; description: string }[] = [
-  {
-    value: 'finding.created',
-    label: 'Finding Created',
-    description: 'When a new vulnerability finding is created',
-  },
-  {
-    value: 'finding.resolved',
-    label: 'Finding Resolved',
-    description: 'When a finding is marked as resolved',
-  },
-  { value: 'finding.updated', label: 'Finding Updated', description: 'When a finding is updated' },
-  {
-    value: 'scan.completed',
-    label: 'Scan Completed',
-    description: 'When a security scan completes',
-  },
-  { value: 'scan.failed', label: 'Scan Failed', description: 'When a security scan fails' },
-  {
-    value: 'asset.discovered',
-    label: 'Asset Discovered',
-    description: 'When a new asset is discovered',
-  },
-  { value: 'asset.updated', label: 'Asset Updated', description: 'When an asset is updated' },
-  {
-    value: 'member.joined',
-    label: 'Member Joined',
-    description: 'When a new member joins the team',
-  },
-  { value: 'member.removed', label: 'Member Removed', description: 'When a member is removed' },
-]
