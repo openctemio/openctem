@@ -2180,7 +2180,7 @@ func (s *TenantService) GetRiskScoringSettings(ctx context.Context, tenantID str
 	return &rs, nil
 }
 
-// GetEASMSettings returns the tenant\x27s attack-surface monitoring settings
+// GetEASMSettings returns the tenant's attack-surface monitoring settings
 // (research/22 P0-11). The zero value is the default: everything on at the
 // platform cadence.
 func (s *TenantService) GetEASMSettings(ctx context.Context, tenantID string) (*tenantdom.EASMSettings, error) {
@@ -2196,7 +2196,7 @@ func (s *TenantService) GetEASMSettings(ctx context.Context, tenantID string) (*
 	return &es, nil
 }
 
-// UpdateEASMSettings replaces the tenant\x27s EASM settings and audits the
+// UpdateEASMSettings replaces the tenant's EASM settings and audits the
 // before/after values.
 func (s *TenantService) UpdateEASMSettings(
 	ctx context.Context,

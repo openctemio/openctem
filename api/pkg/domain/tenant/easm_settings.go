@@ -13,7 +13,7 @@ const (
 	MaxEASMIntervalHours = 168
 )
 
-// EASMSettings is the organization\x27s attack-surface monitoring (research/22
+// EASMSettings is the organization's attack-surface monitoring (research/22
 // P0-11, owner decisions E3 and E8). The zero value is the default: the
 // Certificate Transparency monitor and the DNS-only checks are on at the
 // platform cadence. Stored as "disabled" flags so a tenant that never saved
@@ -42,7 +42,7 @@ func (s EASMSettings) Validate() error {
 	return nil
 }
 
-// UpdateEASMSettings replaces the tenant\x27s EASM settings.
+// UpdateEASMSettings replaces the tenant's EASM settings.
 func (t *Tenant) UpdateEASMSettings(s EASMSettings) error {
 	if err := s.Validate(); err != nil {
 		return err

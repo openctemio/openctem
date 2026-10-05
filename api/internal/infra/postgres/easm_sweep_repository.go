@@ -25,7 +25,7 @@ func NewEASMSweepRepository(db *DB) *EASMSweepRepository {
 
 func runNowLease(tenantID shared.ID) string { return "easm_run_now:" + tenantID.String() }
 
-// Acquire takes the tenant\x27s run-now lease for window and never releases
+// Acquire takes the tenant's run-now lease for window and never releases
 // it, so the next run-now is allowed once it expires (across replicas). When
 // the lease is held it returns false and its expiry.
 func (r *EASMSweepRepository) Acquire(ctx context.Context, tenantID shared.ID, window time.Duration) (bool, time.Time, error) {
@@ -52,7 +52,7 @@ func (r *EASMSweepRepository) RunNowAvailableAt(ctx context.Context, tenantID sh
 	return until, nil
 }
 
-// Freshness returns when the tenant\x27s CT monitor and DNS checks last ran
+// Freshness returns when the tenant's CT monitor and DNS checks last ran
 // (nil: never).
 func (r *EASMSweepRepository) Freshness(ctx context.Context, tenantID shared.ID) (lastCT, lastDNS *time.Time, err error) {
 	var ct, dns sql.NullTime

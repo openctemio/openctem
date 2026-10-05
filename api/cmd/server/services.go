@@ -942,7 +942,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 	}
 	// Run-now and seed-triggered sweeps (research/22 P0-11): CT then DNS
-	// checks for one tenant, each honouring the tenant's switches.
+	// checks for one tenant, each honoring the tenant's switches.
 	var sweepCT easmapp.SweepCT
 	if cfg.Worker.CertMonitorEnabled {
 		sweepCT = s.CertMonitor
