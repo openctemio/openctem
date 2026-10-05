@@ -21,6 +21,7 @@ attack_paths
 attack_simulation_runs
 attack_simulations
 attacker_profiles
+audit_chain_anchors
 audit_chain_rebaseline_entries
 audit_chain_rebaselines
 audit_log_chain
@@ -91,6 +92,7 @@ remediation_campaign_tickets
 remediation_campaigns
 report_schedules
 risk_snapshots
+role_permissions_admin_only_stripped
 roles
 rule_bundles
 rule_overrides
