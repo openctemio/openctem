@@ -92,6 +92,9 @@ const (
 	// ReasonNoCommand: the report named no command, and the sensor's role may
 	// not push results on its own.
 	ReasonNoCommand Reason = "no_command"
+	// ReasonOutOfContract: a report bound to a command carried asset types
+	// its tool does not produce (research/27 G12, output-type binding).
+	ReasonOutOfContract Reason = "out_of_contract"
 )
 
 // Protocol is the results protocol the report arrived on; it decides how an
