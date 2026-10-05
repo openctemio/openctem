@@ -309,7 +309,7 @@ CT and DNS checks on at the platform cadence (decisions E3, E8). Turning CT off
 is the per-tenant opt-out from sending domain names to crt.sh and Cert
 Spotter (22b S6).
 
-Enforcement sits in the services, so every path honours it: the CT and DNS
+Enforcement sits in the services, so every path honors it: the CT and DNS
 controllers, the CT follow-up, run-now and seed sweeps. `certmonitor` and
 `easmdns` read the tenant's settings at the start of each tenant run; an
 unreadable setting skips the tenant (fail closed: an opted-out tenant's

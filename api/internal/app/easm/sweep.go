@@ -2,10 +2,10 @@ package easm
 
 // Run-now and seed-triggered sweeps (research/22 P0-11). A sweep runs the
 // Certificate Transparency monitor and then the DNS-only checks for one
-// tenant, honouring the tenant\x27s switches (each service skips a tenant that
+// tenant, honoring the tenant's switches (each service skips a tenant that
 // turned it off). Run-now is limited to once per 15 minutes per tenant across
 // replicas (a controller lease that is never released, so it expires); a new
-// seed starts a sweep without that limit (the services\x27 own per-tenant locks
+// seed starts a sweep without that limit (the services' own per-tenant locks
 // keep two sweeps from overlapping). Sweeps run in the background with a
 // time bound. Architecture: docs/architecture/easm.md.
 

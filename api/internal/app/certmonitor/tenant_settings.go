@@ -13,7 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
-// TenantSettingsReader reads a tenant\x27s EASM settings (*tenant.TenantService).
+// TenantSettingsReader reads a tenant's EASM settings (*tenant.TenantService).
 type TenantSettingsReader interface {
 	GetEASMSettings(ctx context.Context, tenantID string) (*tenant.EASMSettings, error)
 }
