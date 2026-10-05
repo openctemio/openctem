@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	modulesvc "github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -23,7 +24,7 @@ import (
 type BootstrapHandler struct {
 	permCacheSvc   *app.PermissionCacheService
 	permVersionSvc *app.PermissionVersionService
-	moduleSvc      *app.ModuleService
+	moduleSvc      *modulesvc.ModuleService
 	tenantSvc      *app.TenantService
 	logger         *logger.Logger
 }
@@ -32,7 +33,7 @@ type BootstrapHandler struct {
 func NewBootstrapHandler(
 	permCacheSvc *app.PermissionCacheService,
 	permVersionSvc *app.PermissionVersionService,
-	moduleSvc *app.ModuleService,
+	moduleSvc *modulesvc.ModuleService,
 	tenantSvc *app.TenantService,
 	log *logger.Logger,
 ) *BootstrapHandler {
@@ -98,7 +99,7 @@ type LicensingModuleResponse struct {
 // It processes top-level modules and their sub-modules, applying permission filtering
 // and organizing sub-modules by parent ID.
 func (h *BootstrapHandler) buildModulesResponse(
-	enabledModules *app.GetTenantEnabledModulesOutput,
+	enabledModules *modulesvc.GetTenantEnabledModulesOutput,
 	userPermissions []string,
 	isAdmin bool,
 ) *TenantModulesResponse {

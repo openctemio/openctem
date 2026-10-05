@@ -7,7 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -19,8 +20,8 @@ import (
 
 // ScanProfileHandler handles HTTP requests for scan profiles.
 type ScanProfileHandler struct {
-	service   *app.ScanProfileService
-	audit     *app.AuditService
+	service   *scan.ScanProfileService
+	audit     *auditsvc.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
@@ -28,18 +29,18 @@ type ScanProfileHandler struct {
 // SetAuditService records scan profile changes in the tenant's audit log. A
 // profile decides which tools run, how hard, and the quality gate that can
 // fail a CI pipeline, so who changed it matters.
-func (h *ScanProfileHandler) SetAuditService(svc *app.AuditService) {
+func (h *ScanProfileHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 
-func scanProfileAuditEvent(action audit.Action, p *scanprofile.ScanProfile, message string) app.AuditEvent {
-	return app.NewSuccessEvent(action, audit.ResourceTypeScanProfile, p.ID.String()).
+func scanProfileAuditEvent(action audit.Action, p *scanprofile.ScanProfile, message string) auditsvc.AuditEvent {
+	return auditsvc.NewSuccessEvent(action, audit.ResourceTypeScanProfile, p.ID.String()).
 		WithResourceName(p.Name).
 		WithMessage(message)
 }
 
 // NewScanProfileHandler creates a new ScanProfileHandler.
-func NewScanProfileHandler(service *app.ScanProfileService, v *validator.Validator, log *logger.Logger) *ScanProfileHandler {
+func NewScanProfileHandler(service *scan.ScanProfileService, v *validator.Validator, log *logger.Logger) *ScanProfileHandler {
 	return &ScanProfileHandler{
 		service:   service,
 		validator: v,
@@ -218,7 +219,7 @@ func (h *ScanProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID:           tenantID,
 		UserID:             userID,
 		Name:               req.Name,
@@ -323,7 +324,7 @@ func (h *ScanProfileHandler) List(w http.ResponseWriter, r *http.Request) {
 		includeSystem = false
 	}
 
-	input := app.ListScanProfilesInput{
+	input := scan.ListScanProfilesInput{
 		TenantID:      tenantID,
 		Search:        r.URL.Query().Get("search"),
 		Page:          parseQueryInt(r.URL.Query().Get("page"), 1),
@@ -397,7 +398,7 @@ func (h *ScanProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateScanProfileInput{
+	input := scan.UpdateScanProfileInput{
 		TenantID:           tenantID,
 		ProfileID:          profileID,
 		Name:               req.Name,
@@ -444,9 +445,8 @@ func (h *ScanProfileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
-	logRequestChange(h.audit, h.logger, r,
-		app.NewSuccessEvent(audit.ActionScanProfileDeleted, audit.ResourceTypeScanProfile, profileID).
-			WithMessage("Scan profile deleted"))
+	logRequestChange(h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionScanProfileDeleted, audit.ResourceTypeScanProfile, profileID).
+		WithMessage("Scan profile deleted"))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -511,7 +511,7 @@ func (h *ScanProfileHandler) Clone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CloneScanProfileInput{
+	input := scan.CloneScanProfileInput{
 		TenantID:  tenantID,
 		ProfileID: profileID,
 		NewName:   req.NewName,
@@ -556,7 +556,7 @@ func (h *ScanProfileHandler) UpdateQualityGate(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	input := app.UpdateQualityGateInput{
+	input := scan.UpdateQualityGateInput{
 		TenantID:  tenantID,
 		ProfileID: profileID,
 		QualityGate: scanprofile.QualityGate{
@@ -617,7 +617,7 @@ func (h *ScanProfileHandler) EvaluateQualityGate(w http.ResponseWriter, r *http.
 		Total:    req.Critical + req.High + req.Medium + req.Low + req.Info,
 	}
 
-	input := app.EvaluateQualityGateInput{
+	input := scan.EvaluateQualityGateInput{
 		TenantID:  tenantID,
 		ProfileID: profileID,
 		Counts:    counts,

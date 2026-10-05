@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -138,8 +139,8 @@ func newLifecycleFixture(t *testing.T) *lifecycleFixture {
 	return f
 }
 
-func (f *lifecycleFixture) ownerCtx() app.AuditContext {
-	return app.AuditContext{TenantID: f.tenantID.String(), ActorID: f.ownerID.String(), ActorEmail: "owner@example.com"}
+func (f *lifecycleFixture) ownerCtx() audit.AuditContext {
+	return audit.AuditContext{TenantID: f.tenantID.String(), ActorID: f.ownerID.String(), ActorEmail: "owner@example.com"}
 }
 
 func (f *lifecycleFixture) count(t *testing.T, query string, args ...any) int {
@@ -431,7 +432,7 @@ func TestMemberLifecycle_EraseAnonymisesAndKeepsReferences(t *testing.T) {
 		t.Errorf("unassign_findings left the finding assigned to %q", got)
 	}
 
-	peerCtx := app.AuditContext{TenantID: tid, ActorID: peer}
+	peerCtx := audit.AuditContext{TenantID: tid, ActorID: peer}
 	if err := f.svc.EraseMemberPersonalData(ctx, f.mshipID.String(), peerCtx); !errors.Is(err, app.ErrOwnerRequiredForErase) {
 		t.Fatalf("erase by a non-owner: want ErrOwnerRequiredForErase, got %v", err)
 	}

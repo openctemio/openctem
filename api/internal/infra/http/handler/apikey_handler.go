@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/apikey"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 
 	"github.com/go-chi/chi/v5"
 
@@ -261,8 +261,8 @@ func (h *APIKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // --- Helpers ---
 
 // apiKeyAuditContext attributes an API-key lifecycle event to the caller.
-func apiKeyAuditContext(r *http.Request, tenantID string) *app.AuditContext {
-	return &app.AuditContext{
+func apiKeyAuditContext(r *http.Request, tenantID string) *audit.AuditContext {
+	return &audit.AuditContext{
 		TenantID:   tenantID,
 		ActorID:    middleware.GetUserID(r.Context()),
 		ActorEmail: auditActorEmail(r.Context()),

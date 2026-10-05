@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/internal/app/pipeline"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -204,10 +204,13 @@ func (c *ExpirationChecker) handleExpiredCommand(ctx context.Context, cmd *comma
 	}
 	cmd.Expire()
 	cmd.ErrorMessage = reason.errorMessage
+	metrics.
 
-	// Record metric
-	app.CommandsExpired.WithLabelValues().Inc()
-	app.CommandsTotal.WithLabelValues(string(cmd.Type), "expired").Inc()
+		// Record metric
+		CommandsExpired.
+		WithLabelValues().Inc()
+	metrics.CommandsTotal.
+		WithLabelValues(string(cmd.Type), "expired").Inc()
 
 	c.logger.Info("command expired", "command_id", cmd.ID.String(), "reason", reason.code)
 
