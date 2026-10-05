@@ -92,5 +92,3 @@ security-endpoints.scanEndpoints.results
 security-endpoints.scanEndpoints.stop
 # The sensor config-report route ships in the companion API PR
 # (branch feat/sensor-config-report-api); that PR deletes these two lines.
-endpoints.sensorEndpoints.configReport
-endpoints.sensors.configReport

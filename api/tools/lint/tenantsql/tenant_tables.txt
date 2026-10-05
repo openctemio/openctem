@@ -124,6 +124,7 @@ scim_groups
 scim_tokens
 scope_exclusions
 scope_targets
+sensor_config_reports
 sensor_content_policies
 sensor_events
 sensor_heartbeat_history
