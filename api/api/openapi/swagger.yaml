@@ -10912,6 +10912,11 @@ definitions:
         $ref: '#/definitions/internal_infra_http_handler.ImportFileError'
       format:
         type: string
+      import_id:
+        description: |-
+          ImportID is the record of a committed file: the producer of the
+          findings (scan_id) and assets (import_id) it wrote. Empty in a preview.
+        type: string
       ingest:
         $ref: '#/definitions/internal_infra_http_handler.ImportIngestSummary'
       issues:

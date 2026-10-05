@@ -96,6 +96,24 @@ justification and source as the resolution) only when all of these hold:
 Otherwise the findings it would close are counted (`would_close`). One
 statement touches at most 5,000 findings.
 
+## Producer record
+
+Every committed file gets a row in `finding_imports` (migration 001098)
+before anything is written: tenant, uploader (`actor_user_id`), format, the
+SHA-256 of the file name (the name itself is only in the audit log) and,
+when the file is done, the counts (assets and findings created and updated,
+components, VEX statements, skipped, VEX stored and closed). A preview
+writes none. The record's id is:
+
+- the report id of the ingest, so the findings the import created or updated
+  carry it as `scan_id`, as a scan's findings carry the scan;
+- stamped on the assets the import created or updated, within the uploader's
+  scope, as `assets.import_id` (the last import that wrote the asset);
+- returned per file as `import_id` and listed in the audit records.
+
+So everything one import produced can be found (and purged) by its id. The
+record is read by `(tenant_id, id)` only.
+
 ## Audit
 
 Every import and every preview is recorded as `asset.imported` with

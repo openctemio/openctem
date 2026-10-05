@@ -9,6 +9,8 @@ package findingimport
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -30,9 +32,12 @@ type Ingester interface {
 	Ingest(ctx context.Context, agt *sensor.Sensor, input ingest.Input) (*ingest.Output, error)
 }
 
-// VEXRepository matches and updates the tenant's findings for a VEX
-// document (postgres.FindingRepository).
-type VEXRepository interface {
+// Repository records imports and matches and updates the tenant's findings
+// for a VEX document (postgres.FindingRepository).
+type Repository interface {
+	CreateFindingImport(ctx context.Context, rec *vulnerability.FindingImport) error
+	FinishFindingImport(ctx context.Context, rec *vulnerability.FindingImport) error
+	StampAssetsImport(ctx context.Context, tenantID, importID shared.ID, ids []shared.ID) (int64, error)
 	MatchVEXDocument(ctx context.Context, tenantID shared.ID, q vulnerability.VEXDocumentQuery, limit int) ([]vulnerability.VEXCandidate, error)
 	ApplyVEXDocument(ctx context.Context, tenantID shared.ID, ids []shared.ID, v vulnerability.InteropVEX, closeNotAffected bool, reason string) (stored, closed []shared.ID, err error)
 }
@@ -65,6 +70,8 @@ type Request struct {
 	// Actor is the uploader's data scope; nil is unrestricted (owner,
 	// admin, full data access).
 	Actor ingest.ActorScope
+	// ActorUserID is the uploader, recorded as the producer of the import.
+	ActorUserID *shared.ID
 	// DryRun parses and counts; nothing is written.
 	DryRun bool
 	// CanApprove: the uploader may set findings to false_positive
@@ -110,6 +117,9 @@ type VEXSummary struct {
 
 // FileResult is the outcome of one file.
 type FileResult struct {
+	// ImportID is the import record of a committed file: the producer of
+	// what it wrote (findings.scan_id, assets.import_id). Empty in a preview.
+	ImportID string           `json:"import_id,omitempty"`
 	Name     string           `json:"name"`
 	Format   importer.Format  `json:"format,omitempty"`
 	Error    *FileError       `json:"error,omitempty"`
@@ -123,13 +133,13 @@ type FileResult struct {
 // Service imports uploaded files.
 type Service struct {
 	ingest  Ingester
-	repo    VEXRepository
+	repo    Repository
 	vexMode ingest.VEXMode
 	logger  *logger.Logger
 }
 
 // NewService creates the import service. vexMode is INGEST_VEX.
-func NewService(ing Ingester, repo VEXRepository, vexMode ingest.VEXMode, log *logger.Logger) *Service {
+func NewService(ing Ingester, repo Repository, vexMode ingest.VEXMode, log *logger.Logger) *Service {
 	if vexMode == "" {
 		vexMode = ingest.SourceResolveDryRun
 	}
@@ -163,10 +173,33 @@ func (s *Service) ImportFile(ctx context.Context, req Request, index int, name s
 		fr.Unmapped = fr.Unmapped[:MaxUnmappedListed]
 	}
 
+	var rec *vulnerability.FindingImport
+	if !req.DryRun {
+		// The record exists before anything is written, so every finding
+		// and asset the import writes names an existing producer.
+		rec = &vulnerability.FindingImport{
+			ID:             shared.NewID(),
+			TenantID:       req.TenantID,
+			ActorUserID:    req.ActorUserID,
+			Format:         string(res.Format),
+			FilenameSHA256: nameHash(name),
+		}
+		if err := s.repo.CreateFindingImport(ctx, rec); err != nil {
+			s.logger.Error("finding import: record", "tenant_id", req.TenantID.String(), "error", err)
+			fr.Error = &FileError{Message: "recording the import failed", Kind: "failed"}
+			return fr
+		}
+		fr.ImportID = rec.ID.String()
+		// The report id becomes the findings' scan_id: the import is their
+		// producer, as a scan is.
+		res.Report.Metadata.ID = rec.ID.String()
+	}
+
 	if !req.DryRun && hasContent(res.Report) {
 		out, err := s.ingestReport(ctx, req, res.Report)
 		if err != nil {
 			fr.Error = &FileError{Message: err.Error(), Kind: "failed"}
+			s.finish(ctx, req, rec, &fr)
 			return fr
 		}
 		fr.Ingest = out
@@ -179,7 +212,63 @@ func (s *Service) ImportFile(ctx context.Context, req Request, index int, name s
 		}
 		fr.VEX = sum
 	}
+	s.finish(ctx, req, rec, &fr)
 	return fr
+}
+
+// nameHash is the hex SHA-256 of a file name label.
+func nameHash(name string) string {
+	sum := sha256.Sum256([]byte(name))
+	return hex.EncodeToString(sum[:])
+}
+
+// finish stamps the assets the import wrote with its id and stores its
+// counts. Best-effort: the results are already stored.
+func (s *Service) finish(ctx context.Context, req Request, rec *vulnerability.FindingImport, fr *FileResult) {
+	if rec == nil {
+		return
+	}
+	rec.Components = fr.Stats.Components
+	rec.Statements = fr.Stats.Statements
+	rec.Skipped = fr.Stats.Skipped
+	if o := fr.Ingest; o != nil {
+		rec.AssetsCreated, rec.AssetsUpdated = o.AssetsCreated, o.AssetsUpdated
+		rec.FindingsCreated, rec.FindingsUpdated = o.FindingsCreated, o.FindingsUpdated
+		if ids := s.writtenAssets(ctx, req, o.AssetMap); len(ids) > 0 {
+			if _, err := s.repo.StampAssetsImport(ctx, req.TenantID, rec.ID, ids); err != nil {
+				s.logger.Warn("finding import: stamp assets", "tenant_id", req.TenantID.String(), "error", err)
+			}
+		}
+	}
+	if v := fr.VEX; v != nil {
+		rec.VEXStored, rec.VEXClosed = v.Stored, v.Closed
+	}
+	if err := s.repo.FinishFindingImport(ctx, rec); err != nil {
+		s.logger.Warn("finding import: counts", "tenant_id", req.TenantID.String(), "error", err)
+	}
+}
+
+// writtenAssets are the persisted assets of the report the uploader may
+// change: ingest maps every report asset, and a restricted uploader's
+// out-of-scope ones were not written.
+func (s *Service) writtenAssets(ctx context.Context, req Request, assetMap map[string]shared.ID) []shared.ID {
+	seen := map[shared.ID]bool{}
+	ids := make([]shared.ID, 0, len(assetMap))
+	for _, id := range assetMap {
+		if !id.IsZero() && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if req.Actor == nil || len(ids) == 0 {
+		return ids
+	}
+	allowed, err := req.Actor.AssetsInScope(ctx, ids)
+	if err != nil {
+		s.logger.Warn("finding import: scope of written assets", "tenant_id", req.TenantID.String(), "error", err)
+		return nil
+	}
+	return allowed
 }
 
 func hasContent(r *ctis.Report) bool {

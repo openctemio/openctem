@@ -30,6 +30,18 @@ func (f *importIngester) Ingest(_ context.Context, _ *sensor.Sensor, in ingest.I
 
 type importVEXRepo struct{ applies int }
 
+func (f *importVEXRepo) CreateFindingImport(context.Context, *vulnerability.FindingImport) error {
+	return nil
+}
+
+func (f *importVEXRepo) FinishFindingImport(context.Context, *vulnerability.FindingImport) error {
+	return nil
+}
+
+func (f *importVEXRepo) StampAssetsImport(context.Context, shared.ID, shared.ID, []shared.ID) (int64, error) {
+	return 0, nil
+}
+
 func (f *importVEXRepo) MatchVEXDocument(context.Context, shared.ID, vulnerability.VEXDocumentQuery, int) ([]vulnerability.VEXCandidate, error) {
 	return nil, nil
 }
