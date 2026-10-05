@@ -1,6 +1,4 @@
--- Reverts 001075. Pairing requests are dropped; sensors already paired keep
--- their keys (sensor_keys, 001065).
-SET lock_timeout = '5s';
+-- Reverses 001053_ci_runner_identity.up.sql.
 
 CREATE OR REPLACE FUNCTION refuse_admin_only_permission_on_custom_role()
 RETURNS TRIGGER
@@ -18,10 +16,12 @@ BEGIN
 END;
 $$;
 
-DELETE FROM role_permissions WHERE permission_id IN
-    ('sensors:pair', 'sensors:approve', 'sensors:grant:narrow', 'sensors:grant:widen', 'sensors:revoke');
-DELETE FROM permissions WHERE id IN
-    ('sensors:pair', 'sensors:approve', 'sensors:grant:narrow', 'sensors:grant:widen', 'sensors:revoke');
+DELETE FROM role_permissions WHERE permission_id IN ('scans:ci:read', 'scans:ci:write', 'scans:ci:override');
+DELETE FROM permissions WHERE id IN ('scans:ci:read', 'scans:ci:write', 'scans:ci:override');
 
-DROP TABLE IF EXISTS sensor_pairings;
-ALTER TABLE tenants DROP COLUMN IF EXISTS sensor_bearer_keys_allowed;
+DROP TABLE IF EXISTS ci_gate_overrides;
+DROP TABLE IF EXISTS ci_gate_policies;
+DROP TABLE IF EXISTS ci_oidc_replay;
+DROP TABLE IF EXISTS ci_run_findings;
+DROP TABLE IF EXISTS ci_runs;
+DROP TABLE IF EXISTS ci_trust_configs;
