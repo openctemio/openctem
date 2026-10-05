@@ -142,6 +142,13 @@ const (
 	// agent.offline to it). Emitted once per offline transition, not per tick.
 	EventTypeSensorOffline EventType = "sensor.offline"
 
+	// CI pipeline signals (RFC-051 §10.6), emitted by the CI alert job once
+	// per pipeline or repository while the condition holds, never per run.
+	EventTypeCIScheduleMissed     EventType = "ci.schedule_missed"
+	EventTypeCICoverageRegression EventType = "ci.coverage_regression"
+	EventTypeCIGateFailing        EventType = "ci.gate_failing"
+	EventTypeCIRunnerOutdated     EventType = "ci.runner_outdated"
+
 	// Retired types. Nothing ever emitted them, so they are not in
 	// AllEventTypes and a channel cannot subscribe to them (settings plan
 	// P0-08). They stay as constants only because the legacy aliases below
@@ -211,6 +218,12 @@ func AllEventTypes() []EventTypeInfo {
 
 		// Sensor events - require 'sensors' module
 		{Type: EventTypeSensorOffline, Category: EventCategorySensor, Label: "Sensor Offline", Description: "A sensor stopped sending heartbeats and was marked offline", RequiredModule: ModuleSensors},
+
+		// CI pipeline signals - require 'scans' module (CI runs live there)
+		{Type: EventTypeCIScheduleMissed, Category: EventCategorySensor, Label: "CI Scheduled Scan Missed", Description: "A CI pipeline with a schedule missed two expected runs", RequiredModule: ModuleScans},
+		{Type: EventTypeCICoverageRegression, Category: EventCategorySensor, Label: "CI Coverage Lost", Description: "A repository that had a fresh CI pipeline has none any more", RequiredModule: ModuleScans},
+		{Type: EventTypeCIGateFailing, Category: EventCategorySensor, Label: "CI Default Branch Failing", Description: "The default branch of a repository fails the CI gate (opt-in)", RequiredModule: ModuleScans},
+		{Type: EventTypeCIRunnerOutdated, Category: EventCategorySensor, Label: "CI Runner Outdated", Description: "A CI pipeline runs a sensor older than the minimum supported version", RequiredModule: ModuleScans},
 	}
 }
 
@@ -252,6 +265,14 @@ func DefaultEnabledEventTypes() []EventType {
 		// per-integration severity filter still applies (P0 -> critical,
 		// P1 -> high, ...), so this is not a firehose.
 		EventTypeFindingPriorityEscalated,
+
+		// A scheduled CI scan that silently stopped, a repository that lost
+		// its scanning, or a runner below the supported version are the
+		// failures nobody notices otherwise. A failing default branch is
+		// opt-in: the pipeline itself already reports it.
+		EventTypeCIScheduleMissed,
+		EventTypeCICoverageRegression,
+		EventTypeCIRunnerOutdated,
 	}
 }
 
@@ -293,6 +314,10 @@ func SeverityFilterApplies(eventType EventType) bool {
 	// severity is a constant chosen by the sensor-health controller. The
 	// operator opts in through the event-type list.
 	case EventTypeSensorOffline:
+		return false
+	// The CI signals carry a constant severity chosen by the CI alert job,
+	// not a finding's severity.
+	case EventTypeCIScheduleMissed, EventTypeCICoverageRegression, EventTypeCIGateFailing, EventTypeCIRunnerOutdated:
 		return false
 	// sla_warning is stamped "medium" by the SLA warning adapter as the urgency
 	// of an approaching deadline, whatever the finding's severity. It is opt-in

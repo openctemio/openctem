@@ -862,6 +862,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	}
 	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
 	admin.SetPipelineService(ciSvc)
+	admin.SetCoverageService(ciSvc)
 	return admin, handler.NewCIRunnerHandler(ciSvc, log)
 }
 
