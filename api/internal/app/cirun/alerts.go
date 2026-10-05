@@ -12,6 +12,7 @@ import (
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -88,6 +89,14 @@ func (j *AlertJob) ReconcileTenant(ctx context.Context, tenantID shared.ID) (Ale
 		return res, err
 	}
 	current := cirun.EvaluateAlerts(pipes, now, j.versions)
+	refused, err := j.repo.TokenRefusalsSince(ctx, tenantID, now.Add(-cirun.TokenRefusalWindow))
+	if err != nil {
+		return res, fmt.Errorf("count token refusals: %w", err)
+	}
+	if refused >= cirun.TokenRefusalBurst {
+		current = append(current, cirun.Alert{Kind: cirun.AlertTokenRefusals, SubjectID: tenantID,
+			Detail: map[string]any{"refusals": refused, "window": cirun.TokenRefusalWindow.String()}})
+	}
 	state, err := j.repo.ListAlertState(ctx, tenantID)
 	if err != nil {
 		return res, err
@@ -146,6 +155,8 @@ func alertEvent(k cirun.AlertKind) (integration.EventType, string) {
 		return integration.EventTypeCICoverageRegression, "high"
 	case cirun.AlertGateFailing:
 		return integration.EventTypeCIGateFailing, "medium"
+	case cirun.AlertTokenRefusals:
+		return integration.EventTypeCITokenRefusals, notificationdom.SeverityHigh
 	default:
 		return integration.EventTypeCIRunnerOutdated, "medium"
 	}
@@ -166,6 +177,11 @@ func (j *AlertJob) notify(ctx context.Context, tenantID shared.ID, a cirun.Alert
 	case cirun.AlertCoverageRegression:
 		title = "CI coverage lost: " + a.Repository
 		body = fmt.Sprintf("%s had a CI pipeline scanning it; none of its pipelines has run within its expected cadence.", a.Repository)
+	case cirun.AlertTokenRefusals:
+		title = "CI token exchanges refused repeatedly"
+		body = fmt.Sprintf("%v CI token exchanges were refused in the last %s: a pipeline outside the trust rules, "+
+			"a replayed token or a misconfiguration. The audit log (ci_run.token_refused) names each repository and reason.",
+			a.Detail["refusals"], cirun.TokenRefusalWindow)
 	case cirun.AlertGateFailing:
 		title = "Default branch failing the CI gate: " + a.Repository
 		body = fmt.Sprintf("The last run of %s on the default branch of %s failed the CI gate.", a.Workflow, a.Repository)
@@ -173,14 +189,21 @@ func (j *AlertJob) notify(ctx context.Context, tenantID shared.ID, a cirun.Alert
 		title = "Outdated CI runner: " + a.Repository
 		body = fmt.Sprintf("The CI pipeline %s on %s runs a sensor older than the minimum supported version.", a.Workflow, a.Repository)
 	}
-	if a.PipelineID != nil {
+	switch {
+	case a.Kind == cirun.AlertTokenRefusals:
+		aggregate = "tenant"
+		url = "/settings/scanning/ci"
+	case a.PipelineID != nil:
 		aggregate = "ci_pipeline"
 		url = "/sensors?mode=runner&pipeline=" + a.PipelineID.String()
-	} else {
+	default:
 		aggregate = "repository"
 		url = "/sensors?mode=runner&view=coverage"
 	}
-	meta := map[string]any{"kind": string(a.Kind), "repository": a.Repository, "repository_asset_id": a.RepositoryAssetID.String()}
+	meta := map[string]any{"kind": string(a.Kind)}
+	if a.Repository != "" {
+		meta["repository"], meta["repository_asset_id"] = a.Repository, a.RepositoryAssetID.String()
+	}
 	if a.Workflow != "" {
 		meta["workflow"] = a.Workflow
 	}

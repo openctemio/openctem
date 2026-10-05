@@ -242,6 +242,9 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
 	"scan_zones":        func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
 	"sensors":           func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
+	"scan_freeze_windows": func(*schemaSeeder) map[string]any {
+		return map[string]any{"timezone": "UTC", "recurrence": "weekly", "days": "{1}", "start_minute": "0", "end_minute": "60"}
+	},
 	// public_key is 32 bytes (lib/pq sends a string to a bytea parameter as raw
 	// bytes), thumbprint 43 base64url characters, status a
 	// closed set (CHECKs; RFC-052).
