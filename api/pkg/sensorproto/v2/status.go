@@ -232,11 +232,16 @@ const (
 	// a lease, at most its free slots of scans, in the fair dispatch order;
 	// its claim of each is a replay. Without it GET /commands only lists.
 	FeatureCapacity = "capacity"
+	// FeatureConfigReport: PUT /config-report stores the sensor's preflight
+	// check results and the heartbeat accepts the config_report summary
+	// (research/26). A sensor sends neither to a server that does not list
+	// it. Display and health data only: it never widens dispatch.
+	FeatureConfigReport = "config_report"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCapacity}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCapacity, FeatureConfigReport}
 }
 
 // Deprecation announces a deprecated protocol on hello.
