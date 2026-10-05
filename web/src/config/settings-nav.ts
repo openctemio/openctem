@@ -371,8 +371,8 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'ci-pipelines',
-        title: 'CI pipelines',
-        description: 'Which CI pipelines may send results, and what fails them.',
+        title: 'CI/CD integration',
+        description: 'Which CI/CD pipelines may send results, and what fails them.',
         url: '/settings/scanning/ci',
         icon: Workflow,
         permission: Permission.CIRead,
