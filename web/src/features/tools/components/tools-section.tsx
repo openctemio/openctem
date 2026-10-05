@@ -19,7 +19,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, useCanMutate } from '@/lib/permissions'
 
 import { AddToolDialog } from './add-tool-dialog'
 import { ToolCard } from './tool-card'
@@ -283,6 +283,10 @@ export function ToolsSection({ onToolSelect, selectedToolId }: ToolsSectionProps
 
   // Check if we're in custom tools mode for conditional rendering
   const isCustomToolsMode = mainTab === 'custom'
+  // Custom tools are written with scans:tenant_tools:* (the API's gate).
+  const canEditTool = useCanMutate('PUT /api/v1/custom-tools/{id}')
+  const canDeleteTool = useCanMutate('DELETE /api/v1/custom-tools/{id}')
+  const canToggleTool = useCanMutate('POST /api/v1/custom-tools/{id}/activate')
 
   // Headline numbers describe the active tab's tools, so a metric's count is
   // exactly what its filter shows.
@@ -386,7 +390,7 @@ export function ToolsSection({ onToolSelect, selectedToolId }: ToolsSectionProps
       card={false}
       action={
         !hasFilter && isCustomToolsMode ? (
-          <Can permission={Permission.ToolsWrite}>
+          <Can route="POST /api/v1/custom-tools">
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add tool
@@ -410,10 +414,10 @@ export function ToolsSection({ onToolSelect, selectedToolId }: ToolsSectionProps
         tools={filteredTools}
         categories={categoriesData?.items}
         onViewTool={handleViewTool}
-        onEditTool={isCustomToolsMode ? handleEditTool : undefined}
-        onDeleteTool={isCustomToolsMode ? handleDeleteClick : undefined}
-        onActivateTool={isCustomToolsMode ? handleActivateTool : undefined}
-        onDeactivateTool={isCustomToolsMode ? handleDeactivateTool : undefined}
+        onEditTool={isCustomToolsMode && canEditTool ? handleEditTool : undefined}
+        onDeleteTool={isCustomToolsMode && canDeleteTool ? handleDeleteClick : undefined}
+        onActivateTool={isCustomToolsMode && canToggleTool ? handleActivateTool : undefined}
+        onDeactivateTool={isCustomToolsMode && canToggleTool ? handleDeactivateTool : undefined}
         // Platform tools are read-only - no enable/disable
         readOnly={!isCustomToolsMode}
         toolbarStart={toolbarStart}
@@ -438,10 +442,10 @@ export function ToolsSection({ onToolSelect, selectedToolId }: ToolsSectionProps
                 selected={selectedToolId === tool.id}
                 onSelect={() => onToolSelect?.(selectedToolId === tool.id ? null : tool.id)}
                 onView={handleViewTool}
-                onEdit={isCustomToolsMode ? handleEditTool : undefined}
-                onDelete={isCustomToolsMode ? handleDeleteClick : undefined}
-                onActivate={isCustomToolsMode ? handleActivateTool : undefined}
-                onDeactivate={isCustomToolsMode ? handleDeactivateTool : undefined}
+                onEdit={isCustomToolsMode && canEditTool ? handleEditTool : undefined}
+                onDelete={isCustomToolsMode && canDeleteTool ? handleDeleteClick : undefined}
+                onActivate={isCustomToolsMode && canToggleTool ? handleActivateTool : undefined}
+                onDeactivate={isCustomToolsMode && canToggleTool ? handleDeactivateTool : undefined}
                 // Platform tools are read-only - no enable/disable
                 readOnly={!isCustomToolsMode}
               />
@@ -465,7 +469,7 @@ export function ToolsSection({ onToolSelect, selectedToolId }: ToolsSectionProps
           Export
         </Button>
         {/* Add is for custom tools; on the Platform tab it explains why it is off. */}
-        <Can permission={Permission.ToolsWrite}>
+        <Can route="POST /api/v1/custom-tools">
           <Tooltip>
             <TooltipTrigger asChild>
               <span>
@@ -523,10 +527,10 @@ export function ToolsSection({ onToolSelect, selectedToolId }: ToolsSectionProps
           categories={categoriesData?.items}
           open={detailSheetOpen}
           onOpenChange={setDetailSheetOpen}
-          onEdit={isCustomToolsMode ? handleEditTool : undefined}
-          onDelete={isCustomToolsMode ? handleDeleteClick : undefined}
-          onActivate={isCustomToolsMode ? handleActivateTool : undefined}
-          onDeactivate={isCustomToolsMode ? handleDeactivateTool : undefined}
+          onEdit={isCustomToolsMode && canEditTool ? handleEditTool : undefined}
+          onDelete={isCustomToolsMode && canDeleteTool ? handleDeleteClick : undefined}
+          onActivate={isCustomToolsMode && canToggleTool ? handleActivateTool : undefined}
+          onDeactivate={isCustomToolsMode && canToggleTool ? handleDeactivateTool : undefined}
           // Platform tools are read-only
           readOnly={!isCustomToolsMode}
         />

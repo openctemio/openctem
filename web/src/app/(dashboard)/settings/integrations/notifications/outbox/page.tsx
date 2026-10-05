@@ -43,7 +43,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 import {
@@ -405,7 +405,7 @@ export default function NotificationOutboxPage() {
                   </SafeExternalLink>
                 </DropdownMenuItem>
               )}
-              <Can permission={Permission.NotificationsWrite}>
+              <Can route="POST /api/v1/notification-outbox/{id}/retry">
                 {canRetry && (
                   <DropdownMenuItem onClick={() => handleRetry(entry)} disabled={isRetrying}>
                     <RotateCcw className="me-2 h-4 w-4" />
@@ -413,7 +413,7 @@ export default function NotificationOutboxPage() {
                   </DropdownMenuItem>
                 )}
               </Can>
-              <Can permission={Permission.NotificationsDelete}>
+              <Can route="DELETE /api/v1/notification-outbox/{id}">
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive"
