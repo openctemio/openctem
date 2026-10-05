@@ -45,6 +45,7 @@ import {
 import { AccessRestrictionsCard, isIpLockoutError, parseLines } from './access-restrictions-card'
 import { DeleteOrganization } from './delete-organization'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
+import { SensorOptInSwitches } from '@/features/sensors/components/sensor-opt-in-switches'
 import { safeImageSrc } from '@/lib/safe-href'
 
 const STORAGE_FORM_ID = 'storage-config-form'
@@ -368,6 +369,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
     allowed_domains: '',
     email_verification_mode: 'auto' as 'auto' | 'always' | 'never',
     require_sensor_local_policy_for_private_targets: false,
+    allow_sensor_interactsh: false,
+    allow_sensor_custom_templates: false,
   })
 
   const [brandingForm, setBrandingForm] = useState({
@@ -407,6 +410,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
           (settings.security.email_verification_mode as 'auto' | 'always' | 'never') || 'auto',
         require_sensor_local_policy_for_private_targets:
           settings.security.require_sensor_local_policy_for_private_targets || false,
+        allow_sensor_interactsh: settings.security.allow_sensor_interactsh || false,
+        allow_sensor_custom_templates: settings.security.allow_sensor_custom_templates || false,
       })
       setBrandingForm({
         primary_color: settings.branding.primary_color || '#3B82F6',
@@ -524,6 +529,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
         email_verification_mode: securityForm.email_verification_mode,
         require_sensor_local_policy_for_private_targets:
           securityForm.require_sensor_local_policy_for_private_targets,
+        allow_sensor_interactsh: securityForm.allow_sensor_interactsh,
+        allow_sensor_custom_templates: securityForm.allow_sensor_custom_templates,
       })
       if (result) {
         mutate(result)
@@ -664,6 +671,17 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                     disabled={!canManageSecurityAndAPI}
                   />
                 </div>
+
+                <Separator />
+
+                <SensorOptInSwitches
+                  value={{
+                    allow_sensor_interactsh: securityForm.allow_sensor_interactsh,
+                    allow_sensor_custom_templates: securityForm.allow_sensor_custom_templates,
+                  }}
+                  onChange={(next) => setSecurityForm({ ...securityForm, ...next })}
+                  disabled={!canManageSecurityAndAPI}
+                />
 
                 <Separator />
 

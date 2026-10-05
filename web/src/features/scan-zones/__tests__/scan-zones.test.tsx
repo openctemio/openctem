@@ -190,6 +190,13 @@ describe('helpers', () => {
     expect(triggerErrorHint(err)).toMatch(/outside every scan zone/)
     expect(describeScanZoneError(err, 'x').status).toBe(400)
     expect(triggerErrorHint(new Error('x'))).toBeUndefined()
+    // research/25: refusals from the sensor policy pre-check and the opt-ins.
+    expect(
+      triggerErrorHint(new ApiClientError('No sensor...', 'SENSOR_POLICY_REFUSED', 400))
+    ).toMatch(/local policy/)
+    expect(triggerErrorHint(new ApiClientError('Off', 'SENSOR_OPT_IN_DISABLED', 400))).toMatch(
+      /owner can turn it on/
+    )
   })
 
   it('tells zone conflicts apart when the server sends the generic CONFLICT code', () => {

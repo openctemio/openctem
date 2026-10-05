@@ -46,6 +46,9 @@ export interface SecuritySettings {
    * policy (api RFC-040 §5.7). Absent on APIs without it.
    */
   require_sensor_local_policy_for_private_targets?: boolean
+  /** research/25 D3: off unless an owner enables it; enabling is audited. */
+  allow_sensor_interactsh?: boolean
+  allow_sensor_custom_templates?: boolean
   /**
    * The caller's IP as the API sees it (read-only, GET only). Shown next to the
    * IP allowlist so an owner does not lock themselves out.
@@ -60,6 +63,9 @@ export interface UpdateSecuritySettingsInput {
   allowed_domains?: string[]
   email_verification_mode?: EmailVerificationMode
   require_sensor_local_policy_for_private_targets?: boolean
+  /** research/25 D3: off unless an owner enables it; enabling is audited. */
+  allow_sensor_interactsh?: boolean
+  allow_sensor_custom_templates?: boolean
 }
 
 // ============================================

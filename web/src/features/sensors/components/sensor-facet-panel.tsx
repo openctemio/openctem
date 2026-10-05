@@ -9,6 +9,8 @@ import {
   type FleetFilters,
   type SensorModeFilter,
   type SensorProtocolFilter,
+  SENSOR_POLICY_FILTERS,
+  type SensorPolicyFilter,
 } from '../lib/fleet'
 import { SENSOR_STATE_META, SENSOR_STATES } from '../lib/sensor-state'
 import { compareSensorVersions } from '../lib/sensor-version'
@@ -24,6 +26,12 @@ const PROTOCOL_LABELS: Record<SensorProtocolFilter, string> = {
   v2: 'v2',
   v1: 'v1 (deprecated)',
   unknown: 'Not reported yet',
+}
+const POLICY_LABELS: Record<SensorPolicyFilter, string> = {
+  enforced: 'Enforced',
+  absent: 'No local policy',
+  paused: 'Paused (kill switch)',
+  unknown: 'Not reported',
 }
 const MODE_LABELS: Record<SensorModeFilter, string> = {
   daemon: 'Long-running',
@@ -170,6 +178,18 @@ export function SensorFacetPanel({
           ))}
         </FacetSection>
       )}
+      <FacetSection title="Local policy" selectedCount={filters.policies.length}>
+        {SENSOR_POLICY_FILTERS.map((p) => (
+          <FacetOption
+            key={p}
+            label={POLICY_LABELS[p]}
+            checked={filters.policies.includes(p)}
+            onCheckedChange={(on) =>
+              onChange({ ...filters, policies: toggle(filters.policies, p, on) })
+            }
+          />
+        ))}
+      </FacetSection>
       <FacetSection title="Mode" selectedCount={filters.modes.length} defaultOpen={false}>
         {(Object.keys(MODE_LABELS) as SensorModeFilter[]).map((m) => (
           <FacetOption
