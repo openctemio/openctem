@@ -59,9 +59,11 @@ test.describe('Findings asset-id filter', () => {
     expect(res.ok()).toBeTruthy()
     const findings = ((await res.json()) as { data?: Array<{ asset_id: string }> }).data ?? []
 
-    // Step 3: the URL must still carry the filter (proves the route
-    // didn't strip it on a client-side navigation).
-    expect(page.url()).toContain(`assetId=${assetId}`)
+    // Step 3: the URL must still carry the filter. The page rewrites the old
+    // `assetId` link parameter to the canonical `asset_id`, so a shared old
+    // link keeps its filter.
+    await expect(page).toHaveURL(new RegExp(`[?&]asset_id=${assetId}(&|$)`))
+    expect(page.url()).not.toContain('assetId=')
 
     // Step 4: only this asset's findings come back, and the table shows them.
     expect(findings.length).toBeGreaterThan(0)

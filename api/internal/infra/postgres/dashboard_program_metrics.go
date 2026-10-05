@@ -50,7 +50,7 @@ func (r *DashboardRepository) GetProgramMetrics(ctx context.Context, tenantID sh
 // Plan: the driving set is one tenant's recently-seen internet-facing assets
 // (idx_assets_tenant_status); each stop signal is a per-asset MIN over an
 // index that leads with asset_id (idx_asset_state_history_asset_time,
-// idx_exposure_events_asset, idx_findings_tenant_asset). `detected` is
+// idx_exposure_events_asset, idx_findings_tenant_asset_status). `detected` is
 // MATERIALIZED so the four stop-signal lookups run once per asset — inlined,
 // Postgres re-evaluated them for every reference to detected_at.
 const mttdInternetFacingQuery = `

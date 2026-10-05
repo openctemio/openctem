@@ -38,8 +38,7 @@ import (
 const (
 	webhookMaxBody = 2 * 1024 * 1024 // 2 MiB — tighter than the default.
 	// webhookTimestampTolerance bounds replay attacks: a captured
-	// signature is only valid for ±5 minutes. 5 min is the industry
-	// standard (Stripe, GitHub use the same window) — long enough to
+	// signature is only valid for ±5 minutes, which is long enough to
 	// absorb clock skew between sender and us, short enough that a
 	// captured signature from yesterday's logs is useless.
 	webhookTimestampTolerance = 5 * time.Minute
@@ -95,9 +94,9 @@ func VerifyHMACMulti(headerName string, secretsFn WebhookSecretsFn, log *logger.
 			// resend it indefinitely. Including the timestamp in the
 			// HMAC input + bounding it to ±5 minutes turns a replay
 			// into either a clock-skew rejection or a stale-window
-			// rejection. Senders MUST include this header (Stripe-style
-			// "t=<unix>,v1=<sig>" can also be parsed but plain header
-			// is simpler for first iteration).
+			// rejection. Senders MUST include this header (a combined
+			// "t=<unix>,v1=<sig>" signature header could carry the same
+			// data, but a separate header is simpler to produce and check).
 			tsHeader := r.Header.Get(webhookTimestampHeader)
 			if tsHeader == "" {
 				log.Warn("webhook rejected: missing timestamp", "path", r.URL.Path)
@@ -180,7 +179,8 @@ func VerifyHMACMulti(headerName string, secretsFn WebhookSecretsFn, log *logger.
 // the timestamp in the signed payload is what makes the timestamp
 // header tamper-evident — without this binding, an attacker could
 // strip+replace the timestamp header to bypass the freshness window.
-// Format is "<ts>.<body>" (Stripe convention).
+// Format is "<ts>.<body>": the "." separator keeps the timestamp and
+// body boundary unambiguous.
 func computeHMACWithTimestamp(body []byte, ts, secret string) string {
 	m := hmac.New(sha256.New, []byte(secret))
 	_, _ = m.Write([]byte(ts))
