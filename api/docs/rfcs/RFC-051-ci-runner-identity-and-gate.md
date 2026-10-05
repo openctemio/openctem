@@ -101,7 +101,13 @@ job wins.
    stored. It expires after 15 minutes. `ci_run.token_issued` is audited
    without the token.
 
-Every refusal answers the same `401 The CI token was not accepted`.
+Every refusal answers the same `401 The CI token was not accepted`, with one
+exception decided after the token verified and was admitted: a runner that
+reports (User-Agent) a sensor version below `SENSOR_MIN_VERSION` gets `403
+RUNNER_OUTDATED` and the refusal is audited (`runner_outdated`); the fix is on
+its side. The version is self-reported: this keeps known-bad releases out, it
+does not authenticate the binary. A client that reports no sensor version is
+admitted and its pipeline shows the version as unknown.
 
 `run_id` asks for a fresh token for a run the pipeline already holds (a long
 job). It is honored only for the same tenant, repository, commit and CI run id,
