@@ -213,12 +213,12 @@ export function useCICoverage(
 export function useSetCoverageExpectation() {
   const { currentTenant } = useTenant()
   return useSWRMutation(
-    currentTenant ? `${CI_BASE}/coverage/expected` : null,
+    currentTenant ? `${CI_BASE}/coverage/expectations` : null,
     async (
       _url: string,
       { arg }: { arg: { assetId: string; expected: boolean; capabilities?: string[] } }
     ) => {
-      const url = `${CI_BASE}/coverage/expected/${encodeURIComponent(arg.assetId)}`
+      const url = `${CI_BASE}/coverage/expectations/${encodeURIComponent(arg.assetId)}`
       return arg.expected
         ? put<unknown>(url, { capabilities: arg.capabilities ?? [] })
         : del<void>(url)
