@@ -3,15 +3,20 @@
 /**
  * A CI pipeline's drawer (api RFC-051 §10): its status in three dimensions
  * (freshness, default-branch gate, execution health), its runs (paged), its
- * branches and its gate trend. Read-only: a pipeline is created by a verified
- * token exchange and revoked with its trust configuration.
+ * branches and its gate trend. A pipeline is created by a verified token
+ * exchange and revoked with its trust configuration; an administrator can
+ * retire it, which closes the findings only it reported (audited).
  */
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import Link from 'next/link'
-import { GitBranch, Settings2 } from 'lucide-react'
+import { Archive, GitBranch, Settings2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
 import {
   DataTable,
   DetailCallout,
@@ -29,10 +34,12 @@ import {
   StackedCell,
 } from '@/features/shared'
 import { ProviderIcon } from '@/features/scm-connections'
+import { Permission, usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
 
-import { useCIPipeline, useCIRuns } from '../api/use-ci'
+import { useCIPipeline, useCIRuns, useRetirePipeline } from '../api/use-ci'
+import { validRetireReason } from '../lib/coverage'
 import { PROVIDER_LABEL, shortSHA } from '../lib/ci'
 import { FRESHNESS_LABEL, HEALTH_REASON_LABEL, cadenceLabel, workflowFile } from '../lib/pipeline'
 import type { CIPipelineDetail, CIRun } from '../types'
@@ -84,6 +91,12 @@ function Overview({ p }: { p: CIPipelineDetail }) {
   const cadence = cadenceLabel(p.schedule_interval_seconds || p.median_interval_seconds)
   return (
     <div className="space-y-5">
+      {p.status === 'retired' && (
+        <DetailCallout tone="info" title="Retired">
+          An administrator retired it and the findings only it reported were closed as source
+          retired; each can be reopened. The next run brings it back.
+        </DetailCallout>
+      )}
       {p.status === 'revoked' && (
         <DetailCallout tone="warning" title="Revoked">
           Its trust configuration was disabled, deleted or pointed elsewhere, and its running jobs
@@ -286,9 +299,77 @@ function Branches({ p }: { p: CIPipelineDetail }) {
   )
 }
 
+/**
+ * Retire a pipeline: it is hidden as retired and the open findings only it
+ * reported close as "source retired". A reason is required (audited).
+ */
+export function RetirePipelineDialog({
+  pipelineId,
+  label,
+  open,
+  onOpenChange,
+  onRetired,
+}: {
+  pipelineId: string
+  label: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onRetired?: () => void
+}) {
+  const reasonId = useId()
+  const [reason, setReason] = useState('')
+  const { trigger, isMutating } = useRetirePipeline()
+  const ok = validRetireReason(reason)
+  return (
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) setReason('')
+        onOpenChange(o)
+      }}
+      destructive
+      title="Retire this CI pipeline?"
+      desc={`${label}: findings that only this pipeline reported and nothing else has seen since close as "source retired". Findings another source still sees are not touched. Each closed finding can be reopened, and the next run of the pipeline brings it back.`}
+      confirmText="Retire pipeline"
+      disabled={!ok}
+      isLoading={isMutating}
+      handleConfirm={async () => {
+        try {
+          const res = await trigger({ id: pipelineId, reason: reason.trim() })
+          const n = res?.findings_closed ?? 0
+          toast.success(
+            `Pipeline retired; ${n} finding${n === 1 ? '' : 's'} closed as source retired`
+          )
+          setReason('')
+          onOpenChange(false)
+          onRetired?.()
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : 'Could not retire the pipeline')
+        }
+      }}
+    >
+      <div className="space-y-2">
+        <Label htmlFor={reasonId}>Reason (recorded in the audit log)</Label>
+        <Textarea
+          id={reasonId}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="The workflow was removed; scanning moved to …"
+          maxLength={2000}
+          rows={3}
+        />
+        <p className="text-xs text-muted-foreground">10 to 2,000 characters.</p>
+      </div>
+    </ConfirmDialog>
+  )
+}
+
 export function CIPipelineSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
-  const { data: p, error } = useCIPipeline(id)
+  const { data: p, error, mutate } = useCIPipeline(id)
   const [tab, setTab] = useState<PipelineTab>('overview')
+  const [retireOpen, setRetireOpen] = useState(false)
+  const { can } = usePermissions()
+  const canRetire = can(Permission.CIWrite) && !!p && p.status !== 'retired'
   const close = () => {
     setTab('overview')
     onClose()
@@ -314,12 +395,20 @@ export function CIPipelineSheet({ id, onClose }: { id: string | null; onClose: (
           }
           onClose={close}
           actions={
-            <Button asChild size="sm" variant="outline">
-              <Link href="/settings/scanning/ci">
-                <Settings2 className="h-4 w-4" />
-                CI trust and gate
-              </Link>
-            </Button>
+            <>
+              {canRetire && (
+                <Button size="sm" variant="outline" onClick={() => setRetireOpen(true)}>
+                  <Archive className="h-4 w-4" />
+                  Retire
+                </Button>
+              )}
+              <Button asChild size="sm" variant="outline">
+                <Link href="/settings/scanning/ci">
+                  <Settings2 className="h-4 w-4" />
+                  CI trust and gate
+                </Link>
+              </Button>
+            </>
           }
         />
       }
@@ -338,6 +427,15 @@ export function CIPipelineSheet({ id, onClose }: { id: string | null; onClose: (
         <Runs pipelineId={p.id ?? ''} />
       ) : (
         <Branches p={p} />
+      )}
+      {p?.id && (
+        <RetirePipelineDialog
+          pipelineId={p.id}
+          label={`${p.repository ?? ''} ${workflowFile(p.workflow_path)}`.trim()}
+          open={retireOpen}
+          onOpenChange={setRetireOpen}
+          onRetired={() => void mutate()}
+        />
       )}
     </DetailSheet>
   )
