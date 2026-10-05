@@ -100,7 +100,7 @@ statement touches at most 5,000 findings.
 
 ## Producer record
 
-Every committed file gets a row in `finding_imports` (migration 001098)
+Every committed file gets a row in `finding_imports` (migration 001106)
 before anything is written: tenant, uploader (`actor_user_id`), format, the
 SHA-256 of the file name (the name itself is only in the audit log) and,
 when the file is done, the counts (assets and findings created and updated,
