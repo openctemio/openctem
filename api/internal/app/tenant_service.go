@@ -17,6 +17,7 @@ type (
 	ProvisionedUser         = tenant.ProvisionedUser
 
 	AddMemberInput              = tenant.AddMemberInput
+	OffboardMemberInput         = tenant.OffboardMemberInput
 	BranchTypeRuleInput         = tenant.BranchTypeRuleInput
 	CreateInvitationInput       = tenant.CreateInvitationInput
 	CreateTenantInput           = tenant.CreateTenantInput
@@ -41,6 +42,7 @@ var (
 	ErrNotPendingSetup              = tenant.ErrNotPendingSetup
 	ErrSetupLinkForbidden           = tenant.ErrSetupLinkForbidden
 	ErrIPAllowlistExcludesRequester = tenant.ErrIPAllowlistExcludesRequester
+	ErrOwnerRequiredForErase        = tenant.ErrOwnerRequiredForErase
 )
 
 var (
