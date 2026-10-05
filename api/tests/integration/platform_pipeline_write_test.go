@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 
@@ -13,6 +12,7 @@ import (
 
 	pipelineapp "github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -22,7 +22,7 @@ import (
 // tenant deactivating its own custom tool named like a platform tool
 // deactivated every other tenant's pipelines using that name.
 func TestPlatformPipelineWrites(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
+	dsn := testdb.URL()
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping platform pipeline DB test")
 	}
@@ -31,7 +31,7 @@ func TestPlatformPipelineWrites(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	if err := db.Ping(); err != nil {
-		t.Skipf("database not available: %v", err)
+		testdb.Skipf(t, "database not available: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()

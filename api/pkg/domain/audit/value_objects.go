@@ -41,9 +41,10 @@ const (
 	// ActionAssetAttributionDecided: a person set whether an asset is the
 	// organization's (RFC-036 attribution review).
 	ActionAssetAttributionDecided Action = "asset.attribution_decided"
-	// ActionAssetCreateMerged: a create request matched an existing asset by
-	// name or address and updated it instead of creating a new one.
-	// Metadata lists the changed field names.
+	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
+	// existing repository asset and attached its SCM data to it. POST
+	// /assets no longer merges (a duplicate is a 409); older rows from it
+	// keep this action. Metadata lists the changed field names.
 	ActionAssetCreateMerged Action = "asset.create_merged"
 
 	// Human changes to assets (API/UI). Metadata carries the names of the
@@ -62,6 +63,12 @@ const (
 	ActionMemberRoleChanged Action = "member.role_changed"
 	ActionMemberSuspended   Action = "member.suspended"
 	ActionMemberReactivated Action = "member.reactivated"
+	// ActionMemberOffboarded: access stripped, owned work reassigned, the
+	// membership kept as a tombstone (member lifecycle, RFC-050).
+	ActionMemberOffboarded Action = "member.offboarded"
+	// ActionMemberDataErased: an offboarded person's name and email were
+	// anonymised (owner only).
+	ActionMemberDataErased Action = "member.data_erased"
 
 	// Invitation actions
 	ActionInvitationCreated  Action = "invitation.created"
@@ -111,6 +118,9 @@ const (
 	// another member's reaction from a finding comment (moderation). A
 	// person adding or removing their own reaction is not audited.
 	ActionFindingCommentReactionRemoved Action = "finding.comment_reaction_removed"
+	// ActionFindingDuplicateMarked records a user folding a finding into the
+	// one it duplicates (RFC-043 §9): which finding, into which, both statuses.
+	ActionFindingDuplicateMarked Action = "finding.duplicate_marked"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -121,6 +131,11 @@ const (
 
 	// SLA Policy actions
 	ActionSLAPolicyCreated Action = "sla_policy.created"
+
+	// Saved list views (D15).
+	ActionSavedViewCreated Action = "saved_view.created"
+	ActionSavedViewUpdated Action = "saved_view.updated"
+	ActionSavedViewDeleted Action = "saved_view.deleted"
 	ActionSLAPolicyUpdated Action = "sla_policy.updated"
 	ActionSLAPolicyDeleted Action = "sla_policy.deleted"
 
@@ -140,6 +155,7 @@ const (
 	// Account security actions (the user acting on their own account).
 	ActionAuthMFAEnabled                  Action = "auth.mfa_enabled"
 	ActionAuthMFADisabled                 Action = "auth.mfa_disabled"
+	ActionAuthMFAReset                    Action = "auth.mfa_reset"
 	ActionAuthMFAFailed                   Action = "auth.mfa_failed"
 	ActionAuthMFARecoveryCodeUsed         Action = "auth.mfa_recovery_code_used"
 	ActionAuthMFARecoveryCodesRegenerated Action = "auth.mfa_recovery_codes_regenerated"
@@ -180,6 +196,10 @@ const (
 	// (RFC-040 §5.7, detection A11): the platform asked for something the
 	// owner does not allow.
 	ActionSensorJobRefusedByLocalPolicy Action = "sensor.job_refused_local_policy"
+	// ActionSensorOptInChanged records an organization turning its
+	// interactsh or custom-template switch for sensor jobs on (critical,
+	// alerted) or off (research/25 D3, D9).
+	ActionSensorOptInChanged Action = "sensor.opt_in_changed"
 	// ActionSensorContentRefreshRequested records an administrator asking a
 	// sensor (or the fleet) to refresh its scanner content (RFC-031).
 	ActionSensorContentRefreshRequested Action = "sensor.content_refresh_requested"
@@ -190,6 +210,10 @@ const (
 	// commands a sensor held when it was revoked or disabled (RFC-040 §5.2):
 	// which were re-queued for another sensor and which were failed.
 	ActionSensorCommandsReleased Action = "sensor.commands_released"
+
+	// ActionIntegrationSyncRequested records a connector sync queued for an
+	// integration's sensor (RFC-047), by a person or by the schedule.
+	ActionIntegrationSyncRequested Action = "integration.sync_requested"
 
 	// Sensor results without a command (RFC-040 §5.3).
 	// ActionSensorResultsQuarantined records an unsolicited report held for
@@ -248,6 +272,10 @@ const (
 	ActionSSOChangeRequested Action = "sso.change_requested"
 	ActionSSOChangeApproved  Action = "sso.change_approved"
 	ActionSSOChangeRejected  Action = "sso.change_rejected"
+	// ActionSCIMGroupMappingsUpdated: the SCIM group -> role mappings were
+	// replaced. Changes carry the before/after mapping of every group that
+	// changed; mapping a group to or from admin is owner-only.
+	ActionSCIMGroupMappingsUpdated Action = "scim.group_mappings_updated"
 
 	// Group actions
 	ActionGroupCreated Action = "group.created"
@@ -286,6 +314,21 @@ const (
 	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
 	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
 
+	// Suppression rule approvals. A self-approval (the owner approving their
+	// own rule because nobody else can, owner decision B16) is Critical.
+	ActionSuppressionRuleApproved     Action = "suppression_rule.approved"
+	ActionSuppressionRuleSelfApproved Action = "suppression_rule.self_approved"
+
+	// Report schedule actions: a schedule mails organization posture to its
+	// recipients (members or the allowed domains, D12).
+	ActionReportScheduleCreated   Action = "report_schedule.created"
+	ActionReportScheduleActivated Action = "report_schedule.activated"
+	ActionReportScheduleDeleted   Action = "report_schedule.deleted"
+	// EASM seeds (RFC-036 §6.3): what discovery expands from.
+	ActionEASMSeedCreated Action = "easm_seed.created"
+	ActionEASMSeedUpdated Action = "easm_seed.updated"
+	ActionEASMSeedDeleted Action = "easm_seed.deleted"
+
 	// Scanner template actions: custom templates are code a sensor runs.
 	ActionScannerTemplateCreated    Action = "scanner_template.created"
 	ActionScannerTemplateUpdated    Action = "scanner_template.updated"
@@ -302,6 +345,8 @@ const (
 	ActionAssetAccessRevoked Action = "asset.access_revoked"
 
 	// Permission Set actions
+	// Permission sets were removed (permissions come only from roles). The
+	// actions stay so historical audit rows still render.
 	ActionPermissionSetCreated    Action = "permission_set.created"
 	ActionPermissionSetUpdated    Action = "permission_set.updated"
 	ActionPermissionSetDeleted    Action = "permission_set.deleted"
@@ -409,6 +454,11 @@ const (
 	// an enforcing run closed.
 	ActionIngestCoverageAutoResolveDryRun Action = "ingest.coverage_auto_resolve_dry_run"
 	ActionIngestCoverageAutoResolved      Action = "ingest.coverage_auto_resolved"
+	// Source-asserted resolve (RFC-047): what a dry run would have closed
+	// because the source (Tenable.sc) reported it mitigated, and what an
+	// enforcing run closed.
+	ActionIngestSourceResolveDryRun Action = "ingest.source_resolve_dry_run"
+	ActionIngestSourceResolved      Action = "ingest.source_resolved"
 
 	// AI Triage actions
 	ActionAITriageRequested       Action = "ai_triage.requested"
@@ -455,7 +505,7 @@ func (a Action) IsValid() bool {
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
-		ActionMemberSuspended, ActionMemberReactivated,
+		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
 		ActionComponentCreated, ActionComponentUpdated, ActionComponentDeleted,
@@ -464,21 +514,23 @@ func (a Action) IsValid() bool {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingRetestRequested,
-		ActionFindingCommentReactionRemoved,
+		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
+		ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
-		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy, ActionSensorOptInChanged,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
+		ActionIntegrationSyncRequested,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
@@ -490,6 +542,7 @@ func (a Action) IsValid() bool {
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSCIMGroupMappingsUpdated,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
@@ -498,6 +551,9 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
@@ -525,6 +581,7 @@ func (a Action) IsValid() bool {
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
 		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
+		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved,
 		ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
 		ActionAITriageBudgetExhausted,
@@ -536,7 +593,7 @@ func (a Action) IsValid() bool {
 		ActionAuditChainRebaselined:
 		return true
 	}
-	return false
+	return isConfigAction(a) || isRegisteredAction(a)
 }
 
 // Category returns the category of the action (e.g., "user", "tenant").
@@ -550,7 +607,7 @@ func (a Action) Category() string {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated:
 		return "tenant"
 	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
-		ActionMemberSuspended, ActionMemberReactivated:
+		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased:
 		return "member"
 	case ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired:
 		return "invitation"
@@ -565,14 +622,16 @@ func (a Action) Category() string {
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
-		ActionFindingRetestRequested, ActionFindingCommentReactionRemoved:
+		ActionFindingRetestRequested, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
 		return "finding"
+	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
+		return "saved_view"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"
 	case ActionScanStarted, ActionScanCompleted, ActionScanFailed:
 		return "scan"
 	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
-		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged:
 		return "security"
 	case ActionSettingsUpdated:
@@ -582,7 +641,7 @@ func (a Action) Category() string {
 	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy, ActionSensorOptInChanged,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated:
@@ -590,6 +649,8 @@ func (a Action) Category() string {
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
 		return "scan_zone"
+	case ActionIntegrationSyncRequested:
+		return "integration"
 	case ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted:
 		return "api_key"
 	case ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted:
@@ -601,8 +662,13 @@ func (a Action) Category() string {
 		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
-		ActionScopeExclusionApproved, ActionScopeExclusionRejected:
+		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
+	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved:
+		return "suppression"
+	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
+		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted:
 		return "scanner_template"
@@ -610,7 +676,8 @@ func (a Action) Category() string {
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted:
 		return "rule"
 	case ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
-		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved:
+		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
+		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved:
 		return "ingest"
 	case ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
@@ -629,8 +696,12 @@ func (a Action) Category() string {
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
-		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected:
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSCIMGroupMappingsUpdated:
 		return "sso"
+	}
+	if c, ok := registeredCategory(a); ok {
+		return c
 	}
 	return "unknown"
 }
@@ -651,6 +722,7 @@ const (
 	ResourceTypeFinding          ResourceType = "finding"
 	ResourceTypeFindingComment   ResourceType = "finding_comment"
 	ResourceTypeSLAPolicy        ResourceType = "sla_policy"
+	ResourceTypeSavedView        ResourceType = "saved_view"
 	ResourceTypeScan             ResourceType = "scan"
 	ResourceTypeAsset            ResourceType = "asset"
 	ResourceTypeSettings         ResourceType = "settings"
@@ -686,13 +758,21 @@ const (
 	ResourceTypeVerifiedDomain      ResourceType = "verified_domain"
 	// ResourceTypeSSOChange is an SSO change waiting for an owner's approval.
 	ResourceTypeSSOChange ResourceType = "sso_change"
+	// ResourceTypeSCIMGroupMapping is the organization's SCIM group -> role
+	// mapping set (resource id: the tenant id).
+	ResourceTypeSCIMGroupMapping ResourceType = "scim_group_mapping"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
 	// of a rebaseline event is the rebaseline (archive) id.
-	ResourceTypeAuditChain      ResourceType = "audit_chain"
-	ResourceTypeTemplateSource  ResourceType = "template_source"
-	ResourceTypeScopeTarget     ResourceType = "scope_target"
-	ResourceTypeScopeExclusion  ResourceType = "scope_exclusion"
+	ResourceTypeAuditChain     ResourceType = "audit_chain"
+	ResourceTypeTemplateSource ResourceType = "template_source"
+	ResourceTypeScopeTarget    ResourceType = "scope_target"
+	ResourceTypeScopeExclusion ResourceType = "scope_exclusion"
+	// ResourceTypeSuppressionRule is a finding suppression rule.
+	ResourceTypeSuppressionRule ResourceType = "suppression_rule"
 	ResourceTypeScannerTemplate ResourceType = "scanner_template"
+	ResourceTypeIntegration     ResourceType = "integration"
+	ResourceTypeReportSchedule  ResourceType = "report_schedule"
+	ResourceTypeEASMSeed        ResourceType = "easm_seed"
 )
 
 // String returns the string representation of the resource type.
@@ -706,7 +786,7 @@ func (r ResourceType) IsValid() bool {
 	case ResourceTypeUser, ResourceTypeTenant, ResourceTypeMembership,
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
-		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeScan,
+		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
 		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
@@ -715,12 +795,13 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
+		ResourceTypeSCIMGroupMapping,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
-		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate,
-		ResourceTypeRemediationCampaign:
+		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
+		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
 		return true
 	}
-	return false
+	return isConfigResourceType(r)
 }
 
 // Result represents the outcome of an action.
@@ -778,7 +859,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthFailed, ActionPermissionDenied,
 		ActionSensorRevoked, ActionSensorDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
-		ActionAuditChainRebaselined:
+		ActionAuditChainRebaselined, ActionMemberDataErased, ActionSuppressionRuleSelfApproved:
 		return SeverityCritical
 
 	// High - privilege changes and pipeline failures
@@ -786,9 +867,10 @@ func SeverityForAction(a Action) Severity {
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSCIMGroupMappingsUpdated,
 		ActionUserSuspended, ActionUserDeactivated,
-		ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
-		ActionMemberRemoved, ActionMemberRoleChanged,
+		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
@@ -797,7 +879,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTemplateSourceCredentialAttached,
 		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
 		// Widening what sensors scan, and the code they run.
-		ActionScopeTargetCreated, ActionScopeTargetActivated,
+		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		// Deleting an asset also deletes its findings.
@@ -831,6 +913,9 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeTargetUpdated, ActionScopeTargetDeleted, ActionScopeTargetDeactivated,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionSuppressionRuleApproved,
+		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
+		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
@@ -839,6 +924,9 @@ func SeverityForAction(a Action) Severity {
 
 	// Low - regular operations (including sensor.updated, sensor.connected, sensor.disconnected)
 	default:
+		if sev, ok := registeredSeverity(a); ok {
+			return sev
+		}
 		return SeverityLow
 	}
 }

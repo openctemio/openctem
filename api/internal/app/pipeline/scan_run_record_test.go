@@ -25,7 +25,7 @@ type recordCall struct {
 	status string
 }
 
-func (f *fakeScanRunRecorder) RecordRun(_ context.Context, scanID, runID shared.ID, status string) error {
+func (f *fakeScanRunRecorder) RecordRun(_ context.Context, _ shared.ID, scanID, runID shared.ID, status string) error {
 	f.calls = append(f.calls, recordCall{scanID, runID, status})
 	return f.err
 }

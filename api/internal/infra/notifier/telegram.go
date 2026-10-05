@@ -90,7 +90,7 @@ func (c *TelegramClient) Send(ctx context.Context, msg Message) (*SendResult, er
 	url := fmt.Sprintf("%s/bot%s/sendMessage", c.apiURL, c.botToken)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf("create request: %s", transportError(err, c.botToken))
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -98,7 +98,7 @@ func (c *TelegramClient) Send(ctx context.Context, msg Message) (*SendResult, er
 	if err != nil {
 		return &SendResult{
 			Success: false,
-			Error:   fmt.Sprintf("send request failed: %v", err),
+			Error:   "send request failed: " + transportError(err, c.botToken),
 		}, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -117,7 +117,7 @@ func (c *TelegramClient) Send(ctx context.Context, msg Message) (*SendResult, er
 	if !telegramResp.OK {
 		return &SendResult{
 			Success: false,
-			Error:   fmt.Sprintf("telegram error: %s", telegramResp.Description),
+			Error:   "telegram error: " + echoBody([]byte(telegramResp.Description), c.botToken),
 		}, nil
 	}
 

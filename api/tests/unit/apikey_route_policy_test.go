@@ -64,6 +64,7 @@ func TestAPIKeyPolicy_SensitiveAreasDenied(t *testing.T) {
 		"/api/v1/users/me/password", "/api/v1/users/me/mfa", "/api/v1/users/me/sessions",
 		"/api/v1/users/{userId}/roles", "/api/v1/me/permissions", "/api/v1/admin/tenants",
 		"/api/v1/auth/token", "/api/v1/tenants/{tenant}/members", "/api/v1/invitations/{token}",
+		"/api/v1/invitations/accept", "/api/v1/invitations/lookup",
 	} {
 		if !middleware.APIKeyRouteDenied(p) {
 			t.Errorf("%s must refuse API keys", p)

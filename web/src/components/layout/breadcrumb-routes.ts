@@ -34,19 +34,15 @@ export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/auth/sso',
   '/auth/sso/callback',
   '/insights',
-  '/insights/analytics',
   '/insights/reports',
-  '/invitations',
   '/onboarding',
   '/pentest',
   '/pentest/findings',
   '/pentest/findings/[id]',
   '/pipelines/[id]',
-  '/settings/access-control',
   '/settings/tenant',
   '/settings/pentest/templates/[id]',
   '/settings/scanning',
-  '/simulation',
 ])
 
 /** Whether `path` (a real URL path, ids included) has a page to link to. */

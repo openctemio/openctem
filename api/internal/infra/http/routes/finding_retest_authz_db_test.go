@@ -18,11 +18,15 @@ import (
 	"strings"
 	"testing"
 
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -40,12 +44,6 @@ type rtNucleiOnline struct{}
 func (rtNucleiOnline) HasNucleiValidationSensor(context.Context, shared.ID) (bool, error) {
 	return true, nil
 }
-
-// rtEveryonePolicy: members without an access group see everything (the
-// policy of organizations created before the "nothing" default).
-type rtEveryonePolicy struct{}
-
-func (rtEveryonePolicy) RestrictedDataScope(context.Context, string) bool { return false }
 
 type rtHarness struct {
 	t   *testing.T
@@ -77,7 +75,7 @@ func newRetestAuthzHarness(t *testing.T) *rtHarness {
 
 	pg := &postgres.DB{DB: db}
 	log := logger.NewNop()
-	enforcer := datascope.New(postgres.NewDataScopeRepository(pg), rtEveryonePolicy{},
+	enforcer := datascope.New(postgres.NewDataScopeRepository(pg),
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, log)
@@ -87,7 +85,7 @@ func newRetestAuthzHarness(t *testing.T) *rtHarness {
 
 	cmds := postgres.NewCommandRepository(pg)
 	svc := retestapp.NewService(postgres.NewFindingRetestRepository(pg), postgres.NewFindingRepository(pg),
-		postgres.NewAssetRepository(pg), cmds, validation.NewCommandDispatcher(cmds, log), rtNucleiOnline{}, log)
+		postgres.NewAssetRepository(pg), cmds, validation.NewCommandDispatcher(cmds, realProbeGate(pg, log), log), rtNucleiOnline{}, log)
 
 	router := infrahttp.NewChiRouter()
 	registerFindingRetestRoutes(router, handler.NewFindingRetestHandler(svc, log), Middleware(h.auth), nil)
@@ -125,7 +123,9 @@ func (h *rtHarness) seed() {
 	h.findingA1, h.findingA2, h.findingB = shared.NewID(), shared.NewID(), shared.NewID()
 
 	for _, tid := range []shared.ID{h.tenantA, h.tenantB} {
-		h.exec(`INSERT INTO tenants (id, name, slug, members_without_group_see) VALUES ($1, $2, $2, 'everything')`, tid.String(), "rt-"+tid.String())
+		h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tid.String(), "rt-"+tid.String())
+		// Each tenant authorizes its domain for active checks (RFC-036 §6.3).
+		h.exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES ($1, 'domain', '*.example.com', 'active')`, tid.String())
 	}
 	h.t.Cleanup(func() {
 		ctx := context.Background()
@@ -158,9 +158,17 @@ func (h *rtHarness) seed() {
 			VALUES ($1::uuid, $2, $3, 'dast', 'nuclei', 'exposed-panel', 'hit', 'high', $1::text, 'confirmed')`,
 			f.id.String(), f.tenant.String(), f.asset.String())
 	}
-	// The scoped member's data scope is asset A1 only.
+	// The scoped member's data scope is asset A1 only; the verifier and the
+	// writer hold both of tenant A's assets, so their checks are about
+	// permissions, not data scope (a member with no scope row sees nothing).
 	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
 		h.scoped.String(), h.tenantA.String(), h.assetA1.String())
+	for _, u := range []shared.ID{h.verifier, h.writer} {
+		for _, a := range []shared.ID{h.assetA1, h.assetA2} {
+			h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
+				u.String(), h.tenantA.String(), a.String())
+		}
+	}
 }
 
 func (h *rtHarness) do(user shared.ID, perms []permission.Permission, method, path string) (int, string) {
@@ -292,4 +300,12 @@ func TestRetestSettingsAuthz_AdminOnlyAndTokenTenant(t *testing.T) {
 	if enabledA.String != "true" || enabledB.String == "true" {
 		t.Fatalf("settings written to the wrong organization: A=%q B=%q", enabledA.String, enabledB.String)
 	}
+}
+
+// realProbeGate is the production active-probe gate over the test database:
+// scope exclusions, attribution and scan zones.
+func realProbeGate(pg *postgres.DB, log *logger.Logger) *scanapp.Service {
+	scope := scopeapp.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg),
+		nil, postgres.NewAssetRepository(pg), log)
+	return scanapp.NewTargetGate(scope, easmapp.NewActiveGate(postgres.NewAttributionRepository(pg), postgres.NewAssetRepository(pg), scope, postgres.NewEASMSeedRepository(pg)), postgres.NewScanZoneRepository(pg), nil, log)
 }

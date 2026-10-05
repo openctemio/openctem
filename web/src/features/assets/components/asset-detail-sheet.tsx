@@ -410,7 +410,12 @@ export function AssetDetailSheet<T extends Asset>({
         {tab === 'relationships' && (
           <AssetRelationshipsTab
             assetId={asset.id}
-            sourceAsset={{ id: asset.id, name: asset.name, type: asset.type }}
+            sourceAsset={{
+              id: asset.id,
+              name: asset.name,
+              type: asset.type,
+              subType: asset.subType,
+            }}
             onNavigateToAsset={onNavigateToAsset}
           />
         )}

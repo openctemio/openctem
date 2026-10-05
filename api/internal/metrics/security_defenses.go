@@ -50,7 +50,7 @@ var (
 			Name: "openctem_security_audit_chain_breaks_total",
 			Help: "Audit-log hash-chain breaks detected by the scheduled verifier",
 		},
-		[]string{"tenant_id", "reason"},
+		[]string{"reason"},
 	)
 
 	// AuditChainVerifyRunsTotal counts controller reconcile passes.
@@ -78,19 +78,7 @@ var (
 			Name: "openctem_security_ai_triage_needs_review_total",
 			Help: "AI-triage results flagged for human review due to validator warnings",
 		},
-		[]string{"tenant_id"},
-	)
-
-	// AITriageBudgetUsedTokens is the per-tenant running token
-	// counter for the current billing period. Gauge (not counter)
-	// because the value resets to 0 at month rollover. Emit from
-	// BudgetService.Record() each time a triage finishes.
-	AITriageBudgetUsedTokens = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "openctem_security_ai_triage_budget_used_tokens",
-			Help: "LLM tokens consumed by a tenant in the current billing period",
-		},
-		[]string{"tenant_id"},
+		[]string{},
 	)
 
 	// AITriageBudgetExhaustedTotal counts triage calls refused
@@ -102,6 +90,6 @@ var (
 			Name: "openctem_security_ai_triage_budget_exhausted_total",
 			Help: "Triage calls refused because the tenant's monthly token budget is exhausted",
 		},
-		[]string{"tenant_id"},
+		[]string{},
 	)
 )

@@ -118,7 +118,7 @@ func (c *SplunkClient) Send(ctx context.Context, msg Message) (*SendResult, erro
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(payloadBytes))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf("create request: %s", transportError(err, c.token))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Splunk "+c.token)
@@ -130,7 +130,7 @@ func (c *SplunkClient) Send(ctx context.Context, msg Message) (*SendResult, erro
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return &SendResult{Success: false, Error: fmt.Sprintf("send request failed: %v", err)}, nil
+		return &SendResult{Success: false, Error: "send request failed: " + transportError(err, c.token)}, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -140,7 +140,7 @@ func (c *SplunkClient) Send(ctx context.Context, msg Message) (*SendResult, erro
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return &SendResult{
 			Success: false,
-			Error:   fmt.Sprintf("splunk HEC returned status %d: %s", resp.StatusCode, string(body)),
+			Error:   fmt.Sprintf("splunk HEC returned status %d: %s", resp.StatusCode, echoBody(body, c.token)),
 		}, nil
 	}
 	return &SendResult{Success: true}, nil

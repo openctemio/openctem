@@ -130,6 +130,21 @@ describe('useDetailTab', () => {
     const { result } = renderHook(() => useDetailTab('view', ['overview', 'jobs'] as const))
     expect(result.current[0]).toBe('overview')
   })
+
+  // Radix <Tabs> is controlled; re-selecting the active tab would rewrite the URL
+  // and a subscriber would reflect it back onto `value` — a feedback loop. The
+  // setter must be a no-op when the value is already active.
+  it('does not write the URL when the active tab is set again', () => {
+    window.history.replaceState(null, '', '/sensors?view=jobs')
+    let dispatches = 0
+    const bump = () => (dispatches += 1)
+    window.addEventListener('openctem:url-params-changed', bump)
+    const { result } = renderHook(() => useDetailTab('view', ['overview', 'jobs'] as const))
+    act(() => result.current[1]('jobs'))
+    window.removeEventListener('openctem:url-params-changed', bump)
+    expect(dispatches).toBe(0)
+    expect(new URLSearchParams(window.location.search).get('view')).toBe('jobs')
+  })
 })
 
 describe('DetailSheet on phones', () => {

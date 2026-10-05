@@ -103,6 +103,7 @@ export interface AuditLogFilters {
   since?: string
   until?: string
   search?: string
+  /** 1-based page number, as the API expects. Convert a table pageIndex with toAuditApiPage. */
   page?: number
   per_page?: number
   sort_by?: string

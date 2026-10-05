@@ -312,7 +312,8 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		SELECT zs.zone_id, s.id, s.name, `+sensorActiveCommandsSQL("s")+`, s.effective_max_jobs,
 		       (SELECT count(*) FROM commands c
 		        WHERE c.tenant_id = $1 AND c.sensor_id = s.id
-		          AND c.status IN `+activeCommandStatuses+`) AS active_commands
+		          AND c.status IN `+activeCommandStatuses+`) AS active_commands,
+		       s.reported_local_policy
 		FROM scan_zone_sensors zs
 		JOIN sensors s ON s.id = zs.sensor_id AND s.tenant_id = zs.tenant_id
 		WHERE zs.tenant_id = $1
@@ -336,8 +337,9 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		var (
 			zoneID, sensorID string
 			c                scanzone.SensorCandidate
+			localPolicy      []byte
 		)
-		if err := rows.Scan(&zoneID, &sensorID, &c.Name, &c.CurrentJobs, &c.MaxConcurrentJobs, &c.ActiveCommands); err != nil {
+		if err := rows.Scan(&zoneID, &sensorID, &c.Name, &c.CurrentJobs, &c.MaxConcurrentJobs, &c.ActiveCommands, &localPolicy); err != nil {
 			return nil, fmt.Errorf("scan routable sensor: %w", err)
 		}
 		zid, err := shared.IDFromString(zoneID)
@@ -347,6 +349,7 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		if c.ID, err = shared.IDFromString(sensorID); err != nil {
 			return nil, err
 		}
+		c.LocalPolicy, _ = scanLocalPolicy(c.ID, localPolicy, sql.NullTime{})
 		out[zid] = append(out[zid], c)
 	}
 	return out, rows.Err()

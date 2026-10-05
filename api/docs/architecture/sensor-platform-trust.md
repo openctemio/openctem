@@ -11,6 +11,37 @@
 > this repository; `sensor:…`, `sdk:…` and `helm:…` are in the other
 > repositories. Line numbers are for those commits.
 
+> **Changes since the snapshot (checked on `develop` 2026-10-04).** The gap
+> table below is the 2026-10-03 snapshot, except S3b–S3f, which were updated
+> for #889. These RFC-040 P0 PRs have merged since and close or narrow the
+> rows named (re-verify a row before relying on its "attack that works
+> today"):
+>
+> - **S3b–S3f** result binding and quarantine (#889, migration `000317`):
+>   see the updated rows.
+> - **S2e** the ingest worker drops queued reports of revoked or disabled
+>   sensors (#882); revoking or disabling a sensor takes back its leased
+>   commands (#902).
+> - **S4b** length caps on sensor-supplied finding text on every ingest path
+>   (#886).
+> - **S4e** data-driven links and images encoded, nonce-based CSP (#884);
+>   scanner text encoded in tickets and notifications (#887).
+> - **P1d** `scan` commands from `POST /api/v1/commands` are owner/admin only
+>   and go through scan target resolution (#877).
+> - **P3a** signed custom-template manifests; file and self-contained nuclei
+>   templates refused (#869).
+> - **B3** audit of scope targets, exclusions, tools and scanner templates
+>   (#885).
+> - **P2a, P5a** platform side of the sensor-local policy (reported state,
+>   refusals, the private-target tenant switch) and hardened install snippets
+>   (#916). The sensor side (sdk-go#140, sensor#119) is merged but not
+>   released: sensor v0.8.0 and older ignore the policy file and the kill
+>   switch.
+> - **A7 (stale ceiling)** dispatch pre-check from the reported local policy
+>   (research/25 P0): poll, claim and the scan-trigger preflight share one
+>   `sensor.Accepts` check, so the platform stops dispatching jobs a sensor
+>   would refuse ([sensors.md](sensors.md#sensor-local-policy-rfc-040-57)).
+
 The owner's goal is **mutual distrust**: compromising one side must not be
 enough to exploit the other.
 
@@ -75,11 +106,11 @@ date above.
 | S2d | TPM-held keys where available | **PLANNED** (RFC-032 P5) | Not found (no PKCS#11/TPM code in sdk or sensor). | RFC-032 E4, P5 | Root on the host copies the key file or env. |
 | S2e | Instant revocation | **IMPLEMENTED**, two gaps | Every request reads the sensor row; revoked is always refused (`api/internal/app/sensor/service.go:1391-1444, 1482-1493`), no cache. Gaps: the async ingest worker rebuilds a synthetic sensor with `Status: Active` (`api/internal/app/ingest/job_processor.go:105-116`), so reports queued before a revoke are still processed; leased commands of a revoked sensor wait for lease expiry before re-queue. | RFC-032 E7; RFC-040 §5.2 | A sensor revoked for misbehaviour still lands the reports it queued just before. |
 | S3a | Per-sensor job authorization (sensor A gets only A's jobs) | **IMPLEMENTED**, with self-asserted gates | Poll and claim are scoped by tenant, sensor pin, zone, tool and capability from auth (`api/internal/infra/postgres/command_repository.go:128-146, 183-199, 368-388`); lifecycle calls check ownership (`api/internal/app/command/service.go:336-341`) and fence on lease epoch (`service.go:300-327`, RFC-035 D6). Unpinned commands are claimable by any sensor of the tenant in the zone; the tool and capability gates use what the sensor itself reports when the admin set no limit (`api/pkg/domain/sensor/reported.go:113-142`). | RFC-030, RFC-035 | A stolen key that reports every tool and capability claims the tenant's unpinned jobs (targets, network map). |
-| S3b | Results only for job IDs assigned to that sensor | **MISSING** (v1) / **PARTIAL** (v2) | v1 ingest (`/ingest`, `/ingest/ctis`, `/sarif`, `/recon`, `/scan`, `/chunk`) takes no command id; `Service.Ingest` checks only tenant and active status (`api/internal/app/ingest/service.go:261-266`; handlers `ingest_handler.go:608-688, 710-761, 780-828, 1097-1258`). v2 binds when a command is named (`api/internal/app/ingest/v2_receiver.go:95-116`) but accepts unsolicited `PUT /results/{id}` with no command (`:96-98`). | RFC-023 C-8, RFC-026; RFC-040 §5.3 | Any sensor key creates assets and findings for **any target** in its tenant, unrelated to any job. |
-| S3c | Results stay inside the job (targets, tool) | **MISSING** | No check of submitted assets against command targets or scope: assets are looked up and created tenant-wide by name (`api/internal/app/ingest/processor_assets.go:371-402`). Existing assets are merged: `MarkSeen` reactivates, tags and properties are deep-merged, compliance scope, data classification, PII/PHI and internet-accessible flags are re-applied from the report (`processor_assets.go:1768-1795, 1830-1887`). | RFC-040 §5.3 | A sensor marks a crown-jewel asset `internet_accessible` or changes its classification, reactivates retired assets, or plants hosts that later become scan targets through asset groups. |
-| S3d | Auto-resolve / reopen bound to the job | **PARTIAL** | Auto-resolve is gated on the sensor's effective tools and reserved names (`service.go:731-794`), deferred to commit on v2 (`v2.go:271-336`), but triggered by report fields (`coverage_type=full`, `is_default_branch`, `types.go:105-129`) and **allowed for a legacy sensor that declares and reports no tools** (`service.go:780-783`). Auto-reopen sets `confirmed` on any resolved/verified finding whose fingerprint is reported again, including human-resolved ones (`api/internal/infra/postgres/finding_repository.go:3443-3468`, called from `processor_findings.go:370-392`); `/ingest/check` answers fingerprint existence (`ingest_handler.go:990-1030`). | RFC-023 §10.8, RFC-040 §5.3 | A sensor reopens findings that people closed, or (legacy sensor) closes another tool's findings with a "full" report. |
-| S3e | Validation evidence bound to an assigned validate job | **PARTIAL** | With `command_id`: must be this sensor's open validate command for that finding (`api/internal/infra/http/handler/validation_handler.go:226-270`). Without it: stored as "advisory" against **any finding in the tenant** (`:196-205`); `simulation_run_id` and `target.asset_id` are taken from the body unchecked (`:148-170`). | RFC-023 C-8 | A sensor attaches fabricated evidence to any finding. |
-| S3f | Other sensor writes bound | **MISSING** | Scan sessions registered for any `asset_value`, ownership only checked when set (`api/internal/app/scan/session.go:55-80, 141-144`); ingest job status readable tenant-wide (`ingest_handler.go:1640`); telemetry `correlation_id` unchecked (`runtime_telemetry_handler.go:55-61, 134`); credential ingest lets the sensor choose `reactivate_resolved` (`credential_import_handler.go:140-146`). | RFC-040 §5.3 | Cross-sensor reads and spoofed correlation inside a tenant. |
+| S3b | Results only for job IDs assigned to that sensor | **IMPLEMENTED** in tenant mode `quarantine`; **PARTIAL** in `warn` (#889) | A report is bound when it names an open command assigned to the submitting sensor: v2 `commands/{id}/results/...`, v1 header `X-OpenCTEM-Command-ID` (`api/internal/app/ingest/binding.go`, `ingest_handler.go` `bindRequest`). Another sensor's command, an unknown one, or one finished more than 15 minutes ago is refused (`COMMAND_NOT_FOUND` / `command-not-found`); another tool than the command's is refused. Unsolicited reports are applied (with the unsolicited limits) only from collector and CI-runner roles (`RoleMayPushUnsolicited`). From other roles, per tenant result policy (`GET/PUT /api/v1/sensors/result-policy`): `quarantine` stores the report for review (`422 RESULTS_QUARANTINED` on v1, items counted `quarantined` on v2; approve/reject under `/api/v1/sensors/quarantined-results`), `warn` applies it with the limits plus an audit entry and a metric. Migration `000317` put every existing tenant on `warn`; tenants created later default to `quarantine`. | RFC-023 C-8, RFC-026; RFC-040 §5.3 | In `warn` mode a worker key still lands unsolicited assets and findings (limited: it cannot change existing assets or reopen human-resolved findings). Paths that send no command id (sdk-go v1 fallback, sdk-go before v0.10.0, sensor CI mode) are unsolicited. |
+| S3c | Results stay inside the job (targets, tool) | **PARTIAL** (#889) | A bound report changes only the existing assets its command's targets cover (host, parent domain, CIDR, repository path; `binding.go` `alterScope`), and only with the command's tool. An unsolicited report never changes an existing asset (no flags, exposure, classification, ownership, identifiers, name, tags or properties, no reactivation); an active asset only gets its last-seen time. Still open: new assets outside the command's targets are created (follow-up: RFC-036 candidates). | RFC-040 §5.3 | A compromised sensor with an assigned job plants new hosts outside that job's targets. |
+| S3d | Auto-resolve / reopen bound to the job | **PARTIAL** (narrowed by #889) | An unsolicited report never reopens a finding a person resolved (any `resolution_method` except `scan_verified`; `api/internal/infra/postgres/finding_human_resolved.go`); auto-resolved findings still reopen. In `quarantine` mode unsolicited reports never auto-resolve. A sensor that declares no tools no longer auto-resolves. Bound reports auto-resolve only on the assets the command covers. Since research 18 F3 (2026-10-04) only a v2 run bound to a command that completed with exit 0 closes default-branch findings (same tool and scan profile, blinding guard); unsolicited reports never close in any mode, nor do uploads or v1 reports. Still open: `coverage_type` and `is_default_branch` are still report fields. | RFC-040 §5.3 | A CI or collector key in a `warn` tenant closes findings by reporting full coverage without them. |
+| S3e | Validation evidence bound to an assigned validate job | **PARTIAL** (#889) | With `command_id`: must be this sensor's open validate command for that finding (`api/internal/infra/http/handler/validation_handler.go`). Without it: refused with `403 COMMAND_REQUIRED` unless the tenant's result policy sets `allow_advisory_evidence`. Still open: `simulation_run_id` and `target.asset_id` are taken from the body unchecked. | RFC-023 C-8; RFC-040 §5.3 | A sensor with a validate command attaches evidence that names an unrelated simulation run or asset. |
+| S3f | Other sensor writes bound | **PARTIAL** (#889) | Ingest-job status and scan-session reads are limited to the sensor that owns them, and a scan session no sensor registered can no longer be updated by any sensor (#889). Still open: telemetry `correlation_id` unchecked (`runtime_telemetry_handler.go`); credential ingest lets the sensor choose `reactivate_resolved` (`credential_import_handler.go`). | RFC-040 §5.3 (S3e, S3f follow-ups) | Spoofed telemetry correlation inside a tenant. |
 | S3g | Tenant from authentication, never the body | **IMPLEMENTED** | `AuthenticateSource` puts `agt.TenantID` in context (`ingest_handler.go:476-512`); v2 the same (`sensor_results_v2_handler.go:61-84`); v2 provenance stamped by the server (`api/internal/app/ingest/v2.go:39-52`); no body tenant is read anywhere. | RFC-026 | — |
 | S3h | Sensor credential refused on non-sensor routes (and vice versa) | **IMPLEMENTED** | Tenant routes accept JWT or `oct_` keys only (`api/internal/infra/http/routes/routes.go:1000-1037`, `middleware/apikey_auth.go:129-157, 329-345`, `middleware/unified_auth.go:78-133`); admin routes need the console session (`middleware/admin_auth.go:73`). Sensor auth is mounted only on `/api/v1/agent/*`, `/api/v1/agent/credentials/*`, `/api/v1/validation/evidence` and `/api/v2/sensor/*` (`scanning.go:138`, `exposure.go:166`, `validation.go:38`, `sensor_v2.go:110`). | — | — (but no detection when a sensor key is tried elsewhere, see B4) |
 | S4a | Results: schema validation | **PARTIAL** | v2: strict I-JSON pre-pass, unknown fields refused, enums and ids checked (`api/internal/app/ingest/strictjson.go:42-60, 227-354`). v1 CTIS: unknown fields refused, counts only (`ingest_handler.go:642-656`, `validator.go:29-59`). Recon, chunk, scan, evidence, telemetry: lenient decode. No URL validation anywhere. | RFC-026 | Malformed URLs and unexpected values flow into the database from v1. |
@@ -132,10 +163,13 @@ B4.)
 
 **Is result submission bound to a command assigned to that sensor, with the
 tenant from auth?** Tenant always from auth (S3g). Command transitions are
-bound and fenced (S3a). Results: v1 never, v2 only when the sensor chooses
-to name a command (S3b). Validation evidence: bound with a command id,
-"advisory" against any finding without one (S3e). Assets and findings are
-not checked against the job's targets (S3c).
+bound and fenced (S3a). Results (since #889): bound when they name an open command
+assigned to the sensor (v2 path, v1 `X-OpenCTEM-Command-ID`); unsolicited
+reports are applied with limits from collector/CI roles, and from other roles
+quarantined or (tenant mode `warn`) applied with limits and audited (S3b).
+Validation evidence without a command id is refused unless the tenant allows
+advisory evidence (S3e). A bound report changes only the existing assets its
+command covers; new assets outside the targets are still created (S3c).
 
 **Ingest size limits and schema validation?** Body, decompression, depth
 (v2) and count limits exist; per-field length caps do not; v2 is strict,
@@ -171,7 +205,7 @@ Ranked by (likelihood × impact) with the effort to exploit today.
 
 | Rank | Gap | Who can exploit | Impact |
 |---|---|---|---|
-| 1 | **Unbound sensor writes** (S3b, S3c, S3d, S3e): any sensor key writes assets and findings for any target in its tenant with no job, merges into existing assets (reactivation, compliance and exposure flags), reopens human-resolved findings by fingerprint, attaches advisory evidence to any finding; legacy sensors can auto-resolve | any stolen `rda_` key (bearer, often non-expiring) or any compromised sensor host | integrity of the whole CTEM picture (priorities, SLAs, exposure, attack paths), with no detection |
+| 1 | **Unbound sensor writes** (S3b, S3c, S3d, S3e; largely closed by #889, see the rows): any sensor key writes assets and findings for any target in its tenant with no job, merges into existing assets (reactivation, compliance and exposure flags), reopens human-resolved findings by fingerprint, attaches advisory evidence to any finding; legacy sensors can auto-resolve | any stolen `rda_` key (bearer, often non-expiring) or any compromised sensor host | integrity of the whole CTEM picture (priorities, SLAs, exposure, attack paths), with no detection |
 | 2 | **No authority check between platform and sensor** (P1a, P1d, P2a): unsigned commands, no sensor-local scope, `POST /api/v1/commands` lets a **member** send arbitrary scan targets to any tenant sensor with no scope/exclusion/zone check | a tenant member; anyone with DB write; API RCE; a path attacker trusted by the sensor's CA store | sensors scan what the attacker chooses, including internal ranges on on-prem sensors that allow private targets |
 | 3 | **Platform-supplied custom templates run unsigned** (P3a): nuclei signature enforcement is dropped for those runs; the template "signature" is an unverified HMAC keyed with `APP_ENCRYPTION_KEY`; `allow_interactsh` is payload-controlled | a tenant admin; API or DB compromise | arbitrary request crafting against in-scope targets (intrusive/destructive checks past T0/T1), out-of-band exfiltration of responses |
 | 4 | **One process, one DB role for sensors and admins** (S1, S4c): sensor-reachable parsers (SARIF, recon, chunk always synchronous) run beside the encryption key, session secrets and full DB access; the ingest worker is in-process and keeps processing reports of revoked sensors | any sensor key, plus a parser bug | platform compromise from the sensor side; platform outage from a pathological report |

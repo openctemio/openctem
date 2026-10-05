@@ -223,6 +223,10 @@ func (m *HandlerMockRepository) GetPropertyFacets(_ context.Context, _ shared.ID
 	return nil, nil
 }
 
+func (m *HandlerMockRepository) SetCrownJewel(_ context.Context, _, _ shared.ID, _ bool, _ float64, _ string) error {
+	return nil
+}
+
 func (m *HandlerMockRepository) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
 	return nil, nil
 }

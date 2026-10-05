@@ -70,7 +70,7 @@ export interface AssetSearchFilters {
   // Has findings filter
   hasFindings?: boolean
 
-  // Crown jewel filter (properties->>'is_crown_jewel')
+  // Crown jewel filter (the assets.is_crown_jewel column)
   isCrownJewel?: boolean
 
   // CTEM inventory filter dimensions (api: all-assets-inventory).
@@ -84,6 +84,9 @@ export interface AssetSearchFilters {
   providers?: string[]
   lastSeenBefore?: string // ISO timestamp — assets last seen before this instant
   lastSeenAfter?: string // ISO timestamp — assets last seen after this instant
+  // Attribution (RFC-036): states, or the aliases unknown / unconfirmed /
+  // approved. Empty = no attribution filter (every asset).
+  attribution?: string[]
 
   // Properties filter: key=value pairs for JSONB containment (server-side)
   propertiesFilter?: Record<string, string[]>
@@ -115,6 +118,7 @@ interface BackendAsset {
   impact_integrity?: string
   impact_availability?: string
   is_control_plane?: boolean // CTEM Scoping: asset governs other assets (api #467)
+  is_crown_jewel?: boolean // the assets.is_crown_jewel column
   risk_score: number // 0-100
   finding_count: number
   finding_severity_counts?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
@@ -166,6 +170,7 @@ function transformAsset(backend: BackendAsset): Asset {
     impactIntegrity: (backend.impact_integrity as ImpactRating) || undefined,
     impactAvailability: (backend.impact_availability as ImpactRating) || undefined,
     isControlPlane: backend.is_control_plane ?? undefined,
+    isCrownJewel: backend.is_crown_jewel ?? undefined,
     riskScore: backend.risk_score,
     findingCount: backend.finding_count,
     // Detail fields the API always sent but the transform used to drop, so the
@@ -411,6 +416,7 @@ function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, str
   if (filters.providers?.length) params.providers = filters.providers.join(',')
   if (filters.lastSeenBefore) params.last_seen_before = filters.lastSeenBefore
   if (filters.lastSeenAfter) params.last_seen_after = filters.lastSeenAfter
+  if (filters.attribution?.length) params.attribution = filters.attribution.join(',')
 
   // Sorting
   if (filters.sort) params.sort = filters.sort
@@ -574,6 +580,7 @@ export async function createAsset(input: CreateAssetInput): Promise<Asset> {
   const response = await post<BackendAsset>(endpoints.assets.create(), {
     name: input.name,
     type: input.type,
+    sub_type: input.subType || undefined,
     criticality: input.criticality || 'medium', // Default to medium if not specified
     description: input.description,
     scope: input.scope || 'internal',
@@ -637,7 +644,7 @@ export async function updateAsset(assetId: string, input: UpdateAssetInput): Pro
     owner_ref: input.ownerRef,
     tags: input.tags,
     // Per-type form fields live in `metadata`; backend merges them into
-    // `properties` (preserving keys like is_crown_jewel). API-owned keys are
+    // `properties` (preserving the keys it does not send). API-owned keys are
     // left out: a stale copy of them would be refused.
     properties: editableProperties(input.metadata),
   })

@@ -25,13 +25,15 @@ R3 DELETE /api/v1/findings/{id}/evidence/notes/{noteId}
 R3 DELETE /api/v1/groups/{groupId}
 R3 DELETE /api/v1/groups/{groupId}/assets/{assetId}
 R3 DELETE /api/v1/groups/{groupId}/members/{userId}
-R3 DELETE /api/v1/groups/{groupId}/permission-sets/{permissionSetId}
 R3 DELETE /api/v1/groups/{groupId}/scope-rules/{ruleId}
+R3 DELETE /api/v1/organization/members/{member_id}/mfa
+R3 GET /api/v1/organization/members/{member_id}/access-report
+R3 POST /api/v1/organization/members/{member_id}/erase
+R3 POST /api/v1/organization/members/{member_id}/offboard
 R3 DELETE /api/v1/pentest/campaigns/{id}/members/{userId}
 R3 DELETE /api/v1/pentest/findings/{findingId}
 R3 DELETE /api/v1/pentest/reports/{reportId}
 R3 DELETE /api/v1/pentest/templates/{templateId}
-R3 DELETE /api/v1/permission-sets/{id}/permissions/{permissionId}
 R3 DELETE /api/v1/pipelines/{id}/steps/{stepId}
 R3 DELETE /api/v1/relationships/{relationshipId}
 R3 DELETE /api/v1/repositories/{repositoryId}/branches/{branchId}
@@ -62,7 +64,6 @@ R3 GET /api/v1/findings/related-cves/{cveId}
 R3 GET /api/v1/groups/{groupId}
 R3 GET /api/v1/groups/{groupId}/assets
 R3 GET /api/v1/groups/{groupId}/members
-R3 GET /api/v1/groups/{groupId}/permission-sets
 R3 GET /api/v1/groups/{groupId}/scope-rules
 R3 GET /api/v1/groups/{groupId}/scope-rules/{ruleId}
 R3 GET /api/v1/pentest/findings/{findingId}
@@ -107,7 +108,6 @@ R3 POST /api/v1/compliance/findings/{findingId}/controls/auto-map
 R3 POST /api/v1/groups/{groupId}/assets
 R3 POST /api/v1/groups/{groupId}/assets/bulk
 R3 POST /api/v1/groups/{groupId}/members
-R3 POST /api/v1/groups/{groupId}/permission-sets
 R3 POST /api/v1/groups/{groupId}/scope-rules
 R3 POST /api/v1/groups/{groupId}/scope-rules/reconcile
 R3 POST /api/v1/groups/{groupId}/scope-rules/{ruleId}/preview
@@ -160,6 +160,7 @@ R4 GET /api/v1/vulnerabilities/cve/{cveId}/affected-assets
 R4 PATCH /api/v1/admin/threat-intel/sync/{source}
 R4 PATCH /api/v1/threat-intel/sync/{source}
 R4 POST /api/v1/notification-outbox/{id}/retry
+R4 POST /api/v1/secret-store/{id}/rotate
 R4 PUT /api/v1/secret-store/{id}
 R5 DELETE /api/v1/assets/{id}/lifecycle/snooze
 R5 DELETE /api/v1/findings/{id}/link-ticket
@@ -260,7 +261,6 @@ R6 GET /api/v1/tenants/{tenant}/settings
 R6 GET /api/v1/tenants/{tenant}/settings/asset-identity
 R6 GET /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R6 GET /api/v1/tenants/{tenant}/settings/asset-source
-R6 GET /api/v1/tenants/{tenant}/settings/data-scope
 R6 GET /api/v1/tenants/{tenant}/settings/modules
 R6 GET /api/v1/tenants/{tenant}/settings/modules/bundles
 R6 GET /api/v1/tenants/{tenant}/settings/modules/graph
@@ -270,11 +270,9 @@ R6 GET /api/v1/tenants/{tenant}/settings/risk-scoring
 R6 GET /api/v1/tenants/{tenant}/settings/risk-scoring/presets
 R6 PATCH /api/v1/tenants/{tenant}
 R6 PATCH /api/v1/tenants/{tenant}/members/{userId}
-R6 PATCH /api/v1/tenants/{tenant}/settings/api
 R6 PATCH /api/v1/tenants/{tenant}/settings/asset-identity
 R6 PATCH /api/v1/tenants/{tenant}/settings/branch
 R6 PATCH /api/v1/tenants/{tenant}/settings/branding
-R6 PATCH /api/v1/tenants/{tenant}/settings/data-scope
 R6 PATCH /api/v1/tenants/{tenant}/settings/general
 R6 PATCH /api/v1/tenants/{tenant}/settings/modules
 R6 PATCH /api/v1/tenants/{tenant}/settings/pentest
@@ -319,7 +317,6 @@ R9 GET /api/v1/tenants/{tenant}/settings
 R9 GET /api/v1/tenants/{tenant}/settings/asset-identity
 R9 GET /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R9 GET /api/v1/tenants/{tenant}/settings/asset-source
-R9 GET /api/v1/tenants/{tenant}/settings/data-scope
 R9 GET /api/v1/tenants/{tenant}/settings/modules
 R9 GET /api/v1/tenants/{tenant}/settings/modules/bundles
 R9 GET /api/v1/tenants/{tenant}/settings/modules/graph
@@ -334,11 +331,9 @@ R9 GET /api/v1/users/me/sessions
 R9 GET /api/v1/users/me/tenants
 R9 PATCH /api/v1/tenants/{tenant}
 R9 PATCH /api/v1/tenants/{tenant}/members/{userId}
-R9 PATCH /api/v1/tenants/{tenant}/settings/api
 R9 PATCH /api/v1/tenants/{tenant}/settings/asset-identity
 R9 PATCH /api/v1/tenants/{tenant}/settings/branch
 R9 PATCH /api/v1/tenants/{tenant}/settings/branding
-R9 PATCH /api/v1/tenants/{tenant}/settings/data-scope
 R9 PATCH /api/v1/tenants/{tenant}/settings/general
 R9 PATCH /api/v1/tenants/{tenant}/settings/modules
 R9 PATCH /api/v1/tenants/{tenant}/settings/pentest

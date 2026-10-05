@@ -60,7 +60,7 @@ X-API-Key: <agent_api_key>
 | **Scope** | `/scope/` | Scope configuration for CTEM programs |
 | **Workflows** | `/workflows/` | Automated workflow definitions and triggers |
 | **Exposures** | `/exposures/` | Exposure management, threat intelligence, credentials |
-| **Access Control** | `/groups/`, `/roles/`, `/permission-sets/` | RBAC groups, roles, permissions |
+| **Access Control** | `/groups/`, `/roles/`, `/permissions/` | Roles and permissions (RBAC); groups carry data scope only |
 | **Platform Agents** | `/platform/`, `/platform-jobs/` | Platform-managed agent registration, jobs, leases |
 | **Dashboard** | `/dashboard/` | Aggregated statistics and metrics |
 | **Audit** | `/audit/` | Audit log queries |

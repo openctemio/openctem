@@ -122,7 +122,14 @@ func exprContainsGate(e ast.Expr) bool {
 	return found
 }
 
-func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
+// parseRoutes reads every route registered in internal/infra/http/routes from
+// the source: method, full path (chi groups resolved), whether a permission
+// gate applies, and where it is registered. Shared by the authz coverage gate
+// and the data-surface classification gate.
+//
+//nolint:cyclop,gocognit // the AST walk, moved unchanged out of TestEveryRouteIsGatedOrAllowlisted
+func parseRoutes(t *testing.T) []routeRec {
+	t.Helper()
 	root := repoRoot(t)
 	routesDir := filepath.Join(root, "internal", "infra", "http", "routes")
 	entries, err := os.ReadDir(routesDir)
@@ -252,6 +259,11 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 	if len(routes) < 100 {
 		t.Fatalf("parsed only %d routes — the AST matcher is broken, not the code", len(routes))
 	}
+	return routes
+}
+
+func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
+	routes := parseRoutes(t)
 
 	allowed := func(p string) bool {
 		for _, ap := range allowlistPrefixes {

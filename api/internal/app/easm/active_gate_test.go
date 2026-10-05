@@ -1,0 +1,298 @@
+package easm
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+)
+
+// gateFixture is one tenant's data; any other tenant sees nothing.
+type gateFixture struct {
+	tenant  shared.ID
+	assets  map[string]*asset.Asset // by name
+	records map[string]attribution.Record
+	tombs   map[string]bool
+	targets []*scopedom.Target
+	seeds   []string
+	vds     []string
+	err     error
+}
+
+func (f *gateFixture) mine(t shared.ID) bool { return t.Equals(f.tenant) }
+
+func (f *gateFixture) Records(_ context.Context, t shared.ID, ids []string) (map[string]attribution.Record, error) {
+	out := map[string]attribution.Record{}
+	if f.err != nil {
+		return nil, f.err
+	}
+	if !f.mine(t) {
+		return out, nil
+	}
+	for _, id := range ids {
+		if r, ok := f.records[id]; ok {
+			out[id] = r
+		}
+	}
+	return out, nil
+}
+
+func (f *gateFixture) Tombstoned(_ context.Context, t shared.ID, names []string) (map[string][]attribution.Rule, error) {
+	out := map[string][]attribution.Rule{}
+	if !f.mine(t) {
+		return out, nil
+	}
+	for _, n := range names {
+		if f.tombs[n] {
+			out[n] = nil
+		}
+	}
+	return out, nil
+}
+
+func (f *gateFixture) GetByIDs(_ context.Context, t shared.ID, ids []shared.ID) (map[string]*asset.Asset, error) {
+	out := map[string]*asset.Asset{}
+	if !f.mine(t) {
+		return out, nil
+	}
+	for _, a := range f.assets {
+		for _, id := range ids {
+			if a.ID().Equals(id) {
+				out[id.String()] = a
+			}
+		}
+	}
+	return out, nil
+}
+
+func (f *gateFixture) GetByNames(_ context.Context, t shared.ID, names []string) (map[string]*asset.Asset, error) {
+	out := map[string]*asset.Asset{}
+	if !f.mine(t) {
+		return out, nil
+	}
+	for _, n := range names {
+		if a, ok := f.assets[n]; ok {
+			out[n] = a
+		}
+	}
+	return out, nil
+}
+
+func (f *gateFixture) ListActiveTargets(_ context.Context, t string) ([]*scopedom.Target, error) {
+	if t != f.tenant.String() {
+		return nil, nil
+	}
+	return f.targets, nil
+}
+
+func (f *gateFixture) RootDomainSeedNames(_ context.Context, t shared.ID) ([]string, error) {
+	if !f.mine(t) {
+		return nil, nil
+	}
+	return f.seeds, nil
+}
+
+func (f *gateFixture) VerifiedDomainNames(_ context.Context, t shared.ID) ([]string, error) {
+	if !f.mine(t) {
+		return nil, nil
+	}
+	return f.vds, nil
+}
+
+func (f *gateFixture) add(t *testing.T, name string, typ asset.AssetType) *asset.Asset {
+	t.Helper()
+	a, err := asset.NewAsset(name, typ, asset.CriticalityMedium)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.assets[a.Name()] = a
+	return a
+}
+
+func (f *gateFixture) record(a *asset.Asset, s attribution.State, human bool) {
+	f.records[a.ID().String()] = attribution.Record{State: s, HumanDecided: human}
+}
+
+func newGateFixture(t *testing.T) *gateFixture {
+	t.Helper()
+	f := &gateFixture{tenant: shared.NewID(), assets: map[string]*asset.Asset{}, records: map[string]attribution.Record{}, tombs: map[string]bool{}}
+	st, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "*.scoped.com", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cidr, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeCIDR, "198.51.100.0/24", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.targets = []*scopedom.Target{st, cidr}
+	f.seeds = []string{"seeded.com"}
+	f.vds = []string{"verified.com"}
+	return f
+}
+
+func TestActiveGate_Assets(t *testing.T) {
+	f := newGateFixture(t)
+	g := NewActiveGate(f, f, f, f)
+	cases := []struct {
+		name  string
+		setup func() *asset.Asset
+		want  attribution.State // "" = allowed
+	}{
+		{"unrecorded inside a scope target", func() *asset.Asset { return f.add(t, "app.scoped.com", asset.AssetTypeSubdomain) }, ""},
+		{"unrecorded IP inside a scope CIDR", func() *asset.Asset { return f.add(t, "198.51.100.7", asset.AssetTypeIPAddress) }, ""},
+		{"unrecorded under a seed", func() *asset.Asset { return f.add(t, "www.seeded.com", asset.AssetTypeSubdomain) }, ""},
+		{"unrecorded seed apex", func() *asset.Asset { return f.add(t, "seeded.com", asset.AssetTypeDomain) }, ""},
+		{"unrecorded under a verified domain", func() *asset.Asset { return f.add(t, "a.b.verified.com", asset.AssetTypeSubdomain) }, ""},
+		{"unrecorded outside everything", func() *asset.Asset { return f.add(t, "manual.example.net", asset.AssetTypeDomain) }, attribution.StateUnattributed},
+		{"unrecorded public IP outside everything", func() *asset.Asset { return f.add(t, "203.0.113.5", asset.AssetTypeIPAddress) }, attribution.StateUnattributed},
+		{"unrecorded private address: zones decide", func() *asset.Asset { return f.add(t, "10.0.0.5", asset.AssetTypeIPAddress) }, ""},
+		{"unrecorded repository: not an internet target", func() *asset.Asset {
+			return f.add(t, "github.com/org/repo", asset.AssetTypeRepository)
+		}, ""},
+		{"confirmed by a person outside scope", func() *asset.Asset {
+			a := f.add(t, "confirmed.example.net", asset.AssetTypeDomain)
+			f.record(a, attribution.StateConfirmed, true)
+			return a
+		}, ""},
+		{"needs review inside a scope target", func() *asset.Asset {
+			a := f.add(t, "review.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, attribution.StateNeedsReview},
+		{"candidate", func() *asset.Asset {
+			a := f.add(t, "cand.seeded.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateCandidate, false)
+			return a
+		}, attribution.StateCandidate},
+		{"dependency", func() *asset.Asset {
+			a := f.add(t, "cdn.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateDependency, true)
+			return a
+		}, attribution.StateDependency},
+		{"rejected", func() *asset.Asset {
+			a := f.add(t, "notours.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateRejected, true)
+			return a
+		}, attribution.StateRejected},
+		{"under a rejected parent asset", func() *asset.Asset {
+			p := f.add(t, "legacy.scoped.com", asset.AssetTypeSubdomain)
+			f.record(p, attribution.StateRejected, true)
+			return f.add(t, "api.legacy.scoped.com", asset.AssetTypeSubdomain)
+		}, attribution.StateRejected},
+		{"re-created after rejection (tombstone on its own name)", func() *asset.Asset {
+			f.tombs["gone.seeded.com"] = true
+			return f.add(t, "gone.seeded.com", asset.AssetTypeSubdomain)
+		}, attribution.StateRejected},
+		{"under a tombstoned parent", func() *asset.Asset {
+			f.tombs["old.scoped.com"] = true
+			return f.add(t, "x.old.scoped.com", asset.AssetTypeSubdomain)
+		}, attribution.StateRejected},
+		{"automatically confirmed under a tombstone", func() *asset.Asset {
+			f.tombs["auto.verified.com"] = true
+			a := f.add(t, "www.auto.verified.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateConfirmed, false)
+			return a
+		}, attribution.StateRejected},
+		{"a person confirmed it under a rejected parent", func() *asset.Asset {
+			f.tombs["parent.scoped.com"] = true
+			a := f.add(t, "child.parent.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateConfirmed, true)
+			return a
+		}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := tc.setup()
+			got, err := g.ActiveCheckBlocked(context.Background(), f.tenant, []string{a.ID().String()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state := got[a.ID().String()]; state != tc.want {
+				t.Fatalf("state = %q, want %q", state, tc.want)
+			}
+		})
+	}
+}
+
+func TestActiveGate_BlockedTargets(t *testing.T) {
+	f := newGateFixture(t)
+	g := NewActiveGate(f, f, f, f)
+	rej := f.add(t, "www.scoped.com", asset.AssetTypeSubdomain)
+	f.record(rej, attribution.StateRejected, true)
+	rev := f.add(t, "dev.scoped.com", asset.AssetTypeSubdomain)
+	f.record(rev, attribution.StateNeedsReview, false)
+	f.add(t, "manual.example.net", asset.AssetTypeDomain)
+	f.add(t, "ok.scoped.com", asset.AssetTypeSubdomain)
+	f.tombs["dead.example.org"] = true
+
+	targets := []string{
+		"www.scoped.com",               // rejected asset
+		"https://WWW.scoped.com/login", // the same asset by URL
+		"dev.scoped.com:443",           // needs_review asset by host:port
+		"manual.example.net",           // unattributed asset
+		"ok.scoped.com",                // allowed
+		"api.www.scoped.com",           // free text under a rejected asset
+		"a.dead.example.org",           // free text under a tombstone
+		"free.example.com",             // free text: the act-scope check decides
+	}
+	got, err := g.BlockedTargets(context.Background(), f.tenant, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]attribution.State{
+		"www.scoped.com":               attribution.StateRejected,
+		"https://WWW.scoped.com/login": attribution.StateRejected,
+		"dev.scoped.com:443":           attribution.StateNeedsReview,
+		"manual.example.net":           attribution.StateUnattributed,
+		"api.www.scoped.com":           attribution.StateRejected,
+		"a.dead.example.org":           attribution.StateRejected,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("%s: got %q, want %q (all: %v)", k, got[k], v, got)
+		}
+	}
+
+	// Another tenant: tenant A's rejections, records and assets mean
+	// nothing; free text is not refused and nothing resolves to A's assets.
+	other, err := g.BlockedTargets(context.Background(), shared.NewID(), targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(other) != 0 {
+		t.Fatalf("another tenant was refused by tenant A's data: %v", other)
+	}
+	if b, err := g.ActiveCheckBlocked(context.Background(), shared.NewID(), []string{rej.ID().String()}); err != nil || b[rej.ID().String()] != attribution.StateUnattributed {
+		// Tenant A's asset id asked by another tenant is not found: refused.
+		t.Fatalf("foreign asset id: %v, %v", b, err)
+	}
+}
+
+func TestActiveGate_FailsClosed(t *testing.T) {
+	f := newGateFixture(t)
+	a := f.add(t, "app.scoped.com", asset.AssetTypeSubdomain)
+	if _, err := NewActiveGate(nil, f, f, f).ActiveCheckBlocked(context.Background(), f.tenant, []string{a.ID().String()}); err == nil {
+		t.Fatal("unwired gate must fail")
+	}
+	if _, err := NewActiveGate(f, f, nil, f).BlockedTargets(context.Background(), f.tenant, []string{"x"}); err == nil {
+		t.Fatal("unwired gate must fail")
+	}
+	f.err = errors.New("db down")
+	g := NewActiveGate(f, f, f, f)
+	if _, err := g.ActiveCheckBlocked(context.Background(), f.tenant, []string{a.ID().String()}); err == nil {
+		t.Fatal("a lookup error must fail the check")
+	}
+	if _, err := g.BlockedTargets(context.Background(), f.tenant, []string{"app.scoped.com"}); err == nil {
+		t.Fatal("a lookup error must fail the check")
+	}
+	if _, err := g.ActiveCheckBlocked(context.Background(), f.tenant, []string{"not-a-uuid"}); err == nil {
+		t.Fatal("a malformed id must fail the check")
+	}
+}

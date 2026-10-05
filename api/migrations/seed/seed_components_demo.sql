@@ -295,26 +295,28 @@ BEGIN
   -- ---------------------------------------------------------------------------
   -- Step 3a: Assets (6 covering common types)
   -- ---------------------------------------------------------------------------
-  INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status, scope,
+  -- Asset types are stored as (core type, sub_type); aliases such as
+  -- web_application or firewall are input names only (RFC-042 §6.3.8).
+  INSERT INTO assets (id, tenant_id, name, asset_type, sub_type, criticality, status, scope,
                       exposure, risk_score, description,
                       is_internet_accessible, source_type, discovery_source)
   VALUES
-    ('dcdc1111-0000-0000-0000-000000000001', v_tenant_id, 'demo-web-storefront', 'web_application', 'critical', 'active',
+    ('dcdc1111-0000-0000-0000-000000000001', v_tenant_id, 'demo-web-storefront', 'application', 'web_application', 'critical', 'active',
       'external', 'public', 87, 'Customer-facing e-commerce storefront (React + Node.js)',
       true, 'manual', 'manual'),
-    ('dcdc1111-0000-0000-0000-000000000002', v_tenant_id, 'demo-api-gateway', 'api', 'critical', 'active',
+    ('dcdc1111-0000-0000-0000-000000000002', v_tenant_id, 'demo-api-gateway', 'application', 'api', 'critical', 'active',
       'external', 'public', 79, 'Public API gateway routing customer requests to microservices',
       true, 'manual', 'manual'),
-    ('dcdc1111-0000-0000-0000-000000000003', v_tenant_id, 'demo-payment-service', 'service', 'critical', 'active',
+    ('dcdc1111-0000-0000-0000-000000000003', v_tenant_id, 'demo-payment-service', 'service', NULL, 'critical', 'active',
       'internal', 'restricted', 72, 'Internal payment processing service (Java/Spring Boot)',
       false, 'manual', 'manual'),
-    ('dcdc1111-0000-0000-0000-000000000004', v_tenant_id, 'demo-mobile-app', 'mobile_app', 'high', 'active',
+    ('dcdc1111-0000-0000-0000-000000000004', v_tenant_id, 'demo-mobile-app', 'application', 'mobile_app', 'high', 'active',
       'external', 'public', 58, 'iOS/Android mobile companion app',
       true, 'manual', 'manual'),
-    ('dcdc1111-0000-0000-0000-000000000005', v_tenant_id, 'demo-iac-infra', 'repository', 'high', 'active',
+    ('dcdc1111-0000-0000-0000-000000000005', v_tenant_id, 'demo-iac-infra', 'repository', NULL, 'high', 'active',
       'internal', 'private', 41, 'Terraform/Helm IaC monorepo for production infrastructure',
       false, 'manual', 'manual'),
-    ('dcdc1111-0000-0000-0000-000000000006', v_tenant_id, 'demo-k8s-prod', 'kubernetes_cluster', 'critical', 'active',
+    ('dcdc1111-0000-0000-0000-000000000006', v_tenant_id, 'demo-k8s-prod', 'kubernetes', 'cluster', 'critical', 'active',
       'cloud', 'restricted', 65, 'Production Kubernetes cluster (AWS EKS, 3 AZs)',
       false, 'manual', 'manual')
   ON CONFLICT (id) DO NOTHING;

@@ -10,6 +10,7 @@
 import Link from 'next/link'
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EVENT_TYPE_CONFIG, type ExposureEventType } from '@/lib/api/exposure-types'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   EmptyState,
@@ -34,13 +35,20 @@ const EXPOSURE_TYPE_LABEL: Record<string, string> = {
 
 const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info', 'none']
 
+/** The attribution review queue page. */
+export const EASM_REVIEW_HREF = '/attack-surface/review'
+
 /** The API's severity string as a known severity (unknown → info). */
 export function toSeverity(s: string | undefined): Severity {
   return SEVERITIES.includes(s as Severity) ? (s as Severity) : 'info'
 }
 
 export function exposureTypeLabel(t: string): string {
-  return EXPOSURE_TYPE_LABEL[t] ?? t.replace(/_/g, ' ')
+  return (
+    EXPOSURE_TYPE_LABEL[t] ??
+    EVENT_TYPE_CONFIG[t as ExposureEventType]?.label ??
+    t.replace(/_/g, ' ')
+  )
 }
 
 function Row({
@@ -103,11 +111,22 @@ export function EASMOverview() {
                 <Row label="Confirmed ours" value={a?.confirmed ?? 0} />
                 <Row
                   label="Needs review"
-                  value={a?.needs_review ?? 0}
+                  value={(a?.needs_review ?? 0) + (a?.candidate ?? 0)}
                   hint={
-                    a?.review_oldest_since ? (
+                    (a?.needs_review ?? 0) + (a?.candidate ?? 0) > 0 ? (
                       <>
-                        oldest <RelativeTime date={a.review_oldest_since} className="text-xs" />
+                        {a?.review_oldest_since && (
+                          <>
+                            oldest <RelativeTime date={a.review_oldest_since} className="text-xs" />
+                            {' · '}
+                          </>
+                        )}
+                        <Link
+                          href={EASM_REVIEW_HREF}
+                          className="font-medium text-foreground underline underline-offset-2"
+                        >
+                          Review
+                        </Link>
                       </>
                     ) : undefined
                   }

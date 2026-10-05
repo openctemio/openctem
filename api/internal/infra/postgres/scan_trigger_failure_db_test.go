@@ -73,7 +73,7 @@ func TestRecordTriggerFailure_RecordsFailureWithoutTouchingCounters(t *testing.T
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM scans WHERE id = $1`, scanID.String())
 	})
 
-	if err := repo.RecordTriggerFailure(ctx, scanID, "failed"); err != nil {
+	if err := repo.RecordTriggerFailure(ctx, tenantID, scanID, "failed"); err != nil {
 		t.Fatalf("RecordTriggerFailure: %v", err)
 	}
 

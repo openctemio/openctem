@@ -272,7 +272,7 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
 
       {/* View All Link */}
       <div>
-        <Link href={`/findings?assetId=${assetId}`}>
+        <Link href={`/findings?asset_id=${assetId}`}>
           <Button variant="outline" className="w-full">
             <FileWarning className="me-2 h-4 w-4" />
             View all findings ({response?.total ?? findings.length})

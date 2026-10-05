@@ -22,7 +22,7 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.6
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.1
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/gorilla/websocket v1.5.3
@@ -107,6 +107,7 @@ require (
 	github.com/crewjam/saml v0.5.1
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/openctemio/ctis v1.2.1-0.20261002171956-22afe545d848
+	github.com/teambition/rrule-go v1.8.2
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/mod v0.41.0
 	golang.org/x/tools v0.50.0

@@ -110,13 +110,6 @@ func (r *ScanSessionRepository) Create(ctx context.Context, s *scansession.ScanS
 	return nil
 }
 
-// GetByID retrieves a scan session by ID.
-func (r *ScanSessionRepository) GetByID(ctx context.Context, id shared.ID) (*scansession.ScanSession, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanFromRow(row)
-}
-
 // GetByTenantAndID retrieves a scan session by tenant and ID.
 func (r *ScanSessionRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*scansession.ScanSession, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
@@ -165,7 +158,7 @@ func (r *ScanSessionRepository) Update(ctx context.Context, s *scansession.ScanS
 			scan_profile_id = $12,
 			quality_gate_result = $13,
 			updated_at = $14
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $15
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -183,6 +176,7 @@ func (r *ScanSessionRepository) Update(ctx context.Context, s *scansession.ScanS
 		scanProfileID,
 		nullBytes(qualityGateResult),
 		s.UpdatedAt,
+		s.TenantID.String(),
 	)
 
 	if err != nil {
@@ -200,10 +194,11 @@ func (r *ScanSessionRepository) Update(ctx context.Context, s *scansession.ScanS
 	return nil
 }
 
-// Delete deletes a scan session by ID.
-func (r *ScanSessionRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM scan_sessions WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete deletes a scan session of tenantID. A session of another tenant is
+// not found.
+func (r *ScanSessionRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM scan_sessions WHERE tenant_id = $1 AND id = $2"
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete scan session: %w", err)
 	}

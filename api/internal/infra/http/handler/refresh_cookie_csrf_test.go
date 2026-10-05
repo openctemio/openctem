@@ -10,7 +10,7 @@ import (
 )
 
 // /auth/token, /auth/refresh, /auth/create-first-team and
-// /invitations/{token}/accept-with-refresh are authenticated by the refresh
+// /invitations/accept-with-refresh are authenticated by the refresh
 // token. Taken from the refresh_token cookie it is an ambient credential, so
 // it now needs the double-submit CSRF pair; a token in the body is not
 // ambient and needs nothing.

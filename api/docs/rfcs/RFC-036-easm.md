@@ -435,6 +435,19 @@ active_allowed(asset) =
   AND tier(asset) <= tier_ceiling(scope_target or tenant default)
 ```
 
+**As built (2026-10-04, #1114).** One gate (`internal/app/easm/active_gate.go`)
+decides `active_allowed` on every active-scan path: typed targets and
+asset-group members, at scan create, clone, import, quick scan, `POST
+/commands`, every run (manual, scheduled, retry, workflow) and the dispatch
+gate (pipelines, coverage, validation, retests, simulations, connectors).
+An asset is allowed when its record is `confirmed`, or, with no record, when
+it is inside an active scope target or at/under a root-domain seed or verified
+domain (`derived_from_seed`); a rejected name refuses itself and every name
+under it. An internet-facing asset with no record outside all of them is
+`unattributed` and waits for a person. The tier ceiling is not enforced yet
+(sensor side, 22b S7). See
+[architecture/active-probe-gate.md](../architecture/active-probe-gate.md).
+
 | Tier | Touches the target | Default |
 |---|---|---|
 | **T0 passive** | No (third-party data, DNS) | All candidates, dependencies, lookalikes, confirmed |
@@ -779,13 +792,74 @@ Effort is engineer-weeks across all repos.
 | **P5 — Sources and connectors** | `discovery_source` integrations (Cert Spotter, Censys, Shodan, SecurityTrails, Chaos, urlscan, HIBP, GitHub) with quota + cache; cloud connectors AWS (Route 53, public IPs, ELB, S3), Azure Resource Graph, GCP CAI as authoritative evidence; "cloud public IPs not in inventory" coverage metric | 6–8 (S per source, M per cloud) | Medium (credentials, terms) | P2 | Each source is per-tenant (`ListByProvider`) and isolation-tested. Quota exhaustion degrades to skip + warning. A connector-only asset auto-confirms with w = 1.0 |
 | **P6 — Optional modes** (each its own owner decision) | Lookalike monitoring (Go permutations + UTS #39 skeletons; registration/MX/CT checks; `lookalike_domain` exposure; T0 only); T2 intrusive opt-in with approver + expiry; shared platform sensors with published egress ranges, rDNS, info page, opt-out handling | 3 + 2 + (4 + ops) | Medium (legal/ops for platform sensors) | O2, O3, O5 | Lookalikes never receive active probes. T2 runs refuse without a verified seed and an unexpired approval. Published range document matches the actual egress (automated check) |
 
-**When and where.** The RFC is accepted (§12.3). Implementation of P0, then
-P1, starts now that the api + ui monorepo cutover has merged. It is written
-directly in the monorepo: `api/` for the backend and `web/` for the UI, which
-replaces the separate ui repository. sdk-go and sensor changes (E2–E5, P3
-tools) stay in their own repositories. P2 should not start before P1's
-attribution columns ship. P3's daily
-cadence waits on RFC-030 P4.
+**Status on `develop` (checked 2026-10-04).**
+
+| Phase | Status |
+|---|---|
+| P0 | Shipped on the api/web side: E1 CT rotation and retries (#811, migration `000266`), `certificate_expired` for the newest certificate only, E7 presets with shipped tools only (#815, `000270`), E8/E9 honest numbers and real trends (#829), E11 (#724); CT names promoted to assets and the scan attribution gate (#839). Open: E10 (automatic external/shadow scope). E2–E4 are tracked in sdk-go and the sensor. E5 (httpx certificate, favicon, JARM, ASN, CDN): api ingest of the certificate asset and `serves_certificate` shipped (migration `001026`); the ctis converter, sdk-go `LiveHost` and sensor defaults (`-tls-grab -favicon -jarm -cdn`, same-host redirects, same-host crawl, rate limit honoured) are open PRs in those repositories. |
+| P1 | Shipped: dangling CNAME/NS and email posture checks (#852, `000325`; on by default since research/22 P0-8, `EASM_DNS_CHECKS_ENABLED`) and the lame-delegation check (#1012); attribution side tables and evidence, CT promotion and `GET /api/v1/easm/summary` (#839, `000324`); tenant-scan evidence `tenant_scanned` (#1004); the asset Ownership section (#856); the EASM overview cards on `/attack-surface` (#857); the review queue with bulk decisions and the asset-list attribution filter (#994 API, #1023 web: `/attack-surface/review`, inventory shows approved assets by default; [easm.md §4b](../architecture/easm.md)); findings on unconfirmed assets capped at P2 (#1009); takeover confirmation: a nuclei takeover-template match from a tenant scan on an open `dangling_cname` raises `subdomain_takeover` (high) (#1018, `000485`). Open: sensor-side C17 (dnsx resolver fallback, sensor repository). |
+| P2 | In progress: seeds (#1041: `easm_seeds`, `root_domain` watched by the CT monitor). Open: candidates and tombstones, CIDR/ASN/organization seeds with RDAP/RIPEstat/PTR collectors, noisy-OR learning, rule precision. |
+| P3–P6 | Not started (no `easm_observations`). |
+
+**research/22 P0 (EASM maturity plan, owner decisions E1–E13, 2026-10-04).**
+One entry per item; the sensor items (P0-1 to P0-4) live in the sensor and
+sdk-go repositories, P0-5 with the scan-engine work (research/27).
+
+- **P0-7 EASM alerts through the notification outbox:** shipped (this PR,
+  migration `001014`). The CT monitor, the DNS checks and takeover
+  confirmation write exposures through one writer that announces inserted
+  and reopened rows as `new_exposure` in the same transaction: immediate for
+  medium or higher on approved assets, a daily digest otherwise, never for
+  rejected or deleted assets, 30 immediate alerts per tenant per hour.
+  [easm.md §4c](../architecture/easm.md#4c-alerts-built-p0-7).
+
+- **P0-8 DNS checks on by default, takeover on dependency names (E3, E13):**
+  shipped (#1143, migration `001017`). `EASM_DNS_CHECKS_ENABLED` defaults to
+  true; the CT controller runs the DNS checks for each tenant right after its
+  CT sweep; the email check also covers root-domain seeds and verified
+  domains with no domain asset (22c B3); a nuclei takeover-only scan may
+  probe a `dependency` asset with an open `dangling_cname`. The per-tenant
+  off switch comes with P0-11.
+
+- **P0-9 rejection hygiene and reclassify on decision (B2, B4):** shipped
+  (#1145, migration `001018`). Rejected and tombstoned names (and names
+  under them) produce no CT exposure and their open CT and DNS-check
+  exposures are resolved on rejection; CT exposures link to the host's own
+  asset with an asset-independent fingerprint (stored rows re-keyed); every
+  decision queues an asset-scoped reclassify, drained every minute.
+  [easm.md §5a](../architecture/easm.md#5a-after-a-decision-built-p0-9).
+
+- **P0-10 tenant domain verification with a purpose (E6):** open.
+
+- **P0-11 EASM settings and run-now:** open.
+
+- **P0-12 review queue reachable, honest counts (E1):** shipped (this PR,
+  no migration). Attack surface has Overview | Review tabs and a sidebar
+  badge with the queue's own total (needs_review + candidate); `?tab=rejected`
+  opens "Not ours"; the overview, the exposed list and `/attack-surface/external`
+  count approved assets only; "internet-facing" means `exposure = public`
+  everywhere; `?attribution=all` is accepted. The E1 308 of
+  `/attack-surface/external` waits for the inventory's external columns.
+
+- **P0-13 honest EASM numbers:** shipped (this PR, no migration). The
+  summary counts only exposure types something produces; every type the API
+  can emit has a label in the web; wildcard-only CT names are no longer
+  counted as discovered subdomains; a root-domain seed under an existing
+  seed is refused; the dead certificate Validity filter is removed.
+
+- **P0-6 port and service results surfaced (B6):** shipped (this PR, no
+  migration). A port scan's open ports become `open_port` service assets
+  (through the normal exclusion, attribution and scope rules) with an
+  `exposes` edge from the address and a `port_open` exposure announced
+  through the outbox; the scanner's host name gets `resolves_to` when the
+  tenant has it; a port the next port scan no longer sees is closed
+  (inactive, "disappeared", exposure resolved) and comes back as
+  "recovered".
+
+**When and where.** Implementation is written directly in the monorepo
+(`api/` + `web/`); sdk-go and sensor changes (E2–E5, P3 tools) stay in their
+own repositories. P2 may start: P1's attribution tables shipped (migration
+`000324`). P3's daily cadence waits on RFC-030 P4.
 
 ## 10. Metrics
 

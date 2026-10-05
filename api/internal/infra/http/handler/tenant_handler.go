@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -51,14 +52,6 @@ type TenantHandler struct {
 	// invalidateSecurityPolicy drops the IP-allowlist gate's cached policy for
 	// an organization after its security settings change.
 	invalidateSecurityPolicy func(tenantID string)
-	// invalidateDataScopePolicy drops the cached data-scope policy of an
-	// organization after an administrator changes it.
-	invalidateDataScopePolicy func(tenantID string)
-}
-
-// SetDataScopePolicyInvalidator wires the data-scope policy cache invalidation.
-func (h *TenantHandler) SetDataScopePolicyInvalidator(fn func(tenantID string)) {
-	h.invalidateDataScopePolicy = fn
 }
 
 // SetUserProvisioning wires administrator-created accounts.
@@ -114,15 +107,14 @@ func (h *TenantHandler) SetAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker
 
 // TenantResponse represents a tenant in API responses.
 type TenantResponse struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Slug        string         `json:"slug"`
-	Description string         `json:"description,omitempty"`
-	LogoURL     string         `json:"logo_url,omitempty"`
-	Plan        string         `json:"plan"`
-	Settings    map[string]any `json:"settings,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	Description string    `json:"description,omitempty"`
+	LogoURL     string    `json:"logo_url,omitempty"`
+	Plan        string    `json:"plan"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // TenantWithRoleResponse represents a tenant with the user's role.
@@ -243,8 +235,9 @@ type CreateInvitationRequest struct {
 // =============================================================================
 
 func toTenantResponse(t *tenant.Tenant) TenantResponse {
-	// Any member can read this response; secrets in the settings
-	// (api.webhook_secret, ai.api_key, ...) are write-only.
+	// Any member can read this response, so it carries the profile only:
+	// the security policy (IP allowlist, allowed domains), AI and risk
+	// configuration are read through GET /settings by those allowed to.
 	return TenantResponse{
 		ID:          t.ID().String(),
 		Name:        t.Name(),
@@ -252,7 +245,6 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 		Description: t.Description(),
 		LogoURL:     t.LogoURL(),
 		Plan:        t.Plan().String(),
-		Settings:    tenant.RedactSettings(t.Settings()),
 		CreatedAt:   t.CreatedAt(),
 		UpdatedAt:   t.UpdatedAt(),
 	}
@@ -383,6 +375,18 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 	var toggleErr *module.ToggleError
 	if errors.As(err, &toggleErr) {
 		writeToggleErrorJSON(w, toggleErr)
+		return
+	}
+	var conflict *tenant.SettingsConflictError
+	if errors.As(err, &conflict) {
+		writeSettingsConflict(w, conflict)
+		return
+	}
+	if errors.Is(err, tenant.ErrSettingsSectionCorrupt) {
+		// The service already logged the tenant and section; the error text can
+		// carry stored values, so it is not logged here.
+		h.logger.Error("settings section unreadable")
+		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
 		return
 	}
 	switch {
@@ -576,9 +580,12 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Slug:        req.Slug,
 		Description: req.Description,
 		LogoURL:     req.LogoURL,
+		// Renaming the slug is owner-only; the service compares it with the
+		// stored slug, so admins saving name/description are unaffected.
+		CallerIsOwner: middleware.GetTeamRole(r.Context()) == tenant.RoleOwner,
 	}
 
-	t, err := h.service.UpdateTenant(r.Context(), tenantID.String(), input)
+	t, err := h.service.UpdateTenant(r.Context(), tenantID.String(), input, h.buildAuditContext(r))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -619,8 +626,14 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // Member emails and last sign-in are owner/admin only (owner decision
 // 2026-10-02): other members get ids, names, avatars and roles, which is what
 // the assignee and owner pickers need.
-//   - limit: max results (default 10, max 100)
+//   - status: active | suspended (membership status); empty = any
+//   - role: owner | admin | member | viewer (effective system role); empty = any
+//   - limit: max results (default 100, max 100)
 //   - offset: pagination offset
+//   - status: active | suspended | offboarded | all. Default: active and
+//     suspended (offboarded tombstones are left out, so pickers never offer
+//     a person who left; pickers pass status=active to leave out disabled
+//     members too).
 func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())
 	if tenantID.IsZero() {
@@ -656,6 +669,14 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		maxMemberLimit     = 500
 	)
 	search := r.URL.Query().Get("search")
+	statusFilter := r.URL.Query().Get("status")
+	switch statusFilter {
+	case "", tenant.MemberFilterAll, string(tenant.MemberStatusActive),
+		string(tenant.MemberStatusSuspended), string(tenant.MemberStatusOffboarded):
+	default:
+		apierror.BadRequest("status must be active, suspended, offboarded or all").WriteJSON(w)
+		return
+	}
 	limit := defaultMemberLimit
 	offset := 0
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
@@ -680,6 +701,8 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 			SearchNameOnly: !showDirectory,
 			Limit:          limit,
 			Offset:         offset,
+			Status:         statusFilter,
+			Role:           r.URL.Query().Get("role"),
 		}
 		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
 		if err != nil {
@@ -732,7 +755,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	// Basic member list. Paginated like the include=user path: it used to
 	// return every member of the organization in one response.
 	result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(),
-		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset})
+		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset, Status: statusFilter})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -933,7 +956,7 @@ func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.RemoveMember(r.Context(), memberID, actx); err != nil {
-		h.handleServiceError(w, err)
+		h.writeLifecycleError(w, err)
 		return
 	}
 
@@ -1303,7 +1326,7 @@ func (h *TenantHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.DeleteInvitation(r.Context(), tenantID.String(), invitationID); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), tenantID.String(), invitationID, h.buildAuditContext(r)); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1349,11 +1372,75 @@ func (h *TenantHandler) ResendInvitation(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// GetInvitation handles GET /api/v1/invitations/{token}
-func (h *TenantHandler) GetInvitation(w http.ResponseWriter, r *http.Request) {
+// The invitation token is a bearer credential: whoever holds it can see the
+// invitation, decline it, or (signed in as the invited email) accept it. The
+// body routes below carry it in the request body (RFC-041, docs/rfcs/RFC-041-api-path-design.md):
+// a URL path is written to access logs, metric labels, traces, the browser
+// history and Referer headers. The /api/v1/invitations/{token}/... routes are
+// deprecated aliases of these and share their handlers.
+
+// InvitationTokenRequest is the body of the invitation routes that take the
+// token: lookup, accept and decline.
+type InvitationTokenRequest struct {
+	Token string `json:"token" example:"Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8"`
+}
+
+// maxInvitationTokenBody bounds the body of the invitation routes (a token
+// and, for accept-with-refresh, a refresh token).
+const maxInvitationTokenBody = 8 << 10
+
+// validInvitationToken reports whether t has the shape of an invitation token
+// (32 random bytes, base64url: 43 characters), with room for older formats.
+// Anything else is refused before it reaches the database.
+func validInvitationToken(t string) bool {
+	return len(t) >= 40 && len(t) <= 100 && !strings.ContainsRune(t, 0)
+}
+
+// decodeInvitationBody decodes an invitation route's JSON body into dst. On
+// failure it writes the 400 and returns false.
+func decodeInvitationBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if r.Body == nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return false
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxInvitationTokenBody)).Decode(dst); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// invitationTokenFromBody reads {"token": ...}. On failure it writes the 400
+// and returns false.
+func invitationTokenFromBody(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var req InvitationTokenRequest
+	if !decodeInvitationBody(w, r, &req) {
+		return "", false
+	}
+	if !validInvitationToken(req.Token) {
+		apierror.BadRequest("Invalid invitation token").WriteJSON(w)
+		return "", false
+	}
+	return req.Token, true
+}
+
+// invitationTokenFromPath reads the token of a deprecated
+// /api/v1/invitations/{token}/... route. On failure it writes the 400 and
+// returns false.
+func invitationTokenFromPath(w http.ResponseWriter, r *http.Request) (string, bool) {
 	token := r.PathValue("token")
-	if token == "" {
-		apierror.BadRequest("Invitation token is required").WriteJSON(w)
+	if !validInvitationToken(token) {
+		apierror.BadRequest("Invalid invitation token").WriteJSON(w)
+		return "", false
+	}
+	return token, true
+}
+
+// GetInvitation handles GET /api/v1/invitations/{token} (deprecated; the
+// successor is POST /api/v1/invitations/lookup).
+func (h *TenantHandler) GetInvitation(w http.ResponseWriter, r *http.Request) {
+	token, ok := invitationTokenFromPath(w, r)
+	if !ok {
 		return
 	}
 
@@ -1384,60 +1471,117 @@ func (h *TenantHandler) GetInvitation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetInvitationPreview handles GET /api/v1/invitations/{token}/preview (public)
-// Returns limited invitation info without requiring authentication.
-// This allows users to see what team they're invited to before logging in.
-func (h *TenantHandler) GetInvitationPreview(w http.ResponseWriter, r *http.Request) {
-	token := r.PathValue("token")
-	if token == "" || strings.ContainsRune(token, 0) || len(token) < 40 || len(token) > 100 {
-		apierror.BadRequest("Invalid invitation token").WriteJSON(w)
-		return
-	}
+// InvitationLookupResponse is what an invitation token reveals before sign-in:
+// enough to decide whether to join, and nothing else (no token, no tenant
+// settings, never the inviter's email).
+type InvitationLookupResponse struct {
+	Invitation InvitationLookupInvitation `json:"invitation"`
+	Tenant     InvitationLookupTenant     `json:"tenant"`
+}
 
+// InvitationLookupInvitation is the invitation part of InvitationLookupResponse.
+type InvitationLookupInvitation struct {
+	ID          string    `json:"id"`
+	Email       string    `json:"email"`
+	Role        string    `json:"role"`
+	Pending     bool      `json:"pending"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	InviterName string    `json:"inviter_name"`
+}
+
+// InvitationLookupTenant is the organization part of InvitationLookupResponse.
+type InvitationLookupTenant struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+// LookupInvitation handles POST /api/v1/invitations/lookup (public).
+// @Summary      Look up an invitation
+// @Description  What an invitation token grants, readable before sign-in: the organization, the invited email and role, and whether it is still pending. The token travels in the body, never in the URL.
+// @Tags         Invitations
+// @Accept       json
+// @Produce      json
+// @Param        request  body      InvitationTokenRequest  true  "Invitation token"
+// @Success      200  {object}  InvitationLookupResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /invitations/lookup [post]
+func (h *TenantHandler) LookupInvitation(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromBody(w, r); ok {
+		h.writeInvitationLookup(w, r, token)
+	}
+}
+
+// GetInvitationPreview handles GET /api/v1/invitations/{token}/preview
+// (public, deprecated; the successor is POST /api/v1/invitations/lookup).
+func (h *TenantHandler) GetInvitationPreview(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromPath(w, r); ok {
+		h.writeInvitationLookup(w, r, token)
+	}
+}
+
+// writeInvitationLookup answers a lookup: limited invitation info, without
+// authentication, so the invited person sees what they are invited to before
+// signing in.
+func (h *TenantHandler) writeInvitationLookup(w http.ResponseWriter, r *http.Request, token string) {
 	invitation, err := h.service.GetInvitationByToken(r.Context(), token)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Get the tenant info
 	t, err := h.service.GetTenant(r.Context(), invitation.TenantID().String())
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Get inviter name for better UX
-	inviterName := h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy())
-
-	// Return limited info (no sensitive data like token)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"invitation": map[string]any{
-			"id":           invitation.ID().String(),
-			"email":        invitation.Email(),
-			"role":         invitation.Role().String(),
-			"pending":      invitation.IsPending(),
-			"expires_at":   invitation.ExpiresAt(),
-			"inviter_name": inviterName,
+	_ = json.NewEncoder(w).Encode(InvitationLookupResponse{
+		Invitation: InvitationLookupInvitation{
+			ID:          invitation.ID().String(),
+			Email:       invitation.Email(),
+			Role:        invitation.Role().String(),
+			Pending:     invitation.IsPending(),
+			ExpiresAt:   invitation.ExpiresAt(),
+			InviterName: h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy()),
 		},
-		"tenant": map[string]any{
-			"id":   t.ID().String(),
-			"name": t.Name(),
-			"slug": t.Slug(),
-		},
+		Tenant: InvitationLookupTenant{ID: t.ID().String(), Name: t.Name(), Slug: t.Slug()},
 	})
 }
 
-// AcceptInvitation handles POST /api/v1/invitations/{token}/accept
-func (h *TenantHandler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
-	token := r.PathValue("token")
-	if token == "" {
-		apierror.BadRequest("Invitation token is required").WriteJSON(w)
-		return
+// AcceptInvitationToken handles POST /api/v1/invitations/accept.
+// @Summary      Accept an invitation
+// @Description  Joins the organization of the invitation. The caller must be signed in as the invited email. The token travels in the body, never in the URL.
+// @Tags         Invitations
+// @Accept       json
+// @Produce      json
+// @Param        request  body      InvitationTokenRequest  true  "Invitation token"
+// @Success      200  {object}  MemberResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /invitations/accept [post]
+func (h *TenantHandler) AcceptInvitationToken(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromBody(w, r); ok {
+		h.acceptInvitation(w, r, token)
 	}
+}
 
+// AcceptInvitation handles POST /api/v1/invitations/{token}/accept
+// (deprecated; the successor is POST /api/v1/invitations/accept).
+func (h *TenantHandler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromPath(w, r); ok {
+		h.acceptInvitation(w, r, token)
+	}
+}
+
+func (h *TenantHandler) acceptInvitation(w http.ResponseWriter, r *http.Request, token string) {
 	localUser := middleware.GetLocalUser(r.Context())
 	if localUser == nil {
 		apierror.Unauthorized("Authentication required").WriteJSON(w)
@@ -1456,17 +1600,33 @@ func (h *TenantHandler) AcceptInvitation(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(toMemberResponse(membership))
 }
 
-// DeclineInvitation handles POST /api/v1/invitations/{token}/decline
-// This is a public endpoint - having the token is authorization to decline.
-// Similar to email unsubscribe links.
-func (h *TenantHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request) {
-	token := r.PathValue("token")
-	if token == "" {
-		apierror.BadRequest("Invitation token is required").WriteJSON(w)
-		return
+// DeclineInvitationToken handles POST /api/v1/invitations/decline (public:
+// holding the token is the authorization, like an unsubscribe link).
+// @Summary      Decline an invitation
+// @Description  Deletes the invitation. Holding the token is the authorization, so no sign-in is needed. The token travels in the body, never in the URL.
+// @Tags         Invitations
+// @Accept       json
+// @Param        request  body      InvitationTokenRequest  true  "Invitation token"
+// @Success      204
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /invitations/decline [post]
+func (h *TenantHandler) DeclineInvitationToken(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromBody(w, r); ok {
+		h.declineInvitation(w, r, token)
 	}
+}
 
-	// Get invitation to verify it exists
+// DeclineInvitation handles POST /api/v1/invitations/{token}/decline
+// (public, deprecated; the successor is POST /api/v1/invitations/decline).
+func (h *TenantHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request) {
+	if token, ok := invitationTokenFromPath(w, r); ok {
+		h.declineInvitation(w, r, token)
+	}
+}
+
+func (h *TenantHandler) declineInvitation(w http.ResponseWriter, r *http.Request, token string) {
 	invitation, err := h.service.GetInvitationByToken(r.Context(), token)
 	if err != nil {
 		h.handleServiceError(w, err)
@@ -1475,7 +1635,9 @@ func (h *TenantHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request
 
 	// Delete the invitation (public decline: the token authorizes it; pass the
 	// invitation's own tenant so the scoping check is satisfied).
-	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String()); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String(), app.AuditContext{
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+	}); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1489,12 +1651,75 @@ func (h *TenantHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request
 
 // SettingsResponse represents tenant settings in API responses.
 type SettingsResponse struct {
-	General     GeneralSettingsResponse    `json:"general"`
-	Security    SecuritySettingsResponse   `json:"security"`
-	API         APISettingsResponse        `json:"api"`
-	Branding    BrandingSettingsResponse   `json:"branding"`
-	RiskScoring tenant.RiskScoringSettings `json:"risk_scoring"`
-	Pentest     tenant.PentestSettings     `json:"pentest"`
+	General GeneralSettingsResponse `json:"general"`
+	// Security and RiskScoring are returned to owners and admins only
+	// (absent for other roles): the IP allowlist, allowed domains and scoring
+	// formula are reconnaissance material no member workflow needs.
+	Security    *SecuritySettingsResponse   `json:"security,omitempty"`
+	Branding    BrandingSettingsResponse    `json:"branding"`
+	RiskScoring *tenant.RiskScoringSettings `json:"risk_scoring,omitempty"`
+	Pentest     tenant.PentestSettings      `json:"pentest"`
+	// ETags holds the entity tag of each settings section as stored (keys:
+	// general, security, branding, risk_scoring, pentest, ...). Send the
+	// section's tag as If-Match on its PATCH to get 409 SETTINGS_CONFLICT
+	// instead of overwriting a change saved since you read it.
+	ETags map[string]string `json:"etags,omitempty"`
+}
+
+// forRole drops the admin-only sections for callers who are not an owner or
+// admin of the organization.
+func (resp SettingsResponse) forRole(role tenant.Role) SettingsResponse {
+	if role == tenant.RoleOwner || role == tenant.RoleAdmin {
+		return resp
+	}
+	resp.Security = nil
+	resp.RiskScoring = nil
+	return resp
+}
+
+// withSettingsETags returns resp with its per-section ETags set.
+func withSettingsETags(resp SettingsResponse, etags map[string]string) SettingsResponse {
+	resp.ETags = etags
+	return resp
+}
+
+// settingsWriteCtx carries the request's If-Match header (a settings-section
+// ETag) to the service, which refuses the write with 409 when it is stale.
+func settingsWriteCtx(r *http.Request) context.Context {
+	return tenantapp.WithSettingsIfMatch(r.Context(), r.Header.Get("If-Match"))
+}
+
+// settingsETags returns the stored ETag of every settings section, or nil
+// (logged) when it cannot be read; ETags are advisory for clients.
+func (h *TenantHandler) settingsETags(ctx context.Context, tenantID shared.ID) map[string]string {
+	etags, err := h.service.SectionETags(ctx, tenantID.String())
+	if err != nil {
+		h.logger.Warn("failed to compute settings ETags", "tenant_id", tenantID.String(), "error", err)
+		return nil
+	}
+	return etags
+}
+
+// writeSectionETag sets the ETag response header to the stored tag of one
+// settings section and returns every section's tag.
+func (h *TenantHandler) writeSectionETag(w http.ResponseWriter, r *http.Request, tenantID shared.ID, section string) map[string]string {
+	etags := h.settingsETags(r.Context(), tenantID)
+	if tag := etags[section]; tag != "" {
+		w.Header().Set("ETag", tag)
+	}
+	return etags
+}
+
+// writeSettingsConflict writes 409 SETTINGS_CONFLICT with the current
+// (redacted) section and its ETag, so the client can show what changed.
+func writeSettingsConflict(w http.ResponseWriter, e *tenant.SettingsConflictError) {
+	current := tenant.RedactSettings(map[string]any{e.Section: e.Current})[e.Section]
+	w.Header().Set("ETag", e.ETag)
+	apierror.New(http.StatusConflict, "SETTINGS_CONFLICT", e.Error()).WithDetails(map[string]any{
+		"section": e.Section,
+		"etag":    e.ETag,
+		"current": current,
+	}).WriteJSON(w)
 }
 
 // GeneralSettingsResponse represents general settings.
@@ -1517,19 +1742,14 @@ type SecuritySettingsResponse struct {
 	// RequireSensorLocalPolicyForPrivateTargets: jobs with private targets
 	// go only to sensors that enforce a local policy (RFC-040 §5.7).
 	RequireSensorLocalPolicyForPrivateTargets bool `json:"require_sensor_local_policy_for_private_targets"`
+	// AllowSensorInteractsh / AllowSensorCustomTemplates: the platform sends
+	// jobs with out-of-band callbacks / custom templates to sensors only when
+	// on (research/25 D3; off by default).
+	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh"`
+	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates"`
 	// CurrentIP is the caller's IP as the API sees it, the value the IP
 	// allowlist is checked against (empty outside a request context).
 	CurrentIP string `json:"current_ip,omitempty"`
-}
-
-// APISettingsResponse represents API settings.
-type APISettingsResponse struct {
-	APIKeyEnabled bool     `json:"api_key_enabled"`
-	WebhookURL    string   `json:"webhook_url,omitempty"`
-	WebhookEvents []string `json:"webhook_events"`
-	// WebhookSecretConfigured says whether a signing secret is set; the
-	// secret itself is write-only (PATCH /settings/api).
-	WebhookSecretConfigured bool `json:"webhook_secret_configured"`
 }
 
 // BrandingSettingsResponse represents branding settings.
@@ -1540,10 +1760,7 @@ type BrandingSettingsResponse struct {
 }
 
 func toSettingsResponse(s *tenant.Settings) SettingsResponse {
-	webhookEvents := make([]string, len(s.API.WebhookEvents))
-	for i, e := range s.API.WebhookEvents {
-		webhookEvents[i] = string(e)
-	}
+	rs := s.RiskScoring
 
 	return SettingsResponse{
 		General: GeneralSettingsResponse{
@@ -1552,7 +1769,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			Industry: s.General.Industry,
 			Website:  s.General.Website,
 		},
-		Security: SecuritySettingsResponse{
+		Security: &SecuritySettingsResponse{
 			SSOEnforced:           s.Security.SSOEnforced,
 			MFARequired:           s.Security.MFARequired,
 			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
@@ -1560,19 +1777,15 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			AllowedDomains:        s.Security.AllowedDomains,
 			EmailVerificationMode: string(s.Security.EmailVerificationMode),
 			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
-		},
-		API: APISettingsResponse{
-			APIKeyEnabled:           s.API.APIKeyEnabled,
-			WebhookURL:              s.API.WebhookURL,
-			WebhookSecretConfigured: s.API.WebhookSecret != "",
-			WebhookEvents:           webhookEvents,
+			AllowSensorInteractsh:                     s.Security.AllowSensorInteractsh,
+			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
 		},
 		Branding: BrandingSettingsResponse{
 			PrimaryColor: s.Branding.PrimaryColor,
 			LogoDarkURL:  s.Branding.LogoDarkURL,
 			LogoData:     s.Branding.LogoData,
 		},
-		RiskScoring: s.RiskScoring,
+		RiskScoring: &rs,
 		Pentest:     pentestWithDefaults(s.Pentest),
 	}
 }
@@ -1603,8 +1816,11 @@ func (h *TenantHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := toSettingsResponse(settings)
-	resp.Security.CurrentIP = getClientIP(r)
+	resp := withSettingsETags(toSettingsResponse(settings), h.settingsETags(r.Context(), tenantID)).
+		forRole(middleware.GetTeamRole(r.Context()))
+	if resp.Security != nil {
+		resp.Security.CurrentIP = getClientIP(r)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
@@ -1651,15 +1867,16 @@ func (h *TenantHandler) UpdateGeneralSettings(w http.ResponseWriter, r *http.Req
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateGeneralSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateGeneralSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionGeneral)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // UpdateSecuritySettingsRequest represents the request to update security settings.
@@ -1677,6 +1894,11 @@ type UpdateSecuritySettingsRequest struct {
 	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
 	// RequireSensorLocalPolicyForPrivateTargets: see SecuritySettingsResponse.
 	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
+	// AllowSensorInteractsh / AllowSensorCustomTemplates: see
+	// SecuritySettingsResponse. Turning one on is audited (critical) and
+	// alerted.
+	AllowSensorInteractsh      *bool `json:"allow_sensor_interactsh"`
+	AllowSensorCustomTemplates *bool `json:"allow_sensor_custom_templates"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -1710,158 +1932,28 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		AllowedDomains:        req.AllowedDomains,
 		EmailVerificationMode: req.EmailVerificationMode,
 		RequireSensorLocalPolicyForPrivateTargets: req.RequireSensorLocalPolicyForPrivateTargets,
+		AllowSensorInteractsh:                     req.AllowSensorInteractsh,
+		AllowSensorCustomTemplates:                req.AllowSensorCustomTemplates,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateSecuritySettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateSecuritySettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionSecurity)
 	if h.invalidateSecurityPolicy != nil {
 		h.invalidateSecurityPolicy(tenantID.String())
 	}
 
-	resp := toSettingsResponse(settings)
-	resp.Security.CurrentIP = clientIP
+	resp := withSettingsETags(toSettingsResponse(settings), etags)
+	resp.Security.CurrentIP = clientIP // security PATCH is owner-only
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-// DataScopePolicyResponse is what members without an access group see.
-type DataScopePolicyResponse struct {
-	// MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
-	// (fail-closed). Owners and admins always see everything.
-	MembersWithoutGroupSee string `json:"members_without_group_see" enums:"everything,nothing"`
-}
-
-// UpdateDataScopePolicyRequest sets what members without an access group see.
-type UpdateDataScopePolicyRequest struct {
-	MembersWithoutGroupSee string `json:"members_without_group_see" validate:"required,oneof=everything nothing" enums:"everything,nothing"`
-}
-
-// GetDataScopePolicy handles GET /api/v1/tenants/{tenant}/settings/data-scope
-// @Summary      Get the data scope of members without an access group
-// @Description  Returns what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything.
-// @Tags         Tenants
-// @Produce      json
-// @Security     BearerAuth
-// @Param        tenant  path      string  true  "Tenant ID or slug"
-// @Success      200     {object}  DataScopePolicyResponse
-// @Failure      401     {object}  apierror.Error
-// @Failure      403     {object}  apierror.Error
-// @Failure      404     {object}  apierror.Error
-// @Router       /tenants/{tenant}/settings/data-scope [get]
-func (h *TenantHandler) GetDataScopePolicy(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-	policy, err := h.service.GetDataScopePolicy(r.Context(), tenantID.String())
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(DataScopePolicyResponse{MembersWithoutGroupSee: policy})
-}
-
-// UpdateDataScopePolicy handles PATCH /api/v1/tenants/{tenant}/settings/data-scope
-// @Summary      Set the data scope of members without an access group
-// @Description  Sets what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything. The change is audited.
-// @Tags         Tenants
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        tenant  path      string                        true  "Tenant ID or slug"
-// @Param        body    body      UpdateDataScopePolicyRequest  true  "Policy"
-// @Success      200     {object}  DataScopePolicyResponse
-// @Failure      400     {object}  apierror.Error
-// @Failure      401     {object}  apierror.Error
-// @Failure      403     {object}  apierror.Error
-// @Failure      404     {object}  apierror.Error
-// @Router       /tenants/{tenant}/settings/data-scope [patch]
-func (h *TenantHandler) UpdateDataScopePolicy(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-	var req UpdateDataScopePolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-	policy, err := h.service.UpdateDataScopePolicy(r.Context(), tenantID.String(), req.MembersWithoutGroupSee, h.buildAuditContext(r))
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	if h.invalidateDataScopePolicy != nil {
-		h.invalidateDataScopePolicy(tenantID.String())
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(DataScopePolicyResponse{MembersWithoutGroupSee: policy})
-}
-
-// UpdateAPISettingsRequest represents the request to update API settings.
-// Scalar fields are pointers so a partial PATCH only touches what it sends;
-// WebhookEvents keeps its nil-vs-[] meaning (omitted => unchanged, [] => clear).
-type UpdateAPISettingsRequest struct {
-	APIKeyEnabled *bool `json:"api_key_enabled"`
-	// No `url` tag — see note on UpdateGeneralSettingsRequest.Website.
-	// APISettings.Validate checks the URL when non-empty.
-	WebhookURL    *string  `json:"webhook_url"`
-	WebhookSecret *string  `json:"webhook_secret"`
-	WebhookEvents []string `json:"webhook_events"`
-}
-
-// UpdateAPISettings handles PATCH /api/v1/tenants/{tenant}/settings/api
-func (h *TenantHandler) UpdateAPISettings(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-
-	var req UpdateAPISettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := app.UpdateAPISettingsInput{
-		APIKeyEnabled: req.APIKeyEnabled,
-		WebhookURL:    req.WebhookURL,
-		WebhookSecret: req.WebhookSecret,
-		WebhookEvents: req.WebhookEvents,
-	}
-
-	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateAPISettings(r.Context(), tenantID.String(), input, actx)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
 }
 
 // UpdateBrandingSettingsRequest represents the request to update branding settings.
@@ -1901,15 +1993,16 @@ func (h *TenantHandler) UpdateBrandingSettings(w http.ResponseWriter, r *http.Re
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateBrandingSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateBrandingSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionBranding)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // UpdateBranchSettingsRequest represents the request to update branch naming convention settings.
@@ -1941,15 +2034,16 @@ func (h *TenantHandler) UpdateBranchSettings(w http.ResponseWriter, r *http.Requ
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateBranchSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateBranchSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionBranch)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // =============================================================================
@@ -1975,6 +2069,7 @@ func (h *TenantHandler) GetPentestSettings(w http.ResponseWriter, r *http.Reques
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionPentest)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(ps)
@@ -2005,15 +2100,16 @@ func (h *TenantHandler) UpdatePentestSettings(w http.ResponseWriter, r *http.Req
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdatePentestSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdatePentestSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionPentest)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // =============================================================================
@@ -2033,6 +2129,7 @@ func (h *TenantHandler) GetRiskScoringSettings(w http.ResponseWriter, r *http.Re
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRiskScoring)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rs)
@@ -2058,11 +2155,12 @@ func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateRiskScoringSettings(r.Context(), tenantID.String(), req, actx)
+	settings, err := h.service.UpdateRiskScoringSettings(settingsWriteCtx(r), tenantID.String(), req, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRiskScoring)
 
 	// Invalidate scoring config cache so new formula takes effect immediately
 	if h.assetService != nil {
@@ -2107,6 +2205,7 @@ func (h *TenantHandler) GetAssetSourceSettings(w http.ResponseWriter, r *http.Re
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetSource)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(as)
@@ -2145,11 +2244,12 @@ func (h *TenantHandler) UpdateAssetSourceSettings(w http.ResponseWriter, r *http
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateAssetSourceSettings(r.Context(), tenantID.String(), req, actx)
+	settings, err := h.service.UpdateAssetSourceSettings(settingsWriteCtx(r), tenantID.String(), req, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetSource)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(settings.AssetSource)
@@ -2176,6 +2276,7 @@ func (h *TenantHandler) GetRetestSettings(w http.ResponseWriter, r *http.Request
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRetest)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rs)
 }
@@ -2209,11 +2310,12 @@ func (h *TenantHandler) UpdateRetestSettings(w http.ResponseWriter, r *http.Requ
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
-	rs, err := h.service.UpdateRetestSettings(r.Context(), tenantID.String(), req, h.buildAuditContext(r))
+	rs, err := h.service.UpdateRetestSettings(settingsWriteCtx(r), tenantID.String(), req, h.buildAuditContext(r))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRetest)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rs)
 }
@@ -2235,6 +2337,7 @@ func (h *TenantHandler) GetAssetLifecycleSettings(w http.ResponseWriter, r *http
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetLifecycle)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(al)
@@ -2266,11 +2369,12 @@ func (h *TenantHandler) UpdateAssetLifecycleSettings(w http.ResponseWriter, r *h
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateAssetLifecycleSettings(r.Context(), tenantID.String(), req, actx)
+	settings, err := h.service.UpdateAssetLifecycleSettings(settingsWriteCtx(r), tenantID.String(), req, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetLifecycle)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(settings.AssetLifecycle)
@@ -2845,6 +2949,7 @@ func (h *TenantHandler) GetAssetIdentitySettings(w http.ResponseWriter, r *http.
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetIdentity)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(settings.AssetIdentity)
@@ -2877,21 +2982,16 @@ func (h *TenantHandler) UpdateAssetIdentitySettings(w http.ResponseWriter, r *ht
 		return
 	}
 
-	settings, err := h.service.GetTenantSettings(r.Context(), tenantID.String())
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	settings.AssetIdentity.StaleAssetDays = req.StaleAssetDays
-	settings.AssetIdentity.MaxIPsPerAsset = req.MaxIPsPerAsset
-
 	actx := h.buildAuditContext(r)
-	updated, err := h.service.UpdateTenantSettings(r.Context(), tenantID.String(), *settings, actx)
+	updated, err := h.service.UpdateAssetIdentitySettings(settingsWriteCtx(r), tenantID.String(), tenant.AssetIdentitySettings{
+		StaleAssetDays: req.StaleAssetDays,
+		MaxIPsPerAsset: req.MaxIPsPerAsset,
+	}, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetIdentity)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(updated.AssetIdentity)

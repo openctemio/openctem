@@ -196,12 +196,12 @@ func (r *ReportScheduleRepository) ListDue(ctx context.Context, now time.Time) (
 // re-reads next_run_at, finds it moved, and matches no row. So exactly one
 // replica delivers each slot, and no lock is held while the report renders and
 // is emailed.
-func (r *ReportScheduleRepository) ClaimDue(ctx context.Context, id shared.ID, seen *time.Time, next time.Time) (bool, error) {
+func (r *ReportScheduleRepository) ClaimDue(ctx context.Context, tenantID, id shared.ID, seen *time.Time, next time.Time) (bool, error) {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE report_schedules
 		SET next_run_at = $3, updated_at = now()
-		WHERE id = $1 AND is_active = true AND next_run_at IS NOT DISTINCT FROM $2`,
-		id.String(), seen, next)
+		WHERE id = $1 AND tenant_id = $4 AND is_active = true AND next_run_at IS NOT DISTINCT FROM $2`,
+		id.String(), seen, next, tenantID.String())
 	if err != nil {
 		return false, fmt.Errorf("claim report schedule: %w", err)
 	}

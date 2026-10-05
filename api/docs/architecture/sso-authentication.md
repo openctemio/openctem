@@ -151,9 +151,9 @@ secret.
 
 ## ID-token validation (shipped)
 
-When the provider returns an `id_token` in the token-exchange response, the
-callback verifies it before completing login (`SSOService.verifyIDToken` →
-`oidcVerifier.verify`):
+Every tenant OIDC provider (Entra ID, Okta, Google Workspace) must return an
+`id_token` in the token-exchange response, and the callback verifies it before
+completing login (`SSOService.verifyIDToken` → `oidcVerifier.verify`):
 
 - **Signature** — RS256 only, verified against the provider's JWKS
   (`Provider.JWKSURL`), with keys cached per JWKS URL (1h TTL, refresh on
@@ -166,14 +166,27 @@ callback verifies it before completing login (`SSOService.verifyIDToken` →
   `https://login.microsoftonline.com/{tid}/v2.0` consistent with the token's
   `tid` claim; single-tenant configs additionally require `tid` to match the
   configured directory, while `common`/`organizations`/`consumers` accept any
-  directory (the email domain allow-list still applies).
+  directory (the email domain allow-list still applies). For Okta the issuer
+  must be the configured org's default authorization server
+  (`{org}/oauth2/default`); for Google it must be `https://accounts.google.com`
+  (or `accounts.google.com`).
 
-The check is **fail-closed** when an `id_token` is present. It is skipped when
-the provider returns no `id_token` (e.g. a tenant IdP configured without the
-`openid` scope) — the token response is server-to-server over TLS, so a missing
-`id_token` is not attacker-controllable. The access-token → Graph `/me` call
-remains the identity source; id_token validation is authenticity/replay
-hardening on top.
+The check is **fail-closed**, and so is its absence: a token response without
+an `id_token`, or a provider with no signing keys (an Okta provider without its
+org URL), refuses the login with `ErrSSOInvalidIDToken`. The account's federated
+identity (issuer, subject) and the back-channel-logout session binding come only
+from the verified `id_token`.
+
+The `openid` scope is therefore required:
+
+- creating or updating a provider with a non-empty scope list that lacks
+  `openid` is rejected with `scopes must include "openid"`; an empty list means
+  the defaults, which include it;
+- a provider saved before this rule (scopes without `openid`) keeps working:
+  the authorize request adds `openid` in front of its saved scopes.
+
+For Okta and Google the email still comes from the userinfo endpoint (with its
+`email_verified` claim); for Entra it comes from the verified `id_token`.
 
 ## Global "Sign in with Microsoft" — nOAuth hardening (shipped)
 
@@ -333,3 +346,11 @@ used for an organization that requires 2FA (`mfa_required`) gets
 - **`HasUsableSSOPath` covers OIDC/env only**, not SAML-only tenants; a
   SAML-only tenant can't yet pass the *can't-enable* guard (the owner break-glass
   still prevents any lock-out).
+
+## Default role of just-in-time members
+
+An SSO provider (OIDC or SAML) and the `SSO_ENTRA_DEFAULT_ROLE` fallback may
+only provision **member** or **viewer** (owner decision B18). `admin` is
+refused when the provider is saved, and a provider stored before this rule
+with `admin` provisions viewers: an IdP misconfiguration must not mint
+administrators. Admins are promoted explicitly.

@@ -36,7 +36,7 @@ import {
 import { toast } from 'sonner'
 import { useSWRConfig } from 'swr'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, isHiddenReleaseStatus } from '@/lib/permissions'
 import {
   useTenantModules,
   useUpdateTenantModules,
@@ -173,8 +173,8 @@ export default function ModuleManagementPage() {
     const core: TenantModule[] = []
     const features: TenantModule[] = []
     for (const mod of modules) {
-      // Hide deprecated modules entirely
-      if (mod.release_status === 'deprecated') continue
+      // Hide deprecated and not-yet-built modules entirely
+      if (isHiddenReleaseStatus(mod.release_status)) continue
       if (mod.is_core) {
         core.push(mod)
       } else {
@@ -376,7 +376,7 @@ export default function ModuleManagementPage() {
   return (
     <Main>
       <PageHeader title="Modules" description={PAGE_DESCRIPTION}>
-        <Can permission={Permission.TeamUpdate}>
+        <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
           <Button
             variant="outline"
             size="sm"
@@ -414,7 +414,7 @@ export default function ModuleManagementPage() {
           selection. This replaces the old one-shot "apply a preset" flow,
           which overwrote the config and duplicated this exact catalog. The
           manual toggles below layer on top as non-destructive overrides. */}
-      <Can permission={Permission.TeamUpdate}>
+      <Can route="POST /api/v1/tenants/{tenant}/settings/modules/bundles">
         <BundleSubscriptionCard tenantId={tenantId} onChanged={() => mutate()} />
       </Can>
 
@@ -538,7 +538,7 @@ export default function ModuleManagementPage() {
           Save sits in a bar pinned to the bottom of the content column, shown
           only while there are unsaved changes. */}
       {isDirty && (
-        <Can permission={Permission.TeamUpdate}>
+        <Can route="PATCH /api/v1/tenants/{tenant}/settings/modules">
           <div className="sticky bottom-4 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-lg">
             <div className="text-sm tabular-nums text-muted-foreground">
               {[
@@ -679,9 +679,9 @@ function ModuleRow({
   const hasSubModules = mod.sub_modules && mod.sub_modules.length > 0
   const categoryLabel = CATEGORY_LABELS[mod.category] || mod.category
 
-  // Filter out deprecated sub-modules; keep coming_soon (shown as disabled)
+  // Deprecated and not-yet-built sub-modules are not shown.
   const visibleSubModules = hasSubModules
-    ? mod.sub_modules!.filter((sub) => sub.release_status !== 'deprecated')
+    ? mod.sub_modules!.filter((sub) => !isHiddenReleaseStatus(sub.release_status))
     : []
 
   // Count only HARD edges for the compact badges — soft edges are
@@ -707,11 +707,6 @@ function ModuleRow({
             {mod.release_status === 'beta' && (
               <Badge variant="outline" className="text-xs">
                 Beta
-              </Badge>
-            )}
-            {mod.release_status === 'coming_soon' && (
-              <Badge variant="outline" className="text-xs text-muted-foreground">
-                Coming soon
               </Badge>
             )}
             {hasPendingChange && (

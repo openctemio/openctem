@@ -262,7 +262,7 @@ func (s *ScanProfileService) DeleteScanProfile(ctx context.Context, tenantID, pr
 		return err
 	}
 
-	return s.repo.Delete(ctx, profile.ID)
+	return s.repo.Delete(ctx, tid, profile.ID)
 }
 
 // SetDefaultScanProfile sets a scan profile as the default for a tenant.

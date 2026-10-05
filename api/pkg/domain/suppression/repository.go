@@ -14,6 +14,10 @@ type Repository interface {
 	// (both commit or neither), so rule state and audit trail cannot diverge.
 	SaveWithAudit(ctx context.Context, rule *Rule, action string, actorID *shared.ID, details map[string]any) error
 	FindByID(ctx context.Context, tenantID, id shared.ID) (*Rule, error)
+	// Delete removes the rule and, in the same transaction, lifts every
+	// suppression it applied: each finding it hid (still in the disposition
+	// the suppression gave it) is re-linked to another active rule of the
+	// tenant that matches it, or reopened.
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// Query operations
@@ -25,6 +29,9 @@ type Repository interface {
 	FindMatchingRules(ctx context.Context, tenantID shared.ID, match FindingMatch) ([]*Rule, error)
 
 	// Bulk operations
+	// ExpireRules marks approved rules past expires_at as expired and lifts
+	// their suppressions the same way Delete does. Returns the number of rules
+	// expired.
 	ExpireRules(ctx context.Context) (int64, error)
 
 	// Finding suppressions

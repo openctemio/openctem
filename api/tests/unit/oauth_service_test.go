@@ -1145,3 +1145,16 @@ func TestOAuthService_GetAuthorizationURL_UniqueStates(t *testing.T) {
 		t.Error("expected unique states for each call, got identical states")
 	}
 }
+
+// The services mutate the user they hold before calling these targeted
+// updates, and this mock stores that same pointer, so there is nothing more to
+// write here.
+func (m *mockOAuthUserRepo) RecordFailedLogin(_ context.Context, _ shared.ID, _ int, _ time.Duration) (*time.Time, error) {
+	return nil, nil
+}
+
+func (m *mockOAuthUserRepo) RecordSuccessfulLogin(_ context.Context, _ shared.ID) error { return nil }
+
+func (m *mockOAuthUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ string) error {
+	return nil
+}

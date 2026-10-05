@@ -381,6 +381,11 @@ export const tenantEndpoints = {
   reactivateMember: (tenantIdOrSlug: string, memberId: string) =>
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}/reactivate`,
 
+  /**
+   * Reset a member's two-factor authentication (POST) — owner/admin
+   */
+  resetMemberMfa: (memberId: string) => `/api/v1/organization/members/${memberId}/mfa`,
+
   // ============================================
   // SETTINGS MANAGEMENT
   // ============================================
@@ -403,16 +408,8 @@ export const tenantEndpoints = {
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/security`,
 
   /**
-   * What members without a team see (GET/PATCH, owner/admin)
-   */
-  dataScopePolicy: (tenantIdOrSlug: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/data-scope`,
-
-  /**
    * Update API settings
    */
-  updateAPISettings: (tenantIdOrSlug: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/api`,
 
   /**
    * Update branding settings
@@ -501,18 +498,22 @@ export const tenantEndpoints = {
 // ============================================
 
 /**
- * Invitation endpoints for accepting invitations
+ * Invitation endpoints for accepting invitations. The token is a bearer
+ * credential: every call sends it in the JSON body ({ token }), never in the
+ * URL (RFC-041).
  */
 export const invitationEndpoints = {
-  /**
-   * Get invitation details by token
-   */
-  get: (token: string) => `${API_BASE.INVITATIONS}/${token}`,
+  /** What a token grants, readable before sign-in (public). */
+  lookup: () => `${API_BASE.INVITATIONS}/lookup`,
 
-  /**
-   * Accept invitation
-   */
-  accept: (token: string) => `${API_BASE.INVITATIONS}/${token}/accept`,
+  /** Accept as the signed-in, invited email. */
+  accept: () => `${API_BASE.INVITATIONS}/accept`,
+
+  /** Accept with the refresh token, for a user who has no organization yet. */
+  acceptWithRefresh: () => `${API_BASE.INVITATIONS}/accept-with-refresh`,
+
+  /** Decline (public: holding the token is the authorization). */
+  decline: () => `${API_BASE.INVITATIONS}/decline`,
 } as const
 
 // ============================================
@@ -1098,6 +1099,9 @@ export const sensorEndpoints = {
   manifests: (sensorId: string, limit = 50) =>
     `${API_BASE.SENSORS}/${sensorId}/manifests${buildQueryString({ limit })}`,
 
+  /** The sensor's setup report and its checks (research/26, sensors:read). */
+  configReport: (sensorId: string) => `${API_BASE.SENSORS}/${sensorId}/config-report`,
+
   /** The tenant's scanner content policy (RFC-031): GET, PUT with sensors:write. */
   contentPolicy: () => `${API_BASE.SENSORS}/content-policy`,
 
@@ -1664,6 +1668,23 @@ export const pipelineRunEndpoints = {
    * Cancel a running pipeline
    */
   cancel: (runId: string) => `/api/v1/pipeline-runs/${runId}/cancel`,
+
+  /**
+   * How each stage of a run was planned (counts by reason; research/27).
+   */
+  stages: (runId: string) => `/api/v1/pipeline-runs/${encodeURIComponent(runId)}/stages`,
+
+  /**
+   * One cursor page of a run's tasks (the run read embeds the first page and
+   * its tasks_next_cursor).
+   */
+  tasks: (runId: string, cursor?: string, perPage?: number) => {
+    const params = new URLSearchParams()
+    if (cursor) params.set('cursor', cursor)
+    if (perPage) params.set('per_page', String(perPage))
+    const qs = params.toString()
+    return `/api/v1/pipeline-runs/${encodeURIComponent(runId)}/tasks${qs ? `?${qs}` : ''}`
+  },
 } as const
 
 /**
@@ -1853,6 +1874,11 @@ export const scanEndpoints = {
    * Save an unsaved quick scan as a configuration ("Save as scan")
    */
   save: (scanId: string) => `${API_BASE.SCANS}/${scanId}/save`,
+
+  /**
+   * Next occurrences of a schedule, validated as saving would (stateless)
+   */
+  schedulePreview: () => `${API_BASE.SCANS}/schedule-preview`,
 
   // ============================================
   // BULK OPERATIONS

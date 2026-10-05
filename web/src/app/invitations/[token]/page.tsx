@@ -1,20 +1,18 @@
-import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
 
-import { env } from '@/lib/env'
-
-import { InvitationView } from './invitation-view'
+import { INVITATION_PAGE } from '@/features/auth/lib/invitation-token'
 
 /**
- * Public invitation page (/invitations/{token}). Readable without a session:
- * an invited person who has no account yet sees the invitation and can sign in
- * or create their account from here.
+ * Invitation links sent before the token moved to the URL fragment
+ * (/invitations/{token}). They keep working: the token moves into the
+ * fragment of /invitations, which the browser never sends to a server, and the
+ * redirect replaces this URL in the history.
  */
-export default async function InvitationPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function LegacyInvitationPage({
+  params,
+}: {
+  params: Promise<{ token: string }>
+}) {
   const { token } = await params
-  const cookieStore = await cookies()
-  const hasSession = Boolean(
-    cookieStore.get(env.auth.cookieName)?.value ||
-    cookieStore.get(env.auth.refreshCookieName)?.value
-  )
-  return <InvitationView token={token} hasSession={hasSession} />
+  redirect(`${INVITATION_PAGE}#token=${encodeURIComponent(token)}`)
 }

@@ -231,7 +231,7 @@ func (h *CapabilityHandler) GetCapability(w http.ResponseWriter, r *http.Request
 // GetCategories returns all unique capability categories.
 // GET /api/v1/capabilities/categories
 func (h *CapabilityHandler) GetCategories(w http.ResponseWriter, r *http.Request) {
-	categories, err := h.service.GetCategories(r.Context())
+	categories, err := h.service.GetCategories(r.Context(), middleware.GetTenantID(r.Context()))
 	if err != nil {
 		h.handleError(w, err, "capability")
 		return

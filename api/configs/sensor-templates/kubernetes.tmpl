@@ -12,6 +12,8 @@
 #        kubectl create configmap {{$slug}}-policy -n <namespace> --from-file=sensor-policy.yaml
 #   2. kubectl apply -n <namespace> -f {{$slug}}.yaml
 #   Kill switch: set "kill_switch: true" in the ConfigMap and restart the pod.
+#   The policy needs a sensor release later than v0.8.0; v0.8.0 and older
+#   ignore it and scan without a local policy.
 {{- else}}
 #   kubectl apply -n <namespace> -f {{$slug}}.yaml
 {{- end}}

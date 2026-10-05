@@ -8,7 +8,8 @@ package ingest
 // This closes that gap, conservatively: a finding is closed only when a scan
 // command that ran the same tool (and the same scan profile) COMPLETED with
 // full coverage of the finding's asset and did not report it. A failed,
-// canceled, expired or partial run, a report with rejected items, an asset the
+// canceled, expired or partial run, a report that does not declare
+// coverage_type "full" (an absent value is not full), a report with rejected items, an asset the
 // run never reached, or a finding whose last sighting cannot be tied to a run
 // of the same profile: none of them close anything.
 //
@@ -24,12 +25,14 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -56,6 +59,17 @@ func ParseCoverageAutoResolveMode(v string) CoverageAutoResolveMode {
 	}
 }
 
+// isCoverageCommandType: the command types whose completed full-coverage run
+// may close findings by absence: scans, and Tenable.sc scans launched through
+// the connector (RFC-047). A connector_sync never does (a pull window proves
+// nothing about absence).
+func isCoverageCommandType(t string) bool {
+	return t == string(command.CommandTypeScan) || t == string(command.CommandTypeConnectorScan)
+}
+
+// IsCoverageCommandType is isCoverageCommandType for the command handler.
+func IsCoverageCommandType(t string) bool { return isCoverageCommandType(t) }
+
 // coverageRepo is implemented by the postgres finding repository. Optional: a
 // finding repository without it (tests, mocks) disables the feature.
 type coverageRepo interface {
@@ -75,7 +89,10 @@ const (
 	coverageReportNotCompleted  = "report_failed"
 	coverageRejectedItems       = "report_rejected_items"
 	coveragePartial             = "partial_coverage"
+	coverageUndeclared          = "coverage_undeclared"
 	coverageRepositoryScan      = "repository_scan"
+	coverageNotRepositoryScan   = "not_repository_scan"
+	coverageNotDefaultBranch    = "not_default_branch"
 	coverageToolMismatch        = "tool_ambiguous"
 	coverageReservedTool        = "reserved_tool"
 	coverageNoCoveredAssets     = "no_covered_assets"
@@ -89,11 +106,27 @@ type coverageDecision struct {
 
 func (d coverageDecision) eligible() bool { return d.reason == coverageEligible }
 
-// decideCoverage says whether a command's run proves coverage, and of what.
-//
-//nolint:cyclop // a flat list of independent refusals, each with its reason
+// decideCoverage says whether a command's run proves coverage of non-repository
+// assets, and of what.
 func decideCoverage(c *ingestreport.CommandCoverage) coverageDecision {
-	if c == nil || c.CommandType != string(command.CommandTypeScan) {
+	return decideRunCoverage(c, false)
+}
+
+// decideRepoCoverage is decideCoverage for a repository run: every report must
+// be an explicitly full scan of a default branch.
+func decideRepoCoverage(c *ingestreport.CommandCoverage) coverageDecision {
+	return decideRunCoverage(c, true)
+}
+
+// decideRunCoverage says whether a command's run proves coverage, and of what.
+// The run must have completed with exit code 0 and every report must have
+// completed with nothing rejected, quarantined or in error: a scanner that
+// failed, crashed or dropped results proves nothing about what it did not
+// report.
+//
+//nolint:cyclop,gocognit // a flat list of independent refusals, each with its reason
+func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecision {
+	if c == nil || !isCoverageCommandType(c.CommandType) {
 		return coverageDecision{reason: coverageNotScanCommand}
 	}
 	if c.CommandStatus != string(command.CommandStatusCompleted) {
@@ -111,6 +144,7 @@ func decideCoverage(c *ingestreport.CommandCoverage) coverageDecision {
 
 	q := ingestreport.CoverageQuery{ProfileID: c.ProfileID}
 	seenAssets := map[shared.ID]struct{}{}
+	templates, templatesSet := "", false
 	for _, r := range c.Reports {
 		switch r.State {
 		case protov2.StateCompleted:
@@ -129,14 +163,29 @@ func decideCoverage(c *ingestreport.CommandCoverage) coverageDecision {
 		if len(r.Header) > 0 {
 			_ = json.Unmarshal(r.Header, &header)
 		}
-		switch strings.ToLower(header.Metadata.CoverageType) {
-		case "", string(CoverageTypeFull):
+		if repo {
+			// A repository run closes default-branch findings only for a scan
+			// of a default branch (the coverage check below applies to both).
+			if header.Metadata.Branch == nil {
+				return coverageDecision{reason: coverageNotRepositoryScan}
+			}
+			if !header.Metadata.Branch.IsDefaultBranch {
+				return coverageDecision{reason: coverageNotDefaultBranch}
+			}
+		} else if header.Metadata.Branch != nil {
+			// Repository scans have their own (default-branch) evaluation.
+			return coverageDecision{reason: coverageRepositoryScan}
+		}
+		// Only an explicit "full" proves coverage. An absent coverage_type is
+		// not full (CTIS spec 4.5), the same as the report-level path
+		// (Input.ShouldAutoResolve): a sensor that does not say it covered
+		// everything closes nothing.
+		switch strings.ToLower(strings.TrimSpace(header.Metadata.CoverageType)) {
+		case string(CoverageTypeFull):
+		case "":
+			return coverageDecision{reason: coverageUndeclared}
 		default:
 			return coverageDecision{reason: coveragePartial}
-		}
-		if header.Metadata.Branch != nil {
-			// Repository scans keep their own (default-branch) auto-resolve.
-			return coverageDecision{reason: coverageRepositoryScan}
 		}
 		tool := strings.TrimSpace(r.ToolName)
 		switch {
@@ -148,6 +197,16 @@ func decideCoverage(c *ingestreport.CommandCoverage) coverageDecision {
 			return coverageDecision{reason: coverageToolMismatch}
 		}
 		q.SeenScanIDs = append(q.SeenScanIDs, r.ReportID)
+		// The template release of the run: one value across its reports,
+		// else unknown.
+		_, d := reportTemplateRelease(header.Tool)
+		d = vulnerability.SanitizeTemplateDigest(d)
+		switch {
+		case !templatesSet:
+			templates, templatesSet = d, true
+		case templates != d:
+			templates = ""
+		}
 		for _, a := range r.TouchedAssetIDs {
 			if _, dup := seenAssets[a]; !dup {
 				seenAssets[a] = struct{}{}
@@ -161,6 +220,7 @@ func decideCoverage(c *ingestreport.CommandCoverage) coverageDecision {
 	if len(q.AssetIDs) == 0 {
 		return coverageDecision{reason: coverageNoCoveredAssets}
 	}
+	q.TemplatesDigest = templates
 	return coverageDecision{reason: coverageEligible, query: q}
 }
 
@@ -170,7 +230,47 @@ type CoverageOutcome struct {
 	Reason       string
 	WouldResolve []shared.ID
 	Resolved     []shared.ID
-	Held         bool
+	// TemplateDrift are the candidates whose last sighting ran other
+	// template content than this run (research/18 O6): not proven fixed,
+	// marked not_observed (NotObserved) in enforce mode.
+	TemplateDrift []shared.ID
+	NotObserved   []shared.ID
+	Held          bool
+}
+
+// templateDriftRepo is implemented by the postgres finding repository.
+type templateDriftRepo interface {
+	TemplateDriftedFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID, runDigest string) ([]shared.ID, error)
+	MarkCoverageNotObserved(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error)
+}
+
+// splitTemplateDrift separates, from the stale candidates, those whose last
+// sighting recorded a template release other than the run's. A lookup
+// error keeps every candidate open (fail closed): ok is false.
+func (s *Service) splitTemplateDrift(ctx context.Context, tenantID shared.ID, stale []shared.ID, runDigest string) (resolvable, drifted []shared.ID, ok bool) {
+	repo, has := s.findingRepo.(templateDriftRepo)
+	if !has {
+		return stale, nil, true
+	}
+	drifted, err := repo.TemplateDriftedFindings(ctx, tenantID, stale, runDigest)
+	if err != nil {
+		s.logger.Warn("coverage auto-resolve: template drift check failed; nothing closed", "error", err)
+		return nil, nil, false
+	}
+	if len(drifted) == 0 {
+		return stale, nil, true
+	}
+	skip := make(map[shared.ID]struct{}, len(drifted))
+	for _, id := range drifted {
+		skip[id] = struct{}{}
+	}
+	resolvable = make([]shared.ID, 0, len(stale)-len(drifted))
+	for _, id := range stale {
+		if _, d := skip[id]; !d {
+			resolvable = append(resolvable, id)
+		}
+	}
+	return resolvable, drifted, true
 }
 
 // SetCoverageAutoResolve sets the mode and the blinding guard (the same guard
@@ -193,11 +293,15 @@ func (s *Service) coverageAutoResolveMode() CoverageAutoResolveMode {
 // acts per the mode. Safe to call repeatedly and from both ends (command
 // completion, report finalize): until both are done it does nothing, and an
 // enforce run only ever closes still-open findings.
+//
+// A repository run (default-branch reports) is evaluated by
+// evaluateRepoCoverage instead, whatever the coverage mode: repository
+// findings have always been closed by a covered default-branch scan.
 func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, commandID shared.ID) CoverageOutcome {
 	mode := s.coverageAutoResolveMode()
 	out := CoverageOutcome{Mode: mode}
 	repo, ok := s.findingRepo.(coverageRepo)
-	if mode == CoverageAutoResolveOff || !ok || tenantID.IsZero() || commandID.IsZero() {
+	if !ok || tenantID.IsZero() || commandID.IsZero() {
 		out.Reason = "disabled"
 		return out
 	}
@@ -209,6 +313,13 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		return out
 	}
 	d := decideCoverage(cov)
+	if d.reason == coverageRepositoryScan {
+		return s.evaluateRepoCoverage(ctx, tenantID, commandID, cov, s.coverageGuard)
+	}
+	if mode == CoverageAutoResolveOff {
+		out.Reason = "disabled"
+		return out
+	}
 	out.Reason = d.reason
 	if d.eligible() && !s.sensorsDeclareTool(ctx, cov, d.query.ToolName) {
 		out.Reason = coverageToolMismatch
@@ -228,13 +339,19 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 	if len(stale) == 0 {
 		return out
 	}
-	out.WouldResolve = stale
 	out.Held = s.coverageGuard.Holds(len(stale), open)
+	resolvable, drifted, ok := s.splitTemplateDrift(ctx, tenantID, stale, d.query.TemplatesDigest)
+	if !ok {
+		out.Reason = "error"
+		return out
+	}
+	out.WouldResolve, out.TemplateDrift = resolvable, drifted
+	stale = resolvable
 
 	logArgs := []any{
 		"command_id", commandID.String(), "tool_name", sanitizeIngestLogField(d.query.ToolName),
 		"profile_id", d.query.ProfileID, "covered_assets", len(d.query.AssetIDs),
-		"would_resolve", len(stale), "open", open, "held", out.Held, "mode", string(mode),
+		"would_resolve", len(stale), "template_drift", len(drifted), "open", open, "held", out.Held, "mode", string(mode),
 	}
 	switch {
 	case out.Held:
@@ -244,6 +361,19 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "would_resolve").Add(float64(len(stale)))
 		s.logger.Info("coverage auto-resolve (dry run): would resolve findings", logArgs...)
 	default:
+		if len(drifted) > 0 {
+			// Template drift: the run's absence proves nothing; the finding
+			// is stale, not fixed, until a new sighting re-baselines it.
+			if dr, ok := s.findingRepo.(templateDriftRepo); ok {
+				marked, err := dr.MarkCoverageNotObserved(ctx, tenantID, drifted)
+				if err != nil {
+					s.logger.Warn("coverage auto-resolve: marking template-drifted findings not_observed failed", append(logArgs, "error", err)...)
+				} else {
+					out.NotObserved = marked
+					metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "not_observed").Add(float64(len(marked)))
+				}
+			}
+		}
 		resolved, err := repo.ResolveCoverageStale(ctx, tenantID, stale)
 		if err != nil {
 			s.logger.Warn("coverage auto-resolve failed", append(logArgs, "error", err)...)
@@ -255,6 +385,89 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		if s.activityService != nil && len(resolved) > 0 {
 			if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, resolved, d.query.ToolName, commandID.String()); err != nil {
 				s.logger.Warn("failed to record coverage auto-resolve activities", "error", err)
+			}
+		}
+	}
+	s.auditCoverageAutoResolve(ctx, tenantID, commandID, d.query, out, open)
+	return out
+}
+
+// repoCoverageRepo is implemented by the postgres finding repository.
+type repoCoverageRepo interface {
+	RepoCoverageStaleFindings(ctx context.Context, tenantID shared.ID, q ingestreport.CoverageQuery) (stale []shared.ID, open int, err error)
+	ResolveRepoCoverageStale(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error)
+}
+
+// evaluateRepoCoverage is the only way a scan closes default-branch
+// (repository) findings (research 18 F3). It needs:
+//   - a run bound to a command (a report without one, a CI or tenant upload,
+//     never closes anything: owner decision O11);
+//   - the command completed with exit code 0 and every report completed with
+//     nothing rejected, quarantined or in error;
+//   - every report an explicitly full scan of a default branch, of one tool
+//     the reporting sensors declare;
+//   - candidates on assets the command covers, last seen by the same tool
+//     under the same scan profile (the ruleset did not change);
+//   - the blinding guard.
+//
+// It always enforces (the coverage mode governs non-repository findings
+// only). Safe to run repeatedly: the UPDATE re-checks every condition.
+func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID shared.ID, cov *ingestreport.CommandCoverage, guard BlindingGuard) CoverageOutcome {
+	out := CoverageOutcome{Mode: CoverageAutoResolveEnforce}
+	repo, ok := s.findingRepo.(repoCoverageRepo)
+	if !ok {
+		out.Reason = "disabled"
+		return out
+	}
+	d := decideRepoCoverage(cov)
+	out.Reason = d.reason
+	if d.eligible() && !s.sensorsDeclareTool(ctx, cov, d.query.ToolName) {
+		out.Reason = coverageToolMismatch
+	}
+	if out.Reason == coverageEligible {
+		d.query.AssetIDs = s.coveredByCommand(ctx, tenantID, &commandID, d.query.AssetIDs)
+		if len(d.query.AssetIDs) == 0 {
+			out.Reason = coverageNoCoveredAssets
+		}
+	}
+	metrics.CoverageAutoResolveEvaluations.WithLabelValues("repository", out.Reason).Inc()
+	if out.Reason != coverageEligible {
+		s.logger.Debug("repository auto-resolve: not eligible", "command_id", commandID.String(), "reason", out.Reason)
+		return out
+	}
+
+	stale, open, err := repo.RepoCoverageStaleFindings(ctx, tenantID, d.query)
+	if err != nil {
+		s.logger.Warn("repository auto-resolve: candidate query failed", "command_id", commandID.String(), "error", err)
+		out.Reason = "error"
+		return out
+	}
+	if len(stale) == 0 {
+		return out
+	}
+	out.WouldResolve = stale
+	out.Held = guard.Holds(len(stale), open)
+	logArgs := []any{
+		"command_id", commandID.String(), "tool_name", sanitizeIngestLogField(d.query.ToolName),
+		"profile_id", d.query.ProfileID, "covered_assets", len(d.query.AssetIDs),
+		"would_resolve", len(stale), "open", open, "held", out.Held,
+	}
+	if out.Held {
+		metrics.FindingsCoverageAutoResolve.WithLabelValues("repository", "held").Add(float64(len(stale)))
+		s.logger.Warn("repository auto-resolve held for review (blinding guard)", logArgs...)
+	} else {
+		resolved, err := repo.ResolveRepoCoverageStale(ctx, tenantID, stale)
+		if err != nil {
+			s.logger.Warn("repository auto-resolve failed", append(logArgs, "error", err)...)
+			return out
+		}
+		out.Resolved = resolved
+		metrics.FindingsCoverageAutoResolve.WithLabelValues("repository", "resolved").Add(float64(len(resolved)))
+		app.FindingsAutoResolved.WithLabelValues().Add(float64(len(resolved)))
+		s.logger.Info("repository auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved))...)
+		if s.activityService != nil && len(resolved) > 0 {
+			if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, resolved, d.query.ToolName, commandID.String()); err != nil {
+				s.logger.Warn("failed to record repository auto-resolve activities", "error", err)
 			}
 		}
 	}
@@ -309,6 +522,7 @@ func (s *Service) auditCoverageAutoResolve(ctx context.Context, tenantID, comman
 	event.Metadata = map[string]any{
 		"mode": string(out.Mode), "held": out.Held, "tool_name": q.ToolName, "profile_id": q.ProfileID,
 		"covered_assets": len(q.AssetIDs), "open": open, "count": len(ids),
+		"template_drift": len(out.TemplateDrift), "not_observed": len(out.NotObserved),
 		"finding_ids": listed, "finding_ids_truncated": len(ids) > maxAuditedFindingIDs,
 	}
 	if err := s.writeIngestAuditLog(ctx, auditapp.AuditContext{TenantID: tenantID.String()}, event); err != nil {

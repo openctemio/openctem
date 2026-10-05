@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -91,7 +91,19 @@ export function PlatformIdPForm({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmRequire, setConfirmRequire] = useState(false)
 
-  useEffect(() => setForm(toForm(idp)), [idp])
+  // Reset the editable copy to the server record only when that record actually
+  // changes. The parent hands down a fresh `idp` reference on every SWR
+  // revalidation (focus refetch returns a new object with identical contents);
+  // resetting on the reference alone discards in-progress edits and — paired with
+  // `toForm` building a new object each time — risks a render loop. Gate on a
+  // content signature so the reset fires once per real server change.
+  const appliedIdpKey = useRef<string>('')
+  useEffect(() => {
+    const key = JSON.stringify(idp)
+    if (appliedIdpKey.current === key) return
+    appliedIdpKey.current = key
+    setForm(toForm(idp))
+  }, [idp])
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }))

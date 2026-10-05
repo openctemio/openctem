@@ -2659,6 +2659,26 @@ definitions:
       review_oldest_since:
         type: string
     type: object
+  github_com_openctemio_openctem_api_internal_app_easm.Decision:
+    properties:
+      asset_id:
+        type: string
+      from:
+        type: string
+      to:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.DecisionResult:
+    properties:
+      decided:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.Decision'
+        type: array
+      not_found:
+        items:
+          type: string
+        type: array
+    type: object
   github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock:
     properties:
       by_severity:
@@ -2694,6 +2714,56 @@ definitions:
       since_cycle:
         type: integer
     type: object
+  github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence:
+    properties:
+      first_observed_at:
+        type: string
+      last_observed_at:
+        type: string
+      observed:
+        additionalProperties: {}
+        type: object
+      rule:
+        type: string
+      source:
+        type: string
+      technique:
+        type: string
+      weight:
+        type: number
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.ReviewItem:
+    properties:
+      asset_id:
+        type: string
+      confidence:
+        type: integer
+      evidence:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence'
+        type: array
+      in_queue_since:
+        type: string
+      last_seen:
+        type: string
+      name:
+        type: string
+      reason:
+        type: string
+      state:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.ReviewPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.ReviewItem'
+        type: array
+      total:
+        type: integer
+    type: object
   github_com_openctemio_openctem_api_internal_app_easm.Risk:
     properties:
       asset_id:
@@ -2709,6 +2779,34 @@ definitions:
       title:
         type: string
       type:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.SeedView:
+    properties:
+      attested_at:
+        type: string
+      attested_by:
+        type: string
+      created_at:
+        type: string
+      discovery_enabled:
+        type: boolean
+      id:
+        type: string
+      kind:
+        type: string
+      label:
+        type: string
+      updated_at:
+        type: string
+      value:
+        type: string
+      verification:
+        description: |-
+          Verification: dns_txt when the organization proved control of the
+          domain (or a parent) with a DNS TXT record; none otherwise.
+        type: string
+      verified_domain:
         type: string
     type: object
   github_com_openctemio_openctem_api_internal_app_easm.Summary:
@@ -2915,6 +3013,31 @@ definitions:
       rate_pct:
         type: number
     type: object
+  github_com_openctemio_openctem_api_internal_app_scan.OptInImpact:
+    properties:
+      opt_ins:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns'
+      scans:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan'
+        type: array
+      truncated:
+        description: 'Truncated: more scans are affected than listed.'
+        type: boolean
+    type: object
+  github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+      uses_custom_templates:
+        type: boolean
+      uses_interactsh:
+        type: boolean
+    type: object
   github_com_openctemio_openctem_api_internal_app_scan.PreviewError:
     properties:
       code:
@@ -3054,6 +3177,7 @@ definitions:
     - UPSTREAM_ERROR
     - MFA_ENROLLMENT_REQUIRED
     - APPROVAL_REQUIRED
+    - INVALID_FILTER
     type: string
     x-enum-varnames:
     - CodeBadRequest
@@ -3070,6 +3194,7 @@ definitions:
     - CodeUpstreamError
     - CodeMFAEnrollmentRequired
     - CodeApprovalRequired
+    - CodeInvalidFilter
   github_com_openctemio_openctem_api_pkg_apierror.Error:
     properties:
       code:
@@ -3376,6 +3501,11 @@ definitions:
         type: array
       relationship:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType'
+      sub_type:
+        description: |-
+          SubType restricts the rule to the type's assets of one sub-type
+          ("" = any sub-type).
+        type: string
     type: object
   github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType:
     enum:
@@ -3384,6 +3514,7 @@ definitions:
     - contains
     - exposes
     - resolves_to
+    - serves_certificate
     - cname_of
     - depends_on
     - peer_of
@@ -3404,6 +3535,7 @@ definitions:
     - RelTypeContains
     - RelTypeExposes
     - RelTypeResolvesTo
+    - RelTypeServesCertificate
     - RelTypeCnameOf
     - RelTypeDependsOn
     - RelTypePeerOf
@@ -3440,6 +3572,10 @@ definitions:
         items:
           type: string
         type: array
+      exposure_default:
+        description: ExposureDefault is the exposure the type has by nature ("" =
+          none).
+        type: string
       facets:
         items:
           type: string
@@ -3464,6 +3600,13 @@ definitions:
         type: string
       relationships:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships'
+      scannable_by:
+        description: |-
+          ScannableBy lists the tool target types (supported_targets) that can
+          scan the type (RFC-042 §6.3.8 R5).
+        items:
+          type: string
+        type: array
       sections:
         items:
           type: string
@@ -4106,6 +4249,13 @@ definitions:
       version:
         type: string
     type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns:
+    properties:
+      allow_custom_templates:
+        type: boolean
+      allow_interactsh:
+        type: boolean
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity:
     properties:
       active_jobs:
@@ -4267,6 +4417,105 @@ definitions:
       role_arn:
         description: For cross-account
         type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport:
+    properties:
+      api_keys:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      assigned_findings:
+        description: AssignedFindings counts the member's open (not closed) findings.
+        type: integer
+      campaigns:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      direct_grants:
+        description: DirectGrants is the number of per-user asset grants.
+        type: integer
+      groups:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      membership_id:
+        type: string
+      owned_assets:
+        description: OwnedAssets counts the assets the member is a named (user) owner
+          of.
+        type: integer
+      owned_report_schedules:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      owned_scans:
+        description: Owned work that an offboarding must hand to someone else.
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      owned_workflows:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      roles:
+        description: Access sources.
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      status:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.MemberStatus'
+      user_id:
+        type: string
+      visible_assets:
+        description: |-
+          VisibleAssets is the number of materialized scope rows (0 while the
+          member is disabled: the rows return when re-enabled).
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef:
+    properties:
+      detail:
+        description: |-
+          Detail is a short type-specific note: a key prefix, a campaign role, a
+          schedule type.
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_tenant.MemberStatus:
+    enum:
+    - active
+    - suspended
+    - offboarded
+    type: string
+    x-enum-varnames:
+    - MemberStatusActive
+    - MemberStatusSuspended
+    - MemberStatusOffboarded
+  github_com_openctemio_openctem_api_pkg_domain_tenant.OffboardResult:
+    properties:
+      offboarded_at:
+        type: string
+      reassigned_assets:
+        type: integer
+      reassigned_findings:
+        type: integer
+      reassigned_schedules:
+        type: integer
+      removed_campaigns:
+        type: integer
+      removed_grants:
+        type: integer
+      removed_groups:
+        type: integer
+      report:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport'
+      revoked_keys:
+        type: integer
     type: object
   github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings:
     properties:
@@ -4626,6 +4875,32 @@ definitions:
     required:
     - role_arn
     type: object
+  internal_infra_http_handler.AcceptInvitationWithRefreshRequest:
+    properties:
+      refresh_token:
+        type: string
+      token:
+        type: string
+    type: object
+  internal_infra_http_handler.AcceptInvitationWithRefreshResponse:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+      refresh_token:
+        type: string
+      role:
+        type: string
+      tenant_id:
+        type: string
+      tenant_name:
+        type: string
+      tenant_slug:
+        type: string
+      token_type:
+        type: string
+    type: object
   internal_infra_http_handler.AcceptQuarantinedResultResponse:
     properties:
       assets_created:
@@ -4686,6 +4961,13 @@ definitions:
     required:
     - content
     type: object
+  internal_infra_http_handler.AddFindingDuplicateRequest:
+    properties:
+      finding_id:
+        type: string
+    required:
+    - finding_id
+    type: object
   internal_infra_http_handler.AddGroupMemberRequest:
     properties:
       role:
@@ -4699,18 +4981,6 @@ definitions:
     required:
     - role
     - user_id
-    type: object
-  internal_infra_http_handler.AddPermissionRequest:
-    properties:
-      modification_type:
-        enum:
-        - add
-        - remove
-        type: string
-      permission_id:
-        type: string
-    required:
-    - permission_id
     type: object
   internal_infra_http_handler.AdminAuditChainRebaselineRequest:
     properties:
@@ -5123,6 +5393,14 @@ definitions:
       active_checks_allowed:
         description: 'ActiveChecksAllowed: whether a scan may touch the asset.'
         type: boolean
+      active_checks_blocked_by:
+        description: |-
+          ActiveChecksBlockedBy says why a scan may not touch the asset when
+          active_checks_allowed is false: its state (needs_review, candidate,
+          dependency, monitor_only, rejected; rejected also for a name under a
+          rejected name), or unattributed: no record, and neither inside a scope
+          target nor under a root-domain seed or verified domain.
+        type: string
       confidence:
         type: integer
       decided_at:
@@ -5341,6 +5619,9 @@ definitions:
         type: string
       impact_integrity:
         type: string
+      is_crown_jewel:
+        description: IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel.
+        type: boolean
       is_internet_accessible:
         type: boolean
       last_seen:
@@ -5698,6 +5979,9 @@ definitions:
         type: string
       impact_integrity:
         type: string
+      is_crown_jewel:
+        description: IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel.
+        type: boolean
       is_internet_accessible:
         type: boolean
       last_seen:
@@ -5775,13 +6059,6 @@ definitions:
         type: string
     required:
     - user_id
-    type: object
-  internal_infra_http_handler.AssignPermissionSetRequest:
-    properties:
-      permission_set_id:
-        type: string
-    required:
-    - permission_set_id
     type: object
   internal_infra_http_handler.AttackPathScoreResponse:
     properties:
@@ -6804,6 +7081,13 @@ definitions:
         type: object
       scope:
         type: string
+      sub_type:
+        description: |-
+          SubType is the kind within the type, from the registry's closed list
+          (GET /asset-types). A legacy value of the type is mapped; anything
+          else is a 400.
+        maxLength: 50
+        type: string
       tags:
         items:
           type: string
@@ -7227,36 +7511,6 @@ definitions:
     - name
     - provider
     type: object
-  internal_infra_http_handler.CreatePermissionSetRequest:
-    properties:
-      description:
-        maxLength: 500
-        type: string
-      name:
-        maxLength: 100
-        minLength: 2
-        type: string
-      parent_set_id:
-        type: string
-      permissions:
-        items:
-          type: string
-        type: array
-      set_type:
-        enum:
-        - custom
-        - extended
-        - cloned
-        type: string
-      slug:
-        maxLength: 100
-        minLength: 2
-        type: string
-    required:
-    - name
-    - set_type
-    - slug
-    type: object
   internal_infra_http_handler.CreateRepositoryAssetRequest:
     properties:
       clone_url:
@@ -7365,9 +7619,6 @@ definitions:
       description:
         maxLength: 500
         type: string
-      escalation_config:
-        additionalProperties: {}
-        type: object
       escalation_enabled:
         type: boolean
       high_days:
@@ -7392,6 +7643,24 @@ definitions:
         maxLength: 100
         minLength: 1
         type: string
+      p0_days:
+        description: P0Days..P3Days are optional; an omitted class keeps its default
+          window.
+        maximum: 365
+        minimum: 1
+        type: integer
+      p1_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p2_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p3_days:
+        maximum: 365
+        minimum: 1
+        type: integer
       warning_threshold_pct:
         maximum: 100
         minimum: 0
@@ -7494,6 +7763,12 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        description: |-
+          ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+          evaluated in timezone; at most every 15 minutes.
+        maxLength: 500
+        type: string
       schedule_time:
         type: string
       schedule_type:
@@ -7503,6 +7778,7 @@ definitions:
         - weekly
         - monthly
         - crontab
+        - rrule
         type: string
       sensor_preference:
         enum:
@@ -8140,17 +8416,6 @@ definitions:
           $ref: '#/definitions/internal_infra_http_handler.DataFlowStepResponse'
         type: array
     type: object
-  internal_infra_http_handler.DataScopePolicyResponse:
-    properties:
-      members_without_group_see:
-        description: |-
-          MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
-          (fail-closed). Owners and admins always see everything.
-        enum:
-        - everything
-        - nothing
-        type: string
-    type: object
   internal_infra_http_handler.DedupKeyRequest:
     properties:
       branch:
@@ -8197,17 +8462,51 @@ definitions:
       url:
         type: string
     type: object
-  internal_infra_http_handler.EffectivePermissionsResponse:
+  internal_infra_http_handler.EASMDecisionRequest:
     properties:
-      group_count:
-        type: integer
-      permissions:
+      asset_ids:
         items:
           type: string
         type: array
-      tenant_id:
+      note:
+        description: Note is an optional reason, kept in the audit log.
         type: string
-      user_id:
+      state:
+        description: 'State: confirmed, rejected, dependency, monitor_only or needs_review.'
+        type: string
+    type: object
+  internal_infra_http_handler.EASMSeedCreateRequest:
+    properties:
+      attested:
+        description: |-
+          Attested must be true: the caller states the organization is authorized
+          to have this seed discovered and checked. Recorded with the user and time.
+        type: boolean
+      discovery_enabled:
+        description: DiscoveryEnabled defaults to true.
+        type: boolean
+      kind:
+        description: |-
+          Kind: root_domain (other RFC-036 kinds are accepted once their
+          collectors exist).
+        type: string
+      label:
+        type: string
+      value:
+        type: string
+    type: object
+  internal_infra_http_handler.EASMSeedListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
+        type: array
+    type: object
+  internal_infra_http_handler.EASMSeedUpdateRequest:
+    properties:
+      discovery_enabled:
+        type: boolean
+      label:
         type: string
     type: object
   internal_infra_http_handler.EmbeddedCategoryResponse:
@@ -8625,9 +8924,24 @@ definitions:
         type: string
       cve_id:
         type: string
+      cve_ids:
+        description: Every CVE the scanner named, primary first
+        items:
+          type: string
+        type: array
       cvss_score:
         type: number
+      cvss_v2_vector:
+        description: Detail only (GET /findings/{id}), never in lists or exports (research
+          24 P0-2).
+        type: string
+      cvss_v3_vector:
+        description: CVSS v3.x vector the scanner reported
+        type: string
       cvss_vector:
+        type: string
+      cvss_version:
+        description: Version of cvss_score (2.0, 3.x, 3.1, 4.0)
         type: string
       cwe_ids:
         items:
@@ -8656,8 +8970,14 @@ definitions:
         type: number
       estimated_fix_time:
         type: integer
+      exploit_available:
+        description: The scanner reported a public exploit
+        type: boolean
       exposure_vector:
         description: CTEM Fields
+        type: string
+      family:
+        description: Scanner details kept since research 17 R2 (not priority inputs).
         type: string
       file_path:
         type: string
@@ -8757,6 +9077,9 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      patch_published_at:
+        description: When the vendor published the fix
+        type: string
       priority_class:
         description: Priority Classification (RFC-004)
         type: string
@@ -8797,6 +9120,10 @@ definitions:
         type: string
       scan_id:
         type: string
+      scanner_output:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.ScannerOutputResponse'
+        description: The scanner's proof (plugin output); untrusted plain text
       secret_age_in_days:
         type: integer
       secret_commit_count:
@@ -8875,6 +9202,9 @@ definitions:
         type: string
       verified_by:
         type: string
+      vpr_score:
+        description: Tenable VPR 0.1-10, display only
+        type: number
       vulnerability:
         allOf:
         - $ref: '#/definitions/internal_infra_http_handler.FindingVulnerabilityInfo'
@@ -8944,6 +9274,39 @@ definitions:
         type: string
       trigger:
         type: string
+    type: object
+  internal_infra_http_handler.FindingSearchPage:
+    properties:
+      page:
+        type: integer
+      per_page:
+        type: integer
+    type: object
+  internal_infra_http_handler.FindingSearchRequest:
+    properties:
+      filter:
+        additionalProperties: {}
+        description: |-
+          Filter is a node ({"all":[...]}, {"any":[...]}, {"not":{...}} or a
+          {"field","op","value"} leaf) or the flat-name shorthand
+          ({"severity":["critical"],"epss_score_gte":0.1}).
+        type: object
+      page:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.FindingSearchPage'
+        description: 'Page selects the page: {"page": 1, "per_page": 50}.'
+      q:
+        description: Q is free text over title, description and file path.
+        type: string
+      sort:
+        description: Sort keys, "-" for descending.
+        items:
+          type: string
+        type: array
+      v:
+        description: V is the document version (1).
+        example: 1
+        type: integer
     type: object
   internal_infra_http_handler.FindingSeverityResponse:
     properties:
@@ -9036,6 +9399,16 @@ definitions:
         additionalProperties:
           format: int64
           type: integer
+        type: object
+      by_state:
+        additionalProperties:
+          format: int64
+          type: integer
+        description: |-
+          ByState counts the state lenses of the same filter: open, fixed,
+          dispositioned (false positive, accepted, duplicate; never counted as
+          fixed) and all. Send state=all with the other filters to label a lens
+          switcher.
         type: object
       by_status:
         additionalProperties:
@@ -9814,6 +10187,43 @@ definitions:
       total:
         type: integer
     type: object
+  internal_infra_http_handler.InvitationLookupInvitation:
+    properties:
+      email:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      inviter_name:
+        type: string
+      pending:
+        type: boolean
+      role:
+        type: string
+    type: object
+  internal_infra_http_handler.InvitationLookupResponse:
+    properties:
+      invitation:
+        $ref: '#/definitions/internal_infra_http_handler.InvitationLookupInvitation'
+      tenant:
+        $ref: '#/definitions/internal_infra_http_handler.InvitationLookupTenant'
+    type: object
+  internal_infra_http_handler.InvitationLookupTenant:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      slug:
+        type: string
+    type: object
+  internal_infra_http_handler.InvitationTokenRequest:
+    properties:
+      token:
+        example: Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8
+        type: string
+    type: object
   internal_infra_http_handler.LicensingModuleResponse:
     properties:
       category:
@@ -10304,6 +10714,18 @@ definitions:
     - code
     - password
     type: object
+  internal_infra_http_handler.MFAEnableRequest:
+    properties:
+      code:
+        maxLength: 16
+        type: string
+      password:
+        maxLength: 128
+        type: string
+    required:
+    - code
+    - password
+    type: object
   internal_infra_http_handler.MFAEnrollmentConfirmRequest:
     properties:
       code:
@@ -10336,6 +10758,19 @@ definitions:
       otpauth_uri:
         type: string
       secret:
+        type: string
+    type: object
+  internal_infra_http_handler.MemberResponse:
+    properties:
+      id:
+        type: string
+      invited_by:
+        type: string
+      joined_at:
+        type: string
+      role:
+        type: string
+      user_id:
         type: string
     type: object
   internal_infra_http_handler.NotificationEventCategoryResponse:
@@ -10384,8 +10819,7 @@ definitions:
         type: string
       enabled_event_types:
         example:
-        - '["security_alert"'
-        - '"new_finding"'
+        - '["new_finding"'
         - '"new_exposure"]'
         items:
           type: string
@@ -10449,6 +10883,23 @@ definitions:
         type: string
       url:
         type: string
+    type: object
+  internal_infra_http_handler.OffboardMemberRequest:
+    properties:
+      assets_to:
+        description: New owner of the assets the member owns.
+        type: string
+      findings_to:
+        description: New assignee of the member's open findings.
+        type: string
+      schedules_to:
+        description: New owner of the member's scans, report schedules and workflows.
+        example: 01929c4e-0000-7000-8000-000000000001
+        type: string
+      unassign_findings:
+        description: Put the open findings back in the queue instead (when findings_to
+          is empty).
+        type: boolean
     type: object
   internal_infra_http_handler.OpenPortResult:
     properties:
@@ -10554,85 +11005,6 @@ definitions:
       prev:
         type: string
       self:
-        type: string
-    type: object
-  internal_infra_http_handler.PermissionItemResponse:
-    properties:
-      modification_type:
-        type: string
-      permission_id:
-        type: string
-    type: object
-  internal_infra_http_handler.PermissionSetListResponse:
-    properties:
-      limit:
-        type: integer
-      offset:
-        type: integer
-      permission_sets:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.PermissionSetResponse'
-        type: array
-      total_count:
-        type: integer
-    type: object
-  internal_infra_http_handler.PermissionSetResponse:
-    properties:
-      created_at:
-        type: string
-      description:
-        type: string
-      id:
-        type: string
-      is_active:
-        type: boolean
-      is_system:
-        type: boolean
-      name:
-        type: string
-      parent_set_id:
-        type: string
-      set_type:
-        type: string
-      slug:
-        type: string
-      tenant_id:
-        type: string
-      updated_at:
-        type: string
-    type: object
-  internal_infra_http_handler.PermissionSetWithItemsResponse:
-    properties:
-      created_at:
-        type: string
-      description:
-        type: string
-      id:
-        type: string
-      is_active:
-        type: boolean
-      is_system:
-        type: boolean
-      items:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.PermissionItemResponse'
-        type: array
-      name:
-        type: string
-      parent_set_id:
-        type: string
-      permissions:
-        description: Resolved permissions
-        items:
-          type: string
-        type: array
-      set_type:
-        type: string
-      slug:
-        type: string
-      tenant_id:
-        type: string
-      updated_at:
         type: string
     type: object
   internal_infra_http_handler.PermissionsResponse:
@@ -11262,6 +11634,27 @@ definitions:
       secret_value:
         type: string
     type: object
+  internal_infra_http_handler.RotateCredentialRequest:
+    properties:
+      api_key:
+        $ref: '#/definitions/internal_infra_http_handler.APIKeyDataRequest'
+      aws_role:
+        $ref: '#/definitions/internal_infra_http_handler.AWSRoleDataRequest'
+      azure_service_principal:
+        $ref: '#/definitions/internal_infra_http_handler.AzureServicePrincipalDataRequest'
+      basic_auth:
+        $ref: '#/definitions/internal_infra_http_handler.BasicAuthDataRequest'
+      bearer_token:
+        $ref: '#/definitions/internal_infra_http_handler.BearerTokenDataRequest'
+      gcp_service_account:
+        $ref: '#/definitions/internal_infra_http_handler.GCPServiceAccountDataRequest'
+      github_app:
+        $ref: '#/definitions/internal_infra_http_handler.GitHubAppDataRequest'
+      gitlab_token:
+        $ref: '#/definitions/internal_infra_http_handler.GitLabTokenDataRequest'
+      ssh_key:
+        $ref: '#/definitions/internal_infra_http_handler.SSHKeyDataRequest'
+    type: object
   internal_infra_http_handler.RunDispatchResponse:
     properties:
       excluded_targets:
@@ -11294,6 +11687,10 @@ definitions:
         type: integer
       created_at:
         type: string
+      deadline_at:
+        description: DeadlineAt is when the run is settled if it is still open (RFC-046
+          §6.3).
+        type: string
       dispatch:
         $ref: '#/definitions/internal_infra_http_handler.RunDispatchResponse'
       error_message:
@@ -11309,6 +11706,11 @@ definitions:
       quality_gate_result:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult'
       scan_id:
+        type: string
+      scan_name:
+        description: |-
+          ScanName names the run's scan (list rows only; empty when the scan was
+          deleted).
         type: string
       scan_profile_id:
         type: string
@@ -11326,6 +11728,26 @@ definitions:
         items:
           $ref: '#/definitions/internal_infra_http_handler.StepRunResponse'
         type: array
+      task_summary:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.RunTaskSummaryResponse'
+        description: |-
+          TaskSummary counts the run's tasks (the commands it dispatched) by
+          status. Present on list rows and on the run, once it has tasks.
+      tasks:
+        description: Tasks lists the run's tasks (GET /pipeline-runs/{id} only).
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunTaskResponse'
+        type: array
+      tasks_next_cursor:
+        description: |-
+          TasksNextCursor continues the task list after Tasks
+          (GET /pipeline-runs/{id}/tasks?cursor=) when TasksTruncated.
+        type: string
+      tasks_truncated:
+        description: TasksTruncated is true when the run has more tasks than Tasks
+          lists.
+        type: boolean
       tenant_id:
         type: string
       total_findings:
@@ -11339,6 +11761,125 @@ definitions:
       triggered_by_name:
         description: display name, when triggered_by is a user id
         type: string
+      unfinished_target_count:
+        description: |-
+          UnfinishedTargetCount is how many targets were still open when the run
+          was settled at its deadline; the next scheduled run plans them first.
+        type: integer
+    type: object
+  internal_infra_http_handler.RunStageListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunStageResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.RunStageResponse:
+    properties:
+      chained:
+        description: 'Chained: the stage took targets an earlier stage produced.'
+        type: boolean
+      inputs:
+        description: |-
+          Inputs is how many targets were considered (seeds plus outputs of the
+          types the stage takes); Planned how many were handed to the stage.
+        type: integer
+      max_hop:
+        description: |-
+          MaxHop is the furthest discovery hop from a seed among planned
+          targets.
+        type: integer
+      planned:
+        type: integer
+      planned_at:
+        type: string
+      skipped:
+        additionalProperties:
+          type: integer
+        description: |-
+          Skipped counts the targets left out, by reason: excluded,
+          unconfirmed, refused, other_zone, hop_limit, over_cap, duplicate,
+          invalid, incompatible_type.
+        type: object
+      stage:
+        description: |-
+          Stage is the catalog capability ("" when the catalog cannot place
+          the step).
+        type: string
+      stage_key:
+        description: StageKey is the step key of the stage in the run's template.
+        type: string
+      tier:
+        enum:
+        - T0
+        - T1
+        - T2
+        type: string
+      tool:
+        type: string
+    type: object
+  internal_infra_http_handler.RunTaskPageResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunTaskResponse'
+        type: array
+      next_cursor:
+        description: NextCursor continues after Data; absent on the last page.
+        type: string
+    type: object
+  internal_infra_http_handler.RunTaskResponse:
+    properties:
+      attempts:
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error_message:
+        type: string
+      id:
+        type: string
+      platform:
+        description: |-
+          Platform is true when a shared platform sensor runs the task; it is
+          never named.
+        type: boolean
+      sensor_id:
+        type: string
+      sensor_name:
+        type: string
+      started_at:
+        type: string
+      status:
+        description: Status is queued, running, completed, failed or canceled.
+        type: string
+      step_key:
+        type: string
+      step_run_id:
+        type: string
+      targets:
+        type: integer
+      tool:
+        type: string
+    type: object
+  internal_infra_http_handler.RunTaskSummaryResponse:
+    properties:
+      canceled:
+        type: integer
+      completed:
+        type: integer
+      failed:
+        type: integer
+      queued:
+        type: integer
+      running:
+        type: integer
+      sensors:
+        description: Sensors is how many distinct sensors claimed one of the tasks.
+        type: integer
+      total:
+        type: integer
     type: object
   internal_infra_http_handler.RunUncoveredTarget:
     properties:
@@ -11477,9 +12018,6 @@ definitions:
         type: integer
       description:
         type: string
-      escalation_config:
-        additionalProperties: {}
-        type: object
       escalation_enabled:
         type: boolean
       high_days:
@@ -11498,6 +12036,18 @@ definitions:
         type: integer
       name:
         type: string
+      p0_days:
+        description: |-
+          P0Days..P3Days are the remediation windows per CTEM priority class.
+          They take precedence over the severity windows for every finding that
+          has a priority class.
+        type: integer
+      p1_days:
+        type: integer
+      p2_days:
+        type: integer
+      p3_days:
+        type: integer
       tenant_id:
         type: string
       updated_at:
@@ -11571,6 +12121,72 @@ definitions:
         type: string
     required:
     - name
+    type: object
+  internal_infra_http_handler.SavedViewRequest:
+    properties:
+      columns:
+        items:
+          type: string
+        type: array
+      density:
+        type: string
+      description:
+        type: string
+      filter:
+        type: object
+      from_view_id:
+        description: |-
+          FromViewID duplicates a view the caller can see into a new personal
+          view (how a team member changes a shared view, decision A1); the
+          other fields are ignored then, except name.
+        type: string
+      group_by:
+        type: string
+      group_id:
+        type: string
+      name:
+        type: string
+      page:
+        type: string
+      query:
+        type: string
+    type: object
+  internal_infra_http_handler.SavedViewResponse:
+    properties:
+      columns:
+        items:
+          type: string
+        type: array
+      created_at:
+        type: string
+      density:
+        type: string
+      description:
+        type: string
+      filter:
+        type: object
+      group_by:
+        type: string
+      group_id:
+        type: string
+      group_name:
+        type: string
+      id:
+        type: string
+      is_owner:
+        description: IsOwner says whether the caller may edit or delete it (decision
+          A1).
+        type: boolean
+      name:
+        type: string
+      owner_id:
+        type: string
+      owner_name:
+        type: string
+      page:
+        type: string
+      updated_at:
+        type: string
     type: object
   internal_infra_http_handler.ScanDetailResponse:
     properties:
@@ -11646,6 +12262,8 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        type: string
       schedule_time:
         type: string
       schedule_timezone:
@@ -11836,6 +12454,63 @@ definitions:
       tenant_id:
         type: string
     type: object
+  internal_infra_http_handler.ScanStageImplementationResponse:
+    properties:
+      default:
+        type: boolean
+      tool:
+        type: string
+    type: object
+  internal_infra_http_handler.ScanStageListResponse:
+    properties:
+      max_hops:
+        description: |-
+          MaxHops is how many discovery hops a derived target may be from the
+          run's seeds.
+        type: integer
+      stages:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanStageResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.ScanStageResponse:
+    properties:
+      description:
+        type: string
+      findings:
+        type: boolean
+      implementations:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanStageImplementationResponse'
+        type: array
+      inputs:
+        description: |-
+          Inputs and Outputs are stored type labels: "type" or
+          "type/sub_type" (service/http is an HTTP service).
+        items:
+          type: string
+        type: array
+      key:
+        type: string
+      max_fanout:
+        type: integer
+      name:
+        type: string
+      outputs:
+        items:
+          type: string
+        type: array
+      relations:
+        items:
+          type: string
+        type: array
+      tier:
+        enum:
+        - T0
+        - T1
+        - T2
+        type: string
+    type: object
   internal_infra_http_handler.ScanStatsResponse:
     properties:
       active:
@@ -11964,6 +12639,17 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.ScannerOutputResponse:
+    properties:
+      text:
+        type: string
+      truncated:
+        description: Cut at 64 KiB
+        type: boolean
+      updated_at:
+        description: When the latest sighting wrote it
+        type: string
+    type: object
   internal_infra_http_handler.ScannerTemplateResponse:
     properties:
       content_hash:
@@ -11998,6 +12684,38 @@ definitions:
       validation_error:
         type: string
       version:
+        type: string
+    type: object
+  internal_infra_http_handler.SchedulePreviewRequest:
+    properties:
+      count:
+        description: Count is how many occurrences to list, 1-10 (default 5).
+        type: integer
+      schedule_cron:
+        type: string
+      schedule_day:
+        type: integer
+      schedule_rrule:
+        type: string
+      schedule_time:
+        description: HH:MM
+        type: string
+      schedule_type:
+        type: string
+      timezone:
+        type: string
+    type: object
+  internal_infra_http_handler.SchedulePreviewResponse:
+    properties:
+      occurrences:
+        description: Occurrences are RFC 3339 timestamps with the timezone's offset,
+          in order.
+        items:
+          type: string
+        type: array
+      timezone:
+        description: Timezone the schedule is evaluated in (IANA; UTC when none was
+          given).
         type: string
     type: object
   internal_infra_http_handler.ScopeBulkOperationResponse:
@@ -13483,6 +14201,13 @@ definitions:
         items:
           type: string
         type: array
+      output_types:
+        description: |-
+          OutputTypes are the asset types a report of the tool may create
+          (scan stage catalog); read-only.
+        items:
+          type: string
+        type: array
       supported_targets:
         items:
           type: string
@@ -13631,6 +14356,12 @@ definitions:
         type: object
       scope:
         type: string
+      sub_type:
+        description: |-
+          SubType changes the kind within the asset's type (closed list from
+          GET /asset-types); "" clears it. The type itself cannot change.
+        maxLength: 50
+        type: string
       tags:
         items:
           type: string
@@ -13769,21 +14500,13 @@ definitions:
         maxLength: 1000
         type: string
       expires_at:
+        description: 'ExpiresAt: RFC 3339 timestamp in the future, or null to clear.'
+        format: date-time
         type: string
       name:
         maxLength: 255
         minLength: 1
         type: string
-    type: object
-  internal_infra_http_handler.UpdateDataScopePolicyRequest:
-    properties:
-      members_without_group_see:
-        enum:
-        - everything
-        - nothing
-        type: string
-    required:
-    - members_without_group_see
     type: object
   internal_infra_http_handler.UpdateFindingStatusRequest:
     properties:
@@ -13887,18 +14610,6 @@ definitions:
       name:
         maxLength: 255
         minLength: 1
-        type: string
-    type: object
-  internal_infra_http_handler.UpdatePermissionSetRequest:
-    properties:
-      description:
-        maxLength: 500
-        type: string
-      is_active:
-        type: boolean
-      name:
-        maxLength: 100
-        minLength: 2
         type: string
     type: object
   internal_infra_http_handler.UpdatePreferencesRequest:
@@ -14023,9 +14734,6 @@ definitions:
       description:
         maxLength: 500
         type: string
-      escalation_config:
-        additionalProperties: {}
-        type: object
       escalation_enabled:
         type: boolean
       high_days:
@@ -14052,6 +14760,22 @@ definitions:
         maxLength: 100
         minLength: 1
         type: string
+      p0_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p1_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p2_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p3_days:
+        maximum: 365
+        minimum: 1
+        type: integer
       warning_threshold_pct:
         maximum: 100
         minimum: 0
@@ -14130,6 +14854,12 @@ definitions:
         type: string
       schedule_day:
         type: integer
+      schedule_rrule:
+        description: |-
+          ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+          evaluated in timezone; at most every 15 minutes.
+        maxLength: 500
+        type: string
       schedule_time:
         type: string
       schedule_type:
@@ -14139,6 +14869,7 @@ definitions:
         - weekly
         - monthly
         - crontab
+        - rrule
         type: string
       sensor_preference:
         enum:
@@ -17333,6 +18064,13 @@ paths:
         in: query
         name: last_seen_before
         type: string
+      - description: 'Filter by attribution (comma-separated): confirmed (includes
+          assets with no record), needs_review, candidate, dependency, monitor_only,
+          rejected, unknown (no record), unconfirmed (needs_review+candidate), approved
+          (confirmed+unknown+dependency+monitor_only)'
+        in: query
+        name: attribution
+        type: string
       - description: Sort field (e.g., -created_at, name, -risk_score)
         in: query
         name: sort
@@ -17382,7 +18120,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a new asset for the current tenant
+      description: Creates a new asset for the current tenant. A name (or a correlated
+        address) that matches an existing asset is a 409 and nothing is changed; details.existing_asset_id
+        names the existing asset only when it is in the caller's data scope.
       parameters:
       - description: Asset data
         in: body
@@ -18741,7 +19481,7 @@ paths:
     get:
       description: Returns paginated audit logs for the current tenant
       parameters:
-      - description: Page number
+      - description: Page number (1-based; 0 or missing means 1)
         in: query
         name: page
         type: integer
@@ -18863,7 +19603,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Page number
+      - description: Page number (1-based; 0 or missing means 1)
         in: query
         name: page
         type: integer
@@ -18920,7 +19660,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Page number
+      - description: Page number (1-based; 0 or missing means 1)
         in: query
         name: page
         type: integer
@@ -21124,6 +21864,233 @@ paths:
       summary: Get global dashboard stats
       tags:
       - Dashboard
+  /easm/candidates:
+    get:
+      description: Assets the platform found but could not prove are the organization's
+        (attribution needs_review or candidate by default), most confident first,
+        each with its evidence. Narrowed to the caller's data scope.
+      parameters:
+      - description: Attribution states (comma-separated); default needs_review,candidate
+        in: query
+        name: states
+        type: string
+      - description: Asset types (comma-separated)
+        in: query
+        name: types
+        type: string
+      - description: Minimum confidence 0-100
+        in: query
+        name: min_confidence
+        type: integer
+      - description: Substring of the asset name
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Items per page
+        in: query
+        maximum: 100
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.ReviewPage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: EASM review queue
+      tags:
+      - Attack Surface
+  /easm/candidates/decisions:
+    post:
+      consumes:
+      - application/json
+      description: 'Record whether each asset is the organization''s: confirmed lets
+        scans reach it; rejected, dependency and monitor_only keep it passive. At
+        most 200 assets per call. Assets that are not the organization''s, are deleted
+        or are outside the caller''s data scope are listed in not_found. Each decision
+        is audited.'
+      parameters:
+      - description: Decision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.DecisionResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Decide EASM attribution in bulk
+      tags:
+      - Attack Surface
+  /easm/seeds:
+    get:
+      description: 'The organization''s seeds: what external-surface discovery expands
+        from. A root_domain seed is verified (dns_txt) while the organization has
+        a verified DNS TXT record for it or a parent.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.EASMSeedListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List EASM seeds
+      tags:
+      - Attack Surface
+    post:
+      consumes:
+      - application/json
+      description: Adds a seed discovery expands from. The caller must attest that
+        the organization is authorized to have it discovered and checked (recorded
+        with the user and time). Public suffixes and providers' shared domains are
+        refused. Audited.
+      parameters:
+      - description: Seed
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMSeedCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Add an EASM seed
+      tags:
+      - Attack Surface
+  /easm/seeds/{id}:
+    delete:
+      description: Removes a seed. Assets already discovered from it stay in the inventory
+        with their evidence. Audited.
+      parameters:
+      - description: Seed ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Remove an EASM seed
+      tags:
+      - Attack Surface
+    patch:
+      consumes:
+      - application/json
+      description: 'Changes a seed''s label or turns discovery from it on or off.
+        The kind and value cannot change: delete and add instead. Audited.'
+      parameters:
+      - description: Seed ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Changes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMSeedUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change an EASM seed
+      tags:
+      - Attack Surface
   /easm/summary:
     get:
       description: 'The external attack surface in one call: surface assets by type
@@ -21839,47 +22806,655 @@ paths:
       - Configuration
   /findings:
     get:
-      description: Retrieves a paginated list of findings for the current tenant
+      description: |-
+        Retrieves a paginated list of findings for the current tenant.
+        Filters follow the list query contract (RFC-048): every param is ANDed, a comma list is OR
+        within one field, and operators are suffixes (`_not`, `_gte`, `_gt`, `_lte`, `_lt`, `_contains`).
+        A bad value or an unsortable field is 400 INVALID_FILTER. Old names (severities, statuses,
+        exclude_statuses, sources, priority_classes, finding_ids, cve_ids, finding_types, asset_tags,
+        epss_min, search, assigned_to_me) still work and answer with Deprecation and Sunset headers.
       parameters:
-      - description: Filter by asset ID
+      - collectionFormat: csv
+        description: 'id: any of (comma list)'
         in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: 'id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: any of (comma list)'
+        in: query
+        items:
+          type: string
         name: asset_id
-        type: string
-      - description: Filter by branch ID
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: none of (comma list)'
         in: query
+        items:
+          type: string
+        name: asset_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
         name: branch_id
-        type: string
-      - description: Filter by component ID
+        type: array
+      - collectionFormat: csv
+        description: 'open on branch id: any of (comma list)'
         in: query
+        items:
+          type: string
+        name: open_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'fixed on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: fixed_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: any of (comma list)'
+        in: query
+        items:
+          type: string
         name: component_id
-        type: string
-      - description: Filter by vulnerability ID
+        type: array
+      - collectionFormat: csv
+        description: 'component id: none of (comma list)'
         in: query
+        items:
+          type: string
+        name: component_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: any of (comma list)'
+        in: query
+        items:
+          type: string
         name: vulnerability_id
-        type: string
-      - description: Filter by severities (comma-separated)
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: none of (comma list)'
         in: query
-        name: severities
-        type: string
-      - description: Filter by statuses (comma-separated)
+        items:
+          type: string
+        name: vulnerability_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'severity: any of (comma list)'
         in: query
-        name: statuses
-        type: string
-      - description: Exclude statuses (comma-separated)
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: 'severity: none of (comma list)'
         in: query
-        name: exclude_statuses
-        type: string
-      - description: Filter by sources
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity_not
+        type: array
+      - collectionFormat: csv
+        description: 'status: any of (comma list)'
         in: query
-        name: sources
-        type: string
-      - description: 'Filter by SLA status (comma-separated: on_track,warning,overdue,exceeded,not_applicable)'
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: 'status: none of (comma list)'
         in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status_not
+        type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
+      - collectionFormat: csv
+        description: 'source: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: 'source: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source_not
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
         name: sla_status
-        type: string
-      - description: Filter by tool name
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: none of (comma list)'
         in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status_not
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class_not
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type_not
+        type: array
+      - description: is in kev equals
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: is reachable equals
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: epss score at least
+        in: query
+        name: epss_score_gte
+        type: number
+      - description: epss score at most
+        in: query
+        name: epss_score_lte
+        type: number
+      - description: epss score greater than
+        in: query
+        name: epss_score_gt
+        type: number
+      - description: epss score less than
+        in: query
+        name: epss_score_lt
+        type: number
+      - collectionFormat: csv
+        description: 'tool name: any of (comma list)'
+        in: query
+        items:
+          type: string
         name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: 'tool name: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name_not
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id_not
+        type: array
+      - description: file path contains
+        in: query
+        name: file_path
+        type: string
+      - description: file path contains
+        in: query
+        name: file_path_contains
+        type: string
+      - collectionFormat: csv
+        description: 'asset tag: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - collectionFormat: csv
+        description: 'asset tag: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag_not
+        type: array
+      - description: related to equals
+        enum:
+        - me
+        in: query
+        name: related_to
+        type: string
+      - description: cvss score at least
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: cvss score at most
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: cvss score greater than
+        in: query
+        name: cvss_score_gt
+        type: number
+      - description: cvss score less than
+        in: query
+        name: cvss_score_lt
+        type: number
+      - description: first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lte
+        type: string
+      - description: first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gt
+        type: string
+      - description: first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lt
+        type: string
+      - description: last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lte
+        type: string
+      - description: last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gt
+        type: string
+      - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
+        type: string
+      - collectionFormat: csv
+        description: 'network port: any of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: 'network port: none of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port_not
+        type: array
+      - description: network port at least
+        in: query
+        name: network_port_gte
+        type: integer
+      - description: network port at most
+        in: query
+        name: network_port_lte
+        type: integer
+      - collectionFormat: csv
+        description: 'network transport: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: 'network transport: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport_not
+        type: array
+      - collectionFormat: csv
+        description: 'network service: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: 'network service: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service_not
+        type: array
+      - collectionFormat: csv
+        description: 'assigned to: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: assigned to is unset (true) or set (false)
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: 'assigned to: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
+      - description: exploit available equals
+        in: query
+        name: exploit_available
+        type: boolean
+      - description: created at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: created at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lte
+        type: string
+      - description: created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gt
+        type: string
+      - description: created at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lt
+        type: string
+      - description: updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gte
+        type: string
+      - description: updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lte
+        type: string
+      - description: updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gt
+        type: string
+      - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lt
+        type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
+        type: string
+      - description: Free text over title, description and file path
+        in: query
+        name: q
+        type: string
+      - description: Sort keys, - for descending (default priority_class,severity,-created_at)
+        in: query
+        name: sort
         type: string
       - default: 1
         description: Page number
@@ -21902,9 +23477,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
         "401":
           description: Unauthorized
           schema:
@@ -22268,6 +23841,58 @@ paths:
       security:
       - BearerAuth: []
       summary: Get finding data flows
+      tags:
+      - Findings
+  /findings/{id}/duplicates:
+    post:
+      consumes:
+      - application/json
+      description: Folds the finding named in the body into the finding in the path,
+        the original (RFC-043 §9). Both must be in the caller's organization and data
+        scope and on the same asset, and neither may already be a duplicate. The canonical
+        finding keeps the stronger status and inherits the duplicate's comments, activities,
+        retests, evidence, tickets and fingerprints; the duplicate stays as a tombstone
+        (status duplicate, duplicate_of). Merging with a false positive or risk acceptance
+        also requires findings:approve. Pentest findings are managed in the pentest
+        module. Returns the canonical finding.
+      parameters:
+      - description: ID of the original finding
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: The finding that duplicates it
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AddFindingDuplicateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Mark a finding as a duplicate of this one
       tags:
       - Findings
   /findings/{id}/retests:
@@ -22635,6 +24260,2067 @@ paths:
       summary: Bulk update finding status
       tags:
       - Findings
+  /findings/export:
+    get:
+      description: |-
+        Streams every finding the list's filter selects as CSV (default) or NDJSON (`format=ndjson`),
+        in id order, at most 100,000 rows; the X-Export-Truncated trailer says whether rows were left
+        out. Same scope as GET /findings. Needs findings:export. One export per user at a time (429
+        otherwise). Audit-logged without filter values. CSV formula cells are neutralized.
+      parameters:
+      - description: csv (default) or ndjson
+        enum:
+        - csv
+        - ndjson
+        in: query
+        name: format
+        type: string
+      - collectionFormat: csv
+        description: 'id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: 'id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'open on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: open_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'fixed on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: fixed_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'severity: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: 'severity: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity_not
+        type: array
+      - collectionFormat: csv
+        description: 'status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: 'status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status_not
+        type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
+      - collectionFormat: csv
+        description: 'source: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: 'source: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source_not
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status_not
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class_not
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type_not
+        type: array
+      - description: is in kev equals
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: is reachable equals
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: epss score at least
+        in: query
+        name: epss_score_gte
+        type: number
+      - description: epss score at most
+        in: query
+        name: epss_score_lte
+        type: number
+      - description: epss score greater than
+        in: query
+        name: epss_score_gt
+        type: number
+      - description: epss score less than
+        in: query
+        name: epss_score_lt
+        type: number
+      - collectionFormat: csv
+        description: 'tool name: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: 'tool name: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name_not
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id_not
+        type: array
+      - description: file path contains
+        in: query
+        name: file_path
+        type: string
+      - description: file path contains
+        in: query
+        name: file_path_contains
+        type: string
+      - collectionFormat: csv
+        description: 'asset tag: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - collectionFormat: csv
+        description: 'asset tag: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag_not
+        type: array
+      - description: related to equals
+        enum:
+        - me
+        in: query
+        name: related_to
+        type: string
+      - description: cvss score at least
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: cvss score at most
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: cvss score greater than
+        in: query
+        name: cvss_score_gt
+        type: number
+      - description: cvss score less than
+        in: query
+        name: cvss_score_lt
+        type: number
+      - description: first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lte
+        type: string
+      - description: first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gt
+        type: string
+      - description: first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lt
+        type: string
+      - description: last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lte
+        type: string
+      - description: last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gt
+        type: string
+      - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
+        type: string
+      - collectionFormat: csv
+        description: 'network port: any of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: 'network port: none of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port_not
+        type: array
+      - description: network port at least
+        in: query
+        name: network_port_gte
+        type: integer
+      - description: network port at most
+        in: query
+        name: network_port_lte
+        type: integer
+      - collectionFormat: csv
+        description: 'network transport: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: 'network transport: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport_not
+        type: array
+      - collectionFormat: csv
+        description: 'network service: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: 'network service: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service_not
+        type: array
+      - collectionFormat: csv
+        description: 'assigned to: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: assigned to is unset (true) or set (false)
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: 'assigned to: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
+      - description: exploit available equals
+        in: query
+        name: exploit_available
+        type: boolean
+      - description: created at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: created at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lte
+        type: string
+      - description: created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gt
+        type: string
+      - description: created at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lt
+        type: string
+      - description: updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gte
+        type: string
+      - description: updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lte
+        type: string
+      - description: updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gt
+        type: string
+      - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lt
+        type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
+        type: string
+      - description: Free text
+        in: query
+        name: q
+        type: string
+      produces:
+      - text/csv
+      - application/x-ndjson
+      responses:
+        "200":
+          description: CSV or NDJSON stream
+          schema:
+            type: string
+        "400":
+          description: INVALID_FILTER
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export findings
+      tags:
+      - Findings
+    post:
+      consumes:
+      - application/json
+      description: POST /findings/search's FilterDocument body, streamed like GET
+        /findings/export.
+      parameters:
+      - description: csv (default) or ndjson
+        enum:
+        - csv
+        - ndjson
+        in: query
+        name: format
+        type: string
+      - description: Filter document
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.FindingSearchRequest'
+      produces:
+      - text/csv
+      - application/x-ndjson
+      responses:
+        "200":
+          description: CSV or NDJSON stream
+          schema:
+            type: string
+        "400":
+          description: INVALID_FILTER
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export findings selected by a filter document
+      tags:
+      - Findings
+  /findings/groups:
+    get:
+      description: |-
+        Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
+        (RFC-048), so a grouped view counts exactly the rows the list shows.
+      parameters:
+      - description: cve_id (default), rule_id, asset_id, owner_id, component_id,
+          severity, source, finding_type, family
+        in: query
+        name: group_by
+        type: string
+      - collectionFormat: csv
+        description: 'id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: 'id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'open on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: open_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'fixed on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: fixed_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'severity: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: 'severity: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity_not
+        type: array
+      - collectionFormat: csv
+        description: 'status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: 'status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status_not
+        type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
+      - collectionFormat: csv
+        description: 'source: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: 'source: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source_not
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status_not
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class_not
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type_not
+        type: array
+      - description: is in kev equals
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: is reachable equals
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: epss score at least
+        in: query
+        name: epss_score_gte
+        type: number
+      - description: epss score at most
+        in: query
+        name: epss_score_lte
+        type: number
+      - description: epss score greater than
+        in: query
+        name: epss_score_gt
+        type: number
+      - description: epss score less than
+        in: query
+        name: epss_score_lt
+        type: number
+      - collectionFormat: csv
+        description: 'tool name: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: 'tool name: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name_not
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id_not
+        type: array
+      - description: file path contains
+        in: query
+        name: file_path
+        type: string
+      - description: file path contains
+        in: query
+        name: file_path_contains
+        type: string
+      - collectionFormat: csv
+        description: 'asset tag: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - collectionFormat: csv
+        description: 'asset tag: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag_not
+        type: array
+      - description: related to equals
+        enum:
+        - me
+        in: query
+        name: related_to
+        type: string
+      - description: cvss score at least
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: cvss score at most
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: cvss score greater than
+        in: query
+        name: cvss_score_gt
+        type: number
+      - description: cvss score less than
+        in: query
+        name: cvss_score_lt
+        type: number
+      - description: first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lte
+        type: string
+      - description: first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gt
+        type: string
+      - description: first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lt
+        type: string
+      - description: last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lte
+        type: string
+      - description: last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gt
+        type: string
+      - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
+        type: string
+      - collectionFormat: csv
+        description: 'network port: any of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: 'network port: none of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port_not
+        type: array
+      - description: network port at least
+        in: query
+        name: network_port_gte
+        type: integer
+      - description: network port at most
+        in: query
+        name: network_port_lte
+        type: integer
+      - collectionFormat: csv
+        description: 'network transport: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: 'network transport: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport_not
+        type: array
+      - collectionFormat: csv
+        description: 'network service: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: 'network service: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service_not
+        type: array
+      - collectionFormat: csv
+        description: 'assigned to: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: assigned to is unset (true) or set (false)
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: 'assigned to: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
+      - description: exploit available equals
+        in: query
+        name: exploit_available
+        type: boolean
+      - description: created at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: created at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lte
+        type: string
+      - description: created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gt
+        type: string
+      - description: created at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lt
+        type: string
+      - description: updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gte
+        type: string
+      - description: updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lte
+        type: string
+      - description: updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gt
+        type: string
+      - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lt
+        type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
+        type: string
+      - description: Free text
+        in: query
+        name: q
+        type: string
+      - description: Ignored by groups (accepted for URL parity with the list)
+        in: query
+        name: sort
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Groups per page
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
+      security:
+      - BearerAuth: []
+      summary: Group findings
+      tags:
+      - Findings
+  /findings/related-cves/{cveId}:
+    get:
+      description: |-
+        CVEs sharing a component with the given CVE, among the open findings the filter selects
+        (the params of GET /findings, RFC-048). The source CVE's components come only from findings
+        the caller may see.
+      parameters:
+      - description: CVE id
+        in: path
+        name: cveId
+        required: true
+        type: string
+      - collectionFormat: csv
+        description: 'id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: 'id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'open on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: open_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'fixed on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: fixed_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'severity: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: 'severity: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity_not
+        type: array
+      - collectionFormat: csv
+        description: 'status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: 'status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status_not
+        type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
+      - collectionFormat: csv
+        description: 'source: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: 'source: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source_not
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status_not
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class_not
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type_not
+        type: array
+      - description: is in kev equals
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: is reachable equals
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: epss score at least
+        in: query
+        name: epss_score_gte
+        type: number
+      - description: epss score at most
+        in: query
+        name: epss_score_lte
+        type: number
+      - description: epss score greater than
+        in: query
+        name: epss_score_gt
+        type: number
+      - description: epss score less than
+        in: query
+        name: epss_score_lt
+        type: number
+      - collectionFormat: csv
+        description: 'tool name: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: 'tool name: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name_not
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id_not
+        type: array
+      - description: file path contains
+        in: query
+        name: file_path
+        type: string
+      - description: file path contains
+        in: query
+        name: file_path_contains
+        type: string
+      - collectionFormat: csv
+        description: 'asset tag: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - collectionFormat: csv
+        description: 'asset tag: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag_not
+        type: array
+      - description: related to equals
+        enum:
+        - me
+        in: query
+        name: related_to
+        type: string
+      - description: cvss score at least
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: cvss score at most
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: cvss score greater than
+        in: query
+        name: cvss_score_gt
+        type: number
+      - description: cvss score less than
+        in: query
+        name: cvss_score_lt
+        type: number
+      - description: first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lte
+        type: string
+      - description: first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gt
+        type: string
+      - description: first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lt
+        type: string
+      - description: last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lte
+        type: string
+      - description: last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gt
+        type: string
+      - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
+        type: string
+      - collectionFormat: csv
+        description: 'network port: any of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: 'network port: none of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port_not
+        type: array
+      - description: network port at least
+        in: query
+        name: network_port_gte
+        type: integer
+      - description: network port at most
+        in: query
+        name: network_port_lte
+        type: integer
+      - collectionFormat: csv
+        description: 'network transport: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: 'network transport: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport_not
+        type: array
+      - collectionFormat: csv
+        description: 'network service: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: 'network service: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service_not
+        type: array
+      - collectionFormat: csv
+        description: 'assigned to: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: assigned to is unset (true) or set (false)
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: 'assigned to: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
+      - description: exploit available equals
+        in: query
+        name: exploit_available
+        type: boolean
+      - description: created at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: created at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lte
+        type: string
+      - description: created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gt
+        type: string
+      - description: created at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lt
+        type: string
+      - description: updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gte
+        type: string
+      - description: updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lte
+        type: string
+      - description: updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gt
+        type: string
+      - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lt
+        type: string
+      - description: Free text
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: INVALID_FILTER
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Related CVEs
+      tags:
+      - Findings
   /findings/remediation-groups:
     get:
       description: Groups the tenant's open findings by the fix that resolves them
@@ -22671,26 +26357,690 @@ paths:
       summary: Resolve a remediation group
       tags:
       - Findings
+  /findings/search:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Lists findings selected by a FilterDocument (RFC-048): all/any/not groups with field/op/value
+        leaves, for OR, nesting and id lists of up to 500. Same fields, permission, scope and
+        response as GET /findings. Limits: 50 leaves, depth 3, 32 KB body. A bad document is 400
+        INVALID_FILTER with the JSON path of each problem. Read-only.
+      parameters:
+      - description: Filter document
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.FindingSearchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: INVALID_FILTER with details[].path
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Search findings with a filter document
+      tags:
+      - Findings
   /findings/stats:
     get:
       description: |-
-        Returns aggregated statistics for findings. Optional asset_id query
-        parameter scopes the stats to a single asset (used by the Findings
-        page when filtered by `?assetId=…` so the severity cards match the
-        filtered table instead of showing global tenant counts).
-        Optional sources query parameter (comma-separated, same values and
-        validation as the list endpoint's sources filter) scopes every
-        number to those sources; the Exposures type pages use it to get
-        their counts in one request instead of walking the list.
+        Aggregated statistics over the findings a filter selects. Takes every filter param of
+        GET /findings (RFC-048) and compiles the same WHERE, so the numbers always match the table
+        (the old asset_id and sources params are part of that filter).
       parameters:
-      - description: Restrict stats to a single asset
+      - collectionFormat: csv
+        description: 'id: any of (comma list)'
         in: query
+        items:
+          type: string
+        name: id
+        type: array
+      - collectionFormat: csv
+        description: 'id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: id_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: any of (comma list)'
+        in: query
+        items:
+          type: string
         name: asset_id
-        type: string
-      - description: Restrict stats to these finding sources (comma-separated, max
-          25)
+        type: array
+      - collectionFormat: csv
+        description: 'asset id: none of (comma list)'
         in: query
-        name: sources
+        items:
+          type: string
+        name: asset_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'open on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: open_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'fixed on branch id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: fixed_on_branch_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id
+        type: array
+      - collectionFormat: csv
+        description: 'component id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: component_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id
+        type: array
+      - collectionFormat: csv
+        description: 'vulnerability id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: vulnerability_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'severity: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity
+        type: array
+      - collectionFormat: csv
+        description: 'severity: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+          - none
+          type: string
+        name: severity_not
+        type: array
+      - collectionFormat: csv
+        description: 'status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status
+        type: array
+      - collectionFormat: csv
+        description: 'status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - new
+          - confirmed
+          - in_progress
+          - fix_applied
+          - validated_fixed
+          - not_observed
+          - resolved
+          - false_positive
+          - accepted
+          - duplicate
+          - draft
+          - in_review
+          - remediation
+          - retest
+          - verified
+          - accepted_risk
+          type: string
+        name: status_not
+        type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
+      - collectionFormat: csv
+        description: 'source: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source
+        type: array
+      - collectionFormat: csv
+        description: 'source: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - sast
+          - dast
+          - sca
+          - secret
+          - iac
+          - container
+          - cspm
+          - easm
+          - va
+          - rasp
+          - waf
+          - siem
+          - manual
+          - pentest
+          - bug_bounty
+          - red_team
+          - external
+          - threat_intel
+          - vendor
+          - sarif
+          - sca_tool
+          type: string
+        name: source_not
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status
+        type: array
+      - collectionFormat: csv
+        description: 'sla status: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - on_track
+          - warning
+          - overdue
+          - exceeded
+          - not_applicable
+          type: string
+        name: sla_status_not
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class
+        type: array
+      - collectionFormat: csv
+        description: 'priority class: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - P0
+          - P1
+          - P2
+          - P3
+          type: string
+        name: priority_class_not
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id
+        type: array
+      - collectionFormat: csv
+        description: 'cve id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: cve_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'family: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family
+        type: array
+      - collectionFormat: csv
+        description: 'family: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: family_not
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type
+        type: array
+      - collectionFormat: csv
+        description: 'finding type: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - vulnerability
+          - secret
+          - misconfiguration
+          - compliance
+          - web3
+          type: string
+        name: finding_type_not
+        type: array
+      - description: is in kev equals
+        in: query
+        name: is_in_kev
+        type: boolean
+      - description: is reachable equals
+        in: query
+        name: is_reachable
+        type: boolean
+      - description: epss score at least
+        in: query
+        name: epss_score_gte
+        type: number
+      - description: epss score at most
+        in: query
+        name: epss_score_lte
+        type: number
+      - description: epss score greater than
+        in: query
+        name: epss_score_gt
+        type: number
+      - description: epss score less than
+        in: query
+        name: epss_score_lt
+        type: number
+      - collectionFormat: csv
+        description: 'tool name: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name
+        type: array
+      - collectionFormat: csv
+        description: 'tool name: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: tool_name_not
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id
+        type: array
+      - collectionFormat: csv
+        description: 'rule id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: rule_id_not
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id
+        type: array
+      - collectionFormat: csv
+        description: 'scan id: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: scan_id_not
+        type: array
+      - description: file path contains
+        in: query
+        name: file_path
+        type: string
+      - description: file path contains
+        in: query
+        name: file_path_contains
+        type: string
+      - collectionFormat: csv
+        description: 'asset tag: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag
+        type: array
+      - collectionFormat: csv
+        description: 'asset tag: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_tag_not
+        type: array
+      - description: related to equals
+        enum:
+        - me
+        in: query
+        name: related_to
+        type: string
+      - description: cvss score at least
+        in: query
+        name: cvss_score_gte
+        type: number
+      - description: cvss score at most
+        in: query
+        name: cvss_score_lte
+        type: number
+      - description: cvss score greater than
+        in: query
+        name: cvss_score_gt
+        type: number
+      - description: cvss score less than
+        in: query
+        name: cvss_score_lt
+        type: number
+      - description: first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gte
+        type: string
+      - description: first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lte
+        type: string
+      - description: first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_gt
+        type: string
+      - description: first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: first_detected_at_lt
+        type: string
+      - description: last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gte
+        type: string
+      - description: last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lte
+        type: string
+      - description: last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_gt
+        type: string
+      - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
+        type: string
+      - collectionFormat: csv
+        description: 'network port: any of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port
+        type: array
+      - collectionFormat: csv
+        description: 'network port: none of (comma list)'
+        in: query
+        items:
+          type: integer
+        name: network_port_not
+        type: array
+      - description: network port at least
+        in: query
+        name: network_port_gte
+        type: integer
+      - description: network port at most
+        in: query
+        name: network_port_lte
+        type: integer
+      - collectionFormat: csv
+        description: 'network transport: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport
+        type: array
+      - collectionFormat: csv
+        description: 'network transport: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - tcp
+          - udp
+          - sctp
+          type: string
+        name: network_transport_not
+        type: array
+      - collectionFormat: csv
+        description: 'network service: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service
+        type: array
+      - collectionFormat: csv
+        description: 'network service: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: network_service_not
+        type: array
+      - collectionFormat: csv
+        description: 'assigned to: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to
+        type: array
+      - description: assigned to is unset (true) or set (false)
+        in: query
+        name: assigned_to_null
+        type: boolean
+      - collectionFormat: csv
+        description: 'assigned to: none of (comma list)'
+        in: query
+        items:
+          type: string
+        name: assigned_to_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: any of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality
+        type: array
+      - collectionFormat: csv
+        description: 'asset criticality: none of (comma list)'
+        in: query
+        items:
+          enum:
+          - critical
+          - high
+          - medium
+          - low
+          type: string
+        name: asset_criticality_not
+        type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
+      - description: exploit available equals
+        in: query
+        name: exploit_available
+        type: boolean
+      - description: created at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gte
+        type: string
+      - description: created at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lte
+        type: string
+      - description: created at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_gt
+        type: string
+      - description: created at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: created_at_lt
+        type: string
+      - description: updated at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gte
+        type: string
+      - description: updated at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lte
+        type: string
+      - description: updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_gt
+        type: string
+      - description: updated at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: updated_at_lt
+        type: string
+      - description: 'Saved view ID: its filter, with the other params overriding
+          it field by field'
+        in: query
+        name: view
+        type: string
+      - description: Free text
+        in: query
+        name: q
         type: string
       produces:
       - application/json
@@ -22702,9 +27052,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Response'
         "401":
           description: Unauthorized
           schema:
@@ -23138,87 +27486,6 @@ paths:
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
       summary: Update a member's role
-      tags:
-      - groups
-  /groups/{groupId}/permission-sets:
-    get:
-      description: Get all permission sets assigned to the group with full details
-      parameters:
-      - description: Group ID
-        in: path
-        name: groupId
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/internal_infra_http_handler.PermissionSetResponse'
-            type: array
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: List permission sets assigned to a group
-      tags:
-      - groups
-    post:
-      consumes:
-      - application/json
-      description: Assign a permission set to the group
-      parameters:
-      - description: Group ID
-        in: path
-        name: groupId
-        required: true
-        type: string
-      - description: Permission set details
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.AssignPermissionSetRequest'
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Assign a permission set to a group
-      tags:
-      - groups
-  /groups/{groupId}/permission-sets/{permissionSetId}:
-    delete:
-      description: Remove a permission set assignment from the group
-      parameters:
-      - description: Group ID
-        in: path
-        name: groupId
-        required: true
-        type: string
-      - description: Permission Set ID
-        in: path
-        name: permissionSetId
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Remove a permission set from a group
       tags:
       - groups
   /groups/sync:
@@ -24209,6 +28476,155 @@ paths:
       summary: Test integration credentials without creating
       tags:
       - Integrations
+  /invitations/accept:
+    post:
+      consumes:
+      - application/json
+      description: Joins the organization of the invitation. The caller must be signed
+        in as the invited email. The token travels in the body, never in the URL.
+      parameters:
+      - description: Invitation token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.InvitationTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.MemberResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Accept an invitation
+      tags:
+      - Invitations
+  /invitations/accept-with-refresh:
+    post:
+      consumes:
+      - application/json
+      description: 'For an invited user without an organization yet: accepts the invitation
+        and issues an access token for the new organization. The refresh token comes
+        from the body or the httpOnly cookie (cookie requires the CSRF pair). The
+        invitation token travels in the body, never in the URL.'
+      parameters:
+      - description: Invitation token and optional refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AcceptInvitationWithRefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AcceptInvitationWithRefreshResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Accept an invitation with a refresh token
+      tags:
+      - Invitations
+  /invitations/decline:
+    post:
+      consumes:
+      - application/json
+      description: Deletes the invitation. Holding the token is the authorization,
+        so no sign-in is needed. The token travels in the body, never in the URL.
+      parameters:
+      - description: Invitation token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.InvitationTokenRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Decline an invitation
+      tags:
+      - Invitations
+  /invitations/lookup:
+    post:
+      consumes:
+      - application/json
+      description: 'What an invitation token grants, readable before sign-in: the
+        organization, the invited email and role, and whether it is still pending.
+        The token travels in the body, never in the URL.'
+      parameters:
+      - description: Invitation token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.InvitationTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.InvitationLookupResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Look up an invitation
+      tags:
+      - Invitations
   /me/assets:
     get:
       description: List all assets the current user can access through their group
@@ -24321,18 +28737,55 @@ paths:
       - Modules
   /me/permissions:
     get:
-      description: Get all effective permissions for the current user based on their
-        group memberships
+      description: |-
+        Returns the permissions for the authenticated user in the current tenant.
+        Supports ETag-based caching: send If-None-Match header to check for changes.
+      parameters:
+      - description: ETag from previous response
+        in: header
+        name: If-None-Match
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.EffectivePermissionsResponse'
-      summary: Get effective permissions for current user
+            $ref: '#/definitions/internal_infra_http_handler.PermissionsResponse'
+        "304":
+          description: Not Modified - permissions unchanged
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get current user permissions
       tags:
-      - permissions
+      - Permissions
+  /meta/filters/findings:
+    get:
+      description: |-
+        The machine-readable filter contract of the findings list (RFC-048): fields, types, operators,
+        flat param names, enums, sortability, old param aliases and limits, plus the FilterDocument
+        JSON Schema. Fields the caller may not use are left out.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Findings filter contract
+      tags:
+      - Findings
   /notification-outbox:
     get:
       consumes:
@@ -24684,6 +29137,158 @@ paths:
       summary: Get unread notification count
       tags:
       - notifications
+  /organization/members/{member_id}/access-report:
+    get:
+      description: Everything the member holds in the organization (roles, access
+        groups, API keys, pentest engagements, direct grants, visible assets) and
+        owns (scans, report schedules, workflows, open assigned findings, assets).
+        Drives the offboarding wizard. Owner or administrator.
+      parameters:
+      - description: Membership ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Member access report
+      tags:
+      - Tenants
+  /organization/members/{member_id}/erase:
+    post:
+      description: 'Owner only, after offboarding, and only when the person belongs
+        to no other organization: the name becomes "Deleted user #<hash>", the email
+        a non-deliverable placeholder, and credentials, second factor and federated
+        identity are cleared. Rows and foreign keys stay, so history shows the placeholder.'
+      parameters:
+      - description: Membership ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Erase an offboarded member's personal data
+      tags:
+      - Tenants
+  /organization/members/{member_id}/mfa:
+    delete:
+      description: An owner or administrator turns off the second factor of a member
+        of their organization who lost their authenticator and recovery codes. The
+        member is signed out everywhere and e-mailed. An owner or administrator target
+        needs the owner; a member who also belongs to another organization needs the
+        same authority there; nobody resets their own factor here.
+      parameters:
+      - description: Membership ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reset a member's two-factor authentication
+      tags:
+      - Tenants
+  /organization/members/{member_id}/offboard:
+    post:
+      consumes:
+      - application/json
+      description: Reassigns the member's owned work (mandatory for every category
+        they own something in) to another active member, revokes their API keys, removes
+        their access groups, grants, engagements, roles and invitations, and keeps
+        the membership as a tombstone so history stays valid. A later invitation starts
+        from zero. 409 reassignment_required lists the categories still without a
+        new owner. Owner or administrator; only the owner offboards an administrator.
+      parameters:
+      - description: Membership ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      - description: Who takes over the member's work
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.OffboardMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.OffboardResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Offboard a member
+      tags:
+      - Tenants
   /organization/settings/retest:
     get:
       description: The tenant's auto-retest settings (RFC-039). auto_enabled is false
@@ -24741,87 +29346,55 @@ paths:
       summary: Update auto-retest settings
       tags:
       - Tenants
-  /permission-sets:
+  /pipeline-runs/{id}/stages:
     get:
-      description: List all permission sets for the tenant
+      description: 'How each stage of the run was planned: inputs, planned targets
+        and skipped targets by reason (counts only). A run of another organization
+        is not found.'
       parameters:
-      - description: Include system permission sets
-        in: query
-        name: include_system
-        type: boolean
-      - description: Filter by type
-        in: query
-        name: type
+      - description: Run ID
+        in: path
+        name: id
+        required: true
         type: string
-      - description: Search by name
-        in: query
-        name: search
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.RunStageListResponse'
+      security:
+      - BearerAuth: []
+      summary: List a run's stage plans
+      tags:
+      - Pipelines
+  /pipeline-runs/{id}/tasks:
+    get:
+      description: One page of the run's tasks (one dispatched command each) in dispatch
+        order. Page with next_cursor. Targets are counted, not listed.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
         type: string
-      - default: 20
-        description: Limit results
+      - description: next_cursor of the previous page
         in: query
-        name: limit
+        name: cursor
+        type: string
+      - default: 50
+        description: Tasks per page (1-200)
+        in: query
+        name: per_page
         type: integer
-      - default: 0
-        description: Offset for pagination
-        in: query
-        name: offset
-        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.PermissionSetListResponse'
-      summary: List permission sets
-      tags:
-      - permission-sets
-    post:
-      consumes:
-      - application/json
-      description: Create a new permission set for access control
-      parameters:
-      - description: Permission set details
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.CreatePermissionSetRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.PermissionSetResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Create a new permission set
-      tags:
-      - permission-sets
-  /permission-sets/{id}:
-    delete:
-      description: Delete a permission set
-      parameters:
-      - description: Permission set ID
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
+            $ref: '#/definitions/internal_infra_http_handler.RunTaskPageResponse'
         "400":
           description: Bad Request
           schema:
@@ -24830,141 +29403,11 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Delete a permission set
+      security:
+      - BearerAuth: []
+      summary: List a run's tasks
       tags:
-      - permission-sets
-    get:
-      description: Get detailed information about a permission set
-      parameters:
-      - description: Permission set ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.PermissionSetWithItemsResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Get a permission set by ID
-      tags:
-      - permission-sets
-    put:
-      consumes:
-      - application/json
-      description: Update an existing permission set
-      parameters:
-      - description: Permission set ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Update details
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.UpdatePermissionSetRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.PermissionSetResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Update a permission set
-      tags:
-      - permission-sets
-  /permission-sets/{id}/permissions:
-    post:
-      consumes:
-      - application/json
-      description: Add a permission to a permission set
-      parameters:
-      - description: Permission set ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Permission details
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.AddPermissionRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Add a permission to a set
-      tags:
-      - permission-sets
-  /permission-sets/{id}/permissions/{permissionId}:
-    delete:
-      description: Remove a permission from a permission set
-      parameters:
-      - description: Permission set ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Permission ID
-        in: path
-        name: permissionId
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Remove a permission from a set
-      tags:
-      - permission-sets
-  /permission-sets/system:
-    get:
-      description: List all system-defined permission sets
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/internal_infra_http_handler.PermissionSetResponse'
-            type: array
-      summary: List system permission sets
-      tags:
-      - permission-sets
+      - Pipelines
   /repositories/{repository_id}/branches:
     get:
       description: Retrieves all branches for a repository
@@ -26532,6 +30975,12 @@ paths:
         in: query
         name: include_ad_hoc
         type: boolean
+      - default: name
+        description: 'One sort key, - for descending: name, created_at, last_run_at,
+          next_run_at, total_runs'
+        in: query
+        name: sort
+        type: string
       - default: 1
         description: Page number
         in: query
@@ -27329,6 +31778,85 @@ paths:
       summary: Import scan configuration
       tags:
       - Scans
+  /scans/schedule-preview:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Validates a schedule exactly as saving a scan would (cron or
+        RRULE, timezone, the 15-minute minimum) and lists its next
+        occurrences in its timezone. Reads and stores nothing.
+      parameters:
+      - description: Schedule
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SchedulePreviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SchedulePreviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Preview a scan schedule
+      tags:
+      - Scans
+  /scans/sensor-opt-in-impact:
+    get:
+      description: The organization's switches for out-of-band callbacks (interactsh)
+        and custom templates in sensor jobs (both off unless an owner enabled them,
+        research/25 D3), and the scans whose scanner_config asks for either (at most
+        100; truncated says more exist). While a switch is off, those scans run without
+        interactsh or are refused (custom templates).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.OptInImpact'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Scans affected by the sensor opt-ins
+      tags:
+      - Scans
+  /scans/stages:
+    get:
+      description: 'The scan stage catalog: each capability with the asset types it
+        consumes and produces, its intrusiveness tier and the tools that implement
+        it.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanStageListResponse'
+      security:
+      - BearerAuth: []
+      summary: List scan stages
+      tags:
+      - Scans
   /scans/stats:
     get:
       consumes:
@@ -27503,6 +32031,11 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
           description: Not Found
           schema:
@@ -27575,6 +32108,11 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
@@ -27695,6 +32233,11 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScopeExclusionResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Takes an exclusion in effect out of effect or shortens it without
+            the approval permission, or by its requester
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
@@ -28655,6 +33198,49 @@ paths:
       security:
       - BearerAuth: []
       summary: Update credential
+      tags:
+      - Credentials
+  /secret-store/{id}/rotate:
+    post:
+      consumes:
+      - application/json
+      description: Replace the secret of a credential in place. Send the data field
+        matching the credential's type. Sources bound to the credential use the new
+        value on their next fetch.
+      parameters:
+      - description: Credential ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New secret
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.RotateCredentialRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CredentialResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Rotate credential
       tags:
       - Credentials
   /sensors:
@@ -31317,86 +35903,6 @@ paths:
       summary: List pending invitations
       tags:
       - Tenants
-  /tenants/{tenant}/settings/data-scope:
-    get:
-      description: 'Returns what members who are in no access group see: everything
-        (all assets and findings) or nothing. Owners and admins always see everything.'
-      parameters:
-      - description: Tenant ID or slug
-        in: path
-        name: tenant
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.DataScopePolicyResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get the data scope of members without an access group
-      tags:
-      - Tenants
-    patch:
-      consumes:
-      - application/json
-      description: 'Sets what members who are in no access group see: everything (all
-        assets and findings) or nothing. Owners and admins always see everything.
-        The change is audited.'
-      parameters:
-      - description: Tenant ID or slug
-        in: path
-        name: tenant
-        required: true
-        type: string
-      - description: Policy
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.UpdateDataScopePolicyRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.DataScopePolicyResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Set the data scope of members without an access group
-      tags:
-      - Tenants
   /tenants/{tenant}/settings/sso/changes:
     get:
       description: Owner only. SAML and identity-provider changes a platform administrator
@@ -32125,15 +36631,16 @@ paths:
     post:
       consumes:
       - application/json
-      description: Confirms the authenticator with a code and turns 2FA on. Signs
-        out every other session. Returns recovery codes, shown once.
+      description: Confirms the authenticator with a code and turns 2FA on. Needs
+        the current password. Signs out every other session. Returns recovery codes,
+        shown once.
       parameters:
-      - description: Authenticator code
+      - description: Current password and authenticator code
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_infra_http_handler.MFACodeRequest'
+          $ref: '#/definitions/internal_infra_http_handler.MFAEnableRequest'
       produces:
       - application/json
       responses:
@@ -32299,7 +36806,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.UserResponse'
+            $ref: '#/definitions/internal_infra_http_handler.PreferencesDTO'
         "400":
           description: Bad Request
           schema:
@@ -32441,6 +36948,156 @@ paths:
       summary: API version
       tags:
       - System
+  /views:
+    get:
+      description: The caller's saved views of a page and the ones shared with their
+        groups.
+      parameters:
+      - description: Page
+        enum:
+        - findings
+        in: query
+        name: page
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List saved views
+      tags:
+      - Saved views
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Saves a filter (a FilterDocument, or the page's flat query) and page state. Validated against
+        the page's filter fields (400 INVALID_FILTER). group_id shares it with one of the caller's groups.
+        from_view_id instead copies a view the caller can see into a new personal view (A1).
+      parameters:
+      - description: View
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SavedViewRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SavedViewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Limit reached
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save a view
+      tags:
+      - Saved views
+  /views/{id}:
+    delete:
+      parameters:
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a saved view
+      tags:
+      - Saved views
+    get:
+      parameters:
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SavedViewResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a saved view
+      tags:
+      - Saved views
+    put:
+      consumes:
+      - application/json
+      description: Only the owner may change a view (403 for a shared view of someone
+        else; duplicate it instead).
+      parameters:
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: View
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SavedViewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SavedViewResponse'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a saved view
+      tags:
+      - Saved views
   /vulnerabilities:
     get:
       description: Retrieves a paginated list of CVE vulnerabilities

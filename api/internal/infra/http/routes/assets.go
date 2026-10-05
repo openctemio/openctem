@@ -63,7 +63,7 @@ func registerAssetRoutes(
 
 		// Sync and scan operations (repository assets)
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.AssetsWrite))
-		r.POST("/{id}/scan", h.TriggerScan, middleware.Require(permission.AssetsWrite))
+		r.POST("/{id}/scan", h.TriggerScan, middleware.RequireAll(permission.AssetsWrite, permission.ScansExecute))
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AssetsDelete))
@@ -379,6 +379,29 @@ func registerEASMRoutes(
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 	router.Group("/api/v1/easm", func(r Router) {
 		r.GET("/summary", h.Summary, middleware.Require(permission.AssetsRead))
+		if h.HasReview() {
+			r.GET("/candidates", h.Candidates, middleware.Require(permission.AssetsRead))
+			r.POST("/candidates/decisions", h.Decide, middleware.Require(permission.AssetsWrite))
+		}
+	}, tenantMiddlewares...)
+}
+
+// registerEASMSeedRoutes registers the EASM seeds (RFC-036 §6.3, §6.10):
+// scope permissions, like the other boundary settings, behind the
+// attack_surface module.
+func registerEASMSeedRoutes(
+	router Router,
+	h *handler.EASMSeedHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/seeds", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
+		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.ScopeWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
 	}, tenantMiddlewares...)
 }
 
@@ -600,11 +623,11 @@ func registerAssetImportRoutes(
 	}, nil)
 
 	router.Group("/api/v1/assets/import", func(r Router) {
-		r.POST("/csv", h.ImportCSV, middleware.Require(permission.AssetsWrite), importRL.Middleware())
-		r.POST("/nessus", h.ImportNessus, middleware.Require(permission.AssetsWrite), importRL.Middleware())
+		r.POST("/csv", h.ImportCSV, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware())
+		r.POST("/nessus", h.ImportNessus, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware())
 		// Ingests assets AND vulnerability findings from a .nessus export
 		// (RFC-007 manual/cron coverage path); needs both write scopes.
-		r.POST("/nessus-findings", h.IngestNessusFindings, middleware.RequireAll(permission.AssetsWrite, permission.FindingsWrite), importRL.Middleware())
-		r.POST("/kubernetes", h.ImportKubernetes, middleware.Require(permission.AssetsWrite), importRL.Middleware())
+		r.POST("/nessus-findings", h.IngestNessusFindings, middleware.RequireAll(permission.AssetsWrite, permission.FindingsWrite, permission.AssetsImport), importRL.Middleware())
+		r.POST("/kubernetes", h.ImportKubernetes, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware())
 	}, tenantMiddlewares...)
 }

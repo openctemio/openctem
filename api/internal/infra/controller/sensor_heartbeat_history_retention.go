@@ -63,3 +63,7 @@ func (c *HeartbeatHistoryRetentionController) Reconcile(ctx context.Context) (in
 	}
 	return int(total), nil
 }
+
+// Exclusive: it runs on one API replica at a time (controller lease, RFC-046
+// P1.8); two replicas sweeping at once would delete or fetch twice.
+func (c *HeartbeatHistoryRetentionController) Exclusive() bool { return true }

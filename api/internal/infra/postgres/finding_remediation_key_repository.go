@@ -134,7 +134,16 @@ func (r *FindingRemediationKeyRepository) OpenFindingIDs(ctx context.Context, te
 // closedStatuses. Single round trip via FILTER so a keyed campaign's progress
 // stays a cheap side-table rollup.
 func (r *FindingRemediationKeyRepository) CountByKey(ctx context.Context, tenantID shared.ID, key string, closedStatuses []string) (int64, int64, error) {
-	const q = `
+	return r.CountByKeyInScope(ctx, tenantID, key, closedStatuses, nil)
+}
+
+// CountByKeyInScope is CountByKey over the findings on the scope's assets
+// only (a restricted reader's view of a keyed campaign); a nil scope counts
+// every finding of the tenant.
+func (r *FindingRemediationKeyRepository) CountByKeyInScope(ctx context.Context, tenantID shared.ID, key string, closedStatuses []string, scope *shared.DataScope) (int64, int64, error) {
+	args := []any{tenantID.String(), key, pq.Array(closedStatuses)}
+	inScope, args := dataScopeCond("f.asset_id", scope, args)
+	q := `
 		SELECT
 			COUNT(*) AS total,
 			COUNT(*) FILTER (WHERE f.status = ANY($3::text[])) AS resolved
@@ -142,10 +151,11 @@ func (r *FindingRemediationKeyRepository) CountByKey(ctx context.Context, tenant
 		JOIN findings f ON f.id = frk.finding_id
 		WHERE frk.tenant_id = $1
 		  AND frk.remediation_key = $2
-		  AND f.source <> 'pentest'`
+		  AND f.source <> 'pentest'
+		  AND ` + inScope
 
 	var total, resolved int64
-	if err := r.db.QueryRowContext(ctx, q, tenantID.String(), key, pq.Array(closedStatuses)).Scan(&total, &resolved); err != nil {
+	if err := r.db.QueryRowContext(ctx, q, args...).Scan(&total, &resolved); err != nil {
 		return 0, 0, fmt.Errorf("count findings by remediation key: %w", err)
 	}
 	return total, resolved, nil

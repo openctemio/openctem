@@ -75,6 +75,7 @@ API connector already uses (`pkg/httpsec`).
 | Discovery provenance on assets (`discovery_source`, `discovery_tool`, `discovered_at`, `first_seen`, `last_seen`) | Built | `pkg/domain/asset/entity.go` |
 | Exposure fields (`exposure`, `is_internet_accessible`, exposure change timestamps) | Built | ingest `applyCTEMSignals`, `inferAssetExposure` |
 | Relationships `contains` (root → subdomain), `resolves_to` (domain → IP); inferred `exposes`, `runs_on` | Built | `internal/app/ingest/processor_assets.go`, `internal/app/asset/relationship_inference.go` |
+| HTTP probe server fields (research/22 E5): the TLS leaf certificate becomes a `certificate` asset named by its SHA-256 fingerprint (tenant-scoped, deduplicated by name and fingerprint) linked from the service with `serves_certificate` (migration `001026`); the service keeps `favicon_mmh3`, `jarm`, `cdn`, `cdn_type`, `waf`, `hosted_by` and, when the sensor asks httpx for it, `asn`/`asn_org`/`asn_country`. Certificate text is capped on every ingest path (`text_caps.go`); a `related_assets` link becomes an edge only for a known type pair and only when the report may change the source asset (RFC-040 §5.3) | Built (api); sensor + sdk-go + ctis PRs open | `internal/app/ingest/related_assets.go`, `internal/app/ingest/text_caps.go`; ctis `ConvertReconToCTIS`, sensor `internal/recon/httpx` |
 | Identity resolution (strong identifiers, 7-day IP window, conflicts to dedup review) | Built | RFC-001, RFC-028, [asset-identity-resolution.md](asset-identity-resolution.md) |
 | CT monitoring: crt.sh, `subdomain_discovered` + `certificate_expiring` exposures | Built, with two limits (§6) | `internal/app/certmonitor`, [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md) |
 | Certificate assets → `certificate_expiring` / `certificate_expired` / `ssl_issue` exposures; service assets → `port_open` / `service_detected` | Built | `internal/app/exposurebridge/asset_bridge.go` |
@@ -110,7 +111,7 @@ No EASM page is a `useDashboardStats` scaffold. The planned pages (§7) must
 each have their own endpoint. The UI CI test `sidebar-no-scaffolds` enforces
 this for the sidebar.
 
-## 3. Seeds and authorization (planned)
+## 3. Seeds and authorization (partly built)
 
 A **seed** is a fact the tenant asserts about itself, and discovery starts from
 it. Seed kinds: organisation name, brand, root domain, ASN, CIDR, cloud
@@ -125,6 +126,33 @@ hash. Seeds sit in Scoping › Boundaries next to targets and exclusions.
 Exclusions always win, as today. An asset is actively scanned only when it is
 attributed `confirmed` and either inside a scope target or derived from a seed.
 Candidates and dependencies get passive (T0) checks only.
+
+**Built (P2 slice 1, migration 000700).** `easm_seeds` holds one row per
+(tenant, kind, value) with a label, `discovery_enabled`, and who attested the
+organisation's authority over it and when. The schema lists every RFC kind;
+the API accepts only kinds something consumes, today **`root_domain`**: the
+Certificate Transparency monitor watches it (origin `easm_seed`, asserted:
+names under it get `fqdn_under_asserted_root` and wait for review unless a
+verified domain covers them). CIDR, ASN and organisation seeds arrive with
+their collectors, so no seed sits unused.
+
+| Route | Permission | |
+|---|---|---|
+| `GET /api/v1/easm/seeds` | `attack_surface:scope:read` | with `verification` (`dns_txt` while the tenant has a verified DNS TXT record for the domain or a parent; computed on read, never taken from the client) |
+| `POST /api/v1/easm/seeds` `{kind, value, label?, discovery_enabled?, attested: true}` | `attack_surface:scope:write` | refuses public suffixes, providers' shared domains (private PSL suffixes) and names without an ICANN suffix; at most 500 per tenant; audited `easm_seed.created` (high) |
+| `PATCH /api/v1/easm/seeds/{id}` `{label?, discovery_enabled?}` | `attack_surface:scope:write` | audited `easm_seed.updated` |
+| `DELETE /api/v1/easm/seeds/{id}` | `attack_surface:scope:delete` | assets found from it stay; audited `easm_seed.deleted` |
+
+All behind the `attack_surface` module. Two tenants may seed the same domain:
+nothing about another tenant's seed or verification is ever shown. Code:
+`pkg/domain/easmseed`, `internal/app/easm/seeds.go`,
+`internal/infra/postgres/easm_seed_repository.go`.
+
+**Web.** Scoping › Boundaries (`/scope-config?tab=seeds`) has a **Seeds** tab
+when the `attack_surface` module is on: the list with ownership (verified by a
+DNS TXT record, or asserted), a discovery switch, and Add seed, which stays
+disabled until the attestation box is ticked. Code:
+`web/src/features/attack-surface/components/easm-seeds.tsx`.
 
 ## 4. Attribution
 
@@ -141,8 +169,21 @@ the inventory changed meaning.
 | Rules, noisy-OR, O4 decision, `Merge` (automation only raises; a human decision stands) | `pkg/domain/attribution` |
 | Storage, tenant-scoped writes (a foreign asset id writes nothing) | `internal/infra/postgres/attribution_repository.go` |
 | First producer: CT promotion (`fqdn_under_verified_root` 0.99 → confirmed; `fqdn_under_asserted_root` 0.85 → needs_review) | `internal/app/certmonitor/promote.go` |
-| Scan gate: asset-group members that are not confirmed are skipped; a group of only unconfirmed assets is refused; a failed lookup stops the dispatch | `internal/app/scan/targets.go` (`WithAttributionGate`) |
+| Second producer: sensor reports (owner decision O8 as narrowed by research/22 E7). A report bound to a command the tenant's own sensor ran: an asset that **is** one of the command's targets (same host or repository path, or an address inside a listed range) gets `tenant_scanned` (0.95, strong) with sensor, command, step run, pipeline run, scan, tool, report id and time; an automatic record is re-evaluated unless it is `needs_review` or `rejected` (a scan never takes a name past review). A name the scan **found** under a target (subfinder child, resolved address, auto-created root domain) gets `tenant_scan_discovered` (0.60, medium, never confirms alone); a new internet-facing one gets a `needs_review` record, or `confirmed` with `fqdn_under_verified_root` evidence when it is at/under a verified domain. An unsolicited sensor report gives a new internet-facing asset a `candidate` record and no evidence. A person's decision is never touched; an existing asset without a record keeps none. Server-side ingests (CT promotion, uploads) never come here. `root_domain` in a report must be a registrable strict parent of the reported name (`publicsuffix`), otherwise no domain is created | `internal/app/ingest/scan_attribution.go`, `internal/app/easm/scanned.go`, `internal/infra/postgres/easm_scan_evidence_repository.go` |
+| CT roots from domain assets: only approved ones (not `needs_review`, `candidate` or `rejected`), so a sensor-created domain cannot widen the CT watch list | `internal/app/certmonitor/service.go` (`gatherRoots`) |
+| Active-scan ownership gate on every active-scan path (typed targets and group members alike): refused when the asset's record is not `confirmed`, when the name or a parent of it was rejected (record or live tombstone), and when an internet-facing asset has **no record** and is neither inside an active scope target nor at/under a root-domain seed or verified domain (`unattributed`). Create, clone, import, quick scan and `POST /commands` refuse the request; a run skips the target with a warning; the dispatch gate refuses it. Generic reason to the caller, specific state in the log. Details: [active-probe-gate.md](active-probe-gate.md) | `internal/app/easm/active_gate.go`, `internal/app/scan/ownership.go` |
 | `GET /api/v1/assets/{id}/attribution` (assets:read) and `PUT` (assets:write, audited `asset.attribution_decided`) | `internal/infra/http/handler/asset_attribution_handler.go` |
+
+**Rejection tombstones (P2, migration 000775).** When a person marks a
+domain or subdomain as not the tenant's (asset page or review queue), the
+lowercased name and the rules that supported it are kept in
+`easm_tombstones`, in the same transaction as the decision. CT promotion does
+not propose that name again, even after the asset is deleted, unless it is now
+supported by a rule that was not there at rejection (for example the domain
+was verified since). Reversing the rejection removes the tombstone; tombstones
+expire after 12 months (O7) and each CT sweep purges the tenant's expired
+rows. A failed tombstone lookup promotes nothing. All statements are
+tenant-scoped (`internal/infra/postgres/easm_tombstone_repository.go`).
 
 **Asset merges** (dedup review, RFC-028) keep attribution: the kept asset
 takes the most recent human decision of any merged asset (older decisions stay
@@ -190,6 +231,141 @@ by severity and type; the ten most severe open external exposures; and CT
 monitoring freshness (`ct_monitor_state`). Code: `internal/app/easm`,
 `internal/infra/postgres/easm_summary_repository.go`.
 
+## 4b. Review queue and inventory filter (built, P1)
+
+Until P2 adds `easm_candidates`, the review queue is the set of inventory
+assets whose attribution is `needs_review` or `candidate`.
+
+| Route | Permission | Behaviour |
+|---|---|---|
+| `GET /api/v1/easm/candidates?states=&types=&min_confidence=&search=` | `assets:read` | Most confident first, each row with its evidence. Default states `needs_review,candidate`; `states=rejected` lists rejections for undo |
+| `POST /api/v1/easm/candidates/decisions` `{asset_ids ≤ 200, state, note?}` | `assets:write` | One statement upserts a human decision for each asset that is the tenant's and not deleted; automation never changes it afterwards. One `asset.attribution_decided` audit event per asset (from, to, `via=review_queue`, the note) |
+| `GET /api/v1/assets?attribution=` | `assets:read` | `confirmed` (includes assets with no record), `needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`, `unknown` (no record), `unconfirmed` (= needs_review + candidate), `approved` (= confirmed + unknown + dependency + monitor_only) |
+
+Both EASM routes sit behind the `attack_surface` module. **Isolation:** every
+query pins `tenant_id`; the caller's data scope narrows the queue
+(`user_accessible_assets`, as for the asset list) and filters the decision's
+asset ids first (`datascope.Enforcer.FilterForCaller`). An asset outside the
+scope, of another tenant or deleted is returned in `not_found`; the three cases
+look the same. A data-scope lookup error fails the request. Code:
+`internal/app/easm/review.go`, `internal/infra/postgres/easm_review_repository.go`.
+
+**Web.** `/attack-surface/review` (assets:read, `attack_surface` module) lists
+the queue with each row's evidence in words, with tabs for "Awaiting review"
+and "Not ours" and bulk Confirm / Not ours / Dependency / Monitor only for
+assets:write; the Overview's "Needs review" row links to it. The asset
+inventory (`/assets`) shows only the organisation's assets by default
+(`attribution=approved`): names awaiting review and rejected names are hidden
+behind a "Show all" link, and the filter panel has an Attribution facet.
+Code: `web/src/features/attack-surface/components/easm-review-queue.tsx`,
+`web/src/features/assets/lib/inventory-url.ts` (`attributionQuery`).
+
+## 4c. Alerts (built, P0-7)
+
+EASM exposures reach the notification outbox (research/22 P0-7, owner
+decision E4). The CT monitor, the DNS checks and takeover confirmation write
+exposures through `postgres.EASMExposureWriter`; the DNS checks' reopen goes
+through `EASMDNSRepository.ReopenAuto`. Both enqueue in **the same
+transaction** as the exposure write, and only for rows that were **inserted**
+(`xmax = 0` on the upsert) or **reopened** by the check. A re-sighting
+announces nothing; a rollback leaves neither row.
+
+| Exposure | Alert |
+|---|---|
+| Asset rejected ("Not ours") or deleted | never |
+| Medium or higher on an approved asset (confirmed, dependency, or no record) | `new_exposure` now, one per exposure (`aggregate_type` `exposure`, URL `/exposures/{id}`) |
+| Low or info; asset `needs_review`/`candidate` (labeled `unverified`) or `monitor_only`; exposure linked to no asset (`unlinked`) | the tenant's daily digest |
+| Immediate alerts past 30 per tenant per rolling hour | the digest, counted as `throttled` |
+
+The **digest** is one `notification_outbox` row per tenant and day
+(`aggregate_type` `easm_digest`, due at 08:00 UTC, unique while pending:
+`uq_notification_outbox_easm_digest`, migration `001014`). Each digest-class
+exposure updates it: exact count, counts by severity and by attribution
+label, up to 25 named items, the highest severity. It goes out as
+`new_exposure` like the immediate alerts, so integrations that receive
+`new_exposure` (a default-enabled type) get EASM alerts with no setup, and
+their severity filter applies.
+
+Payload metadata: `channel` `easm`, `exposure_id`, `event_type`, `severity`,
+`source` (`cert_transparency`, `easm_dns`), `attribution` (state or label),
+`reason` (`new`/`reopened`), `asset_id`/`asset_name`, `fingerprint`.
+
+**Tenant isolation.** The alerter loads exposures with the tenant id in the
+query, so ids of another tenant announce nothing; the throttle counter
+(`easm_alert_throttle`) and the digest are per tenant. The throttle row is
+locked for the transaction, which serializes one tenant's alert writes.
+Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_test.go`.
+
+## 4h. Port and service results (built, P0-6)
+
+A port scanner (naabu, nmap, masscan, rustscan) reports an IP address with
+the ports it found open (`technical.ip_address.ports`). Ingest
+(`internal/app/ingest/ports.go`) now:
+
+1. adds an `open_port` asset `<ip>:<port>` (stored as `service` /
+   `open_port`, properties `host`, `port`, `protocol`, `service`, `version`,
+   `discovery_tool`) for every open port before the assets are processed, so
+   it gets the same exclusions, attribution (E7: typed when the address was a
+   command target, otherwise `needs_review`) and scope rules as any reported
+   asset. The port list is hostile input: ports outside 1..65535, non-open
+   states, duplicates and non-address values are dropped; at most 1 000 ports
+   per address and 10 000 per report;
+2. links the address to each port with `exposes`, and a host name the
+   scanner reported to the address with `resolves_to` when the tenant already
+   has that name as a domain or subdomain (a report never creates the name);
+3. lets the exposure bridge project each port to `port_open` (and services
+   to `service_detected`). New recon exposures are announced through the
+   outbox in the same transaction (`AnnouncingExposureRepository`, §4c);
+4. for a port-scan report that may change the address (RFC-040 §5.3), closes
+   the address's active `open_port` assets the scan no longer lists: status
+   `inactive`, a `disappeared` history entry (metadata `port_closed`) and
+   the `port_open`/`service_detected` exposures resolved, in one transaction
+   (`postgres.EASMPortRepository`). A port seen again is set active with a
+   `recovered` entry (metadata `port_opened`) and its exposure reactivated
+   (a reactivation is not announced again). Limits: a scan that finds
+   no open port reports no address, so "all ports closed" is not detected;
+   closed is judged against the previous port scan of any of these tools.
+## 4g. Honest numbers (built, P0-13)
+
+- `GET /easm/summary` counts only exposure types something writes today
+  (`EASMExposureTypes`: subdomain_discovered, certificate_expiring/expired,
+  port_open, service_detected, ssl_issue, dangling_cname/ns,
+  email_security_weak, subdomain_takeover). `api_exposed`, `bucket_public`,
+  `header_missing`, `dns_change`, `port_closed`, `service_changed` and
+  `subdomain_removed` return when they get a producer;
+  `TestEASMExposureTypesHaveProducers` fails if a listed type has none.
+- The web labels every exposure type the API declares
+  (`exposure-types-sync.test.ts` reads `pkg/domain/exposure/value_objects.go`).
+- CT: a name seen only as a wildcard (`*.dev.example.com`) is not a
+  discovered subdomain: it names no host and was counted with no asset.
+  Certificate expiry is still reported for it.
+- Seeds: a `root_domain` under one of the tenant's root-domain seeds is
+  refused (it adds nothing).
+- Certificates page: the client-side Validity filter was never applied by the
+  inventory page and is removed; each row shows its expiry, and expiring or
+  expired certificates are listed on Exposures.
+## 4f. Review queue reachable, honest counts (built, P0-12)
+
+- **Reachable:** the Attack surface sidebar row carries the section tabs
+  Overview (`/attack-surface`) and Review (`/attack-surface/review`). The row
+  badge and the Review tab count are the queue's own total for
+  `needs_review` + `candidate` (`GET /easm/candidates?states=needs_review,candidate&per_page=1`,
+  data-scoped like the queue), so the three numbers always agree. The queue's
+  tab is in the URL: `?tab=rejected` opens "Not ours".
+- **Honest counts:** the overview "Needs review" counts `needs_review` and
+  `candidate` (what the queue lists). `GET /attack-surface/stats` (cards,
+  exposed list, trends) and `/attack-surface/external` cover **approved**
+  assets only, so a rejected or unreviewed name is never shown as exposed
+  surface. Top risks already excluded rejected assets.
+- **One definition of internet-facing:** `exposure = public`, on the
+  attack-surface pages and the inventory strip alike (the strip used
+  `is_internet_accessible`, which CT-promoted names do not set).
+- `?attribution=all` is accepted (no filter) next to `approved`,
+  `unconfirmed`, `unrecorded` and the states.
+- Decision E1 (308 `/attack-surface/external` → filtered `/assets`) waits for
+  the inventory's external columns (attribution, last seen, certificate
+  expiry, CDN).
+
 ## 5. Data model (planned)
 
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and
@@ -205,6 +381,23 @@ monitoring freshness (`ct_monitor_state`). Code: `internal/app/easm`,
 - **Time.** `first_seen`/`last_seen` per asset and per observation; the CT
   `not_before` and the passive-DNS first-seen give the earliest external
   evidence, which is what MTTD is measured against.
+
+## 5a. After a decision (built, P0-9)
+
+A person's attribution decision (review queue `POST /easm/candidates/decisions`
+or `PUT /assets/{id}/attribution`) is followed by
+`easm.DecisionEffects.AfterDecision`, best effort and only for the assets the
+decision stored (tenant and data scope already checked):
+
+- **Reclassify now** (22c B4): an asset-scoped request on the priority
+  reclassify queue, which is drained every minute, so the P2 cap on findings
+  of unconfirmed assets lifts (or applies) within two minutes instead of the
+  12-hour sweep.
+- **Rejection hygiene** (22c B2): on `rejected`, the name's open CT and
+  DNS-check exposures, and those of every name under it, are resolved with
+  state history; the CT monitor stops writing exposures for rejected and
+  tombstoned names. See
+  [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md#rejected-names-identity-and-linking).
 
 ## 6. Known limits of what is built
 

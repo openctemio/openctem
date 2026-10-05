@@ -68,7 +68,7 @@ func newTestAssetService(repo asset.Repository) *app.AssetService {
 }
 
 func makeTestAssetForService(exposure asset.Exposure, criticality asset.Criticality, findingCount int) *asset.Asset {
-	a, _ := asset.NewAsset("test-asset", asset.AssetTypeWebsite, criticality)
+	a, _ := asset.NewAssetWithSubType("test-asset", asset.AssetTypeApplication, "website", criticality)
 	_ = a.UpdateExposure(exposure)
 	a.UpdateFindingCount(findingCount)
 	a.SetTenantID(serviceTenantID)

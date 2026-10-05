@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { ScanRunsTab, runDurationMs } from '../scan-runs-tab'
+import { ScanRunsTab } from '../scan-runs-tab'
 
 // The Runs tab reads pipeline runs (the table every scan trigger writes),
 // paged on the server; it used to read scan sessions, which stayed empty.
@@ -17,13 +17,27 @@ vi.mock('@/lib/api/pipeline-hooks', () => ({
   },
   useScanManagementStats: () => ({
     data: {
-      pipelines: { total: 40, running: 1, pending: 0, completed: 4, failed: 35, canceled: 0 },
+      pipelines: {
+        total: 40,
+        running: 1,
+        pending: 0,
+        completed: 4,
+        partial: 2,
+        failed: 33,
+        canceled: 0,
+      },
     },
     isLoading: false,
   }),
 }))
-vi.mock('@/lib/api/scan-hooks', () => ({
-  useScanConfigs: () => ({ data: { items: [{ id: 's1', name: 'Daily external recon' }] } }),
+const exportGet = vi.fn()
+vi.mock('@/lib/api/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api/client')>()),
+  get: (...a: unknown[]) => exportGet(...a),
+}))
+const exportToCsvMock = vi.fn(() => true)
+vi.mock('@/hooks/use-csv-export', () => ({
+  exportToCsv: (...a: unknown[]) => exportToCsvMock(...(a as [])),
 }))
 vi.mock('../run-detail-sheet', () => ({
   RunDetailSheet: ({ runId }: { runId: string | null }) =>
@@ -42,7 +56,15 @@ vi.mock('@/hooks/use-url-param', () => ({
   useUrlFilter: (key: string, fallback: string) => [
     urlState[key] ?? fallback,
     (v: string) => {
-      urlState[key] = v
+      if (v === fallback || v === '') delete urlState[key]
+      else urlState[key] = v
+    },
+  ],
+  useUrlFilterNumber: (key: string, fallback: number) => [
+    urlState[key] ? Number(urlState[key]) : fallback,
+    (v: number) => {
+      if (v === fallback) delete urlState[key]
+      else urlState[key] = String(v)
     },
   ],
 }))
@@ -58,6 +80,7 @@ const run = (over: Record<string, unknown>) => ({
   tenant_id: 't',
   pipeline_id: 'p',
   scan_id: 's1',
+  scan_name: 'Daily external recon',
   trigger_type: 'manual',
   triggered_by_name: 'Admin',
   status: 'failed',
@@ -112,14 +135,20 @@ describe('ScanRunsTab', () => {
     expect(within(table).getByText('no sensor online')).toBeInTheDocument()
     expect(within(table).getByText('(1 failed)')).toBeInTheDocument()
     expect(within(table).getByText('3m 12s')).toBeInTheDocument()
-    expect(within(table).getByText('Running…')).toBeInTheDocument()
+    expect(within(table).getByText(/so far$/)).toBeInTheDocument()
     expect(within(table).getByText('7')).toBeInTheDocument()
   })
 
   it('shows the real run counts; failed includes timed out and does not filter', () => {
     render(<ScanRunsTab />)
     expect(screen.getByText('Failed or timed out')).toBeInTheDocument()
-    expect(screen.getByText('35')).toBeInTheDocument()
+    expect(screen.getByText('33')).toBeInTheDocument()
+  })
+
+  it('counts partial runs and filters on them', async () => {
+    render(<ScanRunsTab />)
+    await userEvent.click(screen.getByText('Partial'))
+    expect(urlState.run_status).toBe('partial')
   })
 
   it('opens the run drawer on row click', async () => {
@@ -134,6 +163,67 @@ describe('ScanRunsTab', () => {
     expect(pipelineRunsCalls.at(-1)).toMatchObject({ status: 'canceled', page: 1 })
   })
 
+  it('keeps page, page size and sort in the URL and sends them to the API', async () => {
+    urlState.run_page = '2'
+    urlState.run_sort = '-total_findings'
+    render(<ScanRunsTab />)
+    expect(pipelineRunsCalls.at(-1)).toMatchObject({
+      page: 2,
+      per_page: 25,
+      sort: '-total_findings',
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Previous page' }))
+    expect(urlState.run_page).toBeUndefined()
+  })
+
+  it('sorts on the server from a column header and returns to page 1', async () => {
+    urlState.run_page = '2'
+    render(<ScanRunsTab />)
+    await userEvent.click(screen.getByRole('button', { name: /^Started/ }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Asc/ }))
+    expect(urlState.run_sort).toBe('started_at')
+    expect(urlState.run_page).toBeUndefined()
+  })
+
+  it('falls back to newest first for a stale sort link', () => {
+    urlState.run_sort = 'status'
+    render(<ScanRunsTab />)
+    expect(pipelineRunsCalls.at(-1)).toMatchObject({ sort: '-created_at' })
+  })
+
+  it('names a quick-scan run from the server and marks a deleted scan', () => {
+    runsResponse = {
+      items: [
+        run({ id: 'q1', scan_id: 'adhoc', scan_name: 'Quick Scan - 20261004-101010' }),
+        run({ id: 'd1', scan_id: 'gone', scan_name: undefined, error_message: undefined }),
+      ],
+      total: 2,
+      page: 1,
+      per_page: 25,
+      total_pages: 1,
+    }
+    render(<ScanRunsTab />)
+    const table = screen.getByRole('table')
+    expect(
+      within(table).getByRole('link', { name: 'Quick Scan - 20261004-101010' })
+    ).toHaveAttribute('href', '/scans/adhoc')
+    expect(within(table).getByText('Deleted scan')).toBeInTheDocument()
+  })
+
+  it('exports the list as filtered and sorted, through the same endpoint', async () => {
+    urlState.run_status = 'failed'
+    urlState.run_sort = '-started_at'
+    exportGet.mockResolvedValue({ items: [run({})], total: 1, page: 1, per_page: 100 })
+    render(<ScanRunsTab />)
+    await userEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
+    await waitFor(() => expect(exportToCsvMock).toHaveBeenCalled())
+    const url = String(exportGet.mock.calls.at(-1)?.[0])
+    expect(url).toMatch(/^\/api\/v1\/pipeline-runs\?/)
+    expect(url).toContain('status=failed')
+    expect(url).toContain('sort=-started_at')
+    expect(exportToCsvMock).toHaveBeenCalled()
+  })
+
   it('explains the missing permission instead of showing an empty table', () => {
     canReadPipelines = false
     render(<ScanRunsTab />)
@@ -142,11 +232,44 @@ describe('ScanRunsTab', () => {
   })
 })
 
-describe('runDurationMs', () => {
-  it('is undefined until the run finished', () => {
-    expect(runDurationMs({ started_at: '2026-10-02T10:00:00Z' })).toBeUndefined()
-    expect(
-      runDurationMs({ started_at: '2026-10-02T10:00:00Z', completed_at: '2026-10-02T10:00:05Z' })
-    ).toBe(5000)
+describe('ScanRunsTab tasks', () => {
+  beforeEach(() => {
+    canReadPipelines = true
+    for (const k of Object.keys(urlState)) delete urlState[k]
+  })
+
+  it('shows a run as tasks done of total with the counts that matter', () => {
+    runsResponse = {
+      items: [
+        run({
+          status: 'partial',
+          error_message: undefined,
+          task_summary: {
+            total: 5,
+            queued: 0,
+            running: 0,
+            completed: 3,
+            failed: 2,
+            canceled: 0,
+            sensors: 2,
+          },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      per_page: 25,
+      total_pages: 1,
+    }
+    render(<ScanRunsTab />)
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('3/5 tasks')).toBeInTheDocument()
+    expect(within(table).getByText('2 failed')).toBeInTheDocument()
+    expect(within(table).getByText('Partial')).toBeInTheDocument()
+  })
+
+  it('falls back to steps for a run without a task summary', () => {
+    runsResponse = { items: [run({})], total: 1, page: 1, per_page: 25, total_pages: 1 }
+    render(<ScanRunsTab />)
+    expect(within(screen.getByRole('table')).getByText(/1\/2 steps/)).toBeInTheDocument()
   })
 })

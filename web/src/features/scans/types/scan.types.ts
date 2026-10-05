@@ -170,6 +170,12 @@ export interface NewScanFormData {
   /** Tool registry name of the scanner (mode "single"); the API requires it. */
   scannerName: string
   workflowId?: string // Pipeline template id, only when mode is "workflow"
+  /**
+   * scanner_config of a scanner that needs one: a connector scanner
+   * (tenable_sc: the connector integration, policy and repository). Other
+   * scanners take their settings from the scan profile.
+   */
+  scannerConfig?: Record<string, unknown>
   sensorPreference: SensorPreference // Platform sensor selection
   profileId?: string // Optional scan profile (drives quality gate evaluation)
 
@@ -294,44 +300,6 @@ export interface ScanStats {
 // ============================================
 // SMART FILTERING (Asset-Scanner Compatibility)
 // ============================================
-
-/**
- * Skip reason explaining why assets of a certain type were skipped
- */
-export interface SkipReason {
-  assetType: string
-  count: number
-  reason: string
-}
-
-/**
- * Result of smart filtering during scan trigger
- * Shows which assets were scanned vs skipped based on tool compatibility
- */
-export interface FilteringResult {
-  /** Total assets in the scan scope */
-  totalAssets: number
-  /** Assets that were scanned (compatible with tool) */
-  scannedAssets: number
-  /** Assets that were skipped (incompatible with tool) */
-  skippedAssets: number
-  /** Assets with type "unclassified" - cannot match any scanner */
-  unclassifiedAssets: number
-  /** Percentage of compatible assets (0-100) */
-  compatibilityPercent: number
-  /** Breakdown of scanned assets by type */
-  scannedByType?: Record<string, number>
-  /** Breakdown of skipped assets by type */
-  skippedByType?: Record<string, number>
-  /** Detailed reasons for skipping each asset type */
-  skipReasons?: SkipReason[]
-  /** Whether filtering was actually applied */
-  wasFiltered: boolean
-  /** Name of the tool that performed filtering */
-  toolName?: string
-  /** Target types supported by the tool */
-  supportedTargets?: string[]
-}
 
 /**
  * Preview of asset compatibility before scan creation

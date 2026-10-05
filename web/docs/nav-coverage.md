@@ -51,18 +51,13 @@ are live in the sidebar. Do not re-flag them:
 | `/insights/{program-health,data-quality}`                                                         | delegate to `ProgramHealthView` / `DataQualityView` |
 | `/insights/{executive,ctem-maturity}`                                                             | `useSWR` / `useCtemMaturity`                        |
 
-## Genuine scaffolds — 3 pages
+## Genuine scaffolds — none left
 
-`useDashboardStats` is the _only_ (or dominant) data source, and none is in the
-sidebar:
-
-- `/progress` — `useDashboardStats` only.
-- `/trending` — `useDashboardStats` (+ one generic `useSWR`).
-- `/insights/analytics/mttr` — `useDashboardStats` + `useMTTRMetrics`.
-
-These cannot be "connected" — the work left is the feature, not a nav entry. The
-realistic options are delete, or replace with `ComingSoonPage` (which the sidebar
-can badge as `Soon`).
+The last three (`/progress`, `/trending`, `/insights/analytics/mttr`) and
+`/simulation/scenarios` were deleted (owner decision D-31). Each redirects to the
+real page for the same question (`LEGACY_ORPHAN_ROUTE_REDIRECTS` in
+`src/config/legacy-routes.ts`). Do not add a page whose only data source is
+`useDashboardStats`; build the feature first.
 
 The wide scaffold clusters older drafts listed (`/controls/*`, `/workflows/*`,
 `/threats/*`, `/identity/*`, `/collaboration/*`, `/exceptions/*` children,

@@ -26,6 +26,9 @@ import (
 // CoverageConfig is one tenant's active rolling-coverage configuration.
 type CoverageConfig struct {
 	TenantID shared.ID
+	// IntegrationID is the integration whose engine runs the batch (the
+	// Tenable.sc connector, RFC-047).
+	IntegrationID *shared.ID
 	// SensorID optionally pins a specific runner (C3); nil → capability routing.
 	SensorID *shared.ID
 	// Engine is "nessus_pro" (unlimited) or "tenable_sc" (active-IP cap).
@@ -277,12 +280,13 @@ func (s *Scheduler) dispatchTenant(ctx context.Context, cfg CoverageConfig) (boo
 	}
 
 	cmdID, sessionID, err := s.dispatcher.DispatchTenableScan(ctx, DispatchTenableInput{
-		TenantID:     cfg.TenantID,
-		Targets:      targets,
-		SensorID:     cfg.SensorID,
-		Engine:       cfg.Engine,
-		TemplateUUID: cfg.TemplateUUID,
-		ScanZoneID:   zoneID,
+		TenantID:      cfg.TenantID,
+		IntegrationID: cfg.IntegrationID,
+		Targets:       targets,
+		SensorID:      cfg.SensorID,
+		Engine:        cfg.Engine,
+		TemplateUUID:  cfg.TemplateUUID,
+		ScanZoneID:    zoneID,
 	})
 	if err != nil {
 		if rerr := s.store.ReleaseBatch(ctx, cfg.TenantID, batch, claimAt); rerr != nil {
@@ -327,13 +331,20 @@ func (s *Scheduler) gateBatch(ctx context.Context, cfg CoverageConfig, batch []C
 		return nil, nil, nil, errNoTargetGate
 	}
 	targets := make([]string, 0, len(batch))
+	// Each candidate is an inventory asset: the gate refuses one whose
+	// ownership is not confirmed (RFC-036 O4), as a scan does.
+	assets := make(map[string]scanapp.DispatchAsset, len(batch))
 	for _, c := range batch {
 		targets = append(targets, c.Target)
+		a := assets[c.Target]
+		a.IDs = append(a.IDs, c.AssetID)
+		assets[c.Target] = a
 	}
 	gated, err := s.gate.ResolveDispatchTargets(ctx, scanapp.DispatchTargetsInput{
 		TenantID: cfg.TenantID,
 		Targets:  targets,
 		SensorID: cfg.SensorID,
+		Assets:   assets,
 	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("target gate: %w", err)

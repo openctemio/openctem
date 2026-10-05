@@ -82,9 +82,11 @@ type DashboardStatsRepository interface {
 	// (a non-nil scope keeps only findings on in-scope assets).
 	GetRecentActivity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]ActivityItem, error)
 	// GetFindingTrend returns monthly finding counts by severity for a tenant
-	GetFindingTrend(ctx context.Context, tenantID shared.ID, months int) ([]FindingTrendPoint, error)
+	// (a non-nil scope counts only findings on in-scope assets).
+	GetFindingTrend(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, months int) ([]FindingTrendPoint, error)
 	// GetAllStats returns all dashboard stats in 2 optimized queries (replaces 10+ individual calls)
-	GetAllStats(ctx context.Context, tenantID shared.ID) (*DashboardAllStats, error)
+	// (a non-nil scope counts only in-scope assets and their findings).
+	GetAllStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*DashboardAllStats, error)
 
 	// Global stats (not tenant-scoped) - deprecated, use filtered versions
 	GetGlobalAssetStats(ctx context.Context) (AssetStatsData, error)
@@ -93,7 +95,8 @@ type DashboardStatsRepository interface {
 	GetGlobalRecentActivity(ctx context.Context, limit int) ([]ActivityItem, error)
 
 	// MTTR & Trending
-	GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error)
+	// A non-nil scope averages only findings on in-scope assets.
+	GetMTTRMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (map[string]float64, error)
 	GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error)
 
 	// Filtered stats (by accessible tenant IDs) - for multi-tenant authorization
@@ -112,7 +115,8 @@ type DashboardStatsRepository interface {
 	// Executive Summary (Phase 2)
 	GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*ExecutiveSummary, error)
 	// MTTR Analytics (Phase 2)
-	GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*MTTRAnalytics, error)
+	// A non-nil scope averages only findings on in-scope assets.
+	GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*MTTRAnalytics, error)
 	// Process Metrics (Phase 2)
 	GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProcessMetrics, error)
 	// CTEM program metrics (MTTD internet-facing, MTTR validated, owner acceptance)
@@ -167,6 +171,46 @@ type DashboardService struct {
 	repo      DashboardStatsRepository
 	dataScope *datascope.Enforcer // Layer 2 narrowing of row data (nil = unrestricted)
 	logger    *logger.Logger
+	// aggregate reports whether the viewer holds dashboard:aggregate.
+	aggregate func(ctx context.Context) bool
+}
+
+// SetAggregateCheck wires the check for the dashboard:aggregate permission
+// (owner decision D6): a restricted viewer who holds it sees organization
+// totals, with small breakdowns left out. Without the check nobody does.
+func (s *DashboardService) SetAggregateCheck(fn func(ctx context.Context) bool) {
+	s.aggregate = fn
+}
+
+// dashboardKFloor: in organization totals shown to a restricted viewer, a
+// breakdown bucket counting fewer than this many items is left out, so a
+// total does not single out an asset the viewer cannot see.
+const dashboardKFloor = 5
+
+// countScope decides whose data the dashboard counts: nil (the whole
+// organization) for an unrestricted viewer or a restricted viewer holding
+// dashboard:aggregate, else the viewer's scope. aggregated is true in the
+// second case (apply the k-floor).
+func (s *DashboardService) countScope(ctx context.Context, tenantID shared.ID) (scope *shared.DataScope, aggregated bool, err error) {
+	scope, err = s.dataScope.Resolve(ctx, tenantID)
+	if err != nil || scope == nil {
+		return scope, false, err
+	}
+	if s.aggregate != nil && s.aggregate(ctx) {
+		return nil, true, nil
+	}
+	return scope, false, nil
+}
+
+// kFloor drops breakdown buckets under dashboardKFloor.
+func kFloor(m map[string]int) map[string]int {
+	out := make(map[string]int, len(m))
+	for k, v := range m {
+		if v >= dashboardKFloor {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer. Dashboards keep their
@@ -187,8 +231,15 @@ func NewDashboardService(repo DashboardStatsRepository, log *logger.Logger) *Das
 // GetStats returns dashboard statistics for a tenant.
 // Uses optimized batched query (2 queries instead of 10+).
 func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*DashboardStats, error) {
+	// Owner decision D6: the counts follow the viewer. A restricted viewer
+	// counts their own scope, unless they hold dashboard:aggregate (then
+	// organization totals with the k-floor on breakdowns).
+	countScope, aggregated, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
 	// Batched query: all counts + activity in 2 queries
-	all, err := s.repo.GetAllStats(ctx, tenantID)
+	all, err := s.repo.GetAllStats(ctx, tenantID, countScope)
 	if err != nil {
 		s.logger.Error("failed to get dashboard stats", "error", err, "tenant_id", tenantID)
 		// Fallback to empty
@@ -200,8 +251,8 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 	}
 
 	// Layer 2: recent activity is row data (finding titles and messages), so a
-	// restricted member gets it from their in-scope findings only. The counts
-	// above stay tenant-wide aggregates.
+	// restricted member gets it from their in-scope findings only, whatever
+	// their aggregate permission.
 	scope, err := s.dataScope.Resolve(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
@@ -216,10 +267,17 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 	}
 
 	// Finding trend (separate query — different shape, efficient CTE)
-	trend, err := s.repo.GetFindingTrend(ctx, tenantID, 6)
+	trend, err := s.repo.GetFindingTrend(ctx, tenantID, countScope, 6)
 	if err != nil {
 		s.logger.Error("failed to get finding trend", "error", err, "tenant_id", tenantID)
 		trend = []FindingTrendPoint{}
+	}
+	if aggregated {
+		all.Assets.ByType = kFloor(all.Assets.ByType)
+		all.Assets.BySubType = kFloor(all.Assets.BySubType)
+		all.Assets.ByStatus = kFloor(all.Assets.ByStatus)
+		all.Findings.BySeverity = kFloor(all.Findings.BySeverity)
+		all.Findings.ByStatus = kFloor(all.Findings.ByStatus)
 	}
 
 	return &DashboardStats{
@@ -241,8 +299,14 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 }
 
 // GetMTTRMetrics returns MTTR (Mean Time To Remediate) in hours by severity.
+// It follows the viewer like the other dashboard numbers (countScope): a
+// restricted member averages their own findings only (research 24 §5.1).
 func (s *DashboardService) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error) {
-	return s.repo.GetMTTRMetrics(ctx, tenantID, days)
+	scope, _, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.repo.GetMTTRMetrics(ctx, tenantID, scope, days)
 }
 
 // GetRiskVelocity returns weekly new vs resolved finding counts.
@@ -524,8 +588,13 @@ func (s *DashboardService) GetExecutiveSummary(ctx context.Context, tenantID sha
 }
 
 // GetMTTRAnalytics returns MTTR breakdown by severity and priority class.
+// It follows the viewer like GetMTTRMetrics.
 func (s *DashboardService) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*MTTRAnalytics, error) {
-	return s.repo.GetMTTRAnalytics(ctx, tenantID, days)
+	scope, _, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.repo.GetMTTRAnalytics(ctx, tenantID, scope, days)
 }
 
 // dashboardRecentActivityLimit is how many recent findings the dashboards show.

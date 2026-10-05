@@ -38,22 +38,31 @@ export function DeleteOrganization() {
     setBusy(true)
     try {
       await del(`/api/v1/tenants/${currentTenant.slug}`)
-      toast.success(`Organization "${name}" deleted`)
-      // A full reload (not router.push) so no cached data of the deleted
-      // organization survives; replace() so Back does not return here.
-      const next = tenants.find((t) => t.id !== currentTenant.id)
-      let target = '/'
-      if (next) {
-        await switchTeam(next.id)
-      } else {
-        removeCookie(env.cookies.tenant)
-        target = '/onboarding/create-team'
-      }
-      window.location.replace(target)
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to delete the organization'))
       setBusy(false)
+      return
     }
+    // The delete succeeded. Anything that fails from here on is only the move
+    // to another organization, so it must never be reported as a failed
+    // delete (the organization is already gone).
+    toast.success(`Organization "${name}" deleted`)
+    // A full reload (not router.push) so no cached data of the deleted
+    // organization survives; replace() so Back does not return here.
+    const next = tenants.find((t) => t.id !== currentTenant.id)
+    let target = '/'
+    if (next) {
+      try {
+        await switchTeam(next.id)
+      } catch {
+        // Fall back to the root; the app picks an organization on load.
+        removeCookie(env.cookies.tenant)
+      }
+    } else {
+      removeCookie(env.cookies.tenant)
+      target = '/onboarding/create-team'
+    }
+    window.location.replace(target)
   }
 
   return (

@@ -481,13 +481,13 @@ func (r *AssetServiceRepository) DeleteByAssetID(ctx context.Context, tenantID, 
 	return nil
 }
 
-// UpdateFindingCounts updates finding counts for multiple services.
-func (r *AssetServiceRepository) UpdateFindingCounts(ctx context.Context, counts map[shared.ID]int) error {
+// UpdateFindingCounts updates finding counts for multiple services of the tenant.
+func (r *AssetServiceRepository) UpdateFindingCounts(ctx context.Context, tenantID shared.ID, counts map[shared.ID]int) error {
 	if len(counts) == 0 {
 		return nil
 	}
 
-	query := `UPDATE asset_services SET finding_count = $2, updated_at = NOW() WHERE id = $1`
+	query := `UPDATE asset_services SET finding_count = $2, updated_at = NOW() WHERE id = $1 AND tenant_id = $3`
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -502,7 +502,7 @@ func (r *AssetServiceRepository) UpdateFindingCounts(ctx context.Context, counts
 	defer stmt.Close()
 
 	for id, count := range counts {
-		_, err := stmt.ExecContext(ctx, id.String(), count)
+		_, err := stmt.ExecContext(ctx, id.String(), count, tenantID.String())
 		if err != nil {
 			return fmt.Errorf("failed to update finding count for service %s: %w", id, err)
 		}

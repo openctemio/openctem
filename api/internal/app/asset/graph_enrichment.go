@@ -24,16 +24,14 @@ import (
 // enrichmentAssetTypes are the asset types the enrichment reasons over. Naabu
 // open ports and HTTPX services normalize to the `service` core type; hosts /
 // ip_addresses are the containers; applications get RunsOn edges.
-var enrichmentAssetTypes = []assetdom.AssetType{
+// Rows still stored under a legacy alias name (website, http_service ...)
+// are included until the data normalisation (RFC-042 §6.3.8) moves them.
+var enrichmentAssetTypes = assetdom.WithLegacyNames(
 	assetdom.AssetTypeHost,
 	assetdom.AssetTypeIPAddress,
 	assetdom.AssetTypeService,
 	assetdom.AssetTypeApplication,
-	// Legacy (pre-consolidation) application types, harmless if unused.
-	assetdom.AssetTypeWebsite,
-	assetdom.AssetTypeWebApplication,
-	assetdom.AssetTypeAPI,
-}
+)
 
 // EnrichGraphResult reports what a single enrichment pass produced.
 type EnrichGraphResult struct {

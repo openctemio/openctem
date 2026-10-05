@@ -403,3 +403,20 @@ func TestAssetAccessGrants_Lifecycle(t *testing.T) {
 		t.Fatal("access remained with neither grant nor group")
 	}
 }
+
+// A user cannot grant themself access to an asset (23b I-M5): a member about
+// to leave a group could otherwise turn the group-derived access into a
+// permanent personal grant.
+func TestAssetAccessGrants_SelfGrantRefused(t *testing.T) {
+	h := newAOHarness(t)
+	asset := h.asset("")
+	h.setPerms(permission.AssetsRead, permission.GroupsRead, permission.GroupsWrite)
+	status, body := h.do(http.MethodPost, "/api/v1/assets/"+asset.String()+"/access-grants",
+		map[string]string{"user_id": h.actor.String()})
+	if status != http.StatusForbidden {
+		t.Fatalf("self-grant = %d %s, want 403", status, body)
+	}
+	if h.canSee(h.actor, asset) {
+		t.Fatalf("refused self-grant still gave access")
+	}
+}

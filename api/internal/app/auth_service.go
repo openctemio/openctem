@@ -126,6 +126,9 @@ var (
 	ErrMFAChallengeInvalid             = auth.ErrMFAChallengeInvalid
 	ErrMFACodeInvalid                  = auth.ErrMFACodeInvalid
 	ErrMFANotEnabled                   = auth.ErrMFANotEnabled
+	ErrMFAResetSelf                    = auth.ErrMFAResetSelf
+	ErrMFAResetOwnerRequired           = auth.ErrMFAResetOwnerRequired
+	ErrMFAResetOtherOrganization       = auth.ErrMFAResetOtherOrganization
 	ErrMFAAlreadyEnabled               = auth.ErrMFAAlreadyEnabled
 	ErrMFANoPendingSetup               = auth.ErrMFANoPendingSetup
 	ErrMFANotSupported                 = auth.ErrMFANotSupported

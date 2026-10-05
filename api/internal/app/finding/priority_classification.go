@@ -68,6 +68,9 @@ type PriorityClassificationService struct {
 	// opt-in and never a blanket forced change. Nil → off for every tenant.
 	ownershipFloor OwnershipFloorPolicy
 	logger         *logger.Logger
+
+	// attribution caps findings on unconfirmed assets at P2 (RFC-036 §6.8).
+	attribution AttributionLookup
 }
 
 // SetControlLookup wires the compensating control lookup for priority calculation.
@@ -368,6 +371,9 @@ func (s *PriorityClassificationService) ClassifyFinding(
 		hasOwner = s.ownerPresence(ctx, tenantID, assetIDsOf(assetEntity))
 	}
 	pctx := s.buildPriorityContext(finding, assetEntity, effCrit, reachable, s.threatenedSet(ctx, tenantID), aiFP, hasOwner)
+	if assetEntity != nil {
+		pctx.AttributionUnconfirmed = s.unconfirmedAssets(ctx, tenantID, []shared.ID{assetEntity.ID()})[assetEntity.ID()]
+	}
 
 	// Compensating controls on the finding's asset suppress P1 / force P2.
 	s.applyControlProtection(ctx, tenantID, finding.AssetID(), &pctx)
@@ -388,13 +394,7 @@ func (s *PriorityClassificationService) ClassifyFinding(
 
 	for _, rule := range rules {
 		if rule.Matches(pctx) {
-			classification = vulnerability.PriorityClassification{
-				Class:  rule.PriorityClass(),
-				Reason: fmt.Sprintf("Rule: %s", rule.Name()),
-				Source: "rule",
-			}
-			ruleID := rule.ID()
-			classification.RuleID = &ruleID
+			classification = ruleClassification(rule, pctx, true)
 			matched = true
 			break
 		}
@@ -704,6 +704,13 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 	}
 	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, findingIDs)
 
+	// Attribution of every asset in the batch: one tenant-scoped query.
+	attrAssetIDs := make([]shared.ID, 0, len(assets))
+	for aid := range assets {
+		attrAssetIDs = append(attrAssetIDs, aid)
+	}
+	unconfirmed := s.unconfirmedAssets(ctx, tenantID, attrAssetIDs)
+
 	contexts := make([]findingContext, 0, len(findings))
 	for _, f := range findings {
 		// Enrich with EPSS.
@@ -734,6 +741,7 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 		effCrit, critReason := asset.EffectiveCriticality(a.Criticality(), businessCtx[f.AssetID()])
 
 		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened, aiFP, hasOwner)
+		pctx.AttributionUnconfirmed = unconfirmed[f.AssetID()]
 		// Same rule as applyControlProtection, fed from the batch map above so
 		// the sweep stays one query for the whole batch instead of per finding.
 		setControlProtection(&pctx, controlReduction[f.AssetID()])
@@ -752,11 +760,7 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 func classifyContext(rules []*vulnerability.PriorityOverrideRule, pctx vulnerability.PriorityContext) vulnerability.PriorityClassification {
 	for _, rule := range rules {
 		if rule.Matches(pctx) {
-			return vulnerability.PriorityClassification{
-				Class:  rule.PriorityClass(),
-				Reason: fmt.Sprintf("Rule: %s", rule.Name()),
-				Source: "rule",
-			}
+			return ruleClassification(rule, pctx, false)
 		}
 	}
 	return vulnerability.ClassifyPriority(pctx)
@@ -815,8 +819,8 @@ func (s *PriorityClassificationService) buildPriorityContext(
 		// signal. Only-raise: unset ratings (every existing asset) yield a zero
 		// score and no bump, so classification is byte-identical to before.
 		ctx.CIAImpactScore, ctx.CIAImpactHigh, ctx.CIAImpactDetail = ciaImpact(a)
-		// Crown jewel: check properties (DB column exposed via properties map)
-		if cj, ok := a.Properties()["is_crown_jewel"].(bool); ok && cj {
+		// Crown jewel: the assets.is_crown_jewel column.
+		if a.IsCrownJewel() {
 			ctx.AssetIsCrownJewel = true
 		}
 		// High criticality assets treated as implicit crown jewels — evaluated on

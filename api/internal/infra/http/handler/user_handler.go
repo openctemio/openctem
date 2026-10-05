@@ -193,11 +193,7 @@ func (h *UserHandler) GetPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prefs := PreferencesDTO{
-		Theme:         localUser.Preferences().Theme,
-		Language:      localUser.Preferences().Language,
-		Notifications: localUser.Preferences().Notifications,
-	}
+	prefs := toPreferencesDTO(localUser.Preferences())
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -212,7 +208,7 @@ func (h *UserHandler) GetPreferences(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        request  body      UpdatePreferencesRequest  true  "Preferences data"
-// @Success      200  {object}  UserResponse
+// @Success      200  {object}  PreferencesDTO
 // @Failure      400  {object}  map[string]string
 // @Failure      401  {object}  map[string]string
 // @Router       /users/me/preferences [put]
@@ -259,11 +255,23 @@ func (h *UserHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	response := toUserResponse(updatedUser)
-
+	// Return the preferences object, the same shape as GET: the web caches
+	// this response under the preferences key, and a user object there
+	// reset the form to defaults on the next render (and the next Save
+	// persisted those defaults).
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(toPreferencesDTO(updatedUser.Preferences()))
+}
+
+// toPreferencesDTO is the one wire shape of a user's preferences, for both
+// GET and PUT /users/me/preferences.
+func toPreferencesDTO(p user.Preferences) PreferencesDTO {
+	return PreferencesDTO{
+		Theme:         p.Theme,
+		Language:      p.Language,
+		Notifications: p.Notifications,
+	}
 }
 
 // handleValidationError converts validation errors to API errors and writes response.

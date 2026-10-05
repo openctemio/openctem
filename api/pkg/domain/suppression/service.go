@@ -11,8 +11,26 @@ import (
 
 // Service provides business logic for suppression rules.
 type Service struct {
-	repo Repository
-	log  *logger.Logger
+	repo      Repository
+	log       *logger.Logger
+	approvers ApproverDirectory
+}
+
+// ApproverDirectory answers the two questions the four-eyes rule needs
+// (owner decision B16). Implemented by *postgres.SuppressionRepository.
+type ApproverDirectory interface {
+	// CountEligibleApprovers counts the tenant's active members who may
+	// approve suppression rules (owners, admins and holders of a role with
+	// findings:suppressions:approve).
+	CountEligibleApprovers(ctx context.Context, tenantID shared.ID) (int, error)
+	// IsTenantOwner reports whether the user is the tenant's active owner.
+	IsTenantOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+}
+
+// SetApproverDirectory wires the directory the four-eyes rule reads. Without
+// it a requester can never approve their own rule (fail closed).
+func (s *Service) SetApproverDirectory(d ApproverDirectory) {
+	s.approvers = d
 }
 
 // NewService creates a new suppression service.
@@ -86,10 +104,32 @@ type ApproveRuleInput struct {
 	TenantID   shared.ID
 	RuleID     shared.ID
 	ApprovedBy shared.ID
+	// ReviewedUpdatedAt is the rule's updated_at as the approver saw it. The
+	// approval is refused if the rule changed since (the approval pins the
+	// reviewed version).
+	ReviewedUpdatedAt *time.Time
+}
+
+// ApproveResult tells the caller how the approval was granted.
+type ApproveResult struct {
+	Rule *Rule
+	// SelfApproved: the owner approved their own rule because nobody else
+	// could (B16). Callers audit this at Critical severity.
+	SelfApproved bool
 }
 
 // ApproveRule approves a pending suppression rule.
-func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*Rule, error) {
+//
+// Four-eyes (owner decision B16): the approver must not be the requester when
+// the organization has at least two people who can approve. In an
+// organization with a single eligible approver, that person may approve their
+// own rule only if they are the owner; the result says so, and the caller
+// records it at Critical severity. (Step-up re-authentication for this case
+// arrives with the step-up primitive.)
+func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*ApproveResult, error) {
+	if input.ReviewedUpdatedAt == nil {
+		return nil, ErrReviewedVersionRequired
+	}
 	rule, err := s.repo.FindByID(ctx, input.TenantID, input.RuleID)
 	if err != nil {
 		return nil, err
@@ -97,17 +137,52 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*Rul
 	if rule == nil {
 		return nil, ErrRuleNotFound
 	}
+	if !rule.UpdatedAt().Equal(*input.ReviewedUpdatedAt) {
+		return nil, ErrRuleChangedSinceReview
+	}
+
+	selfApproved := false
+	if !rule.RequestedBy().IsZero() && rule.RequestedBy() == input.ApprovedBy {
+		allowed, err := s.mayApproveOwnRule(ctx, input.TenantID, input.ApprovedBy)
+		if err != nil {
+			return nil, err
+		}
+		if !allowed {
+			return nil, ErrSelfApproval
+		}
+		selfApproved = true
+	}
 
 	if err := rule.Approve(input.ApprovedBy); err != nil {
 		return nil, err
 	}
 
+	var details map[string]any
+	if selfApproved {
+		details = map[string]any{"self_approved": true, "reason": "only eligible approver (owner)"}
+	}
 	// Save the rule and its audit entry atomically.
-	if err := s.repo.SaveWithAudit(ctx, rule, "approved", &input.ApprovedBy, nil); err != nil {
+	if err := s.repo.SaveWithAudit(ctx, rule, "approved", &input.ApprovedBy, details); err != nil {
 		return nil, err
 	}
 
-	return rule, nil
+	return &ApproveResult{Rule: rule, SelfApproved: selfApproved}, nil
+}
+
+// mayApproveOwnRule: only when the requester is the owner and nobody else in
+// the organization can approve.
+func (s *Service) mayApproveOwnRule(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	if s.approvers == nil {
+		return false, nil
+	}
+	n, err := s.approvers.CountEligibleApprovers(ctx, tenantID)
+	if err != nil {
+		return false, fmt.Errorf("count eligible approvers: %w", err)
+	}
+	if n >= 2 {
+		return false, nil
+	}
+	return s.approvers.IsTenantOwner(ctx, tenantID, userID)
 }
 
 // RejectRuleInput contains input for rejecting a rule.
@@ -263,6 +338,9 @@ func (s *Service) DeleteRule(ctx context.Context, tenantID, ruleID, deletedBy sh
 		"status": string(rule.Status()),
 	})
 
+	// Delete lifts the rule's suppressions in the same transaction: the
+	// findings it hid return to the open backlog unless another active rule
+	// covers them.
 	return s.repo.Delete(ctx, tenantID, ruleID)
 }
 
@@ -276,7 +354,8 @@ func (s *Service) ApplySuppression(ctx context.Context, findingID, ruleID shared
 	return s.repo.RecordSuppression(ctx, findingID, ruleID, "system")
 }
 
-// ExpireRules expires all rules past their expiration date.
+// ExpireRules expires all rules past their expiration date and lifts the
+// suppressions they applied (see Repository.ExpireRules).
 func (s *Service) ExpireRules(ctx context.Context) (int64, error) {
 	return s.repo.ExpireRules(ctx)
 }

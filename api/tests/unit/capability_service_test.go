@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
@@ -19,6 +20,8 @@ import (
 type MockCapabilityRepository struct {
 	capabilities map[string]*capability.Capability
 	usageStats   map[string]*capability.CapabilityUsageStats
+	// statsTenants records the tenant passed to every usage-stats call.
+	statsTenants []shared.ID
 }
 
 func NewMockCapabilityRepository() *MockCapabilityRepository {
@@ -170,10 +173,10 @@ func (m *MockCapabilityRepository) CountByTenant(ctx context.Context, tenantID s
 	return count, nil
 }
 
-func (m *MockCapabilityRepository) GetCategories(ctx context.Context) ([]string, error) {
+func (m *MockCapabilityRepository) GetCategories(ctx context.Context, tenantID shared.ID) ([]string, error) {
 	categorySet := make(map[string]bool)
 	for _, c := range m.capabilities {
-		if c.Category != "" {
+		if c.Category != "" && (c.TenantID == nil || *c.TenantID == tenantID) {
 			categorySet[c.Category] = true
 		}
 	}
@@ -184,7 +187,8 @@ func (m *MockCapabilityRepository) GetCategories(ctx context.Context) ([]string,
 	return categories, nil
 }
 
-func (m *MockCapabilityRepository) GetUsageStats(ctx context.Context, capabilityID shared.ID) (*capability.CapabilityUsageStats, error) {
+func (m *MockCapabilityRepository) GetUsageStats(ctx context.Context, tenantID shared.ID, capabilityID shared.ID) (*capability.CapabilityUsageStats, error) {
+	m.statsTenants = append(m.statsTenants, tenantID)
 	c, ok := m.capabilities[capabilityID.String()]
 	if !ok {
 		return nil, shared.ErrNotFound
@@ -200,7 +204,8 @@ func (m *MockCapabilityRepository) GetUsageStats(ctx context.Context, capability
 	return stats, nil
 }
 
-func (m *MockCapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilityIDs []shared.ID) (map[shared.ID]*capability.CapabilityUsageStats, error) {
+func (m *MockCapabilityRepository) GetUsageStatsBatch(ctx context.Context, tenantID shared.ID, capabilityIDs []shared.ID) (map[shared.ID]*capability.CapabilityUsageStats, error) {
+	m.statsTenants = append(m.statsTenants, tenantID)
 	result := make(map[shared.ID]*capability.CapabilityUsageStats)
 	for _, id := range capabilityIDs {
 		c, ok := m.capabilities[id.String()]
@@ -404,6 +409,37 @@ func TestCapabilityService_GetUsageStats_PlatformCapabilityAccessible(t *testing
 	}
 	if stats2.ToolCount != 10 {
 		t.Errorf("expected ToolCount 10, got %d", stats2.ToolCount)
+	}
+}
+
+// Security test: the repository computes usage stats for one tenant (its own
+// tools and sensors plus the platform catalog). The service must always pass
+// the caller's tenant, and refuse a call without one, so another tenant's
+// sensors and custom tools can never be counted or named.
+func TestCapabilityService_GetUsageStats_PassesCallerTenant(t *testing.T) {
+	svc, repo := newCapabilityTestService()
+	caller := shared.NewID()
+	c := createPlatformCapability("sast", "SAST", "security")
+	repo.AddCapability(c)
+
+	if _, err := svc.GetCapabilityUsageStats(context.Background(), caller.String(), c.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.GetCapabilitiesUsageStatsBatch(context.Background(), caller.String(), []string{c.ID.String()}); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.statsTenants) != 2 || repo.statsTenants[0] != caller || repo.statsTenants[1] != caller {
+		t.Fatalf("repository got tenants %v, want the caller %s for both calls", repo.statsTenants, caller)
+	}
+
+	if _, err := svc.GetCapabilityUsageStats(context.Background(), "", c.ID.String()); !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("no tenant: err = %v, want a validation error", err)
+	}
+	if _, err := svc.GetCapabilitiesUsageStatsBatch(context.Background(), "", []string{c.ID.String()}); !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("no tenant (batch): err = %v, want a validation error", err)
+	}
+	if len(repo.statsTenants) != 2 {
+		t.Errorf("a call without a tenant reached the repository")
 	}
 }
 

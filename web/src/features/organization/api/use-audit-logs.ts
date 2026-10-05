@@ -18,6 +18,26 @@ import type {
 } from '../types/audit.types'
 
 // ============================================
+// PAGING
+// ============================================
+
+/**
+ * The audit-log API pages are 1-based (`page=1` is the newest page; a missing
+ * or zero page is clamped to 1 by the server). Tables are 0-based
+ * (`pageIndex`). Every caller converts through this helper so the two can
+ * never be mixed up again: sending `pageIndex` as `page` showed the newest
+ * page twice and made the oldest page unreachable.
+ */
+export function toAuditApiPage(pageIndex: number): number {
+  return Number.isFinite(pageIndex) && pageIndex > 0 ? Math.floor(pageIndex) + 1 : 1
+}
+
+/** Clamp a caller-supplied 1-based page to the API contract (>= 1). */
+function apiPage(page: number): number {
+  return Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1
+}
+
+// ============================================
 // URL BUILDER
 // ============================================
 
@@ -29,7 +49,7 @@ function buildAuditLogsUrl(filters?: AuditLogFilters): string {
   if (filters?.since) params.append('since', filters.since)
   if (filters?.until) params.append('until', filters.until)
   if (filters?.search) params.append('search', filters.search)
-  if (filters?.page !== undefined) params.append('page', filters.page.toString())
+  if (filters?.page !== undefined) params.append('page', apiPage(filters.page).toString())
   if (filters?.per_page) params.append('per_page', filters.per_page.toString())
   if (filters?.sort_by) params.append('sort_by', filters.sort_by)
   if (filters?.sort_order) params.append('sort_order', filters.sort_order)
@@ -82,7 +102,7 @@ export function useAuditLogs(filters?: AuditLogFilters) {
   return {
     logs: data?.data ?? [],
     total: data?.total ?? 0,
-    page: data?.page ?? 0,
+    page: data?.page ?? 1,
     perPage: data?.per_page ?? 20,
     totalPages: data?.total_pages ?? 0,
     isLoading: shouldFetch ? isLoading : false,
@@ -156,7 +176,8 @@ export function useAuditLog(id: string | undefined) {
 export function useResourceAuditHistory(
   resourceType: string | undefined,
   resourceId: string | undefined,
-  page = 0,
+  /** 1-based, like the API. */
+  page = 1,
   perPage = 10
 ) {
   const { currentTenant } = useTenant()
@@ -166,7 +187,7 @@ export function useResourceAuditHistory(
 
   const url =
     resourceType && resourceId
-      ? `${auditLogEndpoints.resourceHistory(resourceType, resourceId)}?page=${page}&per_page=${perPage}`
+      ? `${auditLogEndpoints.resourceHistory(resourceType, resourceId)}?page=${apiPage(page)}&per_page=${perPage}`
       : null
 
   const shouldFetch = currentTenant && url && hasAuditModule && !modulesLoading
@@ -193,14 +214,19 @@ export function useResourceAuditHistory(
  * Hook to fetch audit logs for a specific user
  * Requires tenant context and audit module enabled
  */
-export function useUserAuditActivity(userId: string | undefined, page = 0, perPage = 10) {
+export function useUserAuditActivity(
+  userId: string | undefined,
+  /** 1-based, like the API. */
+  page = 1,
+  perPage = 10
+) {
   const { currentTenant } = useTenant()
   const { moduleIds, isLoading: modulesLoading } = useTenantModules()
 
   const hasAuditModule = moduleIds.includes('audit')
 
   const url = userId
-    ? `${auditLogEndpoints.userActivity(userId)}?page=${page}&per_page=${perPage}`
+    ? `${auditLogEndpoints.userActivity(userId)}?page=${apiPage(page)}&per_page=${perPage}`
     : null
 
   const shouldFetch = currentTenant && url && hasAuditModule && !modulesLoading

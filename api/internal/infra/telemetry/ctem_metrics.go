@@ -3,9 +3,10 @@
 //
 // (invariant O1): one counter-in, one counter-out, one latency
 // histogram per CTEM stage. Labels are tightly restricted to keep
-// cardinality bounded — tenant_id is included because operators need
-// per-tenant drill-down, but priority/severity are NOT labels on the
-// latency histogram (their cardinality is covered by the counters).
+// cardinality bounded: no tenant_id (RFC-046 B9: per-tenant views come from
+// logs and traces, never from metric labels), and priority/severity are NOT
+// labels on the latency histogram (their cardinality is covered by the
+// counters).
 //
 // This package only DEFINES metrics — instrumentation sites live in
 // the app and handler layers and call the Observe* helpers. That
@@ -48,44 +49,41 @@ var AllStages = []Stage{
 type Outcome string
 
 const (
-	OutcomeAdvanced       Outcome = "advanced"        // moved to the next stage
-	OutcomeDeferred       Outcome = "deferred"        // explicitly parked (accepted / compensating control)
-	OutcomeFalsePositive  Outcome = "false_positive"  // closed as FP
-	OutcomeReopened       Outcome = "reopened"        // came back to this stage from downstream (feedback loop)
-	OutcomeFailed         Outcome = "failed"          // stage rejected the item (e.g. validation proved it unexploitable)
-	OutcomeClosed         Outcome = "closed"          // terminal
+	OutcomeAdvanced      Outcome = "advanced"       // moved to the next stage
+	OutcomeDeferred      Outcome = "deferred"       // explicitly parked (accepted / compensating control)
+	OutcomeFalsePositive Outcome = "false_positive" // closed as FP
+	OutcomeReopened      Outcome = "reopened"       // came back to this stage from downstream (feedback loop)
+	OutcomeFailed        Outcome = "failed"         // stage rejected the item (e.g. validation proved it unexploitable)
+	OutcomeClosed        Outcome = "closed"         // terminal
 )
 
 var (
 	// stageFindingsIn counts findings entering a stage. Labels:
 	//   stage     — CTEM stage (canonical string)
-	//   tenant_id — owning tenant (so operators can alert per tenant)
 	//   priority  — P0..P3 or "unclassified"
 	stageFindingsIn = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "ctem_stage_findings_in_total",
 			Help: "Number of findings entering a CTEM stage.",
 		},
-		[]string{"stage", "tenant_id", "priority"},
+		[]string{"stage", "priority"},
 	)
 
 	// stageFindingsOut counts findings leaving a stage with a known
 	// outcome. Labels:
 	//   stage     — CTEM stage
-	//   tenant_id — tenant
 	//   outcome   — Outcome constant
 	stageFindingsOut = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "ctem_stage_findings_out_total",
 			Help: "Number of findings leaving a CTEM stage, by outcome.",
 		},
-		[]string{"stage", "tenant_id", "outcome"},
+		[]string{"stage", "outcome"},
 	)
 
 	// stageLatency is the wall-clock time a finding spent in a stage.
 	// Labels:
 	//   stage     — CTEM stage
-	//   tenant_id — tenant
 	//
 	// Buckets span seconds..weeks because validation + mobilisation
 	// routinely take days. Keep bucket count modest to control
@@ -95,44 +93,44 @@ var (
 			Name: "ctem_stage_latency_seconds",
 			Help: "Wall-clock latency of a finding within a CTEM stage.",
 			Buckets: []float64{
-				60,            // 1m
-				5 * 60,        // 5m
-				15 * 60,       // 15m
-				60 * 60,       // 1h
-				4 * 60 * 60,   // 4h
-				12 * 60 * 60,  // 12h
-				24 * 60 * 60,  // 1d
-				3 * 86400,     // 3d
-				7 * 86400,     // 1w
-				30 * 86400,    // 30d
-				90 * 86400,    // 90d
+				60,           // 1m
+				5 * 60,       // 5m
+				15 * 60,      // 15m
+				60 * 60,      // 1h
+				4 * 60 * 60,  // 4h
+				12 * 60 * 60, // 12h
+				24 * 60 * 60, // 1d
+				3 * 86400,    // 3d
+				7 * 86400,    // 1w
+				30 * 86400,   // 30d
+				90 * 86400,   // 90d
 			},
 		},
-		[]string{"stage", "tenant_id"},
+		[]string{"stage"},
 	)
 )
 
 // ObserveStageIn records that a finding entered a stage. Emit at the
 // earliest point the system learns of the finding in that stage.
-func ObserveStageIn(stage Stage, tenantID, priority string) {
+func ObserveStageIn(stage Stage, _ string, priority string) {
 	if priority == "" {
 		priority = "unclassified"
 	}
-	stageFindingsIn.WithLabelValues(string(stage), tenantID, priority).Inc()
+	stageFindingsIn.WithLabelValues(string(stage), priority).Inc()
 }
 
 // ObserveStageOut records that a finding exited a stage with the
 // given outcome.
-func ObserveStageOut(stage Stage, tenantID string, outcome Outcome) {
-	stageFindingsOut.WithLabelValues(string(stage), tenantID, string(outcome)).Inc()
+func ObserveStageOut(stage Stage, _ string, outcome Outcome) {
+	stageFindingsOut.WithLabelValues(string(stage), string(outcome)).Inc()
 }
 
 // ObserveStageLatency records wall-clock time spent in a stage.
 // Instrumentation sites typically compute `time.Since(stageEnteredAt)`
 // and call this helper when the finding exits.
-func ObserveStageLatency(stage Stage, tenantID string, d time.Duration) {
+func ObserveStageLatency(stage Stage, _ string, d time.Duration) {
 	if d <= 0 {
 		return // defensive: do not record zero/negative values
 	}
-	stageLatency.WithLabelValues(string(stage), tenantID).Observe(d.Seconds())
+	stageLatency.WithLabelValues(string(stage)).Observe(d.Seconds())
 }

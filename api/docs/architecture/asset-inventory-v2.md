@@ -64,6 +64,32 @@ code keys on the class or on (type, sub_type), never on an alias.
 - Behaviour is declared in the registry: `scannable_by` (the tool target
   types that can scan the type), `exposure_default`, and the relationship
   constraints resolved to (core type, sub_type).
+- Type-aware features read the registry on the stored pair, never a type
+  name: exposure inference (`exposure_default`), asset-group counters (by
+  class), scan coverage, threat-model applicability (keyed by
+  `(asset_type, sub_type)`, migration 000457), relationship constraints
+  (enforced on human writes, after the tenant and data-scope checks),
+  scanner compatibility (`scannable_by`), assignment-rule type conditions,
+  and the web scope, relationship and create-finding matchers. A row still
+  stored under an alias name reads as its alias's pair until the data
+  normalisation (T3).
+- Scanner compatibility is **enforcing** (O6): a scanner is handed only
+  the asset-group members whose stored (type, sub_type) its target types
+  can scan, at run dispatch and again at every workflow step's command
+  (`internal/app/scan/type_gate.go`). A run or step with nothing left is
+  refused (`NO_COMPATIBLE_TARGETS` / `INCOMPATIBLE_TARGETS`); assets whose
+  compatibility cannot be decided are dispatched.
+- An endpoint is a host (migration 000773): `endpoint` is an input alias
+  of `(host, workstation)`, so a laptop seen by a network scan and by EDR
+  is one host family for identity matching; 16 core types.
+- One web sub-type (O3, migration 000685): a web application is stored as
+  `(application, website)` and labelled "Web application";
+  `web_application` is an input name only (`type_inputs`).
+- Stored data is normalised (T3, migration 000684): every row holds a core
+  type and a declared sub-type, enforced by `chk_assets_core_type`. Each
+  move is ledgered and reversible, recorded as a `reclassified` history
+  entry, and look-alike applications are queued for dedup review, never
+  merged. Deploy it with an explicit migrate step (`air` does not migrate).
 - Status: rules accepted 2026-10-03; implementation in the T1–T3 PRs of
   §6.3.8. This page moves the bullets to "shipped" as they land.
 

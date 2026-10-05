@@ -41,17 +41,21 @@ passwords. The counter is reset only after the second step succeeds. The
 |---|---|---|---|
 | GET | `/2fa` | | `{supported, enabled, enabled_at, recovery_codes_remaining, required_by_organization}` |
 | POST | `/2fa/setup` | | New pending secret `{secret, otpauth_uri}`. 409 if already enabled. Changes nothing until enable. |
-| POST | `/2fa/enable` | `{code}` | Confirms the pending secret, returns 10 recovery codes, **signs out every other session**. |
+| POST | `/2fa/enable` | `{password, code}` | Needs the current password (a stolen session alone cannot bind an authenticator and lock the user out). Confirms the pending secret, returns 10 recovery codes, **signs out every other session**. |
 | POST | `/2fa/disable` | `{password, code}` | `code` = TOTP or unused recovery code. E-mails the user. |
 | POST | `/2fa/recovery-codes` | `{code}` | TOTP only. Replaces all codes, returns the new ones. |
-| POST | `/change-password` | `{current_password, new_password}` | Keeps the current session, revokes the others immediately, e-mails the user. |
+| POST | `/change-password` | `{current_password, new_password}` | Keeps the current session, revokes the others immediately, e-mails the user. Password rate limiter; a wrong current password counts against the account lockout (as do wrong passwords on 2FA enable/disable), and a locked account takes no guesses. |
 | GET | `/sessions` | | `{sessions:[{id, ip_address, user_agent, created_at, last_activity_at, is_current}]}` |
 | DELETE | `/sessions/{id}` | | Revoke one session (immediate). |
 | DELETE | `/sessions` | | Revoke all except the current one (immediate). |
 
 The mutating 2FA routes carry the CSRF check and an auth rate limiter (`setup`/`enable`:
 5/min, `disable`/`recovery-codes`: 3/min per IP). Responses that contain secrets or
-codes are sent with `Cache-Control: no-store`. Federated accounts get
+codes are sent with `Cache-Control: no-store`. Failed-attempt counters and the
+password hash are written by targeted atomic updates (`RecordFailedLogin`,
+`RecordSuccessfulLogin`, `UpdatePasswordHash`); the whole-row user update never
+writes them, so parallel failures all count and a profile save cannot restore
+an old password hash. Federated accounts get
 `supported:false`, and the mutating calls return 400.
 
 ## Organization policy ("Require MFA")
@@ -114,6 +118,7 @@ integration credentials are.
 |---|---|---|
 | 2FA turned on (self-service or forced enrollment) | `auth.mfa_enabled` (metadata `via`) | |
 | 2FA turned off | `auth.mfa_disabled` | yes |
+| 2FA reset by an organization owner/admin | `auth.mfa_reset` (high; actor, target user, metadata `membership_id`, `target_role`; in the caller's organization) | yes (same "turned off" notice) |
 | Wrong second factor at login | `auth.mfa_failed` | |
 | Recovery code used to sign in | `auth.mfa_recovery_code_used` (metadata `recovery_codes_remaining`) | yes |
 | Recovery codes regenerated | `auth.mfa_recovery_codes_regenerated` | |
@@ -123,10 +128,31 @@ integration credentials are.
 ## Recovery
 
 A user who lost their authenticator signs in with a recovery code, then disables and
-re-enables 2FA, or regenerates codes after setting up a new device. If the recovery codes
-are also lost, an operator can delete the user's row:
-`DELETE FROM user_mfa WHERE user_id = '<uuid>';`. Recovery codes cascade with it. If the
-organization requires 2FA, the user's next login forces enrollment again.
+re-enables 2FA, or regenerates codes after setting up a new device.
+
+If the recovery codes are also lost, an owner or administrator of their organization
+resets it: **Settings > Members**, row menu **Reset 2FA**
+(`POST /api/v1/tenants/{tenant}/members/{membershipId}/reset-2fa`,
+`AuthService.ResetMemberMFA`). The reset deletes the factor and the recovery codes,
+revokes every session of the user (with immediate access-token revocation), writes
+`auth.mfa_reset` and e-mails the user. If the organization requires 2FA, the user's next
+login forces enrollment again.
+
+The factor belongs to the user account, not to one organization, so the rules are:
+
+- the target must be a member of the caller's organization (404 otherwise);
+- the caller must be an active owner or administrator there (route `RequireTeamAdmin`,
+  re-checked live in the service);
+- nobody resets their own factor here: that is the self-service disable, which needs the
+  password and a code, so a hijacked admin session cannot strip its own second factor;
+- an owner or administrator target needs an owner caller (the peer-administrator rule);
+- **the same authority is required in every other organization the target belongs to**,
+  active or suspended. An administrator of organization A cannot weaken the account of
+  someone who is also a member, administrator or owner of organization B unless they hold
+  the same authority in B; otherwise 403 tells them to ask an administrator there.
+
+An operator can still delete the row directly as a last resort:
+`DELETE FROM user_mfa WHERE user_id = '<uuid>';` (recovery codes cascade).
 
 ## Key files
 

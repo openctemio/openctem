@@ -1,6 +1,6 @@
 # RFC-016 — Read-only MCP server (AI-native access to CTEM data)
 
-> Status: **Phase 1 shipped** (tenant-scoped API-key auth + read-only MCP server)
+> Status: **Phase 1–2 shipped, Phase 3 partial** (checked 2026-10-04): tenant-scoped API-key auth + read-only MCP server (#299, hardened in #323); 15 read tools and 4 report prompts (#324); the connect page (openctemio/ui#234); per-key rate limits enforced (#556); the same keys read the REST API (#667). Not built: an `mcp:read` scope, write tools, MCP resources.
 > Origin: a deep-dive of `oasm-platform/open-asm` — the one capability it had that
 > OpenCTEM genuinely lacked was a first-class **Model Context Protocol** server.
 

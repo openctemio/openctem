@@ -86,6 +86,31 @@ describe('FindingWhyItMatters', () => {
     )
   })
 
+  it('explains an attribution cap and links to verify ownership', () => {
+    const assetId = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b'
+    render(
+      <FindingWhyItMatters
+        finding={finding({
+          priorityClass: 'P2',
+          priorityClassReason:
+            'KEV-listed, reachable · capped at P2 until ownership is confirmed (was P0; asset attribution: needs_review)',
+          assets: [{ id: assetId, type: 'domain', name: 'api.acme.io' }],
+        })}
+      />
+    )
+    const note = screen.getByRole('note', { name: 'Ownership not confirmed' })
+    expect(note).toHaveTextContent('held at P2')
+    expect(within(note).getByRole('link', { name: 'Verify ownership' })).toHaveAttribute(
+      'href',
+      `/assets/${assetId}`
+    )
+  })
+
+  it('shows no ownership note for an uncapped finding', () => {
+    render(<FindingWhyItMatters finding={finding()} />)
+    expect(screen.queryByRole('note', { name: 'Ownership not confirmed' })).toBeNull()
+  })
+
   it('does not fetch the score breakdown until it is opened', () => {
     explain.mockClear()
     render(<FindingWhyItMatters finding={finding()} />)

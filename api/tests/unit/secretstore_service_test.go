@@ -638,62 +638,71 @@ func TestSecretListCredentials_EmptyResult(t *testing.T) {
 // Tests: UpdateCredential
 // =============================================================================
 
+func secretStr(v string) *string { return &v }
+
 func TestSecretUpdateCredential_Success(t *testing.T) {
 	svc, repo, auditRepo := newSecretTestService(t)
 	ctx := context.Background()
 
 	tenantID := shared.NewID()
+	actor := shared.NewID()
 	cred := secretCreateCredential(t, repo, tenantID, "old-name", secretstore.CredentialTypeAPIKey, &secretstore.APIKeyData{Key: "k"})
 
 	updated, err := svc.UpdateCredential(ctx, app.UpdateCredentialInput{
 		TenantID:     tenantID,
 		CredentialID: cred.ID.String(),
-		Name:         "new-name",
-		Description:  "Updated desc",
+		ActorID:      actor,
+		Name:         secretStr("new-name"),
+		Description:  secretStr("Updated desc"),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if updated.Name != "new-name" {
-		t.Fatalf("expected name 'new-name', got '%s'", updated.Name)
-	}
-	if updated.Description != "Updated desc" {
-		t.Fatalf("expected description 'Updated desc', got '%s'", updated.Description)
+	if updated.Name != "new-name" || updated.Description != "Updated desc" {
+		t.Fatalf("got name %q description %q", updated.Name, updated.Description)
 	}
 	if repo.updateCalls != 1 {
 		t.Fatalf("expected 1 update call, got %d", repo.updateCalls)
 	}
-	// Audit log for update
-	if len(auditRepo.logs) < 1 {
-		t.Fatal("expected at least 1 audit log for update")
+	// The update is audited with the acting user (it had no actor before).
+	if len(auditRepo.logs) != 1 {
+		t.Fatalf("expected 1 audit log, got %d", len(auditRepo.logs))
+	}
+	if got := auditRepo.logs[0].ActorID(); got == nil || *got != actor {
+		t.Fatalf("audit actor = %v, want %s", got, actor)
 	}
 }
 
-func TestSecretUpdateCredential_WithNewData(t *testing.T) {
+// An omitted field is left as it is. The old PUT wiped expires_at and the
+// description whenever they were not sent, so editing the name removed an
+// expiry an administrator had set.
+func TestSecretUpdateCredential_OmittedFieldsUnchanged(t *testing.T) {
 	svc, repo, _ := newSecretTestService(t)
 	ctx := context.Background()
 
 	tenantID := shared.NewID()
-	cred := secretCreateCredential(t, repo, tenantID, "key", secretstore.CredentialTypeAPIKey, &secretstore.APIKeyData{Key: "old-key"})
-	oldEncrypted := make([]byte, len(cred.EncryptedData))
-	copy(oldEncrypted, cred.EncryptedData)
+	cred := secretCreateCredential(t, repo, tenantID, "key", secretstore.CredentialTypeAPIKey, &secretstore.APIKeyData{Key: "k"})
+	expires := time.Now().Add(72 * time.Hour).UTC().Truncate(time.Second)
+	cred.ExpiresAt = &expires
+	cred.Description = "keep me"
 
 	updated, err := svc.UpdateCredential(ctx, app.UpdateCredentialInput{
 		TenantID:     tenantID,
 		CredentialID: cred.ID.String(),
-		Name:         "key",
-		Data:         &secretstore.APIKeyData{Key: "new-key"},
+		Name:         secretStr("renamed"),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Encrypted data should be different
-	if string(updated.EncryptedData) == string(oldEncrypted) {
-		t.Fatal("expected encrypted data to change after update with new data")
+	if updated.ExpiresAt == nil || !updated.ExpiresAt.Equal(expires) {
+		t.Fatalf("expires_at changed: %v", updated.ExpiresAt)
+	}
+	if updated.Description != "keep me" {
+		t.Fatalf("description changed: %q", updated.Description)
 	}
 }
 
-func TestSecretUpdateCredential_WithExpiration(t *testing.T) {
+func TestSecretUpdateCredential_SetAndClearExpiry(t *testing.T) {
 	svc, repo, _ := newSecretTestService(t)
 	ctx := context.Background()
 
@@ -704,35 +713,43 @@ func TestSecretUpdateCredential_WithExpiration(t *testing.T) {
 	updated, err := svc.UpdateCredential(ctx, app.UpdateCredentialInput{
 		TenantID:     tenantID,
 		CredentialID: cred.ID.String(),
-		Name:         "key",
-		ExpiresAt:    &expires,
+		ExpiresAt:    app.OptionalTime{Set: true, Value: &expires},
+	})
+	if err != nil || updated.ExpiresAt == nil {
+		t.Fatalf("set expiry: err=%v expires=%v", err, updated)
+	}
+
+	updated, err = svc.UpdateCredential(ctx, app.UpdateCredentialInput{
+		TenantID:     tenantID,
+		CredentialID: cred.ID.String(),
+		ExpiresAt:    app.OptionalTime{Set: true},
 	})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("clear expiry: %v", err)
 	}
-	if updated.ExpiresAt == nil {
-		t.Fatal("expected ExpiresAt to be set")
+	if updated.ExpiresAt != nil {
+		t.Fatalf("expiry not cleared: %v", updated.ExpiresAt)
 	}
 }
 
-func TestSecretUpdateCredential_KeepNameIfEmpty(t *testing.T) {
+func TestSecretUpdateCredential_RejectsPastExpiryAndEmptyName(t *testing.T) {
 	svc, repo, _ := newSecretTestService(t)
 	ctx := context.Background()
 
 	tenantID := shared.NewID()
-	cred := secretCreateCredential(t, repo, tenantID, "original", secretstore.CredentialTypeAPIKey, &secretstore.APIKeyData{Key: "k"})
+	cred := secretCreateCredential(t, repo, tenantID, "key", secretstore.CredentialTypeAPIKey, &secretstore.APIKeyData{Key: "k"})
 
-	updated, err := svc.UpdateCredential(ctx, app.UpdateCredentialInput{
-		TenantID:     tenantID,
-		CredentialID: cred.ID.String(),
-		Name:         "", // empty name should keep original
-		Description:  "new desc",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	past := time.Now().Add(-time.Hour)
+	if _, err := svc.UpdateCredential(ctx, app.UpdateCredentialInput{
+		TenantID: tenantID, CredentialID: cred.ID.String(),
+		ExpiresAt: app.OptionalTime{Set: true, Value: &past},
+	}); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("past expiry: err = %v, want ErrValidation", err)
 	}
-	if updated.Name != "original" {
-		t.Fatalf("expected name to remain 'original', got '%s'", updated.Name)
+	if _, err := svc.UpdateCredential(ctx, app.UpdateCredentialInput{
+		TenantID: tenantID, CredentialID: cred.ID.String(), Name: secretStr(""),
+	}); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("empty name: err = %v, want ErrValidation", err)
 	}
 }
 
@@ -743,11 +760,8 @@ func TestSecretUpdateCredential_InvalidID(t *testing.T) {
 	_, err := svc.UpdateCredential(ctx, app.UpdateCredentialInput{
 		TenantID:     shared.NewID(),
 		CredentialID: "bad",
-		Name:         "test",
+		Name:         secretStr("test"),
 	})
-	if err == nil {
-		t.Fatal("expected error for invalid ID")
-	}
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("expected ErrValidation, got: %v", err)
 	}
@@ -760,7 +774,7 @@ func TestSecretUpdateCredential_NotFound(t *testing.T) {
 	_, err := svc.UpdateCredential(ctx, app.UpdateCredentialInput{
 		TenantID:     shared.NewID(),
 		CredentialID: shared.NewID().String(),
-		Name:         "test",
+		Name:         secretStr("test"),
 	})
 	if err == nil {
 		t.Fatal("expected error for not found")
@@ -778,7 +792,7 @@ func TestSecretUpdateCredential_RepoError(t *testing.T) {
 	_, err := svc.UpdateCredential(ctx, app.UpdateCredentialInput{
 		TenantID:     tenantID,
 		CredentialID: cred.ID.String(),
-		Name:         "updated",
+		Name:         secretStr("updated"),
 	})
 	if err == nil {
 		t.Fatal("expected error from repo Update")
@@ -797,7 +811,7 @@ func TestSecretRotateCredential_Success(t *testing.T) {
 	cred := secretCreateCredential(t, repo, tenantID, "rotate-key", secretstore.CredentialTypeAPIKey, &secretstore.APIKeyData{Key: "old-key"})
 	originalVersion := cred.KeyVersion
 
-	rotated, err := svc.RotateCredential(ctx, tenantID, cred.ID.String(), &secretstore.APIKeyData{Key: "new-key"})
+	rotated, err := svc.RotateCredential(ctx, app.RotateCredentialInput{TenantID: tenantID, CredentialID: cred.ID.String(), Data: &secretstore.APIKeyData{Key: "new-key"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -820,7 +834,7 @@ func TestSecretRotateCredential_InvalidID(t *testing.T) {
 	svc, _, _ := newSecretTestService(t)
 	ctx := context.Background()
 
-	_, err := svc.RotateCredential(ctx, shared.NewID(), "bad", &secretstore.APIKeyData{Key: "k"})
+	_, err := svc.RotateCredential(ctx, app.RotateCredentialInput{TenantID: shared.NewID(), CredentialID: "bad", Data: &secretstore.APIKeyData{Key: "k"}})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -833,7 +847,7 @@ func TestSecretRotateCredential_NotFound(t *testing.T) {
 	svc, _, _ := newSecretTestService(t)
 	ctx := context.Background()
 
-	_, err := svc.RotateCredential(ctx, shared.NewID(), shared.NewID().String(), &secretstore.APIKeyData{Key: "k"})
+	_, err := svc.RotateCredential(ctx, app.RotateCredentialInput{TenantID: shared.NewID(), CredentialID: shared.NewID().String(), Data: &secretstore.APIKeyData{Key: "k"}})
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
@@ -847,7 +861,7 @@ func TestSecretRotateCredential_RepoError(t *testing.T) {
 	cred := secretCreateCredential(t, repo, tenantID, "key", secretstore.CredentialTypeAPIKey, &secretstore.APIKeyData{Key: "k"})
 	repo.updateErr = errors.New("db error")
 
-	_, err := svc.RotateCredential(ctx, tenantID, cred.ID.String(), &secretstore.APIKeyData{Key: "new"})
+	_, err := svc.RotateCredential(ctx, app.RotateCredentialInput{TenantID: tenantID, CredentialID: cred.ID.String(), Data: &secretstore.APIKeyData{Key: "new"}})
 	if err == nil {
 		t.Fatal("expected error from repo Update")
 	}
@@ -861,11 +875,11 @@ func TestSecretRotateCredential_MultipleRotations(t *testing.T) {
 	cred := secretCreateCredential(t, repo, tenantID, "key", secretstore.CredentialTypeAPIKey, &secretstore.APIKeyData{Key: "v1"})
 
 	// Rotate twice
-	rotated1, err := svc.RotateCredential(ctx, tenantID, cred.ID.String(), &secretstore.APIKeyData{Key: "v2"})
+	rotated1, err := svc.RotateCredential(ctx, app.RotateCredentialInput{TenantID: tenantID, CredentialID: cred.ID.String(), Data: &secretstore.APIKeyData{Key: "v2"}})
 	if err != nil {
 		t.Fatalf("unexpected error on first rotation: %v", err)
 	}
-	rotated2, err := svc.RotateCredential(ctx, tenantID, rotated1.ID.String(), &secretstore.APIKeyData{Key: "v3"})
+	rotated2, err := svc.RotateCredential(ctx, app.RotateCredentialInput{TenantID: tenantID, CredentialID: rotated1.ID.String(), Data: &secretstore.APIKeyData{Key: "v3"}})
 	if err != nil {
 		t.Fatalf("unexpected error on second rotation: %v", err)
 	}
@@ -1255,4 +1269,54 @@ func (m *secretMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _
 
 func (m *secretMockAuditRepo) ApplyChainRebaseline(_ context.Context, _ audit.ChainRebaseline) error {
 	return nil
+}
+
+// Rotating replaces the secret: decrypting afterwards returns the new value,
+// the old one is gone, and the rotation is audited (High) with the actor.
+func TestSecretRotateCredential_DecryptReturnsNewValue(t *testing.T) {
+	svc, repo, auditRepo := newSecretTestService(t)
+	ctx := context.Background()
+
+	tenantID := shared.NewID()
+	actor := shared.NewID()
+	cred := secretCreateCredential(t, repo, tenantID, "git-token", secretstore.CredentialTypeAPIKey, &secretstore.APIKeyData{Key: "old-secret"})
+
+	if _, err := svc.RotateCredential(ctx, app.RotateCredentialInput{
+		TenantID: tenantID, CredentialID: cred.ID.String(), ActorID: actor,
+		Data: &secretstore.APIKeyData{Key: "new-secret"},
+	}); err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	data, err := svc.DecryptCredentialData(ctx, tenantID, cred.ID.String())
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	if got := data.(*secretstore.APIKeyData).Key; got != "new-secret" {
+		t.Fatalf("decrypted key = %q, want new-secret", got)
+	}
+	rot := auditRepo.logs[0]
+	if rot.Severity() != audit.SeverityHigh {
+		t.Fatalf("rotation severity = %s, want high", rot.Severity())
+	}
+	if got := rot.ActorID(); got == nil || *got != actor {
+		t.Fatalf("rotation actor = %v, want %s", got, actor)
+	}
+}
+
+// Another tenant's credential cannot be rotated (tenant isolation).
+func TestSecretRotateCredential_CrossTenantRefused(t *testing.T) {
+	svc, repo, _ := newSecretTestService(t)
+	ctx := context.Background()
+
+	owner := shared.NewID()
+	cred := secretCreateCredential(t, repo, owner, "k", secretstore.CredentialTypeAPIKey, &secretstore.APIKeyData{Key: "v1"})
+	if _, err := svc.RotateCredential(ctx, app.RotateCredentialInput{
+		TenantID: shared.NewID(), CredentialID: cred.ID.String(), Data: &secretstore.APIKeyData{Key: "evil"},
+	}); err == nil {
+		t.Fatal("rotating another tenant's credential must fail")
+	}
+	data, err := svc.DecryptCredentialData(ctx, owner, cred.ID.String())
+	if err != nil || data.(*secretstore.APIKeyData).Key != "v1" {
+		t.Fatalf("owner's secret changed: %v %v", data, err)
+	}
 }

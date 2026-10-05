@@ -9,7 +9,7 @@
  */
 
 import type { AssetStatsData } from '../hooks/use-assets'
-import type { InventoryFilters } from './inventory-url'
+import { ATTRIBUTION_FILTER_VALUES, type InventoryFilters } from './inventory-url'
 import { ASSET_TYPE_LABELS, ASSET_SCOPE_LABELS, EXPOSURE_LEVEL_LABELS } from '../types/asset.types'
 import { CRITICALITY_LABELS } from '@/lib/criticality-colors'
 
@@ -20,6 +20,17 @@ export const DATA_CLASSIFICATION_LABELS: Record<string, string> = {
   confidential: 'Confidential',
   restricted: 'Restricted',
   secret: 'Secret',
+}
+
+/** Attribution filter labels (RFC-036; the asset page uses the same words). */
+export const ATTRIBUTION_FILTER_LABELS: Record<string, string> = {
+  confirmed: 'Confirmed',
+  unknown: 'No record (added before EASM)',
+  needs_review: 'Needs review',
+  candidate: 'Candidate',
+  dependency: 'Dependency',
+  monitor_only: 'Monitor only',
+  rejected: 'Not ours',
 }
 
 /** Deployment environments (mirrors the api CHECK constraint on assets). */
@@ -58,6 +69,7 @@ export interface MultiFacetDef {
     | 'environments'
     | 'providers'
     | 'businessUnitIds'
+    | 'attribution'
   >
   label: string
   source: FacetValueSource
@@ -141,6 +153,16 @@ export function buildFacetGroups(businessUnitLabels: Record<string, string>): Fa
           trueLabel: 'Has owner',
           falseLabel: 'Unowned',
           counts: (s) => s.byHasOwner,
+        },
+        {
+          kind: 'multi',
+          filterKey: 'attribution',
+          label: 'Attribution',
+          source: 'static',
+          values: [...ATTRIBUTION_FILTER_VALUES],
+          labelFor: (v) => ATTRIBUTION_FILTER_LABELS[v] ?? v,
+          // The stats endpoint has no attribution breakdown.
+          counts: () => ({}),
         },
         {
           kind: 'multi',

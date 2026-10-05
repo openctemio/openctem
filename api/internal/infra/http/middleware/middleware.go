@@ -163,7 +163,7 @@ func LoggerWithConfig(log *logger.Logger, cfg LoggerConfig) func(http.Handler) h
 			// Log with appropriate level based on status and duration
 			attrs := []any{
 				"method", r.Method,
-				"path", logger.SanitizeText(r.URL.Path), // decoded: may carry %0A
+				"path", logger.SanitizeText(RedactPath(r.URL.Path)), // decoded: may carry %0A
 				"status", wrapped.statusCode,
 				"duration", duration,
 				"request_id", GetRequestID(r.Context()),

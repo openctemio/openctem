@@ -196,23 +196,43 @@ func (h *authzPolicyHarness) member(tenantID, membershipRole string) policyUser 
 	h.t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, u.id) })
 	h.exec(`INSERT INTO tenant_members (id, user_id, tenant_id, role) VALUES ($1, $2, $3, $4)`,
 		u.membershipID, u.id, tenantID, membershipRole)
+	h.mintToken(&u, tenantID)
+	return u
+}
 
-	isAdmin := membershipRole == "owner" || membershipRole == "admin"
+// mintToken (re)issues u's access token with the permissions u holds now.
+func (h *authzPolicyHarness) mintToken(u *policyUser, tenantID string) {
+	h.t.Helper()
+	email := "authzpol-" + u.id[:8] + "@it.test"
+	isAdmin := u.role == "owner" || u.role == "admin"
 	var perms []string
 	if !isAdmin {
 		var err error
 		perms, err = h.roles.GetUserPermissions(context.Background(), role.MustParseID(tenantID), role.MustParseID(u.id))
 		if err != nil {
-			h.t.Fatalf("permissions of %s: %v", membershipRole, err)
+			h.t.Fatalf("permissions of %s: %v", u.role, err)
 		}
 	}
 	tok, err := h.gen.GenerateTenantScopedAccessTokenWithPermissions(u.id, email, "Authz policy IT", uuid.NewString(),
-		jwt.TenantMembership{TenantID: tenantID, Role: membershipRole}, perms, isAdmin, 0, "password")
+		jwt.TenantMembership{TenantID: tenantID, Role: u.role}, perms, isAdmin, 0, "password")
 	if err != nil {
 		h.t.Fatalf("mint token: %v", err)
 	}
 	u.token = tok.AccessToken
-	return u
+}
+
+// grantCustomRole gives u a custom role of tenantID carrying perms, and
+// re-mints u's token.
+func (h *authzPolicyHarness) grantCustomRole(u *policyUser, tenantID string, perms ...string) {
+	h.t.Helper()
+	roleID := uuid.NewString()
+	h.exec(`INSERT INTO roles (id, tenant_id, slug, name, is_system, hierarchy_level) VALUES ($1, $2, $3, $3, FALSE, 10)`,
+		roleID, tenantID, "custom-"+roleID[:8])
+	for _, p := range perms {
+		h.exec(`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)`, roleID, p)
+	}
+	h.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, u.id, tenantID, roleID)
+	h.mintToken(u, tenantID)
 }
 
 func (h *authzPolicyHarness) do(u policyUser, method, path, body string) (int, string) {
@@ -314,7 +334,7 @@ func TestAuthzPolicy_BillingNotGrantedToMemberOrViewer_DB(t *testing.T) {
 	h := newAuthzPolicyHarness(t)
 	rows, err := h.db.Query(`SELECT r.slug, rp.permission_id FROM role_permissions rp JOIN roles r ON r.id = rp.role_id
 		WHERE r.is_system AND r.slug IN ('member','viewer')
-		  AND rp.permission_id IN ('settings:billing:read','audit:read','sensors:write','sensors:delete')`)
+		  AND rp.permission_id IN ('audit:read','sensors:write','sensors:delete')`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,11 +351,11 @@ func TestAuthzPolicy_BillingNotGrantedToMemberOrViewer_DB(t *testing.T) {
 	var n int
 	if err := h.db.QueryRow(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id
 		WHERE r.is_system AND r.slug IN ('owner','admin')
-		  AND rp.permission_id IN ('settings:billing:read','audit:read','sensors:write')`).Scan(&n); err != nil {
+		  AND rp.permission_id IN ('audit:read','sensors:write')`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 6 {
-		t.Fatalf("owner+admin hold %d of the 6 admin-only grants, want 6", n)
+	if n != 4 {
+		t.Fatalf("owner+admin hold %d of the 4 admin-only grants, want 4", n)
 	}
 	// Members and viewers keep reading sensors.
 	if err := h.db.QueryRow(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id
@@ -352,7 +372,7 @@ func TestAuthzPolicy_MembersSeeOnlyTheirOwnAPIKeys_DB(t *testing.T) {
 	tid := h.tenant()
 	admin, member := h.member(tid, "admin"), h.member(tid, "member")
 	mint := func(owner policyUser) string {
-		res, err := h.keys.Create(context.Background(), apikey.CreateInput{TenantID: tid, UserID: owner.id, Name: "k-" + uuid.NewString()[:8]})
+		res, err := h.keys.Create(context.Background(), apikey.CreateInput{TenantID: tid, UserID: owner.id, Name: "k-" + uuid.NewString()[:8], ExpiresInDays: 90})
 		if err != nil {
 			t.Fatalf("mint key: %v", err)
 		}
@@ -386,6 +406,31 @@ func TestAuthzPolicy_MembersSeeOnlyTheirOwnAPIKeys_DB(t *testing.T) {
 	h.expect(member, http.MethodGet, "/api/v1/api-keys/"+memberKey, "", http.StatusOK)
 	h.expect(member, http.MethodGet, "/api/v1/api-keys/"+adminKey, "", http.StatusNotFound)
 	h.expect(admin, http.MethodGet, "/api/v1/api-keys/"+memberKey, "", http.StatusOK)
+
+	// Revoke and delete follow the same rule (settings audit A-M3): a member
+	// whose custom role lets them revoke and delete keys may do it to their
+	// own keys only; someone else's key reads as not found.
+	h.grantCustomRole(&member, tid, "integrations:api_keys:write", "integrations:api_keys:delete")
+	h.expect(member, http.MethodPost, "/api/v1/api-keys/"+adminKey+"/revoke", "", http.StatusNotFound)
+	h.expect(member, http.MethodDelete, "/api/v1/api-keys/"+adminKey, "", http.StatusNotFound)
+	var status string
+	if err := h.db.QueryRow(`SELECT status FROM api_keys WHERE id = $1`, adminKey).Scan(&status); err != nil {
+		t.Fatalf("admin key after refused revoke/delete: %v", err)
+	}
+	if status != "active" {
+		t.Fatalf("admin key status = %q after a refused revoke", status)
+	}
+	h.expect(member, http.MethodPost, "/api/v1/api-keys/"+memberKey+"/revoke", "", http.StatusOK)
+	other := mint(member)
+	h.expect(admin, http.MethodPost, "/api/v1/api-keys/"+other+"/revoke", "", http.StatusOK)
+	h.expect(admin, http.MethodDelete, "/api/v1/api-keys/"+other, "", http.StatusNoContent)
+
+	// Every key expires (settings decision B14): no expiry, or more than a
+	// year, is refused.
+	h.expect(admin, http.MethodPost, "/api/v1/api-keys", `{"name":"never"}`, http.StatusUnprocessableEntity)
+	h.expect(admin, http.MethodPost, "/api/v1/api-keys", `{"name":"never","expires_in_days":0}`, http.StatusUnprocessableEntity)
+	h.expect(admin, http.MethodPost, "/api/v1/api-keys", `{"name":"too-long","expires_in_days":366}`, http.StatusUnprocessableEntity)
+	h.expect(admin, http.MethodPost, "/api/v1/api-keys", `{"name":"a-year","expires_in_days":365}`, http.StatusCreated)
 }
 
 func TestAuthzPolicy_PeerAdminsAreOwnerManaged_DB(t *testing.T) {

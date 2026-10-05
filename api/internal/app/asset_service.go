@@ -29,6 +29,7 @@ type (
 	BulkUpdateInput                     = asset.BulkUpdateInput
 	CreateAssetGroupInput               = asset.CreateAssetGroupInput
 	CreateAssetInput                    = asset.CreateAssetInput
+	DuplicateAssetError                 = asset.DuplicateAssetError
 	CreateBranchInput                   = asset.CreateBranchInput
 	CreateBusinessUnitInput             = asset.CreateBusinessUnitInput
 	CreateComponentInput                = asset.CreateComponentInput

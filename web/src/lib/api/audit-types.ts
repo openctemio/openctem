@@ -121,6 +121,7 @@ export type AuditAction =
   | 'finding.unassigned'
   | 'finding.commented'
   | 'finding.bulk_updated'
+  | 'finding.duplicate_marked'
   // Branch actions
   | 'branch.created'
   | 'branch.updated'
@@ -131,6 +132,9 @@ export type AuditAction =
   | 'sla_policy.created'
   | 'sla_policy.updated'
   | 'sla_policy.deleted'
+  | 'saved_view.created'
+  | 'saved_view.updated'
+  | 'saved_view.deleted'
   // Scan actions
   | 'scan.started'
   | 'scan.completed'
@@ -166,6 +170,14 @@ export type AuditAction =
   | 'scope_exclusion.deactivated'
   | 'scope_exclusion.approved'
   | 'scope_exclusion.rejected'
+  | 'suppression_rule.approved'
+  | 'suppression_rule.self_approved'
+  | 'easm_seed.created'
+  | 'easm_seed.updated'
+  | 'easm_seed.deleted'
+  | 'report_schedule.created'
+  | 'report_schedule.activated'
+  | 'report_schedule.deleted'
   | 'tool.created'
   | 'tool.updated'
   | 'tool.deleted'
@@ -182,6 +194,30 @@ export type AuditAction =
   | 'remediation_campaign.updated'
   | 'remediation_campaign.status_changed'
   | 'remediation_campaign.deleted'
+  // Configuration changes (audited with a before/after diff)
+  | 'invitation.resent'
+  | 'scim_token.created'
+  | 'scim_token.revoked'
+  | 'storage_config.updated'
+  | 'integration.created'
+  | 'integration.updated'
+  | 'integration.deleted'
+  | 'integration.enabled'
+  | 'integration.disabled'
+  | 'integration.credentials_changed'
+  | 'integration.webhook_secret_read'
+  | 'integration.webhook_secret_rotated'
+  | 'notification_outbox.retried'
+  | 'notification_outbox.deleted'
+  | 'priority_rule.created'
+  | 'priority_rule.updated'
+  | 'priority_rule.deleted'
+  | 'scope_rule.created'
+  | 'scope_rule.updated'
+  | 'scope_rule.deleted'
+  | 'assignment_rule.created'
+  | 'assignment_rule.updated'
+  | 'assignment_rule.deleted'
 
 /**
  * Resource types - maps to backend audit.ResourceType
@@ -198,6 +234,7 @@ export type AuditResourceType =
   | 'finding'
   | 'finding_comment'
   | 'sla_policy'
+  | 'saved_view'
   | 'scan'
   | 'asset'
   | 'settings'
@@ -206,9 +243,19 @@ export type AuditResourceType =
   | 'scan_zone'
   | 'scope_target'
   | 'scope_exclusion'
+  | 'suppression_rule'
+  | 'easm_seed'
+  | 'report_schedule'
   | 'tool'
   | 'scanner_template'
   | 'remediation_campaign'
+  | 'integration'
+  | 'scim_token'
+  | 'storage_config'
+  | 'notification_outbox'
+  | 'priority_rule'
+  | 'scope_rule'
+  | 'assignment_rule'
   | typeof HISTORICAL_SENSOR_RESOURCE_TYPE
 
 /**
@@ -253,55 +300,6 @@ export interface AuditLog {
   metadata?: Record<string, unknown>
   request_id?: string
   timestamp: string
-}
-
-// ============================================
-// LIST RESPONSE & FILTERS
-// ============================================
-
-/**
- * Audit log list response
- */
-export interface AuditLogListResponse {
-  items: AuditLog[]
-  total: number
-  page: number
-  page_size: number
-}
-
-/**
- * Audit log list filters
- */
-export interface AuditLogListFilters {
-  resource_type?: AuditResourceType
-  resource_id?: string
-  action?: AuditAction
-  actor_id?: string
-  result?: AuditResult
-  severity?: AuditSeverity
-  from_date?: string
-  to_date?: string
-  search?: string
-  page?: number
-  page_size?: number
-}
-
-// ============================================
-// STATS
-// ============================================
-
-/**
- * Audit log statistics
- */
-export interface AuditLogStats {
-  total_logs: number
-  logs_today: number
-  logs_this_week: number
-  logs_this_month: number
-  by_action: Record<string, number>
-  by_resource_type: Record<string, number>
-  by_result: Record<string, number>
-  by_severity: Record<string, number>
 }
 
 // ============================================
@@ -359,6 +357,7 @@ export function getActionLabel(action: AuditAction): string {
     'finding.unassigned': 'Finding Unassigned',
     'finding.commented': 'Finding Commented',
     'finding.bulk_updated': 'Findings Bulk Updated',
+    'finding.duplicate_marked': 'Finding Marked Duplicate',
     // Branch actions
     'branch.created': 'Branch Created',
     'branch.updated': 'Branch Updated',
@@ -369,6 +368,9 @@ export function getActionLabel(action: AuditAction): string {
     'sla_policy.created': 'SLA Policy Created',
     'sla_policy.updated': 'SLA Policy Updated',
     'sla_policy.deleted': 'SLA Policy Deleted',
+    'saved_view.created': 'Saved View Created',
+    'saved_view.updated': 'Saved View Updated',
+    'saved_view.deleted': 'Saved View Deleted',
     // Scan actions
     'scan.started': 'Scan Started',
     'scan.completed': 'Scan Completed',
@@ -417,6 +419,16 @@ export function getActionLabel(action: AuditAction): string {
     'scope_exclusion.deactivated': 'Scope Exclusion Deactivated',
     'scope_exclusion.approved': 'Scope Exclusion Approved',
     'scope_exclusion.rejected': 'Scope Exclusion Rejected',
+    'suppression_rule.approved': 'Suppression Rule Approved',
+    'suppression_rule.self_approved': 'Suppression Rule Self-Approved by Owner',
+    // EASM seeds (RFC-036)
+    'easm_seed.created': 'EASM Seed Added',
+    'easm_seed.updated': 'EASM Seed Changed',
+    'easm_seed.deleted': 'EASM Seed Removed',
+    // Report schedules
+    'report_schedule.created': 'Report Schedule Created',
+    'report_schedule.activated': 'Report Schedule Activated',
+    'report_schedule.deleted': 'Report Schedule Deleted',
     // Tool actions
     'tool.created': 'Tool Created',
     'tool.updated': 'Tool Updated',
@@ -435,6 +447,30 @@ export function getActionLabel(action: AuditAction): string {
     'remediation_campaign.updated': 'Remediation Campaign Updated',
     'remediation_campaign.status_changed': 'Remediation Campaign Status Changed',
     'remediation_campaign.deleted': 'Remediation Campaign Deleted',
+    // Configuration changes
+    'invitation.resent': 'Invitation Resent',
+    'scim_token.created': 'SCIM Token Created',
+    'scim_token.revoked': 'SCIM Token Revoked',
+    'storage_config.updated': 'Evidence Storage Changed',
+    'integration.created': 'Integration Created',
+    'integration.updated': 'Integration Updated',
+    'integration.deleted': 'Integration Deleted',
+    'integration.enabled': 'Integration Enabled',
+    'integration.disabled': 'Integration Disabled',
+    'integration.credentials_changed': 'Integration Credentials Changed',
+    'integration.webhook_secret_read': 'Webhook Secret Viewed',
+    'integration.webhook_secret_rotated': 'Webhook Secret Rotated',
+    'notification_outbox.retried': 'Notification Retried',
+    'notification_outbox.deleted': 'Notification Deleted',
+    'priority_rule.created': 'Priority Rule Created',
+    'priority_rule.updated': 'Priority Rule Updated',
+    'priority_rule.deleted': 'Priority Rule Deleted',
+    'scope_rule.created': 'Scope Rule Created',
+    'scope_rule.updated': 'Scope Rule Updated',
+    'scope_rule.deleted': 'Scope Rule Deleted',
+    'assignment_rule.created': 'Assignment Rule Created',
+    'assignment_rule.updated': 'Assignment Rule Updated',
+    'assignment_rule.deleted': 'Assignment Rule Deleted',
   }
   const canonical = canonicalAuditAction(action)
   return labels[canonical] || action

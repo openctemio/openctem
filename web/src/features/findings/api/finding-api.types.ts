@@ -22,6 +22,7 @@ export type FindingStatus =
   | 'confirmed' // Verified as real issue, needs fix
   | 'in_progress' // Developer working on fix
   | 'fix_applied' // Dev/owner marked as fixed — awaiting scan verification
+  | 'not_observed' // Not seen by recent scans, no coverage proof: stale, not fixed
   | 'resolved' // Verified fixed (by scan or security review)
   | 'false_positive' // Not a real issue (requires approval)
   | 'accepted' // Risk accepted (requires approval, has expiration)
@@ -234,6 +235,7 @@ export interface ApiFinding {
   kind?: string // fail/pass/warning/note
   occurrence_count?: number // number of occurrences
   duplicate_count?: number // number of duplicates
+  duplicate_of?: string // the finding this one was folded into (status duplicate)
   comments_count?: number // number of comments
   sla_status?: string // on_track | warning | overdue | exceeded | not_applicable
   sla_deadline?: string // ISO timestamp of the remediation deadline (nullable)
@@ -360,6 +362,22 @@ export interface ApiFinding {
   misconfig_expected?: string
   misconfig_actual?: string
   misconfig_cause?: string
+  /** Rule family / category from the scanner (research 17 R2). */
+  family?: string
+  vpr_score?: number
+  cvss_version?: string
+  cve_ids?: string[]
+  patch_published_at?: string
+  /** The scanner reported a public exploit (findings.exploit_available). */
+  exploit_available?: boolean
+  network_port?: number
+  network_transport?: string
+  network_service?: string
+  /** Detail only (GET /findings/{id}): both CVSS vectors and the scanner's output. */
+  cvss_v2_vector?: string
+  cvss_v3_vector?: string
+  /** The scanner's proof (plugin output). Untrusted plain text: render escaped. */
+  scanner_output?: { text: string; updated_at?: string; truncated: boolean }
 }
 
 // ============================================
@@ -472,7 +490,6 @@ export interface FindingApiFilters {
   severities?: Severity[]
   statuses?: FindingStatus[]
   sources?: FindingSource[]
-  source_id?: string // Sensor/Source ID that created the finding
   tool_name?: string
   rule_id?: string
   scan_id?: string
@@ -496,6 +513,16 @@ export interface FindingApiFilters {
   /** One finding group's rows (group by CVE / type). Sent as `cve_ids` / `finding_types`. */
   cve_ids?: string[]
   finding_types?: string[]
+  /** A saved view the request runs (its filter, with these filters on top). */
+  view?: string
+  /** Scanner rule families (Nessus / Tenable.sc plugin family). Sent as `family`. */
+  families?: string[]
+  /** The state lens: open | fixed | dispositioned | all (research 24, C2). Sent as `state`. */
+  state?: 'open' | 'fixed' | 'dispositioned' | 'all'
+  /** The asset's primary owner (a group-by-owner row's View). Sent as `asset_owner_id`. */
+  asset_owner_id?: string
+  /** Assets with no primary owner (the Unassigned owner row). Sent as `asset_owner_id_null=true`. */
+  asset_owner_unassigned?: boolean
   /** Sort spec, e.g. 'priority_class,severity,-created_at'. */
   sort?: string
   page?: number
@@ -517,4 +544,6 @@ export interface FindingStatsResponse {
   kev_open?: number
   epss_high_open?: number
   sla_breached?: number
+  /** The state lens counts of the same filter: open, fixed, dispositioned, all. */
+  by_state?: Partial<Record<'open' | 'fixed' | 'dispositioned' | 'all', number>>
 }

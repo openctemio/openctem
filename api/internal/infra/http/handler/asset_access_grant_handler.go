@@ -151,6 +151,12 @@ func (h *AssetOwnerHandler) CreateAccessGrant(w http.ResponseWriter, r *http.Req
 	var grantedBy *shared.ID
 	if actor, err := shared.IDFromString(middleware.GetUserID(r.Context())); err == nil {
 		grantedBy = &actor
+		// No self-grant: a member about to leave a group could otherwise
+		// turn group-derived access into a permanent personal grant.
+		if actor == userID {
+			apierror.Forbidden("You cannot grant asset access to yourself").WriteJSON(w)
+			return
+		}
 	}
 
 	g, err := h.repo.CreateAssetAccessGrant(r.Context(), tenantID, assetID, userID, grantedBy)

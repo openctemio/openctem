@@ -10,7 +10,8 @@ import (
 )
 
 // registerGroupRoutes registers access control group endpoints.
-// Groups are used for organizing users and managing permissions.
+// Groups organize users and carry data scope (which assets members see);
+// permissions come only from roles.
 // Tenant context is obtained from JWT token (same pattern as other handlers).
 func registerGroupRoutes(
 	router Router,
@@ -52,17 +53,12 @@ func registerGroupRoutes(
 		r.PUT("/{groupId}/members/{userId}", h.UpdateMemberRole, middleware.Require(permission.GroupsMembers))
 		r.DELETE("/{groupId}/members/{userId}", h.RemoveMember, middleware.Require(permission.GroupsMembers))
 
-		// Group permission sets
-		r.GET("/{groupId}/permission-sets", h.ListAssignedPermissionSets, middleware.Require(permission.GroupsRead))
-		r.POST("/{groupId}/permission-sets", h.AssignPermissionSet, middleware.Require(permission.GroupsPermissions))
-		r.DELETE("/{groupId}/permission-sets/{permissionSetId}", h.UnassignPermissionSet, middleware.Require(permission.GroupsPermissions))
-
 		// Group asset ownership
 		r.GET("/{groupId}/assets", h.ListGroupAssets, middleware.Require(permission.GroupsRead))
-		r.POST("/{groupId}/assets", h.AssignAsset, middleware.Require(permission.GroupsWrite))
-		r.POST("/{groupId}/assets/bulk", h.BulkAssignAssets, middleware.Require(permission.GroupsWrite))
-		r.PUT("/{groupId}/assets/{assetId}", h.UpdateAssetOwnership, middleware.Require(permission.GroupsWrite))
-		r.DELETE("/{groupId}/assets/{assetId}", h.UnassignAsset, middleware.Require(permission.GroupsWrite))
+		r.POST("/{groupId}/assets", h.AssignAsset, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
+		r.POST("/{groupId}/assets/bulk", h.BulkAssignAssets, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
+		r.PUT("/{groupId}/assets/{assetId}", h.UpdateAssetOwnership, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
+		r.DELETE("/{groupId}/assets/{assetId}", h.UnassignAsset, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))
 	}, tenantMiddlewares...)
 
 	// Current user's groups (my groups)
@@ -112,43 +108,6 @@ func registerAssignmentRuleRoutes(
 		r.PUT("/{id}", h.UpdateRule, middleware.Require(permission.AssignmentRulesWrite))
 		r.DELETE("/{id}", h.DeleteRule, middleware.RequireOwner(), middleware.Require(permission.AssignmentRulesDelete))
 		r.POST("/{id}/test", h.TestRule, middleware.Require(permission.AssignmentRulesRead))
-	}, tenantMiddlewares...)
-}
-
-// registerPermissionSetRoutes registers permission set endpoints.
-// Permission sets are used for defining collections of permissions.
-// Tenant context is obtained from JWT token.
-func registerPermissionSetRoutes(
-	router Router,
-	h *handler.PermissionSetHandler,
-	authMiddleware Middleware,
-	userSyncMiddleware Middleware,
-) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Permission Sets API
-	router.Group("/api/v1/permission-sets", func(r Router) {
-		// List and create permission sets
-		r.GET("/", h.ListPermissionSets, middleware.Require(permission.PermissionSetsRead))
-		r.POST("/", h.CreatePermissionSet, middleware.Require(permission.PermissionSetsWrite))
-
-		// System permission sets (read-only)
-		r.GET("/system", h.ListSystemPermissionSets, middleware.Require(permission.PermissionSetsRead))
-
-		// Single permission set operations
-		r.GET("/{id}", h.GetPermissionSet, middleware.Require(permission.PermissionSetsRead))
-		r.PUT("/{id}", h.UpdatePermissionSet, middleware.Require(permission.PermissionSetsWrite))
-		r.DELETE("/{id}", h.DeletePermissionSet, middleware.RequireOwner(), middleware.Require(permission.PermissionSetsDelete))
-
-		// Permission items within a set
-		r.POST("/{id}/permissions", h.AddPermission, middleware.Require(permission.PermissionSetsWrite))
-		r.DELETE("/{id}/permissions/{permissionId}", h.RemovePermission, middleware.Require(permission.PermissionSetsWrite))
-	}, tenantMiddlewares...)
-
-	// Current user's effective permissions (legacy, kept for backward compatibility)
-	router.Group("/api/v1/me/permissions", func(r Router) {
-		r.GET("/", h.GetMyEffectivePermissions)
 	}, tenantMiddlewares...)
 }
 
@@ -228,5 +187,11 @@ func registerRoleRoutes(
 	// Current user's roles
 	router.Group("/api/v1/me/roles", func(r Router) {
 		r.GET("/", h.GetMyRoles)
+	}, tenantMiddlewares...)
+
+	// Current user's effective permissions, from their roles (the only source
+	// of permissions).
+	router.Group("/api/v1/me/permissions", func(r Router) {
+		r.GET("/", h.GetMyPermissions)
 	}, tenantMiddlewares...)
 }

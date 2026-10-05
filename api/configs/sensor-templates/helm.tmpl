@@ -26,6 +26,8 @@ kubectl create secret generic {{$slug}}-key \
 
 # 2. Save the "Local policy" tab as sensor-policy.yaml, reviewed by the owner
 #    of the scanned network: the sensor refuses every job outside it.
+#    This needs a sensor release later than v0.8.0; v0.8.0 and older ignore
+#    the policy and scan without one.
 
 # 3. Turn the bundled sensor on (release "openctem"; use yours). Chart 0.11.0
 #    or later: the sensor runs hardened (non-root, read-only root filesystem,

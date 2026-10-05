@@ -35,6 +35,11 @@ func (p Permission) String() string {
 const (
 	// Dashboard permissions
 	DashboardRead Permission = "dashboard:read"
+	// DashboardAggregate shows organization-wide dashboard totals to a viewer
+	// whose data scope is restricted (owner decision D6, research doc 15):
+	// without it, a restricted viewer's dashboard counts only their own
+	// assets and findings. Breakdowns under 5 are left out (k-floor).
+	DashboardAggregate Permission = "dashboard:aggregate"
 
 	// Audit log permissions
 	AuditRead Permission = "audit:read"
@@ -122,11 +127,6 @@ const (
 	// Workflow permissions (findings:workflows:*)
 	WorkflowsRead  Permission = "findings:workflows:read"
 	WorkflowsWrite Permission = "findings:workflows:write"
-
-	// Policies permissions (findings:policies:*)
-	PoliciesRead   Permission = "findings:policies:read"
-	PoliciesWrite  Permission = "findings:policies:write"
-	PoliciesDelete Permission = "findings:policies:delete"
 )
 
 // =============================================================================
@@ -221,11 +221,6 @@ const (
 	RolesDelete Permission = "team:roles:delete"
 	RolesAssign Permission = "team:roles:assign"
 
-	// Permission Set permissions (team:permission_sets:*)
-	PermissionSetsRead   Permission = "team:permission_sets:read"
-	PermissionSetsWrite  Permission = "team:permission_sets:write"
-	PermissionSetsDelete Permission = "team:permission_sets:delete"
-
 	// Assignment Rules permissions (team:assignment_rules:*)
 	AssignmentRulesRead   Permission = "team:assignment_rules:read"
 	AssignmentRulesWrite  Permission = "team:assignment_rules:write"
@@ -251,11 +246,6 @@ const (
 	NotificationsWrite  Permission = "integrations:notifications:write"
 	NotificationsDelete Permission = "integrations:notifications:delete"
 
-	// Webhook permissions (integrations:webhooks:*)
-	WebhooksRead   Permission = "integrations:webhooks:read"
-	WebhooksWrite  Permission = "integrations:webhooks:write"
-	WebhooksDelete Permission = "integrations:webhooks:delete"
-
 	// API Keys permissions (integrations:api_keys:*)
 	APIKeysRead   Permission = "integrations:api_keys:read"
 	APIKeysWrite  Permission = "integrations:api_keys:write"
@@ -273,9 +263,6 @@ const (
 // =============================================================================
 
 const (
-	// Billing permissions (settings:billing:*)
-	BillingRead  Permission = "settings:billing:read"
-	BillingWrite Permission = "settings:billing:write"
 
 	// SLA permissions (settings:sla:*)
 	SLARead   Permission = "settings:sla:read"
@@ -327,12 +314,10 @@ const (
 
 const (
 	ComplianceFrameworksRead   Permission = "compliance:frameworks:read"
-	ComplianceFrameworksWrite  Permission = "compliance:frameworks:write"
 	ComplianceAssessmentsRead  Permission = "compliance:assessments:read"
 	ComplianceAssessmentsWrite Permission = "compliance:assessments:write"
 	ComplianceMappingsRead     Permission = "compliance:mappings:read"
 	ComplianceMappingsWrite    Permission = "compliance:mappings:write"
-	ComplianceReportsRead      Permission = "compliance:reports:read"
 )
 
 // =============================================================================
@@ -405,15 +390,9 @@ const (
 	// MembersManage is an alias for MembersWrite (team:members:write)
 	MembersManage Permission = "team:members:write"
 
-	// BillingManage is an alias for BillingWrite (settings:billing:write)
-	BillingManage Permission = "settings:billing:write"
-
 	// PentestRead/Write are aliases for ValidationRead/Write
 	PentestRead  Permission = "validation:read"
 	PentestWrite Permission = "validation:write"
-
-	// GroupsPermissions is an alias for GroupsWrite (team:groups:write)
-	GroupsPermissions Permission = "team:groups:write"
 
 	// TemplateSources are aliases for Sources (same permission strings)
 	TemplateSourcesRead   Permission = "scans:sources:read"
@@ -426,7 +405,7 @@ const (
 func AllPermissions() []Permission {
 	return []Permission{
 		// Core
-		DashboardRead,
+		DashboardRead, DashboardAggregate,
 		AuditRead,
 		SettingsRead, SettingsWrite,
 
@@ -445,7 +424,6 @@ func AllPermissions() []Permission {
 		CredentialsRead, CredentialsWrite, CredentialsReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
-		PoliciesRead, PoliciesWrite, PoliciesDelete,
 
 		// Scans module
 		ScansRead, ScansWrite, ScansDelete, ScansExecute,
@@ -464,21 +442,18 @@ func AllPermissions() []Permission {
 		// Team module
 		TeamRead, TeamUpdate, TeamDelete,
 		MembersRead, MembersInvite, MembersWrite, MembersManage,
-		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets, GroupsPermissions,
+		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets,
 		RolesRead, RolesWrite, RolesDelete, RolesAssign,
-		PermissionSetsRead, PermissionSetsWrite, PermissionSetsDelete,
 		AssignmentRulesRead, AssignmentRulesWrite, AssignmentRulesDelete,
 
 		// Integrations module
 		IntegrationsRead, IntegrationsManage,
 		SCMConnectionsRead, SCMConnectionsWrite, SCMConnectionsDelete,
 		NotificationsRead, NotificationsWrite, NotificationsDelete,
-		WebhooksRead, WebhooksWrite, WebhooksDelete,
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
 		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
 
 		// Settings module
-		BillingRead, BillingWrite, BillingManage,
 		SLARead, SLAWrite, SLADelete,
 
 		// Attack Surface module
@@ -495,10 +470,9 @@ func AllPermissions() []Permission {
 		PentestReportsWrite,
 
 		// Compliance module
-		ComplianceFrameworksRead, ComplianceFrameworksWrite,
+		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
-		ComplianceReportsRead,
 
 		// Reports module
 		ReportsRead, ReportsWrite,

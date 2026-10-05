@@ -37,6 +37,9 @@ import type { ScanMode, SensorPreference, NewScanFormData } from '../../types'
 import { SCAN_MODE_CONFIG, SENSOR_PREFERENCE_CONFIG } from '../../types'
 import { usePipelines } from '@/lib/api/pipeline-hooks'
 import { ScannerSelect } from '../scanner-select'
+import { TENABLE_CONNECTOR_ENABLED } from '@/features/integrations/config/feature-gates'
+import { TENABLE_SC_TOOL } from '@/features/integrations/lib/tenable-sc'
+import { TenableScanFields } from './tenable-scan-fields'
 
 interface BasicInfoStepProps {
   data: NewScanFormData
@@ -82,12 +85,21 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
             id="scan-scanner"
             value={data.scannerName}
             onChange={(scannerName) => onChange({ scannerName })}
+            allowConnectors={TENABLE_CONNECTOR_ENABLED}
           />
           <p className="text-muted-foreground text-xs">
             Active scanners in the tool registry. Use Workflow mode (Advanced options) to chain
             several tools.
           </p>
         </div>
+      )}
+
+      {/* A Tenable.sc scan: the connector, policy and repository it launches with */}
+      {data.mode === 'single' && data.scannerName === TENABLE_SC_TOOL && (
+        <TenableScanFields
+          value={data.scannerConfig}
+          onChange={(scannerConfig) => onChange({ scannerConfig })}
+        />
       )}
 
       {/* Workflow Scan: Workflow Selection */}

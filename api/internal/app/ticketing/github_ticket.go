@@ -75,6 +75,9 @@ type GitHubTicketService struct {
 	// clientFactory builds an issueCreator from a resolved access token and
 	// base URL. Overridable in tests; defaults to the real SCM client.
 	clientFactory func(token, baseURL string) (issueCreator, error)
+
+	// activity records inbound status changes with the integration as actor.
+	activity statusActivityRecorder
 }
 
 // NewGitHubTicketService constructs a GitHubTicketService.
@@ -404,6 +407,11 @@ func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID sha
 		return fmt.Errorf("lookup finding by issue url: %w", err)
 	}
 
+	// A ticket never closes a finding (see IsTicketInboundTarget).
+	if !target.IsTicketInboundTarget() {
+		return nil
+	}
+	oldStatus := finding.Status()
 	note := fmt.Sprintf("Synced from GitHub issue (%s)", action)
 	if terr := finding.TransitionStatus(target, note, nil); terr != nil {
 		// Not a hard error — the transition may be blocked (e.g. accepted/false_positive).
@@ -416,8 +424,23 @@ func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID sha
 	}
 	s.logger.Info("github webhook synced finding status",
 		"finding_id", finding.ID().String(), "issue_url", issueHTMLURL, "action", action, "status", target)
+	if s.activity != nil && oldStatus != target {
+		if aerr := s.activity.RecordIntegrationStatusChange(ctx, tenantID, finding.ID(),
+			oldStatus.String(), target.String(), "github", issueKeyFromURL(issueHTMLURL)); aerr != nil {
+			s.logger.Warn("github webhook: failed to record activity", "finding_id", finding.ID().String(), "error", aerr)
+		}
+	}
 	return nil
 }
+
+// statusActivityRecorder records a status change whose actor is an
+// integration (see activity.FindingActivityService.RecordIntegrationStatusChange).
+type statusActivityRecorder interface {
+	RecordIntegrationStatusChange(ctx context.Context, tenantID, findingID shared.ID, oldStatus, newStatus, integration, ref string) error
+}
+
+// SetActivityRecorder wires the finding-activity recorder for inbound changes.
+func (s *GitHubTicketService) SetActivityRecorder(r statusActivityRecorder) { s.activity = r }
 
 // issueActionToStatus maps a GitHub issues webhook action to a finding status.
 // closed → fix_applied (pending verification, mirrors Jira Done); reopened →

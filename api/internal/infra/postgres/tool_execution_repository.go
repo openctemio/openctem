@@ -116,16 +116,6 @@ func (r *ToolExecutionRepository) scanToolExecutionRow(row *sql.Row) (*tool.Tool
 	)
 }
 
-// GetByID retrieves a tool execution by ID without tenant scoping.
-//
-// F-4: This method is UNSAFE for user-facing handlers. See the interface
-// doc block in pkg/domain/tool/repository.go. Use GetByIDInTenant from
-// any code path that handles user input.
-func (r *ToolExecutionRepository) GetByID(ctx context.Context, id shared.ID) (*tool.ToolExecution, error) {
-	query := "SELECT " + toolExecutionSelectCols + " FROM tool_executions WHERE id = $1"
-	return r.scanToolExecutionRow(r.db.QueryRowContext(ctx, query, id.String()))
-}
-
 // GetByIDInTenant retrieves a tool execution scoped to one tenant.
 // Returns shared.ErrNotFound when the row does not belong to the tenant (F-4).
 func (r *ToolExecutionRepository) GetByIDInTenant(ctx context.Context, tenantID, id shared.ID) (*tool.ToolExecution, error) {
@@ -250,7 +240,7 @@ func (r *ToolExecutionRepository) Update(ctx context.Context, execution *tool.To
 			error_message = $4,
 			completed_at = $5,
 			duration_ms = $6
-		WHERE id = $7`
+		WHERE id = $7 AND tenant_id = $8`
 
 	result, err := r.db.ExecContext(ctx, query,
 		string(execution.Status),
@@ -260,6 +250,7 @@ func (r *ToolExecutionRepository) Update(ctx context.Context, execution *tool.To
 		nullTimeFromTimePtr(execution.CompletedAt),
 		execution.DurationMs,
 		execution.ID.String(),
+		execution.TenantID.String(),
 	)
 
 	if err != nil {

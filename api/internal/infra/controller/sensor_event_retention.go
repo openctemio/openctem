@@ -88,3 +88,7 @@ func (c *SensorEventRetentionController) Reconcile(ctx context.Context) (int, er
 	}
 	return int(total), nil
 }
+
+// Exclusive: it runs on one API replica at a time (controller lease, RFC-046
+// P1.8); two replicas sweeping at once would delete or fetch twice.
+func (c *SensorEventRetentionController) Exclusive() bool { return true }

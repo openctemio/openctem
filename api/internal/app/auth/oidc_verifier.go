@@ -262,6 +262,28 @@ func jwkToRSA(nStr, eStr string) (*rsa.PublicKey, error) {
 // token's directory id; for single-tenant configs the directory must match the
 // configured tenant, while multi-tenant authorities (common/organizations/
 // consumers) accept any directory (the email domain allow-list still applies).
+// oktaIssuerValidator pins the issuer to the configured Okta org's default
+// authorization server, the one whose endpoints the flow uses.
+func oktaIssuerValidator(orgURL string) func(issuer, tid string) error {
+	expected := strings.TrimRight(strings.TrimSpace(orgURL), "/") + "/oauth2/default"
+	return func(issuer, _ string) error {
+		if !strings.EqualFold(strings.TrimRight(issuer, "/"), expected) {
+			return errors.New("id_token issuer mismatch")
+		}
+		return nil
+	}
+}
+
+// googleIssuerValidator accepts the two issuer spellings Google documents for
+// its id_tokens.
+func googleIssuerValidator(issuer, _ string) error {
+	switch issuer {
+	case "https://accounts.google.com", "accounts.google.com":
+		return nil
+	}
+	return errors.New("id_token issuer mismatch")
+}
+
 func entraIssuerValidator(configuredTenant string) func(issuer, tid string) error {
 	return func(issuer, tid string) error {
 		if tid == "" {

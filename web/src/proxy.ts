@@ -20,6 +20,10 @@
  *    policy and stamps it on its own scripts; `x-nonce` hands it to the root
  *    layout for the next-themes inline script.
  *
+ * 4. Invitation links from before RFC-041 (/invitations/{token}) get a 307 to
+ *    /invitations#token=..., so the token leaves the path
+ *    (src/lib/middleware/invitation-link.ts).
+ *
  * Keep it cheap: no database, no API call, no JWT verification.
  *
  * @see https://nextjs.org/docs/app/guides/content-security-policy
@@ -29,8 +33,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { handleAuth } from '@/lib/middleware/auth'
 import { detectLocale } from '@/lib/middleware/i18n'
 import { cspForRequest, generateNonce } from '@/lib/middleware/csp'
+import { handleLegacyInvitationLink } from '@/lib/middleware/invitation-link'
 
 export function proxy(req: NextRequest) {
+  // Invitation links from before RFC-041 carry the token in the path.
+  const invitation = handleLegacyInvitationLink(req)
+  if (invitation) return invitation
+
   const redirect = handleAuth(req)
   if (redirect) return redirect
 

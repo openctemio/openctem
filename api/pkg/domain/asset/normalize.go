@@ -431,7 +431,7 @@ func normalizeNetworkName(name string) string {
 // normalizeStorageName normalizes storage asset names.
 func normalizeStorageName(name string, subType string) string {
 	switch subType {
-	case "s3_bucket":
+	case "bucket", "s3_bucket": // s3_bucket: the legacy sub-type (RFC-042 §6.3.8)
 		name = strings.TrimPrefix(name, "s3://")
 		name = strings.TrimPrefix(name, "S3://")
 		// Extract bucket from URL: bucket.s3.amazonaws.com → bucket

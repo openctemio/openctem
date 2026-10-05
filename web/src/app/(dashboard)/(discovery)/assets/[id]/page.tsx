@@ -169,7 +169,7 @@ export default function AssetDetailPage() {
           </CardHeader>
           <CardContent>
             <Link
-              href={`/findings?assetId=${assetId}`}
+              href={`/findings?asset_id=${assetId}`}
               className={cn(
                 'inline-block text-2xl font-bold hover:underline',
                 asset.findingCount > 0 ? 'text-destructive' : ''

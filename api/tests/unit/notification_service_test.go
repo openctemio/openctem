@@ -107,7 +107,7 @@ func (m *mockNotificationRepo) List(_ context.Context, tenantID, userID shared.I
 
 // ListRecipients mirrors the postgres implementation: the audience's members,
 // filtered by each member's stored preferences.
-func (m *mockNotificationRepo) ListRecipients(_ context.Context, n *notification.Notification, _ bool) ([]shared.ID, error) {
+func (m *mockNotificationRepo) ListRecipients(_ context.Context, n *notification.Notification) ([]shared.ID, error) {
 	m.recipientCalls++
 	if m.recipientsErr != nil {
 		return nil, m.recipientsErr

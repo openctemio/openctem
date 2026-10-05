@@ -217,6 +217,16 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 		}
 		authorized = true
 		ev.CorrelationID = cmd.ID
+		// The command, not the body, names the simulation run and the asset:
+		// a body that disagrees is refused, a missing value is taken from it.
+		bound, ok := bindEvidenceToCommand(cmd, simRunID, target.AssetID)
+		if !ok {
+			h.logger.Warn("validation evidence rejected: simulation run or asset differs from the cited command",
+				"sensor_id", agt.ID.String(), "command_id", cmd.ID.String(), "finding_id", findingID.String())
+			apierror.Forbidden("command does not authorize evidence for this finding").WriteJSON(w)
+			return
+		}
+		simRunID, ev.Target.AssetID = bound.simRunID, bound.assetID
 		// A retest check (RFC-039) never moves the finding on its own: the
 		// retest service reads both of the retest's commands when they
 		// complete. Its evidence is recorded, not applied.
@@ -224,6 +234,15 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 		if json.Unmarshal(cmd.Payload, &payload) == nil && payload.RetestID != "" {
 			authorized = false
 		}
+	}
+
+	if req.CommandID == "" && simRunID != nil {
+		// Advisory evidence has no server-issued job behind it, so it cannot
+		// attach to (or finalize) a simulation run.
+		h.logger.Warn("validation evidence rejected: advisory evidence cites a simulation run",
+			"sensor_id", agt.ID.String(), "finding_id", findingID.String())
+		apierror.Forbidden("command does not authorize evidence for this finding").WriteJSON(w)
+		return
 	}
 
 	var result validation.IngestResult
@@ -298,6 +317,45 @@ func (h *ValidationHandler) authorizeEvidenceCommand(
 		return deny("command targets a different finding")
 	}
 	return cmd, true
+}
+
+type boundEvidence struct {
+	simRunID *shared.ID
+	assetID  shared.ID
+}
+
+// bindEvidenceToCommand takes the simulation run and the asset from the
+// cited command's payload. A body value that differs from the payload is
+// refused (ok=false); a missing one is filled from it.
+func bindEvidenceToCommand(cmd *commanddom.Command, bodySimRun *shared.ID, bodyAsset shared.ID) (boundEvidence, bool) {
+	var payload validation.ValidateCommandPayload
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
+		return boundEvidence{}, false
+	}
+	var out boundEvidence
+	if payload.SimulationRunID != "" {
+		id, err := shared.IDFromString(payload.SimulationRunID)
+		if err != nil {
+			return boundEvidence{}, false
+		}
+		out.simRunID = &id
+	}
+	switch {
+	case bodySimRun == nil:
+	case out.simRunID == nil || !bodySimRun.Equals(*out.simRunID):
+		return boundEvidence{}, false
+	}
+	if payload.Target.AssetID != "" {
+		id, err := shared.IDFromString(payload.Target.AssetID)
+		if err != nil {
+			return boundEvidence{}, false
+		}
+		out.assetID = id
+	}
+	if !bodyAsset.IsZero() && !bodyAsset.Equals(out.assetID) {
+		return boundEvidence{}, false
+	}
+	return out, true
 }
 
 func (h *ValidationHandler) writeIngestError(w http.ResponseWriter, err error) {

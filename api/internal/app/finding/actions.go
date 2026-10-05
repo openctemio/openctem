@@ -201,6 +201,9 @@ func (s *FindingActionsService) autoQueueValidations(ctx context.Context, tenant
 
 // --- Group View ---
 
+// validGroupDimensions are the group_by values of the grouped view.
+var validGroupDimensions = vulnerability.FindingGroupDimensions()
+
 // ListFindingGroups returns findings grouped by a dimension.
 func (s *FindingActionsService) ListFindingGroups(
 	ctx context.Context, tenantID string, groupBy string, filter vulnerability.FindingFilter, page pagination.Pagination,
@@ -210,11 +213,7 @@ func (s *FindingActionsService) ListFindingGroups(
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	validDimensions := map[string]bool{
-		"cve_id": true, "rule_id": true, "asset_id": true, "owner_id": true,
-		"component_id": true, "severity": true, "source": true, "finding_type": true,
-	}
-	if !validDimensions[groupBy] {
+	if !validGroupDimensions[groupBy] {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("%w: invalid group_by: %s", shared.ErrValidation, groupBy)
 	}
 
@@ -679,7 +678,7 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 	}
 
 	count, err := s.findingRepo.BulkUpdateStatusByFilter(ctx, tid, input.Filter,
-		vulnerability.FindingStatusResolved, resolution, &uid)
+		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.ResolutionMethodSecurityReviewed)
 	if err != nil {
 		return 0, fmt.Errorf("failed to verify findings: %w", err)
 	}
@@ -717,7 +716,7 @@ func (s *FindingActionsService) BulkRejectByFilter(
 	}
 
 	count, err := s.findingRepo.BulkUpdateStatusByFilter(ctx, tid, input.Filter,
-		vulnerability.FindingStatusInProgress, input.Reason, &uid)
+		vulnerability.FindingStatusInProgress, input.Reason, &uid, "")
 	if err != nil {
 		return 0, fmt.Errorf("failed to reject findings: %w", err)
 	}

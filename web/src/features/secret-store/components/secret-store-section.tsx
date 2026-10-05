@@ -188,14 +188,14 @@ export function SecretStoreSection() {
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
-          <Can permission={Permission.CredentialsWrite}>
+          <Can permission={[Permission.SecretStoreWrite, Permission.SecretStoreDelete]}>
             <DataTableRowActions
               actions={[
                 {
                   label: 'Edit',
                   icon: Pencil,
                   onClick: () => handleEditCredential(row.original),
-                  permission: Permission.CredentialsWrite,
+                  permission: Permission.SecretStoreWrite,
                 },
                 {
                   label: 'Delete',
@@ -203,7 +203,7 @@ export function SecretStoreSection() {
                   onClick: () => handleDeleteClick(row.original),
                   destructive: true,
                   separatorBefore: true,
-                  permission: Permission.CredentialsWrite,
+                  permission: Permission.SecretStoreDelete,
                 },
               ]}
             />
@@ -226,7 +226,7 @@ export function SecretStoreSection() {
         title="No credentials"
         description="Add credentials to authenticate with template sources."
         action={
-          <Can permission={Permission.CredentialsWrite}>
+          <Can permission={Permission.SecretStoreWrite}>
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add credential
@@ -254,7 +254,7 @@ export function SecretStoreSection() {
         title="Source credentials"
         description="Encrypted credentials that template sources use to authenticate (Git tokens, cloud keys and more)."
       >
-        <Can permission={Permission.CredentialsWrite}>
+        <Can permission={Permission.SecretStoreWrite}>
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>
             <Plus className="h-4 w-4" />
             Add credential

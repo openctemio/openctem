@@ -441,6 +441,8 @@ var scanZoneErrorCodes = map[string]bool{
 	"NO_TARGETS":              true,
 	"ALL_TARGETS_EXCLUDED":    true,
 	"PLATFORM_SENSOR_REFUSED": true,
+	"SENSOR_POLICY_REFUSED":   true,
+	"SENSOR_OPT_IN_DISABLED":  true,
 }
 
 // scanZoneErrorCode returns the contract code carried by err, or fallback.

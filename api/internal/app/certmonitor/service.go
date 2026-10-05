@@ -36,6 +36,7 @@ import (
 
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -130,6 +131,12 @@ type VerifiedDomainLister interface {
 	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*verifieddomain.VerifiedDomain, error)
 }
 
+// SeedRootLister lists a tenant's root_domain seeds with discovery on.
+// Satisfied by *postgres.EASMSeedRepository.
+type SeedRootLister interface {
+	DiscoveryRootDomains(ctx context.Context, tenantID shared.ID) ([]string, error)
+}
+
 // ScopeTargetLister lists a tenant's active scope targets. Satisfied by
 // *postgres.ScopeTargetRepository.
 type ScopeTargetLister interface {
@@ -181,6 +188,17 @@ type Service struct {
 	now             func() time.Time
 
 	logger *logger.Logger
+
+	// tombstones lets promotion skip rejected names (nil: no check).
+	tombstones TombstoneChecker
+	// relinker moves stored CT exposures onto their host's asset.
+	relinker ExposureRelinker
+
+	// seeds lists root_domain seeds to watch (nil: none).
+	seeds SeedRootLister
+
+	// maxBody bounds one CT response (maxBodyBytes; tests lower it).
+	maxBody int64
 }
 
 // NewService constructs the CT discovery service. An empty feedBaseURL defaults
@@ -208,6 +226,7 @@ func NewService(
 		recheckAfter:    DefaultRecheckAfter,
 		sweepBudget:     DefaultSweepBudget,
 		maxPromotions:   DefaultMaxPromotionsPerRun,
+		maxBody:         maxBodyBytes,
 		now:             func() time.Time { return time.Now().UTC() },
 		logger:          log.With("service", "cert_monitor"),
 	}
@@ -225,6 +244,11 @@ func (s *Service) SetDomainSources(verified VerifiedDomainLister, targets ScopeT
 	s.verified = verified
 	s.scopeTargets = targets
 }
+
+// SetSeedSource adds the tenant's root_domain seeds (RFC-036 §6.3) to the
+// names the sweep queries. A seed is the tenant's assertion: names found
+// under it get fqdn_under_asserted_root unless a verified domain covers them.
+func (s *Service) SetSeedSource(seeds SeedRootLister) { s.seeds = seeds }
 
 // SetStateStore enables the persisted rotation cursor and failure back-off.
 func (s *Service) SetStateStore(st StateStore) { s.state = st }
@@ -290,6 +314,13 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		defer release()
 	}
 
+	// Retention (O7): rejected-name tombstones expire after 12 months.
+	if s.tombstones != nil {
+		if _, err := s.tombstones.PurgeExpiredTombstones(ctx, tenantID); err != nil {
+			s.logger.Warn("ct sweep: expired tombstones not purged", "tenant_id", tenantID.String(), "error", err)
+		}
+	}
+
 	roots, assetsByName, err := s.gatherRoots(ctx, tenantID)
 	if err != nil {
 		return 0, err
@@ -328,13 +359,13 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 	}
 
 	client := &sweepClient{s: s}
-	var events []*exposuredom.ExposureEvent
+	found := make([]rootFinds, 0, len(due))
 	var promotions []promotion
 	failed, queried, excludedHosts := 0, 0, 0
 	started := s.now()
 	for i, root := range due {
 		if err := ctx.Err(); err != nil {
-			return len(events), err
+			return 0, err
 		}
 		if s.sweepBudget > 0 && s.now().Sub(started) > s.sweepBudget {
 			s.logger.Warn("ct sweep: time budget spent; the remaining domains go first next run",
@@ -345,7 +376,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		// Politeness delay between queries (not before the first one).
 		if i > 0 && s.requestDelay > 0 {
 			if err := s.sleep(ctx, s.requestDelay); err != nil {
-				return len(events), err
+				return 0, err
 			}
 		}
 
@@ -357,7 +388,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		res, err := client.fetch(ctx, root.name)
 		if err != nil {
 			if ctx.Err() != nil {
-				return len(events), ctx.Err()
+				return 0, ctx.Err()
 			}
 			failed++
 			st.ConsecutiveFailures++
@@ -374,7 +405,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		d := collectDiscoveries(root.name, res.entries, attempted, s.expiryWindow, s.expiredLookback, s.maxSubs)
 		d, dropped := withoutExcluded(d, excl)
 		excludedHosts += dropped
-		events = append(events, s.buildEvents(tenantID, root, assetsByName, d)...)
+		found = append(found, rootFinds{root: root, d: d})
 		for _, h := range d.promotable {
 			promotions = append(promotions, promotion{host: h, root: root, source: res.source})
 		}
@@ -388,16 +419,29 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		s.saveState(ctx, tenantID, st)
 	}
 
+	// Promote first, so a new name's exposures link to its own asset.
+	promoted, err := s.promote(ctx, tenantID, promotions)
+	if err != nil {
+		// Exposures are still written; promotion retries on the next run.
+		s.logger.Warn("ct promotion failed", "tenant_id", tenantID.String(), "error", err)
+	}
+
+	own, rejected, err := s.hostAssets(ctx, tenantID, hostsOf(found))
+	if err != nil {
+		return 0, err
+	}
+	var events []*exposuredom.ExposureEvent
+	rejectedHosts := 0
+	for _, f := range found {
+		d, dropped := withoutRejected(f.d, rejected)
+		rejectedHosts += dropped
+		events = append(events, s.buildEvents(tenantID, f.root, assetsByName, own, d)...)
+	}
 	if len(events) > 0 {
 		if err := s.exposureRepo.BulkUpsert(ctx, events); err != nil {
 			return 0, fmt.Errorf("failed to upsert CT exposures: %w", err)
 		}
-	}
-
-	promoted, err := s.promote(ctx, tenantID, promotions)
-	if err != nil {
-		// Exposures are written; promotion retries on the next run.
-		s.logger.Warn("ct promotion failed", "tenant_id", tenantID.String(), "error", err)
+		s.relink(ctx, tenantID, events)
 	}
 
 	s.logger.Info("ct sweep complete",
@@ -406,6 +450,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		"domains_queried", queried,
 		"domains_failed", failed,
 		"hosts_excluded", excludedHosts,
+		"hosts_rejected", rejectedHosts,
 		"exposures", len(events),
 		"assets_promoted", promoted)
 	return len(events), nil
@@ -427,17 +472,27 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// gatherRoots collects every domain the tenant asked us to watch: all domain
-// assets (paged, no cap), verified domains and active domain scope targets.
+// gatherRoots collects every domain the tenant asked us to watch: its domain
+// assets that are not awaiting review or rejected (paged, no cap), verified
+// domains, root_domain seeds with discovery
+// on and active domain scope targets.
 // It also returns the domain assets by name so a discovered host can be tied
 // to its nearest known domain asset.
 func (s *Service) gatherRoots(ctx context.Context, tenantID shared.ID) ([]rootDomain, map[string]shared.ID, error) {
 	var in []rootDomain
 	assetsByName := map[string]shared.ID{}
 
+	// Only domain assets the tenant has not left to review or rejected: a
+	// domain a sensor report created (needs_review or candidate) must not
+	// widen the CT watch list by itself (research/22b S2).
+	approved, _, err := attribution.ParseFilter([]string{attribution.FilterApproved})
+	if err != nil {
+		return nil, nil, err
+	}
 	filter := assetdom.NewFilter().
 		WithTenantID(tenantID.String()).
-		WithTypes(assetdom.AssetTypeDomain)
+		WithTypes(assetdom.AssetTypeDomain).
+		WithAttribution(approved)
 	seen := 0
 	for pageNum := 1; ; pageNum++ {
 		res, err := s.assetRepo.List(ctx, filter, assetdom.NewListOptions(), pagination.New(pageNum, assetPageSize))
@@ -475,6 +530,16 @@ func (s *Service) gatherRoots(ctx context.Context, tenantID shared.ID) ([]rootDo
 		}
 	}
 
+	if s.seeds != nil {
+		names, err := s.seeds.DiscoveryRootDomains(ctx, tenantID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to list seeds: %w", err)
+		}
+		for _, n := range names {
+			in = append(in, rootDomain{name: n, origin: OriginSeed})
+		}
+	}
+
 	if s.scopeTargets != nil {
 		targets, err := s.scopeTargets.ListActive(ctx, tenantID)
 		if err != nil {
@@ -508,10 +573,41 @@ func nearestAsset(host string, root rootDomain, assetsByName map[string]shared.I
 	return root.assetID
 }
 
+// link ties a CT exposure to the host's own asset, else its nearest domain
+// asset, else the root's, and gives it the asset-independent CT identity.
+func link(ev *exposuredom.ExposureEvent, tenantID shared.ID, host string, root rootDomain, assetsByName, own map[string]shared.ID) {
+	if id, ok := own[host]; ok {
+		ev.SetAssetID(&id)
+	} else if id := nearestAsset(host, root, assetsByName); id != nil {
+		ev.SetAssetID(id)
+	}
+	ev.UseFingerprint(ctFingerprint(tenantID, ev, host))
+}
+
+// relink moves stored CT exposures onto the asset this sweep linked them to
+// (a row first written with no asset, or with the root's). Best effort.
+func (s *Service) relink(ctx context.Context, tenantID shared.ID, events []*exposuredom.ExposureEvent) {
+	if s.relinker == nil {
+		return
+	}
+	links := map[string]shared.ID{}
+	for _, ev := range events {
+		if id := ev.AssetID(); id != nil {
+			links[ev.Fingerprint()] = *id
+		}
+	}
+	if len(links) == 0 {
+		return
+	}
+	if _, err := s.relinker.RelinkExposures(ctx, tenantID, Source, links); err != nil {
+		s.logger.Warn("ct sweep: exposures not relinked", "tenant_id", tenantID.String(), "error", err)
+	}
+}
+
 // buildEvents converts the pure discovery results into ExposureEvents for the
 // given tenant/root. Events that fail construction are skipped (defensive;
 // inputs are already validated).
-func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName map[string]shared.ID, d discoveries) []*exposuredom.ExposureEvent {
+func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName, own map[string]shared.ID, d discoveries) []*exposuredom.ExposureEvent {
 	events := make([]*exposuredom.ExposureEvent, 0, len(d.subdomains)+len(d.expiring)+len(d.expired))
 
 	for _, host := range d.subdomains {
@@ -534,9 +630,7 @@ func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName 
 		ev.UpdateDescription(fmt.Sprintf(
 			"A TLS certificate for %q (under your monitored domain %q) was found in public Certificate Transparency logs. "+
 				"Confirm this host is known and intended to be internet-facing.", host, root.name))
-		if id := nearestAsset(host, root, assetsByName); id != nil {
-			ev.SetAssetID(id)
-		}
+		link(ev, tenantID, host, root, assetsByName, own)
 		events = append(events, ev)
 	}
 
@@ -556,9 +650,7 @@ func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName 
 			"The most recent public TLS certificate for %q expires on %s (%d day(s) away). "+
 				"An expired certificate breaks TLS for this host — renew before it lapses.",
 			ec.Host, ec.NotAfter.Format("2006-01-02"), ec.DaysLeft))
-		if id := nearestAsset(ec.Host, root, assetsByName); id != nil {
-			ev.SetAssetID(id)
-		}
+		link(ev, tenantID, ec.Host, root, assetsByName, own)
 		events = append(events, ev)
 	}
 
@@ -579,9 +671,7 @@ func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName 
 				"appears in Certificate Transparency logs. If the host still serves TLS, clients now reject it; "+
 				"if it was retired, remove its DNS records.",
 			ec.Host, ec.NotAfter.Format("2006-01-02"), -ec.DaysLeft))
-		if id := nearestAsset(ec.Host, root, assetsByName); id != nil {
-			ev.SetAssetID(id)
-		}
+		link(ev, tenantID, ec.Host, root, assetsByName, own)
 		events = append(events, ev)
 	}
 
@@ -735,10 +825,12 @@ func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window
 				continue
 			}
 			// subdomain_discovered is for hosts BELOW the apex (the apex is the
-			// already-known domain).
+			// already-known domain), named literally: "*.dev" proves no host
+			// called dev exists, and it would be counted with no asset behind
+			// it (research/22 P0-13, 22c B9).
 			if host != domain {
-				subSet[host] = struct{}{}
 				if !wildcard {
+					subSet[host] = struct{}{}
 					exact[host] = true
 				}
 				if !nb.IsZero() {

@@ -255,10 +255,10 @@ func (m *mockAuthTenantRepo) GetBySlug(_ context.Context, _ string) (*tenant.Ten
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockAuthTenantRepo) Update(_ context.Context, _ *tenant.Tenant) error {
-	if m.updateErr != nil {
-		return m.updateErr
-	}
+func (m *mockAuthTenantRepo) UpdateProfile(_ context.Context, _ *tenant.Tenant) error {
+	return m.updateErr
+}
+func (m *mockAuthTenantRepo) UpdateSettingsSection(_ context.Context, _ shared.ID, _ string, _ any, _ bool, _ any) error {
 	return nil
 }
 
@@ -318,7 +318,7 @@ func (m *mockAuthTenantRepo) GetMembership(_ context.Context, _ shared.ID, _ sha
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockAuthTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID) (*tenant.Membership, error) {
+func (m *mockAuthTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Membership, error) {
 	if m.getMembershipByIDErr != nil {
 		return nil, m.getMembershipByIDErr
 	}
@@ -332,7 +332,7 @@ func (m *mockAuthTenantRepo) UpdateMembership(_ context.Context, _ *tenant.Membe
 	return nil
 }
 
-func (m *mockAuthTenantRepo) DeleteMembership(_ context.Context, _ shared.ID) error {
+func (m *mockAuthTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, _ shared.ID) error {
 	if m.deleteMembershipErr != nil {
 		return m.deleteMembershipErr
 	}
@@ -404,7 +404,7 @@ func (m *mockAuthTenantRepo) GetInvitationByToken(_ context.Context, _ string) (
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockAuthTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID) (*tenant.Invitation, error) {
+func (m *mockAuthTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Invitation, error) {
 	return nil, shared.ErrNotFound
 }
 
@@ -412,7 +412,7 @@ func (m *mockAuthTenantRepo) UpdateInvitation(_ context.Context, _ *tenant.Invit
 	return nil
 }
 
-func (m *mockAuthTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID) error {
+func (m *mockAuthTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 
@@ -2954,4 +2954,22 @@ func TestAuthService_ResetPassword_RepoInvalidTokenErrorIsInvalidResetToken(t *t
 	if !errors.Is(err, app.ErrInvalidResetToken) {
 		t.Fatalf("expected ErrInvalidResetToken, got %v", err)
 	}
+}
+
+// The services mutate the user they hold before calling these targeted
+// updates, and this mock stores that same pointer, so there is nothing more to
+// write here.
+func (m *mockAuthUserRepo) RecordFailedLogin(_ context.Context, _ shared.ID, _ int, _ time.Duration) (*time.Time, error) {
+	m.updateCalls++
+	return nil, m.updateErr
+}
+
+func (m *mockAuthUserRepo) RecordSuccessfulLogin(_ context.Context, _ shared.ID) error {
+	m.updateCalls++
+	return m.updateErr
+}
+
+func (m *mockAuthUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ string) error {
+	m.updateCalls++
+	return m.updateErr
 }

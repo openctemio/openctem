@@ -123,10 +123,10 @@ type NavGroup = {
    */
   cluster?: 'cycle'
   /**
-   * The section's overview page. When set, the header's label is a link to it
-   * (the chevron beside it still folds the section), so "Scoping" opens the
-   * Scoping overview. It must also be one of the section's rows; the filter
-   * drops it when that row is hidden from the user.
+   * The section's overview page. The expanded header never navigates (clicking
+   * it only folds and unfolds the section); on the collapsed icon rail the
+   * flyout's heading links here. It must also be one of the section's rows
+   * (its "Overview"); the filter drops it when that row is hidden from the user.
    */
   url?: string
   items: NavItem[]

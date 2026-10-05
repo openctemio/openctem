@@ -64,35 +64,11 @@ export interface GroupMember {
 }
 
 /**
- * Group with full details including members and permission sets
+ * Group with full details including members
  */
 export interface GroupWithDetails extends Group {
   members: GroupMember[]
-  permission_sets: GroupPermissionSet[]
   assets?: GroupAsset[]
-}
-
-/**
- * Permission set assigned to a group
- */
-export interface GroupPermissionSet {
-  id: string
-  group_id: string
-  permission_set_id: string
-  assigned_at: string
-  assigned_by: string
-  // Flattened permission set fields from API join
-  name: string
-  description?: string
-  is_system: boolean
-  permission_count: number
-  // Or nested permission set object (alternative response format)
-  permission_set?: {
-    id: string
-    name: string
-    description: string
-    is_system: boolean
-  }
 }
 
 /**
@@ -149,10 +125,6 @@ export interface UpdateGroupMemberInput {
 export interface AssignAssetInput {
   asset_id: string
   ownership_type: AssetOwnershipType
-}
-
-export interface AssignPermissionSetInput {
-  permission_set_id: string
 }
 
 /**

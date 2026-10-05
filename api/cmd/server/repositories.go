@@ -148,12 +148,12 @@ type Repositories struct {
 	Suppression *postgres.SuppressionRepository
 
 	// Access Control
-	Group          *postgres.GroupRepository
-	PermissionSet  *postgres.PermissionSetRepository
-	AccessControl  *postgres.AccessControlRepository
-	DataScope      *postgres.DataScopeRepository
-	Role           *postgres.RoleRepository
-	RolePermission *postgres.PermissionRepository
+	Group           *postgres.GroupRepository
+	AccessControl   *postgres.AccessControlRepository
+	DataScope       *postgres.DataScopeRepository
+	MemberLifecycle *postgres.MemberLifecycleRepository
+	Role            *postgres.RoleRepository
+	RolePermission  *postgres.PermissionRepository
 
 	// Session (raw *sql.DB required)
 	Session      *postgres.SessionRepository
@@ -173,8 +173,7 @@ type Repositories struct {
 	TargetMapping *postgres.TargetMappingRepository
 
 	// API Keys & Webhooks
-	APIKey  *postgres.APIKeyRepository
-	Webhook *postgres.WebhookRepository
+	APIKey *postgres.APIKeyRepository
 
 	// Licensing (modules from database)
 	Module       *postgres.ModuleRepository
@@ -188,6 +187,7 @@ type Repositories struct {
 	CTMonitorState *postgres.CTMonitorStateRepository
 	Attribution    *postgres.AttributionRepository
 	EASMDNS        *postgres.EASMDNSRepository
+	EASMSeed       *postgres.EASMSeedRepository
 	EASMSummary    *postgres.EASMSummaryRepository
 
 	// KEV Escalation
@@ -198,6 +198,7 @@ type Repositories struct {
 
 	// Per-user customizable dashboards (RFC-021, migration 000218)
 	UserDashboard *postgres.UserDashboardRepository
+	SavedView     *postgres.SavedViewRepository
 
 	// Asset Dedup (RFC-001)
 	AssetDedup *postgres.AssetDedupRepository
@@ -382,12 +383,12 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Suppression: postgres.NewSuppressionRepository(db),
 
 		// Access Control
-		Group:          postgres.NewGroupRepository(db),
-		PermissionSet:  postgres.NewPermissionSetRepository(db),
-		AccessControl:  postgres.NewAccessControlRepository(db),
-		DataScope:      postgres.NewDataScopeRepository(db),
-		Role:           postgres.NewRoleRepository(db),
-		RolePermission: postgres.NewPermissionRepository(db),
+		Group:           postgres.NewGroupRepository(db),
+		AccessControl:   postgres.NewAccessControlRepository(db),
+		DataScope:       postgres.NewDataScopeRepository(db),
+		MemberLifecycle: postgres.NewMemberLifecycleRepository(db),
+		Role:            postgres.NewRoleRepository(db),
+		RolePermission:  postgres.NewPermissionRepository(db),
 
 		// Session (raw *sql.DB required)
 		Session:      postgres.NewSessionRepository(db.DB),
@@ -405,8 +406,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		TargetMapping: postgres.NewTargetMappingRepository(db),
 
 		// API Keys & Webhooks
-		APIKey:  postgres.NewAPIKeyRepository(db),
-		Webhook: postgres.NewWebhookRepository(db),
+		APIKey: postgres.NewAPIKeyRepository(db),
 
 		// Licensing (modules from database)
 		Module:       postgres.NewModuleRepository(db),
@@ -418,6 +418,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 		Attribution:      postgres.NewAttributionRepository(db),
 		EASMDNS:          postgres.NewEASMDNSRepository(db),
+		EASMSeed:         postgres.NewEASMSeedRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 
 		// KEV Escalation
@@ -428,6 +429,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// Per-user customizable dashboards (RFC-021)
 		UserDashboard: postgres.NewUserDashboardRepository(db),
+		SavedView:     postgres.NewSavedViewRepository(db),
 
 		// Asset Dedup (RFC-001)
 		AssetDedup: postgres.NewAssetDedupRepository(db),

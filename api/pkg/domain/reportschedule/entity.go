@@ -325,3 +325,40 @@ type Repository interface {
 	List(ctx context.Context, filter ScheduleFilter, page pagination.Pagination) (pagination.Result[*ReportSchedule], error)
 	ListDue(ctx context.Context, now time.Time) ([]*ReportSchedule, error)
 }
+
+// RecipientPolicy decides which addresses may receive an organization's
+// scheduled reports (owner decision D12, research doc 15 L-19): an active
+// member of the organization, or an address in one of its
+// Security.AllowedDomains. With no allowed domains, members only.
+type RecipientPolicy interface {
+	// AllowedRecipients returns, for each address (lower-cased), whether it may
+	// receive the organization's reports.
+	AllowedRecipients(ctx context.Context, tenantID shared.ID, emails []string) (map[string]bool, error)
+}
+
+// ErrRecipientNotAllowed: a recipient is neither a member nor in an allowed
+// domain.
+var ErrRecipientNotAllowed = fmt.Errorf("%w: report recipients must be members of the organization or in one of its allowed email domains (Settings → Security)", shared.ErrValidation)
+
+// RefusedRecipients returns the recipients the policy does not allow, in
+// order. A nil policy allows everyone (tests).
+func RefusedRecipients(ctx context.Context, p RecipientPolicy, tenantID shared.ID, recipients []Recipient) ([]string, error) {
+	if p == nil || len(recipients) == 0 {
+		return nil, nil
+	}
+	emails := make([]string, 0, len(recipients))
+	for _, r := range recipients {
+		emails = append(emails, strings.ToLower(strings.TrimSpace(r.Email)))
+	}
+	allowed, err := p.AllowedRecipients(ctx, tenantID, emails)
+	if err != nil {
+		return nil, err
+	}
+	var refused []string
+	for _, e := range emails {
+		if !allowed[e] {
+			refused = append(refused, e)
+		}
+	}
+	return refused, nil
+}

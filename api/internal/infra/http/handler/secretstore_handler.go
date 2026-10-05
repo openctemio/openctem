@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -105,11 +106,53 @@ type GitLabTokenDataRequest struct {
 	Token string `json:"token" validate:"required"`
 }
 
-// UpdateCredentialRequest represents the request body for updating a credential.
+// UpdateCredentialRequest represents the request body for updating a
+// credential's metadata. Every field is optional and an absent field is left
+// unchanged; "description": "" clears the description and "expires_at": null
+// clears the expiry. The secret is changed with POST /{id}/rotate.
 type UpdateCredentialRequest struct {
-	Name        string `json:"name" validate:"omitempty,min=1,max=255"`
-	Description string `json:"description" validate:"max=1000"`
-	ExpiresAt   string `json:"expires_at,omitempty"`
+	Name        *string `json:"name,omitempty" validate:"omitempty,min=1,max=255"`
+	Description *string `json:"description,omitempty" validate:"omitempty,max=1000"`
+	// ExpiresAt: RFC 3339 timestamp in the future, or null to clear.
+	ExpiresAt json.RawMessage `json:"expires_at,omitempty" swaggertype:"string" format:"date-time"`
+}
+
+// RotateCredentialRequest carries the new secret of a credential. Set the one
+// field that matches the credential's stored type (the type cannot change).
+type RotateCredentialRequest struct {
+	APIKey                *APIKeyDataRequest                `json:"api_key,omitempty"`
+	BasicAuth             *BasicAuthDataRequest             `json:"basic_auth,omitempty"`
+	BearerToken           *BearerTokenDataRequest           `json:"bearer_token,omitempty"`
+	SSHKey                *SSHKeyDataRequest                `json:"ssh_key,omitempty"`
+	AWSRole               *AWSRoleDataRequest               `json:"aws_role,omitempty"`
+	GCPServiceAccount     *GCPServiceAccountDataRequest     `json:"gcp_service_account,omitempty"`
+	AzureServicePrincipal *AzureServicePrincipalDataRequest `json:"azure_service_principal,omitempty"`
+	GitHubApp             *GitHubAppDataRequest             `json:"github_app,omitempty"`
+	GitLabToken           *GitLabTokenDataRequest           `json:"gitlab_token,omitempty"`
+}
+
+// parseOptionalExpiry reads expires_at: absent = unchanged, null = clear,
+// otherwise an RFC 3339 timestamp.
+func parseOptionalExpiry(raw json.RawMessage) (app.OptionalTime, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return app.OptionalTime{}, nil
+	}
+	if bytes.Equal(trimmed, []byte("null")) {
+		return app.OptionalTime{Set: true}, nil
+	}
+	var s string
+	if err := json.Unmarshal(trimmed, &s); err != nil {
+		return app.OptionalTime{}, errors.New("expires_at must be an RFC 3339 timestamp or null")
+	}
+	if s == "" {
+		return app.OptionalTime{Set: true}, nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return app.OptionalTime{}, errors.New("expires_at must be an RFC 3339 timestamp (for example 2026-12-31T23:59:59Z) or null")
+	}
+	return app.OptionalTime{Set: true, Value: &t}, nil
 }
 
 // CredentialResponse represents the response for a credential.
@@ -354,24 +397,100 @@ func (h *SecretStoreHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	expiry, err := parseOptionalExpiry(req.ExpiresAt)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+	actorID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+
 	input := app.UpdateCredentialInput{
 		TenantID:     tenantID,
 		CredentialID: credentialID,
+		ActorID:      actorID,
 		Name:         req.Name,
 		Description:  req.Description,
-	}
-
-	// Parse expires_at if provided
-	if req.ExpiresAt != "" {
-		expiresAt, err := time.Parse(time.RFC3339, req.ExpiresAt)
-		if err != nil {
-			apierror.BadRequest("Invalid expires_at format, use RFC3339").WriteJSON(w)
-			return
-		}
-		input.ExpiresAt = &expiresAt
+		ExpiresAt:    expiry,
 	}
 
 	cred, err := h.service.UpdateCredential(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toCredentialResponse(cred))
+}
+
+// Rotate handles POST /api/v1/secret-store/{id}/rotate
+// @Summary      Rotate credential
+// @Description  Replace the secret of a credential in place. Send the data field matching the credential's type. Sources bound to the credential use the new value on their next fetch.
+// @Tags         Credentials
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                   true  "Credential ID"
+// @Param        body  body      RotateCredentialRequest  true  "New secret"
+// @Success      200   {object}  CredentialResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /secret-store/{id}/rotate [post]
+func (h *SecretStoreHandler) Rotate(w http.ResponseWriter, r *http.Request) {
+	credentialID := chi.URLParam(r, "id")
+	if credentialID == "" {
+		apierror.BadRequest("Credential ID is required").WriteJSON(w)
+		return
+	}
+
+	var req RotateCredentialRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+
+	// The stored type decides which data field is read (tenant-scoped lookup:
+	// another tenant's id is a 404).
+	existing, err := h.service.GetCredential(r.Context(), tenantID, credentialID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	credData, err := h.toCredentialData(CreateCredentialRequest{
+		CredentialType:        string(existing.CredentialType),
+		APIKey:                req.APIKey,
+		BasicAuth:             req.BasicAuth,
+		BearerToken:           req.BearerToken,
+		SSHKey:                req.SSHKey,
+		AWSRole:               req.AWSRole,
+		GCPServiceAccount:     req.GCPServiceAccount,
+		AzureServicePrincipal: req.AzureServicePrincipal,
+		GitHubApp:             req.GitHubApp,
+		GitLabToken:           req.GitLabToken,
+	})
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+
+	actorID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	cred, err := h.service.RotateCredential(r.Context(), app.RotateCredentialInput{
+		TenantID:     tenantID,
+		CredentialID: credentialID,
+		ActorID:      actorID,
+		Data:         credData,
+	})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

@@ -159,11 +159,16 @@ func (s *CapabilityService) GetCapability(ctx context.Context, tenantID, id stri
 	return c, nil
 }
 
-// GetCategories returns all unique capability categories.
-func (s *CapabilityService) GetCategories(ctx context.Context) ([]string, error) {
+// GetCategories returns the unique categories of the capabilities the tenant
+// may see (platform and its own custom capabilities).
+func (s *CapabilityService) GetCategories(ctx context.Context, tenantIDStr string) ([]string, error) {
 	s.logger.Debug("getting capability categories")
 
-	return s.repo.GetCategories(ctx)
+	tid, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	return s.repo.GetCategories(ctx, tid)
 }
 
 // =============================================================================
@@ -410,7 +415,7 @@ func (s *CapabilityService) DeleteCapability(ctx context.Context, input DeleteCa
 
 	// Check if capability is in use by any tools or sensors
 	if !input.Force {
-		stats, err := s.repo.GetUsageStats(ctx, cid)
+		stats, err := s.repo.GetUsageStats(ctx, tid, cid)
 		if err != nil {
 			s.logger.Warn("failed to check capability usage", "error", err)
 			// Continue with delete if usage check fails (non-critical)
@@ -450,15 +455,13 @@ func (s *CapabilityService) GetCapabilityUsageStats(ctx context.Context, tenantI
 		return nil, fmt.Errorf("%w: invalid capability id", shared.ErrValidation)
 	}
 
-	// Parse tenant ID
-	var tenantID *shared.ID
-	if tenantIDStr != "" {
-		tid, err := shared.IDFromString(tenantIDStr)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		tenantID = &tid
+	// The stats are always computed for one tenant (its own tools and sensors
+	// plus the platform catalog), so a tenant is required.
+	tid, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
+	tenantID := &tid
 
 	// Check if capability exists and tenant has access
 	cap, err := s.repo.GetByID(ctx, cid)
@@ -475,7 +478,7 @@ func (s *CapabilityService) GetCapabilityUsageStats(ctx context.Context, tenantI
 		}
 	}
 
-	stats, err := s.repo.GetUsageStats(ctx, cid)
+	stats, err := s.repo.GetUsageStats(ctx, tid, cid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get usage stats: %w", err)
 	}
@@ -497,15 +500,13 @@ func (s *CapabilityService) GetCapabilitiesUsageStatsBatch(ctx context.Context, 
 		return map[string]*CapabilityUsageStatsOutput{}, nil
 	}
 
-	// Parse tenant ID
-	var tenantID *shared.ID
-	if tenantIDStr != "" {
-		tid, err := shared.IDFromString(tenantIDStr)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		tenantID = &tid
+	// The stats are always computed for one tenant (its own tools and sensors
+	// plus the platform catalog), so a tenant is required.
+	tid, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
+	tenantID := &tid
 
 	ids := make([]shared.ID, 0, len(capabilityIDs))
 	for _, idStr := range capabilityIDs {
@@ -538,7 +539,7 @@ func (s *CapabilityService) GetCapabilitiesUsageStatsBatch(ctx context.Context, 
 		return map[string]*CapabilityUsageStatsOutput{}, nil
 	}
 
-	stats, err := s.repo.GetUsageStatsBatch(ctx, accessibleIDs)
+	stats, err := s.repo.GetUsageStatsBatch(ctx, tid, accessibleIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get usage stats: %w", err)
 	}

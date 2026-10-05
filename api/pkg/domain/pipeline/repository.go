@@ -103,6 +103,8 @@ type RunFilter struct {
 	TriggeredBy string
 	StartedFrom *time.Time
 	StartedTo   *time.Time
+	// Sort orders the list; the zero value is newest first.
+	Sort RunListSort
 }
 
 // RunRepository defines the interface for pipeline run persistence.
@@ -268,4 +270,48 @@ type UnclaimedRunAborter interface {
 	// its open steps (error code NO_SENSOR, never retried) and its commands
 	// fail with the reason, and the scan records the failure.
 	AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error)
+}
+
+// Rollover is the work a scan's previous scheduled run left unfinished at its
+// deadline (RFC-046 D5): the next scheduled run plans these targets first.
+type Rollover struct {
+	FromRunID shared.ID
+	Targets   []string
+}
+
+// RolloverStore reads the unfinished targets runs recorded at their deadline.
+// Optional extension of RunRepository, asserted by the scan trigger and the
+// run handler. Every read is scoped to the caller's tenant.
+type RolloverStore interface {
+	// GetUnfinishedTargets returns the targets runID recorded as unfinished,
+	// or shared.ErrNotFound when the run is not in tenantID.
+	GetUnfinishedTargets(ctx context.Context, tenantID, runID shared.ID) ([]string, error)
+
+	// LatestRollover returns what the scan's most recent settled run left
+	// unfinished when that run was a scheduled run that ended partial, and
+	// nil otherwise (the latest settled run finished everything, failed,
+	// was canceled, or was not a scheduled run).
+	LatestRollover(ctx context.Context, tenantID, scanID shared.ID) (*Rollover, error)
+}
+
+// CanceledRunClosure is what closing a canceled run changed.
+type CanceledRunClosure struct {
+	// Steps is how many open step runs ended canceled.
+	Steps int64
+	// Commands is how many open commands ended canceled.
+	Commands int64
+	// Sensors are the sensors that held (claimed or were pinned) one of
+	// those commands; each is told to stop on its next heartbeat.
+	Sensors []shared.ID
+}
+
+// CanceledRunCloser closes what a canceled run leaves open (RFC-046 §8).
+// Optional extension of RunRepository, asserted by the pipeline service.
+type CanceledRunCloser interface {
+	// CloseCanceledRun ends the open step runs and commands of runID as
+	// canceled, in one statement, only when the run is in tenantID and is
+	// canceled. Commands lose their lease, so the expired-lease sweep never
+	// re-queues them and the sensor holding one finds it in
+	// cancel_command_ids. Repeating it changes nothing (zero closure).
+	CloseCanceledRun(ctx context.Context, tenantID, runID shared.ID) (CanceledRunClosure, error)
 }

@@ -14,12 +14,18 @@ type ThreatFilter struct {
 	AttackerProfileID *shared.ID   // nil = any attacker
 	Tactic            string       // "" = any tactic
 	TechniqueID       string       // "" = any technique
+	// DataScope keeps only threats whose entry point, target, hop and
+	// evidence finding are all in the caller's data scope (nil: all).
+	DataScope *shared.DataScope
 }
 
 // ModelFilter narrows the models returned by List. Zero-value fields are ignored.
 type ModelFilter struct {
 	ScopeType  ScopeType  // "" = any scope type
 	ScopeRefID *shared.ID // nil = any scope ref
+	// DataScope hides crown-jewel models whose asset is outside the caller's
+	// data scope (nil: all).
+	DataScope *shared.DataScope
 }
 
 // Repository persists and reads threat models (tenant-scoped runtime tables) and

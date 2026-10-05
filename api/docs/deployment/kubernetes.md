@@ -24,7 +24,15 @@ kind: Secret
 metadata: { name: openctem-secrets, namespace: openctem }
 type: Opaque
 stringData:
-  db-user: "openctem"
+  # Three database roles (docs/deployment/database-roles.md): the superuser
+  # (initdb and the bootstrap script only), the migrator that owns the schema,
+  # and the API's DML-only role. Run deploy/postgres/least-privilege-roles.sql
+  # once as the superuser before the first migration.
+  db-superuser: "postgres"
+  db-superuser-password: "CHANGE_ME_IN_PRODUCTION"
+  db-migrate-user: "openctem_migrator"
+  db-migrate-password: "CHANGE_ME_IN_PRODUCTION"
+  db-user: "openctem_app"
   db-password: "CHANGE_ME_IN_PRODUCTION"
   db-name: "openctem"
   jwt-secret: "GENERATE_A_64_CHAR_RANDOM_STRING"        # min 64 chars
@@ -92,9 +100,9 @@ spec:
           ports: [{ containerPort: 5432 }]
           env:
             - name: POSTGRES_USER
-              valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-user } }
+              valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-superuser } }
             - name: POSTGRES_PASSWORD
-              valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-password } }
+              valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-superuser-password } }
             - name: POSTGRES_DB
               valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-name } }
             - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
@@ -203,14 +211,15 @@ spec:
           args:
             - >
               migrate -path=/migrations
-              -database "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
+              -database "postgres://$(DB_MIGRATE_USER):$(DB_MIGRATE_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
               up
           env:
             - { name: DB_HOST, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_HOST } } }
             - { name: DB_PORT, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_PORT } } }
             - { name: DB_SSLMODE, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_SSLMODE } } }
-            - { name: DB_USER, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-user } } }
-            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-password } } }
+            # The schema owner (openctem_migrator), not the API's role: see database-roles.md.
+            - { name: DB_MIGRATE_USER, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-migrate-user } } }
+            - { name: DB_MIGRATE_PASSWORD, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-migrate-password } } }
             - { name: DB_NAME, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-name } } }
 ```
 
@@ -240,14 +249,15 @@ spec:
           args:
             - >
               migrate -path=/migrations
-              -database "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
+              -database "postgres://$(DB_MIGRATE_USER):$(DB_MIGRATE_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
               up
           env:
             - { name: DB_HOST, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_HOST } } }
             - { name: DB_PORT, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_PORT } } }
             - { name: DB_SSLMODE, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_SSLMODE } } }
-            - { name: DB_USER, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-user } } }
-            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-password } } }
+            # The schema owner (openctem_migrator), not the API's role: see database-roles.md.
+            - { name: DB_MIGRATE_USER, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-migrate-user } } }
+            - { name: DB_MIGRATE_PASSWORD, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-migrate-password } } }
             - { name: DB_NAME, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-name } } }
       containers:
         - name: api

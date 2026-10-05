@@ -263,6 +263,7 @@ const (
 	StateChangeComplianceChanged       StateChangeType = "compliance_changed"        // Compliance scope changed
 	StateChangeClassificationChanged   StateChangeType = "classification_changed"    // Data classification changed
 	StateChangeRenamed                 StateChangeType = "renamed"                   // Display name changed (field "name")
+	StateChangeReclassified            StateChangeType = "reclassified"              // Type or sub-type changed (RFC-042 §6.3.8)
 )
 
 // AllStateChangeTypes returns all valid state change types.
@@ -279,6 +280,7 @@ func AllStateChangeTypes() []StateChangeType {
 		StateChangeComplianceChanged,
 		StateChangeClassificationChanged,
 		StateChangeRenamed,
+		StateChangeReclassified,
 	}
 }
 
@@ -309,6 +311,7 @@ func (t StateChangeType) Description() string {
 		StateChangeComplianceChanged:       "Compliance scope changed",
 		StateChangeClassificationChanged:   "Data classification changed",
 		StateChangeRenamed:                 "Asset renamed",
+		StateChangeReclassified:            "Asset reclassified",
 	}
 	if desc, ok := descriptions[t]; ok {
 		return desc

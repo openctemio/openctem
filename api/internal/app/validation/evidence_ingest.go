@@ -39,6 +39,10 @@ func NewEvidenceIngestService(store *EvidenceStore, finding FindingMutator, noti
 // ErrInvalidOutcome is returned when the evidence outcome is not a known value.
 var ErrInvalidOutcome = fmt.Errorf("%w: invalid evidence outcome", shared.ErrValidation)
 
+// ErrEvidenceAssetMismatch is returned when evidence names an asset other
+// than its finding's asset.
+var ErrEvidenceAssetMismatch = fmt.Errorf("%w: evidence target asset is not the finding's asset", shared.ErrValidation)
+
 // IngestResult summarizes what an evidence ingestion did.
 type IngestResult struct {
 	Stored        StoredEvidence
@@ -121,8 +125,14 @@ func (s *EvidenceIngestService) record(
 	// Tenant guard: the finding must exist within the submitting sensor's tenant.
 	// Without this, a compromised sensor could record evidence against another
 	// tenant's finding id (the FK to findings(id) alone would not catch it).
-	if _, err := s.finding.Get(ctx, tenantID, findingID); err != nil {
+	f, err := s.finding.Get(ctx, tenantID, findingID)
+	if err != nil {
 		return StoredEvidence{}, fmt.Errorf("finding lookup: %w", err)
+	}
+	// Asset binding: evidence names the finding's own asset or none. A sensor
+	// cannot attach evidence to another asset of the tenant through it.
+	if !ev.Target.AssetID.IsZero() && !ev.Target.AssetID.Equals(f.AssetID()) {
+		return StoredEvidence{}, ErrEvidenceAssetMismatch
 	}
 
 	return s.store.Record(ctx, tenantID, findingID, simRunID, ev)

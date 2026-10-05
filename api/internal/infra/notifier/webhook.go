@@ -86,7 +86,7 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.webhookURL, bytes.NewReader(payloadBytes))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf("create request: %s", transportError(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "OpenCTEM-Notification/1.0")
@@ -101,7 +101,7 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 	if err != nil {
 		return &SendResult{
 			Success: false,
-			Error:   fmt.Sprintf("send request failed: %v", err),
+			Error:   "send request failed: " + transportError(err),
 		}, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -113,7 +113,7 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return &SendResult{
 			Success: false,
-			Error:   fmt.Sprintf("webhook returned status %d: %s", resp.StatusCode, string(body)),
+			Error:   fmt.Sprintf("webhook returned status %d: %s", resp.StatusCode, echoBody(body)),
 		}, nil
 	}
 

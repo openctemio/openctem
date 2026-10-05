@@ -7,11 +7,11 @@ import "fmt"
 type ControlStatus string
 
 const (
-	ControlStatusNotAssessed     ControlStatus = "not_assessed"
-	ControlStatusImplemented     ControlStatus = "implemented"
-	ControlStatusPartial         ControlStatus = "partial"
-	ControlStatusNotImplemented  ControlStatus = "not_implemented"
-	ControlStatusNotApplicable   ControlStatus = "not_applicable"
+	ControlStatusNotAssessed    ControlStatus = "not_assessed"
+	ControlStatusImplemented    ControlStatus = "implemented"
+	ControlStatusPartial        ControlStatus = "partial"
+	ControlStatusNotImplemented ControlStatus = "not_implemented"
+	ControlStatusNotApplicable  ControlStatus = "not_applicable"
 )
 
 // ParseControlStatus parses a string to ControlStatus.

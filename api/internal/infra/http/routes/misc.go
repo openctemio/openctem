@@ -188,7 +188,7 @@ func registerIntegrationRoutes(
 		r.GET("/", h.List, middleware.Require(permission.IntegrationsRead))
 
 		// List SCM integrations specifically
-		r.GET("/scm", h.ListSCM, middleware.Require(permission.IntegrationsRead))
+		r.GET("/scm", h.ListSCM, middleware.RequireAll(permission.IntegrationsRead, permission.SCMConnectionsRead))
 
 		// List Notification integrations specifically
 		r.GET("/notifications", h.ListNotifications, middleware.Require(permission.IntegrationsRead))
@@ -239,7 +239,11 @@ func registerIntegrationRoutes(
 		r.POST("/{id}/test-notification", h.TestNotification, middleware.Require(permission.IntegrationsManage))
 		// NOTE: /send endpoint removed for security - notifications are triggered internally only
 		// Use BroadcastNotification from FindingService/ScanService instead
-		r.GET("/{id}/notification-events", h.GetNotificationEvents, middleware.Require(permission.IntegrationsRead))
+		// Delivery history carries every event's title, body and metadata
+		// (finding messages, asset names, owner emails) for the whole
+		// tenant, ignoring data scope: channel managers only, like the
+		// channel configuration that decides where those events go.
+		r.GET("/{id}/notification-events", h.GetNotificationEvents, middleware.Require(permission.IntegrationsManage))
 
 		// List repositories from SCM integration
 		r.GET("/{id}/repositories", h.ListRepositories, middleware.Require(permission.IntegrationsRead))
@@ -258,22 +262,30 @@ func registerOutboxRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Tenant-scoped routes - tenant from JWT token
+	// Tenant-scoped routes - tenant from JWT token.
+	//
+	// The outbox holds a row for every event, whether or not a channel is
+	// configured: new findings (message, asset id, owner name and email),
+	// new assets, exposures, SLA and approval events, tenant-wide and
+	// without data scope. That is delivery telemetry for whoever manages the
+	// channels, so every route also needs integrations:manage (owner/admin
+	// by default); members and viewers hold notifications:read for their
+	// own in-app notices, not for this stream. Research doc 15, L-03.
 	router.Group("/api/v1/notification-outbox", func(r Router) {
 		// Get outbox statistics for tenant
-		r.GET("/stats", h.GetStats, middleware.Require(permission.NotificationsRead))
+		r.GET("/stats", h.GetStats, middleware.RequireAll(permission.NotificationsRead, permission.IntegrationsManage))
 
 		// List outbox entries for tenant
-		r.GET("/", h.List, middleware.Require(permission.NotificationsRead))
+		r.GET("/", h.List, middleware.RequireAll(permission.NotificationsRead, permission.IntegrationsManage))
 
 		// Get single outbox entry (must belong to tenant)
-		r.GET("/{id}", h.Get, middleware.Require(permission.NotificationsRead))
+		r.GET("/{id}", h.Get, middleware.RequireAll(permission.NotificationsRead, permission.IntegrationsManage))
 
 		// Retry failed entry (must belong to tenant)
-		r.POST("/{id}/retry", h.Retry, middleware.Require(permission.NotificationsWrite))
+		r.POST("/{id}/retry", h.Retry, middleware.RequireAll(permission.NotificationsWrite, permission.IntegrationsManage))
 
 		// Delete entry (must belong to tenant)
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.NotificationsDelete))
+		r.DELETE("/{id}", h.Delete, middleware.RequireAll(permission.NotificationsDelete, permission.IntegrationsManage))
 	}, tenantMiddlewares...)
 }
 
@@ -386,27 +398,6 @@ func registerPlatformStatsRoutes(
 
 	router.Group("/api/v1/platform", func(r Router) {
 		r.GET("/stats", h.GetStats)
-	}, tenantMiddlewares...)
-}
-
-// registerWebhookRoutes registers webhook management routes.
-func registerWebhookRoutes(
-	router Router,
-	h *handler.WebhookHandler,
-	authMiddleware Middleware,
-	userSyncMiddleware Middleware,
-) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	router.Group("/api/v1/webhooks", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.WebhooksRead))
-		r.POST("/", h.Create, middleware.Require(permission.WebhooksWrite))
-		r.GET("/{id}", h.Get, middleware.Require(permission.WebhooksRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.WebhooksWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.WebhooksDelete))
-		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.WebhooksWrite))
-		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.WebhooksWrite))
-		r.GET("/{id}/deliveries", h.ListDeliveries, middleware.Require(permission.WebhooksRead))
 	}, tenantMiddlewares...)
 }
 

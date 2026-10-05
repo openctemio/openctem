@@ -171,7 +171,7 @@ func (c *AuditChainVerifyController) Reconcile(ctx context.Context) (int, error)
 			for _, b := range res.Breaks {
 				key := breakKey(tid, b)
 				current[key] = struct{}{}
-				metrics.AuditChainBreaksTotal.WithLabelValues(tid.String(), b.Reason).Inc()
+				metrics.AuditChainBreaksTotal.WithLabelValues(b.Reason).Inc()
 
 				if _, alreadyAlerted := c.alertedBreaks[key]; alreadyAlerted {
 					// Known, still-unremediated break — log without the `alert`

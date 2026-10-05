@@ -62,6 +62,12 @@ export interface RecoveryCodesResponse {
   recovery_codes: string[]
 }
 
+/** Confirm 2FA setup: the current password and the authenticator code. */
+export interface TwoFactorEnableInput {
+  password: string
+  code: string
+}
+
 export interface TwoFactorDisableInput {
   password: string
   /** authenticator code or an unused recovery code */

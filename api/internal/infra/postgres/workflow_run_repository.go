@@ -174,6 +174,7 @@ func (r *WorkflowRunRepository) Update(ctx context.Context, run *workflow.Run) e
 		    total_nodes = $5, completed_nodes = $6, failed_nodes = $7,
 		    started_at = $8, completed_at = $9
 		WHERE id = $1
+		  AND status NOT IN ('completed', 'failed', 'canceled')
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -194,6 +195,16 @@ func (r *WorkflowRunRepository) Update(ctx context.Context, run *workflow.Run) e
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
+		// A finished run never changes again: a cancel is not overwritten by
+		// the executor finishing, and a finished run is not reopened.
+		var exists bool
+		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM workflow_runs WHERE id = $1)`,
+			run.ID.String()).Scan(&exists); err != nil {
+			return fmt.Errorf("failed to check workflow run: %w", err)
+		}
+		if exists {
+			return workflow.ErrRunAlreadyFinished
+		}
 		return shared.ErrNotFound
 	}
 

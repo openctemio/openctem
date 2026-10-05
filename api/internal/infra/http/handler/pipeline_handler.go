@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -178,11 +180,14 @@ type TriggerRunRequest struct {
 
 // RunResponse represents the response for a pipeline run.
 type RunResponse struct {
-	ID                string                         `json:"id"`
-	TenantID          string                         `json:"tenant_id"`
-	PipelineID        string                         `json:"pipeline_id"`
-	AssetID           *string                        `json:"asset_id,omitempty"`
-	ScanID            *string                        `json:"scan_id,omitempty"`
+	ID         string  `json:"id"`
+	TenantID   string  `json:"tenant_id"`
+	PipelineID string  `json:"pipeline_id"`
+	AssetID    *string `json:"asset_id,omitempty"`
+	ScanID     *string `json:"scan_id,omitempty"`
+	// ScanName names the run's scan (list rows only; empty when the scan was
+	// deleted).
+	ScanName          string                         `json:"scan_name,omitempty"`
 	ScanProfileID     *string                        `json:"scan_profile_id,omitempty"`
 	TriggerType       string                         `json:"trigger_type"`
 	TriggeredBy       string                         `json:"triggered_by,omitempty"`
@@ -200,9 +205,104 @@ type RunResponse struct {
 	ErrorMessage      string                         `json:"error_message,omitempty"`
 	CreatedAt         string                         `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
-	ScheduledFor    *string                  `json:"scheduled_for,omitempty"`
-	FilteringResult *FilteringResultResponse `json:"filtering_result,omitempty"`
-	Dispatch        *RunDispatchResponse     `json:"dispatch,omitempty"`
+	ScheduledFor *string `json:"scheduled_for,omitempty"`
+	// DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3).
+	DeadlineAt *string `json:"deadline_at,omitempty"`
+	// UnfinishedTargetCount is how many targets were still open when the run
+	// was settled at its deadline; the next scheduled run plans them first.
+	UnfinishedTargetCount int                      `json:"unfinished_target_count,omitempty"`
+	FilteringResult       *FilteringResultResponse `json:"filtering_result,omitempty"`
+	Dispatch              *RunDispatchResponse     `json:"dispatch,omitempty"`
+	// TaskSummary counts the run's tasks (the commands it dispatched) by
+	// status. Present on list rows and on the run, once it has tasks.
+	TaskSummary *RunTaskSummaryResponse `json:"task_summary,omitempty"`
+	// Tasks lists the run's tasks (GET /pipeline-runs/{id} only).
+	Tasks []RunTaskResponse `json:"tasks,omitempty"`
+	// TasksTruncated is true when the run has more tasks than Tasks lists.
+	TasksTruncated bool `json:"tasks_truncated,omitempty"`
+	// TasksNextCursor continues the task list after Tasks
+	// (GET /pipeline-runs/{id}/tasks?cursor=) when TasksTruncated.
+	TasksNextCursor string `json:"tasks_next_cursor,omitempty"`
+}
+
+// RunTaskPageResponse is one page of a run's tasks.
+type RunTaskPageResponse struct {
+	Data []RunTaskResponse `json:"data"`
+	// NextCursor continues after Data; absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+// RunTaskSummaryResponse counts a run's tasks by status (RFC-046 §4.1).
+type RunTaskSummaryResponse struct {
+	Total     int `json:"total"`
+	Queued    int `json:"queued"`
+	Running   int `json:"running"`
+	Completed int `json:"completed"`
+	Failed    int `json:"failed"`
+	Canceled  int `json:"canceled"`
+	// Sensors is how many distinct sensors claimed one of the tasks.
+	Sensors int `json:"sensors"`
+}
+
+// RunTaskResponse is one task of a run: one command, one tool, a slice of
+// targets (counted, not listed), one sensor attempt at a time.
+type RunTaskResponse struct {
+	ID        string  `json:"id"`
+	StepRunID *string `json:"step_run_id,omitempty"`
+	StepKey   string  `json:"step_key,omitempty"`
+	Tool      string  `json:"tool,omitempty"`
+	// Status is queued, running, completed, failed or canceled.
+	Status     string  `json:"status"`
+	SensorID   *string `json:"sensor_id,omitempty"`
+	SensorName string  `json:"sensor_name,omitempty"`
+	// Platform is true when a shared platform sensor runs the task; it is
+	// never named.
+	Platform     bool    `json:"platform,omitempty"`
+	Targets      int     `json:"targets"`
+	Attempts     int     `json:"attempts"`
+	CreatedAt    string  `json:"created_at"`
+	StartedAt    *string `json:"started_at,omitempty"`
+	CompletedAt  *string `json:"completed_at,omitempty"`
+	ErrorMessage string  `json:"error_message,omitempty"`
+}
+
+func toRunTaskSummaryResponse(s pipeline.TaskSummary) *RunTaskSummaryResponse {
+	if s.Total == 0 {
+		return nil
+	}
+	return &RunTaskSummaryResponse{
+		Total: s.Total, Queued: s.Queued, Running: s.Running, Completed: s.Completed,
+		Failed: s.Failed, Canceled: s.Canceled, Sensors: s.Sensors,
+	}
+}
+
+func toRunTaskResponses(tasks []pipeline.Task) []RunTaskResponse {
+	out := make([]RunTaskResponse, 0, len(tasks))
+	for _, t := range tasks {
+		r := RunTaskResponse{
+			ID: t.ID.String(), StepKey: t.StepKey, Tool: t.Tool, Status: string(t.Status),
+			SensorName: t.SensorName, Platform: t.Platform, Targets: t.Targets, Attempts: t.Attempts,
+			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: t.ErrorMessage,
+		}
+		if t.StepRunID != nil {
+			v := t.StepRunID.String()
+			r.StepRunID = &v
+		}
+		if t.SensorID != nil {
+			v := t.SensorID.String()
+			r.SensorID = &v
+		}
+		if t.StartedAt != nil {
+			v := t.StartedAt.Format(time.RFC3339)
+			r.StartedAt = &v
+		}
+		if t.CompletedAt != nil {
+			v := t.CompletedAt.Format(time.RFC3339)
+			r.CompletedAt = &v
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // RunDispatchResponse is what a scan run dispatched: targets resolved and
@@ -829,6 +929,12 @@ func (h *PipelineHandler) TriggerRun(w http.ResponseWriter, r *http.Request) {
 
 	run, err := h.service.TriggerPipeline(pipelineAuditCtx(r), input)
 	if err != nil {
+		// A refused asset_id (unknown, deleted, another tenant's, or out of
+		// the caller's data scope) gets one generic answer.
+		if errors.Is(err, pipelinesvc.ErrRunAssetNotFound) {
+			apierror.NotFound("Asset").WriteJSON(w)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
@@ -843,23 +949,29 @@ func (h *PipelineHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 	runID := chi.URLParam(r, "id")
 
-	run, err := h.service.GetRunWithSteps(r.Context(), runID)
+	// Read by the caller's tenant: another tenant's run is not found.
+	run, err := h.service.GetRunWithStepsForTenant(r.Context(), tenantID, runID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Security: Verify run belongs to tenant
-	if run.TenantID.String() != tenantID {
-		h.logger.Warn("SECURITY: cross-tenant run access attempt",
-			"tenant_id", tenantID,
-			"run_tenant_id", run.TenantID.String())
-		apierror.NotFound("pipeline run not found").WriteJSON(w)
+	resp := toRunResponse(run)
+	tasks, err := h.service.GetRunTasks(r.Context(), run)
+	if err != nil {
+		h.logger.Error("failed to read run tasks", "run_id", run.ID.String(), "error", err)
+		apierror.InternalServerError("failed to read the run's tasks").WriteJSON(w)
 		return
+	}
+	if tasks != nil {
+		resp.TaskSummary = toRunTaskSummaryResponse(tasks.Summary)
+		resp.Tasks = toRunTaskResponses(tasks.Items)
+		resp.TasksTruncated = tasks.Truncated
+		resp.TasksNextCursor = tasks.NextCursor
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toRunResponse(run))
+	json.NewEncoder(w).Encode(resp)
 }
 
 // ListRuns handles GET /api/v1/pipelines/runs
@@ -871,6 +983,7 @@ func (h *PipelineHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		PipelineID: r.URL.Query().Get("pipeline_id"),
 		AssetID:    r.URL.Query().Get("asset_id"),
 		Status:     r.URL.Query().Get("status"),
+		Sort:       r.URL.Query().Get("sort"),
 		Page:       parseQueryInt(r.URL.Query().Get("page"), 1),
 		PerPage:    parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
@@ -881,9 +994,27 @@ func (h *PipelineHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	summaries, err := h.service.RunTaskSummaries(r.Context(), tenantID, result.Data)
+	if err != nil {
+		h.logger.Error("failed to summarize run tasks", "error", err)
+		apierror.InternalServerError("failed to read the runs' tasks").WriteJSON(w)
+		return
+	}
+	scanNames, err := h.service.RunScanNames(r.Context(), tenantID, result.Data)
+	if err != nil {
+		h.logger.Error("failed to name run scans", "error", err)
+		apierror.InternalServerError("failed to read the runs' scans").WriteJSON(w)
+		return
+	}
 	items := make([]*RunResponse, len(result.Data))
 	for i, run := range result.Data {
 		items[i] = toRunResponse(run)
+		if sum, ok := summaries[run.ID]; ok {
+			items[i].TaskSummary = toRunTaskSummaryResponse(sum)
+		}
+		if run.ScanID != nil {
+			items[i].ScanName = scanNames[*run.ScanID]
+		}
 	}
 
 	resp := map[string]interface{}{
@@ -894,6 +1025,47 @@ func (h *PipelineHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		"total_pages": result.TotalPages,
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// ListRunTasks handles GET /api/v1/pipeline-runs/{id}/tasks
+// @Summary      List a run's tasks
+// @Description  One page of the run's tasks (one dispatched command each) in dispatch order. Page with next_cursor. Targets are counted, not listed.
+// @Tags         Pipelines
+// @Produce      json
+// @Param        id        path      string  true   "Run ID"
+// @Param        cursor    query     string  false  "next_cursor of the previous page"
+// @Param        per_page  query     int     false  "Tasks per page (1-200)" default(50)
+// @Success      200  {object}  RunTaskPageResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /pipeline-runs/{id}/tasks [get]
+func (h *PipelineHandler) ListRunTasks(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+	runID := chi.URLParam(r, "id")
+	q := r.URL.Query()
+
+	perPage := 0
+	if raw := q.Get("per_page"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			apierror.BadRequest("per_page must be a number").WriteJSON(w)
+			return
+		}
+		perPage = n
+		if perPage == 0 {
+			perPage = -1 // explicit 0 is out of range, not "default"
+		}
+	}
+
+	page, err := h.service.ListRunTasksPage(r.Context(), tenantID, runID, q.Get("cursor"), perPage)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	resp := RunTaskPageResponse{Data: toRunTaskResponses(page.Items), NextCursor: page.NextCursor}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
@@ -1083,6 +1255,11 @@ func toRunResponse(r *pipeline.Run) *RunResponse {
 		sf := r.ScheduledFor.Format("2006-01-02T15:04:05Z07:00")
 		resp.ScheduledFor = &sf
 	}
+	if r.DeadlineAt != nil {
+		d := r.DeadlineAt.Format("2006-01-02T15:04:05Z07:00")
+		resp.DeadlineAt = &d
+	}
+	resp.UnfinishedTargetCount = r.UnfinishedTargetCount
 
 	if r.QualityGateResult != nil {
 		resp.QualityGateResult = r.QualityGateResult

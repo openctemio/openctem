@@ -41,7 +41,7 @@ jobs:
     outputs:
       images: ${{ steps.f.outputs.api == 'true' || steps.f.outputs.web == 'true' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: f
@@ -72,7 +72,7 @@ jobs:
         image: redis:7-alpine
         ports: ["6379:6379"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The default docker driver: images built here are visible to the next
       # build's FROM without a registry.
       - name: Build openctem-api

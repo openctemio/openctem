@@ -267,8 +267,12 @@ func (s *FindingActivityService) RecordBatchAutoReopened(
 			"new_status":      string(vulnerability.FindingStatusConfirmed),
 			"previous_status": string(rf.PreviousStatus),
 		}
-		if rf.PreviousStatus == vulnerability.FindingStatusValidatedFixed {
+		switch rf.PreviousStatus {
+		case vulnerability.FindingStatusValidatedFixed:
 			changes["reason"] = "validation_downgrade_refuted_by_scan"
+		case vulnerability.FindingStatusNotObserved:
+			// Not a regression: it was never counted as fixed.
+			changes["reason"] = "observed_again"
 		}
 		if rf.PreviousResolution != "" {
 			changes["previous_resolution"] = rf.PreviousResolution
@@ -339,6 +343,31 @@ func (s *FindingActivityService) RecordStatusChange(
 		Changes:      changes,
 		Source:       source,
 	})
+}
+
+// RecordIntegrationStatusChange records a status change made by an
+// integration (a Jira or GitHub webhook): actor type integration, source
+// webhook, with the integration and the ticket reference, so the history
+// never shows an actorless change.
+func (s *FindingActivityService) RecordIntegrationStatusChange(
+	ctx context.Context,
+	tenantID, findingID shared.ID,
+	oldStatus, newStatus, integration, ref string,
+) error {
+	_, err := s.RecordActivity(ctx, RecordActivityInput{
+		TenantID:     tenantID.String(),
+		FindingID:    findingID.String(),
+		ActivityType: string(vulnerability.ActivityStatusChanged),
+		ActorType:    string(vulnerability.ActorTypeIntegration),
+		Changes: map[string]any{
+			"old_status": oldStatus,
+			"new_status": newStatus,
+			"reason":     "synced from " + integration + " " + ref,
+		},
+		Source:         string(vulnerability.SourceWebhook),
+		SourceMetadata: map[string]any{"integration": integration, "ticket": ref},
+	})
+	return err
 }
 
 // RecordSeverityChange is a convenience method for recording severity changes.

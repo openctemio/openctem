@@ -13,6 +13,7 @@ import {
   isCredentialExpired,
   isCredentialExpiringSoon,
   formatLastUsed,
+  expiryDateToRFC3339,
 } from '@/lib/api/secret-store-types'
 import type { SecretStoreCredential } from '@/lib/api/secret-store-types'
 
@@ -213,5 +214,25 @@ describe('formatLastUsed', () => {
     expect(result).not.toContain('day')
     expect(result).not.toBe('Just now')
     expect(result).not.toBe('Never used')
+  })
+})
+
+// ============================================
+// EXPIRY ON THE WIRE
+// ============================================
+
+describe('expiryDateToRFC3339', () => {
+  it('sends the end of the chosen day as RFC 3339 (a bare date returned 400)', () => {
+    expect(expiryDateToRFC3339('2026-12-31')).toBe('2026-12-31T23:59:59Z')
+  })
+
+  it('sends null for an empty date, so the expiry is cleared', () => {
+    expect(expiryDateToRFC3339('')).toBeNull()
+    expect(expiryDateToRFC3339(undefined)).toBeNull()
+    expect(expiryDateToRFC3339('  ')).toBeNull()
+  })
+
+  it('refuses anything that is not a date', () => {
+    expect(() => expiryDateToRFC3339('31/12/2026')).toThrow()
   })
 })

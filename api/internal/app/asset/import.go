@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
-	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +13,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	nessusparser "github.com/openctemio/openctem/api/pkg/parsers/nessus"
 )
 
 // AssetImportService handles bulk asset import from various formats.
@@ -89,8 +90,17 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 		if idx, ok := colIndex["sub_type"]; ok && idx < len(record) {
 			subType = strings.TrimSpace(record[idx])
 		}
+		// Resolve aliases and legacy sub-types to the stored pair
+		// (RFC-042 §6.3.8); an unknown type or sub-type is a row error.
+		resolved, resolveErr := assetdom.ResolveInputType(assetType, subType)
+		if resolveErr != nil {
+			if len(result.Errors) < maxErrors {
+				result.Errors = append(result.Errors, fmt.Sprintf("row %d (%s): %v", rowNum+2, name, resolveErr))
+			}
+			continue
+		}
 		// Normalize with the sub-type, as lookups do (RFC-043 section 10).
-		a, createErr := assetdom.NewAssetWithSubType(name, assetdom.AssetType(assetType), subType, assetdom.CriticalityMedium)
+		a, createErr := assetdom.NewAssetWithSubType(name, resolved.Type, resolved.SubType, assetdom.CriticalityMedium)
 		if createErr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("invalid asset %s: %v", name, createErr))
 			continue
@@ -118,6 +128,7 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 				a.SetProperties(props)
 			}
 		}
+		a.ApplyResolvedType(resolved)
 
 		if createErr := s.assetRepo.Create(ctx, a); createErr != nil {
 			if strings.Contains(createErr.Error(), "already exists") {
@@ -142,28 +153,8 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 // Nessus XML Import
 // =============================================================================
 
-type nessusReport struct {
-	XMLName xml.Name       `xml:"NessusClientData_v2"`
-	Reports []nessusTarget `xml:"Report>ReportHost"`
-}
-
-type nessusTarget struct {
-	Name       string             `xml:"name,attr"`
-	Properties []nessusHostProp   `xml:"HostProperties>tag"`
-	Items      []nessusReportItem `xml:"ReportItem"`
-}
-
-type nessusHostProp struct {
-	Name  string `xml:"name,attr"`
-	Value string `xml:",chardata"`
-}
-
-type nessusReportItem struct {
-	Port       int    `xml:"port,attr"`
-	Protocol   string `xml:"protocol,attr"`
-	PluginName string `xml:"pluginName,attr"`
-	Severity   int    `xml:"severity,attr"`
-}
+// maxNessusImportSize bounds a host-only Nessus import.
+const maxNessusImportSize = 100 * 1024 * 1024
 
 // ImportNessus imports hosts from Nessus XML export.
 func (s *AssetImportService) ImportNessus(ctx context.Context, tenantID string, reader io.Reader) (*AssetImportResult, error) {
@@ -172,19 +163,21 @@ func (s *AssetImportService) ImportNessus(ctx context.Context, tenantID string, 
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	data, err := io.ReadAll(io.LimitReader(reader, 100*1024*1024))
+	// The one Nessus parser, shared with the findings converter.
+	report, err := nessusparser.Parse(reader, maxNessusImportSize)
 	if err != nil {
+		if errors.Is(err, nessusparser.ErrTooLarge) {
+			return nil, fmt.Errorf("%w: Nessus export larger than 100 MB", shared.ErrValidation)
+		}
+		if errors.Is(err, nessusparser.ErrInvalid) {
+			return nil, fmt.Errorf("%w: invalid Nessus XML format", shared.ErrValidation)
+		}
 		return nil, fmt.Errorf("failed to read nessus data: %w", err)
-	}
-
-	var report nessusReport
-	if err := xml.Unmarshal(data, &report); err != nil {
-		return nil, fmt.Errorf("%w: invalid Nessus XML format", shared.ErrValidation)
 	}
 
 	result := &AssetImportResult{}
 
-	for _, host := range report.Reports {
+	for _, host := range report.Hosts {
 		hostname := host.Name
 		props := make(map[string]any)
 		var os string
@@ -220,8 +213,9 @@ func (s *AssetImportService) ImportNessus(ctx context.Context, tenantID string, 
 			continue
 		}
 
+		// The OS is an attribute, not a sub-type (RFC-042 §6.3.8 R2).
 		if os != "" {
-			a.SetSubType(normalizeOS(os))
+			props["os_family"] = normalizeOS(os)
 		}
 		a.SetProperties(props)
 		a.SetDiscoverySource("nessus")
@@ -306,9 +300,12 @@ func (s *AssetImportService) ImportKubernetes(ctx context.Context, tenantID stri
 	now := time.Now().UTC()
 
 	// Create cluster asset
-	cluster, clusterErr := assetdom.NewAssetWithTenant(tid, input.ClusterName, assetdom.AssetType("host"), assetdom.CriticalityHigh)
+	// A cluster is (kubernetes, cluster) and a workload (kubernetes,
+	// workload): they used to be stored as host/kubernetes_cluster and
+	// container/<kind> (RFC-042 §6.3.8).
+	cluster, clusterErr := assetdom.NewAssetWithSubType(input.ClusterName, assetdom.AssetTypeKubernetes, "cluster", assetdom.CriticalityHigh)
 	if clusterErr == nil {
-		cluster.SetSubType("kubernetes_cluster")
+		cluster.SetTenantID(tid)
 		cluster.SetProperties(map[string]any{"namespace_count": len(input.Namespaces)})
 		cluster.SetDiscoverySource("kubernetes")
 		cluster.SetDiscoveredAt(&now)
@@ -327,22 +324,22 @@ func (s *AssetImportService) ImportKubernetes(ctx context.Context, tenantID stri
 		for _, wl := range ns.Workloads {
 			name := fmt.Sprintf("%s/%s", ns.Name, wl.Name)
 
-			a, createErr := assetdom.NewAssetWithTenant(tid, name, assetdom.AssetType("container"), assetdom.CriticalityMedium)
+			a, createErr := assetdom.NewAssetWithSubType(name, assetdom.AssetTypeKubernetes, "workload", assetdom.CriticalityMedium)
 			if createErr != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("workload %s: %v", name, createErr))
 				continue
 			}
-
-			a.SetSubType(strings.ToLower(wl.Kind))
+			a.SetTenantID(tid)
 			a.UpdateDescription(fmt.Sprintf("%s in %s (%d replicas)", wl.Kind, ns.Name, wl.Replicas))
 			a.SetDiscoverySource("kubernetes")
 			a.SetDiscoveredAt(&now)
 
 			props := map[string]any{
-				"namespace":    ns.Name,
-				"kind":         wl.Kind,
-				"replicas":     wl.Replicas,
-				"cluster_name": input.ClusterName,
+				"namespace":     ns.Name,
+				"kind":          wl.Kind,
+				"workload_kind": strings.ToLower(wl.Kind),
+				"replicas":      wl.Replicas,
+				"cluster_name":  input.ClusterName,
 			}
 			if len(wl.Images) > 0 {
 				props["images"] = wl.Images

@@ -53,19 +53,6 @@ func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerab
 	return nil
 }
 
-// GetByID retrieves a comment by ID.
-//
-// Deprecated: callers in a multi-tenant context must use GetByTenantAndID.
-// Kept for backward compatibility with internal call sites that already
-// scope via another path. New code MUST NOT call this directly — the
-// service layer IDOR in UpdateFindingComment/DeleteFindingComment was
-// caused by using this unscoped variant.
-func (r *FindingCommentRepository) GetByID(ctx context.Context, id shared.ID) (*vulnerability.FindingComment, error) {
-	query := r.selectQuery() + " WHERE fc.id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanComment(row)
-}
-
 // GetByTenantAndID retrieves a comment scoped to (tenantID, commentID).
 // The JOIN on findings ensures cross-tenant lookups return ErrNotFound
 // even if the column tenant_id happens to be out of sync with the

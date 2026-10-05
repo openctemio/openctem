@@ -129,10 +129,11 @@ func (memoryEvidenceRepo) ListByFinding(_ context.Context, _, _ shared.ID) ([]va
 	return nil, nil
 }
 
-// TestCTEM_F4_OutcomeNotDetectedResolves — the happy path: sensor says
-// the exposure is gone, finding goes to resolved, notifier stays
+// TestCTEM_F4_OutcomeNotDetectedHolds — the sensor says the exposure is gone,
+// but that run's reachability is the sensor's own claim (research 18 F6), so
+// the finding stays fix_applied for a retest or a reviewer; the notifier stays
 // quiet.
-func TestCTEM_F4_OutcomeNotDetectedResolves(t *testing.T) {
+func TestCTEM_F4_OutcomeNotDetectedHolds(t *testing.T) {
 	f := findingAtFixApplied(t)
 	repo := &mutableFindingRepo{current: f}
 	disp := &stubDispatcher{outcome: validation.OutcomeNotDetected}
@@ -145,14 +146,14 @@ func TestCTEM_F4_OutcomeNotDetectedResolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retest: %v", err)
 	}
-	if !stood {
-		t.Fatal("OutcomeNotDetected must report fix-stood=true")
+	if stood {
+		t.Fatal("a sensor-asserted OutcomeNotDetected must not report fix-stood")
 	}
 	if ev.Outcome != validation.OutcomeNotDetected {
 		t.Fatalf("evidence outcome = %s, want not_detected", ev.Outcome)
 	}
-	if repo.current.Status() != vulnerability.FindingStatusResolved {
-		t.Fatalf("finding should be resolved, got %s", repo.current.Status())
+	if repo.current.Status() != vulnerability.FindingStatusFixApplied {
+		t.Fatalf("finding should stay fix_applied, got %s", repo.current.Status())
 	}
 	if atomic.LoadInt32(&notif.calls) != 0 {
 		t.Fatal("notifier must NOT fire on a passing retest")

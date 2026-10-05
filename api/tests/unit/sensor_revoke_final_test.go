@@ -75,3 +75,27 @@ func TestUpdateSensor_RevokedToRevokedIsAllowed(t *testing.T) {
 		t.Fatalf("UpdateSensor(status=revoked) on a revoked sensor: %v", err)
 	}
 }
+
+// Revoking through the generic update skipped the revoke route: it was logged
+// as a Low sensor.updated instead of the Critical sensor.revoked, with no
+// reason (settings audit SC-H6). Revocation now goes through
+// POST /sensors/{id}/revoke only.
+func TestUpdateSensor_CannotRevokeThroughUpdate(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+	a := createTestSensor(t, tenantID, "Active Sensor")
+	repo.sensors[a.ID] = a
+
+	_, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		TenantID: tenantID.String(),
+		SensorID: a.ID.String(),
+		Status:   "revoked",
+	})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("UpdateSensor(status=revoked) on an active sensor: err = %v, want ErrValidation", err)
+	}
+	if got := repo.sensors[a.ID].Status; got == sensor.SensorStatusRevoked {
+		t.Fatal("the sensor was revoked through the generic update")
+	}
+}

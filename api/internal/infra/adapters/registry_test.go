@@ -11,9 +11,9 @@ import (
 // ingest in production.
 //
 // This test is the second of three layers that guard the adapter list:
-//   1. The registry constructor (registry.go)
-//   2. This test (registry_test.go)
-//   3. Future: the F-310-style linter scanning for `r.Register(` calls
+//  1. The registry constructor (registry.go)
+//  2. This test (registry_test.go)
+//  3. Future: the F-310-style linter scanning for `r.Register(` calls
 func TestNewRegistry_HasExpectedAdapters(t *testing.T) {
 	reg := NewRegistry()
 

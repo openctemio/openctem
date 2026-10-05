@@ -51,7 +51,7 @@ func (f *fakeTokenRepo) Update(_ context.Context, t *scimtoken.ScimToken) error 
 	f.byID[t.ID()] = t
 	return nil
 }
-func (f *fakeTokenRepo) TouchLastUsed(_ context.Context, id shared.ID, at time.Time) error {
+func (f *fakeTokenRepo) TouchLastUsed(_ context.Context, _ shared.ID, id shared.ID, at time.Time) error {
 	if t, ok := f.byID[id]; ok && t.IsActive() {
 		t.TouchLastUsed(at)
 	}
@@ -115,7 +115,7 @@ func TestTokenTouchDoesNotResurrectRevoked(t *testing.T) {
 	}
 	// Simulate the touch from an in-flight authentication that loaded the token
 	// before the revoke landed.
-	if err := repo.TouchLastUsed(context.Background(), res.Token.ID(), time.Now()); err != nil {
+	if err := repo.TouchLastUsed(context.Background(), tenantID, res.Token.ID(), time.Now()); err != nil {
 		t.Fatalf("touch: %v", err)
 	}
 	if _, err := svc.Authenticate(context.Background(), res.Plaintext); err == nil {

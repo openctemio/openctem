@@ -59,6 +59,7 @@ Metrics a criterion can name (case and spacing don't matter):
 | `risk_reduction` | % drop in average asset risk from start to close | at least |
 | `risk_after` | average asset risk at close | at most |
 | `p_class_churn` | priority-class changes during the cycle | at most |
+| `scope_drift_size` / `new_external_assets` | external-surface assets (domain, subdomain, IP address, certificate) first seen during the cycle; names marked as not yours are left out | at most |
 
 Targets read like `0`, `< 48h`, `<= 14 days`, `>= 90%`, `at least 5` or
 `under 2 weeks`. A bare number uses the default comparison above, so

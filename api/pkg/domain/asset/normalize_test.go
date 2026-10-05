@@ -662,7 +662,7 @@ func TestNormalizeIsFingerprint(t *testing.T) {
 		input string
 		want  bool
 	}{
-		{"abcdef0123456789abcdef0123456789abcdef01", true},          // SHA1 (40 chars)
+		{"abcdef0123456789abcdef0123456789abcdef01", true},                                  // SHA1 (40 chars)
 		{"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01", false}, // too long
 		{"sha256abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", true},    // SHA256 with prefix
 		{"not-a-fingerprint", false},

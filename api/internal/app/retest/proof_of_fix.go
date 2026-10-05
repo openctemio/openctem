@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/openctemio/openctem/api/internal/app/validation"
 	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -40,6 +41,10 @@ func (p *ProofOfFix) ValidateFinding(ctx context.Context, tenantID, findingID sh
 		switch {
 		case err == nil:
 			return rt.ID, nil
+		case errors.Is(err, validation.ErrTargetRefused):
+			// Blocked by policy (excluded, out of zone, ownership not
+			// confirmed): no other probe of the same target may run.
+			return shared.ID{}, err
 		case errors.Is(err, retestdom.ErrNotEligible), errors.Is(err, retestdom.ErrNoSensor):
 			// No deterministic re-check for this finding, or no sensor that
 			// can run one: fall back to the plain re-check below.

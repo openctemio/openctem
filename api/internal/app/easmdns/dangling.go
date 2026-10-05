@@ -31,7 +31,10 @@ type Dangling struct {
 	// missing name servers joined by "," (dangling_ns).
 	Target  string
 	Missing []string // dangling_ns: the name servers that do not exist
-	Total   int      // dangling_ns: all name servers of the delegation
+	// Lame lists the delegated name servers that exist but do not answer
+	// authoritatively for the zone (lame delegation).
+	Lame  []string
+	Total int // dangling_ns: all name servers of the delegation
 	// Provider is the hosting service the target belongs to, if the
 	// fingerprint list knows it.
 	Provider *Provider
@@ -63,6 +66,15 @@ func checkDangling(ctx context.Context, q Querier, name string) (Dangling, error
 	switch {
 	case a.RCode == dnsprobe.RCodeNXDomain && target != "":
 		return danglingCNAME(ctx, q, target), nil
+	case a.RCode == dnsprobe.RCodeServFail && target == "":
+		// The resolver could not resolve the name: a lame delegation looks
+		// exactly like this. Ask the authoritative servers, if we can.
+		if aq, ok := q.(AuthQuerier); ok {
+			if d, found := checkLame(ctx, q, aq, name); found {
+				return d, nil
+			}
+		}
+		return Dangling{Outcome: OutcomeUnknown, Reason: "resolver answered " + a.RCode.String()}, nil
 	case a.RCode != dnsprobe.RCodeSuccess && a.RCode != dnsprobe.RCodeNXDomain:
 		return Dangling{Outcome: OutcomeUnknown, Reason: "resolver answered " + a.RCode.String()}, nil
 	case target != "":

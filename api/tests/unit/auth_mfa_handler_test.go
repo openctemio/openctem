@@ -222,8 +222,15 @@ func TestMFAHandler_SelfServiceErrorsAreNot401(t *testing.T) {
 	if rec := authed(lh.SetupMFA, map[string]string{}); rec.Code != http.StatusOK {
 		t.Fatalf("setup: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := authed(lh.EnableMFA, map[string]string{"code": "000000"}); rec.Code != http.StatusBadRequest {
+	if rec := authed(lh.EnableMFA, map[string]string{"password": mfaTestPassword, "code": "000000"}); rec.Code != http.StatusBadRequest {
 		t.Fatalf("enable with wrong code: %d, want 400", rec.Code)
+	}
+	// Enabling 2FA needs the current password (settings audit A-M1).
+	if rec := authed(lh.EnableMFA, map[string]string{"code": "000000"}); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("enable without a password: %d, want 422", rec.Code)
+	}
+	if rec := authed(lh.EnableMFA, map[string]string{"password": "wrong", "code": "000000"}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("enable with a wrong password: %d, want 400", rec.Code)
 	}
 	secret, _ := h.enroll(t, uid)
 	if rec := authed(lh.DisableMFA, map[string]string{"password": "wrong", "code": currentCode(t, secret)}); rec.Code != http.StatusBadRequest {

@@ -154,13 +154,6 @@ func (r *AuditRepository) CreateBatch(ctx context.Context, logs []*audit.AuditLo
 	return nil
 }
 
-// GetByID retrieves an audit log by ID.
-func (r *AuditRepository) GetByID(ctx context.Context, id shared.ID) (*audit.AuditLog, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanAuditLog(row, audit.AuditLogNotFoundError(id))
-}
-
 // GetByTenantAndID retrieves an audit log by tenant and ID (tenant-scoped).
 func (r *AuditRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*audit.AuditLog, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
@@ -257,44 +250,6 @@ func (r *AuditRepository) Count(ctx context.Context, filter audit.Filter) (int64
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count audit logs: %w", err)
-	}
-
-	return count, nil
-}
-
-// DeleteOlderThan deletes audit logs older than the specified time ACROSS ALL
-// TENANTS. See the interface doc (F-3) — this is a platform-privileged
-// operation, safe only from operator-driven background jobs.
-func (r *AuditRepository) DeleteOlderThan(ctx context.Context, before time.Time) (int64, error) {
-	query := `DELETE FROM audit_logs WHERE logged_at < $1 AND severity NOT IN ('high', 'critical')`
-
-	result, err := r.db.ExecContext(ctx, query, before)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete old audit logs: %w", err)
-	}
-
-	count, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	return count, nil
-}
-
-// DeleteOlderThanForTenant deletes audit logs older than the specified time,
-// scoped to a single tenant. High/critical severity entries are preserved
-// (F-3 per-tenant retention variant).
-func (r *AuditRepository) DeleteOlderThanForTenant(ctx context.Context, tenantID shared.ID, before time.Time) (int64, error) {
-	query := `DELETE FROM audit_logs WHERE tenant_id = $1 AND logged_at < $2 AND severity NOT IN ('high', 'critical')`
-
-	result, err := r.db.ExecContext(ctx, query, tenantID.String(), before)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete old audit logs: %w", err)
-	}
-
-	count, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
 	return count, nil
@@ -617,8 +572,9 @@ func nullableID(id *shared.ID) sql.NullString {
 // this at the database level too.
 // ────────────────────────────────────────────────────────────────────
 
-// LatestChainHash returns the newest chain hash for the tenant, or ""
-// when the tenant has no chain entries yet.
+// LatestChainHash returns the newest chain hash for the tenant. When the
+// tenant has no chain entries it returns the newest retention anchor (the head
+// a prune left behind), or "" for a chain that never existed.
 func (r *AuditRepository) LatestChainHash(ctx context.Context, tenantID shared.ID) (string, error) {
 	const q = `
 		SELECT hash
@@ -631,7 +587,7 @@ func (r *AuditRepository) LatestChainHash(ctx context.Context, tenantID shared.I
 	err := r.db.QueryRowContext(ctx, q, tenantID.String()).Scan(&hash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", nil
+			return chainAnchorHash(ctx, r.db, tenantID)
 		}
 		return "", fmt.Errorf("latest chain hash: %w", err)
 	}
@@ -681,7 +637,11 @@ func (r *AuditRepository) AppendNextChainEntry(ctx context.Context, tenantID sha
 		 WHERE tenant_id = $1
 		 ORDER BY chain_position DESC
 		 LIMIT 1`, tenantID.String()).Scan(&prev)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
+		// Every entry was pruned by retention: continue from the anchor.
+		prev, err = chainAnchorHash(ctx, tx, tenantID)
+	}
+	if err != nil {
 		return fmt.Errorf("latest chain hash: %w", err)
 	}
 	e := build(prev)

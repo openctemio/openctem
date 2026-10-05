@@ -53,6 +53,7 @@ type Handlers struct {
 	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
 	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
 	UserDashboard    *handler.UserDashboardHandler    // nil if not initialized - per-user customizable dashboards (RFC-021)
+	SavedView        *handler.SavedViewHandler        // nil if not initialized - saved list views (D15, RFC-048)
 	Audit            *handler.AuditHandler            // nil if not initialized (no database)
 	Branch           *handler.BranchHandler           // nil if not initialized (no database)
 	SLA              *handler.SLAHandler              // nil if not initialized (no database)
@@ -63,6 +64,7 @@ type Handlers struct {
 	AssetType        *handler.AssetTypeHandler        // nil if not initialized (no database)
 	AttackSurface    *handler.AttackSurfaceHandler    // nil if not initialized (no database)
 	EASM             *handler.EASMHandler             // RFC-036 overview; nil if not initialized
+	EASMSeed         *handler.EASMSeedHandler         // RFC-036 seeds; nil if not initialized
 	Docs             *handler.DocsHandler             // API documentation handler
 	Command          *handler.CommandHandler          // nil if not initialized (no database)
 	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
@@ -113,7 +115,6 @@ type Handlers struct {
 
 	// Access Control handlers
 	Group          *handler.GroupHandler          // nil if not initialized (no database)
-	PermissionSet  *handler.PermissionSetHandler  // nil if not initialized (no database)
 	Role           *handler.RoleHandler           // nil if not initialized (no database)
 	Permission     *handler.PermissionHandler     // nil if not initialized (permission sync handler)
 	AssignmentRule *handler.AssignmentRuleHandler // nil if not initialized (no database)
@@ -178,8 +179,7 @@ type Handlers struct {
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
 
 	// API Keys & Webhooks
-	APIKey  *handler.APIKeyHandler  // nil if not initialized (no database)
-	Webhook *handler.WebhookHandler // nil if not initialized (no database)
+	APIKey *handler.APIKeyHandler // nil if not initialized (no database)
 
 	// Notification handlers
 	Notification *handler.NotificationHandler // nil if not initialized (no database)
@@ -355,6 +355,9 @@ func Register(
 	// A stale token's admin flag and role are re-read from the database
 	// (tenantRepo, not the membership cache), so a demoted admin loses the
 	// admin bypass on the next request, reads included.
+	if permCache != nil {
+		tenantPermissionChecker = permCache
+	}
 	if permCache != nil && permVersion != nil {
 		permissionSyncMiddleware = middleware.NewPermissionSyncMiddleware(permCache, permVersion, log).
 			WithTeamRoleReader(tenantRepo).EnrichPermissions
@@ -471,6 +474,7 @@ func Register(
 	// Continuous retest (RFC-039): Retest now + a finding's retest history.
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {
@@ -564,7 +568,8 @@ func Register(
 	}
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
-	// Per-IP rate limit runs before auth to throttle junk-token floods.
+	// Per-IP rate limit runs before auth to throttle junk-token floods; the
+	// organization IP allowlist runs after it (mcpMiddlewares).
 	if h.MCP != nil && h.MCPAuth != nil {
 		registerMCPRoutes(router, h.MCP, middleware.RateLimit(&cfg.RateLimit, log), h.MCPAuth)
 	}
@@ -658,6 +663,9 @@ func Register(
 	}
 	if h.EASM != nil {
 		registerEASMRoutes(router, h.EASM, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMSeed != nil {
+		registerEASMSeedRoutes(router, h.EASMSeed, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Command routes (tenant from JWT token)
@@ -806,10 +814,8 @@ func Register(
 	if h.UserDashboard != nil {
 		registerUserDashboardRoutes(router, h.UserDashboard, authMiddleware, userSync)
 	}
-
-	// Permission Set routes (Access Control - tenant from JWT token)
-	if h.PermissionSet != nil {
-		registerPermissionSetRoutes(router, h.PermissionSet, authMiddleware, userSync)
+	if h.SavedView != nil {
+		registerSavedViewRoutes(router, h.SavedView, authMiddleware, userSync)
 	}
 
 	// Permission Sync routes (real-time permission sync with ETag support)
@@ -835,11 +841,6 @@ func Register(
 	// API Key routes (tenant from JWT token)
 	if h.APIKey != nil {
 		registerAPIKeyRoutes(router, h.APIKey, authMiddleware, userSync)
-	}
-
-	// Webhook routes (tenant from JWT token)
-	if h.Webhook != nil {
-		registerWebhookRoutes(router, h.Webhook, authMiddleware, userSync)
 	}
 
 	// User Notification routes (tenant from JWT token, user-scoped)
@@ -946,6 +947,10 @@ var activeMembershipFromJWTMiddleware Middleware //nolint:gochecknoglobals // se
 // Set once during Register; nil leaves the legacy embedded-JWT behavior.
 var permissionSyncMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
+// tenantPermissionChecker resolves a caller's permissions in the tenant named
+// by a /api/v1/tenants/{tenant}/... path (see tenantPerm).
+var tenantPermissionChecker middleware.TenantPermissionChecker //nolint:gochecknoglobals // set once during init
+
 // dataScopeGuardMiddleware enforces the Layer 2 data scope on every by-id
 // asset and finding route (see middleware.DataScopeGuard). It runs last on
 // the token-tenant chain, after auth, tenant, membership and permission sync
@@ -981,7 +986,9 @@ func (a tenantSecurityPolicyAdapter) SecuritySettings(ctx context.Context, tenan
 	if err != nil {
 		return tenant.SecuritySettings{}, err
 	}
-	return t.TypedSettings().Security, nil
+	// Strict: an unreadable security section is an error (the IP allowlist
+	// gate then denies), never the permissive defaults.
+	return t.SecuritySettingsStrict()
 }
 
 // tenantSSOEnforcedAdapter adapts tenant.Repository to
@@ -1001,7 +1008,11 @@ func (a tenantSSOEnforcedAdapter) IsSSOEnforced(ctx context.Context, tenantID st
 	if err != nil {
 		return false, err
 	}
-	return t.TypedSettings().Security.SSOEnforced, nil
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return false, err
+	}
+	return sec.SSOEnforced, nil
 }
 
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.

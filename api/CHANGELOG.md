@@ -5,6 +5,262 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
+### Security: scheduled scans never run as the system
+
+- A cloned or imported scan now belongs to the person who cloned or imported
+  it (`created_by`), whose act scope is checked on its direct targets. Before,
+  the copy had no owner, so its scheduled runs acted as the unrestricted system
+  and could scan what the person could not (research 21b H2/H3, RFC-050 W2).
+  `POST /scans/{id}/clone` and `POST /scans/import` need an authenticated user.
+- A scheduled run of a scan with **no owner is refused** (`SCAN_HAS_NO_OWNER`,
+  audited), and a scheduled run whose owner is no longer an active member
+  (disabled or offboarded) **pauses the scan** and is refused
+  (`SCAN_OWNER_INACTIVE`, audited). Manual triggers by a person are unchanged.
+- **Upgrade note:** scheduled scans created before this release by clone or
+  import have no owner and stop running on schedule. Find them with
+  `SELECT id, name FROM scans WHERE created_by IS NULL AND schedule_type <> 'manual' AND status = 'active'`
+  and clone or re-save each as the member who should own it.
+
+### Added: certificates from HTTP probes (migration 001026)
+
+- An HTTP probe's TLS leaf certificate (`certificate` asset in a CTIS report,
+  named by its SHA-256 fingerprint and linked from the service through
+  `related_assets`) is stored as one certificate asset per organization and
+  fingerprint, linked to the service with the new relationship type
+  `serves_certificate`. Its expiry feeds the existing certificate exposures.
+  A `related_assets` link becomes an edge only for a known type pair, only
+  when both assets were stored by the same ingest, and only when the report
+  may change the source asset; at most 100 links per asset are read.
+- Certificate text (subject, issuer, serial, SANs, algorithms) is capped and
+  stripped of control characters on every ingest path, like finding text.
+
+### Security: pentest findings stay with their campaign on the asset page
+
+- `GET /assets/{id}/findings` now applies the findings list's visibility:
+  the data scope and the pentest-membership rule. A pentest finding, whose
+  metadata carries the PoC and steps to reproduce, was listed for anyone who
+  could see the asset (research 21b H5, RFC-050 W4); it is now listed only for
+  members of its campaign (administrators unchanged).
+
+### Security: data scope follows group and rule changes in the same transaction
+
+- `user_accessible_assets` is now kept in step with its sources by database
+  triggers, in the writing transaction (migration **001051**, RFC-050 W6):
+  group asset assign/unassign, a member leaving a group, a group deactivated,
+  re-activated or deleted, a scope rule deactivated or deleted. Before, a
+  deactivated or deleted access group kept granting its assets indefinitely
+  (research 21b H6/L-12), a deactivated or narrowed scope rule kept what it
+  had granted (M-2), and a deleted rule's rows were orphaned.
+- Narrowing or deactivating a scope rule reconciles the whole group (stale
+  auto-assignments removed); an asset-group membership change reconciles the
+  rules of its tenant (the lookup used a zero tenant id and never matched, M-3).
+- The migration removes the rows of rules that are already deactivated and
+  runs one full refresh to repair scope rows left by the old behaviour.
+
+### Security: member lifecycle (disable, offboard, erase), one switch for leavers
+
+- **Nobody is hard-deleted any more** (RFC-050 §2, owner decision 2026-10-04).
+  Removing a member used to delete the membership and clean only its roles, so
+  groups, grants and scope rows survived and a re-invite restored the old
+  access (research 21b L-13 / M-19).
+- **Disable** (the existing suspend) now also suspends the member's API and
+  MCP keys, drops their scope rows and pauses the scan schedules, report
+  schedules and workflows they own (administrators are notified), in one
+  transaction. Groups, grants and ownership stay frozen; **re-enable**
+  restores the keys and the scope (paused schedules stay paused).
+- **Offboard** (`POST /api/v1/tenants/{t}/members/{id}/offboard`, and
+  `DELETE /members/{id}`): mandatory reassignment of owned schedules, open
+  assigned findings (or back to the queue) and owned assets to another active
+  member; keys revoked; group memberships, grants, engagement memberships,
+  roles and invitations removed; the membership stays as an `offboarded`
+  tombstone. A plan that leaves owned work uncovered answers 409
+  `reassignment_required`. A re-invite starts from zero. SCIM delete offboards
+  (or disables and asks administrators when the member owns work).
+- **Erase personal data** (`POST /members/{id}/erase`, owner only, after
+  offboarding): name and email anonymised to `Deleted user #<hash>`; rows and
+  foreign keys stay.
+- `GET /members/{id}/access-report` lists what a member holds and owns;
+  `GET /members?status=active|suspended|offboarded|all` (default leaves
+  tombstones out, so pickers never offer a person who left).
+- **Fail closed everywhere:** every membership gate admits an active
+  membership only (a status other than active is refused), an inactive
+  account is refused on every request (not only at login), scope rows exist
+  only for an active principal (`principal_is_active` in every refresh
+  function), an inactive member gets no full-data bypass, and a background
+  job acting for a disabled or offboarded administrator refuses.
+- **Migration 001044** adds the `offboarded` membership status
+  (`offboarded_at`, `offboarded_by`), the `suspended` API key status,
+  `users.erased_at`, the `principal_is_active` and `refresh_access_for_user`
+  functions, gates the refresh functions and drops scope rows of members who
+  are already suspended (their access was already refused at the request
+  gate).
+
+### Security: a restricted member cannot write asset-less exposures
+
+- `POST /exposures`, `POST /exposures/ingest` and the bulk ingest refuse an
+  exposure without `asset_id` from a member whose data scope is restricted
+  (400 `asset_id is required`; a bulk item is reported and dropped). An
+  asset-less exposure is in nobody's asset scope (owner decision D11), and the
+  fingerprint upsert let a restricted member overwrite an existing asset-less
+  exposure's severity, title and details, e.g. downgrade a critical one
+  (research 21b H1, RFC-050 W1). Administrators, full-data roles, sensors and
+  internal jobs are unchanged; out-of-scope asset ids were already refused.
+
+### Security: foreign assignee names and emails scrubbed from finding history (migration 001012)
+
+- Finding activity rows that recorded the name and email of an assignee
+  outside the organization (possible before #1096) now show
+  `Former assignee (not in this organization)`; the email is removed. Rows,
+  ids and timestamps are kept. One-way by design; see
+  `docs/deployment/safe-deploy-and-migrations.md` ("Foreign assignee scrub").
+- A remediation campaign's validator team (`assigned_team`) must be a group
+  of the campaign's organization; any group id used to be stored.
+
+### Security: asset references are tenant-checked in the database (migrations 000920-000922)
+
+- Every table that stores an asset id next to a `tenant_id` (27 columns:
+  findings, exposures, exposure events, pipeline runs, scan sessions,
+  suppressions, SLA policies, scope rows, grants, relationships, ...) gets a
+  composite foreign key `(tenant_id, asset) → assets(tenant_id, id)`: a row of
+  one organization can no longer point at another organization's asset,
+  whatever writes it. Backstop for the application checks on `POST /findings`,
+  exposure create/ingest and pipeline runs (research doc 21b, C1/C3/C4).
+- **Deploy note:** `000921` first counts existing cross-tenant references and
+  refuses to run, changing nothing, if there are any. See
+  `docs/deployment/safe-deploy-and-migrations.md` ("Asset tenant foreign keys")
+  for the listing query and the recovery steps. `000920` builds an index
+  `CONCURRENTLY`; `000922` validates without blocking writes.
+
+### Security: members without a scope row see nothing, in every organization
+
+- **The "see everything" mode is retired** (research doc 15 L-04, owner
+  decision D2; owner signoff 2026-10-04). A member who is in no access group,
+  holds no explicit grant and no `has_full_data_access` role sees no asset or
+  finding anywhere (lists, search, stats, exports, dashboards, reports,
+  notifications, WebSocket channels); by-id reads answer 404. Before, every
+  organization created before migration 000247 showed such members the whole
+  tenant, and a member who lost their last scope row silently widened to it.
+  Owners, admins and full-data roles (for example a "Global Reader") are
+  unchanged.
+- `tenants.members_without_group_see` is no longer read; the per-tenant policy
+  cache (which treated a read failure as "everything") is gone, and the asset,
+  finding and finding-group SQL has no `NOT EXISTS … OR` bypass left.
+- Real-time finding/asset pushes now also reach full-data roles, and no
+  longer reach members without a scope row.
+- **Migration 000910** stores `nothing` for every organization and adds a
+  CHECK so `everything` can no longer be stored (its down migration relaxes
+  the CHECK without flipping data back). The column is dropped in a later
+  release.
+- **Removed endpoints:** `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`
+  and `GET /api/v1/organization/settings/data-scope/impact` (404 now). The web
+  console's "see everything" banner and the "Members without a team" settings
+  card are gone; Settings → Teams states the rule.
+
+### Behaviour change: only a proven scan run closes repository findings
+
+- **Default-branch auto-resolve needs a clean, bound run** (research 18 F3,
+  owner decision O11). A scan closes a repository finding only when a
+  protocol v2 run **bound to a command** completed with exit code 0, every
+  report of the run completed with nothing rejected, quarantined or in error,
+  the reports are an explicitly `full` scan of the default branch, and the
+  finding was last seen by the same tool **under the same scan profile**
+  (the blinding guard still applies). Before, any full default-branch report
+  closed what it left out, even when the scanner had failed or ran a
+  narrower ruleset.
+- **Never closes now:** a report without a command (CI runner or collector,
+  also in `warn` mode), a tenant upload (SARIF, CTIS, Nessus) and any
+  protocol v1 report. They still create and update findings, and the
+  per-branch occurrence sweep is unchanged. Findings they leave open close on
+  the next clean bound run that saw them, by retest, or by a
+  `findings:verify` holder.
+
+### Security: a ticket webhook can never close a finding
+
+- **Jira and GitHub inbound sync only report work state** (research 18 F5).
+  A Jira webhook may move a finding to `confirmed`, `in_progress` or
+  `fix_applied`, never to `resolved`, `false_positive`, `accepted` or
+  `duplicate`: a webhook has no person who holds `findings:verify` or an
+  approval. A ticketing integration whose `ticketing.status_inbound` maps a
+  Jira status to a closing status is refused on save (400); such entries in
+  stored configs are ignored, and the webhook checks the target again before
+  applying it. The stock Jira "Duplicate" mapping was removed (marking a
+  duplicate is a triage decision, `POST /findings/{id}/duplicates`).
+- The tenant's own `status_inbound` overlay now applies to inbound webhooks
+  (before, only the stock map did), within the same three statuses.
+- Inbound status changes are recorded in the finding's history with the
+  integration (`jira` / `github`) and the ticket as the actor.
+
+### Changed: suppressed findings are dispositions, not fixes
+
+- **A suppression rule marks a finding `false_positive` or `accepted`,
+  never `resolved`** (research 18 F7, owner decision O9). A false-positive
+  rule gives `false_positive`; accepted-risk and won't-fix rules give
+  `accepted`. The resolution stays `suppressed` and `finding_suppressions`
+  names the rule. Fix rate and MTTR therefore count real fixes only.
+- Migration 000751 moves existing `resolved` / `suppressed` rows to the
+  disposition of their recorded rule (same tenant), only when that rule is
+  certain; rows with no recorded rule or conflicting rules stay as they are.
+  The relabel is not counted as a regression.
+
+### Findings keep the scanner details they used to drop (research 17 R2)
+
+- Ingest now stores the rule **family** (Nessus / Tenable.sc plugin family,
+  scanner category), the scanner's **exploit-available** verdict as a column,
+  **VPR** (display only, no priority effect), the **CVSS version**, **every
+  CVE** named on the finding (`cve_ids`) and the vendor **patch publication
+  date**. The finding API returns them. Migrations 000688-000689 (nullable
+  columns, NOT VALID checks, partial indexes, and a backfill of the exploit
+  flag from metadata). Fingerprints are unchanged.
+
+### Added: the `not_observed` finding status
+
+- **`not_observed`: not seen lately, not fixed** (research 18, owner
+  decision O2). Recent scans no longer report the finding, but nothing
+  proves the check ran against it. It is an open status: never counted as
+  fixed, no `resolved_at`, and its SLA keeps running. Only the platform sets
+  it; a sighting reopens it (not counted as a regression), and it reaches
+  `resolved` only through a retest or a `findings:verify` holder.
+- **Feature-branch expiry writes `not_observed`** instead of `resolved`, so
+  "not seen for N days on a branch" no longer counts as a fix in fix-rate
+  or MTTR. Migration 000640 moves existing `resolved` / `branch_expired`
+  rows to `not_observed` (no other row is touched) and adds a CHECK
+  constraint on `findings.status`, which had none.
+- Retest runs on `not_observed` findings. The web labels the status
+  "Not Observed" and lists it in the "Open" filter group.
+
+### Behaviour change: resolving a finding needs findings:verify
+
+- **Members can no longer close findings as resolved** (research 18 F1,
+  owner decision O12). Moving a finding to `resolved` now needs
+  `findings:verify` from every status, `fix_applied` included, on every path:
+  `PATCH /findings/{id}/status`, `POST /findings/bulk/status`,
+  `POST /findings/remediation-groups/{key}/resolve` and remediation campaign
+  resolve. Before, a Member (`findings:fix_apply` + `findings:bulk_update`)
+  could mark findings `fix_applied` and then bulk-close them with no
+  checklist and no proof of fix. Without the permission these calls now
+  answer **403** and change nothing. Members keep `fix_applied`; a retest, a
+  verified scan or a security reviewer closes the finding. The web hides
+  "Resolved" from people without the permission. Give `findings:verify` to a
+  custom role if a team should keep closing findings by hand.
+- **Every human resolve records how and by whom.** The single, bulk, group
+  and campaign paths stamp `resolution_method` (`security_reviewed` when the
+  finding's verification checklist is complete, `admin_direct` otherwise) and
+  `resolved_by`, and the bulk path now writes a status-change activity per
+  finding. Any move away from `resolved` clears `resolution_method`.
+- The unused, unguarded `VulnerabilityService.BulkUpdateFindingStatus` was
+  removed.
+
+### Security: validation evidence no longer resolves a finding
+
+- **A validation "not detected" keeps a `fix_applied` finding open**
+  (research 18 F6, RFC-040). The only proof that the target answered was
+  `raw_meta.reachable`, which the sensor asserts about its own run, so a
+  hostile or broken sensor could close any `fix_applied` finding. The verdict
+  is still recorded on the finding; a retest (whose reachability probe the
+  platform dispatches) or a `findings:verify` holder closes it. Downgrades of
+  still-open findings to `validated_fixed` (which a person still closes) and
+  reopen on "detected" are unchanged.
+
 ### Security: custom template trust (RFC-038 §6.12)
 
 - **Custom templates reach sensors only in a signed manifest.** Every
@@ -24,6 +280,18 @@ published at https://docs.openctem.io (operations/release-notes-*).
   protocol.
 
 ### Fixed
+
+- **Coverage-scoped auto-resolve no longer reads a missing `coverage_type`
+  as full** (safety; CTIS spec 4.5, research 16 G4, owner decision Q5).
+  A scan command's run closed findings it no longer reported when its
+  report declared `full` *or nothing at all*, while the report-level
+  (repository) path already treated an absent value as no auto-resolve.
+  Now only an explicit `full` qualifies; an undeclared report is refused
+  with reason `coverage_undeclared`. **Upgrade note:** sensors whose sdk-go
+  predates openctemio/sdk-go#150 send no `coverage_type`, so their scans no
+  longer close findings on this path (fail safe; the mode defaults to
+  `dry_run`). Sensors with that change send `full` only for completed runs
+  and `partial` for runs that stopped part-way.
 
 - **A finding's occurrence count grows with every sighting** (RFC-043 P0).
   Re-ingesting an existing finding wrote back the count it had loaded before
@@ -66,7 +334,6 @@ published at https://docs.openctem.io (operations/release-notes-*).
   it. Fingerprints are unchanged. Existing findings get the value on their
   next scan.
 
-
 - **Scope exclusions apply on every path that scans or discovers, not
   only at scan trigger** (RFC-042 F16). Four paths ignored them:
   - `POST /api/v1/pipelines/runs` and the `trigger_pipeline` workflow
@@ -90,7 +357,6 @@ published at https://docs.openctem.io (operations/release-notes-*).
     asset of the report. Assets already in the inventory are not changed
     or deleted.
   A failed exclusion lookup stops each of these paths (fail closed).
-
 
 - **Group scans resolve members as assets and skip archived ones.** A scan
   of an asset group matched scope exclusions against each member's name
@@ -117,6 +383,34 @@ published at https://docs.openctem.io (operations/release-notes-*).
   queues it, with the reason.
 
 ### Changed (behaviour change)
+
+- **The crown-jewel flag is the `assets.is_crown_jewel` column** (owner
+  decision O5). It was written into `properties.is_crown_jewel`, while the
+  scoping summary read the column, so the two disagreed. Migration 000778
+  backfills the column from the property (JSON `true` or the string `"true"`,
+  any case; anything else reads as false), removes the key from properties
+  and makes the column `NOT NULL DEFAULT FALSE`. Priority classification, the
+  attack-path graph, exposure chains, threat models, the executive
+  dashboard, the crown-jewel filter and dedup merge (a merged crown jewel
+  keeps the flag) read the column; asset responses carry `is_crown_jewel`.
+  Only `PATCH /assets/{id}/crown-jewel` writes it: assets:write, the asset in
+  the caller's data scope (404 otherwise), audited. `is_crown_jewel` stays a
+  reserved key, so a create, update, import or sensor report cannot set it
+  through properties. **Upgrade note:** a crown jewel marked by a pod of the
+  previous release while the migration runs must be marked again.
+
+- **`POST /api/v1/assets` for an asset that already exists is a 409** (owner
+  decision O4). A name, or an address the name correlates to (IP/hostname),
+  that matches an asset of the organization used to merge the request into
+  that asset; it now creates and changes nothing. The 409 carries
+  `details.existing_asset_id` only when that asset is in the caller's data
+  scope; otherwise it is the same generic conflict for every match, so it
+  reveals nothing about an asset the caller cannot see. Another
+  organization's assets never match. The web offers to open the existing
+  asset. Sensor ingest and the SCM repository import
+  (`POST /api/v1/assets/repository`) keep their merge paths. **Upgrade
+  note:** an API client that relied on the create upserting must handle the
+  409 (update the named asset) or send its data through ingest.
 
 - **Tenable rolling coverage of private addresses needs a scan zone.**
   The coverage dispatcher now applies scan create's private-range policy:

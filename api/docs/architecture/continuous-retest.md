@@ -14,7 +14,7 @@ nuclei template (`findings.rule_id`) against the finding's own target — plus a
 
 | Template re-run | Target reachable? | Outcome | Finding |
 |---|---|---|---|
-| matched | any | `still_present` | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress` · `validated_fixed` → `confirmed` |
+| matched | any | `still_present` | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress` · `validated_fixed` / `not_observed` → `confirmed` |
 | no match | yes | `fixed` | → `resolved`, `resolution_method = retest_verified` (`resolved` stays) |
 | no match | no / unknown | `unknown` | unchanged ("target unreachable") |
 | inconclusive / error / no result / deadline passed | any | `unknown` | unchanged |
@@ -25,8 +25,8 @@ firewall change or a sensor in the wrong zone would read as "fixed".
 
 Eligible findings: `tool_name = nuclei` with a template id that passes the
 template guard (no path, no `dos`/`fuzz`/`intrusive`/`brute-force` marker), in
-`new`, `confirmed`, `in_progress`, `fix_applied`, `validated_fixed` or
-`resolved`, on an `active`, network-addressable asset that passes the scope
+`new`, `confirmed`, `in_progress`, `fix_applied`, `validated_fixed`,
+`not_observed` or `resolved`, on an `active`, network-addressable asset that passes the scope
 gates. `false_positive`, `accepted`, `duplicate`, suppressed and pentest
 findings are never retested.
 
@@ -57,6 +57,33 @@ RetestScheduler (controller, every minute, every replica)
        └─ winner queues min(daily budget left, in-flight room, per-pass cap)
           oldest-retested eligible findings, through the same Request path
 ```
+
+## Template digest drift (research/18 O6)
+
+A retest proves something only when it re-ran the template content the
+finding was last seen with. The sensor (sensor#134) reports, per nuclei
+finding, `properties.template_digest` (sha256 of the matching template file)
+and `template_path`, and per report the template release in
+`tool.properties.content` (`nuclei-templates`: version, archive digest).
+Ingest keeps them on the finding as the last sighting's baseline (migration
+001015: `findings.template_digest`, `template_path`, `templates_version`,
+`templates_digest`, `template_seen_at`; sanitized: sha256 digests only, a
+relative path without `..`, a short version token). A sighting without a
+digest keeps the baseline; one with a new digest re-baselines.
+
+When the retest settles (`retestdom.ApplyTemplateDrift`), a conclusive
+outcome (`fixed` or `still_present`) becomes `unknown` (inconclusive, the
+finding does not move) when the finding has a baseline digest and the
+template re-run reported a different digest or none
+(`evidence.template_digest`). A finding without a baseline (sighted before
+provenance existed, or by another tool) is decided as before. A baseline that
+cannot be read is inconclusive (fail closed).
+
+The scan side is coverage auto-resolve: a covered nuclei run whose template
+release differs from the release of a candidate's last sighting (or that
+reported none) does not resolve that candidate; in enforce mode it becomes
+`not_observed` ([finding-status-not-observed.md](finding-status-not-observed.md)).
+A run whose reports disagree on the release counts as reporting none.
 
 ## Limits (server-side)
 
@@ -124,7 +151,7 @@ reopened.
 | Piece | Where |
 |---|---|
 | Outcome and transition rules (pure) | `pkg/domain/retest/retest.go` (`Decide`, `NextStatus`) |
-| Service: request, gates, limits, dispatch, settle, sweep | `internal/app/retest/service.go`, `gates.go` |
+| Service: request, gate preflight, limits, dispatch, settle, sweep | `internal/app/retest/service.go`; the gate: [active-probe-gate.md](active-probe-gate.md) |
 | Auto-retest tick (claim once) | `internal/app/retest/auto.go` |
 | Persistence + settle transaction + cursors | `internal/infra/postgres/finding_retest_repository.go`, migration `000281_finding_retests` |
 | Completion hooks | `internal/infra/http/handler/command_handler.go` (`triggerValidationEvidence`, `triggerRetestSettle`) |

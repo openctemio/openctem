@@ -97,10 +97,15 @@ func TestPoll_WithholdsPrivateTargetsFromSensorsWithoutPolicy(t *testing.T) {
 	}
 
 	on := command.NewService(repo, newCmdTestLogger(), command.WithSensorLookup(lookup), command.WithPrivateTargetPolicy(privatePolicy{required: true}))
-	for _, a := range []*sensor.Sensor{noPolicy, absent, paused} {
+	for _, a := range []*sensor.Sensor{noPolicy, absent} {
 		if got := poll(on, a); !got[public.ID] || got[private.ID] {
 			t.Errorf("sensor %+v: polled %v, want only the public command", a.LocalPolicy, got)
 		}
+	}
+	// A sensor whose owner engaged the kill switch runs no job at all, so
+	// it is offered none (research/25 §3.6).
+	if got := poll(on, paused); len(got) != 0 {
+		t.Errorf("kill switch engaged: polled %v, want nothing", got)
 	}
 	if got := poll(on, enforced); !got[public.ID] || !got[private.ID] {
 		t.Errorf("enforced policy: polled %v, want both", got)

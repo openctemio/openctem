@@ -112,3 +112,41 @@ func TestCalculateDeadline_LegacySeverityPathUnchanged(t *testing.T) {
 		t.Fatalf("legacy path = %s, want %s", got, want)
 	}
 }
+
+func TestUpdatePriorityDays_Validates(t *testing.T) {
+	cases := []struct {
+		name           string
+		p0, p1, p2, p3 int
+		ok             bool
+	}{
+		{"valid", 1, 3, 10, 20, true},
+		{"equal windows allowed", 5, 5, 5, 5, true},
+		{"zero", 0, 3, 10, 20, false},
+		{"above max", 1, 3, 10, MaxSLADays + 1, false},
+		{"P0 longer than P1", 7, 3, 10, 20, false},
+		{"P2 longer than P3", 1, 3, 30, 20, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := newTestPolicy(t)
+			err := p.UpdatePriorityDays(c.p0, c.p1, c.p2, c.p3)
+			if c.ok && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !c.ok {
+				if err == nil {
+					t.Fatal("expected a validation error")
+				}
+				if p.P0Days() != DefaultPriorityDays["P0"] {
+					t.Fatal("a rejected update changed the policy")
+				}
+			}
+		})
+	}
+}
+
+func TestNewPolicy_EscalationOnByDefault(t *testing.T) {
+	if !newTestPolicy(t).EscalationEnabled() {
+		t.Fatal("a new policy must keep deadline notifications on")
+	}
+}

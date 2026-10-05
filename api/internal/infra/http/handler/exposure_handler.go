@@ -275,6 +275,12 @@ func (h *ExposureHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	event, err := h.service.CreateExposure(r.Context(), input)
 	if err != nil {
+		// A refused asset_id (unknown, deleted, another tenant's, or out of
+		// the caller's data scope) gets one generic answer.
+		if errors.Is(err, app.ErrExposureAssetNotFound) {
+			apierror.NotFound("Asset").WriteJSON(w)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}

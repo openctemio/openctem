@@ -32,7 +32,7 @@ func completedRun(t *testing.T, sensorID, assetID shared.ID) *ingestreport.Comma
 		ProfileID: "p-1",
 		Reports: []ingestreport.CoverageReport{{
 			ReportID: "r-1", SensorID: sensorID, State: protov2.StateCompleted, ToolName: "nuclei",
-			Header:          coverageHeader(t, "nuclei", ctis.ReportMetadata{}),
+			Header:          coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "full"}),
 			SegmentOutcomes: map[string]ingestreport.SegmentOutcome{"0": {AcceptedFindings: 3}},
 			TouchedAssetIDs: []shared.ID{assetID},
 		}},
@@ -48,10 +48,36 @@ func TestDecideCoverage(t *testing.T) {
 		want   string
 	}{
 		{"completed full run", func(*ingestreport.CommandCoverage) {}, coverageEligible},
-		{"explicit full coverage", func(c *ingestreport.CommandCoverage) {
-			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "full"})
+		{"explicit full coverage, any case", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: " Full "})
 		}, coverageEligible},
+		// An older sensor sends no coverage_type. Absent is not full (CTIS
+		// spec 4.5): such a run closes nothing.
+		{"coverage not declared", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{})
+		}, coverageUndeclared},
+		{"no header at all", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = nil
+		}, coverageUndeclared},
+		{"one of two reports undeclared", func(c *ingestreport.CommandCoverage) {
+			second := c.Reports[0]
+			second.ReportID = "r-2"
+			second.Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{})
+			c.Reports = append(c.Reports, second)
+		}, coverageUndeclared},
 		{"not a scan command", func(c *ingestreport.CommandCoverage) { c.CommandType = "validate" }, coverageNotScanCommand},
+		{"a Tenable.sc scan through the connector", func(c *ingestreport.CommandCoverage) {
+			c.CommandType = "connector_scan"
+			c.Reports[0].ToolName = "tenable_sc"
+			c.Reports[0].Header = coverageHeader(t, "tenable_sc", ctis.ReportMetadata{CoverageType: "full"})
+		}, coverageEligible},
+		{"a connector pull never resolves by absence", func(c *ingestreport.CommandCoverage) {
+			c.CommandType = "connector_sync"
+		}, coverageNotScanCommand},
+		{"a connector scan that did not finish", func(c *ingestreport.CommandCoverage) {
+			c.CommandType = "connector_scan"
+			c.Reports[0].Header = coverageHeader(t, "tenable_sc", ctis.ReportMetadata{CoverageType: "partial"})
+		}, coveragePartial},
 		{"command failed", func(c *ingestreport.CommandCoverage) { c.CommandStatus = "failed" }, coverageCommandNotCompleted},
 		{"command canceled", func(c *ingestreport.CommandCoverage) { c.CommandStatus = "canceled" }, coverageCommandNotCompleted},
 		{"command expired", func(c *ingestreport.CommandCoverage) { c.CommandStatus = "expired" }, coverageCommandNotCompleted},
@@ -211,4 +237,63 @@ func TestEvaluateCommandCoverage_Refusals(t *testing.T) {
 			t.Fatalf("150 of 160 must be held: %+v", out)
 		}
 	})
+}
+
+// A repository run closes default-branch findings only on proof that it ran
+// cleanly and covered the whole default branch (research 18 F3).
+func TestDecideRepoCoverage(t *testing.T) {
+	sensorID, assetID := shared.NewID(), shared.NewID()
+	mainFull := ctis.ReportMetadata{CoverageType: "full", Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true}}
+	repoRun := func() *ingestreport.CommandCoverage {
+		c := completedRun(t, sensorID, assetID)
+		c.Reports[0].ToolName = "semgrep"
+		c.Reports[0].Header = coverageHeader(t, "semgrep", mainFull)
+		return c
+	}
+	cases := []struct {
+		name   string
+		mutate func(*ingestreport.CommandCoverage)
+		want   string
+	}{
+		{"clean full default-branch run", func(*ingestreport.CommandCoverage) {}, coverageEligible},
+		{"scanner exited non-zero (semgrep found errors)", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":2}`)
+		}, coverageNonZeroExit},
+		{"command still running", func(c *ingestreport.CommandCoverage) { c.CommandStatus = "running" }, coverageCommandNotCompleted},
+		{"scanner errors in the report", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].SegmentOutcomes["1"] = ingestreport.SegmentOutcome{Errors: []protov2.ItemError{{Code: "x"}}}
+		}, coverageRejectedItems},
+		{"coverage type missing is not full", func(c *ingestreport.CommandCoverage) {
+			md := mainFull
+			md.CoverageType = ""
+			c.Reports[0].Header = coverageHeader(t, "semgrep", md)
+		}, coverageUndeclared},
+		{"incremental", func(c *ingestreport.CommandCoverage) {
+			md := mainFull
+			md.CoverageType = "incremental"
+			c.Reports[0].Header = coverageHeader(t, "semgrep", md)
+		}, coveragePartial},
+		{"feature branch", func(c *ingestreport.CommandCoverage) {
+			md := mainFull
+			md.Branch = &ctis.BranchInfo{Name: "feat/x"}
+			c.Reports[0].Header = coverageHeader(t, "semgrep", md)
+		}, coverageNotDefaultBranch},
+		{"no branch: not a repository run", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = coverageHeader(t, "semgrep", ctis.ReportMetadata{CoverageType: "full"})
+		}, coverageNotRepositoryScan},
+		{"reserved tool", func(c *ingestreport.CommandCoverage) { c.Reports[0].ToolName = "manual" }, coverageReservedTool},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := repoRun()
+			tc.mutate(c)
+			if got := decideRepoCoverage(c).reason; got != tc.want {
+				t.Fatalf("reason = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	// The non-repository decision hands such a run over.
+	if got := decideCoverage(repoRun()).reason; got != coverageRepositoryScan {
+		t.Fatalf("decideCoverage on a repository run = %q, want %q", got, coverageRepositoryScan)
+	}
 }

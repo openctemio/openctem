@@ -36,7 +36,7 @@ func TestRecordRun_PersistsStatusAndMovesCounters(t *testing.T) {
 	})
 
 	runID := seedPipelineRun(ctx, t, db, tenantID)
-	if err := repo.RecordRun(ctx, scanID, runID, "completed"); err != nil {
+	if err := repo.RecordRun(ctx, tenantID, scanID, runID, "completed"); err != nil {
 		t.Fatalf("RecordRun: %v", err)
 	}
 
@@ -87,7 +87,7 @@ func TestRecordRun_FailedStatusIncrementsFailedCounter(t *testing.T) {
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM scans WHERE id = $1`, scanID.String())
 	})
 
-	if err := repo.RecordRun(ctx, scanID, seedPipelineRun(ctx, t, db, tenantID), "failed"); err != nil {
+	if err := repo.RecordRun(ctx, tenantID, scanID, seedPipelineRun(ctx, t, db, tenantID), "failed"); err != nil {
 		t.Fatalf("RecordRun: %v", err)
 	}
 

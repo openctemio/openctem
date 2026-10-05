@@ -1,6 +1,6 @@
 # RFC-006 Phase 3 (detail): Bidirectional Jira Status Sync
 
-- **Status**: Proposed
+- **Status**: Proposed. 3a, 3c and 3d shipped (#167, #171, #168); 3b `ticket_links` and 3e `remediation_task` not shipped; inbound webhooks still use the default map (checked 2026-10-04).
 - **Created**: 2026-06-06
 - **Owner**: Platform / Mobilization
 - **Parent**: [RFC-006 — Ticketing Provider Abstraction + Configurable Mapping](./RFC-006-ticketing-provider-and-mapping.md) (§3.3–3.6, Phase 3)

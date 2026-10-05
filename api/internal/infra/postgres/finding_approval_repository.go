@@ -121,7 +121,7 @@ func (r *FindingApprovalRepository) Update(ctx context.Context, a *vulnerability
 			rejected_at = $6,
 			rejection_reason = $7,
 			version = $8
-		WHERE id = $1 AND version = $9
+		WHERE id = $1 AND version = $9 AND tenant_id = $10
 	`
 
 	var approvedBy, rejectedBy *string
@@ -144,6 +144,7 @@ func (r *FindingApprovalRepository) Update(ctx context.Context, a *vulnerability
 		a.RejectionReason,
 		a.Version,
 		a.Version-1,
+		a.TenantID.String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update approval: %w", err)

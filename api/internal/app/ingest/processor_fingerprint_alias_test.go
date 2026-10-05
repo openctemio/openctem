@@ -52,8 +52,12 @@ func twoNetFindingsReport() *ctis.Report {
 func TestProcessBatch_FormerKeysFoldIntoTheirFinding(t *testing.T) {
 	tenantID, assetID := shared.NewID(), shared.NewID()
 	report := twoNetFindingsReport()
-	k22, _ := generateFindingFingerprint(assetID, &report.Findings[0], report.Tool)
-	k2222, _ := generateFindingFingerprint(assetID, &report.Findings[1], report.Tool)
+	key := func(i int) string {
+		k, ok := identityV2(assetID, &report.Findings[i], report.Tool, "", 0)
+		require.True(t, ok)
+		return k.Fingerprint()
+	}
+	k22, k2222 := key(0), key(1)
 	repo := &aliasStubRepo{aliases: map[string]string{k2222: k22}}
 	p := NewFindingProcessor(repo, nil, nil, logger.NewNop())
 

@@ -354,7 +354,7 @@ func (m *MockFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *MockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *MockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 

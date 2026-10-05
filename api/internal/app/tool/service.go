@@ -894,8 +894,8 @@ func (s *Service) CreateTenantToolConfig(ctx context.Context, input CreateTenant
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
-	// Verify tool exists
-	if _, err := s.toolRepo.GetByID(ctx, toolID); err != nil {
+	// Verify the tool exists and the tenant may see it (platform or its own).
+	if _, err := s.visibleTool(ctx, tenantID, toolID); err != nil {
 		return nil, fmt.Errorf("tool not found: %w", err)
 	}
 
@@ -949,7 +949,26 @@ func (s *Service) GetEffectiveToolConfig(ctx context.Context, tenantID, toolID s
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
+	if _, err := s.visibleTool(ctx, tid, toid); err != nil {
+		return nil, err
+	}
+
 	return s.configRepo.GetEffectiveConfig(ctx, tid, toid)
+}
+
+// visibleTool loads a tool the tenant may see: a platform tool (tenant_id IS
+// NULL) or the tenant's own custom tool. Another tenant's custom tool answers
+// not-found, the same as a tool that does not exist, so its existence, its
+// definition and its default config never cross the tenant boundary.
+func (s *Service) visibleTool(ctx context.Context, tenantID, toolID shared.ID) (*tooldom.Tool, error) {
+	t, err := s.toolRepo.GetByID(ctx, toolID)
+	if err != nil {
+		return nil, err
+	}
+	if !t.IsPlatformTool() && !t.BelongsToTenant(tenantID) {
+		return nil, fmt.Errorf("%w: tool not found", shared.ErrNotFound)
+	}
+	return t, nil
 }
 
 // ListTenantToolConfigsInput represents the input for listing tenant tool configs.
@@ -1008,8 +1027,8 @@ func (s *Service) UpdateTenantToolConfig(ctx context.Context, input UpdateTenant
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
-	// Verify tool exists
-	if _, err := s.toolRepo.GetByID(ctx, toolID); err != nil {
+	// Verify the tool exists and the tenant may see it (platform or its own).
+	if _, err := s.visibleTool(ctx, tenantID, toolID); err != nil {
 		return nil, fmt.Errorf("tool not found: %w", err)
 	}
 
@@ -1236,8 +1255,8 @@ func (s *Service) GetToolWithConfig(ctx context.Context, tenantID, toolID string
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
-	// Get tool
-	t, err := s.toolRepo.GetByID(ctx, toid)
+	// Get tool (platform or the tenant's own)
+	t, err := s.visibleTool(ctx, tid, toid)
 	if err != nil {
 		return nil, err
 	}
@@ -1287,7 +1306,7 @@ func (s *Service) GetToolWithConfig(ctx context.Context, tenantID, toolID string
 
 // RecordToolExecutionInput represents the input for recording a tool execution.
 type RecordToolExecutionInput struct {
-	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
+	TenantID      string         `json:"-" validate:"required,uuid"`
 	ToolID        string         `json:"tool_id" validate:"required,uuid"`
 	SensorID      string         `json:"sensor_id" validate:"omitempty,uuid"`
 	PipelineRunID string         `json:"pipeline_run_id" validate:"omitempty,uuid"`
@@ -1345,6 +1364,7 @@ func (s *Service) RecordToolExecution(ctx context.Context, input RecordToolExecu
 
 // CompleteToolExecutionInput represents the input for completing a tool execution.
 type CompleteToolExecutionInput struct {
+	TenantID      string         `json:"-" validate:"required,uuid"`
 	ExecutionID   string         `json:"execution_id" validate:"required,uuid"`
 	FindingsCount int            `json:"findings_count"`
 	OutputSummary map[string]any `json:"output_summary"`
@@ -1354,12 +1374,16 @@ type CompleteToolExecutionInput struct {
 func (s *Service) CompleteToolExecution(ctx context.Context, input CompleteToolExecutionInput) (*tooldom.ToolExecution, error) {
 	s.logger.Info("completing tool execution", "execution_id", input.ExecutionID)
 
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	executionID, err := shared.IDFromString(input.ExecutionID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid execution id", shared.ErrValidation)
 	}
 
-	execution, err := s.executionRepo.GetByID(ctx, executionID)
+	execution, err := s.executionRepo.GetByIDInTenant(ctx, tenantID, executionID)
 	if err != nil {
 		return nil, err
 	}
@@ -1375,6 +1399,7 @@ func (s *Service) CompleteToolExecution(ctx context.Context, input CompleteToolE
 
 // FailToolExecutionInput represents the input for failing a tool execution.
 type FailToolExecutionInput struct {
+	TenantID     string `json:"-" validate:"required,uuid"`
 	ExecutionID  string `json:"execution_id" validate:"required,uuid"`
 	ErrorMessage string `json:"error_message" validate:"required,max=2000"`
 }
@@ -1383,12 +1408,16 @@ type FailToolExecutionInput struct {
 func (s *Service) FailToolExecution(ctx context.Context, input FailToolExecutionInput) (*tooldom.ToolExecution, error) {
 	s.logger.Info("failing tool execution", "execution_id", input.ExecutionID)
 
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	executionID, err := shared.IDFromString(input.ExecutionID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid execution id", shared.ErrValidation)
 	}
 
-	execution, err := s.executionRepo.GetByID(ctx, executionID)
+	execution, err := s.executionRepo.GetByIDInTenant(ctx, tenantID, executionID)
 	if err != nil {
 		return nil, err
 	}
@@ -1403,15 +1432,19 @@ func (s *Service) FailToolExecution(ctx context.Context, input FailToolExecution
 }
 
 // TimeoutToolExecution marks a tool execution as timed out.
-func (s *Service) TimeoutToolExecution(ctx context.Context, executionID string) (*tooldom.ToolExecution, error) {
+func (s *Service) TimeoutToolExecution(ctx context.Context, tenantID, executionID string) (*tooldom.ToolExecution, error) {
 	s.logger.Info("timing out tool execution", "execution_id", executionID)
 
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	eid, err := shared.IDFromString(executionID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid execution id", shared.ErrValidation)
 	}
 
-	execution, err := s.executionRepo.GetByID(ctx, eid)
+	execution, err := s.executionRepo.GetByIDInTenant(ctx, tid, eid)
 	if err != nil {
 		return nil, err
 	}

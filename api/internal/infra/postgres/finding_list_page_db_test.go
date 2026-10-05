@@ -138,24 +138,15 @@ func TestFindingList_DeferredJoinKeepsIsolationScopeAndOrder(t *testing.T) {
 		t.Fatalf("data scope not applied: got %v total=%d", listIDs(res), res.Total)
 	}
 
-	// --- data scope fail-open vs strict for a user with no assignment ---
+	// --- a user with no scope row sees nothing (always fail closed) ---
 	unassigned := seedGroupsUser(ctx, t, db, "noscope.test")
-	openFilter := filterA
-	openFilter.DataScopeUserID = &unassigned
-	res, err = repo.List(ctx, openFilter, vulnerability.FindingListOptions{}, pagination.New(1, 100))
+	noScopeFilter := filterA
+	noScopeFilter.DataScopeUserID = &unassigned
+	res, err = repo.List(ctx, noScopeFilter, vulnerability.FindingListOptions{}, pagination.New(1, 100))
 	if err != nil {
-		t.Fatalf("fail-open list: %v", err)
-	}
-	if res.Total != 5 || len(res.Data) != 5 {
-		t.Fatalf("fail-open: unassigned user should see all 5, got %d/%d", len(res.Data), res.Total)
-	}
-	strictFilter := openFilter
-	strictFilter.DataScopeStrict = true
-	res, err = repo.List(ctx, strictFilter, vulnerability.FindingListOptions{}, pagination.New(1, 100))
-	if err != nil {
-		t.Fatalf("strict list: %v", err)
+		t.Fatalf("no-scope list: %v", err)
 	}
 	if res.Total != 0 || len(res.Data) != 0 {
-		t.Fatalf("strict: unassigned user must see nothing, got %d/%d", len(res.Data), res.Total)
+		t.Fatalf("unassigned user must see nothing, got %d/%d", len(res.Data), res.Total)
 	}
 }

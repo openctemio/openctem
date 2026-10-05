@@ -35,10 +35,12 @@ export const GROUP_BY_DIMENSIONS: GroupByDimension[] = [
   'source',
   'component_id',
   'finding_type',
+  'family',
 ]
 
 /** Statuses the grouped view counts when no status filter is set. */
-export const GROUPED_DEFAULT_STATUSES = 'new,confirmed,in_progress,fix_applied,resolved'
+export const GROUPED_DEFAULT_STATUSES =
+  'new,confirmed,in_progress,fix_applied,not_observed,resolved'
 /** Rows a group shows when it opens, and how many "Show more" adds. */
 const FIRST_ROWS = 5
 const MORE_ROWS = 20
@@ -79,6 +81,8 @@ export function groupRowFilter(
       return { rule_id: key }
     case 'finding_type':
       return { finding_types: [key] }
+    case 'family':
+      return { families: [key] }
     default:
       return null
   }
@@ -97,6 +101,8 @@ function belongsToGroup(dimension: GroupByDimension, key: string, f: ApiFinding)
       return f.rule_id === key
     case 'finding_type':
       return (f.finding_type ?? '') === key
+    case 'family':
+      return (f.family ?? '') === key
     case 'asset_id':
       return f.asset_id === key
     default:
@@ -213,8 +219,16 @@ export function GroupStatusSummary({ stats }: { stats: FindingGroupStats }) {
 export interface FindingGroupsTableProps<TRow extends { id: string }> {
   dimension: GroupByDimension
   /** The page's facet filters the groups API understands. */
-  filters?: { severities?: string; statuses?: string; sources?: string; assignedToMe?: boolean }
-  /** Status scope for groups and rows; defaults to the facet statuses, else open-to-resolved. */
+  filters?: {
+    severities?: string
+    statuses?: string
+    sources?: string
+    assignedToMe?: boolean
+    view?: string
+    /** The state lens; when set, it is the status scope (no default statuses). */
+    state?: 'open' | 'fixed' | 'dispositioned' | 'all'
+  }
+  /** Status scope for groups and rows; defaults to the facet statuses, else the lens, else open-to-resolved. */
   statuses?: string
   columns: ColumnDef<TRow>[]
   /** API finding → table row (the page's transform). */
@@ -265,10 +279,12 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   emptyMessage = 'No findings to group',
   emptyDescription,
 }: FindingGroupsTableProps<TRow>) {
-  const statuses = statusesProp || filters?.statuses || GROUPED_DEFAULT_STATUSES
+  const lens = statusesProp ? undefined : filters?.state
+  const statuses = statusesProp || filters?.statuses || (lens ? '' : GROUPED_DEFAULT_STATUSES)
   const severities = filters?.severities
   const sources = filters?.sources
   const assignedToMe = !!filters?.assignedToMe
+  const savedView = filters?.view
   const {
     data,
     error,
@@ -276,10 +292,12 @@ export function FindingGroupsTable<TRow extends { id: string }>({
     mutate: mutateGroups,
   } = useFindingGroups({
     group_by: dimension,
-    statuses,
+    statuses: statuses || undefined,
+    state: lens,
     severities: filters?.severities || undefined,
     sources: filters?.sources || undefined,
     assigned_to_me: !!filters?.assignedToMe,
+    view: filters?.view,
     page: pagination.pageIndex + 1,
     per_page: pagination.pageSize,
   })
@@ -300,9 +318,11 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   const scope = [
     dimension,
     statuses,
+    lens ?? '',
     filters?.severities ?? '',
     filters?.sources ?? '',
     filters?.assignedToMe ? 'mine' : '',
+    savedView ?? '',
     pagination.pageIndex,
     pagination.pageSize,
   ].join('|')
@@ -322,7 +342,10 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       const groupFilter = groupRowFilter(dimension, key)
       if (!groupFilter) return { rows: [] as ApiFinding[], total: 0 }
       const url = buildFindingsEndpoint({
-        statuses: statuses.split(',') as NonNullable<FindingApiFilters['statuses']>,
+        ...(statuses && {
+          statuses: statuses.split(',') as NonNullable<FindingApiFilters['statuses']>,
+        }),
+        ...(lens && { state: lens }),
         ...(severities && {
           severities: severities.split(',') as NonNullable<FindingApiFilters['severities']>,
         }),
@@ -330,6 +353,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
           sources: sources.split(',') as NonNullable<FindingApiFilters['sources']>,
         }),
         ...(assignedToMe && { assigned_to_me: true }),
+        ...(savedView && { view: savedView }),
         ...groupFilter,
         page: 1,
         per_page: limit,
@@ -339,7 +363,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       if (rows.some((f) => !belongsToGroup(dimension, key, f))) throw new GroupFilterUnsupported()
       return { rows, total: res.total ?? rows.length }
     },
-    [dimension, statuses, severities, sources, assignedToMe]
+    [dimension, statuses, lens, severities, sources, assignedToMe, savedView]
   )
 
   const lazy = useLazyGroupRows<ApiFinding>({

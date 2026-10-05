@@ -13,7 +13,7 @@ import (
 )
 
 // ListFindingGroups returns findings grouped by a dimension.
-// Supported dimensions: cve_id, rule_id, asset_id, owner_id, component_id, severity, source, finding_type.
+// Supported dimensions: cve_id, rule_id, asset_id, owner_id, component_id, severity, source, finding_type, family.
 func (r *FindingRepository) ListFindingGroups(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -38,6 +38,8 @@ func (r *FindingRepository) ListFindingGroups(
 		return r.groupByField(ctx, tenantID, "source", filter, page)
 	case "finding_type":
 		return r.groupByField(ctx, tenantID, "finding_type", filter, page)
+	case "family":
+		return r.groupByField(ctx, tenantID, "family", filter, page)
 	default:
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("unsupported group_by: %s", groupBy)
 	}
@@ -73,6 +75,15 @@ func statusCountCols() string {
 // buildFilterWhere builds WHERE clauses from FindingFilter.
 // Returns clause string and args starting from argOffset.
 func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string, []any) {
+	if filter.Compiled != nil {
+		// A compiled RFC-048 filter is the whole filter (tenant, scope and
+		// pentest rule included). One compiled for other placeholder numbers
+		// cannot be bound safely, so it matches nothing.
+		if filter.Compiled.First != argOffset || !strings.HasPrefix(filter.Compiled.SQL, vulnerability.FindingFieldsF.TenantSQL+" = $") {
+			return "FALSE", nil
+		}
+		return filter.Compiled.SQL, filter.Compiled.Args
+	}
 	var clauses []string
 	var args []any
 
@@ -169,6 +180,17 @@ func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string
 // A filter that asks for either rule without a tenant cannot be resolved and
 // matches nothing (the list builder skipped the rule instead).
 func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) ([]string, []any) {
+	if v := filter.CompiledVisibility; v != nil {
+		if v.First != argOffset || !strings.HasPrefix(v.SQL, vulnerability.FindingFieldsF.TenantSQL+" = $") {
+			return []string{"FALSE"}, nil
+		}
+		return []string{v.SQL}, v.Args
+	}
+	if filter.Compiled != nil {
+		// A compiled filter without its compiled visibility cannot be
+		// narrowed by the legacy fields: match nothing (fail closed).
+		return []string{"FALSE"}, nil
+	}
 	var clauses []string
 	var args []any
 	if (filter.PentestMemberOrNonPentestUserID != nil || filter.DataScopeUserID != nil) && filter.TenantID == nil {
@@ -184,15 +206,11 @@ func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) (
 		argOffset += 2
 	}
 
-	// Layer 2 data scope. A resolved scope (WithDataScope) is strict; the
-	// legacy non-strict form keeps the list's fail-open "no scope row ⇒ all".
+	// Layer 2 data scope, always strict: a user with no scope row sees no
+	// group.
 	if filter.DataScopeUserID != nil {
 		scope := &shared.DataScope{TenantID: *filter.TenantID, UserID: *filter.DataScopeUserID}
 		cond, scopeArgs := dataScopeCondAt("f.asset_id", scope, argOffset)
-		if !filter.DataScopeStrict {
-			cond = fmt.Sprintf(`(NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d) OR %s)`,
-				argOffset, argOffset+1, cond)
-		}
 		clauses = append(clauses, cond)
 		args = append(args, scopeArgs...)
 	}
@@ -237,7 +255,7 @@ func (r *FindingRepository) groupByCVE(
 			(ARRAY['critical','high','medium','low','info'])[MIN(`+cveSeverityRank+`)] as severity,
 			COALESCE(MAX(f.cvss_score), MAX(v.cvss_score)),
 			COALESCE(MAX(f.epss_score), MAX(v.epss_score)),
-			(COALESCE(BOOL_OR(v.exploit_available), false) OR COALESCE(BOOL_OR(f.metadata->>'scanner_exploit_available' = 'true'), false)),
+			COALESCE(BOOL_OR(`+vulnerability.FindingExploitAvailableSQL("f")+`), false),
 			(COALESCE(BOOL_OR(f.is_in_kev), false) OR BOOL_OR(v.cisa_kev_date_added IS NOT NULL)) as cisa_kev,
 			%s
 		FROM findings f
@@ -687,7 +705,7 @@ func (r *FindingRepository) groupByField(
 	field string, filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	// Whitelist field names to prevent SQL injection
-	allowedFields := map[string]bool{"severity": true, "source": true, "finding_type": true}
+	allowedFields := map[string]bool{"severity": true, "source": true, "finding_type": true, "family": true}
 	if !allowedFields[field] {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("invalid group field: %s", field)
 	}
@@ -696,6 +714,10 @@ func (r *FindingRepository) groupByField(
 	extraWhere := ""
 	if filterWhere != "" {
 		extraWhere = "AND " + filterWhere
+	}
+	if field == "family" {
+		// Findings without a family form no group (like rule_id and cve_id).
+		extraWhere += " AND f.family IS NOT NULL AND f.family <> ''"
 	}
 
 	countQuery := fmt.Sprintf(`
@@ -768,9 +790,13 @@ func (r *FindingRepository) groupByField(
 func (r *FindingRepository) BulkUpdateStatusByFilter(
 	ctx context.Context, tenantID shared.ID,
 	filter vulnerability.FindingFilter, status vulnerability.FindingStatus,
-	resolution string, resolvedBy *shared.ID,
+	resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod,
 ) (int64, error) {
-	filterWhere, filterArgs := buildFilterWhere(filter, 5)
+	methodArg, err := resolutionMethodArg(status, method)
+	if err != nil {
+		return 0, err
+	}
+	filterWhere, filterArgs := buildFilterWhere(filter, 6)
 	extraWhere := ""
 	if filterWhere != "" {
 		extraWhere = "AND " + filterWhere
@@ -786,11 +812,11 @@ func (r *FindingRepository) BulkUpdateStatusByFilter(
 
 	query := fmt.Sprintf(`
 		UPDATE findings f
-		SET status = $2, resolution = $3, resolved_by = $4, resolved_at = %s, updated_at = NOW()
+		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5, resolved_at = %s, updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
 	`, resolvedAt, extraWhere)
 
-	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy)}, filterArgs...)
+	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg}, filterArgs...)
 
 	result, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {

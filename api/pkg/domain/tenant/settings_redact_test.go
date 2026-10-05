@@ -9,7 +9,7 @@ import (
 func TestRedactSettings_TypedAndNestedSecrets(t *testing.T) {
 	in := map[string]any{
 		// Typed values, as SetSetting may store them.
-		"api": APISettings{APIKeyEnabled: true, WebhookURL: "https://h.test", WebhookSecret: "whsec-1"},
+		"api": map[string]any{"api_key_enabled": true, "webhook_url": "https://h.test", "webhook_secret": "whsec-1"},
 		"ai":  AISettings{Mode: "byok", APIKey: "enc:sk-1", MonthlyTokenLimit: 5},
 		"integrations": []any{
 			map[string]any{"name": "x", "client_secret": "cs-1", "password": nil},
@@ -34,7 +34,7 @@ func TestRedactSettings_TypedAndNestedSecrets(t *testing.T) {
 	if item["client_secret_configured"] != true || item["password_configured"] != false || item["name"] != "x" {
 		t.Fatalf("nested = %v", item)
 	}
-	if in["api"].(APISettings).WebhookSecret != "whsec-1" {
+	if in["api"].(map[string]any)["webhook_secret"] != "whsec-1" {
 		t.Fatal("input modified")
 	}
 }

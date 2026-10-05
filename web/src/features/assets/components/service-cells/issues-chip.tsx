@@ -16,7 +16,7 @@ import { factChipBase } from './fact-chip'
  * findings only is an API change (follow-up).
  */
 export function assetFindingsHref(assetId: string): string {
-  const q = new URLSearchParams({ assetId, status: FINDINGS_OPEN_STATUSES.join(',') })
+  const q = new URLSearchParams({ asset_id: assetId, status: FINDINGS_OPEN_STATUSES.join(',') })
   return `/findings?${q.toString()}`
 }
 

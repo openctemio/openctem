@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Shield, Target, AlertTriangle, Download, RefreshCw } from 'lucide-react'
+import { Shield, Target, AlertTriangle, RefreshCw } from 'lucide-react'
 import { useAllPentestFindings } from '@/features/pentest/api/use-pentest-api'
 import type { ApiFinding } from '@/features/pentest/api/adapters'
 import { useSimulations, type Simulation } from '@/features/simulation/api/use-simulation-api'
@@ -410,10 +410,6 @@ export default function MitreCoveragePage() {
         <Button variant="outline" size="sm" onClick={handleRefresh}>
           <RefreshCw className="h-4 w-4 sm:me-2" />
           <span className="hidden sm:inline">Refresh</span>
-        </Button>
-        <Button variant="outline" size="sm" disabled title="Coming soon">
-          <Download className="h-4 w-4 sm:me-2" />
-          <span className="hidden sm:inline">Export</span>
         </Button>
       </PageHeader>
 

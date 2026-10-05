@@ -24,10 +24,10 @@ import {
   DetailStatGrid,
   DetailTabs,
   StatusBadge,
+  TruncatedText,
   type DetailMenuItem,
   type DetailTab,
 } from '@/features/shared'
-import { triggerErrorHint } from '@/features/scan-zones'
 import { post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -41,6 +41,9 @@ import {
 import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { formatScanDate, scanSuccessRate } from '../lib/format'
+import { useScanTrigger } from '../hooks/use-scan-trigger'
+import { schedulePreviewRequestFromConfig } from '../lib/schedule-preview'
+import { SchedulePreview } from './schedule-preview'
 
 type Tab = 'overview' | 'config' | 'details'
 const TABS: DetailTab<Tab>[] = [
@@ -130,10 +133,14 @@ export function ScanConfigDetailSheet({
 
 /** Trigger / pause / resume / enable, by the configuration's state. */
 function RunControls({ config }: { config: ScanConfig }) {
-  const [busy, setBusy] = useState<'trigger' | 'pause' | 'activate' | null>(null)
+  const [busy, setBusy] = useState<'pause' | 'activate' | null>(null)
+  // Trigger goes through the shared guard: it asks before a second concurrent
+  // run and ignores double clicks (also from the list behind the drawer).
+  const { trigger: triggerScan, isTriggering, dialog } = useScanTrigger()
+  const triggering = isTriggering(config.id)
 
   const run = async (
-    kind: 'trigger' | 'pause' | 'activate',
+    kind: 'pause' | 'activate',
     request: () => Promise<unknown>,
     done: string,
     failed: string
@@ -144,20 +151,12 @@ function RunControls({ config }: { config: ScanConfig }) {
       toast.success(done)
       await invalidateScanConfigsCache()
     } catch (error) {
-      toast.error(getErrorMessage(error, failed), {
-        description: kind === 'trigger' ? triggerErrorHint(error) : undefined,
-      })
+      toast.error(getErrorMessage(error, failed))
     } finally {
       setBusy(null)
     }
   }
-  const trigger = () =>
-    run(
-      'trigger',
-      () => post(scanEndpoints.trigger(config.id), {}),
-      `Scan "${config.name}" triggered successfully`,
-      `Failed to trigger scan "${config.name}"`
-    )
+  const trigger = () => void triggerScan(config)
   const pause = () =>
     run(
       'pause',
@@ -173,32 +172,42 @@ function RunControls({ config }: { config: ScanConfig }) {
       `Failed to activate scan "${config.name}"`
     )
   const spin = (k: typeof busy) => busy === k && <Loader2 className="h-4 w-4 animate-spin" />
+  const triggerSpin = triggering && <Loader2 className="h-4 w-4 animate-spin" />
+  const locked = !!busy || triggering
 
   if (config.status === 'active') {
     return (
       <>
-        <Button size="sm" onClick={trigger} disabled={!!busy}>
-          {spin('trigger') || <Play className="h-4 w-4" />}
+        <Button size="sm" onClick={trigger} disabled={locked} aria-busy={triggering}>
+          {triggerSpin || <Play className="h-4 w-4" />}
           Trigger
         </Button>
-        <Button size="sm" variant="outline" onClick={pause} disabled={!!busy}>
+        <Button size="sm" variant="outline" onClick={pause} disabled={locked}>
           {spin('pause') || <Pause className="h-4 w-4" />}
           Pause
         </Button>
+        {dialog}
       </>
     )
   }
   if (config.status === 'paused') {
     return (
       <>
-        <Button size="sm" onClick={activate} disabled={!!busy}>
+        <Button size="sm" onClick={activate} disabled={locked}>
           {spin('activate') || <Play className="h-4 w-4" />}
           Resume
         </Button>
-        <Button size="sm" variant="outline" onClick={trigger} disabled={!!busy}>
-          {spin('trigger') || <RefreshCw className="h-4 w-4" />}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={trigger}
+          disabled={locked}
+          aria-busy={triggering}
+        >
+          {triggerSpin || <RefreshCw className="h-4 w-4" />}
           Trigger
         </Button>
+        {dialog}
       </>
     )
   }
@@ -268,9 +277,20 @@ function Configuration({ config }: { config: ScanConfig }) {
         <DetailFieldGrid>
           <DetailField label="Scan type">{SCAN_TYPE_LABELS[config.scan_type]}</DetailField>
           <DetailField label="Frequency">{SCHEDULE_TYPE_LABELS[config.schedule_type]}</DetailField>
+          {config.schedule_rrule && (
+            <DetailField label="Rule" full>
+              <code className="text-xs break-all">{config.schedule_rrule}</code>
+            </DetailField>
+          )}
           {config.schedule_time && <DetailField label="Time">{config.schedule_time}</DetailField>}
           <DetailField label="Timezone">{config.schedule_timezone}</DetailField>
         </DetailFieldGrid>
+        <div className="mt-4">
+          <SchedulePreview
+            request={schedulePreviewRequestFromConfig(config)}
+            paused={config.status !== 'active'}
+          />
+        </div>
       </DetailSection>
       {config.tags && config.tags.length > 0 && (
         <DetailSection title="Tags" count={config.tags.length}>
@@ -316,8 +336,8 @@ function Details({ config }: { config: ScanConfig }) {
               <DetailField label={`Direct targets (${targets.length})`} full>
                 <span className="flex flex-wrap gap-1">
                   {targets.slice(0, 5).map((target, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs break-all" title={target}>
-                      {target.length > 30 ? `${target.slice(0, 30)}…` : target}
+                    <Badge key={i} variant="secondary" className="max-w-[16rem] text-xs">
+                      <TruncatedText value={target} label="Target" />
                     </Badge>
                   ))}
                   {targets.length > 5 && (

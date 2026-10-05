@@ -13,9 +13,6 @@ type Repository interface {
 	// Create creates a new scan session.
 	Create(ctx context.Context, session *ScanSession) error
 
-	// GetByID retrieves a scan session by ID.
-	GetByID(ctx context.Context, id shared.ID) (*ScanSession, error)
-
 	// GetByTenantAndID retrieves a scan session by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*ScanSession, error)
 
@@ -26,7 +23,7 @@ type Repository interface {
 	List(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*ScanSession], error)
 
 	// Delete deletes a scan session by ID.
-	Delete(ctx context.Context, id shared.ID) error
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// FindBaseline finds the most recent completed scan for incremental scanning.
 	// Returns the baseline commit SHA from the last completed scan on the same branch/asset.

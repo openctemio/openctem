@@ -15,18 +15,18 @@ describe('buildGroupsUrl', () => {
     expect(new URLSearchParams(url.split('?')[1]).get('group_by')).toBe('cve_id')
   })
 
-  it('adds assigned_to_me=true when the field is set', () => {
+  it('sends related_to=me when assigned_to_me is set (RFC-048 name)', () => {
     const url = buildGroupsUrl({ group_by: 'cve_id', assigned_to_me: true })
     const params = new URLSearchParams(url.split('?')[1])
-    expect(params.get('assigned_to_me')).toBe('true')
+    expect(params.get('related_to')).toBe('me')
   })
 
   it('omits assigned_to_me when the field is false or unset', () => {
     const falseUrl = buildGroupsUrl({ group_by: 'cve_id', assigned_to_me: false })
-    expect(new URLSearchParams(falseUrl.split('?')[1]).has('assigned_to_me')).toBe(false)
+    expect(new URLSearchParams(falseUrl.split('?')[1]).has('related_to')).toBe(false)
 
     const unsetUrl = buildGroupsUrl({ group_by: 'cve_id' })
-    expect(new URLSearchParams(unsetUrl.split('?')[1]).has('assigned_to_me')).toBe(false)
+    expect(new URLSearchParams(unsetUrl.split('?')[1]).has('related_to')).toBe(false)
   })
 
   it('preserves other filters alongside assigned_to_me', () => {
@@ -37,7 +37,7 @@ describe('buildGroupsUrl', () => {
     })
     const params = new URLSearchParams(url.split('?')[1])
     expect(params.get('group_by')).toBe('owner_id')
-    expect(params.get('statuses')).toBe('new,confirmed')
-    expect(params.get('assigned_to_me')).toBe('true')
+    expect(params.get('status')).toBe('new,confirmed')
+    expect(params.get('related_to')).toBe('me')
   })
 })

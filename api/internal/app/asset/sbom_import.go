@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	componentdom "github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -44,7 +45,14 @@ const (
 type SBOMImportService struct {
 	repo         componentdom.Repository
 	assetChecker assetTenantChecker
+	dataScope    *datascope.Enforcer
 	logger       *logger.Logger
+}
+
+// SetDataScope makes an import refuse (404) an asset outside the caller's
+// data scope.
+func (s *SBOMImportService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
 }
 
 // NewSBOMImportService creates a new SBOMImportService.
@@ -83,6 +91,12 @@ func (s *SBOMImportService) ImportSBOM(ctx context.Context, tenantID, assetID st
 	// guessed/known asset UUID). Returns ErrNotFound → 404 otherwise.
 	if s.assetChecker != nil {
 		if _, err := s.assetChecker.GetByID(ctx, tid, aid); err != nil {
+			return nil, err
+		}
+	}
+	// ...and that the caller may see it (Layer 2): 404 otherwise.
+	if s.dataScope != nil {
+		if err := s.dataScope.AssertAsset(ctx, tid, aid); err != nil {
 			return nil, err
 		}
 	}

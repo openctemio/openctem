@@ -148,7 +148,7 @@ test('public pages open without a session', async ({ request }) => {
     '/forgot-password',
     '/reset-password',
     '/set-password',
-    '/invitations/this-token-does-not-exist',
+    '/invitations',
     '/admin/login',
   ]) {
     const res = await request.get(path, { maxRedirects: 0 })
@@ -158,6 +158,14 @@ test('public pages open without a session', async ({ request }) => {
     const res = await request.get(path, { maxRedirects: 0 })
     expect(res.status(), path).not.toBe(307)
   }
+})
+
+test('an invitation link from before RFC-041 moves its token into the fragment', async ({
+  request,
+}) => {
+  const res = await request.get('/invitations/this-token-does-not-exist', { maxRedirects: 0 })
+  expect(res.status()).toBe(307)
+  expect(res.headers()['location']).toMatch(/\/invitations#token=this-token-does-not-exist$/)
 })
 
 test('the admin console redirects to its own sign-in', async ({ request }) => {

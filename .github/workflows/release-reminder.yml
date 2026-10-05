@@ -59,7 +59,7 @@ jobs:
           echo "today=$today" >> "$GITHUB_OUTPUT"
           echo "Anchor ${ANCHOR}, today ${today} (${days} days): train week = ${train}"
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.week.outputs.train == 'true'
         with:
           ref: develop

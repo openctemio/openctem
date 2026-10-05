@@ -72,7 +72,9 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 		),
 		exposure_metrics AS (
 			SELECT tenant_id, COUNT(*) AS active_count
-			FROM exposure_events WHERE state = 'active'
+			FROM exposure_events e WHERE e.state = 'active'
+			  -- exposures of a soft-deleted asset are history, not active work
+			  AND NOT EXISTS (SELECT 1 FROM assets d WHERE d.id = e.asset_id AND d.deleted_at IS NOT NULL)
 			GROUP BY tenant_id
 		)
 		INSERT INTO risk_snapshots (
@@ -97,6 +99,11 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 		LEFT JOIN finding_metrics f ON f.tenant_id = t.id
 		LEFT JOIN mttr_metrics m ON m.tenant_id = t.id
 		LEFT JOIN exposure_metrics e ON e.tenant_id = t.id
+		-- Lock each tenant row against deletion while it is inserted for: a
+		-- tenant deleted after the statement's snapshot is then skipped
+		-- (READ COMMITTED re-check) instead of failing the whole batch on the
+		-- risk_snapshots tenant foreign key.
+		FOR KEY SHARE OF t
 		ON CONFLICT (tenant_id, snapshot_date)
 		DO UPDATE SET
 			risk_score_avg = EXCLUDED.risk_score_avg,

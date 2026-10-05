@@ -141,6 +141,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.AttackSurface,
   },
+  // The attribution review queue (RFC-036). Reading needs assets:read;
+  // deciding needs assets:write, enforced by the API and the page.
+  '/attack-surface/review': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
   '/business-units': {
     permission: Permission.AssetsRead,
     module: Module.BusinessUnits,
@@ -371,10 +377,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.PentestRead,
     module: Module.AttackSimulation,
   },
-  '/simulation/scenarios': {
-    permission: Permission.PentestRead,
-    module: Module.AttackSimulation,
-  },
   '/control-testing': {
     permission: Permission.PentestRead,
     module: Module.ControlTesting,
@@ -473,10 +475,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ComplianceFrameworksRead,
     module: Module.Compliance,
   },
-  '/insights/reports/compliance': {
-    permission: Permission.ComplianceReportsRead,
-    module: Module.Compliance,
-  },
 
   // ========================================
   // Insights — extended dashboards (each its own module post-000161)
@@ -491,17 +489,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // data-quality endpoint — gated on dashboard read only (no dedicated module),
   // exactly like Program Health, so it is always available with the dashboard.
   '/insights/data-quality': {
-    permission: Permission.DashboardRead,
-  },
-  // Analytics facades over shared dashboard data — not linked in nav but
-  // reachable by URL, so gate on dashboard read instead of leaving fail-open.
-  '/trending': {
-    permission: Permission.DashboardRead,
-  },
-  '/progress': {
-    permission: Permission.DashboardRead,
-  },
-  '/insights/analytics/mttr': {
     permission: Permission.DashboardRead,
   },
   '/insights/executive': {
@@ -600,10 +587,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SLARead,
     module: Module.Sla,
   },
+  // Readable by anyone with pentest access; the page itself is read-only
+  // unless the caller may PATCH the settings (organization administrators).
   '/settings/pentest': {
-    permission: Permission.PentestWrite,
+    permission: Permission.PentestRead,
     module: Module.Pentest,
-    message: 'You need pentest write access to manage pentest settings.',
   },
   '/settings/members': {
     permission: Permission.MembersRead,
@@ -627,12 +615,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/teams/**': {
     permission: Permission.GroupsRead,
   },
-  '/settings/access-control/permission-sets': {
-    permission: Permission.PermissionSetsRead,
-  },
-  '/settings/access-control/permission-sets/**': {
-    permission: Permission.PermissionSetsRead,
-  },
 
   // ========================================
   // Settings - Audit Log (Admin/Owner only, no module required)
@@ -645,19 +627,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/audit-log/**': {
     permission: Permission.AuditRead,
     message: 'Audit logs require admin or owner privileges.',
-  },
-
-  // ========================================
-  // Settings - Billing (Admin/Owner only, no module required)
-  // Billing is a core feature, controlled by RBAC only
-  // ========================================
-  '/settings/billing': {
-    permission: Permission.BillingRead,
-    message: 'Billing information requires admin or owner privileges.',
-  },
-  '/settings/billing/**': {
-    permission: Permission.BillingRead,
-    message: 'Billing information requires admin or owner privileges.',
   },
 
   // ========================================
@@ -689,6 +658,19 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/integrations/**': {
     permission: Permission.IntegrationsRead,
     module: Module.Integrations,
+  },
+  // Delivery history and the outbox queue show every event of the
+  // organization (finding messages, asset names, owner emails) regardless of
+  // data scope: channel managers only, as in the API (integrations:manage).
+  '/settings/integrations/notifications/history': {
+    permission: Permission.IntegrationsManage,
+    module: Module.Integrations,
+    message: 'Only people who manage notification channels can see delivery history.',
+  },
+  '/settings/integrations/notifications/outbox': {
+    permission: Permission.IntegrationsManage,
+    module: Module.Integrations,
+    message: 'Only people who manage notification channels can see the delivery queue.',
   },
 
   // ========================================

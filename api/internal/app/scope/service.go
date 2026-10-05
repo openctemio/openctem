@@ -348,6 +348,9 @@ func (s *Service) GetExclusion(ctx context.Context, tenantID string, exclusionID
 type UpdateExclusionInput struct {
 	Reason    *string    `validate:"omitempty,max=1000"`
 	ExpiresAt *time.Time `validate:"omitempty"`
+	// Reviewer is the caller; shortening the window of an exclusion in
+	// effect needs Reviewer.CanApprove and someone other than the requester.
+	Reviewer scopedom.Reviewer
 }
 
 // UpdateExclusion updates an existing scope exclusion.
@@ -366,6 +369,11 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 		return nil, err
 	}
 
+	if input.ExpiresAt != nil && exclusion.ShortensWindow(input.ExpiresAt) {
+		if err := exclusion.AuthorizeReduction(input.Reviewer); err != nil {
+			return nil, err
+		}
+	}
 	if input.Reason != nil {
 		exclusion.UpdateReason(*input.Reason)
 	}
@@ -381,8 +389,10 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 	return exclusion, nil
 }
 
-// DeleteExclusion deletes a scope exclusion by ID with atomic tenant verification.
-func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenantID string) error {
+// DeleteExclusion deletes a scope exclusion by ID with atomic tenant
+// verification. Deleting an exclusion in effect needs the approval
+// permission and someone other than the requester (AuthorizeReduction).
+func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenantID string, reviewer scopedom.Reviewer) error {
 	parsedID, err := shared.IDFromString(exclusionID)
 	if err != nil {
 		return shared.ErrNotFound
@@ -391,6 +401,14 @@ func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenan
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return err
+	}
+	if err := exclusion.AuthorizeReduction(reviewer); err != nil {
+		return err
 	}
 
 	if err := s.exclusionRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
@@ -546,8 +564,10 @@ func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, ten
 	return exclusion, nil
 }
 
-// DeactivateExclusion deactivates a scope exclusion.
-func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, tenantID string) (*scopedom.Exclusion, error) {
+// DeactivateExclusion takes a scope exclusion out of effect. That needs the
+// approval permission and someone other than the requester
+// (AuthorizeReduction).
+func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, tenantID string, reviewer scopedom.Reviewer) (*scopedom.Exclusion, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -562,6 +582,9 @@ func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, t
 		return nil, err
 	}
 
+	if err := exclusion.AuthorizeReduction(reviewer); err != nil {
+		return nil, err
+	}
 	if err := exclusion.Deactivate(); err != nil {
 		return nil, err
 	}

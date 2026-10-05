@@ -75,7 +75,7 @@ func (m *mockScanRepository) Update(_ context.Context, s *scan.Scan) error {
 	return nil
 }
 
-func (m *mockScanRepository) Delete(_ context.Context, id shared.ID) error {
+func (m *mockScanRepository) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	if _, ok := m.scans[id.String()]; !ok {
 		return shared.ErrNotFound
 	}
@@ -91,19 +91,19 @@ func (m *mockScanRepository) ListDueForExecution(_ context.Context, _ time.Time)
 	return nil, nil
 }
 
-func (m *mockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _ *time.Time) error {
+func (m *mockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _ shared.ID, _ *time.Time) error {
 	return nil
 }
 
-func (m *mockScanRepository) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID) error {
+func (m *mockScanRepository) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 
-func (m *mockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
+func (m *mockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID, _ string) error {
 	return nil
 }
 
-func (m *mockScanRepository) RecordTriggerFailure(_ context.Context, _ shared.ID, _ string) error {
+func (m *mockScanRepository) RecordTriggerFailure(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
 	return nil
 }
 
@@ -127,7 +127,7 @@ func (m *mockScanRepository) UpdateStatusByAssetGroupID(_ context.Context, _ sha
 	return nil
 }
 
-func (m *mockScanRepository) ClaimScheduledRun(_ context.Context, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
+func (m *mockScanRepository) ClaimScheduledRun(_ context.Context, _ shared.ID, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
 	return true, nil
 }
 
@@ -416,7 +416,7 @@ func TestImportConfig_InvalidJSON(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data)
+			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data, shared.NewID().String())
 			assert.Error(t, err)
 			assert.Nil(t, result)
 			assert.ErrorIs(t, err, shared.ErrValidation)
@@ -464,7 +464,7 @@ func TestImportConfig_MissingRequiredFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := svc.ImportConfig(context.Background(), tenantID, []byte(tc.data))
+			result, err := svc.ImportConfig(context.Background(), tenantID, []byte(tc.data), shared.NewID().String())
 			assert.Error(t, err)
 			assert.Nil(t, result)
 			assert.ErrorIs(t, err, shared.ErrValidation)
@@ -499,7 +499,7 @@ func TestImportConfig_EmptyData(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data)
+			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data, shared.NewID().String())
 			assert.Error(t, err)
 			assert.Nil(t, result)
 		})
@@ -522,7 +522,7 @@ func TestImportConfig_InvalidScheduleTime(t *testing.T) {
 	jsonData, err := json.Marshal(data)
 	require.NoError(t, err)
 
-	result, err := svc.ImportConfig(context.Background(), tenantID, jsonData)
+	result, err := svc.ImportConfig(context.Background(), tenantID, jsonData, shared.NewID().String())
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.ErrorIs(t, err, shared.ErrValidation)

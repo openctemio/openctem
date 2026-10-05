@@ -57,6 +57,7 @@ export type GroupByDimension =
   | 'severity'
   | 'source'
   | 'finding_type'
+  | 'family'
 
 export interface FindingGroupsFilters {
   group_by: GroupByDimension
@@ -68,6 +69,10 @@ export interface FindingGroupsFilters {
   assigned_to_me?: boolean
   page?: number
   per_page?: number
+  /** A saved view the groups run (its filter, with these filters on top). */
+  view?: string
+  /** The state lens (open | fixed | dispositioned | all). */
+  state?: string
 }
 
 // ============================================
@@ -77,12 +82,16 @@ export interface FindingGroupsFilters {
 export function buildGroupsUrl(filters: FindingGroupsFilters): string {
   const params = new URLSearchParams()
   params.set('group_by', filters.group_by)
-  if (filters.severities) params.set('severities', filters.severities)
-  if (filters.statuses) params.set('statuses', filters.statuses)
-  if (filters.sources) params.set('sources', filters.sources)
-  if (filters.cve_ids) params.set('cve_ids', filters.cve_ids)
-  if (filters.asset_tags) params.set('asset_tags', filters.asset_tags)
-  if (filters.assigned_to_me) params.set('assigned_to_me', 'true')
+  // The list query contract's param names (RFC-048); the old plural names
+  // are deprecated aliases on the server.
+  if (filters.severities) params.set('severity', filters.severities)
+  if (filters.statuses) params.set('status', filters.statuses)
+  if (filters.sources) params.set('source', filters.sources)
+  if (filters.cve_ids) params.set('cve_id', filters.cve_ids)
+  if (filters.asset_tags) params.set('asset_tag', filters.asset_tags)
+  if (filters.assigned_to_me) params.set('related_to', 'me')
+  if (filters.view) params.set('view', filters.view)
+  if (filters.state) params.set('state', filters.state)
   if (filters.page) params.set('page', String(filters.page))
   if (filters.per_page) params.set('per_page', String(filters.per_page))
   return `/api/v1/findings/groups?${params.toString()}`

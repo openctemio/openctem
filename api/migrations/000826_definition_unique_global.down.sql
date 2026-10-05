@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS ux_vulnerabilities_global_identity;

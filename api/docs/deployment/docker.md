@@ -27,7 +27,7 @@ Dockerfile
 | `docker-compose.dev.yml` | Development app (target: development) |
 | `docker-compose.prod.yml` | Production API alone (target: production), not published |
 | `deploy/docker-compose.yml` | **Production stack**: gateway (one HTTPS port) + web UI + API + Postgres/Redis with TLS |
-| `deploy/gateway/` | Gateway Caddyfile, TLS modes, entrypoint, `smoke-test.sh` |
+| `deploy/gateway/` | Gateway Caddyfile, `planes.caddy` (routing by plane, generated from the API's plane table; do not edit), TLS modes, entrypoint, `smoke-test.sh` |
 
 ---
 

@@ -41,14 +41,30 @@ func TestPromoteKnownProperties_TypeAlias(t *testing.T) {
 
 	result := app.PromoteKnownProperties(input)
 
-	// type resolved via alias: firewall → network
-	assert.Equal(t, "network", result.Type)
-	// sub_type promoted from alias resolution
-	assert.Equal(t, "firewall", result.Properties["__promoted_sub_type"])
+	// an alias in properties.type names the input type; CreateAsset
+	// resolves it to (network, firewall)
+	assert.Equal(t, "firewall", result.Type)
 	// original "type" key removed from properties
 	assert.Nil(t, result.Properties["type"])
 	// vendor stays
 	assert.Equal(t, "Palo Alto", result.Properties["vendor"])
+}
+
+// A properties.type that is not a registry alias (a vendor's own word such as
+// "lan") is an ordinary property. It used to overwrite the request type and
+// fail the request with "invalid asset type".
+func TestPromoteKnownProperties_NonAliasTypeStaysAProperty(t *testing.T) {
+	for _, v := range []string{"lan", "vpn_gateway", "network"} {
+		input := app.CreateAssetInput{
+			Name:        "seg-01",
+			Type:        "network",
+			Criticality: "high",
+			Properties:  map[string]any{"type": v},
+		}
+		result := app.PromoteKnownProperties(input)
+		assert.Equal(t, "network", result.Type, v)
+		assert.Equal(t, v, result.Properties["type"], v)
+	}
 }
 
 func TestPromoteKnownProperties_ScopeExposure(t *testing.T) {

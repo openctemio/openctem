@@ -44,8 +44,34 @@ func (s *TenantService) authorizeMemberChange(ctx context.Context, target *tenan
 		return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
 	}
 	actor, err := s.repo.GetMembership(ctx, actorID, target.TenantID())
-	if err != nil || actor == nil || !actor.IsOwner() || actor.IsSuspended() {
+	if err != nil || actor == nil || !actor.IsOwner() || !actor.IsActive() {
 		return ErrOwnerRequiredForAdminChange
+	}
+	return nil
+}
+
+// ErrOwnerRequiredForAdminPromotion is returned when someone other than the
+// organization's owner tries to make a user an administrator (settings
+// decision B2, 2026-10-04): by adding them as admin, changing their role to
+// admin or inviting them with the admin role. Step-up re-authentication for
+// this action follows with the step-up primitive (settings plan P1-01).
+var ErrOwnerRequiredForAdminPromotion = fmt.Errorf(
+	"%w: only the organization owner can make someone an administrator", shared.ErrForbidden)
+
+// authorizeAdminPromotion refuses to give the admin role unless the actor is
+// the organization's active owner. An empty actor is a system path (SCIM,
+// SSO), bounded by its own rules.
+func (s *TenantService) authorizeAdminPromotion(ctx context.Context, tenantID shared.ID, actx auditapp.AuditContext) error {
+	if actx.ActorID == "" {
+		return nil
+	}
+	actorID, err := shared.IDFromString(actx.ActorID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
+	}
+	actor, err := s.repo.GetMembership(ctx, actorID, tenantID)
+	if err != nil || actor == nil || !actor.IsOwner() || actor.IsSuspended() {
+		return ErrOwnerRequiredForAdminPromotion
 	}
 	return nil
 }

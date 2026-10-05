@@ -1,7 +1,12 @@
 # Rà soát & chuẩn hóa phân quyền — OpenCTEM
 
-> **Trạng thái:** Giai đoạn 0 (Khám phá) + Giai đoạn 1 (Rà soát) — HOÀN TẤT. Chưa sửa code.
-> **Phạm vi:** backend Go (`api`) + frontend Next.js (`ui`), đối chiếu trên `origin/develop`.
+> **Trạng thái (cập nhật 2026-10-04):** ảnh chụp lịch sử của đợt rà soát 2026-09.
+> Phần lớn phát hiện đã được sửa hoặc đã chốt chính sách — xem **§8** (trạng thái
+> trên `develop`). Mô hình hiện hành (canonical):
+> [architecture/authorization-matrix.md](architecture/authorization-matrix.md).
+> Nội dung §1–§7 giữ nguyên như lúc rà soát (đường dẫn `ui/…` nay là `web/…`;
+> số liệu như 159 quyền, ~878 route là của thời điểm đó).
+> **Phạm vi:** khi rà soát là repo `api` + `ui`; nay là monorepo `openctemio/openctem` (`api/` + `web/`).
 > **Phương pháp:** review với tư duy tấn công — giả định kẻ tấn công gọi API trực tiếp, sửa mọi tham số client.
 > **Ngày:** 2026-09.
 
@@ -242,3 +247,33 @@
 | AUTHZ-03,04,05,07,10,11,13,14,16,17 | ⏸ **Chờ duyệt** | Phụ thuộc quyết định chính sách (Q1–Q7) — thuộc Giai đoạn 2/3 sau khi bạn duyệt. |
 
 **Đợt 1 kết quả:** 1 lỗ hổng escalation thật (bulk-assign) đã đóng + test; 1 route hở đã gate; footgun frontend + doc sai đã dọn. Đều verify build/test/lint, commit local, **chưa push** — chờ bạn ra lệnh push.
+
+---
+
+## 8. Trạng thái trên `develop` (kiểm tra 2026-10-04)
+
+Số PR là của `openctemio/openctem` (repo `api` cũ đã đổi tên). Các commit
+"local" ở §7 đã được merge qua các PR dưới đây.
+
+| Mã | Trạng thái | Bằng chứng |
+|---|---|---|
+| AUTHZ-01 | ✅ Đã sửa (#506) | `api/internal/app/accesscontrol/grant_guard.go` |
+| AUTHZ-02 | ✅ Đã sửa (#512) | `api/tests/unit/route_authz_coverage_test.go` |
+| AUTHZ-03 | Đã chốt: không xây deny-gate (allow-only) | authorization-matrix.md, "Settled model" |
+| AUTHZ-04 | Hoãn có chủ ý | authorization-matrix.md, "Known, deliberate gaps" |
+| AUTHZ-05 | ✅ Đã sửa (#516) | `routes/exposure.go` dùng `FindingsBulkUpdate/Status/Assign/Triage/Verify` |
+| AUTHZ-06 | ✅ Đã sửa (#507) | `GET /api/v1/findings/ai-triage/config` có `Require(FindingsRead)` |
+| AUTHZ-07 | ✅ Đã sửa (#514, #591) | đọc thì che (mask), mã hóa khi lưu, `reveal` cần quyền riêng và được audit |
+| AUTHZ-08 | ✅ Đã sửa (#515) | `postgres/role_repository.go` join `p.is_active = TRUE` |
+| AUTHZ-09 | Còn mở | `pkg/jwt/jwt.go` vẫn nhúng `Permissions` (được `EnrichPermissions` làm mới mỗi request) |
+| AUTHZ-10 | Sửa một phần (#511) | `ScanRepository.Update` đã scope tenant; `Delete` vẫn chỉ `WHERE id = $1`; các repo khác chưa rà lại |
+| AUTHZ-11 | Còn mở | |
+| AUTHZ-12 | Đã xóa dead code (openctemio/ui#450) | `server-only` vẫn chưa được import |
+| AUTHZ-13 | Một phần: `DeleteRole` có trần đặc quyền ở service (quyết định 2026-10-02) | self-guard của `UpdateMemberRole` chưa kiểm lại |
+| AUTHZ-14 | Còn mở / hoãn | |
+| AUTHZ-15 | Một phần | `RequirePlatformAdmin` đã xóa; `GenerateSlimAccessToken` vẫn còn (không dùng) |
+| AUTHZ-16 | Đã chốt: không làm (YAGNI) | authorization-matrix.md, "Settled model" |
+| AUTHZ-17 | Go↔DB được CI kiểm (#510) | `api/tests/unit/permission_catalog_sync_test.go`; hằng TS phía web vẫn chỉ nhờ review |
+
+Lưu ý: `AdminAuthMiddleware` (§1) nay dùng phiên console, không còn API key
+quản trị (RFC-022).

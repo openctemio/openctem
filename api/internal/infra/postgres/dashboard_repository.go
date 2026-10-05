@@ -105,7 +105,7 @@ func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID s
 	// Get count of repositories with findings
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON a.id = f.asset_id
+		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id
 		 WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository'`,
 		tenantID.String(),
 	).Scan(&stats.WithFindings)
@@ -158,8 +158,15 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 
 // GetAllStats returns all dashboard statistics for a tenant in 2 optimized queries
 // instead of 10+ separate queries. This is used by the main dashboard endpoint.
-func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.ID) (*app.DashboardAllStats, error) {
+func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*app.DashboardAllStats, error) {
 	tid := tenantID.String()
+	// A non-nil scope counts only the viewer's in-scope assets and their
+	// findings ($2, $3).
+	args := []any{tid}
+	findingIn, args := dataScopeCond("asset_id", scope, args)
+	assetIn, _ := dataScopeCond("id", scope, []any{tid})
+	fIn, _ := dataScopeCond("f.asset_id", scope, []any{tid})
+	aIn, _ := dataScopeCond("a.id", scope, []any{tid})
 	result := &app.DashboardAllStats{
 		Assets: app.AssetStatsData{
 			ByType:   make(map[string]int),
@@ -186,7 +193,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			SELECT GROUPING(severity) AS g_sev, GROUPING(status) AS g_status,
 				severity, status, COUNT(*) AS cnt
 			FROM findings
-			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review')
+			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND `+findingIn+`
 			GROUP BY GROUPING SETS ((severity), (status), ())
 		),
 		asset_agg AS (
@@ -197,19 +204,19 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 				COALESCE(AVG(risk_score), 0) AS avg_risk,
 				COUNT(*) FILTER (WHERE asset_type = 'repository') AS repo_cnt
 			FROM assets
-			WHERE deleted_at IS NULL AND tenant_id = $1
+			WHERE deleted_at IS NULL AND tenant_id = $1 AND `+assetIn+`
 			GROUP BY GROUPING SETS ((asset_type), (status), (NULLIF(sub_type, '')), ())
 		),
 		avg_cvss AS (
 			SELECT COALESCE(AVG(COALESCE(f.cvss_score, v.cvss_score)), 0) AS val
 			FROM findings f JOIN vulnerabilities v ON f.vulnerability_id = v.id
-			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review')
+			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review') AND `+fIn+`
 		),
 		repo_with_findings AS (
 			SELECT COUNT(*) AS cnt
 			FROM assets a
-			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository'
-				AND EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id)
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository' AND `+aIn+`
+				AND EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = a.tenant_id AND f.asset_id = a.id)
 		)
 		SELECT 'asset_total' AS grp, '' AS key, cnt, 0::float8 AS val FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
 		UNION ALL SELECT 'atype', asset_type, cnt, 0 FROM asset_agg WHERE g_type = 0
@@ -222,7 +229,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		UNION ALL SELECT 'avg_risk', '', 0, avg_risk FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
 		UNION ALL SELECT 'repo_total', '', repo_cnt, 0 FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
 		UNION ALL SELECT 'repo_findings', '', cnt, 0 FROM repo_with_findings`,
-		tid,
+		args...,
 	)
 	if err != nil {
 		return nil, err
@@ -305,10 +312,13 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 
 // GetFindingTrend returns monthly finding counts by severity for a tenant.
 // Uses a single query with date_trunc and FILTER to pivot severity counts.
-func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shared.ID, months int) ([]app.FindingTrendPoint, error) {
+func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, months int) ([]app.FindingTrendPoint, error) {
 	if months <= 0 || months > 24 {
 		months = 6
 	}
+	// A non-nil scope counts only findings on the viewer's in-scope assets.
+	args := []any{tenantID.String(), months}
+	inScope, args := dataScopeCond("f.asset_id", scope, args)
 
 	rows, err := r.db.QueryContext(ctx, `
 		WITH months AS (
@@ -334,6 +344,7 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 				AND f.created_at >= date_trunc('month', NOW()) - ($2::int - 1) * interval '1 month'
 				AND f.created_at < date_trunc('month', NOW()) + interval '1 month'
 				AND f.status NOT IN ('draft', 'in_review')
+				AND `+inScope+`
 			GROUP BY 1
 		)
 		SELECT
@@ -346,7 +357,7 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 		FROM months m
 		LEFT JOIN agg a ON a.month_start = m.month_start
 		ORDER BY m.month_start ASC`,
-		tenantID.String(), months,
+		args...,
 	)
 	if err != nil {
 		return nil, err
@@ -372,10 +383,13 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 // MTTR = average time between first detection and resolution, over the last
 // `days` days. Only genuinely-remediated findings (resolved/verified) count;
 // false_positive/accepted_risk are excluded as they are not remediations.
-func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error) {
+func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (map[string]float64, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
+	// A non-nil scope averages only findings on the viewer's in-scope assets.
+	args := []any{tenantID.String(), days}
+	inScope, args := dataScopeCond("asset_id", scope, args)
 	query := `SELECT
 		severity,
 		COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) as avg_hours
@@ -385,9 +399,10 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 		AND resolved_at IS NOT NULL AND first_detected_at IS NOT NULL
 		AND resolved_at >= first_detected_at
 		AND resolved_at >= NOW() - ($2::int || ' days')::interval
+		AND ` + inScope + `
 		GROUP BY severity`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), days)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get MTTR metrics: %w", err)
 	}
@@ -583,7 +598,7 @@ func (r *DashboardRepository) GetGlobalRepositoryStats(ctx context.Context) (app
 	// Get count of repositories with findings
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON a.id = f.asset_id
+		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id
 		 WHERE a.deleted_at IS NULL AND a.asset_type = 'repository'`,
 	).Scan(&stats.WithFindings)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -828,7 +843,7 @@ func (r *DashboardRepository) GetFilteredRepositoryStats(ctx context.Context, te
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON a.id = f.asset_id
+		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id
 		 WHERE a.deleted_at IS NULL AND a.tenant_id IN (`+placeholders+`) AND a.asset_type = 'repository'`,
 		args...,
 	).Scan(&stats.WithFindings)
@@ -1099,7 +1114,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			FROM assets a
 			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1
 				AND f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
-			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND ` + crownJewelPropSQL + `
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.is_crown_jewel
 		),
 		mttr_critical AS (
 			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
@@ -1203,10 +1218,13 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 }
 
 // GetMTTRAnalytics returns MTTR breakdown by severity, priority class, and overall.
-func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*app.MTTRAnalytics, error) {
+func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*app.MTTRAnalytics, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
+	// A non-nil scope averages only findings on the viewer's in-scope assets.
+	args := []any{tenantID.String(), days}
+	inScope, args := dataScopeCond("asset_id", scope, args)
 
 	query := `
 		SELECT
@@ -1236,6 +1254,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 			AND resolved_at IS NOT NULL
 			AND first_detected_at IS NOT NULL
 			AND resolved_at >= first_detected_at
+			AND ` + inScope + `
 	`
 
 	var (
@@ -1245,7 +1264,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 		sampleSize                                  int
 	)
 
-	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&mttrCritical, &mttrHigh, &mttrMedium, &mttrLow,
 		&mttrP0, &mttrP1, &mttrP2, &mttrP3,
 		&mttrOverall, &sampleSize,

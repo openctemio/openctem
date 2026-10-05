@@ -20,20 +20,26 @@ import { Label } from '@/components/ui/label'
 import { useRoles } from '@/features/access-control/api/use-roles'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
+import { invitationLink } from '@/features/auth/lib/invitation-token'
 
 import { createTenantInvitation } from '../api/use-members'
 import { RoleChecklist } from './role-checklist'
 
-/** `${origin}/invitations/<token>`: the page the invitee opens to join. */
+/**
+ * `${origin}/invitations#token=<token>`: the page the invitee opens to join.
+ * The token is in the fragment, which the browser never sends to a server.
+ */
 export function buildInvitationLink(token: string, origin?: string): string {
   const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '')
-  return `${base}/invitations/${token}`
+  return invitationLink(base, token)
 }
 
 interface InviteUserDialogProps {
   tenantSlug: string | undefined
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Only the owner may make someone an administrator (settings decision B2). */
+  canGrantAdmin?: boolean
   /** Called after the invitation is created (refresh the invitation list). */
   onInvited?: () => void
 }
@@ -49,6 +55,7 @@ export function InviteUserDialog({
   open,
   onOpenChange,
   onInvited,
+  canGrantAdmin = false,
 }: InviteUserDialogProps) {
   const [email, setEmail] = useState('')
   const [roleIds, setRoleIds] = useState<string[]>([])
@@ -194,6 +201,7 @@ export function InviteUserDialog({
                   )}
                 </div>
                 <RoleChecklist
+                  canGrantAdmin={canGrantAdmin}
                   roles={roles}
                   selected={roleIds}
                   onChange={setRoleIds}

@@ -20,6 +20,16 @@ const (
 	SuppressionTypeWontFix       SuppressionType = "wont_fix"
 )
 
+// Disposition is the finding status a rule of this type gives the findings it
+// matches (research 18 F7, owner decision O9): a false-positive rule marks the
+// finding false_positive; accepted-risk and won't-fix rules mark it accepted.
+func (t SuppressionType) Disposition() string {
+	if t == SuppressionTypeFalsePositive {
+		return "false_positive"
+	}
+	return "accepted"
+}
+
 // IsValid checks if the suppression type is valid.
 func (t SuppressionType) IsValid() bool {
 	switch t {
@@ -344,8 +354,14 @@ func (r *Rule) Matches(f FindingMatch) bool {
 		return false
 	}
 
-	// Check path pattern (glob matching)
-	if r.pathPattern != "" && f.FilePath != "" {
+	// Check path pattern (glob matching). A finding with no file path (DAST,
+	// network, infrastructure) never matches a path condition: skipping the
+	// condition made a path-only rule such as "test/**" suppress every
+	// path-less finding in the tenant.
+	if r.pathPattern != "" {
+		if f.FilePath == "" {
+			return false
+		}
 		matched, err := filepath.Match(r.pathPattern, f.FilePath)
 		if err != nil || !matched {
 			// Try with ** pattern support

@@ -12,6 +12,7 @@ package ingest
 // person resolved.
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/netip"
@@ -49,13 +50,16 @@ type Binding struct {
 	// Tool is the bound command's tool ("" when it names none); a bound
 	// report must be from that tool.
 	Tool string
+	// StepRunID is the pipeline step run the bound command belongs to (nil
+	// for a command outside a pipeline): the scan run its results came from.
+	StepRunID *shared.ID
 }
 
 // CommandBinding binds a report to cmd, which the caller has checked is
 // assigned to the submitting sensor and open.
 func CommandBinding(cmd *command.Command) Binding {
 	id := cmd.ID
-	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd)}
+	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd), StepRunID: cmd.StepRunID}
 }
 
 // TrustedBinding is the binding of a server-side ingest.
@@ -200,15 +204,119 @@ func (t coverTarget) coversLocator(host, path string) bool {
 	return false
 }
 
+// namesLocator reports whether the target is this host (and path) itself,
+// or a range that contains this address. A subdomain of a domain target is
+// covered (coversLocator) but not named.
+func (t coverTarget) namesLocator(host, path string) bool {
+	if t.prefix != nil {
+		return t.coversLocator(host, path)
+	}
+	if host == t.host {
+		return t.path == "" || path == t.path
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if tip, err := netip.ParseAddr(t.host); err == nil {
+			return ip.Unmap() == tip.Unmap()
+		}
+	}
+	return false
+}
+
 // alterScope decides which existing assets one ingest may change, and so
 // which human-resolved findings it may reopen. It is filled while the
 // report's assets are processed.
 type alterScope struct {
-	all     bool
-	targets []coverTarget
+	all bool
+	// commandBound: the report names a command assigned to the submitting
+	// sensor (BindingCommand). Only such reports may resolve findings on a
+	// source's say-so (source_resolve.go).
+	commandBound bool
+	targets      []coverTarget
 	// allowed are the persisted ids of the assets this report may change:
 	// those it created and the existing ones its command covers.
 	allowed map[shared.ID]bool
+	// actor, when set, is the data scope of the person behind an upload
+	// (Options.Actor): it reports whether they may change an existing asset.
+	actor func(shared.ID) bool
+	// seen are the persisted assets this ingest created or updated, by id:
+	// whether it created them and their stored name and type. Attribution
+	// (scan_attribution.go) reads them.
+	seen map[shared.ID]seenAsset
+}
+
+// seenAsset is one asset an ingest wrote.
+type seenAsset struct {
+	created bool
+	name    string
+	typ     asset.TypeRef
+}
+
+// note records an asset this ingest created or updated.
+func (s *alterScope) note(a *asset.Asset, id shared.ID, created bool) {
+	if s == nil || a == nil || id.IsZero() {
+		return
+	}
+	if s.seen == nil {
+		s.seen = map[shared.ID]seenAsset{}
+	}
+	prev, had := s.seen[id]
+	s.seen[id] = seenAsset{created: created || (had && prev.created), name: a.Name(),
+		typ: asset.TypeRef{Type: a.Type(), SubType: a.SubType()}}
+}
+
+// typedTarget reports whether an asset name is one of the bound command's
+// targets itself (the same host, the same repository path, or an address
+// inside a range the tenant listed), not a name found under one: what the
+// tenant typed (research/22 E7).
+func (s *alterScope) typedTarget(name string) bool {
+	if s == nil || len(s.targets) == 0 {
+		return false
+	}
+	host, path := parseLocator(name)
+	for _, t := range s.targets {
+		if t.namesLocator(host, path) {
+			return true
+		}
+	}
+	return false
+}
+
+// withActor limits the scope to the assets the upload's actor may change.
+// Each decision is looked up once; a lookup error denies (fail closed).
+func (s *alterScope) withActor(ctx context.Context, a ActorScope) *alterScope {
+	if a == nil {
+		return s
+	}
+	memo := map[shared.ID]bool{}
+	s.actor = func(id shared.ID) bool {
+		if ok, seen := memo[id]; seen {
+			return ok
+		}
+		ids, err := a.AssetsInScope(ctx, []shared.ID{id})
+		ok := err == nil && len(ids) == 1 && ids[0] == id
+		memo[id] = ok
+		return ok
+	}
+	return s
+}
+
+// actorRestricted reports whether an upload's actor limits this ingest.
+func (s *alterScope) actorRestricted() bool { return s != nil && s.actor != nil }
+
+// actorDenies reports whether the upload's actor may not change asset id.
+func (s *alterScope) actorDenies(id shared.ID) bool {
+	return s != nil && s.actor != nil && !s.actor(id)
+}
+
+// skipOutOfScope records a report asset the upload's actor may not change.
+func skipOutOfScope(output *Output, ref string) {
+	output.AssetsSkippedOutOfScope++
+	if ref != "" {
+		if output.OutOfScopeAssetRefs == nil {
+			output.OutOfScopeAssetRefs = map[string]bool{}
+		}
+		output.OutOfScopeAssetRefs[ref] = true
+	}
 }
 
 func newAlterScope(b Binding) *alterScope {
@@ -218,6 +326,7 @@ func newAlterScope(b Binding) *alterScope {
 		s.all = true
 	case BindingCommand:
 		s.targets = newCoverTargets(b.Targets)
+		s.commandBound = true
 	}
 	return s
 }
@@ -227,6 +336,9 @@ func fullScope() *alterScope { return &alterScope{all: true, allowed: map[shared
 
 // mayAlter reports whether the report may change the existing asset a.
 func (s *alterScope) mayAlter(a *asset.Asset) bool {
+	if a != nil && s.actorDenies(a.ID()) {
+		return false
+	}
 	if s == nil || s.all {
 		return true
 	}
@@ -258,5 +370,8 @@ func (s *alterScope) allow(id shared.ID) {
 // allowedAsset reports whether findings on the persisted asset id may be
 // reopened after a person resolved them.
 func (s *alterScope) allowedAsset(id shared.ID) bool {
+	if s.actorDenies(id) {
+		return false
+	}
 	return s == nil || s.all || s.allowed[id]
 }

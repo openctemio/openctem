@@ -95,7 +95,7 @@ claim predicate and claim semantics stay in one place.
 | Field | Type | Meaning |
 |---|---|---|
 | `pending_jobs` | int | Commands this sensor could claim right now, capped at 100. Exactly what the poll would offer: pinned to the sensor or unpinned, pending, not expired, not scheduled for later, zone claim predicate (`zoneClaimPredicate`, incl. the tool match), capability gate. `> 0` ⇒ poll now. Not computed for platform sensors (no tenant poll). |
-| `next_heartbeat_seconds` | int | Advised interval. 5 s while work is waiting, 30 s idle, 120 s when the doorbell query itself took ≥ 250 ms (platform under load). Clamped to `[SENSOR_HEARTBEAT_MIN_INTERVAL, SENSOR_HEARTBEAT_MAX_INTERVAL]` and never more than half of the offline distance (45 s: half the ladder's 90 s floor, or of `WORKER_HEARTBEAT_TIMEOUT` when shorter; RFC-035 D2). The heartbeat stores the advice as the sensor's deadline ("Fleet health"), so a sensor that follows it is never marked offline. |
+| `next_heartbeat_seconds` | int | Advised interval. 5 s while work is waiting or while a command the sensor claimed was canceled within the last lease period (so it hears `cancel_command_ids` within seconds), 30 s idle, 120 s when the doorbell query itself took ≥ 250 ms (platform under load). Clamped to `[SENSOR_HEARTBEAT_MIN_INTERVAL, SENSOR_HEARTBEAT_MAX_INTERVAL]` and never more than half of the offline distance (45 s: half the ladder's 90 s floor, or of `WORKER_HEARTBEAT_TIMEOUT` when shorter; RFC-035 D2). The heartbeat stores the advice as the sensor's deadline ("Fleet health"), so a sensor that follows it is never marked offline. |
 | `actions` | []string | Typed directives from a closed set: `pause`, `resume`, `drain`, `rotate_key`, `update`. Rung today: `pause` (sensor disabled by an admin), `rotate_key` (the presented key expires within `SENSOR_KEY_RENEW_BEFORE`, default half of `SENSOR_KEY_TTL`). `resume`, `drain`, `update` are reserved. There is no free-form or shell verb (RFC-023 §10.4 R-4); a sensor ignores a value it does not know. |
 | `config_version` | string | 16 hex chars, opaque. A digest of what the platform governs about the sensor: capabilities, tools, max concurrent jobs, execution mode, operator config, the presented key's expiry and the assigned scan zones with each zone's last change. Heartbeat metrics and `last_seen_at` are not part of it (both rewrite `sensors.updated_at` on every heartbeat, which is why `updated_at` cannot be the source). |
 
@@ -341,7 +341,10 @@ connects from.
 
 **Stats** count the same rows the list returns: the tenant's own sensors.
 Shared platform sensors (`is_platform_sensor`) are in neither; their capacity
-is `GET /api/v1/platform/stats`, shown on its own page. The stats also add `by_state` (every state, zeros included), `by_version_status`,
+is `GET /api/v1/platform/stats`, shown on its own page. Their queue
+(`get_next_platform_job`) is shared fairly across tenants: within a priority
+class, the tenant with the fewest platform jobs in flight goes first
+(migration 000461, RFC-030 §5.7). The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
 
 ## Build information
@@ -639,21 +642,34 @@ Each segment runs through the v1 pipeline with the v2 options:
 - **No global catalog writes.** Findings link to CVE catalog rows that
   exist; the sensor's CVE text stays on the tenant's finding. The catalog is
   written by trusted feeds only.
-- **Auto-resolve only on commit.** Once every segment of a committed report
-  has an outcome, exactly one job claims the finalization: auto-resolve over
-  the union of assets the report touched (full coverage, default branch, a
-  tool the sensor declares), the branch-occurrence sweep and the finding
-  counts. The **blinding guard** holds an auto-resolve that would close more
-  than `SENSOR_V2_BLINDING_MIN_FINDINGS` (100) and more than
-  `SENSOR_V2_BLINDING_RATIO` (50 %) of the open findings of that tool on
-  those assets; the status then says `auto_resolve: held`.
-- **Coverage-scoped auto-resolve (non-repository findings).** The commit
-  auto-resolve above only covers repository default branches, so a host or
+- **Default-branch auto-resolve needs a proven run** (research 18 F3). Only a
+  protocol v2 run **bound to a command** closes repository findings; it is
+  evaluated per command (`evaluateRepoCoverage`) at the report's commit and
+  again when the command completes. It qualifies only if the command
+  completed with exit code 0, every report of the run completed with nothing
+  rejected, quarantined or in error, every report is an **explicitly** `full`
+  scan of a default branch (a missing `coverage_type` is not full), and all
+  reports name one tool the sensors declare. Candidates are open
+  default-branch findings of that tool on the assets the run touched **and**
+  the command covers, not reported by the run, and last seen by a report of
+  the same tool **under the same scan profile** (the stand-in for "same
+  ruleset" until runs carry a ruleset digest; a finding last seen under
+  another profile, by a v1 report or by an upload is never a candidate). The
+  blinding guard holds a close of more than `SENSOR_V2_BLINDING_MIN_FINDINGS`
+  (100) and more than `SENSOR_V2_BLINDING_RATIO` (50 %) of the open findings
+  of that tool on those assets (`auto_resolve: held`). A report without a
+  command (CI, collector, `warn` mode), a tenant upload and any protocol v1
+  report never close a finding (owner decision O11); the per-branch
+  occurrence sweep is unchanged.
+- **Coverage-scoped auto-resolve (non-repository findings).** The
+  default-branch auto-resolve above only covers repository findings, so a host or
   web finding was never closed by a later scan. A scan command is evaluated
   when it is `completed` AND every report filed under it is `completed`
   (checked from both ends: command completion and report finalize). It
   qualifies only if the command exited 0, every report has no rejected or
-  quarantined items and is not `partial`/`incremental`, all reports name one
+  quarantined items and declares `coverage_type: full` (an absent value is
+  not full, CTIS spec 4.5; sensors on sdk-go with openctemio/sdk-go#150
+  always send it), all reports name one
   tool the sensor declares, and the reports touched at least one asset. The
   candidates are open findings of that tool on the touched assets, with no
   branch, not reported by this run, and last seen by a v2 run of the same
@@ -697,7 +713,7 @@ v2 responses carry `OpenCTEM-Protocol: 2`.
 | `SENSOR_PROTOCOL_V2_RESULTS` | `true` | Mount `/api/v2/sensor`, process v2 jobs, advertise on the heartbeat. `false` unmounts it; v2 jobs already queued wait until it is on again. |
 | `SENSOR_V2_BLINDING_RATIO` | `0.5` | Blinding guard ratio. |
 | `SENSOR_V2_BLINDING_MIN_FINDINGS` | `100` | Blinding guard floor. |
-| `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce`. |
+| `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce`. Keep `dry_run`: enforcement is postponed until the closure evaluator ships (owner decision D-22, research 18 P2); this path cannot see template, port or authentication coverage. |
 | `INGEST_MAX_PENDING_PER_TENANT` | `100` | Shared with v1: queue depth per tenant. |
 
 Migrations 000237 (`ingest_reports`, v2 columns on `ingest_jobs`) and 000239
@@ -1081,6 +1097,21 @@ offers more scan commands than that; selection skips sensors with no free
 slot and prefers the most free slots, then the highest reported throughput
 for the tool. `sensors.current_jobs` (never written) is no longer read.
 
+The poll orders commands fairly (RFC-046 §11): by priority class, a command
+moving up one class per 30 minutes waited (never into `critical`), then
+round-robin across runs (the first pending command of every run before the
+second of any), then age.
+
+**Claim-N** (feature `capacity`, RFC-030 §5.9): a v2 sensor that names
+`capacity` in `X-OpenCTEM-Sensor-Features` gets `GET /api/v2/sensor/commands`
+already claimed for it: acknowledged, lease and epoch set, in one
+`UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` that re-checks the
+tenant, pinning, zone, tool and capability gates. Scans are capped at the
+sensor's effective max jobs minus the scans it holds, counted from the
+commands, and at a fresh reported `slots_free`. Its later `claim` of each
+command is a replay (`200`). Without the feature the poll only lists, as
+before.
+
 A sensor hands a command it holds back with
 `POST /api/v2/sensor/commands/{id}/release` (feature `release`): the
 command returns to `pending`, unpinned, zone kept, so another sensor takes
@@ -1149,6 +1180,12 @@ A sensor holds every command it claims under a **lease** (migration 000260:
 
 ## Sensor-local policy (RFC-040 §5.7)
 
+> **Version requirement.** Enforcement is in sdk-go#140 and sensor#119, merged
+> after sensor v0.8.0. Sensor v0.8.0 and older ignore `SENSOR_LOCAL_POLICY`,
+> the policy file and the kill-switch file, and report no `local_policy`
+> (the page shows `unknown`). The install snippets mount the file anyway; it
+> takes effect once the sensor runs a release later than v0.8.0.
+
 The owner of the scanned network installs a read-only policy file on the
 sensor host (`/etc/openctem/sensor-policy.yaml`, `SENSOR_LOCAL_POLICY`; keys
 and semantics in the sensor repository, `docs/LOCAL_POLICY.md`). The sensor
@@ -1182,6 +1219,24 @@ and narrows dispatch:
   `job_refused_local_policy` job event (identical rules fold within the event
   window) and, once per folded burst, the audit action
   `sensor.job_refused_local_policy` (severity high).
+- **Structured refusal and re-queue** (research/25 §3.6, D8; migration
+  001046). Hello feature `refusal`: v2 `POST /commands/{id}/fail` accepts
+  `refusal: {layer, rule, detail}` (layer from a closed set: `builtin`,
+  `local`, `managed`, `scope`, `platform_tool_gate`; sanitized like the
+  report). Without it a reason starting `refused by local policy: ` still
+  counts (older SDKs, protocol v1). For **routed work** (a scan command with a
+  `pipeline_run_id`, the work the platform chose a sensor for; the rule the
+  lease and release paths use) the command is re-queued instead of failed:
+  pending, unpinned, zone kept, one more dispatch attempt, the refusal
+  appended to `commands.refusals` and the sensor to `commands.refused_by`,
+  which the poll, claim, claim-by-id and doorbell predicates exclude. It is
+  re-queued only while another sensor that could claim it (same tenant,
+  dispatchable, same zone, the tool) has a report that `sensor.Accepts` the
+  job; otherwise, or at the third refusal (`command.MaxRefusals`), it fails
+  with the aggregated reasons, the last refusal first so its prefix stays
+  parseable. A re-queued command fires no pipeline failure. Commands a person
+  addressed to one sensor fail as before. A sensor that retries the same fail
+  after the re-queue gets a 409 (the command is no longer its own).
 - **Tenant switch.** Security settings
   `require_sensor_local_policy_for_private_targets` (default off, owner
   decision Q3 (a)). On, a sensor that does not enforce a policy (absent,
@@ -1192,6 +1247,80 @@ and narrows dispatch:
   command waits for a qualifying sensor. Names that resolve to private
   addresses in public DNS are not detected here; the sensor's own policy
   covers them. An unreadable tenant setting withholds (fail closed).
+- **Dispatch pre-check** (research/25 §3.6). One function,
+  `sensor.Accepts(report, job, options)` (`pkg/domain/sensor/accepts.go`),
+  decides whether a sensor's last report would refuse a job, reading the
+  payload as the sensor's admission check does (`sensor.JobOf`: tool from
+  `scanner`/`scanner_name`/`preferred_tool`, `config.allow_interactsh`,
+  `custom_templates`, `config.ports`, literal private addresses). It mirrors
+  the summary: kill switch (withholds everything), `checks.allow`,
+  `tools.allow`, `allow_custom_templates`, `allow_interactsh`, `ports.allow`
+  (exact lists only; named lists such as `top-100` are left to the sensor),
+  `targets.allow_private` (literal RFC 1918 / fc00::/7 targets only), and the
+  tenant switch above (layer `managed`). Allow and deny ranges are reported as
+  counts, so they are left to the sensor. A sensor without a report or
+  without a policy accepts what the policy would decide (the absent policy
+  allows both opt-ins, owner decision Q4 (a)). The same check runs in three
+  places:
+  - **poll and claim** (`command.Service.Poll`, `Claim`): commands the sensor
+    would refuse are left pending for another sensor; the poll reads a wider
+    candidate window so a refused queue head does not starve the sensor;
+  - **claim by id** (`Acknowledge`): refused as "claimed"
+    (`ErrSensorPolicyRefuses`), the command stays pending;
+  - **scan trigger** (`scan.Service`, `policy_preflight.go`): a zone batch is
+    pinned only to a zone sensor that accepts it (least loaded among those);
+    a zone where no online sensor accepts reports its targets as not scanned,
+    with the layer, rule and count ("allow_interactsh: refused by the local
+    policy on 2 of 2 sensor(s) in scan zone "DMZ" ..."); targets outside
+    zones are judged against the tenant's available sensors. When nothing is
+    left to run the trigger is refused with `SENSOR_POLICY_REFUSED` (400) and
+    no run or command is created. The zone-routing preview uses the same
+    code.
+
+  The pre-check only narrows: a report comes from the sensor, so a lying
+  sensor can only withhold jobs from itself, and the sensor keeps enforcing
+  its own policy on whatever it receives. Failures to read the sensor or the
+  tenant setting withhold (fail closed).
+- **Organization opt-ins, default off** (research/25 D3, D9). Security
+  settings `allow_sensor_interactsh` and `allow_sensor_custom_templates`
+  (`tenant.SecuritySettings`), off for existing and new organizations. The
+  platform-side layer (`managed`) of the pre-check: with a switch off the
+  platform sends no job that turns out-of-band callbacks on or carries custom
+  templates, to any sensor, whatever its own policy allows. Sensors without a
+  local policy (legacy ceiling: both on, Q4 (a)) are therefore safe from this
+  release without a host change. Where it applies:
+  - scan create and update refuse `allow_interactsh: true` (boolean or the
+    string `"true"`) and a non-empty `custom_template_ids` with
+    `SENSOR_OPT_IN_DISABLED` (400);
+  - trigger of an existing scan: `allow_interactsh` is removed for that run
+    (the stored scan is untouched; the run carries a warning), and a scan with
+    custom templates is refused (running it without them would run the
+    scanner's default set, wider than what the author chose);
+  - `POST /api/v1/commands` refuses a scan payload asking for either (in
+    `config`, `scanner_config` or `custom_templates`);
+  - dispatch (`command.WithOptInPolicy`) withholds such commands from every
+    sensor (claim by id: `ErrOptInDisabled`), the backstop for commands queued
+    before the release; they expire. An unreadable setting withholds.
+
+  Only an owner changes them (`PATCH /tenants/{tenant}/settings/security`).
+  Turning one on is audited as `sensor.opt_in_changed` at critical severity
+  and logged as alert `sensor_opt_in_enabled`; turning it off is audited at
+  medium. `GET /api/v1/scans/sensor-opt-in-impact` (`scans:read`) returns the
+  switches and the scans that ask for either (at most 100), for the banner
+  shown to existing organizations. Enabling a switch never overrides a
+  sensor's local policy: the job still goes only to sensors whose own policy
+  accepts it.
+- **Console** (web). The fleet table has a Policy column and a "Local policy"
+  facet (`?policy=enforced|absent|paused|unknown`; "absent" + "unknown" is "no
+  local policy"). The detail sheet shows the full reported digest (selectable)
+  and, for a sensor without a policy or one that repeats the absent-policy
+  warning, the corrected guidance: custom templates need
+  `SENSOR_TEMPLATE_SIGNING_KEYS` on the host and an organization opt-in;
+  interactsh runs only when a job asks for it and the organization allows it.
+  Settings → Authentication and security has the two opt-in switches; the
+  Scans page and the settings show a banner listing the scans the switches
+  affect (`GET /scans/sensor-opt-in-impact`). Trigger refusals
+  `SENSOR_POLICY_REFUSED` and `SENSOR_OPT_IN_DISABLED` carry a next-step hint.
 - **Install dialog.** `GET /sensors/{id}/config-templates` returns `policy`, a
   sensor-policy/v1 template (`configs/sensor-templates/policy.tmpl`)
   prefilled with the ranges of the sensor's scan zones (none for a sensor in
@@ -1207,7 +1336,12 @@ and narrows dispatch:
 ## Network egress and proxies (RFC-034, proposed)
 
 > Design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md). Status:
-> **Proposed**. Only "Today" below is implemented.
+> **Proposed**; Phase 0 shipped on the sensor side. sdk-go v0.15.0 and later
+> (sdk-go#111, sensor#102) add `SENSOR_CONTROL_PROXY`, `SENSOR_CONTENT_PROXY`
+> (content sources, including `SafeHTTPClient`, which checks the target before
+> the proxy) and `SENSOR_SCAN_PROXY` (`inherit` or `direct`). "Today" below
+> describes sensors built on older SDKs; "Proposed" (profiles, forwarder) is
+> not built.
 
 A sensor sends three kinds of traffic, and RFC-034 configures each one
 separately:

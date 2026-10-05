@@ -1,12 +1,15 @@
 package main
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
 // TestCommittedRegistryIsUpToDate is the asset-types-drift check as a unit
@@ -102,6 +105,7 @@ types:
     icon: git-branch
     class: code_repo
     legacy_category: code
+    sub_types: [image]
     identity_keys: [scm_repo_id, name]
     attributes:
       - { name: provider, type: enum, values: [github], facet: true }
@@ -164,6 +168,16 @@ func TestResolve_RejectsInvalidRegistries(t *testing.T) {
 		{"lens named after an /assets page", "id: code, label: Code,", "id: changes, label: Code,", "", "reserved"},
 		{"class named after an /assets page", "{ id: code_repo, label: Code repository", "{ id: duplicates, label: Code repository", "", "reserved"},
 		{"alias of an unknown type", "class: code_repo\n    legacy", "class: code_repo\n    alias_of: { type: nope, sub_type: x }\n    legacy", "", "alias_of unknown type"},
+		// RFC-042 §6.3.8: closed sub-types and input mappings.
+		{"duplicate sub-type", "sub_types: [image]", "sub_types: [image, image]", "", "duplicate"},
+		{"sub-type input that is a sub-type", "sub_types: [image]", "sub_types: [image]\n    sub_type_inputs:\n      image: {}", "", "already one of"},
+		{"sub-type input to an undeclared sub-type", "sub_types: [image]", "sub_types: [image]\n    sub_type_inputs:\n      img: { sub_type: picture }", "", "not in repository's sub_types"},
+		{"sub-type input to an unknown provider", "sub_types: [image]", "sub_types: [image]\n    sub_type_inputs:\n      gh: { provider: githubb }", "", "not an assets.provider value"},
+		{"sub-type input to an undeclared attribute", "sub_types: [image]", "sub_types: [image]\n    sub_type_inputs:\n      gh: { attributes: { stars: \"1\" } }", "", "not an attribute"},
+		{"sub-type input to a wrong enum value", "sub_types: [image]", "sub_types: [image]\n    sub_type_inputs:\n      gh: { attributes: { provider: gitlab } }", "", "is not one of"},
+		{"sub-type input to an alias", "sub_types: [image]", "sub_types: [image]\n    sub_type_inputs:\n      gh: { type: unclassified2 }", "", "unknown type"},
+		{"virtual type to an undeclared sub-type", "virtual_types: [{ name: container_image, type: repository, sub_type: image }]", "virtual_types: [{ name: container_image, type: repository, sub_type: layer }]", "", "not in repository's sub_types"},
+		{"unmodelled virtual type with a type", "virtual_types: [{ name: container_image, type: repository, sub_type: image }]", "virtual_types: [{ name: container_image, type: repository, unmodelled: true }]", "", "unmodelled name has no type"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -183,5 +197,47 @@ func TestResolve_RejectsInvalidRegistries(t *testing.T) {
 				t.Errorf("want an error containing %q, got %v", tc.want, err)
 			}
 		})
+	}
+}
+
+// An unmodelled virtual name is skipped, not resolved to a wrong type.
+func TestResolve_UnmodelledVirtualTypeIsSkipped(t *testing.T) {
+	reg := strings.Replace(minimal,
+		"virtual_types: [{ name: container_image, type: repository, sub_type: image }]",
+		"virtual_types: [{ name: container_image, unmodelled: true }]", 1)
+	if err := resolveText(t, reg, minimalRel); err != nil {
+		t.Fatalf("unmodelled virtual type rejected: %v", err)
+	}
+}
+
+// The generator's provider list is the domain's.
+func TestKnownProviders_MatchTheDomain(t *testing.T) {
+	want := map[string]bool{}
+	for _, p := range asset.AllProviders() {
+		want[string(p)] = true
+	}
+	if !maps.Equal(knownProviders, want) {
+		t.Errorf("knownProviders = %v, asset.AllProviders = %v", knownProviders, want)
+	}
+}
+
+func TestValidatesAfterBlock(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	block := sqlBeginMarker + "\nCHECK NOT VALID;\n" + sqlEndMarker + "\n"
+	if validatesAfterBlock(write("a.up.sql", block)) {
+		t.Error("a migration without VALIDATE passed")
+	}
+	if !validatesAfterBlock(write("b.up.sql", block+"move rows;\n"+validateCoreType+"\n")) {
+		t.Error("VALIDATE after the block was not seen")
+	}
+	if validatesAfterBlock(write("c.up.sql", validateCoreType+"\n"+block)) {
+		t.Error("VALIDATE before the block must not count: rows are moved after the block")
 	}
 }

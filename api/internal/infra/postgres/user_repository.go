@@ -196,13 +196,14 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 		UPDATE users
 		SET keycloak_id = $2, email = $3, name = $4, avatar_url = $5, phone = $6,
 		    status = $7, preferences = $8, last_login_at = $9, updated_at = $10,
-		    auth_provider = $11, password_hash = $12, email_verified = $13,
-		    email_verification_token = $14, email_verification_expires_at = $15,
-		    password_reset_token = $16, password_reset_expires_at = $17,
-		    failed_login_attempts = $18, locked_until = $19,
-		    federated_issuer = $20, federated_subject = $21
+		    auth_provider = $11, email_verified = $12,
+		    email_verification_token = $13, email_verification_expires_at = $14,
+		    password_reset_token = $15, password_reset_expires_at = $16,
+		    federated_issuer = $17, federated_subject = $18
 		WHERE id = $1
 	`
+	// password_hash, failed_login_attempts and locked_until are not written
+	// here: see RecordFailedLogin, RecordSuccessfulLogin, UpdatePasswordHash.
 
 	result, err := r.db.ExecContext(ctx, query,
 		u.ID().String(),
@@ -216,14 +217,11 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 		nullTime(u.LastLoginAt()),
 		u.UpdatedAt(),
 		u.AuthProvider().String(),
-		u.PasswordHash(),
 		u.EmailVerified(),
 		u.EmailVerificationToken(),
 		nullTime(u.EmailVerificationExpiresAt()),
 		u.PasswordResetToken(),
 		nullTime(u.PasswordResetExpiresAt()),
-		u.FailedLoginAttempts(),
-		nullTime(u.LockedUntil()),
 		u.FederatedIssuer(),
 		u.FederatedSubject(),
 	)
@@ -244,6 +242,64 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 		return user.NotFoundError(u.ID())
 	}
 
+	return nil
+}
+
+// RecordFailedLogin atomically adds one failed attempt and locks the account
+// once the count reaches maxAttempts. Concurrent failures each count.
+func (r *UserRepository) RecordFailedLogin(ctx context.Context, id shared.ID, maxAttempts int, lockout time.Duration) (*time.Time, error) {
+	var lockedUntil sql.NullTime
+	err := r.db.QueryRowContext(ctx, `
+		UPDATE users
+		SET failed_login_attempts = failed_login_attempts + 1,
+		    locked_until = CASE
+		        WHEN failed_login_attempts + 1 >= $2 THEN NOW() + make_interval(secs => $3)
+		        ELSE locked_until
+		    END,
+		    updated_at = NOW()
+		WHERE id = $1
+		RETURNING locked_until`,
+		id.String(), maxAttempts, lockout.Seconds(),
+	).Scan(&lockedUntil)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, user.NotFoundError(id)
+		}
+		return nil, fmt.Errorf("record failed login: %w", err)
+	}
+	if !lockedUntil.Valid || !lockedUntil.Time.After(time.Now()) {
+		return nil, nil
+	}
+	t := lockedUntil.Time
+	return &t, nil
+}
+
+// RecordSuccessfulLogin clears the failed attempts and the lock and stamps
+// last_login_at.
+func (r *UserRepository) RecordSuccessfulLogin(ctx context.Context, id shared.ID) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE users
+		SET failed_login_attempts = 0, locked_until = NULL, last_login_at = NOW(), updated_at = NOW()
+		WHERE id = $1`, id.String())
+	if err != nil {
+		return fmt.Errorf("record successful login: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return user.NotFoundError(id)
+	}
+	return nil
+}
+
+// UpdatePasswordHash sets the password hash and nothing else.
+func (r *UserRepository) UpdatePasswordHash(ctx context.Context, id shared.ID, hash string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1`, id.String(), hash)
+	if err != nil {
+		return fmt.Errorf("update password hash: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return user.NotFoundError(id)
+	}
 	return nil
 }
 

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+
 	businessunitdom "github.com/openctemio/openctem/api/pkg/domain/businessunit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -15,7 +17,20 @@ import (
 type BusinessUnitService struct {
 	repo         businessunitdom.Repository
 	assetChecker assetTenantChecker
+	dataScope    *datascope.Enforcer
 	logger       *logger.Logger
+}
+
+// SetDataScope makes linking or unlinking an asset answer 404 when the
+// caller may not see it: a BU link changes the asset's effective
+// criticality, so it is a write on the asset.
+func (s *BusinessUnitService) SetDataScope(e *datascope.Enforcer) { s.dataScope = e }
+
+func (s *BusinessUnitService) assertAssetInScope(ctx context.Context, tid, aid shared.ID) error {
+	if s.dataScope == nil {
+		return nil
+	}
+	return s.dataScope.AssertAsset(ctx, tid, aid)
 }
 
 // NewBusinessUnitService creates a new service. assetChecker verifies that an
@@ -231,6 +246,9 @@ func (s *BusinessUnitService) AddAsset(ctx context.Context, tenantID, buID, asse
 			return err
 		}
 	}
+	if err := s.assertAssetInScope(ctx, tid, aid); err != nil {
+		return err
+	}
 	if err := s.repo.AddAsset(ctx, tid, bid, aid); err != nil {
 		return err
 	}
@@ -247,6 +265,9 @@ func (s *BusinessUnitService) RemoveAsset(ctx context.Context, tenantID, buID, a
 		return err
 	}
 	if _, err := s.repo.GetByID(ctx, tid, bid); err != nil {
+		return err
+	}
+	if err := s.assertAssetInScope(ctx, tid, aid); err != nil {
 		return err
 	}
 	if err := s.repo.RemoveAsset(ctx, tid, bid, aid); err != nil {

@@ -57,25 +57,28 @@ func NewScanHandler(service *scansvc.Service, userRepo user.Repository, coverage
 // CreateScanRequest represents the request body for creating a scan.
 // Either asset_group_id OR asset_group_ids OR targets must be provided (can have all).
 type CreateScanRequest struct {
-	Name             string         `json:"name" validate:"required,min=1,max=200"`
-	Description      string         `json:"description" validate:"max=1000"`
-	AssetGroupID     string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
-	AssetGroupIDs    []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
-	Targets          []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
-	ScanType         string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName      string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig    map[string]any `json:"scanner_config"`
-	TargetsPerJob    int            `json:"targets_per_job"`
-	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay      *int           `json:"schedule_day"`
-	ScheduleTime     *string        `json:"schedule_time"`
-	Timezone         string         `json:"timezone" validate:"max=50"`
-	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner     bool           `json:"run_on_tenant_runner"`
-	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID        string         `json:"profile_id" validate:"omitempty,uuid"`
+	Name          string         `json:"name" validate:"required,min=1,max=200"`
+	Description   string         `json:"description" validate:"max=1000"`
+	AssetGroupID  string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
+	AssetGroupIDs []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
+	Targets       []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	ScanType      string         `json:"scan_type" validate:"required,oneof=workflow single"`
+	PipelineID    string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName   string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig map[string]any `json:"scanner_config"`
+	TargetsPerJob int            `json:"targets_per_job"`
+	ScheduleType  string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleCron  string         `json:"schedule_cron" validate:"max=100"`
+	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+	// evaluated in timezone; at most every 15 minutes.
+	ScheduleRRule    string   `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay      *int     `json:"schedule_day"`
+	ScheduleTime     *string  `json:"schedule_time"`
+	Timezone         string   `json:"timezone" validate:"max=50"`
+	Tags             []string `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     bool     `json:"run_on_tenant_runner"`
+	SensorPreference string   `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID        string   `json:"profile_id" validate:"omitempty,uuid"`
 	// ScanZoneID pins every target to one scan zone; empty = Automatic routing.
 	ScanZoneID          string `json:"scan_zone_id" validate:"omitempty,uuid"`
 	TimeoutSeconds      int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
@@ -85,21 +88,24 @@ type CreateScanRequest struct {
 
 // UpdateScanRequest represents the request body for updating a scan.
 type UpdateScanRequest struct {
-	Name             string         `json:"name" validate:"omitempty,min=1,max=200"`
-	Description      string         `json:"description" validate:"max=1000"`
-	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName      string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig    map[string]any `json:"scanner_config"`
-	TargetsPerJob    *int           `json:"targets_per_job"`
-	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay      *int           `json:"schedule_day"`
-	ScheduleTime     *string        `json:"schedule_time"`
-	Timezone         string         `json:"timezone" validate:"max=50"`
-	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner     *bool          `json:"run_on_tenant_runner"`
-	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID        *string        `json:"profile_id" validate:"omitempty"`
+	Name          string         `json:"name" validate:"omitempty,min=1,max=200"`
+	Description   string         `json:"description" validate:"max=1000"`
+	PipelineID    string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName   string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig map[string]any `json:"scanner_config"`
+	TargetsPerJob *int           `json:"targets_per_job"`
+	ScheduleType  string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleCron  string         `json:"schedule_cron" validate:"max=100"`
+	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+	// evaluated in timezone; at most every 15 minutes.
+	ScheduleRRule    string   `json:"schedule_rrule" validate:"max=500"`
+	ScheduleDay      *int     `json:"schedule_day"`
+	ScheduleTime     *string  `json:"schedule_time"`
+	Timezone         string   `json:"timezone" validate:"max=50"`
+	Tags             []string `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     *bool    `json:"run_on_tenant_runner"`
+	SensorPreference string   `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID        *string  `json:"profile_id" validate:"omitempty"`
 	// ScanZoneID: omitted = unchanged, "" = Automatic routing, id = pin to that zone.
 	ScanZoneID          *string `json:"scan_zone_id" validate:"omitempty"`
 	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
@@ -199,6 +205,7 @@ type ScanDetailResponse struct {
 	TargetsPerJob         int                        `json:"targets_per_job"`
 	ScheduleType          string                     `json:"schedule_type"`
 	ScheduleCron          string                     `json:"schedule_cron,omitempty"`
+	ScheduleRRule         string                     `json:"schedule_rrule,omitempty"`
 	ScheduleDay           *int                       `json:"schedule_day,omitempty"`
 	ScheduleTime          *string                    `json:"schedule_time,omitempty"`
 	ScheduleTimezone      string                     `json:"schedule_timezone"`
@@ -323,6 +330,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		TargetsPerJob:       req.TargetsPerJob,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
+		ScheduleRRule:       req.ScheduleRRule,
 		ScheduleDay:         req.ScheduleDay,
 		ScheduleTime:        scheduleTime,
 		Timezone:            req.Timezone,
@@ -418,6 +426,7 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 // @Param        status          query     string  false  "Filter by status"
 // @Param        search          query     string  false  "Search by name"
 // @Param        include_ad_hoc  query     bool    false  "Also list unsaved quick scans (ad_hoc)"
+// @Param        sort            query     string  false  "One sort key, - for descending: name, created_at, last_run_at, next_run_at, total_runs" default(name)
 // @Param        page            query     int     false  "Page number" default(1)
 // @Param        per_page        query     int     false  "Items per page" default(20)
 // @Success      200  {object}  ListResponse[ScanDetailResponse]
@@ -438,6 +447,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 		Tags:         parseQueryArray(r.URL.Query().Get("tags")),
 		Search:       r.URL.Query().Get("search"),
 		IncludeAdHoc: r.URL.Query().Get("include_ad_hoc") == "true",
+		Sort:         r.URL.Query().Get("sort"),
 		Page:         parseQueryInt(r.URL.Query().Get("page"), 1),
 		PerPage:      parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
@@ -531,6 +541,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		TargetsPerJob:       req.TargetsPerJob,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
+		ScheduleRRule:       req.ScheduleRRule,
 		ScheduleDay:         req.ScheduleDay,
 		ScheduleTime:        scheduleTime,
 		Timezone:            req.Timezone,
@@ -861,6 +872,26 @@ func (h *ScanHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// SensorOptInImpact handles GET /api/v1/scans/sensor-opt-in-impact
+// @Summary      Scans affected by the sensor opt-ins
+// @Description  The organization's switches for out-of-band callbacks (interactsh) and custom templates in sensor jobs (both off unless an owner enabled them, research/25 D3), and the scans whose scanner_config asks for either (at most 100; truncated says more exist). While a switch is off, those scans run without interactsh or are refused (custom templates).
+// @Tags         Scans
+// @Produce      json
+// @Success      200  {object}  scansvc.OptInImpact
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scans/sensor-opt-in-impact [get]
+func (h *ScanHandler) SensorOptInImpact(w http.ResponseWriter, r *http.Request) {
+	impact, err := h.service.SensorOptInImpact(r.Context(), middleware.GetTenantID(r.Context()))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(impact)
+}
+
 // CoverageStatus handles GET /api/v1/scans/coverage
 // @Summary      Scan coverage status
 // @Description  License-aware rolling coverage summary for the tenant's scannable
@@ -933,7 +964,7 @@ func (h *ScanHandler) CloneScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.service.CloneScan(r.Context(), tenantID, scanID, req.Name)
+	s, err := h.service.CloneScan(r.Context(), tenantID, scanID, req.Name, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1254,6 +1285,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		TargetsPerJob:         s.TargetsPerJob,
 		ScheduleType:          string(s.ScheduleType),
 		ScheduleCron:          s.ScheduleCron,
+		ScheduleRRule:         s.ScheduleRRule,
 		ScheduleDay:           s.ScheduleDay,
 		ScheduleTimezone:      s.ScheduleTimezone,
 		Tags:                  s.Tags,
@@ -1603,7 +1635,7 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data)
+	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

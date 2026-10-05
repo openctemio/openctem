@@ -93,6 +93,8 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 # {{if .CACert}}2{{else}}1{{end}}. Install the sensor-local policy (the "Local policy" tab, saved as
 # sensor-policy.yaml), reviewed by the owner of the network this sensor scans.
 # The sensor refuses every job outside it; without the file it does not start.
+# This needs a sensor release later than v0.8.0: v0.8.0 and older ignore the
+# policy and the kill switch, and scan without a local policy.
 sudo install -d -m 0755 /etc/openctem
 sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 
@@ -198,6 +200,8 @@ export SSL_CERT_DIR=/etc/openctem/certs
 #        sudo install -D -m 0644 -o root sensor-policy.yaml policy/sensor-policy.yaml
 #   3. Save this file as compose.yaml and run: docker compose up -d
 #   Kill switch (no job runs while the file exists): sudo touch policy/STOP
+#   The policy and the kill switch need a sensor release later than v0.8.0;
+#   v0.8.0 and older ignore them and scan without a local policy.
 {{- else}}
 #   2. Save this file as compose.yaml and run: docker compose up -d
 {{- end}}
@@ -290,6 +294,8 @@ configs:
 #        kubectl create configmap {{$slug}}-policy -n <namespace> --from-file=sensor-policy.yaml
 #   2. kubectl apply -n <namespace> -f {{$slug}}.yaml
 #   Kill switch: set "kill_switch: true" in the ConfigMap and restart the pod.
+#   The policy needs a sensor release later than v0.8.0; v0.8.0 and older
+#   ignore it and scan without a local policy.
 {{- else}}
 #   kubectl apply -n <namespace> -f {{$slug}}.yaml
 {{- end}}
@@ -561,6 +567,8 @@ kubectl create secret generic {{$slug}}-key \
 
 # 2. Save the "Local policy" tab as sensor-policy.yaml, reviewed by the owner
 #    of the scanned network: the sensor refuses every job outside it.
+#    This needs a sensor release later than v0.8.0; v0.8.0 and older ignore
+#    the policy and scan without one.
 
 # 3. Turn the bundled sensor on (release "openctem"; use yours). Chart 0.11.0
 #    or later: the sensor runs hardened (non-root, read-only root filesystem,
@@ -591,6 +599,8 @@ helm upgrade openctem openctem/openctem --reuse-values \
 #   sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 # The sensor refuses every job outside it, whatever the platform sends, and
 # reports only its digest and a summary. The platform cannot change it.
+# Requires a sensor release later than v0.8.0: v0.8.0 and older ignore this
+# file (and the kill switch) and scan without a local policy.
 # Every key: https://github.com/openctemio/sensor/blob/main/docs/LOCAL_POLICY.md
 apiVersion: openctem.io/sensor-policy/v1
 

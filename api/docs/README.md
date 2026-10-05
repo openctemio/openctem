@@ -29,9 +29,11 @@
 - [Sensor ↔ Platform Trust](architecture/sensor-platform-trust.md) - Mutual-distrust gap analysis: every control (gateway split, per-sensor identity, object authorization, hostile results, signed jobs, local policy, credentials by reference, host hardening, audit, detections) with status, file:line evidence and the attack each gap allows today ([RFC-040](rfcs/RFC-040-platform-sensor-mutual-distrust.md))
 - [Scan Zones](architecture/scan-zones.md) - Tenant address ranges → zone sensors: narrowest-zone routing and batching at trigger time, the zone claim predicate, run completion over batches, coverage view, UI contract (RFC-023 Phase 1)
 - [Sensor Result Binding](architecture/sensor-result-binding.md) - Which sensor reports may change existing assets and findings: bound to an assigned command (v2 path, v1 `X-OpenCTEM-Command-ID`), unsolicited limits, collector/CI roles, tenant mode warn/quarantine, the results quarantine and its review API (RFC-040 group C, Q6 (a))
+- [Organization Settings](architecture/organization-settings.md) - How tenants.settings is stored and written: one section per write with a compare-and-swap, ETag/If-Match and 409 SETTINGS_CONFLICT, a corrupt section fails closed
 - [Audit Hash Chain](architecture/audit-hash-chain.md) - Tamper-evident per-tenant SHA-256 chain over audit_logs: append, verify, the hourly verifier, and rebaselining (when it is allowed, what is archived in the same transaction, how to review overwritten hashes)
 - [Shift-Left CI Scanning](architecture/shift-left-ci-scanning.md) - Agent-first SAST/SCA/secrets in CI: structure + dataflow diagrams, branch-aware findings, risk-aware gate, PR decoration (RFC-008)
 - [Ticketing Integration (Jira)](architecture/ticketing-integration.md) - Per-tenant client resolver, create/link/webhook, Mobilization
+- [Tenable.sc sensor connector](architecture/tenable-sc-connector.md) - RFC-047 pull path: connector_sync commands, sensor-held keys, cursor, source-asserted resolve
 - [Tenable — User & Data Flow](architecture/tenable-user-and-data-flow.md) - How operators interact with Tenable on the UI + end-to-end data flow (agent/direct/upload)
 - [Data Sources](architecture/data-sources.md) - Multi-source asset tracking, collectors, scanners
 - [Global Catalog Trust](architecture/global-catalog-trust.md) - Who may write the CVE, component and license catalogs every tenant shares: trusted feeds only, tenant input creates but never changes, tenant views read the tenant's own observation first
@@ -49,7 +51,7 @@
 - [User Two-Factor Authentication](architecture/user-two-factor-authentication.md) - TOTP 2FA for organization users (RFC-024): login challenge → `/auth/mfa/verify`, forced enrollment under "Require MFA", token-mint policy gate, recovery codes, immediate session revocation, My account API
 - [Permission Real-time Sync](architecture/permission-realtime-sync.md) - Effective-permission cache, per-user version bump, 0-second revocation, 409-on-stale-write
 - [Tenant API Keys (`oct_`)](architecture/api-keys.md) - What a key carries, read-only REST access next to MCP, scopes narrowed to what the key's user holds now, refused routes, CSRF, rate limit, audit attribution, and the open write-access decision
-- [Authorization Audit (2026-09)](authz-audit.md) - End-to-end review that produced the standardization: AUTHZ-01..17 findings, endpoint inventory, and the deferred/behavior-changing items awaiting signoff
+- [Authorization Audit (2026-09)](authz-audit.md) - Historical snapshot of the review that produced the standardization (AUTHZ-01..17, endpoint inventory), with a status table of each finding on `develop`; the current model is the authorization matrix
 
 ### Architecture Decision Records (ADR)
 - [ADR-001: Use Standard net/http](architecture/decisions/001-use-stdlib-http.md)
@@ -79,6 +81,7 @@
 
 ### Deployment
 - [Safe Deploy & Migrations](deployment/safe-deploy-and-migrations.md) - Canonical safe-deploy sequence, expand-contract rules, schema-check semantics, dirty-migration recovery, rollback
+- [Least-privilege database roles](deployment/database-roles.md) - The API connects as `openctem_app` (DML only), migrations as `openctem_migrator` (schema owner); the bootstrap script, what the API needs at run time, compose/helm variables, and the upgrade runbook
 - [Rotating APP_ENCRYPTION_KEY](deployment/encryption-key-rotation.md) - What the key protects, `cmd/rekey` (dry run, apply, sweep), `APP_ENCRYPTION_KEY_PREVIOUS`, and the zero-downtime runbook
 - [Docker](deployment/docker.md) - Docker & Docker Compose (dev/prod)
 - [Kubernetes](deployment/kubernetes.md) - K8s manifests

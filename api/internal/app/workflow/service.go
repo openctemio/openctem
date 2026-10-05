@@ -3,6 +3,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -136,6 +137,11 @@ func (s *WorkflowService) CreateWorkflow(ctx context.Context, input CreateWorkfl
 		w.Tags = input.Tags
 	}
 
+	// Refuse trigger/action types the platform does not execute, before any write.
+	if err := validateSupportedNodeInputs(input.Nodes); err != nil {
+		return nil, err
+	}
+
 	// Create workflow
 	if err := s.workflowRepo.Create(ctx, w); err != nil {
 		return nil, fmt.Errorf("failed to create workflow: %w", err)
@@ -265,6 +271,15 @@ func (s *WorkflowService) UpdateWorkflow(ctx context.Context, input UpdateWorkfl
 	var activationChange string
 	if input.IsActive != nil {
 		if *input.IsActive && !w.IsActive {
+			// A workflow that uses a trigger or action the platform does not
+			// execute stays readable, but cannot be switched on.
+			full, err := s.workflowRepo.GetWithGraph(ctx, w.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load workflow graph: %w", err)
+			}
+			if err := full.ValidateSupported(); err != nil {
+				return nil, err
+			}
 			w.Activate()
 			activationChange = "activated"
 		} else if !*input.IsActive && w.IsActive {
@@ -326,6 +341,12 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 	}
 	if activeCount > 0 {
 		return nil, shared.NewDomainError("ACTIVE_RUNS_EXIST", "cannot update workflow graph with active runs", shared.ErrValidation)
+	}
+
+	// Refuse trigger/action types the platform does not execute, before the
+	// existing graph is deleted.
+	if err := validateSupportedNodeInputs(input.Nodes); err != nil {
+		return nil, err
 	}
 
 	// Update metadata if provided
@@ -474,6 +495,10 @@ func (s *WorkflowService) AddNode(ctx context.Context, input AddNodeInput) (*wor
 		return nil, err
 	}
 
+	if err := workflowdom.ValidateSupported(input.Config); err != nil {
+		return nil, err
+	}
+
 	node, err := workflowdom.NewNode(w.ID, input.NodeKey, input.NodeType, input.Name)
 	if err != nil {
 		return nil, err
@@ -530,6 +555,9 @@ func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput)
 		node.SetUIPosition(*input.UIPositionX, *input.UIPositionY)
 	}
 	if input.Config != nil {
+		if err := workflowdom.ValidateSupported(*input.Config); err != nil {
+			return nil, err
+		}
 		node.Config = *input.Config
 	}
 
@@ -759,20 +787,62 @@ func (s *WorkflowService) CancelRun(ctx context.Context, tenantID, userID, runID
 		return err
 	}
 
+	if run.Status == workflowdom.RunStatusCanceled {
+		// Canceling again is the same cancel: close anything left open.
+		s.skipOpenNodeRuns(ctx, tenantID, runID)
+		return nil
+	}
 	if run.Status.IsTerminal() {
 		return shared.NewDomainError("INVALID_STATUS", "run is already in terminal state", shared.ErrValidation)
 	}
 
 	run.Cancel()
 
+	// The update refuses a run that finished meanwhile, so a cancel never
+	// turns a completed run into a canceled one.
 	if err := s.runRepo.Update(ctx, run); err != nil {
+		if errors.Is(err, workflowdom.ErrRunAlreadyFinished) {
+			return shared.NewDomainError("INVALID_STATUS", "run is already in terminal state", shared.ErrValidation)
+		}
 		return fmt.Errorf("failed to cancel run: %w", err)
 	}
+
+	// Its pending and running steps end now. The executor sees the run
+	// canceled before its next step and stops; a step it then tries to
+	// start or finish is refused (a finished node run never changes).
+	skipped := s.skipOpenNodeRuns(ctx, tenantID, runID)
 
 	// Audit log
 	s.logAudit(ctx, auditapp.AuditContext{TenantID: tenantID.String(), ActorID: userID.String()},
 		auditapp.NewSuccessEvent(audit.ActionWorkflowRunCanceled, audit.ResourceTypeWorkflowRun, runID.String()).
-			WithMessage("Workflow run canceled"))
+			WithMessage("Workflow run canceled").
+			WithMetadata("workflow_id", run.WorkflowID.String()).
+			WithMetadata("skipped_steps", skipped))
 
 	return nil
+}
+
+// skipOpenNodeRuns ends the open steps of a canceled run (best effort: the
+// run is canceled either way, and canceling again retries this).
+func (s *WorkflowService) skipOpenNodeRuns(ctx context.Context, tenantID, runID shared.ID) int64 {
+	c, ok := s.nodeRunRepo.(workflowdom.NodeRunCanceler)
+	if !ok {
+		return 0
+	}
+	n, err := c.SkipOpenNodeRuns(ctx, tenantID, runID)
+	if err != nil {
+		s.logger.Warn("failed to close the canceled run's steps", "run_id", runID.String(), "error", err)
+		return 0
+	}
+	return n
+}
+
+// validateSupportedNodeInputs refuses node inputs that use a trigger or action
+// type the platform does not execute (see workflowdom.ValidateSupported).
+func validateSupportedNodeInputs(nodes []CreateNodeInput) error {
+	configs := make([]workflowdom.NodeConfig, 0, len(nodes))
+	for _, n := range nodes {
+		configs = append(configs, n.Config)
+	}
+	return workflowdom.ValidateSupported(configs...)
 }

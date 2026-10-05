@@ -169,10 +169,10 @@ func (r *FindingActivityRepository) insertActivityChunk(ctx context.Context, act
 	return nil
 }
 
-// GetByID retrieves an activity by ID.
-func (r *FindingActivityRepository) GetByID(ctx context.Context, id shared.ID) (*vulnerability.FindingActivity, error) {
-	query := r.selectQuery() + " WHERE fa.id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
+// GetByTenantAndID retrieves an activity of the tenant.
+func (r *FindingActivityRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.FindingActivity, error) {
+	query := r.selectQuery() + " WHERE fa.tenant_id = $1 AND fa.id = $2"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 	return r.scanActivity(row)
 }
 

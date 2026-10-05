@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -66,6 +65,20 @@ type Service struct {
 	// post-asset-insert, best-effort. Nil-safe: when unwired, recon assets are
 	// not projected (prior behavior).
 	assetExposureProjector AssetExposureProjector
+
+	// scanAttribution stamps tenant_scanned attribution evidence on the
+	// assets of command-bound reports (RFC-036 O8). Nil-safe.
+	scanAttribution ScanAttributionStamper
+
+	// takeoverConfirmer raises subdomain_takeover from nuclei takeover
+	// findings of command-bound reports (RFC-036 P1). Nil-safe.
+	takeoverConfirmer TakeoverConfirmer
+
+	// stepOutputs records what command-bound reports of pipeline steps
+	// wrote, for chained stages; commandIngested is told when a v2 report
+	// of a command finished (step_outputs.go). Nil-safe.
+	stepOutputs     StepOutputRecorder
+	commandIngested CommandIngestedHook
 
 	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
 	// non-repository findings (coverage_autoresolve.go). The zero mode is
@@ -160,6 +173,12 @@ func (s *Service) SetRepositoryExtensionRepository(repo asset.RepositoryExtensio
 // subdomain-to-domain relationships during asset ingestion.
 func (s *Service) SetRelationshipRepository(repo asset.RelationshipRepository) {
 	s.assetProcessor.SetRelationshipRepository(repo)
+}
+
+// SetPortReconciler wires port-closed detection for port-scan reports
+// (research/22 P0-6). Optional: unwired, ports are only ever added.
+func (s *Service) SetPortReconciler(r PortReconciler) {
+	s.assetProcessor.SetPortReconciler(r)
 }
 
 // SetAssetStateHistoryRepository wires the asset state-history store so the
@@ -263,6 +282,12 @@ func (s *Service) SetSuppressionChecker(checker SuppressionChecker) {
 	s.findingProcessor.SetSuppressionChecker(checker)
 }
 
+// SetSuppressionModuleGuard makes ingest suppression honor the tenant's
+// suppressions module toggle (off = findings land as reported).
+func (s *Service) SetSuppressionModuleGuard(guard ModuleGuard) {
+	s.findingProcessor.SetSuppressionModuleGuard(guard)
+}
+
 // SetAssetExposureProjector wires the post-insert recon-asset → exposure-store
 // projector so open ports, exposed services and weak/expiring TLS certificates
 // surface continuously in the Exposure Register (CTEM Discovery). Nil-safe:
@@ -314,6 +339,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// unsolicited gate unless the accept side ran it already: quarantined
 	// (stored, not applied) or applied with the unsolicited limits.
 	opts := input.Options
+	if opts.Actor != nil {
+		// An upload's findings land only on the assets its rows name, never
+		// on an asset made up from the metadata or on "the only asset".
+		opts.RequireAssetForFindings = true
+	}
 	binding := opts.Binding
 	if agt.ID.IsZero() {
 		binding = TrustedBinding()
@@ -337,7 +367,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// behavior until the tenant switches.
 	unsolicitedMayResolve := binding.Kind != BindingUnsolicited ||
 		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
-	scope := newAlterScope(binding)
+	scope := newAlterScope(binding).withActor(ctx, opts.Actor)
 
 	// report.Metadata.ID and SourceType come from the CTIS payload
 	// submitted by the sensor. A compromised/malicious sensor can
@@ -385,6 +415,18 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		addError(output, fmt.Sprintf("assets: %v", err))
 	}
 
+	// A restricted upload creates no asset, so every asset it maps must be
+	// one its actor may change; drop any other (an id a concurrent create
+	// race remapped to an existing row) with its findings.
+	if scope.actorRestricted() {
+		for ref, id := range assetMap {
+			if scope.actorDenies(id) {
+				delete(assetMap, ref)
+				skipOutOfScope(output, ref)
+			}
+		}
+	}
+
 	output.AssetMap = assetMap
 
 	s.logger.Debug("asset processing complete",
@@ -392,6 +434,19 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		"assets_updated", output.AssetsUpdated,
 		"asset_map_size", len(assetMap),
 	)
+
+	// Step 1a: attribution of what a sensor report wrote (RFC-036 §6.4,
+	// research/22 E7): command-bound and unsolicited sensor reports.
+	// Best-effort.
+	if binding.Kind == BindingCommand || binding.Kind == BindingUnsolicited {
+		toolName := ""
+		if report.Tool != nil {
+			toolName = report.Tool.Name
+		}
+		s.stampScanAttribution(ctx, agt, tenantID, binding, scope, toolName, report.Metadata.ID, assetMap)
+	}
+	// What a pipeline step's report wrote, for the stages chained after it.
+	s.recordStepOutputs(ctx, tenantID, binding, scope)
 
 	// Step 1b: Project recon-discovered assets (open ports, exposed services,
 	// TLS certificates) into the Exposure Register. Best-effort — a failure here
@@ -439,75 +494,25 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 			s.logger.Error("failed to process findings batch", "error", err)
 			// Continue with partial results
 		}
+		if report.Tool != nil {
+			s.auditSourceResolve(ctx, tenantID, binding, report.Tool.Name, output)
+		}
 	}
 
-	// Step 3: Auto-resolve stale findings (only for full coverage scans on default branch)
-	// This marks findings as 'resolved' if they were not seen in this scan.
-	// Protected statuses (false_positive, accepted) are never auto-resolved.
-	//
-	// Auto-resolve conditions (all must be true):
-	// 1. CoverageType = full (not incremental or partial)
-	// 2. Scan is on default branch (main/master) - feature branch scans never auto-resolve
-	// 3. Tool name available for scoping
-	//
-	// This follows GitHub/GitLab best practices where default branch is source of truth.
-	// Protocol v2 defers both auto-resolve steps to the report's commit.
-	autoResolveEligible := !opts.DeferAutoResolve && input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != ""
-	switch {
-	case opts.DeferAutoResolve:
-		s.logger.Debug("auto-resolve deferred to the report commit")
-	case autoResolveEligible && !unsolicitedMayResolve:
-		s.logger.Info("auto-resolve skipped: the report names no command (tenant mode quarantine)",
-			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(report.Tool.Name))
-	case autoResolveEligible && s.sensorMayAutoResolveTool(ctx, agt, report.Tool.Name):
-		toolName := report.Tool.Name
-		scanID := report.Metadata.ID
+	// Step 2d: takeover-template findings confirm open dangling CNAMEs
+	// (RFC-036 P1); command-bound reports only. Best-effort.
+	s.confirmTakeovers(ctx, agt, tenantID, binding, scope, report, assetMap)
 
-		s.logger.Info("auto-resolve enabled for default branch full scan",
-			"tool_name", toolName,
-			"scan_id", scanID,
-			"branch", input.GetBranchInfo().Name,
-		)
-
-		// Auto-resolve across all assets in a single query rather than one per
-		// asset. Pass nil branchID to resolve findings on any default branch.
-		// A report bound to a command resolves only on the assets that
-		// command covers (RFC-040 §5.3).
-		assetIDs := make([]shared.ID, 0, len(assetMap))
-		for _, assetID := range assetMap {
-			if binding.Kind == BindingCommand && !scope.allowedAsset(assetID) {
-				continue
-			}
-			assetIDs = append(assetIDs, assetID)
-		}
-
-		var allResolvedIDs []shared.ID
-		resolvedIDs, err := s.findingRepo.AutoResolveStaleByAssets(ctx, tenantID, assetIDs, toolName, scanID, nil)
-		if err != nil {
-			s.logger.Warn("failed to auto-resolve stale findings",
-				"tool_name", toolName,
-				"asset_count", len(assetIDs),
-				"error", err,
-			)
-		} else if len(resolvedIDs) > 0 {
-			output.FindingsAutoResolved += len(resolvedIDs)
-			app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolvedIDs)))
-			s.logger.Info("auto-resolved stale findings",
-				"tool_name", toolName,
-				"asset_count", len(assetIDs),
-				"count", len(resolvedIDs),
-			)
-			allResolvedIDs = append(allResolvedIDs, resolvedIDs...)
-		}
-
-		// Record audit trail once for all auto-resolved findings (single batch INSERT)
-		if s.activityService != nil && len(allResolvedIDs) > 0 {
-			if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, allResolvedIDs, toolName, scanID); err != nil {
-				s.logger.Warn("failed to record auto-resolve activities", "error", err)
-			}
-		}
-	case s.findingRepo != nil && report.Tool != nil:
-		s.logAutoResolveSkipped(input, report, autoResolveEligible)
+	// Step 3: a protocol v1 report never closes findings (research 18 F3). A
+	// scan closes default-branch findings only through the per-command
+	// evaluation of a protocol v2 run (evaluateRepoCoverage): the command
+	// completed with exit 0, nothing was rejected, the same tool and scan
+	// profile, behind the blinding guard. A v1 report proves none of that,
+	// and an unbound report or a tenant upload never closes (owner decision
+	// O11). The per-branch occurrence sweep below is unchanged.
+	if !opts.DeferAutoResolve && s.findingRepo != nil && report.Tool != nil && input.ShouldAutoResolve() {
+		s.logger.Info("auto-resolve skipped: only a protocol v2 run bound to a command closes findings",
+			"tool_name", sanitizeIngestLogField(report.Tool.Name), "binding", binding.String())
 	}
 
 	// Step 3b: Per-branch occurrence auto-resolve (branch-aware occurrence model).
@@ -516,7 +521,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// the scan no longer reports as auto_fixed — so per-branch state reflects what
 	// is actually present on that branch. Additive: it only touches occurrence
 	// rows, never the finding's headline status. Best-effort.
-	if !opts.DeferAutoResolve && unsolicitedMayResolve && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
+	if !opts.DeferAutoResolve && unsolicitedMayResolve && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
 		report.Tool != nil && report.Metadata.ID != "" &&
 		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
 		toolName := report.Tool.Name
@@ -624,40 +629,6 @@ func (s *Service) projectAssetExposures(ctx context.Context, tenantID shared.ID,
 
 	if err := s.assetExposureProjector.ProjectAssets(ctx, tenantID, assets); err != nil {
 		s.logger.Warn("asset exposure projection failed", "error", err)
-	}
-}
-
-// logAutoResolveSkipped says why a report did not auto-resolve stale findings.
-// toolGateBlocked means every report-level condition held and only the
-// sensor/tool gate (sensorMayAutoResolveTool) refused; that gate already logged
-// its reason, so nothing more is said here. Before, that case fell through to
-// "coverage type not full", which was false for a full default-branch scan.
-func (s *Service) logAutoResolveSkipped(input Input, report *ctis.Report, toolGateBlocked bool) {
-	branchInfo := input.GetBranchInfo()
-	switch {
-	case toolGateBlocked:
-		return
-	case branchInfo == nil:
-		s.logger.Debug("auto-resolve skipped: no branch info provided")
-	case !branchInfo.IsDefaultBranch:
-		s.logger.Debug("auto-resolve skipped: not default branch",
-			"branch", sanitizeIngestLogField(branchInfo.Name),
-		)
-	case report.Metadata.ID == "":
-		// Without a scan identity we cannot tell which findings belong to
-		// THIS scan, so the "not seen in this scan" staleness test would
-		// match (and resolve) the tenant's entire existing finding set.
-		s.logger.Warn("auto-resolve skipped: report metadata.id is empty",
-			"tool_name", sanitizeIngestLogField(report.Tool.Name),
-		)
-	default:
-		coverageType := input.CoverageType
-		if coverageType == "" && report.Metadata.CoverageType != "" {
-			coverageType = CoverageType(report.Metadata.CoverageType)
-		}
-		s.logger.Debug("auto-resolve skipped: coverage type not full",
-			"coverage_type", sanitizeIngestLogField(string(coverageType)),
-		)
 	}
 }
 
@@ -813,59 +784,6 @@ var reservedAutoResolveTools = map[string]struct{}{
 	"manual":         {},
 	"burp_suite":     {}, // Burp XML import (pentest)
 	"csv_import":     {}, // CSV finding import (pentest)
-}
-
-// sensorMayAutoResolveTool decides whether a report attributed to toolName may
-// auto-resolve stale findings of that tool. Auto-resolve is keyed on the
-// sensor-SUPPLIED tool name, so without this any sensor key in the tenant could
-// close another tool's findings by claiming its name in a "full" scan.
-//
-//   - Server-side ingests (synthetic sensor, zero ID: tenant uploads, platform
-//     imports) are trusted — the server chose the tool name.
-//   - Reserved non-scanner tool names are never auto-resolved by a sensor.
-//   - A sensor may only auto-resolve its effective tools: what it reports
-//     installed narrowed by its tool limit, or its declared tools when it
-//     never reported (RFC-029 §4.3.1).
-//   - A sensor that declares no tools and reports none auto-resolves nothing
-//     (RFC-040 §5.3; it used to keep the pre-RFC-029 behavior).
-func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sensor, toolName string) bool {
-	if agt == nil || agt.ID.IsZero() {
-		return true
-	}
-	if _, reserved := reservedAutoResolveTools[strings.ToLower(strings.TrimSpace(toolName))]; reserved {
-		s.logger.Warn("auto-resolve skipped: tool name is reserved for non-sensor sources",
-			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
-		return false
-	}
-
-	tools := agt.EffectiveTools()
-	reported := agt.Reported.Tools != nil
-	// The async ingest worker rebuilds a minimal sensor from the job (ID +
-	// tenant only); load the sensor row in that case.
-	if len(tools) == 0 && !reported && s.sensorRepo != nil {
-		if stored, err := s.sensorRepo.GetByID(ctx, agt.ID); err == nil && stored != nil {
-			tools = stored.EffectiveTools()
-			reported = stored.Reported.Tools != nil
-		}
-	}
-
-	if len(tools) == 0 && !reported {
-		// RFC-040 §5.3: a sensor that declares and reports no tools could
-		// close any tool's findings with a "full" report; it no longer
-		// auto-resolves anything.
-		s.logger.Warn("auto-resolve skipped: the sensor declares and reports no tools; declare the sensor's tools to let it auto-resolve",
-			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
-		return false
-	}
-	for _, t := range tools {
-		if tooldom.SameTool(t, toolName) {
-			return true
-		}
-	}
-	s.logger.Warn("auto-resolve skipped: reported tool is not among the sensor's declared tools",
-		"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName),
-		"declared_tools", sanitizeIngestLogField(strings.Join(tools, ",")))
-	return false
 }
 
 // validateSensor checks if the sensor is valid for ingestion.

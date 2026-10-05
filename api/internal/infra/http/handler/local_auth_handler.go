@@ -379,7 +379,7 @@ func (h *LocalAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 // refreshTokenFrom returns the refresh token that authenticates a
 // refresh-token route (/auth/token, /auth/refresh, /auth/create-first-team,
-// /invitations/{token}/accept-with-refresh). A token sent in the body is a
+// /invitations/accept-with-refresh). A token sent in the body is a
 // deliberate, non-ambient credential (server-to-server callers such as the
 // UI's Next routes use it) and needs nothing else. A token taken from the
 // refresh_token cookie is ambient - the browser attaches it to any request -
@@ -678,11 +678,6 @@ func (h *LocalAuthHandler) CreateFirstTeam(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(resp)
 }
 
-// AcceptInvitationWithRefreshRequest is the request body for accepting invitation with refresh token.
-type AcceptInvitationWithRefreshRequest struct {
-	InvitationToken string `json:"invitation_token" validate:"required"`
-}
-
 // AcceptInvitationWithRefreshResponse is the response body for accepting invitation with refresh token.
 type AcceptInvitationWithRefreshResponse struct {
 	AccessToken  string `json:"access_token"`
@@ -695,16 +690,49 @@ type AcceptInvitationWithRefreshResponse struct {
 	Role         string `json:"role"`
 }
 
-// AcceptInvitationWithRefresh handles accepting an invitation using refresh token.
-// POST /api/v1/invitations/{token}/accept-with-refresh
-// This endpoint is for users who were invited but don't have a tenant yet,
-// so they only have a refresh token (no access token).
-// The refresh token is obtained from the httpOnly cookie.
+// AcceptInvitationWithRefreshRequest is the body of
+// POST /api/v1/invitations/accept-with-refresh. refresh_token may be omitted
+// when the browser sends the refresh_token cookie (with the CSRF pair).
+type AcceptInvitationWithRefreshRequest struct {
+	Token        string `json:"token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
+// AcceptInvitationWithRefreshBody handles
+// POST /api/v1/invitations/accept-with-refresh: accept an invitation with a
+// refresh token, for an invited user who has no organization yet (so no
+// tenant-scoped access token). The invitation token travels in the body.
+// @Summary      Accept an invitation with a refresh token
+// @Description  For an invited user without an organization yet: accepts the invitation and issues an access token for the new organization. The refresh token comes from the body or the httpOnly cookie (cookie requires the CSRF pair). The invitation token travels in the body, never in the URL.
+// @Tags         Invitations
+// @Accept       json
+// @Produce      json
+// @Param        request  body      AcceptInvitationWithRefreshRequest  true  "Invitation token and optional refresh token"
+// @Success      200  {object}  AcceptInvitationWithRefreshResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /invitations/accept-with-refresh [post]
+func (h *LocalAuthHandler) AcceptInvitationWithRefreshBody(w http.ResponseWriter, r *http.Request) {
+	var body AcceptInvitationWithRefreshRequest
+	if !decodeInvitationBody(w, r, &body) {
+		return
+	}
+	if !validInvitationToken(body.Token) {
+		apierror.BadRequest("Invalid invitation token").WriteJSON(w)
+		return
+	}
+	h.acceptInvitationWithRefresh(w, r, body.Token, body.RefreshToken)
+}
+
+// AcceptInvitationWithRefresh handles
+// POST /api/v1/invitations/{token}/accept-with-refresh (deprecated; the
+// successor is POST /api/v1/invitations/accept-with-refresh).
+// The refresh token is obtained from the body or the httpOnly cookie.
 func (h *LocalAuthHandler) AcceptInvitationWithRefresh(w http.ResponseWriter, r *http.Request) {
-	// Get invitation token from URL path
-	invitationToken := r.PathValue("token")
-	if invitationToken == "" {
-		apierror.BadRequest("Invitation token is required").WriteJSON(w)
+	invitationToken, ok := invitationTokenFromPath(w, r)
+	if !ok {
 		return
 	}
 
@@ -715,7 +743,11 @@ func (h *LocalAuthHandler) AcceptInvitationWithRefresh(w http.ResponseWriter, r 
 	if r.Body != nil {
 		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
 	}
-	refreshToken, ok := h.refreshTokenFrom(w, r, body.RefreshToken)
+	h.acceptInvitationWithRefresh(w, r, invitationToken, body.RefreshToken)
+}
+
+func (h *LocalAuthHandler) acceptInvitationWithRefresh(w http.ResponseWriter, r *http.Request, invitationToken, bodyRefreshToken string) {
+	refreshToken, ok := h.refreshTokenFrom(w, r, bodyRefreshToken)
 	if !ok {
 		return
 	}

@@ -131,16 +131,6 @@ func (s *FindingCommentService) AddStatusChangeComment(ctx context.Context, inpu
 	return comment, nil
 }
 
-// GetComment retrieves a comment by ID.
-func (s *FindingCommentService) GetComment(ctx context.Context, commentID string) (*vulnerability.FindingComment, error) {
-	parsedID, err := shared.IDFromString(commentID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-
-	return s.commentRepo.GetByID(ctx, parsedID)
-}
-
 // UpdateCommentInput represents the input for updating a comment.
 type UpdateCommentInput struct {
 	Content string `validate:"required,min=1,max=10000"`

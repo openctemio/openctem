@@ -1,0 +1,246 @@
+'use client'
+
+import { useState } from 'react'
+import { Bookmark, Copy, Trash2, Users } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { useMyGroups } from '@/features/access-control/api/use-groups'
+
+import {
+  createSavedView,
+  deleteSavedView,
+  duplicateSavedView,
+  type SavedView,
+  type SavedViewPage,
+  useSavedViews,
+  viewQueryFromSearch,
+} from '../api/use-saved-views'
+
+interface SavedViewsMenuProps {
+  page: SavedViewPage
+  /** The saved view the page shows, if any. */
+  activeId?: string
+  /** True when the URL has filter params on top of the active view. */
+  modified?: boolean
+  /** The current group-by, saved with the view. */
+  groupBy?: string
+  /** Open a view (the page puts `view=<id>` in its URL). */
+  onSelect: (view: SavedView | null) => void
+}
+
+const PERSONAL = 'personal'
+
+/**
+ * The toolbar's saved views menu (UI contract D15): open a view, save the
+ * current filter as a view (personal or shared with one of your groups),
+ * delete your own, duplicate a shared one. Sharing a view shares the query,
+ * not the rows: each person sees their own scoped results.
+ */
+export function SavedViewsMenu({
+  page,
+  activeId,
+  modified,
+  groupBy,
+  onSelect,
+}: SavedViewsMenuProps) {
+  const { views, mutate } = useSavedViews(page)
+  const { groups } = useMyGroups()
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [share, setShare] = useState(PERSONAL)
+  const [saving, setSaving] = useState(false)
+
+  const active = views.find((v) => v.id === activeId)
+  const mine = views.filter((v) => v.is_owner)
+  const shared = views.filter((v) => !v.is_owner)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const view = await createSavedView({
+        page,
+        name: name.trim(),
+        query: viewQueryFromSearch(window.location.search),
+        group_id: share === PERSONAL ? undefined : share,
+        group_by: groupBy || undefined,
+      })
+      await mutate()
+      setSaveOpen(false)
+      setName('')
+      setShare(PERSONAL)
+      toast.success(`Saved view "${view.name}"`)
+      onSelect(view)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not save the view')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const remove = async (view: SavedView) => {
+    try {
+      await deleteSavedView(view.id)
+      await mutate()
+      if (view.id === activeId) onSelect(null)
+      toast.success(`Deleted view "${view.name}"`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not delete the view')
+    }
+  }
+
+  const duplicate = async (view: SavedView) => {
+    try {
+      const copy = await duplicateSavedView(view.id)
+      await mutate()
+      toast.success(`Created "${copy.name}"`)
+      onSelect(copy)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not duplicate the view')
+    }
+  }
+
+  const item = (view: SavedView) => (
+    <DropdownMenuItem
+      key={view.id}
+      className="flex items-center gap-2"
+      onSelect={() => onSelect(view)}
+    >
+      <span className="flex-1 truncate">{view.name}</span>
+      {view.group_name && (
+        <Users
+          className="h-3 w-3 text-muted-foreground"
+          aria-label={`Shared with ${view.group_name}`}
+        />
+      )}
+      {view.is_owner ? (
+        <button
+          type="button"
+          className="rounded-sm p-0.5 hover:bg-muted"
+          aria-label={`Delete view ${view.name}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            void remove(view)
+          }}
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="rounded-sm p-0.5 hover:bg-muted"
+          aria-label={`Duplicate view ${view.name}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            void duplicate(view)
+          }}
+        >
+          <Copy className="h-3 w-3" />
+        </button>
+      )}
+    </DropdownMenuItem>
+  )
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-9 max-w-[14rem]">
+            <Bookmark className="h-4 w-4 md:me-2" />
+            <span className="hidden truncate md:inline">{active ? active.name : 'Views'}</span>
+            {active && modified && (
+              <span className="ms-1 hidden text-xs text-muted-foreground md:inline">
+                (modified)
+              </span>
+            )}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          {mine.length > 0 && <DropdownMenuLabel>My views</DropdownMenuLabel>}
+          {mine.map(item)}
+          {shared.length > 0 && <DropdownMenuLabel>Shared with my groups</DropdownMenuLabel>}
+          {shared.map(item)}
+          {views.length > 0 && <DropdownMenuSeparator />}
+          {active && (
+            <DropdownMenuItem onSelect={() => onSelect(null)}>Clear view</DropdownMenuItem>
+          )}
+          <DropdownMenuItem onSelect={() => setSaveOpen(true)}>
+            Save current filters as a view
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save view</DialogTitle>
+            <DialogDescription>
+              Saves the current filters, sort and grouping. A shared view shares the filters, not
+              the results: everyone sees the findings they are allowed to see.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="saved-view-name">Name</Label>
+              <Input
+                id="saved-view-name"
+                value={name}
+                maxLength={120}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="saved-view-share">Visible to</Label>
+              <Select value={share} onValueChange={setShare}>
+                <SelectTrigger id="saved-view-share">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={PERSONAL}>Only me</SelectItem>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void save()} disabled={saving || name.trim() === ''}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}

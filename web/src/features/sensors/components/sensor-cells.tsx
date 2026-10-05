@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { DetailChipList } from '@/features/shared/components/detail-sheet'
 import type { Sensor, SensorSdkStatus, SensorVersionStatus } from '@/lib/api/sensor-types'
 
+import { configHealthMeta, configHealthNeedsAttention } from '../lib/config-report'
 import { capacityLabel, sensorCapacity, type SensorToolRow } from '../lib/capabilities'
 import { formatDurationShort, keyExpiry } from '../lib/format'
 import { isOneShotSensor } from '../lib/sensor-state'
@@ -55,6 +56,28 @@ export function SensorTag({
 }
 
 /**
+ * The setup health as a tag. By default only the states that need someone
+ * (attention, impaired, blocked); `always` shows ok and unknown too.
+ */
+export function ConfigHealthTag({
+  health,
+  always = false,
+}: {
+  health: string | null | undefined
+  always?: boolean
+}) {
+  const { t } = useTranslation()
+  if (!always && !configHealthNeedsAttention(health)) return null
+  if (always && !health) return null
+  const meta = configHealthMeta(health)
+  return (
+    <SensorTag tone={meta.tone} title={t('sensors.setup.healthTitle', 'Setup checks')}>
+      <span data-config-health={health ?? ''}>{t(meta.key, meta.label)}</span>
+    </SensorTag>
+  )
+}
+
+/**
  * The host name a sensor reports, or null when it adds nothing: not reported,
  * or the same as the sensor's name (installs often name the sensor after its
  * host).
@@ -81,6 +104,7 @@ export function SensorNameCell({ sensor }: { sensor: Sensor }) {
         </span>
         {sensor.is_platform_sensor && <SensorTag>Platform</SensorTag>}
         <ProtocolTag sensor={sensor} />
+        <ConfigHealthTag health={sensor.config_health} />
       </span>
       {host && (
         <span

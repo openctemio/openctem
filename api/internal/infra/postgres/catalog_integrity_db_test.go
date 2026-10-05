@@ -363,7 +363,7 @@ func TestActiveCVEs_TenantViewUsesOwnObservation(t *testing.T) {
 		t.Errorf("tenant B sees %s cvss=%v exploit=%v; want its own critical/9.8 and no exploit claim from tenant A",
 			got.Severity, got.CVSSScore, got.ExploitAvailable)
 	}
-	stats, err := findings.GetActiveCVEStats(ctx, tB, false)
+	stats, err := findings.GetActiveCVEStats(ctx, tB, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

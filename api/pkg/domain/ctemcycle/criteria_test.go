@@ -90,8 +90,6 @@ func TestEvaluateCriterion_NotMeasurable(t *testing.T) {
 		{"free text metric", "open KEV findings", "0", "not one the platform measures"},
 		{"per-priority mttr not measured", "mttr_hours_p0", "<48", "not one the platform measures"},
 		{"substring is not a match", "resolved", "5", "not one the platform measures"},
-		// scope drift has no real source yet, so it must not be checkable.
-		{"scope drift deferred", "scope_drift_size", "0", "not one the platform measures"},
 		{"prose target", "MTTR", "as fast as possible", "not a numeric comparison"},
 		{"quarter target", "p0 resolved", "Q3", "not a numeric comparison"},
 		{"percent on a count", "p0 resolved", ">= 90%", "does not fit"},
@@ -239,9 +237,13 @@ func TestRecognizedCriterionMetrics(t *testing.T) {
 			t.Errorf("recognized metrics missing %q: %v", want, got)
 		}
 	}
+	offered := false
 	for _, g := range got {
 		if g == MetricScopeDriftSize {
-			t.Errorf("scope_drift_size must not be offered: its source is not wired")
+			offered = true
 		}
+	}
+	if !offered {
+		t.Errorf("scope_drift_size must be offered: it counts new external assets (RFC-036 §6.9)")
 	}
 }

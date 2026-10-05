@@ -9,7 +9,6 @@ import "github.com/openctemio/openctem/api/internal/app/integration"
 type (
 	IntegrationService                 = integration.IntegrationService
 	NotificationService                = integration.NotificationService
-	WebhookService                     = integration.WebhookService
 	AttachmentService                  = integration.AttachmentService
 	CredentialImportService            = integration.CredentialImportService
 	SecretStoreService                 = integration.SecretStoreService
@@ -17,7 +16,6 @@ type (
 	CreateCredentialInput              = integration.CreateCredentialInput
 	CreateIntegrationInput             = integration.CreateIntegrationInput
 	CreateNotificationIntegrationInput = integration.CreateNotificationIntegrationInput
-	CreateWebhookInput                 = integration.CreateWebhookInput
 	CredentialItem                     = integration.CredentialItem
 	CredentialListOptions              = integration.CredentialListOptions
 	CredentialListResult               = integration.CredentialListResult
@@ -37,9 +35,7 @@ type (
 	IntegrationListReposResult         = integration.IntegrationListReposResult
 	ListCredentialsInput               = integration.ListCredentialsInput
 	ListCredentialsOutput              = integration.ListCredentialsOutput
-	ListDeliveriesInput                = integration.ListDeliveriesInput
 	ListIntegrationsInput              = integration.ListIntegrationsInput
-	ListWebhooksInput                  = integration.ListWebhooksInput
 	NotificationEventEntry             = integration.NotificationEventEntry
 	NotificationEventSendResult        = integration.NotificationEventSendResult
 	SendNotificationInput              = integration.SendNotificationInput
@@ -50,10 +46,11 @@ type (
 	TestIntegrationCredentialsInput    = integration.TestIntegrationCredentialsInput
 	TestIntegrationCredentialsResult   = integration.TestIntegrationCredentialsResult
 	UpdateCredentialInput              = integration.UpdateCredentialInput
+	RotateCredentialInput              = integration.RotateCredentialInput
+	OptionalTime                       = integration.OptionalTime
 	UpdateIntegrationInput             = integration.UpdateIntegrationInput
 	UpdateNotificationIntegrationInput = integration.UpdateNotificationIntegrationInput
 	UpdatePreferencesInput             = integration.UpdatePreferencesInput
-	UpdateWebhookInput                 = integration.UpdateWebhookInput
 	UploadInput                        = integration.UploadInput
 	WebSocketBroadcaster               = integration.WebSocketBroadcaster
 )
@@ -64,7 +61,6 @@ var (
 	NewIntegrationService      = integration.NewIntegrationService
 	NewNotificationService     = integration.NewNotificationService
 	NewSecretStoreService      = integration.NewSecretStoreService
-	NewWebhookService          = integration.NewWebhookService
 
 	// ErrCredentialNoSecret: a leaked credential was found but holds no secret.
 	ErrCredentialNoSecret = integration.ErrNoSecret

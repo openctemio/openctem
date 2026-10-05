@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -400,7 +401,9 @@ func TestEvaluateRules_AssetTypeCondition_NeedsResolver(t *testing.T) {
 
 	// Resolver returning the matching type → the rule fires.
 	e := NewEngine(repo, log)
-	e.SetAssetTypeResolver(func(context.Context, shared.ID, shared.ID) (string, error) { return "domain", nil })
+	e.SetAssetTypeResolver(func(context.Context, shared.ID, shared.ID) (asset.TypeRef, error) {
+		return asset.TypeRef{Type: asset.AssetTypeDomain}, nil
+	})
 	res, err = e.EvaluateRules(context.Background(), tenantID, finding)
 	require.NoError(t, err)
 	require.Len(t, res, 1)
@@ -408,8 +411,43 @@ func TestEvaluateRules_AssetTypeCondition_NeedsResolver(t *testing.T) {
 
 	// Resolver returning a different type → no match.
 	e2 := NewEngine(repo, log)
-	e2.SetAssetTypeResolver(func(context.Context, shared.ID, shared.ID) (string, error) { return "repository", nil })
+	e2.SetAssetTypeResolver(func(context.Context, shared.ID, shared.ID) (asset.TypeRef, error) {
+		return asset.TypeRef{Type: asset.AssetTypeRepository}, nil
+	})
 	res, err = e2.EvaluateRules(context.Background(), tenantID, finding)
 	require.NoError(t, err)
 	assert.Empty(t, res)
+}
+
+// RFC-042 §6.3.8: a rule names types as a person writes them; it is matched
+// on the asset's stored (type, sub_type). A rule on `website` used to be
+// compared with the stored type `application` and never matched.
+func TestMatchesConditions_AssetTypesByStoredPair(t *testing.T) {
+	engine := NewEngine(nil, logger.NewNop())
+	finding := newTestFinding(t, vulnerability.SeverityHigh, "nuclei", vulnerability.FindingSourceDAST, vulnerability.FindingTypeVulnerability)
+	website := asset.TypeRef{Type: asset.AssetTypeApplication, SubType: "website"}
+	api := asset.TypeRef{Type: asset.AssetTypeApplication, SubType: "api"}
+	firewall := asset.TypeRef{Type: asset.AssetTypeNetwork, SubType: "firewall"}
+	vpc := asset.TypeRef{Type: asset.AssetTypeNetwork, SubType: "vpc"}
+	cases := []struct {
+		names []string
+		ref   asset.TypeRef
+		want  bool
+	}{
+		{[]string{"website"}, website, true},
+		{[]string{"Website "}, website, true},
+		{[]string{"website"}, api, false},
+		{[]string{"application"}, api, true},
+		{[]string{"firewall"}, firewall, true},
+		{[]string{"firewall"}, vpc, false},
+		{[]string{"network"}, vpc, true},
+		{[]string{"host"}, website, false},
+		{[]string{"no_such_type"}, website, false},
+		// a row still stored under the alias name (before the data normalisation)
+		{[]string{"website"}, asset.TypeRef{Type: "website"}, true},
+	}
+	for _, c := range cases {
+		got := engine.MatchesConditions(accesscontrol.AssignmentConditions{AssetTypes: c.names}, finding, c.ref)
+		assert.Equal(t, c.want, got, "%v on %+v", c.names, c.ref)
+	}
 }

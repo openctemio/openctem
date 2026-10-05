@@ -169,6 +169,7 @@ function EnableTwoFactorDialog({
   const { setupTwoFactor, isSettingUp } = useSetupTwoFactor()
   const { enableTwoFactor, isEnabling } = useEnableTwoFactor()
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null)
+  const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [codes, setCodes] = useState<string[] | null>(null)
@@ -185,6 +186,7 @@ function EnableTwoFactorDialog({
     if (requested.current) return
     requested.current = true
     setSetup(null)
+    setPassword('')
     setCode('')
     setError(null)
     setCodes(null)
@@ -198,7 +200,7 @@ function EnableTwoFactorDialog({
     e.preventDefault()
     setError(null)
     try {
-      const recovery = await enableTwoFactor(code)
+      const recovery = await enableTwoFactor({ password, code })
       setCodes(recovery)
       onEnabled()
       toast.success('Two-factor authentication is on')
@@ -248,8 +250,8 @@ function EnableTwoFactorDialog({
             <DialogHeader>
               <DialogTitle>Set up two-factor authentication</DialogTitle>
               <DialogDescription>
-                Scan the QR code with an authenticator app, then enter the 6-digit code it shows.
-                Turning this on signs out your other sessions.
+                Scan the QR code with an authenticator app, then enter the 6-digit code it shows and
+                your current password. Turning this on signs out your other sessions.
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col items-center gap-3">
@@ -261,6 +263,16 @@ function EnableTwoFactorDialog({
               ) : isSettingUp || !error ? (
                 <Skeleton className="h-44 w-44" />
               ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="enable-password">Current password</Label>
+              <PasswordInput
+                id="enable-password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={!setup || isEnabling}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="enable-code">Authentication code</Label>
@@ -281,7 +293,10 @@ function EnableTwoFactorDialog({
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={!setup || code.length !== 6 || isEnabling}>
+              <Button
+                type="submit"
+                disabled={!setup || !password || code.length !== 6 || isEnabling}
+              >
                 {isEnabling && <Loader2 className="h-4 w-4 animate-spin" />}
                 Turn on
               </Button>

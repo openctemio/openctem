@@ -37,6 +37,7 @@ type ScanConfigExport struct {
 	// Schedule
 	ScheduleType     string  `json:"schedule_type"`
 	ScheduleCron     string  `json:"schedule_cron,omitempty"`
+	ScheduleRRule    string  `json:"schedule_rrule,omitempty"`
 	ScheduleDay      *int    `json:"schedule_day,omitempty"`
 	ScheduleTime     *string `json:"schedule_time,omitempty"`
 	ScheduleTimezone string  `json:"schedule_timezone"`
@@ -95,6 +96,7 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 		TargetsPerJob:       sc.TargetsPerJob,
 		ScheduleType:        string(sc.ScheduleType),
 		ScheduleCron:        sc.ScheduleCron,
+		ScheduleRRule:       sc.ScheduleRRule,
 		ScheduleDay:         sc.ScheduleDay,
 		ScheduleTimezone:    sc.ScheduleTimezone,
 		RunOnTenantRunner:   sc.RunOnTenantRunner,
@@ -185,8 +187,15 @@ func decodeScanConfigExport(data []byte) (ScanConfigExport, error) {
 
 // ImportConfig creates a new scan from imported JSON configuration.
 // The imported config is validated and a new scan entity is created.
-func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []byte) (*scan.Scan, error) {
+// ImportConfig creates a scan from an exported configuration. The importer
+// becomes its owner (created_by), and the create path checks their act scope
+// on the direct targets; a scan without an owner would run its schedule as
+// the system (research 21b H3, RFC-050 W2).
+func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []byte, actorID string) (*scan.Scan, error) {
 	s.logger.Info("importing scan config", "tenant_id", tenantID.String())
+	if actor, err := shared.IDFromString(actorID); err != nil || actor.IsZero() {
+		return nil, ErrScanActorRequired
+	}
 
 	export, err := decodeScanConfigExport(data)
 	if err != nil {
@@ -224,6 +233,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		TargetsPerJob:       export.TargetsPerJob,
 		ScheduleType:        export.ScheduleType,
 		ScheduleCron:        export.ScheduleCron,
+		ScheduleRRule:       export.ScheduleRRule,
 		ScheduleDay:         export.ScheduleDay,
 		ScheduleTime:        scheduleTime,
 		Timezone:            export.ScheduleTimezone,
@@ -234,6 +244,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		TimeoutSeconds:      export.TimeoutSeconds,
 		MaxRetries:          export.MaxRetries,
 		RetryBackoffSeconds: export.RetryBackoffSeconds,
+		CreatedBy:           actorID,
 	}
 
 	// Set primary asset group ID for backward compatibility

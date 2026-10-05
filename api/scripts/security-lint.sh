@@ -101,6 +101,13 @@ check_http_client() {
         # SafeHTTPClient is used in production; the plain &http.Client
         # fires only on the AllowLoopback test path (httptest 127.0.0.1).
         'api/internal/infra/notifier/splunk.go'
+        # Sensor Tenable.sc connector (RFC-047): reaches an operator-configured
+        # Tenable.sc that usually sits on a private address, so the RFC1918
+        # block of SafeHTTPClient cannot apply. Its own dialer resolves once
+        # and dials the checked IP (no DNS rebinding), refuses redirects, and
+        # requires a configured CA or certificate pin; the URL comes only from
+        # the sensor-local config, never from the platform.
+        agent/internal/connector/tenablesc/client.go
         # Workflow HTTPRequestHandler implements its own SSRF guard
         # inline (validateURL + safeDialer + CheckRedirect). Functionally
         # equivalent to SafeHTTPClient; consolidation is a follow-up.
@@ -136,7 +143,7 @@ check_http_client() {
         printf '%s' "$filtered" | sed 's/^/       /'
         return
     fi
-    say_pass "Rule 1: no raw &http.Client{} outside pkg/httpsec (api/, agent/; 5 documented exceptions)"
+    say_pass "Rule 1: no raw &http.Client{} outside pkg/httpsec (api/, agent/; 6 documented exceptions)"
 }
 
 # ---------------------------------------------------------------------------

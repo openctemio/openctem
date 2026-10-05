@@ -139,7 +139,7 @@ func TestSLABreachPublisher_ErrorsDoNotEscape(t *testing.T) {
 // The breach notification's severity depends on the finding's, so the
 // escalation query must return it.
 func TestBreachQuery_ReturnsFindingSeverity(t *testing.T) {
-	if !strings.Contains(breachSelectUpdateQuery, "RETURNING tenant_id, id, sla_deadline, severity") {
+	if !strings.Contains(breachSelectUpdateQuery, "RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity") {
 		t.Error("breach query must RETURN the finding severity for the notification")
 	}
 }

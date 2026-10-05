@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  attributionQuery,
   countActiveFilters,
   DEFAULT_PAGE_SIZE,
   isInventoryFilterEmpty,
@@ -55,5 +56,17 @@ describe('inventory sort mapping', () => {
     expect(sortToSorting(undefined)).toEqual([])
     expect(sortingToSort([{ id: 'owner', desc: false }])).toBeUndefined()
     expect(sortingToSort([])).toBeUndefined()
+  })
+
+  it('hides names awaiting review and rejected names unless attribution is chosen', () => {
+    // No selection: the API gets the approved alias (confirmed, no record,
+    // dependency, monitor only).
+    expect(attributionQuery({})).toEqual(['approved'])
+    const f = parseInventoryFilters(new URLSearchParams('attribution=needs_review,candidate'))
+    expect(f.attribution).toEqual(['needs_review', 'candidate'])
+    expect(attributionQuery(f)).toEqual(['needs_review', 'candidate'])
+    expect(serializeInventoryFilters(f).get('attribution')).toBe('needs_review,candidate')
+    expect(countActiveFilters(f)).toBe(2)
+    expect(isInventoryFilterEmpty(f)).toBe(false)
   })
 })

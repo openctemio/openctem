@@ -28,7 +28,7 @@ func (r *bulkStubRepo) GetByIDs(_ context.Context, _ shared.ID, ids []shared.ID)
 	return out, nil
 }
 
-func (r *bulkStubRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, ids []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID) error {
+func (r *bulkStubRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, ids []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
 	r.written = append(r.written, ids...)
 	return nil
 }

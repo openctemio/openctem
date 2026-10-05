@@ -26,7 +26,7 @@ func (f *fakeCommandCreator) Create(_ context.Context, cmd *commanddom.Command) 
 
 func TestCommandDispatcher_Dispatch_BuildsValidateCommand(t *testing.T) {
 	cc := &fakeCommandCreator{}
-	d := NewCommandDispatcher(cc, logger.NewNop())
+	d := NewCommandDispatcher(cc, allowAllGate{}, logger.NewNop())
 
 	tenant := shared.NewID()
 	finding := shared.NewID()
@@ -91,7 +91,7 @@ func TestCommandDispatcher_Dispatch_BuildsValidateCommand(t *testing.T) {
 // routed to a sensor that can run a single template.
 func TestCommandDispatcher_Dispatch_NucleiJobRequiresNucleiCapability(t *testing.T) {
 	cc := &fakeCommandCreator{}
-	d := NewCommandDispatcher(cc, logger.NewNop())
+	d := NewCommandDispatcher(cc, allowAllGate{}, logger.NewNop())
 
 	job := ValidationJob{
 		JobID:          shared.NewID(),
@@ -139,7 +139,7 @@ func TestCommandDispatcher_Dispatch_NucleiJobRequiresNucleiCapability(t *testing
 }
 
 func TestCommandDispatcher_Dispatch_RejectsZeroIDs(t *testing.T) {
-	d := NewCommandDispatcher(&fakeCommandCreator{}, logger.NewNop())
+	d := NewCommandDispatcher(&fakeCommandCreator{}, allowAllGate{}, logger.NewNop())
 	if _, err := d.Dispatch(context.Background(), ValidationJob{}); err == nil {
 		t.Fatal("expected validation error for zero tenant/finding ids")
 	}
@@ -149,7 +149,7 @@ func TestCommandDispatcher_Dispatch_RejectsZeroIDs(t *testing.T) {
 // then sets simulation_run_id and leaves finding_id empty.
 func TestCommandDispatcher_Dispatch_SimulationJob(t *testing.T) {
 	cc := &fakeCommandCreator{}
-	d := NewCommandDispatcher(cc, logger.NewNop())
+	d := NewCommandDispatcher(cc, allowAllGate{}, logger.NewNop())
 
 	simRun := shared.NewID()
 	job := ValidationJob{
@@ -178,7 +178,7 @@ func TestCommandDispatcher_Dispatch_SimulationJob(t *testing.T) {
 
 func TestCommandDispatcher_Dispatch_PropagatesRepoError(t *testing.T) {
 	cc := &fakeCommandCreator{err: errors.New("db down")}
-	d := NewCommandDispatcher(cc, logger.NewNop())
+	d := NewCommandDispatcher(cc, allowAllGate{}, logger.NewNop())
 	_, err := d.Dispatch(context.Background(), ValidationJob{
 		JobID:     shared.NewID(),
 		TenantID:  shared.NewID(),

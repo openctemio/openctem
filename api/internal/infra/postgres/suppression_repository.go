@@ -125,10 +125,22 @@ func (r *SuppressionRepository) FindByID(ctx context.Context, tenantID, id share
 	return r.scanRule(row)
 }
 
-// Delete removes a suppression rule.
+// Delete removes a suppression rule and lifts its suppressions in the same
+// transaction (finding_suppressions rows cascade with the rule, so the lift
+// must run first).
 func (r *SuppressionRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := r.liftSuppressionsInTx(ctx, tx, tenantID, id, "suppression rule deleted"); err != nil {
+		return err
+	}
+
 	query := `DELETE FROM suppression_rules WHERE tenant_id = $1 AND id = $2`
-	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
+	result, err := tx.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete suppression rule: %w", err)
 	}
@@ -141,7 +153,144 @@ func (r *SuppressionRepository) Delete(ctx context.Context, tenantID, id shared.
 		return suppression.ErrRuleNotFound
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
 	return nil
+}
+
+// suppressedCandidate is a finding a rule suppressed that is still in the
+// disposition the suppression gave it.
+type suppressedCandidate struct {
+	id       string
+	status   string
+	toolName string
+	ruleID   string
+	filePath string
+	assetID  sql.NullString
+}
+
+// liftSuppressionsInTx undoes what a rule that stops applying (expired or
+// deleted) did to findings. Every finding linked to the rule that is still in
+// the suppression's disposition (resolution 'suppressed', status
+// false_positive or accepted) is either re-linked to another active rule of
+// the tenant that matches it, or reopened as 'new' with a 'reopened' activity.
+// A finding someone has since moved to another status is left alone. All
+// queries are tenant-scoped. Returns the number of findings reopened.
+func (r *SuppressionRepository) liftSuppressionsInTx(
+	ctx context.Context, tx *sql.Tx, tenantID, ruleID shared.ID, reason string,
+) (int, error) {
+	candidates, err := loadSuppressedCandidates(ctx, tx, tenantID, ruleID)
+	if err != nil {
+		return 0, err
+	}
+	if len(candidates) == 0 {
+		return 0, nil
+	}
+	others, err := r.loadOtherActiveRules(ctx, tx, tenantID, ruleID)
+	if err != nil {
+		return 0, err
+	}
+
+	reopened := 0
+	for _, c := range candidates {
+		match := suppression.FindingMatch{ToolName: c.toolName, RuleID: c.ruleID, FilePath: c.filePath}
+		if c.assetID.Valid {
+			match.AssetID, _ = shared.IDFromString(c.assetID.String)
+		}
+		var cover *suppression.Rule
+		for _, o := range others {
+			if o.Matches(match) {
+				cover = o
+				break
+			}
+		}
+		if cover != nil {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO finding_suppressions (finding_id, suppression_rule_id, applied_by)
+				VALUES ($1, $2, 'system')
+				ON CONFLICT (finding_id, suppression_rule_id) DO NOTHING`, c.id, cover.ID().String()); err != nil {
+				return 0, fmt.Errorf("re-link suppressed finding: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE findings SET status = $3, updated_at = NOW()
+				WHERE tenant_id = $1 AND id = $2 AND status <> $3`,
+				tenantID.String(), c.id, cover.SuppressionType().Disposition()); err != nil {
+				return 0, fmt.Errorf("re-apply suppression disposition: %w", err)
+			}
+			continue
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE findings
+			   SET status = 'new', resolution = NULL, resolution_method = NULL,
+			       resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
+			 WHERE tenant_id = $1 AND id = $2 AND resolution = 'suppressed'`,
+			tenantID.String(), c.id); err != nil {
+			return 0, fmt.Errorf("reopen suppressed finding: %w", err)
+		}
+		changes, err := json.Marshal(map[string]any{
+			"reason":              reason,
+			"suppression_rule_id": ruleID.String(),
+			"previous_status":     c.status,
+			"new_status":          "new",
+		})
+		if err != nil {
+			return 0, fmt.Errorf("marshal reopen activity: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO finding_activities (id, tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, created_at)
+			VALUES ($1, $2, $3, 'reopened', 'system', 'system: suppression lifted', $4, 'auto', NOW())`,
+			shared.NewID().String(), tenantID.String(), c.id, changes); err != nil {
+			return 0, fmt.Errorf("record reopen activity: %w", err)
+		}
+		reopened++
+	}
+	return reopened, nil
+}
+
+// loadSuppressedCandidates locks and returns the findings a rule suppressed
+// that are still in the suppression's disposition.
+func loadSuppressedCandidates(ctx context.Context, tx *sql.Tx, tenantID, ruleID shared.ID) ([]suppressedCandidate, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT f.id, f.status, COALESCE(f.tool_name, ''), COALESCE(f.rule_id, ''),
+		       COALESCE(f.file_path, ''), f.asset_id
+		FROM finding_suppressions fs
+		JOIN findings f ON f.id = fs.finding_id AND f.tenant_id = $1
+		WHERE fs.suppression_rule_id = $2
+		  AND f.resolution = 'suppressed'
+		  AND f.status IN ('false_positive', 'accepted')
+		FOR UPDATE OF f`, tenantID.String(), ruleID.String())
+	if err != nil {
+		return nil, fmt.Errorf("load suppressed findings: %w", err)
+	}
+	defer rows.Close()
+	var candidates []suppressedCandidate
+	for rows.Next() {
+		var c suppressedCandidate
+		if err := rows.Scan(&c.id, &c.status, &c.toolName, &c.ruleID, &c.filePath, &c.assetID); err != nil {
+			return nil, fmt.Errorf("scan suppressed finding: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate suppressed findings: %w", err)
+	}
+	return candidates, nil
+}
+
+// loadOtherActiveRules returns the tenant's other approved, unexpired rules.
+func (r *SuppressionRepository) loadOtherActiveRules(ctx context.Context, tx *sql.Tx, tenantID, ruleID shared.ID) ([]*suppression.Rule, error) {
+	rows, err := tx.QueryContext(ctx, r.selectQuery()+`
+		WHERE sr.tenant_id = $1 AND sr.id <> $2
+		  AND sr.status = 'approved'
+		  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
+		ORDER BY sr.created_at DESC`, tenantID.String(), ruleID.String())
+	if err != nil {
+		return nil, fmt.Errorf("load other active rules: %w", err)
+	}
+	defer rows.Close()
+	return r.scanRules(rows)
 }
 
 // FindByTenant retrieves suppression rules for a tenant with filters.
@@ -255,22 +404,132 @@ func (r *SuppressionRepository) FindMatchingRules(ctx context.Context, tenantID 
 	return matchingRules, nil
 }
 
-// ExpireRules marks expired rules as expired.
+// ExpireRules marks approved rules past expires_at as expired and lifts their
+// suppressions, one rule per transaction so one failure does not hold back the
+// rest. A rule whose lift fails stays approved (and inactive by its
+// expires_at) and is retried on the next run.
 func (r *SuppressionRepository) ExpireRules(ctx context.Context) (int64, error) {
-	query := `
-		UPDATE suppression_rules
-		SET status = 'expired', updated_at = NOW()
-		WHERE status = 'approved'
-		AND expires_at IS NOT NULL
-		AND expires_at < NOW()
-	`
-
-	result, err := r.db.ExecContext(ctx, query)
+	due, err := r.listDueForExpiry(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to expire suppression rules: %w", err)
+		return 0, err
 	}
 
-	return result.RowsAffected()
+	var expired int64
+	var firstErr error
+	for _, e := range due {
+		if err := r.expireOne(ctx, e.tenantID, e.id); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		expired++
+	}
+	return expired, firstErr
+}
+
+type expiringRule struct{ id, tenantID shared.ID }
+
+// listDueForExpiry returns the approved rules whose expires_at has passed.
+// This is the system job: it spans tenants, and every rule is then expired and
+// lifted within its own tenant.
+func (r *SuppressionRepository) listDueForExpiry(ctx context.Context) ([]expiringRule, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id FROM suppression_rules
+		WHERE status = 'approved' AND expires_at IS NOT NULL AND expires_at < NOW()`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list expired suppression rules: %w", err)
+	}
+	defer rows.Close()
+	var due []expiringRule
+	for rows.Next() {
+		var id, tid string
+		if err := rows.Scan(&id, &tid); err != nil {
+			return nil, fmt.Errorf("scan expired suppression rule: %w", err)
+		}
+		pid, err1 := shared.IDFromString(id)
+		ptid, err2 := shared.IDFromString(tid)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		due = append(due, expiringRule{id: pid, tenantID: ptid})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate expired suppression rules: %w", err)
+	}
+	return due, nil
+}
+
+func (r *SuppressionRepository) expireOne(ctx context.Context, tenantID, ruleID shared.ID) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE suppression_rules SET status = 'expired', updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND status = 'approved'
+		  AND expires_at IS NOT NULL AND expires_at < NOW()`, tenantID.String(), ruleID.String())
+	if err != nil {
+		return fmt.Errorf("expire suppression rule: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil // another replica got there first
+	}
+	if _, err := r.liftSuppressionsInTx(ctx, tx, tenantID, ruleID, "suppression rule expired"); err != nil {
+		return err
+	}
+	if err := r.recordAuditInTx(ctx, tx, ruleID, "expired", nil, nil); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
+}
+
+// CountEligibleApprovers counts the tenant's active members who may approve
+// suppression rules: owners and admins (who pass every permission check) and
+// members holding a role with findings:suppressions:approve.
+func (r *SuppressionRepository) CountEligibleApprovers(ctx context.Context, tenantID shared.ID) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT tm.user_id)
+		FROM tenant_members tm
+		WHERE tm.tenant_id = $1
+		  AND tm.status = 'active'
+		  AND (
+		      tm.role IN ('owner', 'admin')
+		      OR EXISTS (
+		          SELECT 1 FROM user_roles ur
+		          JOIN role_permissions rp ON rp.role_id = ur.role_id
+		          WHERE ur.tenant_id = tm.tenant_id AND ur.user_id = tm.user_id
+		            AND rp.permission_id = $2
+		      )
+		  )`, tenantID.String(), suppressionApprovePermission).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count eligible suppression approvers: %w", err)
+	}
+	return n, nil
+}
+
+// suppressionApprovePermission is permission.SuppressionsApprove (not imported
+// here to keep the repository free of the permission package).
+const suppressionApprovePermission = "findings:suppressions:approve"
+
+// IsTenantOwner reports whether the user is an active owner of the tenant.
+func (r *SuppressionRepository) IsTenantOwner(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM tenant_members
+			WHERE tenant_id = $1 AND user_id = $2 AND role = 'owner' AND status = 'active'
+		)`, tenantID.String(), userID.String()).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("check tenant owner: %w", err)
+	}
+	return ok, nil
 }
 
 // RecordSuppression records that a finding was suppressed by a rule.

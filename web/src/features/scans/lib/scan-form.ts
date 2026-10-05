@@ -19,6 +19,12 @@ import type {
   UpdateScanConfigRequest,
 } from '@/lib/api/scan-types'
 import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../types'
+import {
+  TENABLE_SC_TOOL,
+  readTenableScanConfig,
+  tenableScanConfigError,
+  tenableScanConfigToApi,
+} from '@/features/integrations/lib/tenable-sc'
 
 /** Form schedule frequency -> API schedule type ("once" is manual). */
 export function frequencyToScheduleType(frequency: ScheduleFrequency | undefined): ScheduleType {
@@ -52,6 +58,10 @@ function toApiSensorPreference(preference: string): ApiSensorPreference {
 export function basicInfoError(form: NewScanFormData): string | null {
   if (!form.name.trim()) return 'Please enter a scan name'
   if (form.mode === 'single' && !form.scannerName) return 'Please choose a scanner'
+  if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
+    const problem = tenableScanConfigError(readTenableScanConfig(form.scannerConfig))
+    if (problem) return problem
+  }
   if (form.mode === 'workflow' && !form.workflowId) return 'Please select a workflow'
   return null
 }
@@ -102,6 +112,9 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
 
   if (form.mode === 'workflow' && form.workflowId) request.pipeline_id = form.workflowId
   if (form.mode === 'single') request.scanner_name = form.scannerName
+  if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
+    request.scanner_config = tenableScanConfigToApi(readTenableScanConfig(form.scannerConfig))
+  }
 
   applySchedule(form, request)
   return request
@@ -114,6 +127,7 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
     name: config.name,
     mode: config.scan_type === 'workflow' ? 'workflow' : 'single',
     scannerName: config.scanner_name ?? '',
+    scannerConfig: config.scanner_config ? { ...config.scanner_config } : undefined,
     workflowId: config.pipeline_id,
     sensorPreference: config.sensor_preference || 'auto',
     targets: {
@@ -169,6 +183,12 @@ export function formDataToUpdateRequest(
 
   if (form.mode === 'workflow' && form.workflowId) request.pipeline_id = form.workflowId
   if (form.mode === 'single' && form.scannerName) request.scanner_name = form.scannerName
+  if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
+    request.scanner_config = tenableScanConfigToApi(
+      readTenableScanConfig(form.scannerConfig),
+      config.scanner_config
+    )
+  }
 
   applySchedule(form, request)
   return request

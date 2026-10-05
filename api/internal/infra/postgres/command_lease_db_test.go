@@ -64,7 +64,7 @@ func TestCommandLease_ClaimRenewRequeue(t *testing.T) {
 		if err != nil || !ok {
 			t.Fatalf("claim %s: %v %v", id, ok, err)
 		}
-		got, err := cmds.GetByID(ctx, id)
+		got, err := cmds.GetByTenantAndID(ctx, tenant, id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,7 +91,7 @@ func TestCommandLease_ClaimRenewRequeue(t *testing.T) {
 	if !ok || r.Epoch != 1 || r.SensorID == nil || *r.SensorID != a {
 		t.Fatalf("expired lease not re-queued with its holder: %+v", r)
 	}
-	c, err := cmds.GetByID(ctx, lost)
+	c, err := cmds.GetByTenantAndID(ctx, tenant, lost)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestCommandLease_NoCompletionAfterRequeue(t *testing.T) {
 			t.Fatalf("A %s: %v", tr, err)
 		}
 	}
-	stale, err := cmds.GetByID(ctx, id) // what A's late completion read
+	stale, err := cmds.GetByTenantAndID(ctx, tenant, id) // what A's late completion read
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestCommandLease_NoCompletionAfterRequeue(t *testing.T) {
 	if res.Command.Status != command.CommandStatusCompleted || res.Command.LeaseEpoch != 2 {
 		t.Fatalf("B's completion: %+v", res.Command)
 	}
-	final, err := cmds.GetByID(ctx, id)
+	final, err := cmds.GetByTenantAndID(ctx, tenant, id)
 	if err != nil {
 		t.Fatal(err)
 	}

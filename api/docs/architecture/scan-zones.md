@@ -69,7 +69,7 @@ failing closed, as in api#555).
    pre-zone platform/tenant rules.
 8. Every uncovered target is listed in the run's `dispatch_warnings` (with its
    reason) and `uncovered_targets`; `zone_routing` summarises the routing. If no
-   target is left, the trigger fails with `NO_ZONE_COVERAGE`.
+   target is left, the trigger fails with `NO_ZONE_COVERAGE`. A run that leaves targets uncovered ends **`partial`**, never `completed`, even when every job succeeded (it does not fire `scan_completed` automations).
 
 Each batch payload carries only its own targets: `targets`/`target`, a
 `scanner_config` whose `targets`/`target` keys are rewritten to the batch

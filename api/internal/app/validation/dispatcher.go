@@ -87,18 +87,32 @@ type ValidateResultPayload struct {
 }
 
 // CommandDispatcher implements JobDispatcher by creating a CommandTypeValidate
-// command that a validate-capable sensor polls and executes.
+// command that a validate-capable sensor polls and executes. It is the only
+// producer of validate commands, and every job passes the active-probe gate
+// here before a command exists: a refused target, an unwired gate or a gate
+// error dispatches nothing.
 type CommandDispatcher struct {
 	commands CommandCreator
+	gate     TargetGate
 	logger   *logger.Logger
 }
 
-// NewCommandDispatcher wires the dispatcher over the command repository.
-func NewCommandDispatcher(commands CommandCreator, log *logger.Logger) *CommandDispatcher {
+// NewCommandDispatcher wires the dispatcher over the command repository and
+// the active-probe gate. A nil gate refuses every job (fail closed).
+func NewCommandDispatcher(commands CommandCreator, gate TargetGate, log *logger.Logger) *CommandDispatcher {
 	return &CommandDispatcher{
 		commands: commands,
+		gate:     gate,
 		logger:   log.With("service", "validation-dispatcher"),
 	}
+}
+
+// Preflight runs a target through the active-probe gate without dispatching
+// anything, so a caller can refuse a request before it records state.
+// Dispatch runs the same check again; Preflight never replaces it.
+func (d *CommandDispatcher) Preflight(ctx context.Context, tenantID shared.ID, t Target) error {
+	_, err := CheckTarget(ctx, d.gate, tenantID, t)
+	return err
 }
 
 // Dispatch enqueues the job as a tenant command and returns the command ID.
@@ -150,6 +164,19 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 		RequiredCapabilities: []string{requiredCap},
 	}
 
+	// The active-probe gate: exclusions, the private-range policy, the
+	// asset's attribution and scan-zone routing, as for a scan.
+	zone, err := CheckTarget(ctx, d.gate, job.TenantID, job.Target)
+	if err != nil {
+		d.logger.Info("validation job refused by the active-probe gate",
+			"tenant_id", job.TenantID.String(),
+			"asset_id", job.Target.AssetID.String(),
+			"executor_kind", string(job.ExecutorKind),
+			"reason", err.Error(),
+		)
+		return shared.ID{}, err
+	}
+
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return shared.ID{}, fmt.Errorf("marshal validate payload: %w", err)
@@ -158,6 +185,10 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 	cmd, err := commanddom.NewCommand(job.TenantID, commanddom.CommandTypeValidate, commanddom.CommandPriorityNormal, raw)
 	if err != nil {
 		return shared.ID{}, fmt.Errorf("build validate command: %w", err)
+	}
+	if zone != nil {
+		// Only the zone's sensors may claim the probe (zoneClaimPredicate).
+		cmd.SetScanZone(zone.ID)
 	}
 
 	if err := d.commands.Create(ctx, cmd); err != nil {

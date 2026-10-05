@@ -266,7 +266,7 @@ func (s *NotificationService) pushWebSocket(ctx context.Context, n *notification
 		return
 	}
 
-	recipients, err := s.repo.ListRecipients(ctx, n, s.dataScope.Strict(ctx, n.TenantID()))
+	recipients, err := s.repo.ListRecipients(ctx, n)
 	if err != nil {
 		// The notification is stored; the inbox and badge still pick it up on
 		// the next fetch. Only the live push is lost.

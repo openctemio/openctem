@@ -202,14 +202,17 @@ func TestScopeChangesAreAudited_DB(t *testing.T) {
 	base = "/api/v1/scope/exclusions/" + excl
 	h.expect(member, http.MethodPut, base, `{"reason":"very fragile"}`, http.StatusOK)
 	h.expect(admin, http.MethodPost, base+"/approve", "", http.StatusOK)
-	h.expect(member, http.MethodPost, base+"/deactivate", "", http.StatusOK)
+	// Taking an approved exclusion out of effect needs the approval
+	// permission (L-07): scope:write alone is refused and writes nothing.
+	h.expect(member, http.MethodPost, base+"/deactivate", "", http.StatusForbidden)
+	h.expect(owner, http.MethodPost, base+"/deactivate", "", http.StatusOK)
 	h.expect(member, http.MethodPost, base+"/activate", "", http.StatusOK)
 	h.expect(admin, http.MethodDelete, base, "", http.StatusNoContent)
 	requireAudited(t, h.auditRows(tid, "scope_exclusion."), excl, []auditRow{
 		{action: "scope_exclusion.created", actor: member.id, after: map[string]any{"pattern": "payroll.example.com", "status": "pending"}},
 		{action: "scope_exclusion.updated", actor: member.id, before: map[string]any{"reason": "fragile"}, after: map[string]any{"reason": "very fragile"}},
 		{action: "scope_exclusion.approved", actor: admin.id, before: map[string]any{"status": "pending"}, after: map[string]any{"status": "active", "in_effect": true}},
-		{action: "scope_exclusion.deactivated", actor: member.id, severity: "high", before: map[string]any{"in_effect": true}, after: map[string]any{"in_effect": false}},
+		{action: "scope_exclusion.deactivated", actor: owner.id, severity: "high", before: map[string]any{"in_effect": true}, after: map[string]any{"in_effect": false}},
 		{action: "scope_exclusion.activated", actor: member.id, before: map[string]any{"in_effect": false}, after: map[string]any{"in_effect": true}},
 		{action: "scope_exclusion.deleted", actor: admin.id, severity: "high", before: map[string]any{"pattern": "payroll.example.com"}},
 	})
@@ -314,4 +317,71 @@ http:
 	if strings.Contains(raw, "Zq8vT3mP0wX7") || !strings.Contains(raw, `"rate_limit": 10`) {
 		t.Fatalf("tool config audit entry must mask the secret and keep the rest: %s", raw)
 	}
+}
+
+// An approved exclusion was put into effect by two people; taking that
+// protection away (deactivate, delete, an expiry moved earlier or into the
+// past) needs the same: the approval permission, and not the requester.
+// scope:write alone (a member default) used to be enough. Research doc 15,
+// L-07.
+func TestScopeExclusion_ReducingProtectionNeedsSecondApprover_DB(t *testing.T) {
+	h := newChangeAuditHarness(t)
+	tid := h.tenant()
+	owner, admin, member := h.member(tid, "owner"), h.member(tid, "admin"), h.member(tid, "member")
+	week := time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	day := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+
+	// Requested by the admin, approved by the owner.
+	excl := decodeID(t, h.expect(admin, http.MethodPost, "/api/v1/scope/exclusions",
+		`{"exclusion_type":"domain","pattern":"payments.reduce.example.com","reason":"prod","expires_at":"`+week+`"}`, http.StatusCreated))
+	base := "/api/v1/scope/exclusions/" + excl
+	h.expect(owner, http.MethodPost, base+"/approve", "", http.StatusOK)
+	n := len(h.auditRows(tid, "scope_exclusion."))
+
+	for _, c := range []struct{ method, path, body string }{
+		{http.MethodPost, base + "/deactivate", ""},
+		{http.MethodPut, base, `{"expires_at":"` + past + `"}`},
+		{http.MethodPut, base, `{"expires_at":"` + day + `"}`},
+		{http.MethodDelete, base, ""},
+		{http.MethodPost, "/api/v1/scope/exclusions/bulk/delete", `{"exclusion_ids":["` + excl + `"]}`},
+	} {
+		// A member with scope:write (and scope:delete for the delete routes
+		// it does not hold anyway) is refused...
+		if c.method != http.MethodDelete && c.path != "/api/v1/scope/exclusions/bulk/delete" {
+			h.expect(member, c.method, c.path, c.body, http.StatusForbidden)
+		}
+		// ...and so is the requester, although an admin.
+		if c.path == "/api/v1/scope/exclusions/bulk/delete" {
+			body := h.expect(admin, c.method, c.path, c.body, http.StatusOK)
+			if !strings.Contains(body, excl) || !strings.Contains(body, `"affected_count":0`) {
+				t.Errorf("bulk delete by the requester: %s, want the exclusion refused", body)
+			}
+			continue
+		}
+		h.expect(admin, c.method, c.path, c.body, http.StatusForbidden)
+	}
+	if got := len(h.auditRows(tid, "scope_exclusion.")); got != n {
+		t.Fatalf("refused reductions wrote %d audit entries", got-n)
+	}
+	var status string
+	var expires time.Time
+	if err := h.db.QueryRow(`SELECT status, expires_at FROM scope_exclusions WHERE id = $1`, excl).Scan(&status, &expires); err != nil {
+		t.Fatal(err)
+	}
+	if status != "active" || expires.Format(time.RFC3339) != week {
+		t.Fatalf("after refused reductions: status %s expires %s, want active until %s", status, expires.Format(time.RFC3339), week)
+	}
+
+	// Editing the reason stays on scope:write.
+	h.expect(member, http.MethodPut, base, `{"reason":"still prod"}`, http.StatusOK)
+	// A second approver may shorten and then deactivate it; both audited.
+	h.expect(owner, http.MethodPut, base, `{"expires_at":"`+day+`"}`, http.StatusOK)
+	h.expect(owner, http.MethodPost, base+"/deactivate", "", http.StatusOK)
+	rows := h.auditRows(tid, "scope_exclusion.")
+	if len(rows) < 3 || rows[len(rows)-1].action != "scope_exclusion.deactivated" || rows[len(rows)-1].actor != owner.id {
+		t.Fatalf("the second approver's changes were not audited: %+v", rows)
+	}
+	// Out of effect, it can be deleted with ordinary rights.
+	h.expect(admin, http.MethodDelete, base, "", http.StatusNoContent)
 }

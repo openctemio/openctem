@@ -163,16 +163,18 @@ export interface ScopeTypeConfig {
 }
 
 /**
- * Mapping of scope target types to asset types
+ * Mapping of scope target types to asset type names. A name resolves to the
+ * stored (type, sub-type) pair through the asset type registry (`website` is
+ * application/website): match with assetMatchesAnyTypeName, never by string.
  */
 export const SCOPE_TO_ASSET_TYPE_MAP: Record<ScopeTargetType, string[]> = {
-  domain: ['domain'],
-  subdomain: ['domain'],
+  domain: ['domain', 'subdomain'],
+  subdomain: ['subdomain', 'domain'],
   ip_address: ['ip_address', 'host'],
   ip_range: ['ip_address', 'host'],
   certificate: ['certificate'],
   api: ['api', 'api_endpoint'],
-  website: ['website'],
+  website: ['website', 'web_application'],
   mobile_app: ['mobile_app'],
   cloud_account: ['cloud_account'],
   cloud_resource: ['compute', 'storage', 'serverless', 'database'],
@@ -183,7 +185,7 @@ export const SCOPE_TO_ASSET_TYPE_MAP: Record<ScopeTargetType, string[]> = {
   repository: ['repository'],
   project: ['repository', 'project'], // @deprecated - maps to repository
   path: ['api_endpoint'],
-  email_domain: ['domain'],
+  email_domain: ['domain', 'subdomain'],
 }
 
 /**

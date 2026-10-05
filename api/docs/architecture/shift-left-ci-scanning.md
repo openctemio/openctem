@@ -93,7 +93,7 @@ graph LR
 ```
 
 **Invariants**
-- Canonical `findings.status` changes **only** from a **default-branch, full-coverage** scan (feature/PR scans write occurrences only). Protects against a feature branch mass-resolving real findings.
+- Canonical `findings.status` changes **only** from a **default-branch, full-coverage** scan bound to a command that completed cleanly (feature/PR scans write occurrences only). Protects against a feature branch, a failed run or an unbound upload mass-resolving real findings.
 - Default-branch flag is never silently re-pointed on ingest (anti-abuse).
 - Auto-resolve is scoped (tool × scan × assets/branch) — a partial/PR scan never resolves findings outside its scope.
 
@@ -105,7 +105,7 @@ scope is deliberately narrow:
 
 | Finding sits on | Auto-resolves? | Why |
 |---|---|---|
-| A repository asset, on its **default branch** (`findings.branch_id` → `repository_branches.is_default`) | Yes — by a full-coverage scan of that branch, same tool, different scan id | A full scan of the default branch sees the whole codebase; absence means the code is gone. |
+| A repository asset, on its **default branch** (`findings.branch_id` → `repository_branches.is_default`) | Yes — only by a protocol v2 run **bound to a command** that completed with exit 0 and nothing rejected, an explicitly full scan of that branch, same tool and same scan profile as the finding's last sighting (research 18 F3; see `sensors.md`). A CI upload without a command, a tenant upload or a v1 report never closes (owner decision O11). | A clean full scan of the default branch with the same ruleset sees the whole codebase; absence means the code is gone. A failed run, a narrower ruleset or an unbound report proves nothing. |
 | A repository asset, on a feature branch | No (its occurrence on that branch is marked `auto_fixed` instead) | A feature branch is not the source of truth. |
 | A domain, host, IP, service, cloud or any other non-repository asset | **No** | Absence from a network or external scan is not evidence of a fix: hosts go down, ports get filtered, rate limits and template sets vary between runs. These findings close through retest/validation, a human, or the scanner reporting them fixed. `resolveBranches` only tracks branches for repository assets, and the auto-resolve query joins to the default branch, so this holds for every ingest path. |
 

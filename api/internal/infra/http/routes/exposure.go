@@ -29,39 +29,39 @@ func registerExposureRoutes(
 	// Exposure routes - tenant from JWT token
 	router.Group("/api/v1/exposures", func(r Router) {
 		// Stats endpoint (must be before /{id} to avoid matching)
-		r.GET("/stats", h.GetStats, middleware.Require(permission.FindingsRead))
+		r.GET("/stats", h.GetStats, middleware.RequireAll(permission.FindingsRead, permission.ExposuresRead))
 
 		// Bulk ingest (must be before /{id} to avoid matching)
-		r.POST("/ingest", h.BulkIngest, middleware.Require(permission.FindingsWrite))
+		r.POST("/ingest", h.BulkIngest, middleware.RequireAll(permission.FindingsWrite, permission.ExposuresWrite))
 
 		// Read operations
-		r.GET("/", h.List, middleware.Require(permission.FindingsRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.FindingsRead))
+		r.GET("/", h.List, middleware.RequireAll(permission.FindingsRead, permission.ExposuresRead))
+		r.GET("/{id}", h.Get, middleware.RequireAll(permission.FindingsRead, permission.ExposuresRead))
 
 		// Write operations
-		r.POST("/", h.Create, middleware.Require(permission.FindingsWrite))
+		r.POST("/", h.Create, middleware.RequireAll(permission.FindingsWrite, permission.ExposuresWrite))
 
 		// State transitions
-		r.POST("/{id}/resolve", h.Resolve, middleware.Require(permission.FindingsWrite))
+		r.POST("/{id}/resolve", h.Resolve, middleware.RequireAll(permission.FindingsWrite, permission.ExposuresTriage))
 		// Accepting the risk of, or dismissing, an exposure is the same
 		// disposition a finding can only reach through the approval workflow
 		// (FindingStatus.RequiresApproval: accepted / false_positive), so it
 		// needs the approver permission, not findings:write. Exposures have no
 		// request/approve records of their own; the approver sets the state
 		// directly, with the reason recorded in the state history.
-		r.POST("/{id}/accept", h.Accept, middleware.Require(permission.FindingsApprove))
-		r.POST("/{id}/false-positive", h.MarkFalsePositive, middleware.Require(permission.FindingsApprove))
-		r.POST("/{id}/reactivate", h.Reactivate, middleware.Require(permission.FindingsWrite))
+		r.POST("/{id}/accept", h.Accept, middleware.RequireAll(permission.FindingsApprove, permission.ExposuresTriage))
+		r.POST("/{id}/false-positive", h.MarkFalsePositive, middleware.RequireAll(permission.FindingsApprove, permission.ExposuresTriage))
+		r.POST("/{id}/reactivate", h.Reactivate, middleware.RequireAll(permission.FindingsWrite, permission.ExposuresTriage))
 
 		// CTEM-ID tag: associate a standardized exposure-catalog id with this
 		// exposure (stored on the exposure's details; no schema change).
-		r.PUT("/{id}/ctem-id", h.SetCTEMID, middleware.Require(permission.FindingsWrite))
+		r.PUT("/{id}/ctem-id", h.SetCTEMID, middleware.RequireAll(permission.FindingsWrite, permission.ExposuresWrite))
 
 		// History
-		r.GET("/{id}/history", h.GetHistory, middleware.Require(permission.FindingsRead))
+		r.GET("/{id}/history", h.GetHistory, middleware.RequireAll(permission.FindingsRead, permission.ExposuresRead))
 
 		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.FindingsDelete))
+		r.DELETE("/{id}", h.Delete, middleware.RequireAll(permission.FindingsDelete, permission.ExposuresDelete))
 	}, tenantMiddlewares...)
 }
 
@@ -238,6 +238,15 @@ func registerVulnerabilityRoutes(
 		// Stats endpoint (must be before /{id} to avoid route conflicts)
 		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead))
 
+		// The FilterDocument form of the list (RFC-048): read-only, same
+		// permission and scope as GET /findings.
+		r.POST("/search", h.SearchFindings, middleware.Require(permission.FindingsRead))
+
+		// Server-side export (RFC-048): the list's filter, scoped, streamed,
+		// one per user at a time, audit-logged.
+		r.GET("/export", h.ExportFindings, middleware.Require(permission.FindingsExport))
+		r.POST("/export", h.ExportFindingsDocument, middleware.Require(permission.FindingsExport))
+
 		// Groups + Related CVEs (must be before /{id})
 		if findingActionsHandler != nil {
 			r.GET("/groups", findingActionsHandler.ListFindingGroups, middleware.Require(permission.FindingsRead))
@@ -282,6 +291,10 @@ func registerVulnerabilityRoutes(
 
 		// Triage and verification
 		r.PATCH("/{id}/triage", h.TriageFinding, middleware.Require(permission.FindingsTriage))
+		// Mark duplicate (RFC-043 §9): a triage decision that folds the finding
+		// in the body into this one; merging with an approval disposition
+		// also needs findings:approve (checked in the service).
+		r.POST("/{id}/duplicates", h.AddFindingDuplicate, middleware.Require(permission.FindingsTriage))
 		// Verification is a segregation-of-duties control: moving a finding to
 		// resolved must require FindingsVerify (security/scanner), NOT the
 		// broader FindingsWrite that a developer role holds — otherwise a member
@@ -319,6 +332,11 @@ func registerVulnerabilityRoutes(
 
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete))
+	}, tenantMiddlewares...)
+
+	// The findings filter contract (RFC-048): fields, operators, limits.
+	router.Group("/api/v1/meta/filters", func(r Router) {
+		r.GET("/findings", h.FindingFilterMeta, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 
 	// Asset-scoped finding routes
@@ -422,25 +440,25 @@ func registerAITriageRoutes(
 	// AI triage routes - tenant from JWT token
 	router.Group("/api/v1/findings/{id}/ai-triage", func(r Router) {
 		// Get latest triage result (must be before /{triageId} to avoid conflicts)
-		r.GET("/", h.GetTriageResult, middleware.Require(permission.FindingsRead))
+		r.GET("/", h.GetTriageResult, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
 
 		// Get triage history (must be before /{triageId} to avoid conflicts)
-		r.GET("/history", h.ListTriageHistory, middleware.Require(permission.FindingsRead))
+		r.GET("/history", h.ListTriageHistory, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
 
 		// Get specific triage result by ID
-		r.GET("/{triageId}", h.GetTriageResultByID, middleware.Require(permission.FindingsRead))
+		r.GET("/{triageId}", h.GetTriageResultByID, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
 	}, tenantMiddlewares...)
 
 	// Trigger AI triage for a finding (rate-limited)
 	router.POST("/api/v1/findings/{id}/ai-triage", h.RequestTriage,
-		append(postMiddlewares, middleware.Require(permission.FindingsWrite))...)
+		append(postMiddlewares, middleware.RequireAll(permission.FindingsWrite, permission.AITriageTrigger))...)
 
 	// Bulk triage multiple findings (rate-limited)
 	// Note: Bulk endpoint uses same rate limiter - each finding in bulk counts toward limit
 	router.POST("/api/v1/findings/ai-triage/bulk", h.RequestBulkTriage,
-		append(postMiddlewares, middleware.Require(permission.FindingsWrite))...)
+		append(postMiddlewares, middleware.RequireAll(permission.FindingsWrite, permission.AITriageTrigger))...)
 
 	// AI triage config endpoint - returns current AI mode, provider, model
 	router.GET("/api/v1/findings/ai-triage/config", h.GetConfig,
-		append(tenantMiddlewares, middleware.Require(permission.FindingsRead))...)
+		append(tenantMiddlewares, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))...)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -26,7 +27,13 @@ import (
 //   - only an owner may change the role set of another administrator (a user
 //     holding the system admin role): administrators manage members and
 //     viewers, not their peers. Changing one's own role set is not a peer
-//     change and stays subject to the rules above.
+//     change and stays subject to the rules above;
+//   - only an owner may make someone an administrator (settings decision B2):
+//     granting the system admin role to a user who does not hold it yet needs
+//     an owner, on every path (AssignRole, SetUserRoles, BulkAssign, and so
+//     user creation and invitations);
+//   - no custom role may carry an admin-only permission (settings decision
+//     B1, permission.AdminOnlyPermissions), whoever builds it.
 //
 // The handler-level check (assertCanGrantPermissions) lets administrators
 // through, so this is where the rule is enforced. An empty actor is a system
@@ -111,6 +118,50 @@ func (a grantActor) mayCarry(perms []string, fullData bool) error {
 		return fmt.Errorf("%w: it carries full data access, which you do not have", ErrGrantForbidden)
 	}
 	return nil
+}
+
+// ErrAdminPromotionOwnerOnly is returned when someone other than an owner tries
+// to make a user an administrator.
+var ErrAdminPromotionOwnerOnly = fmt.Errorf("%w: only the organization owner can make someone an administrator", ErrGrantForbidden)
+
+// rejectAdminOnlyPermissions refuses a custom-role permission set that carries
+// a permission only the system owner and admin roles may hold.
+func rejectAdminOnlyPermissions(perms []string) error {
+	for _, p := range perms {
+		if permission.IsAdminOnly(p) {
+			return fmt.Errorf("%w: %s is reserved for owners and administrators and cannot be put on a custom role", shared.ErrValidation, p)
+		}
+	}
+	return nil
+}
+
+// authorizeAdminPromotion checks that the actor may give user uid the role set
+// newRoles as far as the system admin role is concerned: if the set adds the
+// admin role to a user who does not hold it yet, the actor must be an owner.
+// A system path (no actor: SCIM, SSO, invitation acceptance without an
+// inviter) is bounded by its own rules and is not checked here.
+func (s *RoleService) authorizeAdminPromotion(ctx context.Context, a grantActor, tid, uid roledom.ID, newRoles []roledom.ID) error {
+	if a.system || a.owner {
+		return nil
+	}
+	adds := false
+	for _, id := range newRoles {
+		if id == roledom.AdminRoleID {
+			adds = true
+			break
+		}
+	}
+	if !adds {
+		return nil
+	}
+	_, alreadyAdmin, err := s.holdsPrivilegedRoles(ctx, tid, uid)
+	if err != nil {
+		return err
+	}
+	if alreadyAdmin {
+		return nil
+	}
+	return ErrAdminPromotionOwnerOnly
 }
 
 // holdsPrivilegedRoles reports whether the user currently holds the owner role

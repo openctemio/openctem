@@ -179,7 +179,11 @@ func registerUserRoutes(
 
 		// Local auth session management
 		if provider.SupportsLocal() && localAuthHandler != nil {
-			r.POST("/me/change-password", localAuthHandler.ChangePassword)
+			// Change-password checks the current password, so it gets the
+			// password rate limiter (settings audit A-M2); wrong passwords
+			// also count against the account lockout in the service.
+			passwordRL := newAuthRateLimiter("account-password")
+			r.POST("/me/change-password", localAuthHandler.ChangePassword, passwordRL.PasswordMiddleware())
 			r.GET("/me/sessions", localAuthHandler.ListSessions)
 			r.DELETE("/me/sessions", localAuthHandler.RevokeAllSessions)
 			r.DELETE("/me/sessions/{sessionId}", localAuthHandler.RevokeSession)

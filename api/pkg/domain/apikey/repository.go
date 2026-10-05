@@ -34,5 +34,5 @@ type Repository interface {
 	// TouchLastUsed records that the key was just used (last_used_at/ip +
 	// use_count). Best-effort — callers ignore its error so telemetry never
 	// blocks authentication.
-	TouchLastUsed(ctx context.Context, id ID, ip string) error
+	TouchLastUsed(ctx context.Context, tenantID, id ID, ip string) error
 }

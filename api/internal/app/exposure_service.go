@@ -28,3 +28,9 @@ var (
 	NewExposureService            = exposure.NewExposureService
 	NewRemediationCampaignService = exposure.NewRemediationCampaignService
 )
+
+// ErrExposureAssetNotFound is the generic refusal of an exposure asset_id.
+var ErrExposureAssetNotFound = exposure.ErrExposureAssetNotFound
+
+// ErrExposureAssetRequired refuses an asset-less exposure from a restricted member.
+var ErrExposureAssetRequired = exposure.ErrExposureAssetRequired

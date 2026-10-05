@@ -21,6 +21,9 @@ const (
 	ScheduleWeekly  ScheduleType = "weekly"
 	ScheduleMonthly ScheduleType = "monthly"
 	ScheduleCrontab ScheduleType = "crontab"
+	// ScheduleRRule: an RFC 5545 recurrence rule in the scan timezone
+	// (RFC-046 D11), in ScheduleRRule.
+	ScheduleRRule ScheduleType = "rrule"
 )
 
 // Status represents the scan status.

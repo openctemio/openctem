@@ -17,20 +17,18 @@ type Repository interface {
 	// This is used for the transactional outbox pattern.
 	CreateInTx(ctx context.Context, tx *sql.Tx, event *ExposureEvent) error
 
-	// GetByID retrieves an exposure event by its ID.
-	GetByID(ctx context.Context, id shared.ID) (*ExposureEvent, error)
-
 	// GetByTenantAndID retrieves an exposure event by tenant and ID (tenant-scoped access control).
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*ExposureEvent, error)
 
 	// GetByFingerprint retrieves an exposure event by fingerprint within a tenant.
 	GetByFingerprint(ctx context.Context, tenantID shared.ID, fingerprint string) (*ExposureEvent, error)
 
-	// Update updates an existing exposure event.
+	// Update updates an existing exposure event. Only the row of the event's
+	// own tenant is written; another tenant's id is not found.
 	Update(ctx context.Context, event *ExposureEvent) error
 
-	// Delete removes an exposure event by its ID.
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete removes an exposure event of the tenant.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// List retrieves exposure events with filtering, sorting, and pagination.
 	List(ctx context.Context, filter Filter, opts ListOptions, page pagination.Pagination) (pagination.Result[*ExposureEvent], error)

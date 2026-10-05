@@ -203,19 +203,47 @@ virtual_types:
   - { name: k8s_cluster, type: kubernetes, sub_type: cluster }
   - { name: k8s_workload, type: kubernetes, sub_type: workload }
   - { name: container_image, type: container, sub_type: image }
-  - { name: api_collection, type: application, sub_type: api_collection }
-  - { name: api_endpoint, type: discovered_url }
+  - { name: api_collection, type: application, sub_type: api }
+  - { name: api_endpoint, type: service, sub_type: discovered_url }
   - { name: identity_provider, type: identity, sub_type: identity_provider }
-  - { name: credential, type: identity, sub_type: credential }
-  - { name: mobile, type: mobile_app }
+  # A credential is a secret, not an identity; secrets become a type of
+  # their own (RFC-042 §6.3.8 O4). Until then its constraints are skipped.
+  - { name: credential, unmodelled: true }
+  - { name: mobile, type: application, sub_type: mobile_app }
+
+# Legacy type names still accepted on input that are no type of their own
+# (RFC-042 §6.3.8). `web_application` is stored as (application, website):
+# one web sub-type, labelled "Web application" (owner decision O3).
+type_inputs:
+  web_application: { type: application, sub_type: website }
 
 # Attribute types: string, int, number, bool, time, enum (needs values),
 # list (of strings) and object (opaque). Only string, int, enum and bool
 # attributes can be facets or group-by fields.
 #
-# Each type: `alias_of` marks a legacy type that ingest stores as
-# (core type, sub_type) (pkg/domain/asset TypeAliases). An alias keeps its
-# own class: a `host` row with sub_type `serverless` is class `function`.
+# Core types and aliases (RFC-042 §6.3.8, docs/rfcs/RFC-042-asset-inventory-v2.md):
+#
+#   - A type without `alias_of` is a core type: the only values
+#     assets.asset_type holds.
+#   - `alias_of` marks an input name. Every write path (REST, import,
+#     ingest, connectors, seeds) resolves it to (core type, sub_type) and,
+#     optionally, a `provider` and `attributes`; it is never stored. An
+#     alias keeps its own class: a `host` row with sub_type `serverless` is
+#     class `function`. Its sub_type must be in the core type's sub_types;
+#     it may be empty only when the alias has the core type's class.
+#   - `sub_types` is the closed list of kinds of a core type (a sub-type is
+#     a kind, never a vendor or an engine). REST and import reject any other
+#     value; ingest keeps it in properties.x_native_sub_type.
+#   - `sub_type_inputs` maps a legacy sub-type value that is still accepted
+#     on input to { type, sub_type, provider, attributes }. Provider and
+#     attributes are set only when the asset has none.
+#   - `scannable_by` lists the tool target types (a tool's supported_targets:
+#     url, domain, ip, host, ...) that can scan the type. An alias without
+#     one inherits its core type's list; with one, it is the list of that
+#     (core type, sub_type).
+#   - `exposure_default` is the exposure a type has by nature (public for
+#     domains, certificates and web applications); ingest applies it when the
+#     scanner sent no exposure.
 types:
   # ---------------------------------------------------------------------------
   # External surface
@@ -236,6 +264,8 @@ types:
       - { name: whois, type: object }
     columns: [name, registrar, expires_at, findings.open, last_seen, owner]
     card: domain
+    scannable_by: [domain]
+    exposure_default: public
     sections: [overview, attributes, dns, findings, relationships, owners, sources, history]
 
   - type: subdomain
@@ -253,6 +283,8 @@ types:
       - { name: is_wildcard, type: bool, facet: true }
     columns: [name, parent_domain, findings.open, last_seen, owner]
     card: domain
+    scannable_by: [domain]
+    exposure_default: public
     sections: [overview, attributes, dns, services, findings, relationships, owners, sources, history]
 
   - type: ip_address
@@ -261,6 +293,8 @@ types:
     icon: network
     class: ip_address
     legacy_category: external_surface
+    sub_type_inputs:
+      ip: {}
     identity_keys: [ip, name]
     attributes:
       - { name: version, type: enum, values: ["4", "6"], facet: true }
@@ -276,6 +310,7 @@ types:
       - { name: is_reserved, type: bool }
     columns: [name, asn_org, country, findings.open, last_seen, owner]
     card: ip_address
+    scannable_by: [ip, host]
     sections: [overview, attributes, services, findings, relationships, owners, sources, history]
 
   - type: certificate
@@ -284,6 +319,9 @@ types:
     icon: shield-check
     class: certificate
     legacy_category: external_surface
+    sub_type_inputs:
+      ssl: {}
+      tls: {}
     identity_keys: [attr.fingerprint_sha256, name]
     attributes:
       - { name: serial_number, type: string }
@@ -302,6 +340,8 @@ types:
       - { name: is_wildcard, type: bool, facet: true }
     columns: [name, issuer_org, not_after, is_self_signed, last_seen, owner]
     card: certificate
+    scannable_by: [certificate]
+    exposure_default: public
     sections: [overview, certificate, attributes, findings, relationships, owners, sources, history]
 
   - type: service
@@ -310,7 +350,9 @@ types:
     icon: server
     class: service
     legacy_category: network
-    sub_types: [http, open_port, discovered_url, port]
+    sub_types: [http, open_port, discovered_url]
+    sub_type_inputs:
+      port: { sub_type: open_port }
     identity_keys: [name]
     attributes:
       - { name: port, type: int, facet: true, group: true }
@@ -327,6 +369,7 @@ types:
       - { name: response_time_ms, type: int }
     columns: [name, port, protocol, product, findings.open, last_seen]
     card: service
+    scannable_by: [service, port]
     sections: [overview, attributes, technologies, certificate, findings, relationships, owners, sources, history]
 
   - type: http_service
@@ -355,6 +398,7 @@ types:
       - { name: redirect_url, type: string }
     columns: [name, status_code, title, server, findings.open, last_seen]
     card: service
+    scannable_by: [url, service, port]
     sections: [overview, attributes, technologies, certificate, findings, relationships, owners, sources, history]
 
   - type: open_port
@@ -377,6 +421,7 @@ types:
       - { name: discovery_tool, type: string, facet: true }
     columns: [name, port, protocol, service, findings.open, last_seen]
     card: service
+    scannable_by: [port, service]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: discovered_url
@@ -399,6 +444,7 @@ types:
       - { name: forms, type: object }
     columns: [name, method, status_code, content_type, findings.open, last_seen]
     card: web_endpoint
+    scannable_by: [url]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   # ---------------------------------------------------------------------------
@@ -410,7 +456,11 @@ types:
     icon: app-window
     class: application
     legacy_category: application
-    sub_types: [website, web_application, api, mobile_app, api_collection]
+    sub_types: [website, api, mobile_app]
+    # O3 (RFC-042 §6.3.8): one web sub-type, stored as `website` and
+    # labelled "Web application"; `web_application` is an input name.
+    sub_type_inputs:
+      web_application: { sub_type: website }
     identity_keys: [name]
     attributes:
       - { name: url, type: string }
@@ -422,11 +472,12 @@ types:
       - { name: has_waf, type: bool, facet: true }
     columns: [name, sub_type, server, findings.open, last_seen, owner]
     card: application
+    scannable_by: [url]
     sections: [overview, attributes, technologies, findings, services, relationships, owners, sources, history]
 
   - type: website
-    label: Website
-    plural: Websites
+    label: Web Application
+    plural: Web Applications
     icon: globe
     class: application
     alias_of: { type: application, sub_type: website }
@@ -438,32 +489,15 @@ types:
       - { name: technologies, type: list }
       - { name: server, type: string, facet: true, group: true }
       - { name: cms, type: string, facet: true, group: true }
+      - { name: framework, type: string, facet: true, group: true }
       - { name: response_code, type: int, facet: true }
       - { name: tls_version, type: string, facet: true }
       - { name: has_waf, type: bool, facet: true }
       - { name: waf_vendor, type: string, facet: true }
     columns: [name, title, server, findings.open, last_seen, owner]
     card: application
-    sections: [overview, attributes, technologies, findings, relationships, owners, sources, history]
-
-  - type: web_application
-    label: Web Application
-    plural: Web Applications
-    icon: app-window
-    class: application
-    alias_of: { type: application, sub_type: web_application }
-    legacy_category: application
-    identity_keys: [name]
-    attributes:
-      - { name: url, type: string }
-      - { name: title, type: string }
-      - { name: technologies, type: list }
-      - { name: server, type: string, facet: true, group: true }
-      - { name: framework, type: string, facet: true, group: true }
-      - { name: response_code, type: int, facet: true }
-      - { name: has_waf, type: bool, facet: true }
-    columns: [name, title, framework, findings.open, last_seen, owner]
-    card: application
+    scannable_by: [url]
+    exposure_default: public
     sections: [overview, attributes, technologies, findings, relationships, owners, sources, history]
 
   - type: api
@@ -485,6 +519,8 @@ types:
       - { name: endpoints_count, type: int }
     columns: [name, api_type, authentication, findings.open, last_seen, owner]
     card: application
+    scannable_by: [url, api]
+    exposure_default: public
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: mobile_app
@@ -506,6 +542,7 @@ types:
       - { name: uses_ssl_pinning, type: bool, facet: true }
     columns: [name, platform, version, findings.open, last_seen, owner]
     card: application
+    scannable_by: [mobile]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   # ---------------------------------------------------------------------------
@@ -517,7 +554,17 @@ types:
     icon: server
     class: host
     legacy_category: infrastructure
-    sub_types: [compute, serverless, server]
+    # workstation: a user device (laptop, desktop, kiosk) an EDR or MDM
+    # reports. It is a host, so a laptop seen by a network scan and by EDR
+    # can be matched (RFC-042 §6.3.8 T4a: `endpoint` was a type of its own).
+    sub_types: [compute, serverless, workstation]
+    sub_type_inputs:
+      server: {}
+      linux: { attributes: { os_family: linux } }
+      windows: { attributes: { os_family: windows } }
+      macos: { attributes: { os_family: macos } }
+      bsd: { attributes: { os_family: bsd } }
+      kubernetes_cluster: { type: kubernetes, sub_type: cluster }
     identity_keys: [host_id, cloud_id, bios_uuid, serial_number, mac, fqdn, hostname, ip, name]
     attributes:
       - { name: hostname, type: string }
@@ -535,6 +582,7 @@ types:
       - { name: hypervisor, type: string, facet: true }
     columns: [name, os_name, ip_addresses, findings.open, last_seen, owner]
     card: host
+    scannable_by: [host, ip]
     sections: [overview, attributes, services, findings, components, relationships, owners, exposure, sources, history]
 
   - type: compute
@@ -559,6 +607,7 @@ types:
       - { name: platform, type: string, facet: true }
     columns: [name, provider, region, instance_type, findings.open, last_seen]
     card: host
+    scannable_by: [host, ip, compute]
     sections: [overview, attributes, services, findings, relationships, owners, exposure, sources, history]
 
   - type: endpoint
@@ -566,6 +615,7 @@ types:
     plural: Endpoints
     icon: laptop
     class: host
+    alias_of: { type: host, sub_type: workstation }
     legacy_category: infrastructure
     identity_keys: [host_id, bios_uuid, serial_number, mac, hostname, name]
     attributes:
@@ -577,6 +627,7 @@ types:
       - { name: edr_installed, type: bool, facet: true }
     columns: [name, device_type, os_family, findings.open, last_seen, owner]
     card: host
+    scannable_by: [host, ip]
     sections: [overview, attributes, findings, components, relationships, owners, sources, history]
 
   - type: serverless
@@ -600,6 +651,7 @@ types:
       - { name: last_modified, type: time }
     columns: [name, provider, runtime, region, findings.open, last_seen]
     card: function
+    scannable_by: [serverless]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: cloud_account
@@ -608,6 +660,13 @@ types:
     icon: cloud
     class: cloud_account
     legacy_category: cloud
+    sub_types: [account, project, subscription, organization]
+    # Vendors were stored as sub-types; the vendor is the provider.
+    sub_type_inputs:
+      aws: { provider: aws, attributes: { provider: aws } }
+      gcp: { provider: gcp, attributes: { provider: gcp } }
+      azure: { provider: azure, attributes: { provider: azure } }
+      digitalocean: { attributes: { provider: digitalocean } }
     identity_keys: [cloud_id, attr.account_id, name]
     attributes:
       - { name: provider, type: enum, values: [aws, gcp, azure, digitalocean, other], facet: true, group: true }
@@ -618,6 +677,7 @@ types:
       - { name: mfa_enabled, type: bool, facet: true }
     columns: [name, provider, account_id, findings.open, last_seen, owner]
     card: cloud_account
+    scannable_by: [cloud_account]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   # ---------------------------------------------------------------------------
@@ -630,6 +690,15 @@ types:
     class: container
     legacy_category: infrastructure
     sub_types: [image]
+    # The Kubernetes importer stored workloads as containers of their kind.
+    sub_type_inputs:
+      cronjob: { type: kubernetes, sub_type: workload, attributes: { workload_kind: cronjob } }
+      daemonset: { type: kubernetes, sub_type: workload, attributes: { workload_kind: daemonset } }
+      deployment: { type: kubernetes, sub_type: workload, attributes: { workload_kind: deployment } }
+      job: { type: kubernetes, sub_type: workload, attributes: { workload_kind: job } }
+      pod: { type: kubernetes, sub_type: workload, attributes: { workload_kind: pod } }
+      replicaset: { type: kubernetes, sub_type: workload, attributes: { workload_kind: replicaset } }
+      statefulset: { type: kubernetes, sub_type: workload, attributes: { workload_kind: statefulset } }
     identity_keys: [attr.container_id, name]
     attributes:
       - { name: container_id, type: string }
@@ -642,6 +711,7 @@ types:
       - { name: networks, type: list }
     columns: [name, image, runtime, findings.open, last_seen, owner]
     card: container
+    scannable_by: [container]
     sections: [overview, attributes, findings, components, relationships, owners, sources, history]
 
   - type: kubernetes
@@ -658,10 +728,12 @@ types:
       - { name: region, type: string, facet: true }
       - { name: cluster_name, type: string, group: true }
       - { name: namespace, type: string, group: true }
+      - { name: workload_kind, type: string, facet: true, group: true }
       - { name: node_count, type: int }
       - { name: rbac_enabled, type: bool, facet: true }
     columns: [name, sub_type, provider, version, findings.open, last_seen]
     card: cluster
+    scannable_by: [kubernetes]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: kubernetes_cluster
@@ -724,6 +796,7 @@ types:
       - { name: immutable_tags, type: bool, facet: true }
     columns: [name, provider, image_count, findings.open, last_seen, owner]
     card: artifact_registry
+    scannable_by: [container]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   # ---------------------------------------------------------------------------
@@ -735,7 +808,12 @@ types:
     icon: git-branch
     class: code_repo
     legacy_category: code
-    sub_types: [github, gitlab, bitbucket, azure_devops]
+    # The SCM is the provider, not a sub-type.
+    sub_type_inputs:
+      github: { provider: github, attributes: { provider: github } }
+      gitlab: { provider: gitlab, attributes: { provider: gitlab } }
+      bitbucket: { provider: bitbucket, attributes: { provider: bitbucket } }
+      azure_devops: { provider: azure_devops, attributes: { provider: azure_devops } }
     storage: asset_repositories
     identity_keys: [scm_repo_id, attr.canonical_url, name]
     attributes:
@@ -748,6 +826,7 @@ types:
       - { name: archived, type: bool, facet: true }
     columns: [name, provider, visibility, language, findings.open, last_seen, owner]
     card: repository
+    scannable_by: [repository, file]
     sections: [overview, findings, components, secrets, branches, relationships, owners, sources, history]
 
   # ---------------------------------------------------------------------------
@@ -759,7 +838,7 @@ types:
     icon: user
     class: identity
     legacy_category: identity
-    sub_types: [iam_user, iam_role, &service_account service_account, identity_provider, credential]
+    sub_types: [iam_user, iam_role, &service_account service_account, identity_provider]
     identity_keys: [cloud_id, attr.principal_id, name]
     attributes:
       - { name: provider, type: enum, values: [aws, gcp, azure, entra, okta, kubernetes, other], facet: true, group: true }
@@ -771,6 +850,7 @@ types:
       - { name: last_used, type: time }
     columns: [name, sub_type, provider, mfa_enabled, findings.open, last_seen]
     card: identity
+    scannable_by: []
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: iam_user
@@ -847,7 +927,30 @@ types:
     icon: database
     class: data_store
     legacy_category: data
-    sub_types: [data_store]
+    # The kind of database; the engine is the `engine` attribute.
+    sub_types: [relational, document, key_value, graph, warehouse, vector]
+    sub_type_inputs:
+      data_store: {}
+      postgresql: { sub_type: relational, attributes: { engine: postgresql } }
+      postgres: { sub_type: relational, attributes: { engine: postgresql } }
+      mysql: { sub_type: relational, attributes: { engine: mysql } }
+      mariadb: { sub_type: relational, attributes: { engine: mariadb } }
+      mssql: { sub_type: relational, attributes: { engine: mssql } }
+      sqlserver: { sub_type: relational, attributes: { engine: mssql } }
+      oracle: { sub_type: relational, attributes: { engine: oracle } }
+      sqlite: { sub_type: relational, attributes: { engine: sqlite } }
+      mongodb: { sub_type: document, attributes: { engine: mongodb } }
+      couchdb: { sub_type: document, attributes: { engine: couchdb } }
+      elasticsearch: { sub_type: document, attributes: { engine: elasticsearch } }
+      opensearch: { sub_type: document, attributes: { engine: opensearch } }
+      redis: { sub_type: key_value, attributes: { engine: redis } }
+      memcached: { sub_type: key_value, attributes: { engine: memcached } }
+      dynamodb: { sub_type: key_value, attributes: { engine: dynamodb } }
+      cassandra: { sub_type: key_value, attributes: { engine: cassandra } }
+      neo4j: { sub_type: graph, attributes: { engine: neo4j } }
+      snowflake: { sub_type: warehouse, attributes: { engine: snowflake } }
+      bigquery: { sub_type: warehouse, attributes: { engine: bigquery } }
+      redshift: { sub_type: warehouse, attributes: { engine: redshift } }
     identity_keys: [cloud_id, name]
     attributes:
       - { name: engine, type: string, facet: true, group: true }
@@ -861,6 +964,7 @@ types:
       - { name: backup_retention_days, type: int }
     columns: [name, engine, provider, publicly_accessible, findings.open, last_seen, owner]
     card: data_store
+    scannable_by: [database]
     sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
 
   - type: data_store
@@ -868,7 +972,7 @@ types:
     plural: Data Stores
     icon: hard-drive
     class: data_store
-    alias_of: { type: database, sub_type: data_store }
+    alias_of: { type: database }
     legacy_category: data
     identity_keys: [cloud_id, name]
     attributes:
@@ -886,7 +990,10 @@ types:
     icon: archive
     class: data_store
     legacy_category: cloud
-    sub_types: [s3_bucket, container_registry]
+    sub_types: [bucket, file_share, disk, container_registry]
+    sub_type_inputs:
+      s3_bucket: { sub_type: bucket, provider: aws, attributes: { provider: aws } }
+      s3: { sub_type: bucket, provider: aws, attributes: { provider: aws } }
     identity_keys: [cloud_id, attr.arn, name]
     attributes:
       - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
@@ -900,6 +1007,7 @@ types:
       - { name: logging_enabled, type: bool, facet: true }
     columns: [name, provider, region, public_access, findings.open, last_seen, owner]
     card: data_store
+    scannable_by: [storage]
     sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
 
   - type: s3_bucket
@@ -907,7 +1015,7 @@ types:
     plural: S3 Buckets
     icon: archive
     class: data_store
-    alias_of: { type: storage, sub_type: s3_bucket }
+    alias_of: { type: storage, sub_type: bucket, provider: aws, attributes: { provider: aws } }
     legacy_category: data
     identity_keys: [cloud_id, attr.arn, name]
     attributes:
@@ -930,7 +1038,14 @@ types:
     icon: network
     class: network
     legacy_category: network
-    sub_types: [vpc, subnet, firewall, load_balancer, router, switch]
+    # Two families (RFC-042 §6.3.8 O2): segments, then devices.
+    sub_types: [vpc, subnet, ip_block, vlan, security_group, firewall, router, switch, load_balancer, vpn_gateway, wireless_controller, access_point, ids_ips]
+    sub_type_inputs:
+      wireless_ap: { sub_type: access_point }
+      ids: { sub_type: ids_ips }
+      ips: { sub_type: ids_ips }
+      core_switch: { sub_type: switch }
+      access_switch: { sub_type: switch }
     identity_keys: [cloud_id, name]
     attributes:
       - { name: cidr, type: string }
@@ -941,6 +1056,7 @@ types:
       - { name: zone, type: string, facet: true, group: true }
     columns: [name, sub_type, cidr, findings.open, last_seen, owner]
     card: network
+    scannable_by: [network]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: vpc
@@ -1033,4 +1149,5 @@ types:
     attributes: []
     columns: [name, type, findings.open, last_seen, owner]
     card: generic
+    scannable_by: []
     sections: [overview, attributes, findings, relationships, owners, sources, history]

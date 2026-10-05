@@ -428,7 +428,7 @@ func TestEmailService_SendTeamInvitationEmail_Success(t *testing.T) {
 	if data.TeamName != "Acme Corp" {
 		t.Errorf("expected TeamName=Acme Corp, got %s", data.TeamName)
 	}
-	expectedURL := "https://app.example.com/invitations/inv-tok-456"
+	expectedURL := "https://app.example.com/invitations#token=inv-tok-456"
 	if data.InvitationURL != expectedURL {
 		t.Errorf("expected InvitationURL=%s, got %s", expectedURL, data.InvitationURL)
 	}
@@ -568,7 +568,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			iData := mock.lastData.(email.TeamInvitationData)
-			expectedInvURL := fmt.Sprintf("%s/invitations/inv1", tc.baseURL)
+			expectedInvURL := fmt.Sprintf("%s/invitations#token=inv1", tc.baseURL)
 			if iData.InvitationURL != expectedInvURL {
 				t.Errorf("expected InvitationURL=%s, got %s", expectedInvURL, iData.InvitationURL)
 			}

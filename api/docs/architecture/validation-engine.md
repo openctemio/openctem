@@ -133,6 +133,18 @@ drift; technique `T1190`). The API remains a pure orchestrator — it never runs
 nuclei. `Selector`/`DefaultSelector` prefer safe-check and gate the riskier kinds
 behind an attacker profile.
 
+**Active-probe gate:** `CommandDispatcher` is the only producer of validate
+commands, and every job passes the scan target gate before a command exists:
+scope exclusions, the private-range policy, the asset attribution and scan-zone
+routing (a zoned target is pinned to its zone). A refusal is
+`validation.ErrTargetRefused` (400 with the reason); an unwired gate or a lookup
+error dispatches nothing. See [active-probe-gate.md](active-probe-gate.md).
+
+**Evidence ownership:** evidence that cites its validate command takes the
+simulation run and the asset from that command; a body naming another run or
+asset is refused (403). Advisory evidence (no command) cannot cite a
+simulation run, and evidence may name only its finding's asset.
+
 **Capability gate:** dispatch routes a job to an agent by matching the job's
 required capability against the agent's flat capability list. A `safe-check`
 job requires `validate`; a `KindNuclei` job requires the deeper `validate:nuclei`
@@ -173,7 +185,7 @@ finding:
 | Verdict (outcome) | Finding before | Transition |
 |-------------------|----------------|------------|
 | `not_reproducible` (`not_detected`) | new / confirmed / in_progress | → `validated_fixed` (**downgrade**, `downgraded_at` stamped) |
-| `not_reproducible` | `fix_applied` | → `resolved` (verified proof-of-fix, *not* a downgrade) |
+| `not_reproducible` | `fix_applied` | hold, verdict stamped. Not a close: `raw_meta.reachable` is the sensor's own claim (research 18 F6). A retest (RFC-039) or a `findings:verify` holder closes it. |
 | `reproducible` (`detected`) | `fix_applied` | → `in_progress` (fix did not hold) + notify |
 | `reproducible` | `validated_fixed` | → `confirmed` (prior downgrade refuted) |
 | `reproducible` | other open | hold, stamp "still exploitable" |

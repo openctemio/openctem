@@ -17,13 +17,13 @@ type (
 	ProvisionedUser         = tenant.ProvisionedUser
 
 	AddMemberInput              = tenant.AddMemberInput
+	OffboardMemberInput         = tenant.OffboardMemberInput
 	BranchTypeRuleInput         = tenant.BranchTypeRuleInput
 	CreateInvitationInput       = tenant.CreateInvitationInput
 	CreateTenantInput           = tenant.CreateTenantInput
 	EmailJobEnqueuer            = tenant.EmailJobEnqueuer
 	MemberStatusEmailNotifier   = tenant.MemberStatusEmailNotifier
 	TeamInvitationJobPayload    = tenant.TeamInvitationJobPayload
-	UpdateAPISettingsInput      = tenant.UpdateAPISettingsInput
 	UpdateBranchSettingsInput   = tenant.UpdateBranchSettingsInput
 	UpdateBrandingSettingsInput = tenant.UpdateBrandingSettingsInput
 	UpdateGeneralSettingsInput  = tenant.UpdateGeneralSettingsInput
@@ -42,6 +42,7 @@ var (
 	ErrNotPendingSetup              = tenant.ErrNotPendingSetup
 	ErrSetupLinkForbidden           = tenant.ErrSetupLinkForbidden
 	ErrIPAllowlistExcludesRequester = tenant.ErrIPAllowlistExcludesRequester
+	ErrOwnerRequiredForErase        = tenant.ErrOwnerRequiredForErase
 )
 
 var (

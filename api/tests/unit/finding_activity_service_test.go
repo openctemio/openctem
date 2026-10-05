@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -48,7 +49,7 @@ func (m *findingActActivityRepo) CreateBatch(ctx context.Context, activities []*
 	return nil
 }
 
-func (m *findingActActivityRepo) GetByID(ctx context.Context, id shared.ID) (*vulnerability.FindingActivity, error) {
+func (m *findingActActivityRepo) GetByTenantAndID(ctx context.Context, _, id shared.ID) (*vulnerability.FindingActivity, error) {
 	if m.GetByIDFunc != nil {
 		return m.GetByIDFunc(ctx, id)
 	}
@@ -1536,7 +1537,7 @@ func TestFindingActivityService_RecordActivity_TimestampIsSet(t *testing.T) {
 func (m *stubFindingRepo) ListFindingGroups(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.FindingGroup], error) {
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
-func (m *stubFindingRepo) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *stubFindingRepo) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 func (m *stubFindingRepo) FindRelatedCVEs(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter) ([]vulnerability.RelatedCVE, error) {
@@ -1551,5 +1552,18 @@ func (m *stubFindingRepo) GetByWorkItemURI(_ context.Context, _ shared.ID, _ str
 }
 
 func (m *stubFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
+	return nil
+}
+
+// The services mutate the user they hold before calling these targeted
+// updates, and this mock stores that same pointer, so there is nothing more to
+// write here.
+func (m *findingActUserRepo) RecordFailedLogin(_ context.Context, _ shared.ID, _ int, _ time.Duration) (*time.Time, error) {
+	return nil, nil
+}
+
+func (m *findingActUserRepo) RecordSuccessfulLogin(_ context.Context, _ shared.ID) error { return nil }
+
+func (m *findingActUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ string) error {
 	return nil
 }

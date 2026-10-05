@@ -1,0 +1,278 @@
+[
+  {
+    "version": "1.0",
+    "metadata": {
+      "id": "cmd-1-0",
+      "timestamp": "2026-10-04T12:00:00Z",
+      "source_type": "scanner",
+      "coverage_type": "incremental"
+    },
+    "tool": {
+      "name": "tenable_sc",
+      "version": "6.4.0",
+      "vendor": "Tenable"
+    },
+    "assets": [
+      {
+        "id": "host-10.20.0.16",
+        "type": "ip_address",
+        "value": "10.20.0.16",
+        "name": "FILESRV",
+        "properties": {
+          "ip_address": "10.20.0.16",
+          "netbios_name": "FILESRV",
+          "os": "Microsoft Windows Server 2019",
+          "tenable_repository": "Datacenter",
+          "tenable_repository_id": "5"
+        }
+      },
+      {
+        "id": "host-2001:db8::10",
+        "type": "ip_address",
+        "value": "2001:db8::10",
+        "name": "2001:db8::10",
+        "properties": {
+          "ip_address": "2001:db8::10",
+          "tenable_repository": "Branch IPv6",
+          "tenable_repository_id": "7"
+        }
+      },
+      {
+        "id": "host-app01.corp.example",
+        "type": "host",
+        "value": "app01.corp.example",
+        "name": "app01.corp.example",
+        "identifiers": {
+          "mac_addresses": [
+            "00:50:56:aa:bb:cc"
+          ]
+        },
+        "properties": {
+          "fqdn": "app01.corp.example",
+          "ip_address": "10.20.0.15",
+          "netbios_name": "CORP\\APP01",
+          "os": "Linux Kernel 5.15",
+          "tenable_acr": 9,
+          "tenable_aes": 870,
+          "tenable_host_uuid": "4c2f6d1e-0a7b-4b39-9d55-1f0e2a3b4c5d",
+          "tenable_repository": "Datacenter",
+          "tenable_repository_id": "5"
+        }
+      }
+    ],
+    "findings": [
+      {
+        "type": "vulnerability",
+        "title": "Apache Log4Shell RCE detection via callback correlation (Direct Check HTTP)",
+        "description": "The remote web server is affected by a remote code execution vulnerability.\n\nApache Log4j 2.x before 2.15.0 allows JNDI lookups. hidden",
+        "severity": "critical",
+        "category": "CGI abuses",
+        "rule_id": "156860",
+        "rule_name": "Apache Log4Shell RCE detection via callback correlation (Direct Check HTTP)",
+        "asset_ref": "host-app01.corp.example",
+        "network": {
+          "host": "app01.corp.example",
+          "port": 8443,
+          "protocol": "tcp"
+        },
+        "evidence": "\u003cplugin_output\u003eSent: ${jndi:ldap://x}\u003c/plugin_output\u003e",
+        "vulnerability": {
+          "cve_id": "CVE-2021-44228",
+          "cve_ids": [
+            "CVE-2021-44228",
+            "CVE-2021-45046",
+            "CVE-2021-45105"
+          ],
+          "cvss_version": "3.x",
+          "cvss_score": 10,
+          "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+          "published_at": "2021-12-09T00:00:00Z",
+          "exploit_available": true,
+          "epss_score": 0.97565,
+          "vpr_score": 10,
+          "cpe": "cpe:/a:apache:log4j"
+        },
+        "remediation": {
+          "recommendation": "Upgrade to Apache Log4j version 2.17.1 or later."
+        },
+        "references": [
+          "https://logging.apache.org/log4j/2.x/security.html",
+          "https://www.cisa.gov/known-exploited-vulnerabilities"
+        ],
+        "fingerprint": "tenable_sc:5:10.20.0.15:156860:8443/tcp",
+        "first_seen_at": "2023-12-08T01:46:40Z",
+        "last_seen_at": "2026-09-21T14:13:20Z",
+        "properties": {
+          "tenable_accept_risk": false,
+          "tenable_acr": 9,
+          "tenable_aes": 870,
+          "tenable_check_type": "remote",
+          "tenable_exploit_ease": "Exploits are available",
+          "tenable_exploit_frameworks": "Metasploit (Log4Shell HTTP Header Injection), Core Impact",
+          "tenable_host_uuid": "4c2f6d1e-0a7b-4b39-9d55-1f0e2a3b4c5d",
+          "tenable_patch_pub_date": "2021-12-10T00:00:00Z",
+          "tenable_plugin_family": "CGI abuses",
+          "tenable_plugin_id": "156860",
+          "tenable_plugin_mod_date": "2023-11-14T22:13:20Z",
+          "tenable_plugin_pub_date": "2021-12-14T00:00:00Z",
+          "tenable_plugin_type": "remote",
+          "tenable_previously_mitigated": false,
+          "tenable_recast_risk": false,
+          "tenable_repository": "Datacenter",
+          "tenable_repository_id": "5",
+          "tenable_risk_factor": "Critical",
+          "tenable_state": "open",
+          "tenable_vuln_pub_date": "2021-12-09T00:00:00Z",
+          "tenable_vuln_uuid": "a1b2c3d4-0000-4000-8000-000000000001",
+          "tenable_xrefs": "IAVA:2021-A-0573, CISA-KNOWN-EXPLOITED:2021/12/24"
+        }
+      },
+      {
+        "type": "vulnerability",
+        "title": "SSL Certificate Cannot Be Trusted",
+        "description": "The SSL certificate for this service cannot be trusted.\n\nThe server's X.509 certificate cannot be trusted.",
+        "severity": "medium",
+        "category": "General",
+        "rule_id": "51192",
+        "rule_name": "SSL Certificate Cannot Be Trusted",
+        "asset_ref": "host-10.20.0.16",
+        "network": {
+          "host": "10.20.0.16",
+          "port": 443,
+          "protocol": "tcp"
+        },
+        "vulnerability": {
+          "cvss_version": "3.x",
+          "cvss_score": 6.5,
+          "cvss_vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N"
+        },
+        "remediation": {
+          "recommendation": "Purchase or generate a proper SSL certificate for this service."
+        },
+        "fingerprint": "tenable_sc:5:10.20.0.16:51192:443/tcp",
+        "first_seen_at": "2023-11-14T22:13:20Z",
+        "last_seen_at": "2026-09-10T00:26:40Z",
+        "properties": {
+          "tenable_accept_risk": true,
+          "tenable_accept_risk_comment": "Internal CA, accepted by IT until 2027",
+          "tenable_check_type": "remote",
+          "tenable_plugin_family": "General",
+          "tenable_plugin_id": "51192",
+          "tenable_plugin_type": "remote",
+          "tenable_previously_mitigated": true,
+          "tenable_recast_risk": false,
+          "tenable_repository": "Datacenter",
+          "tenable_repository_id": "5",
+          "tenable_state": "open"
+        }
+      },
+      {
+        "type": "vulnerability",
+        "title": "Traceroute Information",
+        "description": "It was possible to obtain traceroute information.\n\nMakes a traceroute to the remote host.",
+        "severity": "low",
+        "category": "General",
+        "rule_id": "10287",
+        "rule_name": "Traceroute Information",
+        "asset_ref": "host-2001:db8::10",
+        "fingerprint": "tenable_sc:7:2001:db8::10:10287:0/udp",
+        "first_seen_at": "2023-11-14T22:13:20Z",
+        "last_seen_at": "2026-09-15T19:20:00Z",
+        "properties": {
+          "tenable_accept_risk": false,
+          "tenable_plugin_family": "General",
+          "tenable_plugin_id": "10287",
+          "tenable_previously_mitigated": false,
+          "tenable_recast_risk": true,
+          "tenable_recast_risk_comment": "Recast from info to low by policy",
+          "tenable_repository": "Branch IPv6",
+          "tenable_repository_id": "7",
+          "tenable_state": "open"
+        }
+      },
+      {
+        "type": "vulnerability",
+        "title": "MS17-010: Security Update for Microsoft Windows SMB Server",
+        "description": "The remote Windows host is affected by multiple vulnerabilities.\n\nThe remote Windows host is missing a security update.",
+        "severity": "critical",
+        "category": "Windows : Microsoft Bulletins",
+        "rule_id": "97833",
+        "rule_name": "MS17-010: Security Update for Microsoft Windows SMB Server",
+        "asset_ref": "host-10.20.0.16",
+        "network": {
+          "host": "10.20.0.16",
+          "port": 445,
+          "protocol": "tcp"
+        },
+        "vulnerability": {
+          "cve_id": "CVE-2017-0143",
+          "cve_ids": [
+            "CVE-2017-0143",
+            "CVE-2017-0144"
+          ],
+          "cvss_version": "3.x",
+          "cvss_score": 8.1,
+          "cvss_vector": "CVSS:3.0/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+          "published_at": "2017-03-14T00:00:00Z",
+          "exploit_available": true,
+          "epss_score": 0.943,
+          "vpr_score": 9.8
+        },
+        "remediation": {
+          "recommendation": "Apply the MS17-010 update."
+        },
+        "fingerprint": "tenable_sc:5:10.20.0.16:97833:445/tcp",
+        "first_seen_at": "2020-09-13T12:26:40Z",
+        "last_seen_at": "2026-05-28T20:26:40Z",
+        "status": "resolved",
+        "properties": {
+          "tenable_accept_risk": false,
+          "tenable_host_uuid": "9e8d7c6b-5a49-4382-a1b0-c9d8e7f6a5b4",
+          "tenable_last_mitigated": "2026-09-20T10:26:40Z",
+          "tenable_plugin_family": "Windows : Microsoft Bulletins",
+          "tenable_plugin_id": "97833",
+          "tenable_plugin_type": "local",
+          "tenable_previously_mitigated": true,
+          "tenable_recast_risk": false,
+          "tenable_repository": "Datacenter",
+          "tenable_repository_id": "5",
+          "tenable_state": "mitigated",
+          "tenable_vuln_pub_date": "2017-03-14T00:00:00Z"
+        }
+      }
+    ]
+  },
+  {
+    "version": "1.0",
+    "metadata": {
+      "id": "cmd-1-1",
+      "timestamp": "2026-10-04T12:00:00Z",
+      "source_type": "scanner",
+      "coverage_type": "incremental"
+    },
+    "tool": {
+      "name": "tenable_sc",
+      "version": "6.4.0",
+      "vendor": "Tenable"
+    },
+    "assets": [
+      {
+        "id": "host-10.20.0.99",
+        "type": "ip_address",
+        "value": "10.20.0.99",
+        "name": "PRINTER7",
+        "identifiers": {
+          "mac_addresses": [
+            "00:11:22:33:44:55"
+          ]
+        },
+        "properties": {
+          "ip_address": "10.20.0.99",
+          "netbios_name": "PRINTER7",
+          "tenable_repository": "Datacenter",
+          "tenable_repository_id": "5"
+        }
+      }
+    ]
+  }
+]

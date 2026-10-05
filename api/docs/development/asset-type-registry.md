@@ -15,9 +15,22 @@ their classes and the lenses those classes belong to. It implements RFC-042
 Each type entry declares:
 
 - `class` (the lens follows from the class);
-- `alias_of`, for a legacy type that ingest stores as (core type, sub_type).
-  An alias keeps its own class: a `host` with sub_type `serverless` is a
-  `function`;
+- `alias_of`, for an input name that is stored as (core type, sub_type),
+  optionally with a `provider` and `attributes` (`s3_bucket` is stored as
+  `(storage, bucket)` + provider `aws`). Aliases are never stored. An alias
+  keeps its own class: a `host` with sub_type `serverless` is a `function`.
+  Its sub_type must be in the core type's `sub_types`; it may be left out
+  only when the alias has the core type's class (`data_store`);
+- `sub_types`, the closed list of kinds of a core type. A sub-type is a
+  kind, never a vendor or an engine;
+- top-level `type_inputs`, legacy type names still accepted on input that
+  are no type of their own (`web_application` → `(application, website)`,
+  owner decision O3). They resolve like an alias but describe no stored
+  pair, so a stored pair keeps exactly one description;
+- `sub_type_inputs`, legacy sub-type values still accepted on input and what
+  they are stored as: `{ type, sub_type, provider, attributes }`
+  (`postgresql: { sub_type: relational, attributes: { engine: postgresql } }`).
+  Provider and attributes are set only where the asset has no value;
 - typed `attributes` (string, int, number, bool, time, enum, list, object).
   `facet: true` / `group: true` make an attribute a facet or group-by field,
   named `<type>.<attribute>`;
@@ -26,20 +39,69 @@ Each type entry declares:
 - `identity_keys` in match order: RFC-028 identifier kinds, `attr.<name>`,
   and always `name` last;
 - `legacy_category`, the value of the old `category` field of asset
-  responses.
+  responses;
+- `scannable_by`, the tool target types (a tool's `supported_targets`:
+  `url`, `domain`, `ip`, `host` …) that can scan the type. An alias without
+  a list uses its core type's; with one, it is the list of that
+  (core type, sub_type);
+- `exposure_default`, the exposure a type has by nature (`public` for
+  domains, certificates and web applications). Ingest applies it when the
+  scanner sent no exposure.
+
+## Reading the registry in feature code
+
+Feature code never compares an asset's type with a type name. It asks the
+registry about the stored (type, sub_type) pair
+(`pkg/domain/asset/type_behaviour.go`):
+
+| Question | Function |
+|---|---|
+| The pair a row stands for (a legacy alias row reads as its alias's pair) | `CanonicalPair` |
+| Default exposure | `DefaultExposure` |
+| Tool target types that can scan it | `ScannableBy` |
+| Is a relationship allowed (human writes are refused otherwise) | `RelationshipAllowed`, `AllowedRelationshipTargets` |
+| Does a name a person wrote in a rule cover it (`website`, `firewall`) | `TypeNameMatches` |
+| A type filter that must still find legacy alias rows | `WithLegacyNames` |
+
+The web does the same through `web/src/features/asset-types/type-match.ts`.
+`alias_constants_lint_test.go` fails the build when non-test Go code outside
+the resolver names an alias constant (`AssetTypeWebsite` …): such a
+comparison silently never matches a stored row.
 
 Allowed relationships are not written per type. The generator resolves the
 constraints of `configs/relationship-types.yaml` to real types, using the
 `virtual_types` table for the frontend names (`k8s_workload`,
-`container_image` …), and fails on any name it cannot resolve.
+`container_image` …), and fails on any name it cannot resolve. A virtual
+name for a concept without a type yet is marked `unmodelled: true`
+(`credential`, a secret) and its constraints are skipped.
+
+## Input types and stored types
+
+Every write path resolves its input with `asset.ResolveInputType` (people
+and API clients: REST, CSV and bulk import) or `asset.ResolveInputTypeLenient`
+(ingest, sensors, connectors):
+
+| Input | Stored | REST / import | Ingest |
+|---|---|---|---|
+| core type, declared sub-type | as given | accepted | accepted |
+| alias (`website`) | `(application, website)` | accepted | accepted |
+| legacy sub-type (`database` + `postgresql`) | `(database, relational)` + `engine` | accepted | accepted |
+| alias + a different sub-type (`website` + `api`) | — | 400 | alias kept, sub-type in `x_native_sub_type` |
+| undeclared sub-type (`network` + `lan`) | — | 400 | no sub-type, value in `x_native_sub_type` |
+| unknown type | — | 400 | `unclassified` |
+
+`asset.NewAssetWithSubType` refuses anything else, so a writer that skips
+the resolver fails loudly. `PATCH /assets/{id}` accepts `sub_type` (the type
+of an existing asset cannot change) and records a `reclassified` state
+history entry.
 
 ## What is generated
 
 | Output | Contents |
 |---|---|
-| `pkg/domain/asset/registry_generated.go` | the registry data, `Class`/`Lens`/`Category` constants, `TypeAliases` |
-| `web/src/features/asset-types/registry.generated.ts` | the closed sets and labels |
-| `make asset-types-sql` (printed) | the `asset_types` seed and the `assets` re-backfill, for a migration |
+| `pkg/domain/asset/registry_generated.go` | the registry data, `Class`/`Lens`/`Category` constants, `TypeAliases`, the stored types and the input map |
+| `web/src/features/asset-types/registry.generated.ts` | the closed sets and labels, `STORED_ASSET_TYPES`, `ASSET_SUB_TYPES`, `ASSET_TYPE_ALIASES` |
+| `make asset-types-sql` (printed) | the `asset_types` seed (with `sub_types` and `is_storable`), the `asset_type_input_map` rows and the `assets` re-backfill, for a migration |
 
 `GET /api/v1/asset-types` serves `asset.RegistryDocument()` with a strong
 ETag. Its `data`/`total`/`page` fields are the legacy `asset_types` rows and
@@ -95,5 +157,19 @@ rules. A registry PR that breaks one needs an RFC amendment first.
   legacy categories are unchanged.
 - **`internal/infra/postgres` `TestAssetTypeRegistry_*`** (with
   `DATABASE_URL`): the `asset_types` rows and CHECK constraints match the
-  registry, the trigger agrees with `asset.ClassOf` for every stored pair, and
-  the backfill repairs stale rows.
+  registry, the trigger agrees with `asset.ClassOf` for every stored pair, the
+  backfill repairs stale rows, `chk_assets_core_type` lists exactly the stored
+  types, and the normalisation batch (000684) moves legacy rows of two tenants
+  onto stored pairs without dropping a value.
+
+## Only core types are stored
+
+Since migration 000684, `chk_assets_core_type` refuses any `assets.asset_type`
+that is not a core type. The registry block emits it `NOT VALID`, so a registry
+change updates the list in the same migration; the migration then moves the rows
+the change leaves outside the list (`asset_type_normalise_batch`) and runs
+`ALTER TABLE assets VALIDATE CONSTRAINT chk_assets_core_type;` after the block.
+`gen-asset-types -check` fails when that statement is missing. Rows written before
+were moved by the normalisation (ledger `asset_type_reclassifications`; legacy
+codes kept in `properties.x_native_type`, values that did not fit in
+`properties.x_native_sub_type`).

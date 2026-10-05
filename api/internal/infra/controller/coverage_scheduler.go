@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
+	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -21,16 +22,19 @@ import (
 // integration-listing half) and delegates the candidate/cursor half to the
 // coverage repository.
 //
-// SCOPE: today the controller only drives UNLIMITED engines (Nessus Pro).
-// Capped engines (Tenable.sc) are skipped with a log line until active-IP
-// accounting + reclaim-ACK ship (Phase 3.5) — dispatching them without that
-// accounting could exceed the license, which we refuse to risk.
+// Since RFC-047 the engine is the Tenable.sc sensor connector: a batch is a
+// connector_scan launched through the connector's sensor, sized against
+// Tenable.sc's own licensed and active IPs, and the next batch waits for the
+// previous one to finish and be ingested. Nessus Pro integrations have no
+// runner and are not driven.
 type CoverageScheduler struct {
 	integrations integrationLister
 	coverage     coverageRepo
 	dispatcher   scancoverage.BatchDispatcher
 	config       *CoverageSchedulerConfig
 	logger       *logger.Logger
+	// active is the active-IP count per tenant read in the current pass.
+	active map[shared.ID]int
 }
 
 // integrationLister is the slice of the integration repository the controller
@@ -59,8 +63,16 @@ type CoverageSchedulerConfig struct {
 	IntegrationPageSize int
 	// Gate checks every batch before dispatch (private-range policy, scope
 	// exclusions, scan zones). Without it nothing is dispatched.
-	Gate   scancoverage.TargetGate
-	Logger *logger.Logger
+	Gate scancoverage.TargetGate
+	// Connector says whether a connector integration may take a batch and
+	// sizes it (tenablesc.Service). Without it nothing is dispatched.
+	Connector CoverageConnector
+	Logger    *logger.Logger
+}
+
+// CoverageConnector is the connector side of coverage (tenablesc.Service).
+type CoverageConnector interface {
+	CoverageStatus(ctx context.Context, intg *integration.Integration) (tenablesc.CoverageStatus, error)
 }
 
 // NewCoverageScheduler builds a CoverageScheduler.
@@ -114,79 +126,64 @@ func (c *CoverageScheduler) Reconcile(ctx context.Context) (int, error) {
 // scancoverage.CoverageSource implementation
 // =============================================================================
 
-// ListActiveCoverage returns every tenant's coverage-enabled, unlimited-engine
-// Tenable integration as a CoverageConfig. Capped engines are skipped (see the
-// type doc). It pages through integrations cross-tenant.
+// ListActiveCoverage returns, for every tenant, its coverage-enabled
+// Tenable.sc sensor connector that may take a batch now (RFC-047 §9): the
+// license numbers are Tenable.sc's own, and an integration whose previous
+// batch is still running or being ingested is skipped. One connector per
+// tenant; others are logged and skipped. It pages through integrations
+// cross-tenant; each is then acted on under its own tenant.
 func (c *CoverageScheduler) ListActiveCoverage(ctx context.Context) ([]scancoverage.CoverageConfig, error) {
+	if c.config.Connector == nil {
+		return nil, nil
+	}
 	provider := integration.ProviderTenable
 	status := integration.StatusConnected
+	c.active = map[shared.ID]int{}
 
 	var configs []scancoverage.CoverageConfig
-	page := 1
-	for {
+	for page := 1; ; page++ {
 		res, err := c.integrations.List(ctx, integration.Filter{
-			Provider: &provider,
-			Status:   &status,
-			Page:     page,
-			PerPage:  c.config.IntegrationPageSize,
+			Provider: &provider, Status: &status, Page: page, PerPage: c.config.IntegrationPageSize,
+			SortBy: "created_at", SortOrder: "asc",
 		})
 		if err != nil {
 			return nil, err
 		}
 		for _, intg := range res.Data {
-			cfg, ok := c.toCoverageConfig(intg)
-			if ok {
-				configs = append(configs, cfg)
+			if !tenablesc.IsConnector(intg) {
+				continue
 			}
+			st, err := c.config.Connector.CoverageStatus(ctx, intg)
+			if err != nil {
+				c.logger.Warn("coverage status of a Tenable.sc connector failed",
+					"integration_id", intg.ID().String(), "tenant_id", intg.TenantID().String(), "error", err)
+				continue
+			}
+			if !st.Ready {
+				c.logger.Debug("coverage not dispatched for connector",
+					"integration_id", intg.ID().String(), "tenant_id", intg.TenantID().String(), "reason", st.Reason)
+				continue
+			}
+			if _, dup := c.active[intg.TenantID()]; dup {
+				c.logger.Warn("more than one coverage-enabled Tenable.sc connector in a tenant; only the first is used",
+					"integration_id", intg.ID().String(), "tenant_id", intg.TenantID().String())
+				continue
+			}
+			c.active[intg.TenantID()] = st.ActiveIPs
+			id := intg.ID()
+			configs = append(configs, scancoverage.CoverageConfig{
+				TenantID:      intg.TenantID(),
+				IntegrationID: &id,
+				Engine:        string(scancoverage.EngineTenableSC),
+				Policy:        st.Policy,
+				DefaultBatch:  st.DefaultBatch,
+			})
 		}
 		if len(res.Data) < c.config.IntegrationPageSize || int64(page*c.config.IntegrationPageSize) >= res.Total {
 			break
 		}
-		page++
 	}
 	return configs, nil
-}
-
-// toCoverageConfig maps one integration to a CoverageConfig, returning ok=false
-// when it should not be auto-rotated (config invalid, coverage disabled, or a
-// capped engine that is not yet supported).
-func (c *CoverageScheduler) toCoverageConfig(intg *integration.Integration) (scancoverage.CoverageConfig, bool) {
-	tc, err := scancoverage.ParseTenableConfig(intg.Config())
-	if err != nil {
-		c.logger.Warn("skipping tenable integration: invalid config",
-			"integration_id", intg.ID().String(),
-			"tenant_id", intg.TenantID().String(),
-			"error", err)
-		return scancoverage.CoverageConfig{}, false
-	}
-	if !tc.CoverageEnabled {
-		return scancoverage.CoverageConfig{}, false
-	}
-	if tc.Engine != scancoverage.EngineNessusPro {
-		c.logger.Info("skipping coverage: capped engine not yet supported",
-			"integration_id", intg.ID().String(),
-			"tenant_id", intg.TenantID().String(),
-			"engine", string(tc.Engine))
-		return scancoverage.CoverageConfig{}, false
-	}
-
-	cfg := scancoverage.CoverageConfig{
-		TenantID:     intg.TenantID(),
-		Engine:       string(tc.Engine),
-		Policy:       tc.LicensePolicy(),
-		DefaultBatch: tc.EffectiveBatchSize(),
-		TemplateUUID: tc.TemplateUUID,
-	}
-	if tc.SensorID != "" {
-		if id, err := shared.IDFromString(tc.SensorID); err == nil {
-			cfg.SensorID = &id
-		} else {
-			c.logger.Warn("ignoring invalid pinned sensor_id on tenable integration",
-				"integration_id", intg.ID().String(),
-				"sensor_id", tc.SensorID)
-		}
-	}
-	return cfg, true
 }
 
 // ListCandidates delegates to the coverage repository.
@@ -194,9 +191,11 @@ func (c *CoverageScheduler) ListCandidates(ctx context.Context, tenantID shared.
 	return c.coverage.ListCandidates(ctx, tenantID, limit)
 }
 
-// ActiveIPs delegates to the coverage repository.
-func (c *CoverageScheduler) ActiveIPs(ctx context.Context, tenantID shared.ID) (int, error) {
-	return c.coverage.ActiveIPs(ctx, tenantID)
+// ActiveIPs is Tenable.sc's active-IP count for the tenant's connector, as
+// read by ListActiveCoverage in the same pass (after the previous batch was
+// settled).
+func (c *CoverageScheduler) ActiveIPs(_ context.Context, tenantID shared.ID) (int, error) {
+	return c.active[tenantID], nil
 }
 
 // =============================================================================

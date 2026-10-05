@@ -39,12 +39,6 @@ export const SCM_PROVIDER_OPTIONS = [
 
 export const AUTH_TYPE_OPTIONS = [
   { value: 'token', label: 'Personal Access Token', description: 'Use a PAT for authentication' },
-  { value: 'oauth', label: 'OAuth', description: 'Use OAuth for authentication (coming soon)' },
-  {
-    value: 'app',
-    label: 'GitHub App',
-    description: 'Use a GitHub App for authentication (coming soon)',
-  },
 ] as const
 
 export const DEFAULT_BASE_URLS: Record<string, string> = {

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"strings"
 
@@ -16,7 +17,9 @@ type WorkerConfig struct {
 	RedisAddr     string
 	RedisPassword string
 	RedisDB       int
-	Concurrency   int
+	// RedisTLS is nil for a plaintext Redis (redis.TLSConfig).
+	RedisTLS    *tls.Config
+	Concurrency int
 }
 
 // WorkerOption is a functional option for configuring the Worker.
@@ -65,9 +68,10 @@ func WithAITriageProcessor(processor AITriageProcessor) WorkerOption {
 func NewWorker(cfg WorkerConfig, emailService *app.EmailService, log *logger.Logger, opts ...WorkerOption) (*Worker, error) {
 	server := asynq.NewServer(
 		asynq.RedisClientOpt{
-			Addr:     cfg.RedisAddr,
-			Password: cfg.RedisPassword,
-			DB:       cfg.RedisDB,
+			Addr:      cfg.RedisAddr,
+			Password:  cfg.RedisPassword,
+			DB:        cfg.RedisDB,
+			TLSConfig: cfg.RedisTLS,
 		},
 		asynq.Config{
 			Concurrency: cfg.Concurrency,

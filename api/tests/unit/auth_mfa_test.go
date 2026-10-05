@@ -362,7 +362,7 @@ func (h *mfaHarness) enroll(t *testing.T, userID shared.ID) (string, []string) {
 		t.Fatalf("BeginMFASetup: %v", err)
 	}
 	code, _ := totp.Code(setup.Secret, time.Now())
-	codes, err := h.svc.EnableMFA(context.Background(), app.AuditContext{ActorID: userID.String()}, userID.String(), code)
+	codes, err := h.svc.EnableMFA(context.Background(), app.AuditContext{ActorID: userID.String()}, userID.String(), mfaTestPassword, code)
 	if err != nil {
 		t.Fatalf("EnableMFA: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestMFA_Enrollment(t *testing.T) {
 		h := newMFAHarness(t)
 		uid := h.seedUser(t, "b@example.com")
 		setup, _ := h.svc.BeginMFASetup(context.Background(), uid.String())
-		_, err := h.svc.EnableMFA(context.Background(), app.AuditContext{}, uid.String(), wrongCode(currentCode(t, setup.Secret)))
+		_, err := h.svc.EnableMFA(context.Background(), app.AuditContext{}, uid.String(), mfaTestPassword, wrongCode(currentCode(t, setup.Secret)))
 		if !errors.Is(err, app.ErrMFACodeInvalid) {
 			t.Fatalf("want ErrMFACodeInvalid, got %v", err)
 		}
@@ -489,7 +489,7 @@ func TestMFA_Enrollment(t *testing.T) {
 	t.Run("enable without setup is refused", func(t *testing.T) {
 		h := newMFAHarness(t)
 		uid := h.seedUser(t, "c@example.com")
-		_, err := h.svc.EnableMFA(context.Background(), app.AuditContext{}, uid.String(), "123456")
+		_, err := h.svc.EnableMFA(context.Background(), app.AuditContext{}, uid.String(), mfaTestPassword, "123456")
 		if !errors.Is(err, app.ErrMFANoPendingSetup) {
 			t.Fatalf("want ErrMFANoPendingSetup, got %v", err)
 		}
@@ -524,7 +524,7 @@ func TestMFA_Enrollment(t *testing.T) {
 
 		setup, _ := h.svc.BeginMFASetup(context.Background(), uid.String())
 		_, err := h.svc.EnableMFA(context.Background(),
-			app.AuditContext{ActorID: uid.String(), SessionID: cur.SessionID}, uid.String(), currentCode(t, setup.Secret))
+			app.AuditContext{ActorID: uid.String(), SessionID: cur.SessionID}, uid.String(), mfaTestPassword, currentCode(t, setup.Secret))
 		if err != nil {
 			t.Fatalf("EnableMFA: %v", err)
 		}
@@ -994,5 +994,58 @@ func TestSessionService_RevocationIsImmediate(t *testing.T) {
 	// Another user cannot revoke this user's session.
 	if err := svc.RevokeSession(context.Background(), shared.NewID().String(), a.SessionID); err == nil {
 		t.Fatal("revoked another user's session")
+	}
+}
+
+// Enabling 2FA needs the current password, and wrong passwords count against
+// the account lockout (settings audit A-M1, A-M2): a stolen session alone can
+// neither bind an attacker's authenticator nor guess the password freely.
+func TestEnableMFA_NeedsCurrentPassword(t *testing.T) {
+	h := newMFAHarness(t)
+	uid := h.seedUser(t, "pw@example.com")
+	setup, err := h.svc.BeginMFASetup(context.Background(), uid.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = h.svc.EnableMFA(context.Background(), app.AuditContext{}, uid.String(), "wrong", currentCode(t, setup.Secret))
+	if !errors.Is(err, app.ErrPasswordMismatch) {
+		t.Fatalf("enable with a wrong password: want ErrPasswordMismatch, got %v", err)
+	}
+	u := h.users.users[uid.String()]
+	if u.FailedLoginAttempts() != 1 {
+		t.Fatalf("failed attempts after a wrong password = %d, want 1", u.FailedLoginAttempts())
+	}
+	if _, err := h.svc.EnableMFA(context.Background(), app.AuditContext{}, uid.String(), mfaTestPassword, currentCode(t, setup.Secret)); err != nil {
+		t.Fatalf("enable with the password: %v", err)
+	}
+}
+
+// A stolen session cannot guess the current password through change-password
+// without limit: each wrong guess counts against the account lockout, and a
+// locked account takes no further guesses, even the right password.
+func TestChangePassword_WrongPasswordCountsTowardLockout(t *testing.T) {
+	h := newMFAHarness(t)
+	uid := h.seedUser(t, "guess@example.com")
+	ctx := context.Background()
+	var err error
+	for i := 0; i < 10; i++ {
+		err = h.svc.ChangePassword(ctx, uid.String(), app.ChangePasswordInput{
+			CurrentPassword: "wrong-guess", NewPassword: "AnotherPassword456",
+		})
+		if errors.Is(err, app.ErrAccountLocked) {
+			break
+		}
+		if !errors.Is(err, app.ErrPasswordMismatch) {
+			t.Fatalf("guess %d: want ErrPasswordMismatch, got %v", i, err)
+		}
+	}
+	if !h.users.users[uid.String()].IsLocked() {
+		t.Fatal("account not locked after repeated wrong passwords")
+	}
+	err = h.svc.ChangePassword(ctx, uid.String(), app.ChangePasswordInput{
+		CurrentPassword: mfaTestPassword, NewPassword: "AnotherPassword456",
+	})
+	if !errors.Is(err, app.ErrAccountLocked) {
+		t.Fatalf("locked account with the right password: want ErrAccountLocked, got %v", err)
 	}
 }

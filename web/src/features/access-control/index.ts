@@ -2,7 +2,7 @@
  * Access Control Feature
  *
  * Provides group-based access control management for tenant admins.
- * Includes groups, permission sets, and member management.
+ * Includes groups (data scope) and member management.
  */
 
 // Types

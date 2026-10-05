@@ -666,6 +666,9 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
         {
           name: String(data.name ?? ''),
           type: config.type as never,
+          // The page's sub-type, so the asset lands on this page (an API on
+          // the APIs page, not an untyped application).
+          ...(config.subType ? { subType: config.subType } : {}),
           criticality: (data.criticality as string | undefined) || 'medium',
           description: String(data.description ?? ''),
           scope: (data.scope as string | undefined) || 'internal',
@@ -691,7 +694,7 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
           : undefined
       )
     },
-    [crud, config.formFields, config.type]
+    [crud, config.formFields, config.type, config.subType]
   )
 
   const handleFormUpdate = useCallback(

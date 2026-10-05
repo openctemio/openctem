@@ -28,7 +28,7 @@ others see. A hostile or compromised sensor, or just a buggy one, could:
 | CVE title, description, CVSS, severity, references, versions, dates | first report (CISA KEV name and description take precedence) | set them only when it creates the row | `findings.title`, `findings.severity`, `findings.cvss_score` |
 | `epss_score`, `epss_percentile` | EPSS feed (`epss_scores`) | nothing | `findings.epss_score` (also from the feed, via enrichment) |
 | `cisa_kev_*` | CISA KEV feed (`kev_catalog`) | nothing | `findings.is_in_kev` (also from the feed) |
-| `exploit_available`, `exploit_maturity` | CISA KEV feed (KEV means exploited) | nothing | `findings.metadata.scanner_exploit_available` |
+| `exploit_available`, `exploit_maturity` | CISA KEV feed (KEV means exploited) | nothing | `findings.exploit_available` (read by the list filter, the CVE groups and the tenant CVE views through one predicate, `vulnerability.FindingExploitAvailableSQL`) |
 | Component identity (`purl`, name, version, ecosystem) | — | create the row | — |
 | Component description, homepage, metadata | first report | set them only when it creates the row | — |
 | Component licenses | none today (`component_licenses` is not written or read) | nothing | `asset_components.license` |
@@ -62,6 +62,26 @@ others see. A hostile or compromised sensor, or just a buggy one, could:
   entries. The tenant's licenses are then stored on its own `asset_components`
   row (`AssetDependency.SetLicense`). A re-scan that declares no license keeps
   the recorded one.
+
+### Issue definitions (RFC-044)
+
+Since RFC-044 P1 the CVE catalog is the definition catalog: it also holds
+scanner rules, templates, advisories without a CVE and **tenant-scoped**
+definitions (custom rules, pentest issues, a rule id a sensor reported that no
+curated pack knows). The rule above extends to them, and the schema enforces
+it ([vulnerability-model.md §9.2](vulnerability-model.md#92-isolation-and-trust-in-the-schema)):
+
+- A tenant definition is visible to its tenant only; no row of another tenant
+  (finding link, identifier, relation, taxonomy link, merge target) can point
+  at it, and its scope never changes.
+- A report may create a global **identity stub** for an advisory id nobody
+  has reported (title = the id, no reporter text); a rule id a sensor reports
+  becomes a tenant definition, never global content.
+- Global aliases come only from OSV, GHSA or the CVE List; global relations
+  and taxonomy links only from feeds or the rule-catalog import. An alias a
+  report asserts is stored on that tenant's finding (`finding_definitions`,
+  role `alias`), never as a global identifier, so a hostile sensor cannot
+  merge or rename global definitions.
 
 ### Tenant views read the tenant's observation first
 

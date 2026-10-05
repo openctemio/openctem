@@ -29,6 +29,8 @@ interface AddUserDialogProps {
   tenantSlug: string | undefined
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Only the owner may make someone an administrator (settings decision B2). */
+  canGrantAdmin?: boolean
   /** Called after the account is created (refresh the member list). */
   onCreated?: () => void
 }
@@ -37,7 +39,13 @@ interface AddUserDialogProps {
  * Create an account for someone directly (no self-registration). The API either
  * emails them a setup link or returns a one-time link that is shown here once.
  */
-export function AddUserDialog({ tenantSlug, open, onOpenChange, onCreated }: AddUserDialogProps) {
+export function AddUserDialog({
+  tenantSlug,
+  open,
+  onOpenChange,
+  onCreated,
+  canGrantAdmin = false,
+}: AddUserDialogProps) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [roleIds, setRoleIds] = useState<string[]>([])
@@ -155,6 +163,7 @@ export function AddUserDialog({ tenantSlug, open, onOpenChange, onCreated }: Add
                   )}
                 </div>
                 <RoleChecklist
+                  canGrantAdmin={canGrantAdmin}
                   roles={roles}
                   selected={roleIds}
                   onChange={setRoleIds}

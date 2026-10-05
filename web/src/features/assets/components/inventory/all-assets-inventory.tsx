@@ -32,6 +32,8 @@ import { useBusinessUnits } from '@/features/business-units/api/use-business-uni
 import { buildFacetGroups, deactivatePreset, type QuickPreset } from '../../lib/inventory-facets'
 import {
   parseInventoryFilters,
+  attributionQuery,
+  ATTRIBUTION_FILTER_VALUES,
   serializeInventoryFilters,
   countActiveFilters,
   isInventoryFilterEmpty,
@@ -67,6 +69,7 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     hasFindings: f.hasFindings,
     lastSeenBefore: f.lastSeenBefore,
     lastSeenAfter: f.lastSeenAfter,
+    attribution: attributionQuery(f),
     sort: f.sort,
     page: f.page ?? 1,
     pageSize: f.pageSize ?? DEFAULT_PAGE_SIZE,
@@ -343,6 +346,21 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         </div>
 
         <div className="min-w-0 flex-1">
+          {!filters.attribution?.length && (
+            <p className="mb-2 text-sm text-muted-foreground" data-slot="attribution-default">
+              Showing assets that are yours. Names awaiting ownership review and names marked as not
+              yours are hidden.{' '}
+              <button
+                type="button"
+                className="font-medium text-foreground underline underline-offset-2"
+                onClick={() =>
+                  setFilters({ ...filters, attribution: [...ATTRIBUTION_FILTER_VALUES], page: 1 })
+                }
+              >
+                Show all
+              </button>
+            </p>
+          )}
           {isError ? (
             <Alert variant="destructive">
               <AlertTitle>Failed to load assets</AlertTitle>

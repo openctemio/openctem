@@ -33,6 +33,10 @@ export function useHashTab(defaultValue: string): [string, (value: string) => vo
 
   const setValue = useCallback(
     (next: string) => {
+      const current = window.location.hash.replace(/^#/, '') || defaultValue
+      // Idempotent: writing the active value would rewrite the URL and dispatch a
+      // hashchange that a subscriber reflects straight back, looping.
+      if (next === current) return
       const url =
         next === defaultValue
           ? window.location.pathname + window.location.search

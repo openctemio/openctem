@@ -20,7 +20,6 @@ import (
 type Settings struct {
 	General        GeneralSettings        `json:"general"`
 	Security       SecuritySettings       `json:"security"`
-	API            APISettings            `json:"api"`
 	Branding       BrandingSettings       `json:"branding"`
 	Branch         BranchSettings         `json:"branch"`
 	AI             AISettings             `json:"ai"`
@@ -227,9 +226,14 @@ type BranchSettings struct {
 }
 
 // PentestSettings holds pentest-related configuration per tenant.
+//
+// A nil list means "never configured" (clients show their built-in
+// defaults); an empty, non-nil list means the organization cleared it on
+// purpose. The fields therefore have no omitempty: with it, a cleared list was
+// dropped on save and came back as the defaults on the next read.
 type PentestSettings struct {
-	CampaignTypes []ConfigOption `json:"campaign_types,omitempty"`
-	Methodologies []ConfigOption `json:"methodologies,omitempty"`
+	CampaignTypes []ConfigOption `json:"campaign_types"`
+	Methodologies []ConfigOption `json:"methodologies"`
 }
 
 // ConfigOption represents a configurable option with value and label.
@@ -299,10 +303,9 @@ type SecuritySettings struct {
 	IPWhitelist       []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
 	AllowedDomains    []string `json:"allowed_domains"`     // Allowed email domains for signup
 
-	// The data-scope policy ("members without an access group see: everything |
-	// nothing") is the tenants.members_without_group_see column (migration
-	// 000247), not a settings key. A restricted_data_scope key left in stored
-	// JSON was folded into that column by the migration and is ignored.
+	// A restricted_data_scope key left in stored JSON is ignored: members
+	// without a scope row see nothing in every organization (owner decision
+	// D2), there is no data-scope setting.
 
 	// EmailVerificationMode controls whether new users must verify their email.
 	//   "auto"   = (default) require verification IFF SMTP is configured (smart)
@@ -317,6 +320,16 @@ type SecuritySettings struct {
 	// jobs wait for a sensor whose network owner installed a policy. Off by
 	// default: sensors without a policy work as before.
 	RequireSensorLocalPolicyForPrivateTargets bool `json:"require_sensor_local_policy_for_private_targets,omitempty"`
+
+	// AllowSensorInteractsh and AllowSensorCustomTemplates are the
+	// organization's switches for out-of-band callbacks (interactsh) and
+	// custom templates in sensor jobs (research/25 D3). Off by default, for
+	// existing and new organizations: the platform then refuses scans that
+	// ask for them, strips allow_interactsh at trigger and never dispatches
+	// such a job, whatever the sensor's own policy allows. Turning one on is
+	// an owner action, audited at critical severity and alerted (D9).
+	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh,omitempty"`
+	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates,omitempty"`
 }
 
 // EmailVerificationMode controls per-tenant email verification behavior.
@@ -342,54 +355,6 @@ func (m EmailVerificationMode) IsValid() bool {
 	switch m {
 	case EmailVerificationAuto, EmailVerificationAlways, EmailVerificationNever, "":
 		return true
-	}
-	return false
-}
-
-// APISettings contains API and webhook configuration.
-type APISettings struct {
-	APIKeyEnabled bool           `json:"api_key_enabled"` // Enable API key access
-	WebhookURL    string         `json:"webhook_url"`     // Webhook endpoint URL
-	WebhookSecret string         `json:"webhook_secret"`  // Webhook signing secret
-	WebhookEvents []WebhookEvent `json:"webhook_events"`  // Events to send to webhook
-}
-
-// WebhookEvent represents a webhook event type.
-type WebhookEvent string
-
-const (
-	WebhookEventFindingCreated  WebhookEvent = "finding.created"
-	WebhookEventFindingResolved WebhookEvent = "finding.resolved"
-	WebhookEventFindingUpdated  WebhookEvent = "finding.updated"
-	WebhookEventScanCompleted   WebhookEvent = "scan.completed"
-	WebhookEventScanFailed      WebhookEvent = "scan.failed"
-	WebhookEventAssetDiscovered WebhookEvent = "asset.discovered"
-	WebhookEventAssetUpdated    WebhookEvent = "asset.updated"
-	WebhookEventMemberJoined    WebhookEvent = "member.joined"
-	WebhookEventMemberRemoved   WebhookEvent = "member.removed"
-)
-
-// ValidWebhookEvents returns all valid webhook events.
-func ValidWebhookEvents() []WebhookEvent {
-	return []WebhookEvent{
-		WebhookEventFindingCreated,
-		WebhookEventFindingResolved,
-		WebhookEventFindingUpdated,
-		WebhookEventScanCompleted,
-		WebhookEventScanFailed,
-		WebhookEventAssetDiscovered,
-		WebhookEventAssetUpdated,
-		WebhookEventMemberJoined,
-		WebhookEventMemberRemoved,
-	}
-}
-
-// IsValid checks if the webhook event is valid.
-func (e WebhookEvent) IsValid() bool {
-	for _, v := range ValidWebhookEvents() {
-		if e == v {
-			return true
-		}
 	}
 	return false
 }
@@ -816,12 +781,6 @@ func DefaultSettings() Settings {
 			AllowedDomains:        []string{},
 			EmailVerificationMode: EmailVerificationAuto, // Smart: require iff SMTP configured
 		},
-		API: APISettings{
-			APIKeyEnabled: false,
-			WebhookURL:    "",
-			WebhookSecret: "",
-			WebhookEvents: []WebhookEvent{},
-		},
 		Branding: BrandingSettings{
 			PrimaryColor: "#3B82F6", // Blue
 			LogoDarkURL:  "",
@@ -868,9 +827,6 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.Security.Validate(); err != nil {
 		return fmt.Errorf("security settings: %w", err)
-	}
-	if err := s.API.Validate(); err != nil {
-		return fmt.Errorf("api settings: %w", err)
 	}
 	if err := s.Branding.Validate(); err != nil {
 		return fmt.Errorf("branding settings: %w", err)
@@ -948,23 +904,6 @@ func (s *SecuritySettings) Validate() error {
 	for _, domain := range s.AllowedDomains {
 		if !isValidDomain(domain) {
 			return fmt.Errorf("%w: invalid domain: %s", shared.ErrValidation, domain)
-		}
-	}
-	return nil
-}
-
-// Validate validates API settings.
-func (s *APISettings) Validate() error {
-	// Validate webhook URL
-	if s.WebhookURL != "" {
-		if _, err := url.ParseRequestURI(s.WebhookURL); err != nil {
-			return fmt.Errorf("%w: invalid webhook URL", shared.ErrValidation)
-		}
-	}
-	// Validate webhook events
-	for _, event := range s.WebhookEvents {
-		if !event.IsValid() {
-			return fmt.Errorf("%w: invalid webhook event: %s", shared.ErrValidation, event)
 		}
 	}
 	return nil
@@ -1053,21 +992,13 @@ func (s *Settings) ToMap() map[string]any {
 }
 
 // SettingsFromMap converts map[string]any to Settings.
+//
+// Each section is decoded on its own (SettingsFromMapChecked): a section that
+// cannot be decoded falls back to its default without affecting the others.
+// Enforcement points that must fail closed on a corrupt security section use
+// Tenant.SecuritySettingsStrict instead.
 func SettingsFromMap(m map[string]any) Settings {
-	if len(m) == 0 {
-		return DefaultSettings()
-	}
-	data, _ := json.Marshal(m)
-	var settings Settings
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return DefaultSettings()
-	}
-
-	// Ensure risk_scoring has valid defaults if not present in the map
-	if _, ok := m["risk_scoring"]; !ok {
-		settings.RiskScoring = LegacyRiskScoringSettings()
-	}
-
+	settings, _ := SettingsFromMapChecked(m)
 	return settings
 }
 
@@ -1227,16 +1158,6 @@ func (t *Tenant) UpdateSecuritySettings(security SecuritySettings) error {
 	}
 	settings := t.TypedSettings()
 	settings.Security = security
-	return t.UpdateSettings(settings)
-}
-
-// UpdateAPISettings updates only the API settings.
-func (t *Tenant) UpdateAPISettings(api APISettings) error {
-	if err := api.Validate(); err != nil {
-		return err
-	}
-	settings := t.TypedSettings()
-	settings.API = api
 	return t.UpdateSettings(settings)
 }
 

@@ -64,6 +64,11 @@ type Tool struct {
 	// Supported input/output
 	SupportedTargets []string // 'url', 'domain', 'ip', 'file', 'repository', 'container'
 	OutputFormats    []string // 'json', 'sarif', 'csv', 'txt'
+	// OutputTypes are the asset types a report of the tool may create
+	// (tools.output_types, from the scan stage catalog in
+	// pkg/domain/stage). Read-only: no API writes it, so a tenant cannot
+	// widen what its reports may create.
+	OutputTypes []string
 
 	// Documentation
 	DocsURL   string
@@ -235,6 +240,19 @@ const KindCollector = "collector"
 func (t *Tool) IsCollector() bool {
 	k, _ := t.Metadata["kind"].(string)
 	return k == KindCollector
+}
+
+// KindConnector is the catalog's metadata.kind of a connector: a tool the
+// sensor runs against another product's API (e.g. "tenable_sc", RFC-047) on
+// connector commands, never on a dispatched scan.
+const KindConnector = "connector"
+
+// IsConnector reports whether the tool is a connector (metadata.kind =
+// "connector"). Scans refuse it: connector commands are created by the
+// integration that owns them.
+func (t *Tool) IsConnector() bool {
+	k, _ := t.Metadata["kind"].(string)
+	return k == KindConnector
 }
 
 // IsPlatformTool returns true if this is a platform-provided tool.
