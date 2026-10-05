@@ -77,7 +77,7 @@ const BUILTINS = ['ctem', 'classic'] as const
 const BUILTIN_LABEL: Record<string, string> = { ctem: 'CTEM', classic: 'Classic' }
 
 /**
- * Main dashboard shell with a Tenable-style dashboard switcher. Two built-in views
+ * Main dashboard shell with a dashboard switcher. Two built-in views
  * (CTEM / Classic) plus the user's saved custom dashboards are all selectable from
  * one "Switch Dashboard" menu; the chosen view persists in localStorage and falls
  * back to the user's default custom dashboard on first load.

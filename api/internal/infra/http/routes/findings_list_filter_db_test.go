@@ -237,7 +237,7 @@ func TestFindingsList_ContractHeadersAndErrors(t *testing.T) {
 	}
 }
 
-// The research 17 filters (Tenable.sc parity) narrow inside the caller's
+// The research 17 filters (CVSS, dates, network, assignment, asset, exploit) narrow inside the caller's
 // scope like every other field.
 func TestFindingsList_Research17Filters(t *testing.T) {
 	h := newGroupScopeHarness(t)

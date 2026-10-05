@@ -305,7 +305,7 @@ func (v *SecurityValidator) validateToolNameAndGetCapabilities(ctx context.Conte
 	}
 
 	// Check if tool exists in registry (platform or tenant-specific)
-	t, err := v.toolRepo.GetByName(ctx, toolName)
+	t, err := v.toolRepo.GetByName(ctx, tenantID, toolName)
 	if err != nil {
 		// Try tenant-specific tool
 		t, err = v.toolRepo.GetByTenantAndName(ctx, tenantID, toolName)

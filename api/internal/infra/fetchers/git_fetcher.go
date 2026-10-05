@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -33,6 +34,69 @@ const defaultBranch = "main"
 // (template repos are shallow, depth=1) so large legitimate clones are not
 // cut short, while still capping a hung/slow-loris remote.
 const gitCloneTimeout = 5 * time.Minute
+
+// Repository size limits for a template-source clone. The clone lands on the
+// API server's disk; an oversized repository could fill it (a full disk has
+// already stopped Postgres once), so the clone is aborted past maxCloneBytes
+// and a checkout with more than maxRepoFiles files is refused.
+var (
+	maxCloneBytes int64 = 200 * 1024 * 1024 // 200MB on disk
+	maxRepoFiles        = 20000
+	cloneSizePoll       = 250 * time.Millisecond
+)
+
+// ErrRepositoryTooLarge: the repository exceeds the clone size or file limit.
+var ErrRepositoryTooLarge = errors.New("repository exceeds the template source size limit")
+
+// dirSize returns the bytes used by regular files under dir.
+func dirSize(dir string) int64 {
+	var total int64
+	_ = filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+// cloneWithSizeCap runs clone while watching the target directory; once it
+// grows past maxCloneBytes the clone is canceled and ErrRepositoryTooLarge
+// returned.
+func cloneWithSizeCap(ctx context.Context, dir string, clone func(context.Context) (*git.Repository, error)) (*git.Repository, error) {
+	// Read the limits once: the watcher must not touch the package variables
+	// after this call returns (tests change them).
+	limit, poll := maxCloneBytes, cloneSizePoll
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var tooLarge atomic.Bool
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		t := time.NewTicker(poll)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				if dirSize(dir) > limit {
+					tooLarge.Store(true)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	repo, err := clone(cctx)
+	close(done)
+	<-stopped
+	if tooLarge.Load() || (err == nil && dirSize(dir) > limit) {
+		return nil, ErrRepositoryTooLarge
+	}
+	return repo, err
+}
 
 // init routes go-git's HTTP/HTTPS transport through an SSRF-guarded
 // *http.Client whose dialer rejects internal / cloud-metadata addresses.
@@ -142,6 +206,7 @@ func (f *GitFetcher) Fetch(ctx context.Context, opts FetchOptions) (*FetchResult
 	}
 	files := make(map[string][]byte)
 	var totalSize int64
+	seen := 0
 
 	err = filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -159,6 +224,10 @@ func (f *GitFetcher) Fetch(ctx context.Context, opts FetchOptions) (*FetchResult
 		// it would follow it to wherever it points on the server.
 		if !info.Mode().IsRegular() {
 			return nil
+		}
+		seen++
+		if seen > maxRepoFiles {
+			return ErrRepositoryTooLarge
 		}
 
 		// Check extension filter
@@ -368,16 +437,24 @@ func (f *GitFetcher) cloneRepo(ctx context.Context) (*git.Repository, error) {
 		Depth:         1, // Shallow clone for efficiency
 	}
 
-	repo, err := git.PlainCloneContext(ctx, f.tempDir, false, opts)
-	if err != nil {
+	clone := func(c context.Context) (*git.Repository, error) {
+		return git.PlainCloneContext(c, f.tempDir, false, opts)
+	}
+	repo, err := cloneWithSizeCap(ctx, f.tempDir, clone)
+	if err != nil && !errors.Is(err, ErrRepositoryTooLarge) {
 		// Try master if main fails
 		if branch == defaultBranch {
+			_ = os.RemoveAll(f.tempDir)
+			_ = os.MkdirAll(f.tempDir, 0o700)
 			opts.ReferenceName = plumbing.NewBranchReferenceName("master")
-			repo, err = git.PlainCloneContext(ctx, f.tempDir, false, opts)
+			repo, err = cloneWithSizeCap(ctx, f.tempDir, clone)
 		}
-		if err != nil {
-			return nil, err
+	}
+	if err != nil {
+		if errors.Is(err, ErrRepositoryTooLarge) {
+			_ = os.RemoveAll(f.tempDir)
 		}
+		return nil, err
 	}
 
 	f.worktree, _ = repo.Worktree()

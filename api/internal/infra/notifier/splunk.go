@@ -20,8 +20,8 @@ const defaultSplunkSourcetype = "openctem:notification"
 //
 // HEC is a push-only receiver: we POST a JSON envelope to
 // <endpoint>/services/collector/event with an "Authorization: Splunk <token>"
-// header. This is the industry-standard way security tooling routes findings
-// into a SIEM (mirrors Tenable/Vulcan -> SIEM). Outbound delivery rides the
+// header. HEC is the collector most SIEM deployments expose for pushed findings,
+// so no polling agent is needed on the customer side. Outbound delivery rides the
 // same notification fan-out (outbox + event/severity filters) as the other
 // providers, so it inherits reliable, deduplicated delivery for free.
 type SplunkClient struct {

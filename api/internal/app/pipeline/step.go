@@ -60,7 +60,7 @@ func (s *Service) AddStep(ctx context.Context, input AddStepInput) (*pipeline.St
 	capabilities := input.Capabilities
 	if len(capabilities) == 0 && input.Tool != "" && s.toolRepo != nil {
 		// Try to get capabilities from tool
-		tool, err := s.toolRepo.GetByName(ctx, input.Tool)
+		tool, err := s.toolRepo.GetByName(ctx, tenantID, input.Tool)
 		if err != nil {
 			// Try tenant-specific tool
 			tool, err = s.toolRepo.GetByTenantAndName(ctx, tenantID, input.Tool)
@@ -189,7 +189,7 @@ func (s *Service) ValidateSteps(ctx context.Context, inputs []AddStepInput) erro
 		capabilities := input.Capabilities
 		if len(capabilities) == 0 && input.Tool != "" && s.toolRepo != nil {
 			// Try to get capabilities from tool
-			t, err := s.toolRepo.GetByName(ctx, input.Tool)
+			t, err := s.toolRepo.GetByName(ctx, tenantID, input.Tool)
 			if err != nil {
 				// Try tenant-specific tool
 				t, err = s.toolRepo.GetByTenantAndName(ctx, tenantID, input.Tool)
@@ -248,7 +248,7 @@ func (s *Service) ValidateToolReferences(ctx context.Context, template *pipeline
 		// Case 1: Step has explicit tool specified
 		if step.Tool != "" {
 			// Try to find the tool (platform first, then tenant-specific)
-			t, err := s.toolRepo.GetByName(ctx, step.Tool)
+			t, err := s.toolRepo.GetByName(ctx, tenantID, step.Tool)
 			if err != nil {
 				// Try tenant-specific tool
 				t, err = s.toolRepo.GetByTenantAndName(ctx, tenantID, step.Tool)
