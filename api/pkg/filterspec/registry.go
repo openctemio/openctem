@@ -145,6 +145,11 @@ type Field struct {
 	// for "true"; "false" compiles to its negation (a NULL counts as false).
 	// It binds no value, so a partial index on the predicate can serve it.
 	BoolTemplate string
+	// EnumTemplates, for a TypeEnum field whose only operator is OpEq, maps
+	// every enum value to a constant predicate (a lens: "state=open" is a set
+	// of statuses). The value selects the template and is never bound or
+	// rendered, so an index on the predicate can serve it.
+	EnumTemplates map[string]string
 	// Enum is the allowed set for TypeEnum.
 	Enum []string
 	// Nullable makes not-in and ne also match NULL, and allows OpIsNull.
@@ -331,6 +336,9 @@ func validateTemplates(f *Field) error {
 			return fmt.Errorf("field %q: BoolTemplate needs a boolean eq field, no %s and no eq template", f.Name, ArgToken)
 		}
 	}
+	if err := validateEnumTemplates(f); err != nil {
+		return err
+	}
 	for op, tpl := range f.Templates {
 		if !f.allows(op) {
 			return fmt.Errorf("field %q: template for operator %s it does not allow", f.Name, op)
@@ -342,6 +350,30 @@ func validateTemplates(f *Field) error {
 		if op != OpIsNull && !has && !(strings.Contains(tpl, UserToken) && f.Type == TypeEnum && len(f.Enum) == 1) {
 			// Only a one-value enum ("related_to=me") may ignore its value.
 			return fmt.Errorf("field %q: template for %s has no %s", f.Name, op, ArgToken)
+		}
+	}
+	return nil
+}
+
+// validateEnumTemplates checks that an EnumTemplates field is a one-operator
+// (eq) enum with a constant template for exactly its enum values.
+func validateEnumTemplates(f *Field) error {
+	if f.EnumTemplates == nil {
+		return nil
+	}
+	if f.Type != TypeEnum || len(f.Ops) != 1 || f.Ops[0] != OpEq || len(f.Templates) > 0 || f.BoolTemplate != "" {
+		return fmt.Errorf("field %q: EnumTemplates needs an enum field whose only operator is eq, and no other template", f.Name)
+	}
+	if len(f.EnumTemplates) != len(f.Enum) {
+		return fmt.Errorf("field %q: EnumTemplates must cover exactly the enum values", f.Name)
+	}
+	for _, v := range f.Enum {
+		tpl, ok := f.EnumTemplates[v]
+		if !ok || strings.TrimSpace(tpl) == "" {
+			return fmt.Errorf("field %q: no EnumTemplates entry for %q", f.Name, v)
+		}
+		if strings.Contains(tpl, ArgToken) {
+			return fmt.Errorf("field %q: EnumTemplates entry for %q must not bind a value", f.Name, v)
 		}
 	}
 	return nil
@@ -396,6 +428,12 @@ func (r *Registry) Rebase(table, alias string) *Registry {
 			nf.Templates = make(map[Op]string, len(f.Templates))
 			for op, tpl := range f.Templates {
 				nf.Templates[op] = sub(tpl)
+			}
+		}
+		if f.EnumTemplates != nil {
+			nf.EnumTemplates = make(map[string]string, len(f.EnumTemplates))
+			for v, tpl := range f.EnumTemplates {
+				nf.EnumTemplates[v] = sub(tpl)
 			}
 		}
 		cp.fields[name] = &nf

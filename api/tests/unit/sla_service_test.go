@@ -178,7 +178,7 @@ func validSLACreateInput(tenantID string) sla.CreatePolicyInput {
 		LowDays:             60,
 		InfoDays:            90,
 		WarningThresholdPct: 80,
-		EscalationEnabled:   false,
+		EscalationEnabled:   slaBoolPtr(false),
 	}
 }
 
@@ -383,8 +383,7 @@ func TestCreateSLAPolicy_WithEscalation(t *testing.T) {
 
 	tenantID := shared.NewID()
 	input := validSLACreateInput(tenantID.String())
-	input.EscalationEnabled = true
-	input.EscalationConfig = map[string]any{"notify": "manager@example.com"}
+	input.EscalationEnabled = slaBoolPtr(true)
 
 	policy, err := svc.CreateSLAPolicy(context.Background(), input)
 	if err != nil {
@@ -764,7 +763,6 @@ func TestUpdateSLAPolicy_EnableEscalation(t *testing.T) {
 
 	input := sla.UpdatePolicyInput{
 		EscalationEnabled: slaBoolPtr(true),
-		EscalationConfig:  map[string]any{"channel": "#alerts"},
 	}
 	policy, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), tenantID.String(), input)
 	if err != nil {
@@ -1234,5 +1232,60 @@ func TestCheckSLACompliance_NoPolicyUsesDefaults(t *testing.T) {
 	}
 	if result.DaysRemaining < 59 {
 		t.Errorf("expected ~60 days remaining, got %d", result.DaysRemaining)
+	}
+}
+
+func TestCreateSLAPolicy_PriorityDays(t *testing.T) {
+	svc := newTestSLAService(newMockSLARepo())
+	input := validSLACreateInput(shared.NewID().String())
+	input.P0Days = slaIntPtr(1)
+	input.P2Days = slaIntPtr(10)
+	policy, err := svc.CreateSLAPolicy(context.Background(), input)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if policy.P0Days() != 1 || policy.P1Days() != sladom.DefaultPriorityDays["P1"] || policy.P2Days() != 10 {
+		t.Fatalf("priority days = %d/%d/%d, want 1/default/10", policy.P0Days(), policy.P1Days(), policy.P2Days())
+	}
+
+	bad := validSLACreateInput(shared.NewID().String())
+	bad.P0Days = slaIntPtr(40) // longer than the P1 default
+	if _, err := svc.CreateSLAPolicy(context.Background(), bad); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("P0 longer than P1 = %v, want validation error", err)
+	}
+}
+
+func TestUpdateSLAPolicy_PriorityDaysPartial(t *testing.T) {
+	repo := newMockSLARepo()
+	svc := newTestSLAService(repo)
+	tenantID := shared.NewID()
+	created, err := svc.CreateSLAPolicy(context.Background(), validSLACreateInput(tenantID.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := svc.UpdateSLAPolicy(context.Background(), created.ID().String(), tenantID.String(),
+		sla.UpdatePolicyInput{P3Days: slaIntPtr(60)})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated.P3Days() != 60 || updated.P0Days() != sladom.DefaultPriorityDays["P0"] {
+		t.Fatalf("P0/P3 = %d/%d, want default/60", updated.P0Days(), updated.P3Days())
+	}
+	if _, err := svc.UpdateSLAPolicy(context.Background(), created.ID().String(), tenantID.String(),
+		sla.UpdatePolicyInput{P1Days: slaIntPtr(1), P0Days: slaIntPtr(2)}); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("P0 > P1 update = %v, want validation error", err)
+	}
+}
+
+func TestCreateSLAPolicy_EscalationDefaultsOn(t *testing.T) {
+	svc := newTestSLAService(newMockSLARepo())
+	input := validSLACreateInput(shared.NewID().String())
+	input.EscalationEnabled = nil
+	policy, err := svc.CreateSLAPolicy(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !policy.EscalationEnabled() {
+		t.Fatal("escalation omitted on create must default to on")
 	}
 }

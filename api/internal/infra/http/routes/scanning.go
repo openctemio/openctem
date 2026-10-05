@@ -816,6 +816,7 @@ func registerSecretStoreRoutes(
 		// Write operations
 		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite))
+		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite))
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete))
