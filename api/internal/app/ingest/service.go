@@ -10,7 +10,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/activity"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -80,7 +80,7 @@ type Service struct {
 	// instance would have its own mutex and could interleave appends.
 	auditSvc *auditapp.AuditService
 
-	activityService *app.FindingActivityService
+	activityService *activity.FindingActivityService
 
 	// assetExposureProjector promotes recon-discovered assets (open ports,
 	// exposed services, TLS certificates) into the Exposure Register. Runs
@@ -230,7 +230,7 @@ func (s *Service) SetIdentityStore(store IdentityStore, reviewer IdentityReviewe
 }
 
 // SetActivityService sets the finding activity service for audit trail during ingestion.
-func (s *Service) SetActivityService(activityService *app.FindingActivityService) {
+func (s *Service) SetActivityService(activityService *activity.FindingActivityService) {
 	s.activityService = activityService
 	s.findingProcessor.SetActivityService(activityService)
 }
