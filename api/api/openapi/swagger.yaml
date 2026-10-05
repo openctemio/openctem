@@ -4078,6 +4078,32 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.ConfigCounts:
+    properties:
+      error:
+        type: integer
+      fail:
+        type: integer
+      pass:
+        type: integer
+      skip:
+        type: integer
+      warn:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.ConfigSetting:
+    properties:
+      name:
+        type: string
+      secret:
+        type: boolean
+      set:
+        type: boolean
+      source:
+        type: string
+      valid:
+        type: boolean
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport:
     properties:
       digest:
@@ -9746,6 +9772,13 @@ definitions:
         items:
           type: string
         type: array
+      config_report:
+        description: |-
+          ConfigReport is the config report summary (research/26): digest,
+          health, fail and warn counts, observed_at, sent by SDKs that see
+          "config_report" on hello. The digest is the one PUT /config-report
+          returned. Read leniently (a member of the wrong shape is ignored).
+        type: object
       content:
         description: |-
           Content is a slim heartbeat's content freshness (RFC-033 §6.12): a
@@ -12887,6 +12920,124 @@ definitions:
         description: NextCursor fetches the next (older) page; "" when there is none.
         type: string
     type: object
+  internal_infra_http_handler.SensorConfigCheckResponse:
+    properties:
+      blocks:
+        items:
+          type: string
+        type: array
+      code:
+        type: string
+      docs_url:
+        type: string
+      excerpt:
+        type: string
+      fix:
+        additionalProperties:
+          type: string
+        description: |-
+          Fix maps a format (env, compose, helm) to a snippet from the
+          platform catalog with the check's values escaped for that format;
+          only the formats the catalog has, {} when none.
+        type: object
+      group:
+        enum:
+        - platform
+        - identity
+        - policy
+        - tools
+        - content
+        - network
+        - storage
+        - runtime
+        - config
+        - connector
+        type: string
+      id:
+        type: string
+      keys:
+        items:
+          type: string
+        type: array
+      known:
+        type: boolean
+      observed:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.SensorConfigObservedItem'
+        type: array
+      severity:
+        enum:
+        - info
+        - warning
+        - critical
+        type: string
+      status:
+        enum:
+        - pass
+        - warn
+        - fail
+        - skip
+        - error
+        type: string
+      summary:
+        type: string
+      title:
+        type: string
+      why:
+        type: string
+    type: object
+  internal_infra_http_handler.SensorConfigObservedItem:
+    properties:
+      label:
+        type: string
+      value:
+        type: string
+    type: object
+  internal_infra_http_handler.SensorConfigReportResponse:
+    properties:
+      checks:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.SensorConfigCheckResponse'
+        type: array
+      counts:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ConfigCounts'
+      derived_note:
+        type: string
+      health:
+        enum:
+        - ok
+        - attention
+        - impaired
+        - blocked
+        - unknown
+        type: string
+      observed_at:
+        type: string
+      received_at:
+        type: string
+      runtime_kind:
+        enum:
+        - docker
+        - kubernetes
+        - systemd
+        - binary
+        - unknown
+        type: string
+      settings:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ConfigSetting'
+        type: array
+      stale:
+        type: boolean
+      state:
+        enum:
+        - reported
+        - derived
+        - none
+        type: string
+      truncated:
+        type: boolean
+    type: object
   internal_infra_http_handler.SensorConfigTemplatesResponse:
     properties:
       api_key_included:
@@ -13220,6 +13371,19 @@ definitions:
         description: |-
           CapabilityMismatch lists settings the sensor's report contradicts
           (a tool set here that the sensor does not have); omitted when none.
+      config_health:
+        description: |-
+          ConfigHealth is the platform's rollup of the sensor's latest config
+          report (research/26): ok, attention, impaired or blocked; null when
+          it sent none. While the report is stale it is still the last rollup;
+          health_reasons then carry config_report_stale. The checklist is
+          GET /sensors/{id}/config-report.
+        enum:
+        - ok
+        - attention
+        - impaired
+        - blocked
+        type: string
       content:
         description: |-
           Content is the scanner content the sensor reports (trivy DB, nuclei
@@ -33544,6 +33708,44 @@ paths:
       security:
       - BearerAuth: []
       summary: Sensor activity timeline
+      tags:
+      - Sensors
+  /sensors/{id}/config-report:
+    get:
+      description: 'The sensor''s config report (research/26): the preflight checks
+        it ran on itself, each explained from the platform catalog with fix snippets
+        per install type, and the settings it declares (set or not and where from;
+        never a value). For a sensor that sends no report the checks are derived from
+        its heartbeat (state derived); none before it first connected. 404 for a sensor
+        of another organization.'
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorConfigReportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Sensor setup checklist
       tags:
       - Sensors
   /sensors/{id}/config-templates:
