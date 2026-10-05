@@ -11,12 +11,16 @@
 
 A daily controller (`internal/infra/controller/easm_dns_checks.go`, name
 `easm-dns-checks`) runs two checks for every active tenant that has the
-`attack_surface` module (O10):
+`attack_surface` module (O10). They are **on by default** (research/22 owner
+decision E3). The CT controller also runs both checks for a tenant right
+after that tenant's CT sweep, so a name CT just promoted is checked in the
+same pass, not a full interval later (names checked within the re-check
+window are not asked again):
 
 | Check | Names | Finds | Exposure type |
 |---|---|---|---|
 | Dangling DNS | active `domain` and `subdomain` assets | a CNAME whose target does not exist; a delegation whose name servers do not exist | `dangling_cname`, `dangling_ns` |
-| Email posture | active `domain` assets that are registrable domains (subdomains inherit the organisation's DMARC policy) | SPF, DMARC, MTA-STS and TLS-RPT gaps | `email_security_weak` |
+| Email posture | active `domain` assets that are registrable domains (subdomains inherit the organisation's DMARC policy), plus root-domain seeds (discovery on) and verified domains that no domain asset covers, checked by name (22c B3; state in `easm_dns_name_state`, migration 000981; the exposure is linked to no asset until a domain asset exists, whose first check clears it) | SPF, DMARC, MTA-STS and TLS-RPT gaps | `email_security_weak` |
 
 Code: `internal/app/easmdns` (checks, service), `pkg/dnsprobe` (DNS client),
 `internal/infra/postgres/easm_dns_repository.go`, migration 000325.
@@ -164,7 +168,7 @@ address is not judged at all, so a private name server is never called lame.
 
 | Variable | Default | |
 |---|---|---|
-| `EASM_DNS_CHECKS_ENABLED` | `false` | off until the scans P1 work lands (claim-N with `SKIP LOCKED`, controller leases, write-amplification fixes): a daily controller over every tenant should not run by default before that. Turn it on per deployment; the per-run cap and budget bound it |
+| `EASM_DNS_CHECKS_ENABLED` | `true` | on by default (research/22 E3); each tenant's run holds a controller lease and the per-run cap, QPS and budget bound it. `false` turns the checks off platform-wide |
 | `EASM_DNS_RESOLVER` | first `nameserver` of `/etc/resolv.conf` | `host[:port]` of a recursive resolver |
 | `EASM_DNS_QPS` | `20` | |
 | `EASM_DNS_CHECK_INTERVAL` | `24h` | RFC-036 O9: daily light checks |
