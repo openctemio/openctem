@@ -14,7 +14,6 @@
   "common.noData": "No data",
   "common.rowsExported": "Exported {count} rows",
   "common.language": "Language",
-  "nav.item.ci-runners": "CI runners",
   "nav.item.sensors": "Sensors",
   "nav.item.all-components": "All Components",
   "nav.item.apis": "APIs",
