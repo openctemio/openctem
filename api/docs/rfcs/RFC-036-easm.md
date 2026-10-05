@@ -788,7 +788,12 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
   admit SSO JIT and SCIM users. Web: Verify on each seed.
   [easm.md §4d](../architecture/easm.md#4d-verified-domains-built-p0-10).
 
-- **P0-11 EASM settings and run-now:** open.
+- **P0-11 EASM settings and run-now:** shipped (this PR, no migration).
+  `GET/PUT /api/v1/easm/settings` (CT and DNS-check switches, intervals
+  with a 6 h floor; the CT switch is the E8 opt-out) and
+  `POST /api/v1/easm/sweeps` (once per 15 minutes per tenant, audited); a
+  new seed starts a sweep; controllers tick hourly so tenant intervals take
+  effect. [easm.md §4e](../architecture/easm.md#4e-settings-and-run-now-built-p0-11).
 
 - **P0-12 review queue reachable, honest counts (E1):** shipped (this PR,
   no migration). Attack surface has Overview | Review tabs and a sidebar

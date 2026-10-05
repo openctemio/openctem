@@ -68,10 +68,13 @@ type Handlers struct {
 	// EASMVerifiedDomain is tenant self-service domain verification
 	// (research/22 P0-10); nil if not initialized.
 	EASMVerifiedDomain *handler.EASMVerifiedDomainHandler
-	Docs               *handler.DocsHandler             // API documentation handler
-	Command            *handler.CommandHandler          // nil if not initialized (no database)
-	Ingest             *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
-	RuntimeTelemetry   *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint sensors
+	// EASMSettings is attack-surface monitoring settings and run-now
+	// (research/22 P0-11); nil if not initialized.
+	EASMSettings     *handler.EASMSettingsHandler
+	Docs             *handler.DocsHandler             // API documentation handler
+	Command          *handler.CommandHandler          // nil if not initialized (no database)
+	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
+	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint sensors
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
@@ -669,6 +672,9 @@ func Register(
 	}
 	if h.EASMVerifiedDomain != nil {
 		registerEASMVerifiedDomainRoutes(router, h.EASMVerifiedDomain, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMSettings != nil {
+		registerEASMSettingsRoutes(router, h.EASMSettings, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 	if h.EASMSeed != nil {
 		registerEASMSeedRoutes(router, h.EASMSeed, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
