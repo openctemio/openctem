@@ -182,4 +182,37 @@ func TestExposureCreateIngest_AssetTenantAndScope_DB(t *testing.T) {
 	if outScopeByScoped != 1 { // the admin's create only
 		t.Errorf("%d exposure(s) on the out-of-scope asset, want 1 (the admin's)", outScopeByScoped)
 	}
+
+	// H1 (RFC-050 W1): an asset-less exposure is full-data only (D11). The
+	// administrator records a critical one; a restricted member can neither
+	// create one nor downgrade it by ingesting the same fingerprint.
+	assetless := func(severity string) map[string]any {
+		return map[string]any{"event_type": "port_open", "severity": severity, "source": "exa", "title": "exa assetless"}
+	}
+	w := httptest.NewRecorder()
+	h.Create(w, as(admin, true, assetless("critical")))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("admin asset-less create = %d (%s), want 201", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	h.Create(w, as(scoped, false, assetless("info")))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("scoped member asset-less create = %d (%s), want 400", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	h.BulkIngest(w, as(scoped, false, map[string]any{"exposures": []any{assetless("info"), body(inScope)}}))
+	var bulk ingestResult
+	_ = json.Unmarshal(w.Body.Bytes(), &bulk)
+	if w.Code != http.StatusCreated || bulk.Ingested != 1 || bulk.Failed != 1 || len(bulk.Errors) != 1 ||
+		bulk.Errors[0].Index != 0 || bulk.Errors[0].Reason != "asset_id is required" {
+		t.Errorf("scoped bulk with an asset-less item = %d %+v, want the asset-less item refused", w.Code, bulk)
+	}
+	var sev string
+	if err := raw.QueryRowContext(ctx, `SELECT severity FROM exposure_events
+		WHERE tenant_id = $1 AND asset_id IS NULL AND title = 'exa assetless'`, tenantA).Scan(&sev); err != nil {
+		t.Fatal(err)
+	}
+	if sev != "critical" {
+		t.Errorf("asset-less exposure severity = %q after a restricted ingest, want critical (not downgraded)", sev)
+	}
 }
