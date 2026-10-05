@@ -17,7 +17,7 @@ import (
 type Settings struct {
 	// RequireOIDC refuses CI results sent with a sensor key: a CI job must
 	// prove its identity with its provider's OIDC token. On for every
-	// organization created after migration 001112; existing ones opt in.
+	// organization created after migration 001120; existing ones opt in.
 	RequireOIDC bool `json:"require_oidc"`
 }
 
