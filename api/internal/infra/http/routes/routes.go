@@ -80,12 +80,14 @@ type Handlers struct {
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
-	IOC             *handler.IOCHandler        // nil if not initialized - IOC catalog (feeds B6 correlator)
-	Validation      *handler.ValidationHandler // nil if not initialized - CTEM Stage-4 validation evidence
-	SCIM            *handler.SCIMHandler       // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
-	SCIMToken       *handler.SCIMTokenHandler  // nil if not initialized - SCIM token admin
-	SCIMAuth        Middleware                 // SCIM bearer-token auth middleware (nil if SCIM disabled)
-	ModuleGate      *middleware.ModuleGate     // per-tenant module route gating (nil-safe: fail-open)
+	// SensorPairing serves interactive pairing (RFC-052); nil when disabled.
+	SensorPairing *handler.SensorPairingHandler
+	IOC           *handler.IOCHandler        // nil if not initialized - IOC catalog (feeds B6 correlator)
+	Validation    *handler.ValidationHandler // nil if not initialized - CTEM Stage-4 validation evidence
+	SCIM          *handler.SCIMHandler       // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
+	SCIMToken     *handler.SCIMTokenHandler  // nil if not initialized - SCIM token admin
+	SCIMAuth      Middleware                 // SCIM bearer-token auth middleware (nil if SCIM disabled)
+	ModuleGate    *middleware.ModuleGate     // per-tenant module route gating (nil-safe: fail-open)
 	// DataScope enforces the Layer 2 (group) data scope on every by-id asset
 	// and finding route of the token-tenant chain (DataScopeGuard). nil
 	// disables the guard (tests with a minimal handler set).
@@ -721,6 +723,12 @@ func Register(
 	// authenticator, only when enabled.
 	if h.SensorResultsV2 != nil {
 		registerSensorV2Routes(router, h.SensorResultsV2, sensorControlV2Handler(h, log), ingestRateLimiter, log)
+	}
+
+	// Sensor pairing (RFC-052): sensor plane (signed by the key being
+	// paired) and user plane.
+	if h.SensorPairing != nil {
+		registerSensorPairingRoutes(router, h.SensorPairing, authMiddleware, userSync, log)
 	}
 
 	// Sensor management routes (tenant from JWT token)
