@@ -33,6 +33,8 @@ type Service struct {
 	// optIns withholds commands asking for an opt-in the tenant has not
 	// enabled (local_policy.go, research/25 D3); nil: not applied.
 	optIns OptInPolicy
+	// now is the clock (tests replace it).
+	now func() time.Time
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
@@ -68,6 +70,7 @@ func NewService(repo commanddom.Repository, log *logger.Logger, opts ...Option) 
 	s := &Service{
 		repo:   repo,
 		logger: log.With("service", "command"),
+		now:    time.Now,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -559,6 +562,10 @@ type FailInput struct {
 	ErrorMessage string `json:"error_message"`
 	// LeaseEpoch: see CompleteInput.LeaseEpoch.
 	LeaseEpoch *int `json:"-"`
+	// Refusal is the structured policy refusal a v2 sensor reported, or
+	// nil (then a failure reason with the local-policy prefix still counts
+	// as one). research/25 §3.6.
+	Refusal *sensordom.DispatchRefusal `json:"-"`
 }
 
 // MaxFailErrorMessageBytes caps the sensor-supplied error message stored on a
@@ -595,13 +602,30 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 		return nil, ErrLeaseLost
 	}
 
+	// A policy refusal (research/25 D8): routed work goes to another
+	// eligible sensor, the refuser is excluded; the timeline and audit
+	// hear about every refusal.
+	if ref := sensordom.RefusalOf(input.Refusal, input.ErrorMessage); ref != nil {
+		sensorID := cmd.SensorID
+		if s.refusals != nil && sensorID != nil {
+			s.refusals.ObserveLocalPolicyRefusal(ctx, cmd.TenantID, *sensorID, cmd.ID.String(), ref.Message())
+		}
+		out, done, err := s.handleRefusal(ctx, cmd, input, ref)
+		if done {
+			return out, err
+		}
+		fence := fenceOf(cmd, input.SensorID)
+		cmd.Fail(truncateUTF8(ref.Message(), MaxFailErrorMessageBytes))
+		if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
+			return nil, err
+		}
+		return cmd, nil
+	}
+
 	fence := fenceOf(cmd, input.SensorID)
 	cmd.Fail(truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes))
 	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
-	}
-	if s.refusals != nil && cmd.SensorID != nil {
-		s.refusals.ObserveLocalPolicyRefusal(ctx, cmd.TenantID, *cmd.SensorID, cmd.ID.String(), cmd.ErrorMessage)
 	}
 
 	return cmd, nil

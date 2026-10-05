@@ -29,7 +29,11 @@ export interface DetailCheck {
   aside?: React.ReactNode
 }
 
-const CHECK_ICON: Record<DetailCheckStatus, { icon: typeof CheckCircle2; className: string }> = {
+/** Icon and colour per check status: one vocabulary for every checklist. */
+export const DETAIL_CHECK_ICON: Record<
+  DetailCheckStatus,
+  { icon: typeof CheckCircle2; className: string }
+> = {
   ok: { icon: CheckCircle2, className: 'text-success' },
   warning: { icon: AlertTriangle, className: 'text-warning' },
   critical: { icon: CircleAlert, className: 'text-destructive' },
@@ -95,7 +99,7 @@ export function DetailChecklist({
       <CollapsibleContent className="pt-1">
         <ul className="divide-y rounded-lg border" aria-label={label}>
           {orderChecks(checks).map((c) => {
-            const { icon: Icon, className: iconClass } = CHECK_ICON[c.status]
+            const { icon: Icon, className: iconClass } = DETAIL_CHECK_ICON[c.status]
             const right =
               c.action ??
               (c.aside ? (
