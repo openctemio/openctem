@@ -577,7 +577,7 @@ func InitLocalAuthHandler(
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
 // optional config-template service. Templates live in
-// $AGENT_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
+// $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
 // edited without rebuilding the frontend.
 func newSensorHandlerWithTemplates(
 	sensorSvc *app.SensorService,

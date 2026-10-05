@@ -21,16 +21,6 @@ endpoints.components.get
 endpoints.components.list
 endpoints.components.listByProject
 endpoints.components.update
-endpoints.projectEndpoints.create
-endpoints.projectEndpoints.delete
-endpoints.projectEndpoints.get
-endpoints.projectEndpoints.list
-endpoints.projectEndpoints.update
-endpoints.projects.create
-endpoints.projects.delete
-endpoints.projects.get
-endpoints.projects.list
-endpoints.projects.update
 endpoints.sensorEndpoints.stats
 endpoints.sensors.stats
 endpoints.toolStatsEndpoints.execution
