@@ -6,9 +6,9 @@ package handler
 // only reaches the heartbeat.
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
@@ -54,7 +54,7 @@ func TestSignedSensorAuth_DB(t *testing.T) {
 	exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix, max_concurrent_jobs, auth_kind)
 	      VALUES ($1, $2, 'kb', 'worker', 'active', 'unknown', 'daemon', $3, '', 5, 'key_bound')`,
 		sid.String(), tid.String(), sensordom.KeyBoundHashPlaceholder())
-	key := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{42}, 32))
+	_, key, _ := ed25519.GenerateKey(rand.Reader)
 	signer, _ := sensorsig.NewSigner(key)
 	exec(`INSERT INTO sensor_keys (tenant_id, sensor_id, thumbprint, public_key, status) VALUES ($1, $2, $3, $4, 'active')`,
 		tid.String(), sid.String(), signer.KeyID(), []byte(signer.PublicKey()))
