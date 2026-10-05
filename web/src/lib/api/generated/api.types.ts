@@ -38465,7 +38465,11 @@ export interface components {
       status?: string
       trust_config_id?: string
       verdict?: string
-      verdict_detail?: Record<string, never>
+      /**
+       * @description VerdictDetail is the last verdict with its reasons and links (detail
+       *     view only).
+       */
+      verdict_detail?: components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Verdict']
       workflow?: string
     }
     'internal_infra_http_handler.CISAKEVResponse': {
