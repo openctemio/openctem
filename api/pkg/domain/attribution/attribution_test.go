@@ -91,6 +91,9 @@ func TestParseFilter(t *testing.T) {
 		{[]string{"unconfirmed"}, []State{StateCandidate, StateNeedsReview}, false, true},
 		{[]string{"approved"}, []State{StateConfirmed, StateDependency, StateMonitorOnly}, true, true},
 		{[]string{"needs_review", "unconfirmed"}, []State{StateCandidate, StateNeedsReview}, false, true},
+		// research/22 P0-12: "all" means no filter, whatever comes with it.
+		{[]string{"all"}, nil, false, false},
+		{[]string{"approved", "all"}, nil, false, false},
 	}
 	for _, tc := range cases {
 		f, given, err := ParseFilter(tc.in)

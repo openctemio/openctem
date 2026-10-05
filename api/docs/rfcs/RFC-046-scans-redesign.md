@@ -8,7 +8,7 @@
 > (migration 000674; trigger type `rollover` waits for P1.4).
 > P2 chaining (research/27 P0, owner decisions G1–G12, 2026-10-05): the stage
 > catalogue with typed inputs and outputs (`pkg/domain/stage`, migration
-> 001020 `tools.output_types`, `GET /api/v1/scans/stages`) and the one
+> 001040 `tools.output_types`, `GET /api/v1/scans/stages`) and the one
 > planner (capability → tool at plan time, one payload builder and one step
 > dispatcher; fixes F1 and F2) are in review; the hop router with the per-hop
 > gate, report output-type binding and run-drawer stage lanes follow. State:

@@ -5,9 +5,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import type { PriorityClass } from '@/features/findings/types/finding.types'
 import { cn } from '@/lib/utils'
-import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip } from '@/components/charts'
-import { CHART_TOOLTIP_PROPS, PRIORITY_CHART_COLORS, PRIORITY_ORDER } from '../../lib/ctem-colors'
+import dynamic from 'next/dynamic'
+import { PRIORITY_CHART_COLORS, PRIORITY_ORDER } from '../../lib/ctem-colors'
 import type { RiskTrendPoint } from '../../hooks/use-ctem-dashboard'
+
+// recharts loads after the card's numbers (see trend-charts.tsx).
+const PriorityAreaChart = dynamic(() => import('./trend-charts').then((m) => m.PriorityAreaChart), {
+  ssr: false,
+  loading: () => <Skeleton className="h-full min-h-28 w-full" />,
+})
 
 interface PriorityOverTimeProps {
   trend?: RiskTrendPoint[]
@@ -37,28 +43,7 @@ export function PriorityOverTime({ trend, isLoading }: PriorityOverTimeProps) {
           <Skeleton className="h-28 w-full" />
         ) : points.length > 1 ? (
           <div className="w-full flex-1 min-h-28">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={points} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-                <XAxis dataKey="date" hide />
-                <YAxis hide />
-                <Tooltip
-                  {...CHART_TOOLTIP_PROPS}
-                  labelFormatter={(v) => new Date(String(v)).toLocaleDateString()}
-                />
-                {PRIORITY_ORDER.map((p) => (
-                  <Area
-                    key={p}
-                    type="monotone"
-                    dataKey={`${p.toLowerCase()}_open`}
-                    name={p}
-                    stackId="1"
-                    stroke={PRIORITY_CHART_COLORS[p]}
-                    fill={PRIORITY_CHART_COLORS[p]}
-                    fillOpacity={0.6}
-                  />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
+            <PriorityAreaChart points={points} />
           </div>
         ) : (
           <div className="flex flex-1 min-h-28 items-center justify-center text-xs text-muted-foreground">

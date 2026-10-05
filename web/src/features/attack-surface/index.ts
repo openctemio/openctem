@@ -18,6 +18,7 @@ export type {
 export { PathGraph, EASMOverview } from './components'
 export { useEASMSummary } from './hooks/use-easm-summary'
 export { EASMReviewQueue } from './components/easm-review-queue'
+export { AttackSurfaceSectionTabs } from './components/attack-surface-section-tabs'
 export { useEASMReviewQueue, useDecideReviewBatch } from './hooks/use-easm-review'
 export type { PathGraphNode, PathGraphPath, PathNodeRole } from './components'
 
