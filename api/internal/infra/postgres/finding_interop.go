@@ -14,7 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// Source interoperability data of findings (migration 001055, CTIS 1.4).
+// Source interoperability data of findings (migration 001062, CTIS 1.4).
 // Written and read here only, never by the generic finding SELECT, so lists,
 // exports, tickets and notifications cannot carry it. Every statement is
 // scoped by tenant_id.
