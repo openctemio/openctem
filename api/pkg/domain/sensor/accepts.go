@@ -322,3 +322,61 @@ func firstPortOutside(jobSpec, policySpec string) (int, bool) {
 	}
 	return 0, false
 }
+
+// Layers a sensor may name in a structured refusal (v2 fail "refusal",
+// research/25 §3.6). A closed set: anything else is stored as "unknown".
+var sensorRefusalLayers = map[string]bool{
+	"builtin": true, RefusalLayerLocal: true, RefusalLayerManaged: true, "scope": true, "platform_tool_gate": true,
+}
+
+// SanitizeRefusal reduces a sensor-reported refusal to safe, bounded
+// values: a known layer (else "unknown"), a well-formed rule (else
+// "unknown"), a printable detail of at most 300 characters. nil stays nil.
+func SanitizeRefusal(r *DispatchRefusal) *DispatchRefusal {
+	if r == nil {
+		return nil
+	}
+	out := &DispatchRefusal{Layer: "unknown", Rule: "unknown", Detail: sanitizeWarning(r.Detail)}
+	if l := strings.ToLower(strings.TrimSpace(r.Layer)); sensorRefusalLayers[l] {
+		out.Layer = l
+	}
+	if rule := strings.TrimSpace(r.Rule); len(rule) <= maxLocalPolicyNameLen && localPolicyRuleRE.MatchString(rule) {
+		out.Rule = rule
+	}
+	return out
+}
+
+// RefusalOf returns the refusal a failed command reports: the structured
+// one when the sensor sent it (sanitized), else one parsed from a failure
+// reason with the local-policy prefix (older SDKs). nil when the failure
+// is not a policy refusal.
+func RefusalOf(structured *DispatchRefusal, errorMessage string) *DispatchRefusal {
+	if structured != nil {
+		return SanitizeRefusal(structured)
+	}
+	rule, ok := LocalPolicyRefusal(errorMessage)
+	if !ok {
+		return nil
+	}
+	detail := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(errorMessage), LocalPolicyRefusalPrefix))
+	if _, rest, found := strings.Cut(detail, ":"); found {
+		detail = strings.TrimSpace(rest)
+	} else {
+		detail = ""
+	}
+	return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: rule, Detail: sanitizeWarning(detail)}
+}
+
+// Message is the failure reason a refusal is recorded with. A local-policy
+// refusal keeps the prefix older readers parse ("refused by local policy:
+// <rule>: <detail>").
+func (r *DispatchRefusal) Message() string {
+	head := "refused by the " + r.Layer + " policy: "
+	if r.Layer == RefusalLayerLocal {
+		head = LocalPolicyRefusalPrefix
+	}
+	if r.Detail == "" {
+		return head + r.Rule
+	}
+	return head + r.Rule + ": " + r.Detail
+}
