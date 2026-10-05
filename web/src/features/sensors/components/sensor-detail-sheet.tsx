@@ -64,8 +64,10 @@ import { requestSensorContentRefresh, SensorContentSection } from './sensor-cont
 import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-section'
 import { SensorLocalPolicySection } from './sensor-local-policy-section'
 import { SensorManifestTab } from './sensor-manifest-tab'
+import { SensorSetupTab } from './config-check-list'
 import { SensorStateBadge } from './sensor-state-badge'
 import {
+  ConfigHealthTag,
   distinctHostname,
   LEGACY_KEY_EXPLANATION,
   ProtocolTag,
@@ -85,6 +87,7 @@ import {
   sensorCapacity,
   sensorToolRows,
 } from '../lib/capabilities'
+import { configHealthNeedsAttention } from '../lib/config-report'
 import { agoShort, exactTime, formatDurationShort } from '../lib/format'
 import type { ReleaseChannel } from '../lib/fleet'
 import { sensorHealthChecks, type HealthCheck, type HealthCheckAction } from '../lib/health-checks'
@@ -126,7 +129,7 @@ interface SensorDetailSheetProps {
 
 // Activity is not a tab: the Overview's activity summary opens the shared
 // ActivityPanel (web/docs/ui/activity-panel.md).
-type DrawerTab = 'overview' | 'jobs' | 'manifest' | 'config'
+type DrawerTab = 'setup' | 'overview' | 'jobs' | 'manifest' | 'config'
 
 const DRAWER_TABS: DetailTab<DrawerTab>[] = [
   { value: 'overview', label: 'Overview' },
@@ -134,6 +137,22 @@ const DRAWER_TABS: DetailTab<DrawerTab>[] = [
   { value: 'manifest', label: 'Manifest' },
   { value: 'config', label: 'Config' },
 ]
+const SETUP_TAB: DetailTab<DrawerTab> = { value: 'setup', label: 'Setup & health' }
+
+/**
+ * The drawer's tabs. Setup & health only on APIs that report config health
+ * (the field is present, null before the first report); first, and the tab
+ * the drawer opens on, when the setup needs someone.
+ */
+function drawerTabs(sensor: Pick<Sensor, 'config_health'>): DetailTab<DrawerTab>[] {
+  if (sensor.config_health === undefined) return DRAWER_TABS
+  if (configHealthNeedsAttention(sensor.config_health)) return [SETUP_TAB, ...DRAWER_TABS]
+  return [...DRAWER_TABS, SETUP_TAB]
+}
+
+function initialTab(sensor: Pick<Sensor, 'config_health'>): DrawerTab {
+  return configHealthNeedsAttention(sensor.config_health) ? 'setup' : 'overview'
+}
 
 // ---------------------------------------------------------------------------
 // Health: the callout (what is wrong) and the full checklist behind a toggle
@@ -784,9 +803,9 @@ export function SensorDetailSheet({
   const activityRef = useRef<EntityActivityHandle>(null)
   const [shownId, setShownId] = useState<string | null>(null)
   if (sensorProp && sensorProp.id !== shownId) {
-    // Another sensor: start on its overview.
+    // Another sensor: start on its overview, or on its setup when that needs someone.
     setShownId(sensorProp.id)
-    setTab('overview')
+    setTab(initialTab(sensorProp))
   }
   if (!sensorProp) return null
   const sensor = live && live.id === sensorProp.id ? live : sensorProp
@@ -866,6 +885,7 @@ export function SensorDetailSheet({
               <SensorStateBadge sensor={sensor} now={now} thresholds={thresholds} />
               {sensor.is_platform_sensor && <SensorTag>Platform</SensorTag>}
               <ProtocolTag sensor={sensor} />
+              <ConfigHealthTag health={sensor.config_health} />
             </>
           }
           meta={subline}
@@ -893,7 +913,7 @@ export function SensorDetailSheet({
           }
         />
       }
-      tabs={<DetailTabs tabs={DRAWER_TABS} value={tab} onValueChange={setTab} />}
+      tabs={<DetailTabs tabs={drawerTabs(sensor)} value={tab} onValueChange={setTab} />}
     >
       {tab === 'overview' && (
         <div className="space-y-5">
@@ -934,6 +954,8 @@ export function SensorDetailSheet({
           </DetailSections>
         </div>
       )}
+
+      {tab === 'setup' && <SensorSetupTab sensor={sensor} />}
 
       {tab === 'jobs' && <SensorJobs sensor={sensor} />}
 
