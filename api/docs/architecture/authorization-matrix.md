@@ -311,7 +311,7 @@ create's target validator, exclusions, zone routing) in one call.
 > (`pkg/domain/permission/admin_only.go`). The role service refuses them on
 > create and update, whoever edits the role (400), and a trigger on
 > `role_permissions` refuses a row that would put one on a custom role
-> (migration `000945`, which also stripped them from existing custom roles and
+> (migration `001012`, which also stripped them from existing custom roles and
 > kept the report in `role_permissions_admin_only_stripped`). Custom roles
 > keep the read permissions and `sensors:commands:write`.
 >
