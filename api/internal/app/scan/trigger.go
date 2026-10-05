@@ -52,6 +52,63 @@ type TriggerScanExecInput struct {
 // the scan's previous run still active.
 var ErrScanRunInProgress = pipeline.ErrScanRunActive
 
+// ErrScanActorRequired is returned when a scan would be created (clone,
+// import) without the person who owns it.
+var ErrScanActorRequired = fmt.Errorf("%w: the acting user is required", shared.ErrValidation)
+
+// ErrScanHasNoOwner is returned when a scheduled run is due for a scan with
+// no owner (created_by). Such a run would act as the unrestricted system, so
+// it is refused (research 21b H2/H3, RFC-050 SP-3).
+var ErrScanHasNoOwner = shared.NewDomainError("SCAN_HAS_NO_OWNER",
+	"This scan has no owner, so its scheduled runs are refused. Clone or re-save it as a member to take ownership.",
+	shared.ErrValidation)
+
+// ErrScanOwnerInactive is returned when a scheduled run is due for a scan
+// whose owner is no longer an active member; the scan is paused.
+var ErrScanOwnerInactive = shared.NewDomainError("SCAN_OWNER_INACTIVE",
+	"This scan's owner is disabled or left the organization, so the scan was paused. Reassign it to resume.",
+	shared.ErrValidation)
+
+// OwnerActivity reports whether a user is an active member of a tenant with
+// an active account (postgres.AccessControlRepository.IsActiveTenantMember).
+type OwnerActivity interface {
+	IsActiveTenantMember(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+}
+
+// SetOwnerActivity wires the owner check of scheduled runs.
+func (s *Service) SetOwnerActivity(o OwnerActivity) { s.ownerActivity = o }
+
+// refuseOwnerlessSchedule stops a scheduled run that would act for nobody:
+// a scan without an owner is refused, a scan whose owner is no longer active
+// is paused and refused. A lookup error refuses (fail closed).
+func (s *Service) refuseOwnerlessSchedule(ctx context.Context, sc *scan.Scan) error {
+	if sc.CreatedBy == nil || sc.CreatedBy.IsZero() {
+		s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
+			NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), ErrScanHasNoOwner).
+				WithResourceName(sc.Name).WithMessage("Scheduled run refused: the scan has no owner"))
+		return ErrScanHasNoOwner
+	}
+	if s.ownerActivity == nil {
+		return nil
+	}
+	active, err := s.ownerActivity.IsActiveTenantMember(ctx, sc.TenantID, *sc.CreatedBy)
+	if err != nil {
+		return fmt.Errorf("check scan owner, run refused: %w", err)
+	}
+	if active {
+		return nil
+	}
+	if perr := sc.Pause(); perr == nil {
+		if uerr := s.scanRepo.Update(ctx, sc); uerr != nil {
+			s.logger.Warn("failed to pause a scan whose owner is inactive", "scan_id", sc.ID.String(), "error", uerr)
+		}
+	}
+	s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
+		NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), ErrScanOwnerInactive).
+			WithResourceName(sc.Name).WithMessage("Scheduled run refused and scan paused: the owner is not an active member"))
+	return ErrScanOwnerInactive
+}
+
 // TriggerScan triggers a scan execution.
 func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (*pipeline.Run, error) {
 	s.logger.Info("triggering scan", "scan_id", input.ScanID)
@@ -92,6 +149,13 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	triggerType := input.TriggerType
 	if triggerType == "" {
 		triggerType = pipeline.TriggerTypeManual
+	}
+	// A scheduled run acts as the scan's owner: refuse when there is none
+	// and pause when the owner is no longer an active member.
+	if triggerType == pipeline.TriggerTypeSchedule {
+		if err := s.refuseOwnerlessSchedule(ctx, sc); err != nil {
+			return nil, err
+		}
 	}
 
 	// Validate tools are still available and active before triggering
