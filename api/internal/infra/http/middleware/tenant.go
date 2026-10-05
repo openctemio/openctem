@@ -67,7 +67,7 @@ func TenantContext(tenantRepo tenant.Repository) func(http.Handler) http.Handler
 
 // MembershipReader is the minimal lookup contract the membership-aware
 // middleware needs. Both the raw tenant.Repository and the cached
-// app.MembershipCacheService implement it via structural typing, so the
+// accesscontrol.MembershipCacheService implement it via structural typing, so the
 // middleware can transparently switch between direct DB access and a
 // Redis-backed cache without knowing the difference.
 type MembershipReader interface {
