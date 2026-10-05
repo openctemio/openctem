@@ -9,6 +9,7 @@ import (
 	"time"
 
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,10 +21,12 @@ func testLogger() *logger.Logger { return logger.NewNop() }
 // --- fakes -----------------------------------------------------------------
 
 type fakeAssetRepo struct {
-	assets []*assetdom.Asset
+	assets     []*assetdom.Asset
+	lastFilter assetdom.Filter
 }
 
-func (r *fakeAssetRepo) List(_ context.Context, _ assetdom.Filter, _ assetdom.ListOptions, page pagination.Pagination) (pagination.Result[*assetdom.Asset], error) {
+func (r *fakeAssetRepo) List(_ context.Context, f assetdom.Filter, _ assetdom.ListOptions, page pagination.Pagination) (pagination.Result[*assetdom.Asset], error) {
+	r.lastFilter = f
 	// Pages like the real repository, including pagination's per-page clamp.
 	start := min(page.Offset(), len(r.assets))
 	end := min(start+page.Limit(), len(r.assets))
@@ -270,5 +273,25 @@ func TestQueryCRTSH_SSRFGuardBlocksInternal(t *testing.T) {
 	svc := NewService(&fakeAssetRepo{}, newFakeExposureRepo(), "http://localhost:9", testLogger())
 	if _, err := svc.queryCRTSH(context.Background(), "example.com"); err == nil {
 		t.Fatalf("SSRF guard should have blocked an internal/localhost feed target")
+	}
+}
+
+// A domain asset awaiting review, a candidate or a rejected one is not a CT
+// root: a domain a sensor report created must not widen the watch list by
+// itself (research/22b S2). The listing asks for approved assets only.
+func TestGatherRoots_OnlyApprovedDomainAssets(t *testing.T) {
+	repo := &fakeAssetRepo{}
+	svc := NewService(repo, newFakeExposureRepo(), "http://127.0.0.1:0", testLogger())
+	if _, _, err := svc.gatherRoots(context.Background(), shared.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	f := repo.lastFilter.Attribution
+	if f == nil || !f.Unrecorded {
+		t.Fatalf("domain assets listed without the approved attribution filter: %+v", f)
+	}
+	for _, st := range f.States {
+		if st == attribution.StateNeedsReview || st == attribution.StateCandidate || st == attribution.StateRejected {
+			t.Fatalf("CT roots include %s domain assets", st)
+		}
 	}
 }

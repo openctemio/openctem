@@ -14,9 +14,11 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -40,8 +42,12 @@ type AttachmentHandler struct {
 	service         *app.AttachmentService
 	accessChecker   FindingCampaignAccessChecker // optional; when nil, no campaign check
 	storageResolver *app.SettingsStorageResolver // optional; for storage config CRUD
+	audit           *auditapp.AuditService       // optional; audits storage config changes
 	logger          *logger.Logger
 }
+
+// SetAuditService wires the audit log for storage configuration changes.
+func (h *AttachmentHandler) SetAuditService(a *auditapp.AuditService) { h.audit = a }
 
 // NewAttachmentHandler creates a new handler.
 func NewAttachmentHandler(svc *app.AttachmentService, log *logger.Logger) *AttachmentHandler {
@@ -504,6 +510,17 @@ func (h *AttachmentHandler) UpdateStorageConfig(w http.ResponseWriter, r *http.R
 		apierror.InternalServerError("Failed to save storage config").WriteJSON(w)
 		return
 	}
+
+	// Where evidence files are written is security relevant (a changed
+	// bucket or endpoint redirects future uploads): High, keys redacted.
+	var before any
+	if existing != nil {
+		before = *existing
+	}
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r),
+		auditapp.NewChangeEvent(auditdom.ActionStorageConfigUpdated, auditdom.ResourceTypeStorageConfig, tenantID, before, cfg).
+			WithSeverity(auditdom.SeverityHigh).
+			WithMessage("Evidence storage configuration updated"))
 
 	writeJSON(w, http.StatusOK, map[string]any{"status": "saved", "provider": cfg.Provider})
 }

@@ -390,7 +390,15 @@ the billing page in the UI.
 | `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
 | `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
-| Secret store `GET` / `POST`,`PUT` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+
+> **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
+> leaves absent fields unchanged (`description: ""` clears it, `expires_at: null`
+> clears the expiry; `expires_at` is RFC 3339 and must be in the future). The
+> secret is replaced only by `POST /secret-store/{id}/rotate` (same credential
+> type; `key_version` and `last_rotated_at` advance). Update, rotate (High),
+> delete (High) and decrypt (High) are audited with the acting user, or a named
+> system actor for a scheduled template sync. All lookups are by tenant and id.
 
 > **A stored credential goes only where someone entitled to it pointed it.**
 > A sync decrypts the source's `credential_id` and sends it to the source's
@@ -1050,9 +1058,18 @@ computed with the same SQL condition as every scoped list:
 | Restricted member with **`dashboard:aggregate`** (new permission, migration `000774`; owner and admin by default, custom roles when granted) | the organization totals; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see |
 
 Recent activity and top risks are row data and stay limited to the viewer's
-scope whatever the permission. The other dashboard metrics (MTTR, velocity,
-data quality, risk trend, program, process and executive metrics) move the
-same way in a follow-up; until then they stay in the table below.
+scope whatever the permission. MTTR (`GET /dashboard/mttr` and
+`/dashboard/mttr-analytics`) follows the viewer the same way (research 24
+§5.1): a restricted member averages their own in-scope findings, with
+`dashboard:aggregate` the organization. The other dashboard metrics
+(velocity, data quality, risk trend, program, process and executive metrics)
+move the same way in a follow-up; until then they stay in the table below.
+
+Remediation campaign progress follows the reader too (research 15 L-18,
+research 24): a restricted member reading a campaign (`GET`, list, and the
+responses of update, status and refresh) sees the finding and resolved counts
+of their own in-scope findings. The stored counts stay organization-wide,
+because auto-complete reads them; a restricted read never persists its view.
 ### Scheduled report recipients
 
 A scheduled report mails organization posture out, so its recipients are
@@ -1088,7 +1105,7 @@ query; none exposes a row, name, title or id of an out-of-scope object.
 
 | Endpoint | Why tenant-wide |
 |---|---|
-| `GET /dashboard/{mttr,velocity,data-quality,risk-trend,mttr-analytics,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
+| `GET /dashboard/{velocity,data-quality,risk-trend,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
 | `GET /attack-surface/stats` average risk score and per-type breakdown | aggregate; the counts and row lists on that endpoint are scoped |
 | `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |

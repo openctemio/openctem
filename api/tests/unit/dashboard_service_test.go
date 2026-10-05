@@ -185,7 +185,7 @@ func (m *mockDashboardRepo) GetFilteredRecentActivity(_ context.Context, tenantI
 	return m.filteredRecentActivity, nil
 }
 
-func (m *mockDashboardRepo) GetMTTRMetrics(_ context.Context, _ shared.ID, _ int) (map[string]float64, error) {
+func (m *mockDashboardRepo) GetMTTRMetrics(_ context.Context, _ shared.ID, _ *shared.DataScope, _ int) (map[string]float64, error) {
 	return map[string]float64{}, nil
 }
 
@@ -205,7 +205,7 @@ func (m *mockDashboardRepo) GetExecutiveSummary(_ context.Context, _ shared.ID, 
 	return &app.ExecutiveSummary{}, nil
 }
 
-func (m *mockDashboardRepo) GetMTTRAnalytics(_ context.Context, _ shared.ID, _ int) (*app.MTTRAnalytics, error) {
+func (m *mockDashboardRepo) GetMTTRAnalytics(_ context.Context, _ shared.ID, _ *shared.DataScope, _ int) (*app.MTTRAnalytics, error) {
 	return &app.MTTRAnalytics{BySeverity: map[string]float64{}, ByPriorityClass: map[string]float64{}}, nil
 }
 
