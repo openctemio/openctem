@@ -64,6 +64,11 @@ const (
 	ReasonErrorReported      HealthReasonCode = "error_reported"
 	ReasonHeartbeatLate      HealthReasonCode = "heartbeat_late"
 	ReasonControlSlow        HealthReasonCode = "control_slow"
+	// Config report reasons (config_report.go): a setup check failed or
+	// needs attention, or the stored report no longer matches the sensor.
+	ReasonConfigCheckFailed  HealthReasonCode = "config_check_failed"
+	ReasonConfigCheckWarning HealthReasonCode = "config_check_warning"
+	ReasonConfigReportStale  HealthReasonCode = "config_report_stale"
 )
 
 // Reason severities.
@@ -227,6 +232,12 @@ func (a *Sensor) AssessHealth(now time.Time, p HealthPolicy) HealthAssessment {
 					pos.Due.UTC().Format(time.RFC3339), humanDuration(pos.Interval), pos.OfflineAt.UTC().Format(time.RFC3339))})
 		}
 	}
+	// A stale config report is only news while the sensor heartbeats.
+	if out.State == StateOnline {
+		if r, ok := a.configStaleReason(); ok {
+			out.Reasons = append(out.Reasons, r)
+		}
+	}
 	if out.State == StateOnline && len(out.Reasons) > 0 {
 		out.State = StateDegraded
 	}
@@ -342,6 +353,8 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus, 
 				c.LagMillis, c.BuildMillis))
 		}
 	}
+
+	reasons = append(reasons, a.configReasons()...)
 
 	if a.Health == SensorHealthError {
 		msg := "The sensor reported an error."
