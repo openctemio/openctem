@@ -75,6 +75,37 @@ Consequences:
   is never overwritten with defaults. Writes to other sections still work.
   An operator fixes the stored JSON.
 
+## Audit: every change carries a diff
+
+Configuration changes are written to the tenant audit log with a field-level
+before/after diff (`internal/app/audit/settings_diff.go`, `DiffChanges` /
+`NewChangeEvent`):
+
+- the diff holds only the fields that changed, as dotted paths
+  (`ip_whitelist`, `webhook.url`); `metadata.changed_fields` lists them;
+- a field whose name marks a secret (`*secret*`, `*password*`, `api_key`,
+  `access_key`, `*token*`, `credentials`, ...) is recorded as `"[changed]"`,
+  never as its value;
+- strings are cut at 256 characters and lists at 50 items.
+
+Severity follows what the change does, not which endpoint it came through:
+
+| Change | Severity |
+|---|---|
+| security: 2FA requirement off, SSO enforcement off, IP allowlist emptied | Critical |
+| security: IP allowlist widened (an entry outside every previous range), allowed domains widened or removed, email verification `never`, private-target local policy off, session timeout longer | High |
+| security: any other change (tightening, neutral) | Medium |
+| organization slug renamed (SAML/SSO URLs depend on it) | High |
+| organization name, description, logo | Low |
+| SCIM token created | High |
+| SCIM token revoked | Medium |
+| evidence storage configuration (`storage_config.updated`, keys redacted) | High |
+| invitation canceled or declined (`invitation.deleted`), resent (`invitation.resent`) | Low |
+
+Every other section save (general, branding, branch, pentest, risk scoring,
+asset source/lifecycle/identity, retest) keeps its action and severity and
+now carries the diff too.
+
 ## Tests
 
 - `internal/app/tenant/settings_cas_db_test.go` (Postgres): racing saves of two
@@ -86,3 +117,8 @@ Consequences:
 - `internal/infra/http/handler/settings_conflict_test.go`: the 409 body redacts
   secrets.
 - `web/src/features/organization/api/__tests__/use-tenant-settings-if-match.test.tsx`.
+- `internal/app/audit/settings_diff_test.go`, `internal/app/tenant/settings_audit_test.go`:
+  diff, redaction, truncation, severity rules.
+- `internal/app/tenant/settings_audit_db_test.go`, `internal/infra/http/handler/scim_token_audit_db_test.go`,
+  `internal/infra/http/handler/storage_config_audit_db_test.go` (Postgres): one
+  audit row per change with actor, diff and severity; no secret in the row.
