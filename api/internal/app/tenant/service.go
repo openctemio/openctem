@@ -1017,6 +1017,17 @@ func (s *TenantService) SearchMembersWithUserInfo(ctx context.Context, tenantID 
 		return nil, fmt.Errorf("%w: search string exceeds maximum of %d characters", shared.ErrValidation, maxSearchLength)
 	}
 
+	switch filters.Status {
+	case "", string(tenantdom.MemberStatusActive), string(tenantdom.MemberStatusSuspended):
+	default:
+		return nil, fmt.Errorf("%w: unknown member status filter", shared.ErrValidation)
+	}
+	switch filters.Role {
+	case "", tenantdom.RoleOwner.String(), tenantdom.RoleAdmin.String(), tenantdom.RoleMember.String(), tenantdom.RoleViewer.String():
+	default:
+		return nil, fmt.Errorf("%w: unknown member role filter", shared.ErrValidation)
+	}
+
 	return s.repo.SearchMembersWithUserInfo(ctx, parsedID, filters)
 }
 
@@ -1885,11 +1896,18 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 	var before tenantdom.PentestSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionPentest, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().Pentest
+		// Absent (nil) = unchanged; an empty list = cleared on purpose.
+		current := before
 		ps := tenantdom.PentestSettings{
-			CampaignTypes: input.CampaignTypes,
-			Methodologies: input.Methodologies,
+			CampaignTypes: current.CampaignTypes,
+			Methodologies: current.Methodologies,
 		}
-
+		if input.CampaignTypes != nil {
+			ps.CampaignTypes = input.CampaignTypes
+		}
+		if input.Methodologies != nil {
+			ps.Methodologies = input.Methodologies
+		}
 		return t.UpdatePentestSettings(ps)
 	})
 	if err != nil {
