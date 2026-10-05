@@ -300,55 +300,6 @@ export interface AuditLog {
 }
 
 // ============================================
-// LIST RESPONSE & FILTERS
-// ============================================
-
-/**
- * Audit log list response
- */
-export interface AuditLogListResponse {
-  items: AuditLog[]
-  total: number
-  page: number
-  page_size: number
-}
-
-/**
- * Audit log list filters
- */
-export interface AuditLogListFilters {
-  resource_type?: AuditResourceType
-  resource_id?: string
-  action?: AuditAction
-  actor_id?: string
-  result?: AuditResult
-  severity?: AuditSeverity
-  from_date?: string
-  to_date?: string
-  search?: string
-  page?: number
-  page_size?: number
-}
-
-// ============================================
-// STATS
-// ============================================
-
-/**
- * Audit log statistics
- */
-export interface AuditLogStats {
-  total_logs: number
-  logs_today: number
-  logs_this_week: number
-  logs_this_month: number
-  by_action: Record<string, number>
-  by_resource_type: Record<string, number>
-  by_result: Record<string, number>
-  by_severity: Record<string, number>
-}
-
-// ============================================
 // HELPERS
 // ============================================
 
