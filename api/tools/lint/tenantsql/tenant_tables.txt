@@ -31,6 +31,11 @@ business_services
 business_unit_assets
 business_units
 capabilities
+ci_gate_overrides
+ci_gate_policies
+ci_run_findings
+ci_runs
+ci_trust_configs
 commands
 comment_reactions
 compensating_controls
@@ -150,6 +155,5 @@ user_roles
 validation_evidence
 verified_domains
 vulnerabilities
-webhooks
 workflow_runs
 workflows

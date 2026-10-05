@@ -19,13 +19,17 @@ var adminOnlyPermissions = []Permission{
 	CommandsDelete,
 	ScanZonesWrite,
 	ScanZonesDelete,
-	// RFC-052: pairing, approval, grants and revocation (migration 001075
+	// RFC-052: pairing, approval, grants and revocation (migration 001078
 	// extends the trigger).
 	SensorsPair,
 	SensorsApprove,
 	SensorsGrantNarrow,
 	SensorsGrantWiden,
 	SensorsRevoke,
+	// CI trust configurations issue upload credentials; the override lets a
+	// commit past the gate (RFC-051).
+	CIWrite,
+	CIOverride,
 }
 
 // AdminOnlyPermissions returns the permissions that only the system owner and

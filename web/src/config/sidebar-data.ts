@@ -48,6 +48,7 @@ import {
   Shield,
   // Pipeline icons
   GitMerge,
+  GitBranch,
   // Template & Secret Store icons
   // Attack path icons
   Route,
@@ -220,6 +221,14 @@ export const sidebarData: SidebarData = {
           icon: RadioTower,
           permission: Permission.SensorsRead,
           module: 'sensors',
+        },
+        // CI pipeline runs (RFC-051): not sensors, so a view of their own.
+        {
+          title: 'CI runners',
+          url: '/ci-runners',
+          icon: GitBranch,
+          permission: Permission.CIRead,
+          module: 'scans',
         },
         // What is exposed, summarised from the inventory below (moved from
         // Scoping: it is a Discovery output, not a scoping decision).
