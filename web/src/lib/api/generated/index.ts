@@ -136,10 +136,9 @@ export type FindingRetestResponse = Schemas['internal_infra_http_handler.Finding
 export type FindingRetestListResponse =
   Schemas['internal_infra_http_handler.FindingRetestListResponse']
 
-// Scope (targets / exclusions / schedules)
+// Scope (targets / exclusions)
 export type ScopeTargetResponse = Schemas['internal_infra_http_handler.ScopeTargetResponse']
 export type ScopeExclusionResponse = Schemas['internal_infra_http_handler.ScopeExclusionResponse']
-export type ScanScheduleResponse = Schemas['internal_infra_http_handler.ScanScheduleResponse']
 export type ScopeStatsResponse = Schemas['internal_infra_http_handler.ScopeStatsResponse']
 export type ScopeMatchResponse = Schemas['internal_infra_http_handler.ScopeMatchResponse']
 export type ScopeBulkOperationResponse =
@@ -185,3 +184,6 @@ export type EASMDecisionResult =
 /** GET/POST/PATCH /api/v1/easm/seeds — EASM seeds (RFC-036 §6.3). */
 export type EASMSeed = Schemas['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
 export type EASMSeedList = Schemas['internal_infra_http_handler.EASMSeedListResponse']
+export type EASMSettings = Schemas['internal_infra_http_handler.EASMSettingsResponse']
+export type EASMSweepTicket =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.SweepTicket']

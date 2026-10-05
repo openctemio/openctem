@@ -111,6 +111,11 @@ Configuration: `CERT_MONITOR_ENABLED` (default true), `CERT_MONITOR_INTERVAL`
 (24h), `CERT_MONITOR_FEED_URL` (`https://crt.sh`),
 `CERT_MONITOR_CERTSPOTTER_URL` (`https://api.certspotter.com`, `off`
 disables), `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (50).
+Since research/22 P0-11 `CERT_MONITOR_INTERVAL` is the platform default
+interval: the controller ticks hourly, a domain is re-queried once its window
+passed, and a tenant may set its own interval (6 h to 168 h) or turn the
+monitor off (`/api/v1/easm/settings`; then its names are not sent to crt.sh
+or Cert Spotter).
 
 Data-source note (RFC-036 O1): only the watched domain names are sent to crt.sh
 and Cert Spotter. Both are free public services; heavy commercial use of
