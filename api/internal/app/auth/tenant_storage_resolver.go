@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
@@ -48,16 +49,21 @@ func (r *SettingsStorageResolver) GetTenantStorageConfig(ctx context.Context, te
 		return nil, nil
 	}
 
-	// Decrypt credentials
+	// Decrypt credentials. A key that does not decrypt is an error: using the
+	// ciphertext as the key would send it to the storage endpoint.
 	if r.encryptor != nil && cfg.AccessKey != "" {
-		if dec, err := r.encryptor.DecryptString(cfg.AccessKey); err == nil {
-			cfg.AccessKey = dec
+		dec, err := r.encryptor.DecryptString(cfg.AccessKey)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt storage access key: %w", err)
 		}
+		cfg.AccessKey = dec
 	}
 	if r.encryptor != nil && cfg.SecretKey != "" {
-		if dec, err := r.encryptor.DecryptString(cfg.SecretKey); err == nil {
-			cfg.SecretKey = dec
+		dec, err := r.encryptor.DecryptString(cfg.SecretKey)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt storage secret key: %w", err)
 		}
+		cfg.SecretKey = dec
 	}
 
 	return &cfg, nil
@@ -65,16 +71,21 @@ func (r *SettingsStorageResolver) GetTenantStorageConfig(ctx context.Context, te
 
 // SaveTenantStorageConfig upserts the storage config for a tenant.
 func (r *SettingsStorageResolver) SaveTenantStorageConfig(ctx context.Context, tenantID string, cfg attachment.StorageConfig) error {
-	// Encrypt credentials before persisting
+	// Encrypt credentials before persisting. Encryption failing is an error:
+	// never store the keys in plaintext.
 	if r.encryptor != nil && cfg.AccessKey != "" {
-		if enc, err := r.encryptor.EncryptString(cfg.AccessKey); err == nil {
-			cfg.AccessKey = enc
+		enc, err := r.encryptor.EncryptString(cfg.AccessKey)
+		if err != nil {
+			return fmt.Errorf("encrypt storage access key: %w", err)
 		}
+		cfg.AccessKey = enc
 	}
 	if r.encryptor != nil && cfg.SecretKey != "" {
-		if enc, err := r.encryptor.EncryptString(cfg.SecretKey); err == nil {
-			cfg.SecretKey = enc
+		enc, err := r.encryptor.EncryptString(cfg.SecretKey)
+		if err != nil {
+			return fmt.Errorf("encrypt storage secret key: %w", err)
 		}
+		cfg.SecretKey = enc
 	}
 
 	cfgJSON, err := json.Marshal(cfg)
