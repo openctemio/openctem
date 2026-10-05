@@ -121,8 +121,6 @@ func registerTenantRoutes(
 		r.PATCH("/settings/asset-identity", h.UpdateAssetIdentitySettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 
 		// Asset source priority settings (admin+) — RFC-003 Phase 1a
-		r.GET("/settings/asset-source", h.GetAssetSourceSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
-		r.PUT("/settings/asset-source", h.UpdateAssetSourceSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 
 		// Asset lifecycle settings (admin+) — stale detection + snooze.
 		r.GET("/settings/asset-lifecycle", h.GetAssetLifecycleSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
