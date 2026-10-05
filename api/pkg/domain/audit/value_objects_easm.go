@@ -11,3 +11,15 @@ const ActionScanTargetRefused Action = "scan.target_refused"
 var _ = registerActions("scan", map[Action]Severity{
 	ActionScanTargetRefused: SeverityMedium,
 })
+
+// EASM monitoring settings and run-now (research/22 P0-11). Turning
+// monitoring off is high: it silences discovery and DNS checks.
+const (
+	ActionEASMSettingsUpdated Action = "easm_settings.updated"
+	ActionEASMSweepRequested  Action = "easm_sweep.requested"
+)
+
+var _ = registerActions("easm", map[Action]Severity{
+	ActionEASMSettingsUpdated: SeverityHigh,
+	ActionEASMSweepRequested:  SeverityMedium,
+})
