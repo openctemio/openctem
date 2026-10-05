@@ -91,9 +91,9 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 	// Register sets package-level chain parts; put them back afterwards.
 	saved := []Middleware{csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware,
 		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware}
-	savedKeyAuth := apiKeyOrJWT
+	savedKeyAuth, savedStepUp := apiKeyOrJWT, stepUpChecker
 	t.Cleanup(func() {
-		apiKeyOrJWT = savedKeyAuth
+		apiKeyOrJWT, stepUpChecker = savedKeyAuth, savedStepUp
 		csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware = saved[0], saved[1], saved[2]
 		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware = saved[3], saved[4], saved[5]
 	})
@@ -139,6 +139,8 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 			postgres.NewAssetRepository(db), log), v, log),
 		BusinessUnit: handler.NewBusinessUnitHandler(
 			asset.NewBusinessUnitService(postgres.NewBusinessUnitRepository(db), postgres.NewAssetRepository(db), log), log),
+		// Not about step-up (step_up_db_test.go is): every session is fresh.
+		StepUp: alwaysSteppedUp{},
 	}, cfg, log, authCfg, tenantRepo, tenantapp.NewUserService(userRepo, log), nil, nil, nil)
 
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())

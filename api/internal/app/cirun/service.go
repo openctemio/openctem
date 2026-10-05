@@ -32,6 +32,16 @@ import (
 // for a verified token, to the tenant's audit log.
 var ErrExchangeRefused = errors.New("ci token exchange refused")
 
+// ErrRunnerOutdated refuses an exchange from a runner that reports a version
+// below the minimum supported one (SENSOR_MIN_VERSION). It is told to the
+// caller (only after its token verified and was admitted): the fix is on its
+// side.
+var ErrRunnerOutdated = errors.New("ci runner older than the minimum supported version")
+
+// errPipelineRate is a pipeline over MaxPipelineRunsPerHour (refused as
+// ErrExchangeRefused, audited).
+var errPipelineRate = errors.New("pipeline run rate exceeded")
+
 // ErrReportOutOfScope refuses a report that names an asset other than the
 // run's repository.
 var ErrReportOutOfScope = fmt.Errorf("%w: a CI run reports only on its own repository", shared.ErrValidation)
@@ -108,6 +118,7 @@ type Service struct {
 	ingester  ReportIngester
 	units     BusinessUnits
 	audit     Auditor
+	alerts    AdminAlerter
 	cfg       Config
 	log       *logger.Logger
 	now       func() time.Time
@@ -125,6 +136,8 @@ type Deps struct {
 	Ingester ReportIngester
 	Units    BusinessUnits
 	Audit    Auditor
+	// Alerts tells every administrator about break-glass (nil: audit only).
+	Alerts AdminAlerter
 }
 
 // NewService creates the service.
@@ -133,7 +146,7 @@ func NewService(d Deps, cfg Config, log *logger.Logger) *Service {
 		log = logger.NewNop()
 	}
 	return &Service{repo: d.Repo, verifier: d.Verifier, assets: d.Assets, branches: d.Branches, baseline: d.Baseline,
-		ingester: d.Ingester, units: d.Units, audit: d.Audit, cfg: cfg, log: log.With("service", "cirun"), now: time.Now}
+		ingester: d.Ingester, units: d.Units, audit: d.Audit, alerts: d.Alerts, cfg: cfg, log: log.With("service", "cirun"), now: time.Now}
 }
 
 // SetClock replaces the clock (tests).
@@ -155,6 +168,12 @@ func (s *Service) logAudit(ctx context.Context, tenantID shared.ID, a Actor, ev 
 	if err := s.audit.LogEvent(ctx, auditapp.AuditContext{TenantID: tenantID.String(), ActorID: a.UserID,
 		ActorEmail: a.Email, ActorIP: a.IP, UserAgent: a.UserAgent, RequestID: a.RequestID}, ev); err != nil {
 		s.log.Warn("ci audit record not written", "action", ev.Action.String(), "error", logger.SanitizeError(err))
+	}
+}
+
+func (s *Service) alertAdmins(ctx context.Context, tenantID shared.ID, a AdminAlert) {
+	if s.alerts != nil {
+		s.alerts.AlertAdmins(ctx, tenantID, a)
 	}
 }
 
@@ -228,6 +247,16 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
 		return nil, ErrExchangeRefused
 	}
+	// A runner below the minimum supported version is refused. The version
+	// is the one the runner reports (User-Agent): this keeps known-bad
+	// releases out, it does not authenticate the binary. A client that
+	// reports no sensor version is admitted and shown as unknown.
+	if v := s.runnerVersion(in.UserAgent); s.cfg.Versions.MinVersion != "" &&
+		sensor.ClassifyVersion(v, "", s.cfg.Versions.MinVersion) == sensor.VersionUnsupported {
+		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "runner_outdated",
+			Detail: fmt.Sprintf("runner %s is older than the minimum supported version %s", v, s.cfg.Versions.MinVersion)}})
+		return nil, ErrRunnerOutdated
+	}
 	fresh, err := s.repo.ClaimJTI(ctx, tok.Issuer, tok.JTI, tok.ExpiresAt.Add(time.Hour))
 	if err != nil {
 		return nil, fmt.Errorf("record token id: %w", err)
@@ -246,6 +275,11 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		}
 	} else {
 		out, err = s.createRun(ctx, tenantID, cfg, claims, key, in.UserAgent)
+		if errors.Is(err, errPipelineRate) {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "pipeline_rate",
+				Detail: fmt.Sprintf("the pipeline started %d or more runs in the last hour", cirun.MaxPipelineRunsPerHour)}})
+			return nil, ErrExchangeRefused
+		}
 		if errors.Is(err, cirun.ErrPipelineCap) {
 			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "pipeline_cap",
 				Detail: "the organization or the trust configuration has the most CI pipelines it may have"}})
@@ -338,7 +372,14 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 	if err != nil {
 		return nil, err
 	}
-	_, sensorVersion := sensor.ResolveBuild(sensor.BuildReport{}, "", userAgent, now)
+	recent, err := s.repo.CountPipelineRunsSince(ctx, tenantID, pipeline.ID, now.Add(-time.Hour))
+	if err != nil {
+		return nil, fmt.Errorf("count pipeline runs: %w", err)
+	}
+	if recent >= cirun.MaxPipelineRunsPerHour {
+		return nil, errPipelineRate
+	}
+	sensorVersion := s.runnerVersion(userAgent)
 	token, hash, err := cirun.NewToken()
 	if err != nil {
 		return nil, err
@@ -370,7 +411,7 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		TokenExpiresAt:    &expires,
 		Status:            cirun.StatusRunning,
 		PipelineID:        &pipeline.ID,
-		SensorVersion:     sensor.NormalizeVersion(sensorVersion),
+		SensorVersion:     sensorVersion,
 		TemplateRef:       templateRef,
 		CreatedAt:         now,
 		UpdatedAt:         now,
@@ -380,6 +421,13 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 	}
 	s.refreshPipeline(ctx, tenantID, run.PipelineID)
 	return &ExchangeOutput{Run: run, Token: token, ExpiresAt: expires}, nil
+}
+
+// runnerVersion is the sensor version the runner's User-Agent reports
+// (normalized; "" when it reports none).
+func (s *Service) runnerVersion(userAgent string) string {
+	_, v := sensor.ResolveBuild(sensor.BuildReport{}, "", userAgent, s.now())
+	return sensor.NormalizeVersion(v)
 }
 
 // upsertPipeline finds or creates the run's pipeline within the caps and
@@ -579,6 +627,9 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 	}
 	if run.Status == cirun.StatusEvaluated {
 		return nil, fmt.Errorf("%w: the run was already evaluated", shared.ErrConflict)
+	}
+	if run.ReportsCount >= cirun.MaxRunReports {
+		return nil, cirun.ErrRunReportCap
 	}
 	if err := ScopeReport(report, run); err != nil {
 		return nil, err

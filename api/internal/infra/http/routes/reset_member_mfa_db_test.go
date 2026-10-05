@@ -56,7 +56,9 @@ func newResetMFAHarness(t *testing.T) *resetMFAHarness {
 	}
 	saved := []Middleware{csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware,
 		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware}
+	savedStepUp := stepUpChecker
 	t.Cleanup(func() {
+		stepUpChecker = savedStepUp
 		csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware = saved[0], saved[1], saved[2]
 		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware = saved[3], saved[4], saved[5]
 	})
@@ -87,6 +89,8 @@ func newResetMFAHarness(t *testing.T) *resetMFAHarness {
 	Register(router, Handlers{
 		Tenant:    handler.NewTenantHandler(tenant.NewTenantService(tenantRepo, log, tenant.WithTenantAuditService(auditSvc)), v, log),
 		LocalAuth: handler.NewLocalAuthHandler(authSvc, nil, nil, nil, authCfgApp, log),
+		// Not about step-up (step_up_db_test.go is): every session is fresh.
+		StepUp: alwaysSteppedUp{},
 	}, cfg, log, AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}, tenantRepo, tenant.NewUserService(userRepo, log), nil, nil, nil)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)

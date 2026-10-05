@@ -116,6 +116,9 @@ type UpdateScanRequest struct {
 // TriggerScanRequest represents the request body for triggering a scan.
 type TriggerScanExecRequest struct {
 	Context map[string]any `json:"context"`
+	// OverrideFreeze starts the scan although a scan freeze window is
+	// active. Needs scans:freeze:override (403 otherwise); audited.
+	OverrideFreeze bool `json:"override_freeze,omitempty"`
 }
 
 // CloneScanRequest represents the request body for cloning a scan.
@@ -811,7 +814,9 @@ func formatBulkMessage(action string, successful, failed int) string {
 // @Param        request  body      TriggerScanExecRequest  false  "Trigger context"
 // @Success      201  {object}  RunResponse
 // @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error  "override_freeze without scans:freeze:override"
 // @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error  "SCAN_FREEZE_ACTIVE: a scan freeze window is active"
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /scans/{id}/trigger [post]
@@ -826,11 +831,17 @@ func (h *ScanHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.OverrideFreeze && !middleware.HasPermission(r.Context(), permission.ScanFreezeOverride.String()) {
+		apierror.Forbidden("Overriding a scan freeze window needs the scans:freeze:override permission").WriteJSON(w)
+		return
+	}
+
 	input := scansvc.TriggerScanExecInput{
-		TenantID:    tenantID,
-		ScanID:      scanID,
-		TriggeredBy: userID,
-		Context:     req.Context,
+		TenantID:       tenantID,
+		ScanID:         scanID,
+		TriggeredBy:    userID,
+		Context:        req.Context,
+		FreezeOverride: req.OverrideFreeze,
 	}
 
 	run, err := h.service.TriggerScan(r.Context(), input)
@@ -1398,6 +1409,10 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// their code so the client can explain them.
 		apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
 			cleanErrorMessage(err, "Invalid request")).WriteJSON(w)
+	case scansvc.AsFrozen(err) != nil:
+		// A scan freeze window is active: 409 with its own code, so the
+		// console can offer the override to those who hold it.
+		apierror.New(http.StatusConflict, apierror.Code(scansvc.CodeScanFrozen), scansvc.AsFrozen(err).Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
