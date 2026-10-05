@@ -28,7 +28,7 @@ others see. A hostile or compromised sensor, or just a buggy one, could:
 | CVE title, description, CVSS, severity, references, versions, dates | first report (CISA KEV name and description take precedence) | set them only when it creates the row | `findings.title`, `findings.severity`, `findings.cvss_score` |
 | `epss_score`, `epss_percentile` | EPSS feed (`epss_scores`) | nothing | `findings.epss_score` (also from the feed, via enrichment) |
 | `cisa_kev_*` | CISA KEV feed (`kev_catalog`) | nothing | `findings.is_in_kev` (also from the feed) |
-| `exploit_available`, `exploit_maturity` | CISA KEV feed (KEV means exploited) | nothing | `findings.metadata.scanner_exploit_available` |
+| `exploit_available`, `exploit_maturity` | CISA KEV feed (KEV means exploited) | nothing | `findings.exploit_available` (read by the list filter, the CVE groups and the tenant CVE views through one predicate, `vulnerability.FindingExploitAvailableSQL`) |
 | Component identity (`purl`, name, version, ecosystem) | — | create the row | — |
 | Component description, homepage, metadata | first report | set them only when it creates the row | — |
 | Component licenses | none today (`component_licenses` is not written or read) | nothing | `asset_components.license` |

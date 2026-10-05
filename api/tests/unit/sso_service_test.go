@@ -210,8 +210,11 @@ func (m *ssoMockTenantRepo) GetBySlug(_ context.Context, slug string) (*tenant.T
 	return t, nil
 }
 
-func (m *ssoMockTenantRepo) Update(_ context.Context, _ *tenant.Tenant) error {
+func (m *ssoMockTenantRepo) UpdateProfile(_ context.Context, _ *tenant.Tenant) error {
 	return m.updateErr
+}
+func (m *ssoMockTenantRepo) UpdateSettingsSection(_ context.Context, _ shared.ID, _ string, _ any, _ bool, _ any) error {
+	return nil
 }
 
 func (m *ssoMockTenantRepo) Delete(_ context.Context, _ shared.ID) error {
