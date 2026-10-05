@@ -12473,7 +12473,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.ProgramMetrics']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_module.ProgramMetrics']
           }
         }
         /** @description Bad Request */
@@ -13204,6 +13204,209 @@ export interface paths {
           }
           content: {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SweepTicket']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/verified-domains': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List the organization's verified domains
+     * @description Domains the organization proved it controls with a DNS TXT record. Names under a verified domain are attributed with the strong rule fqdn_under_verified_root. Rows a platform administrator set up for SSO are listed read-only (managed=true).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomainList']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Add a domain to verify for EASM
+     * @description Returns the DNS TXT record to publish. The domain is verified for EASM only: it never admits SSO users (SSO domains are set up by a platform administrator). Public suffixes and shared consumer domains are refused. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Domain */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomainCreateRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomain']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/verified-domains/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Remove a domain the organization verified for EASM
+     * @description Names under it stop auto-confirming. SSO domains cannot be removed here. Audited.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Verified domain ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/verified-domains/{id}/verify': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Check a domain's TXT record now
+     * @description Looks up the TXT record and marks the domain verified when the exact token is present. At most 10 checks per organization per hour (429 with Retry-After). Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Verified domain ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomain']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Too Many Requests */
@@ -36164,53 +36367,6 @@ export interface components {
       /** @description Supported is false for federated accounts (2FA is the IdP's job). */
       supported?: boolean
     }
-    'github_com_openctemio_openctem_api_internal_app.ProgramMetrics': {
-      /**
-       * @description MTTDInternetFacing — mean time to detect new internet-facing assets.
-       *
-       *     Population: non-archived assets whose first_seen falls in the window and
-       *     that are internet-facing now (exposure = 'public' OR
-       *     is_internet_accessible).
-       *
-       *     Clock start: assets.first_seen (the asset entered the inventory).
-       *     Clock stop: the EARLIEST of these per-asset signals that it was known to
-       *     be internet-facing or exposed —
-       *       - assets.exposure_changed_at, when the current exposure is 'public'
-       *         (stamped when the exposure level was classified);
-       *       - asset_state_history rows of change_type exposure_changed /
-       *         internet_exposure_changed whose new_value is 'public' / 'true';
-       *       - the asset's first exposure event (exposure_events.first_seen_at);
-       *       - the asset's first finding (findings.first_detected_at).
-       *     A stop before first_seen counts as 0 h (known at discovery). Assets with
-       *     no stop signal at all are not averaged; they are counted in Unmeasured.
-       *
-       *     Caveat: exposure_changed_at holds the LAST exposure change, so an asset
-       *     that flapped public → private → public is measured to the later flip
-       *     unless an earlier history row / exposure / finding exists.
-       */
-      mttd_internet_facing?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.DurationMetric']
-      /**
-       * @description MTTRValidated — mean time to remediate VALIDATED exposures only.
-       *
-       *     Population: findings with at least one validation_evidence row of
-       *     outcome 'detected' (the validation re-check reproduced the exposure —
-       *     "still exploitable", RFC-011.2 VerdictReproducible), now in status
-       *     resolved / verified, with resolved_at in the window.
-       *
-       *     Clock start: the first 'detected' validation_evidence.created_at.
-       *     Clock stop: findings.resolved_at. Findings resolved before they were
-       *     validated are excluded (the fix did not follow the validation).
-       *     false_positive / accepted / validated_fixed are not remediation and are
-       *     excluded.
-       */
-      mttr_validated?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.DurationMetric']
-      /**
-       * @description OwnerAcceptance — share of assignments the assignee acted on within the
-       *     SLA window. See OwnerAcceptanceMetric.
-       */
-      owner_acceptance?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.OwnerAcceptanceMetric']
-      period_days?: number
-    }
     'github_com_openctemio_openctem_api_internal_app.ProviderInfo': {
       enabled?: boolean
       id?: string
@@ -36255,6 +36411,11 @@ export interface components {
       logged_at?: string
       offset_ns?: number
       position?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord': {
+      host?: string
+      type?: string
+      value?: string
     }
     'github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput': {
       base_branch?: string
@@ -36483,6 +36644,53 @@ export interface components {
       missed?: number
       pending?: number
       rate_pct?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_module.ProgramMetrics': {
+      /**
+       * @description MTTDInternetFacing — mean time to detect new internet-facing assets.
+       *
+       *     Population: non-archived assets whose first_seen falls in the window and
+       *     that are internet-facing now (exposure = 'public' OR
+       *     is_internet_accessible).
+       *
+       *     Clock start: assets.first_seen (the asset entered the inventory).
+       *     Clock stop: the EARLIEST of these per-asset signals that it was known to
+       *     be internet-facing or exposed —
+       *       - assets.exposure_changed_at, when the current exposure is 'public'
+       *         (stamped when the exposure level was classified);
+       *       - asset_state_history rows of change_type exposure_changed /
+       *         internet_exposure_changed whose new_value is 'public' / 'true';
+       *       - the asset's first exposure event (exposure_events.first_seen_at);
+       *       - the asset's first finding (findings.first_detected_at).
+       *     A stop before first_seen counts as 0 h (known at discovery). Assets with
+       *     no stop signal at all are not averaged; they are counted in Unmeasured.
+       *
+       *     Caveat: exposure_changed_at holds the LAST exposure change, so an asset
+       *     that flapped public → private → public is measured to the later flip
+       *     unless an earlier history row / exposure / finding exists.
+       */
+      mttd_internet_facing?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.DurationMetric']
+      /**
+       * @description MTTRValidated — mean time to remediate VALIDATED exposures only.
+       *
+       *     Population: findings with at least one validation_evidence row of
+       *     outcome 'detected' (the validation re-check reproduced the exposure —
+       *     "still exploitable", RFC-011.2 VerdictReproducible), now in status
+       *     resolved / verified, with resolved_at in the window.
+       *
+       *     Clock start: the first 'detected' validation_evidence.created_at.
+       *     Clock stop: findings.resolved_at. Findings resolved before they were
+       *     validated are excluded (the fix did not follow the validation).
+       *     false_positive / accepted / validated_fixed are not remediation and are
+       *     excluded.
+       */
+      mttr_validated?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.DurationMetric']
+      /**
+       * @description OwnerAcceptance — share of assignments the assignee acted on within the
+       *     SLA window. See OwnerAcceptanceMetric.
+       */
+      owner_acceptance?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.OwnerAcceptanceMetric']
+      period_days?: number
     }
     'github_com_openctemio_openctem_api_internal_app_scan.OptInImpact': {
       opt_ins?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns']
@@ -39719,6 +39927,36 @@ export interface components {
       dns_checks_enabled?: boolean
       dns_interval_hours?: number
     }
+    'internal_infra_http_handler.EASMVerifiedDomain': {
+      created_at?: string
+      domain?: string
+      id?: string
+      /** @description Instructions is the TXT record to publish (easm rows only). */
+      instructions?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord']
+      last_checked_at?: string
+      /**
+       * @description Managed is true for an sso row: the organization cannot re-check or
+       *     delete it here.
+       */
+      managed?: boolean
+      /**
+       * @description Purpose: easm (added by the organization, attribution only) or sso
+       *     (set up by a platform administrator; admits SSO users, read-only here).
+       */
+      purpose?: string
+      /**
+       * @description Status: pending (TXT not seen yet), verified, or failed (it was
+       *     verified and the record is gone; names under it stop auto-confirming).
+       */
+      status?: string
+      verified_at?: string
+    }
+    'internal_infra_http_handler.EASMVerifiedDomainCreateRequest': {
+      domain?: string
+    }
+    'internal_infra_http_handler.EASMVerifiedDomainList': {
+      data?: components['schemas']['internal_infra_http_handler.EASMVerifiedDomain'][]
+    }
     'internal_infra_http_handler.EmbeddedCategoryResponse': {
       color?: string
       /** @description 'SAST', 'DAST', etc. */
@@ -40486,7 +40724,7 @@ export interface components {
       /**
        * @description Disk/network throughput in MB/s. Optional — sensors that omit them leave
        *     the corresponding load-balancing terms at zero. Accepted here so the
-       *     AGENT_LB_DISK_IO_WEIGHT / AGENT_LB_NETWORK_WEIGHT knobs have real inputs.
+       *     SENSOR_LB_DISK_IO_WEIGHT / SENSOR_LB_NETWORK_WEIGHT knobs have real inputs.
        */
       disk_read_mbps?: number
       disk_write_mbps?: number

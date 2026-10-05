@@ -296,6 +296,29 @@ query, so ids of another tenant announce nothing; the throttle counter
 locked for the transaction, which serializes one tenant's alert writes.
 Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_test.go`.
 
+## 4d. Verified domains (built, P0-10)
+
+A tenant member with `scope:write` verifies a domain with the DNS TXT flow
+(`/api/v1/easm/verified-domains`; how-to:
+[verify-a-domain-for-easm.md](../how-to/verify-a-domain-for-easm.md)). Each
+`verified_domains` row has a `purpose` (migration `001081`, owner decision
+E6):
+
+| Purpose | Set up by | EASM (verified root, gate, CT) | SSO JIT and SCIM admission |
+|---|---|---|---|
+| `easm` | the organization (tenant route) | yes | **no** |
+| `sso` | a platform administrator (admin console); every row from before 001081 | yes | yes |
+
+`domainverify.Service.IsVerifiedDomain` (the SSO and SCIM gate) answers true
+only for a verified `sso` row. An administrator adding a domain the
+organization already verified for EASM turns that row into `sso`, keeping
+its token and verification. The tenant routes can list every row but
+re-check or delete only `easm` rows (others answer 404). Checks are limited to
+10 per organization per hour (Redis across replicas, in-process window on a
+Redis error), and every change is audited high. Rows are per tenant, so two
+organizations may verify the same domain and neither learns of the other.
+The 12-hour re-check marks a lost record `failed`, and names under it stop
+auto-confirming.
 ## 4e. Settings and run-now (built, P0-11)
 
 | Route | Permission | What |

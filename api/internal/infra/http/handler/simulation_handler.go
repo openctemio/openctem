@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -19,12 +19,12 @@ import (
 
 // SimulationHandler handles attack simulation and control test HTTP endpoints.
 type SimulationHandler struct {
-	service *app.SimulationService
+	service *compliance.SimulationService
 	logger  *logger.Logger
 }
 
 // NewSimulationHandler creates a new simulation handler.
-func NewSimulationHandler(svc *app.SimulationService, log *logger.Logger) *SimulationHandler {
+func NewSimulationHandler(svc *compliance.SimulationService, log *logger.Logger) *SimulationHandler {
 	return &SimulationHandler{service: svc, logger: log}
 }
 
@@ -80,7 +80,7 @@ func (h *SimulationHandler) CreateSimulation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	sim, err := h.service.CreateSimulation(r.Context(), app.CreateSimulationInput{
+	sim, err := h.service.CreateSimulation(r.Context(), compliance.CreateSimulationInput{
 		TenantID:           tenantID,
 		Name:               req.Name,
 		Description:        req.Description,
@@ -126,7 +126,7 @@ func (h *SimulationHandler) UpdateSimulation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	sim, err := h.service.UpdateSimulation(r.Context(), app.UpdateSimulationInput{
+	sim, err := h.service.UpdateSimulation(r.Context(), compliance.UpdateSimulationInput{
 		TenantID:           tenantID,
 		SimulationID:       simID,
 		Name:               req.Name,
@@ -287,7 +287,7 @@ func (h *SimulationHandler) CreateControlTest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	ct, err := h.service.CreateControlTest(r.Context(), app.CreateControlTestInput{
+	ct, err := h.service.CreateControlTest(r.Context(), compliance.CreateControlTestInput{
 		TenantID:       tenantID,
 		Name:           req.Name,
 		Description:    req.Description,
@@ -320,7 +320,7 @@ func (h *SimulationHandler) RecordControlTestResult(w http.ResponseWriter, r *ht
 		return
 	}
 
-	ct, err := h.service.RecordControlTestResult(r.Context(), app.RecordControlTestResultInput{
+	ct, err := h.service.RecordControlTestResult(r.Context(), compliance.RecordControlTestResultInput{
 		TenantID:   tenantID,
 		ControlID:  ctID,
 		Status:     req.Status,

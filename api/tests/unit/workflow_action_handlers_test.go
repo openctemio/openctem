@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/domain/workflow"
@@ -280,14 +281,14 @@ func newWfActionInput(
 	actionType workflow.ActionType,
 	config map[string]any,
 	triggerData map[string]any,
-) *app.ActionInput {
+) *workflowsvc.ActionInput {
 	if config == nil {
 		config = make(map[string]any)
 	}
 	if triggerData == nil {
 		triggerData = make(map[string]any)
 	}
-	return &app.ActionInput{
+	return &workflowsvc.ActionInput{
 		TenantID:     tenantID,
 		WorkflowID:   shared.NewID(),
 		RunID:        shared.NewID(),
@@ -306,7 +307,7 @@ func newWfActionInput(
 func TestWfActionFinding_AssignUser_Success(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
@@ -336,7 +337,7 @@ func TestWfActionFinding_AssignUser_Success(t *testing.T) {
 func TestWfActionFinding_AssignUser_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
@@ -354,7 +355,7 @@ func TestWfActionFinding_AssignUser_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_AssignUser_MissingUserID(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
@@ -373,7 +374,7 @@ func TestWfActionFinding_AssignUser_MissingUserID(t *testing.T) {
 func TestWfActionFinding_AssignUser_ServiceError(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
@@ -401,7 +402,7 @@ func TestWfActionFinding_AssignUser_ServiceError(t *testing.T) {
 func TestWfActionFinding_AssignTeam_NotImplemented(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	teamID := shared.NewID()
@@ -425,7 +426,7 @@ func TestWfActionFinding_AssignTeam_NotImplemented(t *testing.T) {
 func TestWfActionFinding_AssignTeam_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 
@@ -442,7 +443,7 @@ func TestWfActionFinding_AssignTeam_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_AssignTeam_MissingTeamID(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
@@ -466,7 +467,7 @@ func TestWfActionFinding_AssignTeam_MissingTeamID(t *testing.T) {
 func TestWfActionFinding_UpdatePriority_NotImplemented(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
@@ -489,7 +490,7 @@ func TestWfActionFinding_UpdatePriority_NotImplemented(t *testing.T) {
 func TestWfActionFinding_UpdatePriority_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeUpdatePriority, map[string]any{
@@ -505,7 +506,7 @@ func TestWfActionFinding_UpdatePriority_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_UpdatePriority_MissingPriority(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
@@ -528,7 +529,7 @@ func TestWfActionFinding_UpdatePriority_MissingPriority(t *testing.T) {
 func TestWfActionFinding_UpdateStatus_Success(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
@@ -554,7 +555,7 @@ func TestWfActionFinding_UpdateStatus_Success(t *testing.T) {
 func TestWfActionFinding_UpdateStatus_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateStatus, map[string]any{
@@ -570,7 +571,7 @@ func TestWfActionFinding_UpdateStatus_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_UpdateStatus_MissingStatus(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
@@ -589,7 +590,7 @@ func TestWfActionFinding_UpdateStatus_MissingStatus(t *testing.T) {
 func TestWfActionFinding_UpdateStatus_ServiceError(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
@@ -614,7 +615,7 @@ func TestWfActionFinding_UpdateStatus_ServiceError(t *testing.T) {
 func TestWfActionFinding_AddTags_Success(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, []string{"existing-tag"})
@@ -637,7 +638,7 @@ func TestWfActionFinding_AddTags_Success(t *testing.T) {
 func TestWfActionFinding_AddTags_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeAddTags, map[string]any{
@@ -653,7 +654,7 @@ func TestWfActionFinding_AddTags_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_AddTags_MissingTags(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
@@ -672,7 +673,7 @@ func TestWfActionFinding_AddTags_MissingTags(t *testing.T) {
 func TestWfActionFinding_AddTags_EmptyTags(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
@@ -696,7 +697,7 @@ func TestWfActionFinding_AddTags_EmptyTags(t *testing.T) {
 func TestWfActionFinding_RemoveTags_Success(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, []string{"urgent", "reviewed"})
@@ -719,7 +720,7 @@ func TestWfActionFinding_RemoveTags_Success(t *testing.T) {
 func TestWfActionFinding_RemoveTags_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeRemoveTags, map[string]any{
@@ -735,7 +736,7 @@ func TestWfActionFinding_RemoveTags_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_RemoveTags_MissingTags(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, []string{"urgent"})
@@ -758,7 +759,7 @@ func TestWfActionFinding_RemoveTags_MissingTags(t *testing.T) {
 func TestWfActionFinding_GetFindingID_FromActionConfig(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
@@ -766,7 +767,7 @@ func TestWfActionFinding_GetFindingID_FromActionConfig(t *testing.T) {
 	findingRepo.addFinding(f)
 
 	// finding_id in ActionConfig
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:   tenantID,
 		WorkflowID: shared.NewID(),
 		RunID:      shared.NewID(),
@@ -792,7 +793,7 @@ func TestWfActionFinding_GetFindingID_FromActionConfig(t *testing.T) {
 func TestWfActionFinding_GetFindingID_FromTriggerData(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
@@ -800,7 +801,7 @@ func TestWfActionFinding_GetFindingID_FromTriggerData(t *testing.T) {
 	findingRepo.addFinding(f)
 
 	// finding_id in TriggerData["finding"]["id"]
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:   tenantID,
 		WorkflowID: shared.NewID(),
 		RunID:      shared.NewID(),
@@ -829,13 +830,13 @@ func TestWfActionFinding_GetFindingID_FromTriggerData(t *testing.T) {
 func TestWfActionFinding_GetFindingID_Missing(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
 	// No finding_id anywhere
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:     tenantID,
 		WorkflowID:   shared.NewID(),
 		RunID:        shared.NewID(),
@@ -859,7 +860,7 @@ func TestWfActionFinding_GetFindingID_Missing(t *testing.T) {
 func TestWfActionFinding_UnsupportedAction(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := workflowsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeRunScript, nil, nil)
@@ -877,7 +878,7 @@ func TestWfActionFinding_UnsupportedAction(t *testing.T) {
 func TestWfActionPipeline_TriggerPipeline_NilService(t *testing.T) {
 	// pipelineService == nil → returns error-less map with triggered=false
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := workflowsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
 	pipelineID := shared.NewID()
@@ -898,7 +899,7 @@ func TestWfActionPipeline_TriggerPipeline_NilService(t *testing.T) {
 
 func TestWfActionPipeline_TriggerPipeline_MissingPipelineID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := workflowsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerPipeline, map[string]any{}, nil)
@@ -911,7 +912,7 @@ func TestWfActionPipeline_TriggerPipeline_MissingPipelineID(t *testing.T) {
 
 func TestWfActionPipeline_TriggerPipeline_InvalidPipelineIDFormat(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := workflowsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerPipeline, map[string]any{
@@ -930,7 +931,7 @@ func TestWfActionPipeline_TriggerPipeline_InvalidPipelineIDFormat(t *testing.T) 
 
 func TestWfActionPipeline_TriggerScan_NilService(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := workflowsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
 	scanID := shared.NewID()
@@ -951,7 +952,7 @@ func TestWfActionPipeline_TriggerScan_NilService(t *testing.T) {
 
 func TestWfActionPipeline_TriggerScan_MissingScanID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := workflowsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerScan, map[string]any{}, nil)
@@ -964,7 +965,7 @@ func TestWfActionPipeline_TriggerScan_MissingScanID(t *testing.T) {
 
 func TestWfActionPipeline_TriggerScan_InvalidScanIDFormat(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := workflowsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerScan, map[string]any{
@@ -979,7 +980,7 @@ func TestWfActionPipeline_TriggerScan_InvalidScanIDFormat(t *testing.T) {
 
 func TestWfActionPipeline_UnsupportedAction(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := workflowsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeAssignUser, nil, nil)
@@ -998,7 +999,7 @@ func TestWfActionPipeline_UnsupportedAction(t *testing.T) {
 // configured") rather than report {"created": true} without filing anything.
 func TestWfActionTicket_CreateTicket_NoProvider(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, nil, nil, log)
+	h := workflowsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeCreateTicket, map[string]any{
@@ -1019,7 +1020,7 @@ func TestWfActionTicket_CreateTicket_NoProvider(t *testing.T) {
 // The target finding must be resolvable from config or trigger data first.
 func TestWfActionTicket_CreateTicket_MissingFindingID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, nil, nil, log)
+	h := workflowsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeCreateTicket, map[string]any{
@@ -1039,7 +1040,7 @@ func TestWfActionTicket_CreateTicket_MissingFindingID(t *testing.T) {
 // With no Jira provider wired, update_ticket must fail loudly ("not configured").
 func TestWfActionTicket_UpdateTicket_NoProvider(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, nil, nil, log)
+	h := workflowsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateTicket, map[string]any{
@@ -1057,7 +1058,7 @@ func TestWfActionTicket_UpdateTicket_NoProvider(t *testing.T) {
 
 func TestWfActionTicket_UpdateTicket_MissingFindingID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, nil, nil, log)
+	h := workflowsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateTicket, map[string]any{}, nil)
@@ -1070,7 +1071,7 @@ func TestWfActionTicket_UpdateTicket_MissingFindingID(t *testing.T) {
 
 func TestWfActionTicket_UnsupportedAction(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, nil, nil, log)
+	h := workflowsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeRunScript, nil, nil)
@@ -1088,7 +1089,7 @@ func TestWfActionTicket_UnsupportedAction(t *testing.T) {
 func TestWfActionAITriage_TriggerAITriage_NilService(t *testing.T) {
 	// aiTriageService == nil → returns map with triggered=false (no error)
 	log := logger.NewNop()
-	h := app.NewAITriageActionHandler(nil, log)
+	h := workflowsvc.NewAITriageActionHandler(nil, log)
 
 	tenantID := shared.NewID()
 	findingID := shared.NewID()
@@ -1109,7 +1110,7 @@ func TestWfActionAITriage_TriggerAITriage_NilService(t *testing.T) {
 
 func TestWfActionAITriage_TriggerAITriage_MissingFindingID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewAITriageActionHandler(nil, log)
+	h := workflowsvc.NewAITriageActionHandler(nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerAITriage, map[string]any{}, nil)
@@ -1122,13 +1123,13 @@ func TestWfActionAITriage_TriggerAITriage_MissingFindingID(t *testing.T) {
 
 func TestWfActionAITriage_TriggerAITriage_FindingIDFromTriggerData(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewAITriageActionHandler(nil, log)
+	h := workflowsvc.NewAITriageActionHandler(nil, log)
 
 	tenantID := shared.NewID()
 	findingID := shared.NewID()
 
 	// finding_id resolved from TriggerData["finding"]["id"]
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:     tenantID,
 		WorkflowID:   shared.NewID(),
 		RunID:        shared.NewID(),
@@ -1154,7 +1155,7 @@ func TestWfActionAITriage_TriggerAITriage_FindingIDFromTriggerData(t *testing.T)
 
 func TestWfActionAITriage_UnsupportedAction(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewAITriageActionHandler(nil, log)
+	h := workflowsvc.NewAITriageActionHandler(nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeAssignUser, nil, nil)
@@ -1171,7 +1172,7 @@ func TestWfActionAITriage_UnsupportedAction(t *testing.T) {
 
 func TestWfActionScriptRunner_Execute_AlwaysDisabled(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewScriptRunnerHandler(log)
+	h := workflowsvc.NewScriptRunnerHandler(log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeRunScript, map[string]any{
@@ -1201,13 +1202,14 @@ func TestWfAction_RegisterAllActionHandlers_RegistersAllTypes(t *testing.T) {
 	nodeRunRepo := NewMockNodeRunRepository()
 	log := logger.NewNop()
 
-	executor := app.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	executor := workflowsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
 
 	// Build a VulnerabilityService backed by minimal in-memory mocks.
 	vulnSvc, _ := newWfActionVulnService()
+	workflowsvc.
 
-	// Register all handlers (nil for pipeline, scan, integration — they may be nil).
-	app.RegisterAllActionHandlers(executor, vulnSvc, nil, nil, nil, log)
+		// Register all handlers (nil for pipeline, scan, integration — they may be nil).
+		RegisterAllActionHandlers(executor, vulnSvc, nil, nil, nil, log)
 
 	// Verify handlers were registered by exercising each action type.
 	// We do this by calling Execute directly on the individual handlers (already tested above).
@@ -1222,10 +1224,11 @@ func TestWfAction_RegisterAllActionHandlers_NilVulnSvc(t *testing.T) {
 	nodeRunRepo := NewMockNodeRunRepository()
 	log := logger.NewNop()
 
-	executor := app.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	executor := workflowsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	workflowsvc.
 
-	// nil vulnSvc → finding handlers must NOT be registered (no panic)
-	app.RegisterAllActionHandlers(executor, nil, nil, nil, nil, log)
+		// nil vulnSvc → finding handlers must NOT be registered (no panic)
+		RegisterAllActionHandlers(executor, nil, nil, nil, nil, log)
 }
 
 // =============================================================================
@@ -1238,12 +1241,13 @@ func TestWfAction_RegisterAllActionHandlersWithAI_IncludesAITriage(t *testing.T)
 	nodeRunRepo := NewMockNodeRunRepository()
 	log := logger.NewNop()
 
-	executor := app.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	executor := workflowsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
 
 	vulnSvc, _ := newWfActionVulnService()
+	workflowsvc.
 
-	// nil aiTriageSvc → AI triage handler must NOT be registered (no panic)
-	app.RegisterAllActionHandlersWithAI(executor, vulnSvc, nil, nil, nil, nil, nil, nil, log)
+		// nil aiTriageSvc → AI triage handler must NOT be registered (no panic)
+		RegisterAllActionHandlersWithAI(executor, vulnSvc, nil, nil, nil, nil, nil, nil, log)
 }
 
 func TestWfAction_RegisterAllActionHandlersWithAI_AllNil(t *testing.T) {
@@ -1252,10 +1256,11 @@ func TestWfAction_RegisterAllActionHandlersWithAI_AllNil(t *testing.T) {
 	nodeRunRepo := NewMockNodeRunRepository()
 	log := logger.NewNop()
 
-	executor := app.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	executor := workflowsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	workflowsvc.
 
-	// All nil services — only ScriptRunnerHandler should be registered (no panic)
-	app.RegisterAllActionHandlersWithAI(executor, nil, nil, nil, nil, nil, nil, nil, log)
+		// All nil services — only ScriptRunnerHandler should be registered (no panic)
+		RegisterAllActionHandlersWithAI(executor, nil, nil, nil, nil, nil, nil, nil, log)
 }
 
 // =============================================================================

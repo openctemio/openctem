@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	compliancesvc "github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/compliance"
@@ -19,12 +19,12 @@ import (
 
 // ComplianceHandler handles compliance HTTP requests.
 type ComplianceHandler struct {
-	service *app.ComplianceService
+	service *compliancesvc.ComplianceService
 	logger  *logger.Logger
 }
 
 // NewComplianceHandler creates a new compliance handler.
-func NewComplianceHandler(svc *app.ComplianceService, log *logger.Logger) *ComplianceHandler {
+func NewComplianceHandler(svc *compliancesvc.ComplianceService, log *logger.Logger) *ComplianceHandler {
 	return &ComplianceHandler{service: svc, logger: log}
 }
 
@@ -161,7 +161,7 @@ func (h *ComplianceHandler) UpdateAssessment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	assessment, err := h.service.UpdateAssessment(r.Context(), app.UpdateAssessmentInput{
+	assessment, err := h.service.UpdateAssessment(r.Context(), compliancesvc.UpdateAssessmentInput{
 		TenantID:    tenantID,
 		FrameworkID: req.FrameworkID,
 		ControlID:   controlID,
