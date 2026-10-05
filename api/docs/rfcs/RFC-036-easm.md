@@ -823,7 +823,11 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
 
 - **P0-12 review queue reachable, honest counts (E1):** open.
 
-- **P0-13 honest EASM numbers:** open.
+- **P0-13 honest EASM numbers:** shipped (this PR, no migration). The
+  summary counts only exposure types something produces; every type the API
+  can emit has a label in the web; wildcard-only CT names are no longer
+  counted as discovered subdomains; a root-domain seed under an existing
+  seed is refused; the dead certificate Validity filter is removed.
 
 - **P0-6 port and service results surfaced (B6):** open.
 

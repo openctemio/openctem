@@ -784,10 +784,12 @@ func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window
 				continue
 			}
 			// subdomain_discovered is for hosts BELOW the apex (the apex is the
-			// already-known domain).
+			// already-known domain), named literally: "*.dev" proves no host
+			// called dev exists, and it would be counted with no asset behind
+			// it (research/22 P0-13, 22c B9).
 			if host != domain {
-				subSet[host] = struct{}{}
 				if !wildcard {
+					subSet[host] = struct{}{}
 					exact[host] = true
 				}
 				if !nb.IsZero() {
