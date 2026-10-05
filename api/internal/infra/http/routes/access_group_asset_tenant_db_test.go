@@ -22,8 +22,7 @@ import (
 	"testing"
 
 	_ "github.com/lib/pq"
-
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -76,8 +75,8 @@ func newAGAHarness(t *testing.T) *agaHarness {
 
 	db := &postgres.DB{DB: sqldb}
 	log := logger.NewNop()
-	groupSvc := app.NewGroupService(postgres.NewGroupRepository(db), log,
-		app.WithAccessControlRepository(postgres.NewAccessControlRepository(db)))
+	groupSvc := accesscontrol.NewGroupService(postgres.NewGroupRepository(db), log,
+		accesscontrol.WithAccessControlRepository(postgres.NewAccessControlRepository(db)))
 
 	router := infrahttp.NewChiRouter()
 	auth := Middleware(func(next http.Handler) http.Handler {

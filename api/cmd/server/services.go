@@ -38,6 +38,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	"github.com/openctemio/openctem/api/internal/app/attack"
@@ -48,7 +50,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
-	iocapp "github.com/openctemio/openctem/api/internal/app/ioc"
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/pipeline"
@@ -397,7 +398,7 @@ func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context
 // websocket.ChannelAccessChecker, so the hub can refuse a subscription to a
 // finding, triage, scan or group channel the user is not allowed to read.
 type wsChannelAccess struct {
-	roles  *app.RoleService
+	roles  *accesscontrol.RoleService
 	groups *postgres.GroupRepository
 	scope  *datascope.Enforcer
 }
@@ -599,14 +600,14 @@ type Services struct {
 	SensorSelector *app.SensorSelector
 
 	// Access Control
-	Group          *app.GroupService
-	Role           *app.RoleService
+	Group          *accesscontrol.GroupService
+	Role           *accesscontrol.RoleService
 	AssignmentRule *assignment.RuleService
 	ScopeRule      *scope.RuleService
 
 	// Permission Sync
-	PermVersion *app.PermissionVersionService
-	PermCache   *app.PermissionCacheService
+	PermVersion *accesscontrol.PermissionVersionService
+	PermCache   *accesscontrol.PermissionCacheService
 
 	// Membership cache (Redis-backed wrapper around tenant.Repository
 	// .GetMembership). Read by RequireMembership +
@@ -614,7 +615,7 @@ type Services struct {
 	// status check on every tenant-scoped request becomes a Redis GET
 	// instead of a DB round trip. Invalidated by TenantService when
 	// role / status / membership rows change.
-	MembershipCache *app.MembershipCacheService
+	MembershipCache *accesscontrol.MembershipCacheService
 
 	// Module Service (OSS - all modules enabled, UI metadata only)
 	Module *module.ModuleService
@@ -632,11 +633,8 @@ type Services struct {
 	ControlChangePub *controller.ControlChangePublisher
 	Reclassifier     *reclassify.Reclassifier
 
-	// B6 runtime loop — indicator catalogue + correlator.
-	// Handlers.go hooks the correlator into RuntimeTelemetryHandler so
-	// every accepted event is matched against active IOCs.
-	IOCRepo       *postgres.IOCRepository
-	IOCCorrelator *iocapp.Correlator
+	// IOC catalog.
+	IOCRepo *postgres.IOCRepository
 
 	// bulk-action guard (attached to finding bulk handlers).
 	BulkGuard *app.BulkGuard
@@ -1085,15 +1083,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Vulnerability.SetSLAApplier(sla.NewApplier(s.SLA))
 	}
 
-	// B6 runtime loop — IOC catalogue + correlator. The correlator is
-	// attached to the runtime telemetry handler in handlers.go so every
-	// accepted event is matched against active IOCs. Match side effects:
-	//   - ioc_matches row (always, per hit)
-	//   - closed finding auto-reopen via reopen_adapter (when IOC links
-	//     back to a finding)
+	// IOC catalog. Runtime telemetry reached the correlator only through
+	// the protocol v1 /telemetry-events route, which is retired.
 	s.IOCRepo = repos.IOC
-	iocReopener := iocapp.NewFindingReopener(repos.Finding, s.Audit)
-	s.IOCCorrelator = iocapp.NewCorrelator(s.IOCRepo, iocReopener, log)
 
 	// bulk-action safety rail. Defaults: 500 rows/request,
 	// 10k rows/tenant/hour. Attached to bulk finding handlers below.
@@ -1887,11 +1879,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetSuppressionChecker(s.Suppression)
 
 	// Initialize access control services
-	s.Group = app.NewGroupService(repos.Group, log,
-		app.WithGroupAuditService(s.Audit),
-		app.WithAccessControlRepository(repos.AccessControl),
-		app.WithGroupDataScope(s.DataScope),
-		app.WithScopeDelegationCap(s.DataScope),
+	s.Group = accesscontrol.NewGroupService(repos.Group, log,
+		accesscontrol.WithGroupAuditService(s.Audit),
+		accesscontrol.WithAccessControlRepository(repos.AccessControl),
+		accesscontrol.WithGroupDataScope(s.DataScope),
+		accesscontrol.WithScopeDelegationCap(s.DataScope),
 	)
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
@@ -1962,8 +1954,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssignmentRule.SetFindingRepository(repos.Finding)
 
 	// Initialize permission sync services
-	s.PermVersion = app.NewPermissionVersionService(deps.RedisClient, log)
-	s.PermCache, err = app.NewPermissionCacheService(deps.RedisClient, repos.Role, s.PermVersion, log)
+	s.PermVersion = accesscontrol.NewPermissionVersionService(deps.RedisClient, log)
+	s.PermCache, err = accesscontrol.NewPermissionCacheService(deps.RedisClient, repos.Role, s.PermVersion, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize permission cache service: %w", err)
 	}
@@ -1971,17 +1963,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize membership cache. Hard error if Redis is unreachable
 	// at boot — without this cache the RequireMembership middleware
 	// hammers the database on every request.
-	s.MembershipCache, err = app.NewMembershipCacheService(deps.RedisClient, repos.Tenant, log)
+	s.MembershipCache, err = accesscontrol.NewMembershipCacheService(deps.RedisClient, repos.Tenant, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize membership cache service: %w", err)
 	}
 
-	s.Role = app.NewRoleService(repos.Role, repos.RolePermission, log,
-		app.WithRoleAuditService(s.Audit),
-		app.WithRolePermissionVersionService(s.PermVersion),
-		app.WithRolePermissionCacheService(s.PermCache),
-		app.WithRoleMembershipReader(s.MembershipCache),
-		app.WithRoleMembershipCacheInvalidator(s.MembershipCache),
+	s.Role = accesscontrol.NewRoleService(repos.Role, repos.RolePermission, log,
+		accesscontrol.WithRoleAuditService(s.Audit),
+		accesscontrol.WithRolePermissionVersionService(s.PermVersion),
+		accesscontrol.WithRolePermissionCacheService(s.PermCache),
+		accesscontrol.WithRoleMembershipReader(s.MembershipCache),
+		accesscontrol.WithRoleMembershipCacheInvalidator(s.MembershipCache),
 	)
 
 	// Bound every oct_ key by what its user holds now, not at mint time.

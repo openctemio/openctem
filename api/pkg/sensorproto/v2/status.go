@@ -260,9 +260,6 @@ type Deprecation struct {
 	SunsetAt     time.Time `json:"sunset_at"`
 }
 
-// DeprecationProtocolV1 is the hello key of protocol v1's deprecation.
-const DeprecationProtocolV1 = "protocol_v1"
-
 // Hello is GET /api/v2/sensor/hello: what this server speaks and its limits
 // (RFC-023 C3, RFC-029 §4.2).
 type Hello struct {

@@ -1,11 +1,10 @@
 package routes
 
 // RFC-029: the protocol v2 control plane (heartbeat, commands, suppressions,
-// fingerprint queries, key renewal) over the real route registration, with
-// protocol v1 mounted beside it as in production, against a migrated
-// database. Asserts the wire of RFC-029 §4, the idempotent transitions, the
-// isolation between sensors and tenants, the deprecation headers on v1 and
-// the protocol telemetry.
+// fingerprint queries, key renewal) over the real route registration, against
+// a migrated database. Asserts the wire of RFC-029 §4, the idempotent
+// transitions, the isolation between sensors and tenants and the protocol
+// telemetry; and that the retired protocol v1 routes are gone.
 
 import (
 	"bytes"
@@ -99,7 +98,6 @@ func newCtlHarness(t *testing.T) *ctlHarness {
 	}
 
 	router := infrahttp.NewChiRouter()
-	registerSensorRoutes(router, ih, ch, nil, nil, sh, nil, nil, nil, log)
 	registerSensorV2Routes(router, handler.NewSensorResultsV2Handler(receiver, sensorSvc, log), ctl, nil, log)
 	router.Group("/api/v1/probe", func(r Router) {
 		r.GET("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(299) })
@@ -222,9 +220,8 @@ func TestSensorV2Control_HelloListsEveryFeature(t *testing.T) {
 	if strings.Join(hello.Features, ",") != strings.Join(want, ",") {
 		t.Fatalf("features %v, want %v", hello.Features, want)
 	}
-	dep, ok := hello.Deprecations[protov2.DeprecationProtocolV1]
-	if !ok || !dep.SunsetAt.Equal(time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC)) {
-		t.Fatalf("deprecations %+v", hello.Deprecations)
+	if len(hello.Deprecations) != 0 {
+		t.Fatalf("protocol v1 is retired, nothing is deprecated: %+v", hello.Deprecations)
 	}
 	if hello.Limits.MaxFingerprintsPerRequest != protov2.DefaultMaxFingerprintsPerRequest {
 		t.Fatalf("limits %+v", hello.Limits)
@@ -256,24 +253,6 @@ func TestSensorV2Control_HeartbeatAndTelemetry(t *testing.T) {
 	if got.Protocol == nil || got.Protocol.Version != 2 || got.Protocol.UserAgent != "openctem-sdk-go/0.9.0 (openctemio-sensor/0.5.0)" ||
 		got.Version != "0.5.0" || got.Hostname != "ci-01" {
 		t.Fatalf("stored telemetry %+v version=%q host=%q", got.Protocol, got.Version, got.Hostname)
-	}
-
-	// A v1 heartbeat records protocol 1, keeps its v1 body and carries the
-	// deprecation headers.
-	resp, raw = h.call(s.key, http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{"status": "running"},
-		"User-Agent", "openctem-sdk-go/0.8.1\t(\u00e9sensor)")
-	h.want(resp, raw, 200, "")
-	if !strings.Contains(string(raw), `"agent_id"`) {
-		t.Fatalf("v1 body changed: %s", raw)
-	}
-	if resp.Header.Get("Deprecation") != "@1790812800" || resp.Header.Get("Sunset") != "Thu, 01 Apr 2027 00:00:00 GMT" ||
-		resp.Header.Get("Link") != `</api/v2/sensor/heartbeat>; rel="successor-version"` {
-		t.Fatalf("v1 deprecation headers %v", resp.Header)
-	}
-	got, _ = h.repo.GetByID(context.Background(), shared.MustIDFromString(s.id))
-	if got.Protocol == nil || got.Protocol.Version != 1 || !got.Protocol.Deprecated() ||
-		got.Protocol.UserAgent != "openctem-sdk-go/0.8.1(sensor)" {
-		t.Fatalf("v1 telemetry %+v", got.Protocol)
 	}
 }
 
@@ -389,7 +368,7 @@ func TestSensorV2Control_CommandLifecycleIsIdempotent(t *testing.T) {
 	if p := decodeAs[protov2.Problem](t, raw); p.State != "completed" {
 		t.Fatalf("state %q", p.State)
 	}
-	// The v1 poll no longer offers it.
+	// The poll no longer offers it.
 	resp, raw = h.call(s.key, http.MethodGet, "/api/v2/sensor/commands", nil)
 	h.want(resp, raw, 200, "")
 	if l := decodeAs[protov2.CommandList](t, raw); len(l.Commands) != 0 {
@@ -466,24 +445,33 @@ func TestSensorV2Control_ExpiredCommand(t *testing.T) {
 	}
 }
 
-func TestSensorV2Control_V1CommandRoutesAreDeprecated(t *testing.T) {
+// Protocol v1 is retired: none of its sensor routes, nor the /api/v1/agents
+// management redirect, is served any more, whatever the credential.
+func TestSensorV2Control_ProtocolV1RoutesAreGone(t *testing.T) {
 	h := newCtlHarness(t)
 	s := h.newSensor(h.tenantID, "v1")
 	id := h.newCommand(h.tenantID, "")
-	resp, raw := h.call(s.key, http.MethodPost, "/api/v1/agent/commands/"+id+"/acknowledge", nil)
-	h.want(resp, raw, 200, "")
-	if got := resp.Header.Get("Link"); got != `</api/v2/sensor/commands/`+id+`/claim>; rel="successor-version"` {
-		t.Fatalf("Link %q", got)
+	for _, c := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/agent/heartbeat"},
+		{http.MethodPost, "/api/v1/agent/ingest"},
+		{http.MethodGet, "/api/v1/agent/commands"},
+		{http.MethodPost, "/api/v1/agent/commands/" + id + "/acknowledge"},
+		{http.MethodGet, "/api/v1/agent/suppressions"},
+		{http.MethodPost, "/api/v1/agent/credentials/ingest"},
+		{http.MethodGet, "/api/v1/agents/"},
+	} {
+		resp, _ := h.call(s.key, c.method, c.path, nil)
+		if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("%s %s = %d, want 404", c.method, c.path, resp.StatusCode)
+		}
 	}
-	// Not-yet-replaced v1 routes are counted but not deprecated.
-	resp, _ = h.call(s.key, http.MethodGet, "/api/v1/agent/ingest/scanners", nil)
-	if resp.Header.Get("Deprecation") != "" {
-		t.Fatalf("ingest/scanners deprecated without a successor")
+	// The command was not touched through the old route.
+	var status string
+	if err := h.db.QueryRowContext(context.Background(), `SELECT status FROM commands WHERE id = $1`, id).Scan(&status); err != nil {
+		t.Fatal(err)
 	}
-	// Errors carry the headers too.
-	resp, _ = h.call(s.key, http.MethodPost, "/api/v1/agent/commands/"+id+"/complete", nil)
-	if resp.StatusCode < 400 || resp.Header.Get("Deprecation") == "" {
-		t.Fatalf("v1 error: %d %v", resp.StatusCode, resp.Header)
+	if status != "pending" {
+		t.Fatalf("command status %q after a v1 call, want pending", status)
 	}
 }
 
@@ -556,4 +544,44 @@ func TestSensorV2Control_KeyRenewal(t *testing.T) {
 	// Without a key TTL the presented key is replaced (as v1).
 	resp, raw = h.call(s.key, http.MethodPost, "/api/v2/sensor/heartbeat", nil)
 	h.want(resp, raw, 401, ingestProblem("unauthenticated"))
+}
+
+// A sensor sees only its own tenant's active (approved, unexpired) rules; a
+// sensor of another tenant never sees them.
+func TestSensorV2Control_SuppressionsOwnTenantOnly(t *testing.T) {
+	h := newCtlHarness(t)
+	other := h.newTenant()
+	userID := shared.NewID().String()
+	if _, err := h.db.ExecContext(context.Background(), `INSERT INTO users (id, email, name) VALUES ($1, $2, 'sup')`,
+		userID, "sup-"+userID+"@openctem-test.local"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM suppression_rules WHERE requested_by = $1`, userID)
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, userID)
+	})
+	seed := func(tenantID, label string) {
+		for _, rule := range []struct{ ruleID, status, expiry string }{
+			{label + "-approved", "approved", "NULL"},
+			{label + "-pending", "pending", "NULL"},
+			{label + "-expired", "approved", "NOW() - interval '1 day'"},
+		} {
+			if _, err := h.db.ExecContext(context.Background(), `INSERT INTO suppression_rules
+				(tenant_id, rule_id, tool_name, name, status, requested_by, expires_at)
+				VALUES ($1, $2, 'semgrep', $2, $3, $4, `+rule.expiry+`)`, tenantID, rule.ruleID, rule.status, userID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	seed(h.tenantID, "tenant-a")
+	seed(other, "tenant-b")
+	for _, c := range []struct{ tenant, want string }{{h.tenantID, "tenant-a-approved"}, {other, "tenant-b-approved"}} {
+		s := h.newSensor(c.tenant, "sup")
+		resp, raw := h.call(s.key, http.MethodGet, "/api/v2/sensor/suppressions", nil)
+		h.want(resp, raw, 200, "")
+		l := decodeAs[protov2.SuppressionList](t, raw)
+		if l.Count != 1 || len(l.Rules) != 1 || l.Rules[0].RuleID != c.want {
+			t.Fatalf("tenant %s sensor got %s, want only %s", c.tenant, raw, c.want)
+		}
+	}
 }

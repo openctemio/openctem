@@ -18,7 +18,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // =============================================================================
@@ -653,23 +652,22 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	return nil
 }
 
-// scannerPayload builds the protocol-v1 payload of a single-scanner command.
+// scannerPayload builds the payload of a single-scanner command.
 func (s *Service) scannerPayload(
 	sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun,
 	scannerConfig map[string]any, runContext map[string]any,
 	targets []string, templates []EmbeddedTemplate,
 ) map[string]any {
 	payloadMap := map[string]any{
-		"run_id":                            run.ID.String(),
-		"scan_id":                           sc.ID.String(),
-		"scanner_name":                      sc.ScannerName,
-		"scanner_config":                    scannerConfig,
-		"asset_group_id":                    sc.AssetGroupID.String(),
-		"targets_per_job":                   sc.TargetsPerJob,
-		"routing_tags":                      sc.Tags,
-		"tenant_runner_only":                sc.RunOnTenantRunner,
-		legacyv1.PayloadKeySensorPreference: string(sc.SensorPreference),
-		"context":                           StepRunContext(runContext, nil),
+		"run_id":             run.ID.String(),
+		"scan_id":            sc.ID.String(),
+		"scanner_name":       sc.ScannerName,
+		"scanner_config":     scannerConfig,
+		"asset_group_id":     sc.AssetGroupID.String(),
+		"targets_per_job":    sc.TargetsPerJob,
+		"routing_tags":       sc.Tags,
+		"tenant_runner_only": sc.RunOnTenantRunner,
+		"context":            StepRunContext(runContext, nil),
 		// The sensor SDK (ScanCommandPayload) reads `scanner`, `config` and a
 		// single `target`, not `scanner_name`/`scanner_config` — send both sets
 		// so the command dispatches correctly (contract drift previously left
