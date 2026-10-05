@@ -168,16 +168,19 @@ type ToolResponse struct {
 	Capabilities     []string                  `json:"capabilities"`
 	SupportedTargets []string                  `json:"supported_targets"`
 	OutputFormats    []string                  `json:"output_formats"`
-	DocsURL          string                    `json:"docs_url,omitempty"`
-	GithubURL        string                    `json:"github_url,omitempty"`
-	IsActive         bool                      `json:"is_active"`
-	IsBuiltin        bool                      `json:"is_builtin"`
-	IsPlatformTool   bool                      `json:"is_platform_tool"` // true for platform tools, false for custom
-	Tags             []string                  `json:"tags"`
-	Metadata         map[string]any            `json:"metadata,omitempty"`
-	CreatedBy        *string                   `json:"created_by,omitempty"` // User ID who created the tool (for custom tools)
-	CreatedAt        string                    `json:"created_at"`
-	UpdatedAt        string                    `json:"updated_at"`
+	// OutputTypes are the asset types a report of the tool may create
+	// (scan stage catalog); read-only.
+	OutputTypes    []string       `json:"output_types"`
+	DocsURL        string         `json:"docs_url,omitempty"`
+	GithubURL      string         `json:"github_url,omitempty"`
+	IsActive       bool           `json:"is_active"`
+	IsBuiltin      bool           `json:"is_builtin"`
+	IsPlatformTool bool           `json:"is_platform_tool"` // true for platform tools, false for custom
+	Tags           []string       `json:"tags"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+	CreatedBy      *string        `json:"created_by,omitempty"` // User ID who created the tool (for custom tools)
+	CreatedAt      string         `json:"created_at"`
+	UpdatedAt      string         `json:"updated_at"`
 }
 
 // TenantToolConfigRequest represents the request for tenant tool config.
@@ -1490,6 +1493,7 @@ func toToolResponse(t *tooldom.Tool) *ToolResponse {
 		Capabilities:     t.Capabilities,
 		SupportedTargets: t.SupportedTargets,
 		OutputFormats:    t.OutputFormats,
+		OutputTypes:      t.OutputTypes,
 		DocsURL:          t.DocsURL,
 		GithubURL:        t.GithubURL,
 		IsActive:         t.IsActive,
@@ -1528,6 +1532,9 @@ func toToolResponse(t *tooldom.Tool) *ToolResponse {
 	}
 	if resp.OutputFormats == nil {
 		resp.OutputFormats = []string{}
+	}
+	if resp.OutputTypes == nil {
+		resp.OutputTypes = []string{}
 	}
 	if resp.Tags == nil {
 		resp.Tags = []string{}
