@@ -69,8 +69,8 @@ func (r *CommandLogRepository) Append(ctx context.Context, b commandlog.Batch, a
 
 		// A replay of a stored batch answers what it stored.
 		var stored int
-		err = tx.QueryRowContext(ctx, `SELECT line_count FROM command_logs WHERE command_id = $1 AND seq = $2`,
-			b.CommandID.String(), b.Seq).Scan(&stored)
+		err = tx.QueryRowContext(ctx, `SELECT line_count FROM command_logs WHERE tenant_id = $1 AND command_id = $2 AND seq = $3`,
+			b.TenantID.String(), b.CommandID.String(), b.Seq).Scan(&stored)
 		if err == nil {
 			out = commandlog.AppendResult{Stored: stored}
 			return nil
@@ -82,7 +82,7 @@ func (r *CommandLogRepository) Append(ctx context.Context, b commandlog.Batch, a
 		var batches, bytes int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT count(*) FILTER (WHERE seq >= 0), COALESCE(sum(bytes), 0)
-			FROM command_logs WHERE command_id = $1`, b.CommandID.String()).Scan(&batches, &bytes); err != nil {
+			FROM command_logs WHERE tenant_id = $1 AND command_id = $2`, b.TenantID.String(), b.CommandID.String()).Scan(&batches, &bytes); err != nil {
 			return fmt.Errorf("count batches: %w", err)
 		}
 		if batches >= maxBatches || bytes+len(b.JSON) > maxBytes {
