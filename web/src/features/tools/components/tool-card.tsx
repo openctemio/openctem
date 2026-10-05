@@ -23,7 +23,7 @@ import {
   PowerOff,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { Can, useCanMutate } from '@/lib/permissions'
 import type { Tool } from '@/lib/api/tool-types'
 import type { ToolCategory } from '@/lib/api/tool-category-types'
 import { getCategoryNameById, getCategoryDisplayNameById } from '@/lib/api/tool-category-hooks'
@@ -64,7 +64,7 @@ export function ToolCard({
   // Look up category name from category_id
   const categoryName = getCategoryNameById(categories, tool.category_id)
   const categoryDisplayName = getCategoryDisplayNameById(categories, tool.category_id)
-  const canWriteTools = useHasPermission(Permission.ToolsWrite)
+  const canWriteTools = useCanMutate('POST /api/v1/custom-tools/{id}/activate')
   const logoSrc = safeImageSrc(tool.logo_url)
   return (
     <Card
@@ -133,7 +133,7 @@ export function ToolCard({
                 View Details
               </DropdownMenuItem>
               {!readOnly && !tool.is_builtin && onEdit && (
-                <Can permission={Permission.ToolsWrite}>
+                <Can route="PUT /api/v1/custom-tools/{id}">
                   <DropdownMenuItem onClick={() => onEdit(tool)}>
                     <Settings className="me-2 h-4 w-4" />
                     Edit
@@ -164,7 +164,7 @@ export function ToolCard({
               )}
               {/* Only show activate/deactivate for custom tools (not read-only) */}
               {!readOnly && (onActivate || onDeactivate) && (
-                <Can permission={Permission.ToolsWrite}>
+                <Can route="POST /api/v1/custom-tools/{id}/activate">
                   <DropdownMenuSeparator />
                   {tool.is_active
                     ? onDeactivate && (
@@ -188,7 +188,7 @@ export function ToolCard({
                 </Can>
               )}
               {!readOnly && !tool.is_builtin && onDelete && (
-                <Can permission={Permission.ToolsDelete}>
+                <Can route="DELETE /api/v1/custom-tools/{id}">
                   <DropdownMenuItem onClick={() => onDelete(tool)} className="text-red-500">
                     <Trash2 className="me-2 h-4 w-4" />
                     Delete

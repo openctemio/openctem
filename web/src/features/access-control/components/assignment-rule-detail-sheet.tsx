@@ -58,7 +58,7 @@ import {
   DetailSheet,
   type DetailMenuItem,
 } from '@/features/shared'
-import { Permission, useHasPermission } from '@/lib/permissions'
+import { useCanMutate } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 interface AssignmentRuleDetailSheetProps {
@@ -80,8 +80,9 @@ export function AssignmentRuleDetailSheet({
   const { updateAssignmentRule, isUpdating } = useUpdateAssignmentRule(open ? ruleId : null)
   const { deleteAssignmentRule, isDeleting } = useDeleteAssignmentRule(open ? ruleId : null)
   const { groups } = useGroups()
-  const canWrite = useHasPermission(Permission.AssignmentRulesWrite)
-  const canDelete = useHasPermission(Permission.AssignmentRulesDelete)
+  const canWrite = useCanMutate('PUT /api/v1/assignment-rules/{id}')
+  // Owner only on the API (RequireOwner).
+  const canDelete = useCanMutate('DELETE /api/v1/assignment-rules/{id}')
 
   // Group lookup map: id → name
   const groupMap = useMemo(() => {

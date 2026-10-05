@@ -26,9 +26,11 @@ interface AssetsTabProps {
   limit: number
   offset: number
   onPageChange: (offset: number) => void
-  onAddAsset: () => void
-  onBulkAddAssets: () => void
-  onRemoveAsset: (id: string, name: string) => void
+  /** The three callbacks are omitted when the caller may not change the
+   *  team's assets; their controls are then hidden. */
+  onAddAsset?: () => void
+  onBulkAddAssets?: () => void
+  onRemoveAsset?: (id: string, name: string) => void
 }
 
 export function AssetsTab({
@@ -82,14 +84,18 @@ export function AssetsTab({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-sm font-medium">Assigned Assets ({totalCount})</h4>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={onBulkAddAssets}>
-            <Layers className="me-2 h-4 w-4" />
-            Bulk Add
-          </Button>
-          <Button size="sm" onClick={onAddAsset}>
-            <Plus className="me-2 h-4 w-4" />
-            Assign Asset
-          </Button>
+          {onBulkAddAssets && (
+            <Button size="sm" variant="outline" onClick={onBulkAddAssets}>
+              <Layers className="me-2 h-4 w-4" />
+              Bulk Add
+            </Button>
+          )}
+          {onAddAsset && (
+            <Button size="sm" onClick={onAddAsset}>
+              <Plus className="me-2 h-4 w-4" />
+              Assign Asset
+            </Button>
+          )}
         </div>
       </div>
 
@@ -143,16 +149,18 @@ export function AssetsTab({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <DataTableRowActions
-                  actions={[
-                    {
-                      label: 'Remove',
-                      icon: Trash2,
-                      destructive: true,
-                      onClick: () => onRemoveAsset(item.asset_id, item.asset?.name || 'Asset'),
-                    },
-                  ]}
-                />
+                {onRemoveAsset && (
+                  <DataTableRowActions
+                    actions={[
+                      {
+                        label: 'Remove',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => onRemoveAsset(item.asset_id, item.asset?.name || 'Asset'),
+                      },
+                    ]}
+                  />
+                )}
               </div>
             </div>
           ))}

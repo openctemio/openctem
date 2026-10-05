@@ -16,6 +16,16 @@ published at https://docs.openctem.io (operations/release-notes-*).
   (research 21b H1, RFC-050 W1). Administrators, full-data roles, sensors and
   internal jobs are unchanged; out-of-scope asset ids were already refused.
 
+### Security: foreign assignee names and emails scrubbed from finding history (migration 001012)
+
+- Finding activity rows that recorded the name and email of an assignee
+  outside the organization (possible before #1096) now show
+  `Former assignee (not in this organization)`; the email is removed. Rows,
+  ids and timestamps are kept. One-way by design; see
+  `docs/deployment/safe-deploy-and-migrations.md` ("Foreign assignee scrub").
+- A remediation campaign's validator team (`assigned_team`) must be a group
+  of the campaign's organization; any group id used to be stored.
+
 ### Security: asset references are tenant-checked in the database (migrations 000920-000922)
 
 - Every table that stores an asset id next to a `tenant_id` (27 columns:

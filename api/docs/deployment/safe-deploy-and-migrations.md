@@ -253,6 +253,80 @@ keep *both* the deploy and the rollback boringly safe.
 
 ---
 
+## Foreign assignee scrub (migration 001012)
+
+Before the assignee membership check (#1096), a finding could be assigned to
+any platform user, and the activity row stored that user's name and email in
+the assigning organization's history. `001012` replaces that text, in
+`finding_activities` only:
+
+- an `assigned` row whose `assignee_id` is not a member of the row's
+  organization: `assignee_name` becomes `Former assignee (not in this
+  organization)`, `assignee_email` is removed;
+- an `unassigned` row whose previous assignee (the latest earlier `assigned`
+  row on the same finding) is such a user: `previous_assignee_name` gets the
+  same label;
+- `message` is cleared when it quoted the removed name or email.
+
+Rows, ids (`assignee_id` stays) and timestamps are kept, and each scrubbed
+row is marked `changes.assignee_scrubbed = "001012"`. "Not a member" is
+judged at migration time, so a former member removed from the organization
+gets the label too (it is true, and the id still identifies them).
+
+**One-way:** the down migration is a no-op; the removed text is not kept
+anywhere. That is safe for a rollback: these fields are display-only.
+
+Read-only pre-flight (what it will change):
+
+```sql
+-- Read-only pre-flight for migration 001012: what it would change.
+WITH uuid_re AS (SELECT '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text AS re),
+assigned AS (
+    SELECT fa.*, (fa.changes->>'assignee_id') AS who
+      FROM finding_activities fa, uuid_re
+     WHERE fa.activity_type = 'assigned' AND fa.changes->>'assignee_id' ~* uuid_re.re
+),
+unassigned AS (
+    SELECT u.*,
+           (SELECT a.changes->>'assignee_id' FROM finding_activities a
+             WHERE a.tenant_id = u.tenant_id AND a.finding_id = u.finding_id AND a.activity_type = 'assigned'
+               AND (a.created_at, a.id) < (u.created_at, u.id)
+             ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS who
+      FROM finding_activities u
+     WHERE u.activity_type = 'unassigned' AND u.changes ? 'previous_assignee_name'
+)
+SELECT 'assigned rows, assignee not a member (scrubbed)' AS what, count(*) AS n
+  FROM assigned a WHERE NOT EXISTS (SELECT 1 FROM tenant_members m WHERE m.tenant_id = a.tenant_id AND m.user_id = a.who::uuid)
+UNION ALL
+SELECT 'assigned rows, assignee a member (kept)', count(*)
+  FROM assigned a WHERE EXISTS (SELECT 1 FROM tenant_members m WHERE m.tenant_id = a.tenant_id AND m.user_id = a.who::uuid)
+UNION ALL
+SELECT 'unassigned rows, previous assignee not a member (scrubbed)', count(*)
+  FROM unassigned u, uuid_re WHERE u.who ~* uuid_re.re
+   AND NOT EXISTS (SELECT 1 FROM tenant_members m WHERE m.tenant_id = u.tenant_id AND m.user_id = u.who::uuid)
+UNION ALL
+SELECT 'unassigned rows, previous assignee a member (kept)', count(*)
+  FROM unassigned u, uuid_re WHERE u.who ~* uuid_re.re
+   AND EXISTS (SELECT 1 FROM tenant_members m WHERE m.tenant_id = u.tenant_id AND m.user_id = u.who::uuid)
+UNION ALL
+SELECT 'unassigned rows, previous assignee unknown (kept, no earlier assigned row)', count(*)
+  FROM unassigned u, uuid_re WHERE u.who IS NULL OR u.who !~* uuid_re.re
+UNION ALL
+SELECT 'findings currently assigned to a non-member (not changed here)', count(*)
+  FROM findings f WHERE f.assigned_to IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM tenant_members m WHERE m.tenant_id = f.tenant_id AND m.user_id = f.assigned_to)
+UNION ALL
+SELECT 'campaigns owned by a non-member (not changed here)', count(*)
+  FROM remediation_campaigns c WHERE c.assigned_to IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM tenant_members m WHERE m.tenant_id = c.tenant_id AND m.user_id = c.assigned_to)
+UNION ALL
+SELECT 'campaigns with a validator team of another tenant (not changed here)', count(*)
+  FROM remediation_campaigns c WHERE c.assigned_team IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM groups g WHERE g.id = c.assigned_team AND g.tenant_id = c.tenant_id);
+```
+
+---
+
 ## Asset tenant foreign keys (migrations 000920-000922)
 
 Every column that references `assets(id)` from a table with a `tenant_id` also
