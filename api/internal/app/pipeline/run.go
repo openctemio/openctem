@@ -337,7 +337,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 	// sees it.
 	var stepTargets *scanapp.StepTargets
 	if f, ok := s.targetGate.(StepTargetFilter); ok {
-		st, ferr := f.FilterStepTargets(ctx, step.Tool, run.Context)
+		st, ferr := f.FilterStepTargets(ctx, run.TenantID, step.Tool, run.Context)
 		if ferr != nil {
 			return fmt.Errorf("step %s: %w", step.StepKey, ferr)
 		}

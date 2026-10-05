@@ -51,7 +51,7 @@ func (m *toolSvcMockToolRepo) GetByID(_ context.Context, id shared.ID) (*tooldom
 	return t, nil
 }
 
-func (m *toolSvcMockToolRepo) GetByName(_ context.Context, name string) (*tooldom.Tool, error) {
+func (m *toolSvcMockToolRepo) GetByName(_ context.Context, _ shared.ID, name string) (*tooldom.Tool, error) {
 	for _, t := range m.tools {
 		if t.Name == name {
 			return t, nil
@@ -941,7 +941,7 @@ func TestToolService_GetToolByName_Success(t *testing.T) {
 	existing := createPlatformTool("nuclei", tooldom.InstallGo)
 	repo.AddTool(existing)
 
-	result, err := svc.GetToolByName(context.Background(), "nuclei")
+	result, err := svc.GetToolByName(context.Background(), "", "nuclei")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -953,7 +953,7 @@ func TestToolService_GetToolByName_Success(t *testing.T) {
 func TestToolService_GetToolByName_NotFound(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
 
-	_, err := svc.GetToolByName(context.Background(), "nonexistent")
+	_, err := svc.GetToolByName(context.Background(), "", "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for non-existent tool")
 	}
@@ -962,7 +962,7 @@ func TestToolService_GetToolByName_NotFound(t *testing.T) {
 func TestToolService_GetToolByName_EmptyName(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
 
-	_, err := svc.GetToolByName(context.Background(), "")
+	_, err := svc.GetToolByName(context.Background(), "", "")
 	if err == nil {
 		t.Fatal("expected error for empty name")
 	}
@@ -2992,4 +2992,19 @@ func TestToolService_ListTenantToolConfigs_WithToolFilter(t *testing.T) {
 
 func (m *toolSvcMockSensorRepo) KnownCapabilityNames(_ context.Context, _ *shared.ID, _, _ []string) (map[string]bool, map[string]bool, error) {
 	return map[string]bool{}, map[string]bool{}, nil
+}
+
+// A custom tool may not take a platform tool name: names resolve to the
+// platform tool first, so the custom one would never run (settings audit SC-M5).
+func TestToolService_CreateCustomTool_PlatformNameReserved(t *testing.T) {
+	svc, repo, _, _ := newToolSvcTestService()
+	platform := &tooldom.Tool{ID: shared.NewID(), Name: "nuclei", IsBuiltin: true}
+	repo.tools[platform.ID.String()] = platform
+
+	_, err := svc.CreateCustomTool(context.Background(), tool.CreateCustomToolInput{
+		TenantID: shared.NewID().String(), Name: "nuclei", DisplayName: "Nuclei", InstallMethod: "docker",
+	})
+	if !errors.Is(err, shared.ErrConflict) {
+		t.Fatalf("custom tool named like a platform tool: err = %v, want ErrConflict", err)
+	}
 }

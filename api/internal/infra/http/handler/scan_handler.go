@@ -366,7 +366,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if preview, err := h.service.PreviewScanCompatibility(r.Context(), req.ScannerName, groupIDs); err == nil && preview != nil {
+		if preview, err := h.service.PreviewScanCompatibility(r.Context(), s.TenantID, req.ScannerName, groupIDs); err == nil && preview != nil {
 			response.CompatibilityWarning = &AssetCompatibilityPreviewResponse{
 				IsFullyCompatible:    preview.IsFullyCompatible,
 				CompatibilityPercent: preview.CompatibilityPercent,

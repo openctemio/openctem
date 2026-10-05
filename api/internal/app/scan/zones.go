@@ -85,11 +85,11 @@ func (s *Service) loadZones(ctx context.Context, tenantID shared.ID) ([]*scanzon
 // are only files, repositories or containers (SAST, SCA, secrets, IaC) runs
 // where the code is and is not routed. An unknown tool is routed (fail
 // closed).
-func (s *Service) toolReachesNetwork(ctx context.Context, name string) bool {
+func (s *Service) toolReachesNetwork(ctx context.Context, tenantID shared.ID, name string) bool {
 	if s.toolRepo == nil || name == "" {
 		return true
 	}
-	t, err := s.toolRepo.GetByName(ctx, name)
+	t, err := s.toolRepo.GetByName(ctx, tenantID, name)
 	if err != nil || t == nil || len(t.SupportedTargets) == 0 {
 		return true
 	}

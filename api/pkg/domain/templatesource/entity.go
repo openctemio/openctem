@@ -73,6 +73,9 @@ func (c *GitSourceConfig) Validate() error {
 	if _, err := GitURLHost(c.URL); err != nil {
 		return shared.NewDomainError("VALIDATION", err.Error(), shared.ErrValidation)
 	}
+	if err := checkSourceURLTransport(c.URL, true); err != nil {
+		return shared.NewDomainError("VALIDATION", "git url: "+err.Error(), shared.ErrValidation)
+	}
 	if c.Branch == "" {
 		return shared.NewDomainError("VALIDATION", "git branch is required", shared.ErrValidation)
 	}
@@ -241,12 +244,113 @@ type HTTPSourceConfig struct {
 	Timeout  int               `json:"timeout,omitempty"` // Seconds
 }
 
-// Validate validates the HTTP source configuration.
+// Limits on the HTTP source configuration.
+const (
+	maxHTTPSourceHeaders  = 20
+	maxHTTPSourceTimeout  = 300 // seconds
+	maxHTTPHeaderValueLen = 1024
+)
+
+var headerNamePattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+
+// IsSecretHeader reports whether a request header carries a credential. Such
+// headers belong in Source credentials (encrypted, write-only), not in the
+// source configuration, which is stored as plain JSON and shown to anyone who
+// can read template sources.
+func IsSecretHeader(name string) bool {
+	n := strings.ToLower(name)
+	switch n {
+	case "authorization", "proxy-authorization", "cookie":
+		return true
+	}
+	for _, marker := range []string{"token", "secret", "password", "api-key", "apikey", "auth", "key"} {
+		if strings.Contains(n, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// Validate validates the HTTP source configuration: an https URL with a host
+// and no embedded credentials, a bounded set of non-secret headers, and a
+// bounded timeout.
 func (c *HTTPSourceConfig) Validate() error {
 	if c.URL == "" {
 		return shared.NewDomainError("VALIDATION", "http url is required", shared.ErrValidation)
 	}
+	u, err := url.Parse(c.URL)
+	if err != nil || u.Hostname() == "" {
+		return shared.NewDomainError("VALIDATION", "http url is invalid", shared.ErrValidation)
+	}
+	if err := checkSourceURLTransport(c.URL, false); err != nil {
+		return shared.NewDomainError("VALIDATION", "http url: "+err.Error(), shared.ErrValidation)
+	}
+	if len(c.Headers) > maxHTTPSourceHeaders {
+		return shared.NewDomainError("VALIDATION", fmt.Sprintf("at most %d headers", maxHTTPSourceHeaders), shared.ErrValidation)
+	}
+	for name, value := range c.Headers {
+		if !headerNamePattern.MatchString(name) {
+			return shared.NewDomainError("VALIDATION", "header name is invalid", shared.ErrValidation)
+		}
+		if IsSecretHeader(name) {
+			return shared.NewDomainError("VALIDATION",
+				fmt.Sprintf("header %q carries a credential: store it in Source credentials and bind that credential to the source", name),
+				shared.ErrValidation)
+		}
+		if len(value) > maxHTTPHeaderValueLen || strings.ContainsAny(value, "\r\n") {
+			return shared.NewDomainError("VALIDATION", "header value is invalid", shared.ErrValidation)
+		}
+	}
+	if c.Timeout < 0 || c.Timeout > maxHTTPSourceTimeout {
+		return shared.NewDomainError("VALIDATION", fmt.Sprintf("timeout must be 0-%d seconds", maxHTTPSourceTimeout), shared.ErrValidation)
+	}
 	return nil
+}
+
+// checkSourceURLTransport refuses plain http (the fetched templates run on
+// sensors, so they must not be swappable in transit) and a URL that embeds a
+// password or token ("https://user:token@host/..."): credentials belong in
+// Source credentials. allowSSH also accepts ssh:// and the scp-style form.
+func checkSourceURLTransport(raw string, allowSSH bool) error {
+	raw = strings.TrimSpace(raw)
+	if allowSSH && scpLikeGitURL.MatchString(raw) {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("is invalid")
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+	case "ssh":
+		if !allowSSH {
+			return fmt.Errorf("must use https")
+		}
+	default:
+		return fmt.Errorf("must use https")
+	}
+	if u.User != nil {
+		if _, hasPassword := u.User.Password(); hasPassword {
+			return fmt.Errorf("must not embed a password or token; store it in Source credentials")
+		}
+		if strings.EqualFold(u.Scheme, "https") {
+			return fmt.Errorf("must not embed user info; store credentials in Source credentials")
+		}
+	}
+	return nil
+}
+
+// MaskedURL hides the password of a URL with user info, for responses.
+func MaskedURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	if _, has := u.User.Password(); has {
+		u.User = url.UserPassword(u.User.Username(), "xxxxx")
+		return u.String()
+	}
+	return raw
 }
 
 // TemplateSource represents an external source for scanner templates.

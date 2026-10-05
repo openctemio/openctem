@@ -1593,6 +1593,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
 		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
 		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),
+		// An organization's "disabled" switch on a tool stops it at trigger time.
+		scan.WithTenantToolConfigs(repos.TenantToolConfig),
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan

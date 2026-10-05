@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"testing"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Every platform tool the migrations seed must read back through the
@@ -34,14 +36,14 @@ func TestToolCatalog_SeededToolsReadBack(t *testing.T) {
 		t.Skip("no seeded tools (migrations not applied)")
 	}
 	for _, n := range names {
-		if _, err := repo.GetByName(ctx, n); err != nil {
+		if _, err := repo.GetByName(ctx, shared.ID{}, n); err != nil {
 			t.Errorf("GetByName(%q): %v", n, err)
 		}
 	}
 
 	// The asset collectors (migration 000265) are in the catalog as collectors.
 	for _, n := range []string{"gcp-dns", "vcenter", "ldap", "splunk", "prtg"} {
-		tl, err := repo.GetByName(ctx, n)
+		tl, err := repo.GetByName(ctx, shared.ID{}, n)
 		if err != nil {
 			t.Errorf("collector %q: %v", n, err)
 			continue

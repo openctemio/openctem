@@ -45,7 +45,7 @@ func (m *secValMockToolRepo) AddTenantTool(tenantID shared.ID, t *tool.Tool) {
 	m.tenantTools[m.tenantKey(tenantID, t.Name)] = t
 }
 
-func (m *secValMockToolRepo) GetByName(_ context.Context, name string) (*tool.Tool, error) {
+func (m *secValMockToolRepo) GetByName(_ context.Context, _ shared.ID, name string) (*tool.Tool, error) {
 	t, ok := m.platformTools[name]
 	if !ok {
 		return nil, shared.ErrNotFound

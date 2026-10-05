@@ -202,6 +202,7 @@ type Service struct {
 	zoneResolver        scanzone.Resolver    // resolves hostname targets for zone routing
 	actScope            ActScopeChecker      // optional; nil = act scope not enforced (research/15 L-06)
 	connectorScans      ConnectorScans       // optional; nil = a connector cannot be a scanner (RFC-047)
+	tenantTools         TenantToolConfigs    // optional; nil = per-organization tool switch not enforced
 	logger              *logger.Logger
 }
 

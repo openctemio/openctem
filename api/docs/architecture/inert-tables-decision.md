@@ -54,3 +54,12 @@ superseded `assets` CIA columns (100% NULL, 0 Go readers, replaced by
 "contract" path to the seven never-wired **tables** above, each dropped behind
 the `-- expand-contract-ok:` marker with a full 0-ref / 0-inbound-FK / 0-writer
 proof.
+
+## tenant_tool_configs: the enabled switch is enforced
+
+`tenant_tool_configs.is_enabled` is read at scan trigger time and at every
+step dispatch (`scan.Service.checkTenantToolEnabled`): a tool an organization
+switched off is refused with `TOOL_DISABLED` and never reaches a sensor. No row
+means enabled. A lookup failure refuses the dispatch. The other columns
+(config, custom templates, patterns, wordlists) are still not consumed by
+sensors (settings decision B10: removed from the UI until they are).

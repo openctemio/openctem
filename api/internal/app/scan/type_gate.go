@@ -57,11 +57,11 @@ type scannerTypeGate struct {
 // decided for it (no tool name, no tool repository, an unknown tool, or a
 // tool that declares no target type). A failed tool or mapping lookup is
 // returned: the caller does not dispatch (fail closed).
-func (s *Service) newScannerTypeGate(ctx context.Context, toolName string) (*scannerTypeGate, error) {
+func (s *Service) newScannerTypeGate(ctx context.Context, tenantID shared.ID, toolName string) (*scannerTypeGate, error) {
 	if strings.TrimSpace(toolName) == "" || s.toolRepo == nil {
 		return nil, nil
 	}
-	t, err := s.toolRepo.GetByName(ctx, toolName)
+	t, err := s.toolRepo.GetByName(ctx, tenantID, toolName)
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			return nil, nil
@@ -149,14 +149,23 @@ type StepTargets struct {
 // every target. Every target being refused is an error
 // (INCOMPATIBLE_TARGETS, wrapping shared.ErrValidation): the step must not
 // reach a sensor with nothing it can scan.
-func (s *Service) FilterStepTargets(ctx context.Context, toolName string, runContext map[string]any) (*StepTargets, error) {
+func (s *Service) FilterStepTargets(ctx context.Context, tenantID shared.ID, toolName string, runContext map[string]any) (*StepTargets, error) {
+	// Every step dispatch (scan runs and direct pipeline runs) passes here:
+	// a tool the organization disabled never reaches a sensor.
+	if s.tenantTools != nil && s.toolRepo != nil && strings.TrimSpace(toolName) != "" {
+		if t, err := s.toolRepo.GetByName(ctx, tenantID, toolName); err == nil {
+			if err := s.checkTenantToolEnabled(ctx, tenantID, t); err != nil {
+				return nil, err
+			}
+		}
+	}
 	targets := contextTargets(runContext)
 	out := &StepTargets{Targets: targets}
 	types := contextTargetTypes(runContext)
 	if len(targets) == 0 || len(types) == 0 {
 		return out, nil
 	}
-	gate, err := s.newScannerTypeGate(ctx, toolName)
+	gate, err := s.newScannerTypeGate(ctx, tenantID, toolName)
 	if err != nil || gate == nil {
 		return out, err
 	}

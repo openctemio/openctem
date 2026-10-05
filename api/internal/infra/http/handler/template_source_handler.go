@@ -495,9 +495,9 @@ func toTemplateSourceResponse(s *ts.TemplateSource) *TemplateSourceResponse {
 		Enabled:         s.Enabled,
 		AutoSyncOnScan:  s.AutoSyncOnScan,
 		CacheTTLMinutes: s.CacheTTLMinutes,
-		GitConfig:       s.GitConfig,
+		GitConfig:       maskedGitConfig(s.GitConfig),
 		S3Config:        s.S3Config,
-		HTTPConfig:      s.HTTPConfig,
+		HTTPConfig:      maskedHTTPConfig(s.HTTPConfig),
 		LastSyncHash:    s.LastSyncHash,
 		LastSyncStatus:  string(s.LastSyncStatus),
 		LastSyncError:   s.LastSyncError,
@@ -585,4 +585,39 @@ func (h *TemplateSourceHandler) Sync(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
+}
+
+// secretHeaderMask replaces a credential header value in responses.
+const secretHeaderMask = "********"
+
+// maskedGitConfig returns a copy with any password embedded in the URL
+// hidden. Sources stored before the https/no-credentials rule may still hold
+// "https://user:token@host/..."; viewers of the source must not read it.
+func maskedGitConfig(c *ts.GitSourceConfig) *ts.GitSourceConfig {
+	if c == nil {
+		return nil
+	}
+	out := *c
+	out.URL = ts.MaskedURL(c.URL)
+	return &out
+}
+
+// maskedHTTPConfig returns a copy with credential headers and any password in
+// the URL hidden (legacy rows; new ones are refused at write).
+func maskedHTTPConfig(c *ts.HTTPSourceConfig) *ts.HTTPSourceConfig {
+	if c == nil {
+		return nil
+	}
+	out := *c
+	out.URL = ts.MaskedURL(c.URL)
+	if len(c.Headers) > 0 {
+		out.Headers = make(map[string]string, len(c.Headers))
+		for k, v := range c.Headers {
+			if ts.IsSecretHeader(k) {
+				v = secretHeaderMask
+			}
+			out.Headers[k] = v
+		}
+	}
+	return &out
 }
