@@ -309,7 +309,7 @@ func (c *HTTPSourceConfig) Validate() error {
 
 // checkSourceURLTransport refuses plain http (the fetched templates run on
 // sensors, so they must not be swappable in transit) and a URL that embeds a
-// password or token ("https://user:token@host/..."): credentials belong in
+// password or token in its userinfo part: credentials belong in
 // Source credentials. allowSSH also accepts ssh:// and the scp-style form.
 func checkSourceURLTransport(raw string, allowSSH bool) error {
 	raw = strings.TrimSpace(raw)
