@@ -5,7 +5,7 @@ import { externalSurfaceFilters, riskRange } from '../external-filters'
 describe('externalSurfaceFilters', () => {
   it('always scopes to internet-facing assets, never to the unused "external" scope', () => {
     const f = externalSurfaceFilters({}, DEFAULT_RISK_LEVELS)
-    expect(f).toEqual({ exposures: ['public'] })
+    expect(f).toEqual({ exposures: ['public'], attribution: ['approved'] })
     expect(f.scopes).toBeUndefined()
   })
 
@@ -17,6 +17,7 @@ describe('externalSurfaceFilters', () => {
       )
     ).toEqual({
       exposures: ['public'],
+      attribution: ['approved'],
       search: 'api',
       types: ['subdomain'],
       minRiskScore: 60,
@@ -28,6 +29,7 @@ describe('externalSurfaceFilters', () => {
   it('ignores the "all" sentinels', () => {
     expect(externalSurfaceFilters({ type: 'all', risk: 'all' }, DEFAULT_RISK_LEVELS)).toEqual({
       exposures: ['public'],
+      attribution: ['approved'],
     })
   })
 })
