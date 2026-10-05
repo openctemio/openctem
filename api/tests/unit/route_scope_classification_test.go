@@ -121,6 +121,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	// --- scoped ------------------------------------------------------------------
 	"/api/v1/assets":                                      {classScoped, "route guard on /assets/{id}/**, list, stats and facets scoped (RFC-042 F10)"},
 	"/api/v1/findings":                                    {classScoped, "route guard on /findings/{id}/**, lists and bulk paths scoped"},
+	"POST /api/v1/findings/import":                        {classScoped, "runs with the uploader's rights: ingest Actor (in-scope assets only, no auto-resolve) and VEX documents applied to in-scope findings only"},
 	"POST /api/v1/findings/$":                             {classScoped, "asset_id through AssertAssetRef (tenant + caller scope), branch bound to the asset (research 21b C1)"},
 	"GET /api/v1/findings/analytics/sources":              {classGap, "L-18 (source analytics counts are tenant-wide)"},
 	"/api/v1/compliance/findings":                         {classScoped, "route guard on /compliance/findings/{id}/**"},
