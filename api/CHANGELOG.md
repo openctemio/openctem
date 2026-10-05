@@ -36,12 +36,37 @@ published at https://docs.openctem.io (operations/release-notes-*).
   only for an active principal (`principal_is_active` in every refresh
   function), an inactive member gets no full-data bypass, and a background
   job acting for a disabled or offboarded administrator refuses.
-- **Migration 000970** adds the `offboarded` membership status
+- **Migration 001013** adds the `offboarded` membership status
   (`offboarded_at`, `offboarded_by`), the `suspended` API key status,
   `users.erased_at`, the `principal_is_active` and `refresh_access_for_user`
   functions, gates the refresh functions and drops scope rows of members who
   are already suspended (their access was already refused at the request
   gate).
+
+### Security: foreign assignee names and emails scrubbed from finding history (migration 001012)
+
+- Finding activity rows that recorded the name and email of an assignee
+  outside the organization (possible before #1096) now show
+  `Former assignee (not in this organization)`; the email is removed. Rows,
+  ids and timestamps are kept. One-way by design; see
+  `docs/deployment/safe-deploy-and-migrations.md` ("Foreign assignee scrub").
+- A remediation campaign's validator team (`assigned_team`) must be a group
+  of the campaign's organization; any group id used to be stored.
+
+### Security: asset references are tenant-checked in the database (migrations 000920-000922)
+
+- Every table that stores an asset id next to a `tenant_id` (27 columns:
+  findings, exposures, exposure events, pipeline runs, scan sessions,
+  suppressions, SLA policies, scope rows, grants, relationships, ...) gets a
+  composite foreign key `(tenant_id, asset) → assets(tenant_id, id)`: a row of
+  one organization can no longer point at another organization's asset,
+  whatever writes it. Backstop for the application checks on `POST /findings`,
+  exposure create/ingest and pipeline runs (research doc 21b, C1/C3/C4).
+- **Deploy note:** `000921` first counts existing cross-tenant references and
+  refuses to run, changing nothing, if there are any. See
+  `docs/deployment/safe-deploy-and-migrations.md` ("Asset tenant foreign keys")
+  for the listing query and the recovery steps. `000920` builds an index
+  `CONCURRENTLY`; `000922` validates without blocking writes.
 
 ### Security: members without a scope row see nothing, in every organization
 

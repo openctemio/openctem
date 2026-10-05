@@ -435,6 +435,19 @@ active_allowed(asset) =
   AND tier(asset) <= tier_ceiling(scope_target or tenant default)
 ```
 
+**As built (2026-10-04, #1114).** One gate (`internal/app/easm/active_gate.go`)
+decides `active_allowed` on every active-scan path: typed targets and
+asset-group members, at scan create, clone, import, quick scan, `POST
+/commands`, every run (manual, scheduled, retry, workflow) and the dispatch
+gate (pipelines, coverage, validation, retests, simulations, connectors).
+An asset is allowed when its record is `confirmed`, or, with no record, when
+it is inside an active scope target or at/under a root-domain seed or verified
+domain (`derived_from_seed`); a rejected name refuses itself and every name
+under it. An internet-facing asset with no record outside all of them is
+`unattributed` and waits for a person. The tier ceiling is not enforced yet
+(sensor side, 22b S7). See
+[architecture/active-probe-gate.md](../architecture/active-probe-gate.md).
+
 | Tier | Touches the target | Default |
 |---|---|---|
 | **T0 passive** | No (third-party data, DNS) | All candidates, dependencies, lookalikes, confirmed |
@@ -787,6 +800,32 @@ Effort is engineer-weeks across all repos.
 | P1 | Shipped: dangling CNAME/NS and email posture checks (#852, `000325`; **off by default**, `EASM_DNS_CHECKS_ENABLED`) and the lame-delegation check (#1012); attribution side tables and evidence, CT promotion and `GET /api/v1/easm/summary` (#839, `000324`); tenant-scan evidence `tenant_scanned` (#1004); the asset Ownership section (#856); the EASM overview cards on `/attack-surface` (#857); the review queue with bulk decisions and the asset-list attribution filter (#994 API, #1023 web: `/attack-surface/review`, inventory shows approved assets by default; [easm.md §4b](../architecture/easm.md)); findings on unconfirmed assets capped at P2 (#1009); takeover confirmation: a nuclei takeover-template match from a tenant scan on an open `dangling_cname` raises `subdomain_takeover` (high) (#1018, `000485`). Open: sensor-side C17 (dnsx resolver fallback, sensor repository). |
 | P2 | In progress: seeds (#1041: `easm_seeds`, `root_domain` watched by the CT monitor). Open: candidates and tombstones, CIDR/ASN/organization seeds with RDAP/RIPEstat/PTR collectors, noisy-OR learning, rule precision. |
 | P3–P6 | Not started (no `easm_observations`). |
+
+**research/22 P0 (EASM maturity plan, owner decisions E1–E13, 2026-10-04).**
+One entry per item; the sensor items (P0-1 to P0-4) live in the sensor and
+sdk-go repositories, P0-5 with the scan-engine work (research/27).
+
+- **P0-7 EASM alerts through the notification outbox:** shipped (this PR,
+  migration `001014`). The CT monitor, the DNS checks and takeover
+  confirmation write exposures through one writer that announces inserted
+  and reopened rows as `new_exposure` in the same transaction: immediate for
+  medium or higher on approved assets, a daily digest otherwise, never for
+  rejected or deleted assets, 30 immediate alerts per tenant per hour.
+  [easm.md §4c](../architecture/easm.md#4c-alerts-built-p0-7).
+
+- **P0-8 DNS checks on by default, takeover on dependency names (E3, E13):** open.
+
+- **P0-9 rejection hygiene and reclassify on decision (B2, B4):** open.
+
+- **P0-10 tenant domain verification with a purpose (E6):** open.
+
+- **P0-11 EASM settings and run-now:** open.
+
+- **P0-12 review queue reachable, honest counts (E1):** open.
+
+- **P0-13 honest EASM numbers:** open.
+
+- **P0-6 port and service results surfaced (B6):** open.
 
 **When and where.** Implementation is written directly in the monorepo
 (`api/` + `web/`); sdk-go and sensor changes (E2–E5, P3 tools) stay in their

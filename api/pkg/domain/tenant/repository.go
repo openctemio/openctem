@@ -13,7 +13,15 @@ type Repository interface {
 	Create(ctx context.Context, t *Tenant) error
 	GetByID(ctx context.Context, id shared.ID) (*Tenant, error)
 	GetBySlug(ctx context.Context, slug string) (*Tenant, error)
-	Update(ctx context.Context, t *Tenant) error
+	// UpdateProfile writes the organization profile (name, slug, description,
+	// logo URL). It never touches settings.
+	UpdateProfile(ctx context.Context, t *Tenant) error
+	// UpdateSettingsSection replaces one top-level settings section with
+	// next, only if its stored value still equals expected (expectedPresent
+	// false = the key is absent). Returns *SettingsConflictError when another
+	// write changed the section first, and shared.ErrNotFound when the tenant
+	// does not exist. Other sections are never rewritten.
+	UpdateSettingsSection(ctx context.Context, id shared.ID, section string, expected any, expectedPresent bool, next any) error
 	Delete(ctx context.Context, id shared.ID) error
 	ExistsBySlug(ctx context.Context, slug string) (bool, error)
 
@@ -150,6 +158,9 @@ type MemberSearchFilters struct {
 	// "offboarded", or "all". Empty lists active and suspended members (not
 	// the offboarded tombstones).
 	Status string
+	// Role filters on the effective system role (owner, admin, member,
+	// viewer); empty = any.
+	Role string
 }
 
 // Member status filter values for MemberSearchFilters.Status.

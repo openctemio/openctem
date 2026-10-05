@@ -1,11 +1,13 @@
 package ingest
 
 import (
+	"context"
 	"strings"
 	"time"
 
 	"github.com/openctemio/ctis"
 
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -51,4 +53,49 @@ func patchPublishedAt(props ctis.Properties) *time.Time {
 		}
 	}
 	return nil
+}
+
+// scannerEvidenceWriter stores scanner output and CVSS vectors by
+// fingerprint (postgres.FindingRepository). Optional: a repository without
+// it simply keeps none.
+type scannerEvidenceWriter interface {
+	UpdateScannerEvidenceBatch(ctx context.Context, tenantID shared.ID, updates []vulnerability.ScannerEvidenceUpdate) (int64, error)
+}
+
+// cvssVectorProperties are the finding property keys a scanner names each
+// CVSS vector under (the Nessus converter, the Tenable.sc connector).
+var (
+	cvssV2VectorProperties = []string{"cvss_v2_vector", "cvss2_vector"}
+	cvssV3VectorProperties = []string{"cvss_v3_vector", "cvss3_vector"}
+)
+
+// scannerEvidenceUpdate is a sighting's scanner output (research 24 P0-2,
+// owner decision C9) and both CVSS vectors. A secret finding keeps no
+// output: a secret scanner's evidence is the leaked value itself.
+func scannerEvidenceUpdate(fingerprint string, cf *ctis.Finding) vulnerability.ScannerEvidenceUpdate {
+	u := vulnerability.ScannerEvidenceUpdate{Fingerprint: fingerprint}
+	if cf.Type != ctis.FindingTypeSecret && cf.Secret == nil {
+		u.Output = vulnerability.SanitizeScannerOutput(cf.Evidence)
+	}
+	u.CVSSv2Vector = vulnerability.NormalizeCVSSv2Vector(stringProperty(cf.Properties, cvssV2VectorProperties))
+	u.CVSSv3Vector = vulnerability.NormalizeCVSSv3Vector(stringProperty(cf.Properties, cvssV3VectorProperties))
+	// The one vector of the CVSS block fills whichever version it is.
+	if v := cf.Vulnerability; v != nil && v.CVSSVector != "" {
+		if u.CVSSv3Vector == "" {
+			u.CVSSv3Vector = vulnerability.NormalizeCVSSv3Vector(v.CVSSVector)
+		}
+		if u.CVSSv2Vector == "" {
+			u.CVSSv2Vector = vulnerability.NormalizeCVSSv2Vector(v.CVSSVector)
+		}
+	}
+	return u
+}
+
+func stringProperty(props ctis.Properties, keys []string) string {
+	for _, k := range keys {
+		if s, ok := props[k].(string); ok && strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return ""
 }

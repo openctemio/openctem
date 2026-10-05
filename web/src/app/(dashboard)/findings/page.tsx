@@ -6,12 +6,33 @@ import { formatEpssScore } from '@/lib/epss'
 import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useUrlParams, useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
+import {
+  DEFAULT_FINDING_LENS,
+  FINDING_LENSES,
+  parseFindingLens,
+  type FindingLens,
+} from '@/features/findings/lib/state-lens'
+import {
+  useUrlParams,
+  useUrlParam,
+  useUrlFilter,
+  useUrlFilterList,
+  pushUrlSearch,
+  replaceUrlSearch,
+} from '@/hooks/use-url-param'
+import {
+  buildDrillDownSearch,
+  buildGroupedSearch,
+  drillOrigin,
+  drillValue,
+  removeFilterParam,
+} from '@/features/findings/lib/drilldown'
 import {
   useFindingSourcesApi,
   groupFindingSourcesByCategory,
 } from '@/features/config/api/finding-source-api'
 import { useDebounce } from '@/hooks/use-debounce'
+import { toDisplayText } from '@/lib/untrusted-text'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -29,6 +50,9 @@ import {
   BulkActionBar,
   FilterPanelToggle,
   FilterSheet,
+  TruncatedText,
+  SegmentedLens,
+  DrillDownBreadcrumb,
 } from '@/features/shared'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -440,6 +464,12 @@ function FindingsContent() {
   const [reachableFilter, setReachableFilter] = useUrlFilter('is_reachable', 'false')
   const [slaFilter, setSlaFilter] = useUrlFilterList('sla_status')
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
+  // The state lens (Open, the default · Fixed · Dispositioned · All). A saved
+  // view carries its own status scope, so the default lens is not laid on top
+  // of one; a lens picked explicitly still is.
+  const rawLens = useUrlParam('state')
+  const [, setLensParam] = useUrlFilter('state', DEFAULT_FINDING_LENS)
+  const lens = parseFindingLens(rawLens)
   // "Assigned to me" / My Work: findings the current user is the assignee of,
   // owns the asset of, or is a member of an assigned group. Independent, stackable
   // with the CTEM signals; the backend resolves the user from the token.
@@ -538,15 +568,21 @@ function FindingsContent() {
       (k) => !['view', 'group', 'page', 'per_page', 'tab', 'density'].includes(k)
     )
 
-  const [, setAssetParam] = useUrlFilter('asset_id', '')
-  // A scan run's "View all findings" (scan-session-detail-sheet).
-  const [, setScanParam] = useUrlFilter('scan_id', '')
+  // asset_id and scan_id (a scan run's "View all findings") are read above.
   // A CVE group's "View": the list narrowed to that CVE (search does not match
   // the CVE id, so it cannot stand in for this).
-  const [cveParam, setCveParam] = useUrlFilter('cve_id', '')
+  const [cveParam] = useUrlFilter('cve_id', '')
   // A rule group's "View": the list narrowed to that scanner rule (nuclei
   // template, semgrep rule, misconfiguration check, secret rule).
-  const [ruleParam, setRuleParam] = useUrlFilter('rule_id', '')
+  const [ruleParam] = useUrlFilter('rule_id', '')
+  // The other group dimensions' drill-down filters (research 24 P0-1): every
+  // group row's View opens the list narrowed to it.
+  const [familyParam] = useUrlFilter('family', '')
+  const [findingTypeParam] = useUrlFilter('finding_type', '')
+  const [componentParam] = useUrlFilter('component_id', '')
+  const [ownerParam] = useUrlFilter('asset_owner_id', '')
+  const [ownerNullParam] = useUrlFilter('asset_owner_id_null', '')
+  const ownerUnassigned = ownerNullParam === 'true'
   // Bumped after a change, so the grouped view reloads its groups and rows.
   const [groupsReloadKey, setGroupsReloadKey] = useState(0)
   const [autoAssignOpen, setAutoAssignOpen] = useState(false)
@@ -644,8 +680,14 @@ function FindingsContent() {
     if (scanIdFilter) filters.scan_id = scanIdFilter
     if (cveParam) filters.cve_ids = [cveParam]
     if (ruleParam) filters.rule_id = ruleParam
+    if (familyParam) filters.families = [familyParam]
+    if (findingTypeParam) filters.finding_types = [findingTypeParam]
+    if (componentParam) filters.component_id = componentParam
+    if (ownerParam) filters.asset_owner_id = ownerParam
+    if (ownerUnassigned) filters.asset_owner_unassigned = true
     if (severities.length > 0) filters.severities = severities
     if (savedId) filters.view = savedId
+    if (!savedId || rawLens) filters.state = lens
     if (statuses.length > 0) {
       filters.statuses = statuses as NonNullable<FindingApiFilters['statuses']>
     } else if (!savedId) {
@@ -674,6 +716,11 @@ function FindingsContent() {
     scanIdFilter,
     cveParam,
     ruleParam,
+    familyParam,
+    findingTypeParam,
+    componentParam,
+    ownerParam,
+    ownerUnassigned,
     severities,
     statuses,
     sourceFilter,
@@ -687,6 +734,8 @@ function FindingsContent() {
     pagination,
     sortParam,
     savedId,
+    lens,
+    rawLens,
   ])
 
   // The metric strip counts what the table shows (RFC-048: stats take the
@@ -714,8 +763,14 @@ function FindingsContent() {
     scanIdFilter,
     cveParam,
     ruleParam,
+    familyParam,
+    findingTypeParam,
+    componentParam,
+    ownerParam,
+    ownerNullParam,
     groupParam,
     viewParam,
+    lens,
     severities.join(),
     statuses.join(),
     sourceFilter.join(),
@@ -745,6 +800,12 @@ function FindingsContent() {
     isLoading: statsLoading,
     mutate: mutateStats,
   } = useFindingStatsApi(statsFilters)
+  // The lens counts: the same filter under every lens at once (by_state).
+  const lensStatsFilters = useMemo(
+    () => ({ ...statsFilters, state: 'all' as const }),
+    [statsFilters]
+  )
+  const { data: lensStats } = useFindingStatsApi(lensStatsFilters)
 
   // Fetch findings from API (filtered by severity tab)
   const {
@@ -1087,7 +1148,7 @@ function FindingsContent() {
               // The title leads the name, so a screen reader announces which
               // finding the button opens (it used to read "View finding
               // details" on every row).
-              aria-label={`${row.getValue('title')}, view details`}
+              aria-label={`${toDisplayText(row.getValue('title'), 300)}, view details`}
               onClick={() => handleRowClick(row.original)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -1097,7 +1158,10 @@ function FindingsContent() {
               }}
             >
               <div className="flex items-center gap-1.5">
-                <p className="font-medium truncate">{row.getValue('title')}</p>
+                {/* Scanner-supplied text: escaped, isolated, never markup. */}
+                <p dir="auto" className="font-medium truncate [unicode-bidi:isolate]">
+                  {toDisplayText(row.getValue('title'), 500)}
+                </p>
                 {/* KEV — actively exploited; the single most urgent triage signal */}
                 {row.original.isInKev && (
                   <Tooltip>
@@ -1210,12 +1274,11 @@ function FindingsContent() {
             )
           }
           return (
-            <span
-              className="text-muted-foreground block max-w-[200px] truncate font-mono text-sm"
-              title={name}
-            >
-              {name}
-            </span>
+            <TruncatedText
+              value={name}
+              label="Location"
+              className="max-w-[200px] font-mono text-sm text-muted-foreground"
+            />
           )
         },
       },
@@ -1661,17 +1724,18 @@ function FindingsContent() {
   // Filters that arrive from elsewhere (an asset, a scan run, a CVE or rule
   // group) are context, not facets: always shown, inline in the toolbar so they
   // never add a row above the table. Each chip removes only its own parameter.
-  const removeContextParam = (param: string) => {
-    if (param === 'asset_id') setAssetParam('')
-    else if (param === 'scan_id') setScanParam('')
-    else if (param === 'cve_id') setCveParam('')
-    else if (param === 'rule_id') setRuleParam('')
-  }
+  const removeContextParam = (param: string) =>
+    replaceUrlSearch(removeFilterParam(new URLSearchParams(window.location.search), param))
   const contextFilterValues = {
     assetId: assetIdFilter,
     scanId: scanIdFilter,
     cveId: cveParam,
     ruleId: ruleParam,
+    family: familyParam,
+    findingType: findingTypeParam,
+    componentId: componentParam,
+    ownerId: ownerParam,
+    ownerUnassigned,
   }
   const contextFilterOn = hasFindingContextFilters(contextFilterValues)
   const contextChips = (
@@ -1686,8 +1750,19 @@ function FindingsContent() {
     </>
   )
 
+  const lensControl = (
+    <SegmentedLens<FindingLens>
+      label="Finding state"
+      countNoun="findings"
+      value={lens}
+      onChange={(next) => setLensParam(next)}
+      options={FINDING_LENSES.map((l) => ({ ...l, count: lensStats?.by_state?.[l.value] }))}
+    />
+  )
+
   const toolbarEnd = (
     <>
+      {lensControl}
       <SavedViewsMenu
         page="findings"
         activeId={savedId}
@@ -1719,7 +1794,9 @@ function FindingsContent() {
     >
       <SeverityBadge severity={f.severity} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
-        <p className="line-clamp-2 text-sm font-medium">{f.title}</p>
+        <p dir="auto" className="line-clamp-2 text-sm font-medium [unicode-bidi:isolate]">
+          {toDisplayText(f.title, 500)}
+        </p>
         {(f.cve || f.scanner) && (
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {f.cve && <span className="font-mono">{f.cve}</span>}
@@ -1743,26 +1820,20 @@ function FindingsContent() {
 
   const listOnlyNote = listOnlyFilterOn && (
     <span className="text-xs text-muted-foreground">
-      Search, priority, KEV, SLA, asset, scan, CVE and rule filters apply to the ungrouped list.
+      Search, priority, KEV, SLA and the asset, scan, CVE, rule, family, type, component and owner
+      filters apply to the ungrouped list.
     </span>
   )
 
-  // "View" on a group opens the list filtered to it, where the dimension maps
-  // to a list filter. Other dimensions get no View button (not a dead one).
-  const viewableGroup =
-    groupBy === 'cve_id' ||
-    groupBy === 'rule_id' ||
-    groupBy === 'severity' ||
-    groupBy === 'source' ||
-    groupBy === 'asset_id'
+  // "View" on a group opens the list filtered to it, for every dimension
+  // (research 24 P0-1). It is a push, not a replace: Back returns to the
+  // grouped view with its filters, and the other filters are kept.
+  const viewableGroup = groupBy !== null
   const viewGroup = (group: FindingGroup) => {
-    const key = group.group_key
-    setGroupParam('')
-    if (groupBy === 'cve_id') setCveParam(key)
-    else if (groupBy === 'rule_id') setRuleParam(key)
-    else if (groupBy === 'severity') setSeverityParam([key])
-    else if (groupBy === 'source') setSourceFilter([key])
-    else if (groupBy === 'asset_id') setAssetParam(key)
+    if (!groupBy) return
+    pushUrlSearch(
+      buildDrillDownSearch(new URLSearchParams(window.location.search), groupBy, group.group_key)
+    )
   }
 
   // Mark fixed works on a CVE's or an asset's in-progress findings (the
@@ -1820,10 +1891,30 @@ function FindingsContent() {
     reloadKey: groupsReloadKey,
   }
 
+  // Breadcrumb of a drill-down, rebuilt from the URL: Findings › By rule › X.
+  const drillDim = drillOrigin(searchParams, GROUP_BY_DIMENSIONS)
+  const drillBreadcrumb = drillDim ? (
+    <DrillDownBreadcrumb
+      className="mt-1"
+      steps={[
+        {
+          label: 'Findings',
+          onSelect: () => router.push('/findings'),
+        },
+        {
+          label: `By ${GROUP_BY_LABELS[drillDim].toLowerCase()}`,
+          onSelect: () => pushUrlSearch(buildGroupedSearch(searchParams, drillDim)),
+        },
+      ]}
+      value={drillValue(searchParams, drillDim)}
+      mono={drillDim === 'cve_id' || drillDim === 'rule_id'}
+    />
+  ) : undefined
+
   return (
     <>
       <Main>
-        <PageHeader title="Findings">
+        <PageHeader title="Findings" description={drillBreadcrumb}>
           <Button variant="outline" size="sm" asChild>
             <Link href="/findings/approvals">
               <ClipboardList className="h-4 w-4 sm:me-2" />
@@ -1898,6 +1989,7 @@ function FindingsContent() {
                     sources: sourceFilter.join(',') || undefined,
                     assignedToMe: mineActive,
                     view: savedId,
+                    state: !savedId || rawLens ? lens : undefined,
                   }}
                   renderGroupActions={groupActions}
                   onViewGroup={viewableGroup ? viewGroup : undefined}
@@ -1913,6 +2005,7 @@ function FindingsContent() {
                   }
                   toolbarEnd={
                     <>
+                      {lensControl}
                       {groupBy === 'owner_id' && hasUnassignedGroup && (
                         <Button
                           variant="outline"

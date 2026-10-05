@@ -21,10 +21,10 @@ type Policy struct {
 	mediumDays   int
 	lowDays      int
 	infoDays     int
-	// F3: priority-class-driven SLA days. When a finding has a
-	// PriorityClass (P0..P3), these take precedence over severity-based
-	// days. Columns exist in migration 000142 but were previously
-	// unread — a false CTEM signal flagged in the framework audit.
+	// Priority-class SLA days. When a finding has a PriorityClass
+	// (P0..P3), these take precedence over severity-based days. They are
+	// persisted in sla_policies.p0_days..p3_days; NULL there means
+	// "inherit DefaultPriorityDays".
 	p0Days              int
 	p1Days              int
 	p2Days              int
@@ -57,6 +57,9 @@ var DefaultPriorityDays = map[string]int{
 	"P3": 30, // Everything else.
 }
 
+// MaxSLADays is the longest remediation window a policy may set.
+const MaxSLADays = 365
+
 // NewPolicy creates a new SLA Policy with default values.
 func NewPolicy(
 	tenantID shared.ID,
@@ -85,11 +88,14 @@ func NewPolicy(
 		p2Days:              DefaultPriorityDays["P2"],
 		p3Days:              DefaultPriorityDays["P3"],
 		warningThresholdPct: 80,
-		escalationEnabled:   false,
-		escalationConfig:    make(map[string]any),
-		isActive:            true,
-		createdAt:           now,
-		updatedAt:           now,
+		// Escalation (approaching/breached notifications) is on by default:
+		// a new policy must not silently stop the alerts a tenant without a
+		// policy gets.
+		escalationEnabled: true,
+		escalationConfig:  make(map[string]any),
+		isActive:          true,
+		createdAt:         now,
+		updatedAt:         now,
 	}, nil
 }
 
@@ -139,9 +145,9 @@ func Reconstitute(
 		mediumDays:   mediumDays,
 		lowDays:      lowDays,
 		infoDays:     infoDays,
-		// Priority-class days default to DefaultPriorityDays for rows
-		// persisted by legacy callers. Callers that need custom values
-		// should set them via WithPriorityDays after Reconstitute.
+		// Priority-class days start at DefaultPriorityDays; the repository
+		// applies the persisted values with WithPriorityDays (NULL = keep
+		// the default).
 		p0Days:              DefaultPriorityDays["P0"],
 		p1Days:              DefaultPriorityDays["P1"],
 		p2Days:              DefaultPriorityDays["P2"],
@@ -260,11 +266,8 @@ func (p *Policy) CalculateDeadline(severity string, detectedAt time.Time) time.T
 
 // CalculateDeadlineFor computes the SLA deadline honouring CTEM priority
 // class first, falling back to severity when the priority class is
-// empty or unknown (legacy findings without a class yet).
-//
-// F3: this is the single entry point that downstream services
-// SHOULD use. It closes the fake-signal gap where p0..p3 days existed
-// in the schema but were not read.
+// empty or unknown (legacy findings without a class yet). This is the
+// single entry point downstream services should use.
 func (p *Policy) CalculateDeadlineFor(priorityClass, severity string, detectedAt time.Time) time.Time {
 	if days := p.GetDaysForPriorityClass(priorityClass); days > 0 {
 		return detectedAt.Add(time.Duration(days) * 24 * time.Hour)
@@ -311,6 +314,26 @@ func (p *Policy) UpdateSLADays(critical, high, medium, low, info int) error {
 	return nil
 }
 
+// UpdatePriorityDays sets the P0..P3 remediation windows. Each must be
+// 1..365 days and they must be non-decreasing (P0 <= P1 <= P2 <= P3): a
+// more urgent class never gets a longer window.
+func (p *Policy) UpdatePriorityDays(p0, p1, p2, p3 int) error {
+	for _, d := range []int{p0, p1, p2, p3} {
+		if d < 1 || d > MaxSLADays {
+			return fmt.Errorf("%w: priority SLA days must be between 1 and %d", shared.ErrValidation, MaxSLADays)
+		}
+	}
+	if p0 > p1 || p1 > p2 || p2 > p3 {
+		return fmt.Errorf("%w: priority SLA days must be in order: P0 <= P1 <= P2 <= P3", shared.ErrValidation)
+	}
+	p.p0Days = p0
+	p.p1Days = p1
+	p.p2Days = p2
+	p.p3Days = p3
+	p.updatedAt = time.Now().UTC()
+	return nil
+}
+
 func (p *Policy) SetWarningThreshold(percent int) error {
 	if percent < 1 || percent > 100 {
 		return fmt.Errorf("%w: warning threshold must be between 1 and 100", shared.ErrValidation)
@@ -320,11 +343,10 @@ func (p *Policy) SetWarningThreshold(percent int) error {
 	return nil
 }
 
-func (p *Policy) EnableEscalation(config map[string]any) {
+// EnableEscalation turns on approaching/breached deadline notifications for
+// findings governed by this policy.
+func (p *Policy) EnableEscalation() {
 	p.escalationEnabled = true
-	if config != nil {
-		p.escalationConfig = config
-	}
 	p.updatedAt = time.Now().UTC()
 }
 

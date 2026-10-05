@@ -34,39 +34,19 @@ export interface UseMembersOptions {
   includeRoles?: boolean
   /** Search term for name or email (case-insensitive) */
   search?: string
-  /** Max results (default 10, max 100) */
+  /** Max results (server default 100, max 100) */
   limit?: number
   /** Pagination offset */
   offset?: number
   /**
-   * Membership status to list. Defaults to `active`: every picker (assignee,
-   * group member, approver, owner) must never offer a disabled member or a
-   * person who left. The Members page passes `all`.
+   * Membership status filter (server-side). Defaults to `active`: every
+   * picker (assignee, group member, approver, owner) must never offer a
+   * disabled member or a person who left (RFC-050). `current` lists active
+   * and disabled members (the server default), `all` adds offboarded ones.
    */
-  status?: MemberStatusFilter
-}
-
-/** The member list filter every picker uses (RFC-050: no deactivated people). */
-export const PICKER_MEMBER_STATUS: MemberStatusFilter = 'active'
-
-function membersQuery(options?: UseMembersOptions): URLSearchParams {
-  const params = new URLSearchParams()
-  const includes = ['user']
-  if (options?.includeRoles) {
-    includes.push('roles')
-  }
-  params.set('include', includes.join(','))
-  if (options?.search) {
-    params.set('search', options.search)
-  }
-  if (options?.limit && options.limit > 0) {
-    params.set('limit', String(options.limit))
-  }
-  if (options?.offset && options.offset > 0) {
-    params.set('offset', String(options.offset))
-  }
-  params.set('status', options?.status ?? PICKER_MEMBER_STATUS)
-  return params
+  status?: MemberStatusFilter | 'current'
+  /** Effective system role filter (server-side) */
+  role?: 'owner' | 'admin' | 'member' | 'viewer'
 }
 
 /**
@@ -87,7 +67,33 @@ export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMemb
   // Only fetch if user has permission
   const shouldFetch = tenantIdOrSlug && canReadMembers
 
-  const params = membersQuery(options)
+  // Build query parameters
+  const params = new URLSearchParams()
+
+  // Include parameter
+  const includes = ['user']
+  if (options?.includeRoles) {
+    includes.push('roles')
+  }
+  params.set('include', includes.join(','))
+
+  // Search and pagination parameters
+  if (options?.search) {
+    params.set('search', options.search)
+  }
+  if (options?.limit && options.limit > 0) {
+    params.set('limit', String(options.limit))
+  }
+  if (options?.offset && options.offset > 0) {
+    params.set('offset', String(options.offset))
+  }
+  const status = options?.status ?? PICKER_MEMBER_STATUS
+  if (status !== 'current') {
+    params.set('status', status)
+  }
+  if (options?.role) {
+    params.set('role', options.role)
+  }
 
   const { data, error, isLoading, mutate } = useSWR<MemberListResponse>(
     shouldFetch ? `${tenantEndpoints.members(tenantIdOrSlug)}?${params.toString()}` : null,
@@ -192,6 +198,9 @@ export function useRemoveMember(tenantIdOrSlug: string | undefined, memberId: st
 // ============================================
 // MEMBER LIFECYCLE (RFC-050)
 // ============================================
+
+/** The member list filter every picker uses (RFC-050: no deactivated people). */
+export const PICKER_MEMBER_STATUS: MemberStatusFilter = 'active'
 
 /**
  * What a member holds and owns. Fetched only when `memberId` is set and the
@@ -332,7 +341,32 @@ export function issueSetupLink(tenantIdOrSlug: string, userId: string) {
  * Get the SWR key for members list
  */
 export function getMembersKey(tenantIdOrSlug: string, options?: UseMembersOptions) {
-  return `${tenantEndpoints.members(tenantIdOrSlug)}?${membersQuery(options).toString()}`
+  const params = new URLSearchParams()
+
+  const includes = ['user']
+  if (options?.includeRoles) {
+    includes.push('roles')
+  }
+  params.set('include', includes.join(','))
+
+  if (options?.search) {
+    params.set('search', options.search)
+  }
+  if (options?.limit && options.limit > 0) {
+    params.set('limit', String(options.limit))
+  }
+  if (options?.offset && options.offset > 0) {
+    params.set('offset', String(options.offset))
+  }
+  const status = options?.status ?? PICKER_MEMBER_STATUS
+  if (status !== 'current') {
+    params.set('status', status)
+  }
+  if (options?.role) {
+    params.set('role', options.role)
+  }
+
+  return `${tenantEndpoints.members(tenantIdOrSlug)}?${params.toString()}`
 }
 
 /**

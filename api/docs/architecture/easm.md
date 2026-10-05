@@ -168,8 +168,9 @@ the inventory changed meaning.
 | Rules, noisy-OR, O4 decision, `Merge` (automation only raises; a human decision stands) | `pkg/domain/attribution` |
 | Storage, tenant-scoped writes (a foreign asset id writes nothing) | `internal/infra/postgres/attribution_repository.go` |
 | First producer: CT promotion (`fqdn_under_verified_root` 0.99 → confirmed; `fqdn_under_asserted_root` 0.85 → needs_review) | `internal/app/certmonitor/promote.go` |
-| Second producer: tenant scans (`tenant_scanned` 0.95, strong; owner decision O8). A report bound to a command the tenant's own sensor ran stamps, on the assets it created or its command's targets cover, one evidence row per (asset, sensor) with the sensor, command, step run, pipeline run, scan, tool, report id and time; an automatic record is re-evaluated (needs_review + tenant_scanned → confirmed), a human decision is never touched, and a legacy asset gets evidence only. Unsolicited reports and server-side ingests (CT promotion, uploads) never fire the rule | `internal/app/ingest/scan_attribution.go`, `internal/app/easm/scanned.go`, `internal/infra/postgres/easm_scan_evidence_repository.go` |
-| Scan gate: asset-group members that are not confirmed are skipped; a group of only unconfirmed assets is refused; a failed lookup stops the dispatch | `internal/app/scan/targets.go` (`WithAttributionGate`) |
+| Second producer: sensor reports (owner decision O8 as narrowed by research/22 E7). A report bound to a command the tenant's own sensor ran: an asset that **is** one of the command's targets (same host or repository path, or an address inside a listed range) gets `tenant_scanned` (0.95, strong) with sensor, command, step run, pipeline run, scan, tool, report id and time; an automatic record is re-evaluated unless it is `needs_review` or `rejected` (a scan never takes a name past review). A name the scan **found** under a target (subfinder child, resolved address, auto-created root domain) gets `tenant_scan_discovered` (0.60, medium, never confirms alone); a new internet-facing one gets a `needs_review` record, or `confirmed` with `fqdn_under_verified_root` evidence when it is at/under a verified domain. An unsolicited sensor report gives a new internet-facing asset a `candidate` record and no evidence. A person's decision is never touched; an existing asset without a record keeps none. Server-side ingests (CT promotion, uploads) never come here. `root_domain` in a report must be a registrable strict parent of the reported name (`publicsuffix`), otherwise no domain is created | `internal/app/ingest/scan_attribution.go`, `internal/app/easm/scanned.go`, `internal/infra/postgres/easm_scan_evidence_repository.go` |
+| CT roots from domain assets: only approved ones (not `needs_review`, `candidate` or `rejected`), so a sensor-created domain cannot widen the CT watch list | `internal/app/certmonitor/service.go` (`gatherRoots`) |
+| Active-scan ownership gate on every active-scan path (typed targets and group members alike): refused when the asset's record is not `confirmed`, when the name or a parent of it was rejected (record or live tombstone), and when an internet-facing asset has **no record** and is neither inside an active scope target nor at/under a root-domain seed or verified domain (`unattributed`). Create, clone, import, quick scan and `POST /commands` refuse the request; a run skips the target with a warning; the dispatch gate refuses it. Generic reason to the caller, specific state in the log. Details: [active-probe-gate.md](active-probe-gate.md) | `internal/app/easm/active_gate.go`, `internal/app/scan/ownership.go` |
 | `GET /api/v1/assets/{id}/attribution` (assets:read) and `PUT` (assets:write, audited `asset.attribution_decided`) | `internal/infra/http/handler/asset_attribution_handler.go` |
 
 **Rejection tombstones (P2, migration 000775).** When a person marks a
@@ -257,6 +258,42 @@ inventory (`/assets`) shows only the organisation's assets by default
 behind a "Show all" link, and the filter panel has an Attribution facet.
 Code: `web/src/features/attack-surface/components/easm-review-queue.tsx`,
 `web/src/features/assets/lib/inventory-url.ts` (`attributionQuery`).
+
+## 4c. Alerts (built, P0-7)
+
+EASM exposures reach the notification outbox (research/22 P0-7, owner
+decision E4). The CT monitor, the DNS checks and takeover confirmation write
+exposures through `postgres.EASMExposureWriter`; the DNS checks' reopen goes
+through `EASMDNSRepository.ReopenAuto`. Both enqueue in **the same
+transaction** as the exposure write, and only for rows that were **inserted**
+(`xmax = 0` on the upsert) or **reopened** by the check. A re-sighting
+announces nothing; a rollback leaves neither row.
+
+| Exposure | Alert |
+|---|---|
+| Asset rejected ("Not ours") or deleted | never |
+| Medium or higher on an approved asset (confirmed, dependency, or no record) | `new_exposure` now, one per exposure (`aggregate_type` `exposure`, URL `/exposures/{id}`) |
+| Low or info; asset `needs_review`/`candidate` (labeled `unverified`) or `monitor_only`; exposure linked to no asset (`unlinked`) | the tenant's daily digest |
+| Immediate alerts past 30 per tenant per rolling hour | the digest, counted as `throttled` |
+
+The **digest** is one `notification_outbox` row per tenant and day
+(`aggregate_type` `easm_digest`, due at 08:00 UTC, unique while pending:
+`uq_notification_outbox_easm_digest`, migration `001014`). Each digest-class
+exposure updates it: exact count, counts by severity and by attribution
+label, up to 25 named items, the highest severity. It goes out as
+`new_exposure` like the immediate alerts, so integrations that receive
+`new_exposure` (a default-enabled type) get EASM alerts with no setup, and
+their severity filter applies.
+
+Payload metadata: `channel` `easm`, `exposure_id`, `event_type`, `severity`,
+`source` (`cert_transparency`, `easm_dns`), `attribution` (state or label),
+`reason` (`new`/`reopened`), `asset_id`/`asset_name`, `fingerprint`.
+
+**Tenant isolation.** The alerter loads exposures with the tenant id in the
+query, so ids of another tenant announce nothing; the throttle counter
+(`easm_alert_throttle`) and the digest are per tenant. The throttle row is
+locked for the transaction, which serializes one tenant's alert writes.
+Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_test.go`.
 
 ## 5. Data model (planned)
 

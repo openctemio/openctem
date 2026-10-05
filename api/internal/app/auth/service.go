@@ -574,10 +574,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 			return nil, ErrInvalidCredentials
 		}
 		// Record failed login attempt
-		u.RecordFailedLogin(s.config.MaxLoginAttempts, s.config.LockoutDuration)
-		if updateErr := s.userRepo.Update(ctx, u); updateErr != nil {
-			s.logger.Error("failed to update user after failed login", "error", updateErr)
-		}
+		s.recordPasswordFailure(ctx, u)
 
 		// Audit failed login
 		actx := auditapp.AuditContext{
@@ -634,10 +631,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	}
 
 	// Reset failed login attempts on successful login
-	u.RecordSuccessfulLogin()
-	if err := s.userRepo.Update(ctx, u); err != nil {
-		s.logger.Error("failed to reset failed login attempts", "error", err)
-	}
+	s.recordLoginSuccess(ctx, u)
 
 	return s.completeLogin(ctx, u, input.IPAddress, input.UserAgent)
 }
@@ -822,7 +816,12 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 	if err != nil {
 		return fmt.Errorf("failed to load tenant for SSO enforcement: %w", err)
 	}
-	if ssoEnforcementDenied(sess.AuthMethodFor(tenantID), role, t.TypedSettings().Security.SSOEnforced) {
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		// Fail closed: an unreadable security section never admits a session.
+		return fmt.Errorf("failed to read SSO enforcement policy: %w", err)
+	}
+	if ssoEnforcementDenied(sess.AuthMethodFor(tenantID), role, sec.SSOEnforced) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
 		// user id; omit the raw role string to keep no user-derived value in the
 		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
@@ -1501,12 +1500,30 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 	// Revoke all sessions (and their refresh tokens) for security
 	s.revokeUserSessions(ctx, u.ID(), shared.ID{})
 
-	if err := s.userRepo.Update(ctx, u); err != nil {
+	if err := s.userRepo.UpdatePasswordHash(ctx, u.ID(), passwordHash); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
 	s.logger.Info("password reset completed", "user_id", u.ID().String())
 	return nil
+}
+
+// recordPasswordFailure counts a wrong password (sign-in, change-password,
+// 2FA enable/disable) against the account lockout, atomically in the
+// database, and mirrors it on u.
+func (s *AuthService) recordPasswordFailure(ctx context.Context, u *userdom.User) {
+	u.RecordFailedLogin(s.config.MaxLoginAttempts, s.config.LockoutDuration)
+	if _, err := s.userRepo.RecordFailedLogin(ctx, u.ID(), s.config.MaxLoginAttempts, s.config.LockoutDuration); err != nil {
+		s.logger.Error("failed to record failed password attempt", "error", err)
+	}
+}
+
+// recordLoginSuccess clears the failed attempts after a completed sign-in.
+func (s *AuthService) recordLoginSuccess(ctx context.Context, u *userdom.User) {
+	u.RecordSuccessfulLogin()
+	if err := s.userRepo.RecordSuccessfulLogin(ctx, u.ID()); err != nil {
+		s.logger.Error("failed to reset failed login attempts", "error", err)
+	}
 }
 
 // ChangePasswordInput represents the input for changing password.
@@ -1537,12 +1554,19 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 		return errors.New("password change not supported for this auth provider")
 	}
 
-	// Verify current password
+	// Verify current password. A wrong one counts against the account
+	// lockout like a failed sign-in, and a locked account takes no guesses,
+	// so a stolen session cannot guess the password here without limit
+	// (settings audit A-M2; the route is also rate limited).
 	passwordHash := u.PasswordHash()
 	if passwordHash == nil {
 		return errors.New("no password set for this user")
 	}
+	if u.IsLocked() {
+		return ErrAccountLocked
+	}
 	if err := s.passwordHasher.Verify(input.CurrentPassword, *passwordHash); err != nil {
+		s.recordPasswordFailure(ctx, u)
 		return ErrPasswordMismatch
 	}
 
@@ -1562,7 +1586,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 		return fmt.Errorf("failed to set password: %w", err)
 	}
 
-	if err := s.userRepo.Update(ctx, u); err != nil {
+	if err := s.userRepo.UpdatePasswordHash(ctx, u.ID(), newPasswordHash); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
