@@ -148,7 +148,7 @@ func (s *AuthService) ResetMemberMFA(ctx context.Context, actx auditapp.AuditCon
 // there, and an owner or administrator target needs an owner.
 func (s *AuthService) mayResetIn(ctx context.Context, actorID, tenantID shared.ID, targetRole tenantdom.Role) error {
 	actor, err := s.tenantRepo.GetMembership(ctx, actorID, tenantID)
-	if err != nil || actor == nil || actor.IsSuspended() {
+	if err != nil || actor == nil || !actor.IsActive() {
 		return fmt.Errorf("%w: you are not an administrator of this organization", shared.ErrForbidden)
 	}
 	switch actor.Role() {

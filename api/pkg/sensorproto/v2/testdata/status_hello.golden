@@ -104,7 +104,8 @@
     "release",
     "manifest",
     "local_policy",
-    "capacity"
+    "capacity",
+    "refusal"
   ],
   "media_types": [
     "application/vnd.openctem.ctis.v1+json"
