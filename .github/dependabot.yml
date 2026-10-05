@@ -28,22 +28,6 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
-  # The protocol-v1 compat harness pins the LAST RELEASED sdk-go on purpose
-  # (api/tests/compat/v1); never let Dependabot move it.
-  - package-ecosystem: "gomod"
-    directory: "/api/tests/compat/v1"
-    target-branch: "develop"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 2
-    labels: ["dependencies", "go", "api"]
-    commit-message:
-      prefix: "deps(api-compat)"
-    ignore:
-      - dependency-name: "github.com/openctemio/sdk-go"
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-
   - package-ecosystem: "npm"
     directory: "/web"
     target-branch: "develop"
