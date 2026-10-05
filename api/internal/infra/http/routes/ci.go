@@ -83,6 +83,9 @@ func registerCIRoutes(
 		r.PUT("/trust-configs/{id}", admin.UpdateTrustConfig, middleware.Require(permission.CIWrite))
 		r.DELETE("/trust-configs/{id}", admin.DeleteTrustConfig, middleware.Require(permission.CIWrite))
 
+		r.GET("/pipelines", admin.ListPipelines, middleware.Require(permission.CIRead))
+		r.GET("/pipelines/{id}", admin.GetPipeline, middleware.Require(permission.CIRead))
+
 		r.GET("/runs", admin.ListRuns, middleware.Require(permission.CIRead))
 		r.GET("/runs/{id}", admin.GetRun, middleware.Require(permission.CIRead))
 

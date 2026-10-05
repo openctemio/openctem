@@ -19,7 +19,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -1835,14 +1834,13 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	delete(ctisAsset.Properties, "sub_type")
 
 	// Set discovery info
-	discoverySource := legacyv1.DiscoverySourceSensor
+	discoverySource := DiscoverySourceSensor
 	discoveryTool := ""
 	if tool != nil {
 		discoveryTool = tool.Name
 	}
 	if source, ok := ctisAsset.Properties[asset.PropKeyDiscoverySource].(string); ok {
-		// v1 sensors label their own discoveries "agent".
-		discoverySource = legacyv1.NormalizeDiscoverySource(source)
+		discoverySource = normalizeDiscoverySource(source)
 	}
 	if toolName, ok := ctisAsset.Properties[asset.PropKeyDiscoveryTool].(string); ok {
 		discoveryTool = toolName

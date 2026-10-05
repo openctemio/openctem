@@ -107,7 +107,7 @@ func TestRules(t *testing.T) {
 		{"GET", "/api/v1/shares/{token}", tenantChain, "R7"},
 		{"GET", "/api/v1/as/{a_id}/bs/{b_id}/cs/{c_id}/ds/{d_id}", tenantChain, "R8"},
 		{"POST", "/api/v1/agents/{id}/x", "", "R9"},
-		{"GET", "/api/v1/agents", "h.RedirectDeprecatedPath", ""},
+		{"GET", "/api/v1/agents", "middleware.Deprecated(d)", ""},
 		{"GET", "/scim/v2/Users", "scimAuth", ""},
 		{"GET", "/api/v1/scans/{scan_id}/export", tenantChain, ""},
 		{"GET", "/api/v1/auth/oauth/{provider}/authorize", "", ""},

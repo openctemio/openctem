@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/group"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -225,14 +225,14 @@ func (m *mockGroupRepo) ListGroupIDsByUser(_ context.Context, _, _ shared.ID) ([
 // Test Helpers
 // =============================================================================
 
-func newTestGroupService(repo *mockGroupRepo) *app.GroupService {
+func newTestGroupService(repo *mockGroupRepo) *accesscontrol.GroupService {
 	log := logger.NewNop()
-	return app.NewGroupService(repo, log)
+	return accesscontrol.NewGroupService(repo, log)
 }
 
-func createTestGroup(t *testing.T, svc *app.GroupService, tenantID shared.ID, name, slug string) *group.Group {
+func createTestGroup(t *testing.T, svc *accesscontrol.GroupService, tenantID shared.ID, name, slug string) *group.Group {
 	t.Helper()
-	input := app.CreateGroupInput{
+	input := accesscontrol.CreateGroupInput{
 		TenantID:  tenantID.String(),
 		Name:      name,
 		Slug:      slug,
@@ -255,7 +255,7 @@ func TestCreateGroup_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	creatorID := shared.NewID()
 
-	input := app.CreateGroupInput{
+	input := accesscontrol.CreateGroupInput{
 		TenantID:    tenantID.String(),
 		Name:        "Security Team Alpha",
 		Slug:        "security-team-alpha",
@@ -295,7 +295,7 @@ func TestCreateGroup_ValidationError_EmptyName(t *testing.T) {
 	svc := newTestGroupService(repo)
 	tenantID := shared.NewID()
 
-	input := app.CreateGroupInput{
+	input := accesscontrol.CreateGroupInput{
 		TenantID:  tenantID.String(),
 		Name:      "",
 		Slug:      "test-slug",
@@ -316,7 +316,7 @@ func TestCreateGroup_ValidationError_InvalidGroupType(t *testing.T) {
 	svc := newTestGroupService(repo)
 	tenantID := shared.NewID()
 
-	input := app.CreateGroupInput{
+	input := accesscontrol.CreateGroupInput{
 		TenantID:  tenantID.String(),
 		Name:      "Test Group",
 		Slug:      "test-group",
@@ -337,7 +337,7 @@ func TestCreateGroup_ValidationError_InvalidSlug(t *testing.T) {
 	svc := newTestGroupService(repo)
 	tenantID := shared.NewID()
 
-	input := app.CreateGroupInput{
+	input := accesscontrol.CreateGroupInput{
 		TenantID:  tenantID.String(),
 		Name:      "Test Group",
 		Slug:      "INVALID SLUG!",
@@ -362,7 +362,7 @@ func TestCreateGroup_DuplicateSlug(t *testing.T) {
 	createTestGroup(t, svc, tenantID, "First Group", "my-slug")
 
 	// Try to create second group with same slug
-	input := app.CreateGroupInput{
+	input := accesscontrol.CreateGroupInput{
 		TenantID:  tenantID.String(),
 		Name:      "Second Group",
 		Slug:      "my-slug", // duplicate
@@ -382,7 +382,7 @@ func TestCreateGroup_InvalidTenantID(t *testing.T) {
 	repo := newMockGroupRepo()
 	svc := newTestGroupService(repo)
 
-	input := app.CreateGroupInput{
+	input := accesscontrol.CreateGroupInput{
 		TenantID:  "not-a-uuid",
 		Name:      "Test Group",
 		Slug:      "test-group",
@@ -458,7 +458,7 @@ func TestUpdateGroup_Success(t *testing.T) {
 
 	newName := "Updated Name"
 	newDesc := "Updated description"
-	input := app.UpdateGroupInput{
+	input := accesscontrol.UpdateGroupInput{
 		Name:        &newName,
 		Description: &newDesc,
 	}
@@ -481,7 +481,7 @@ func TestUpdateGroup_NotFound(t *testing.T) {
 	svc := newTestGroupService(repo)
 
 	newName := "Updated"
-	input := app.UpdateGroupInput{
+	input := accesscontrol.UpdateGroupInput{
 		Name: &newName,
 	}
 
@@ -503,7 +503,7 @@ func TestUpdateGroup_ActivateDeactivate(t *testing.T) {
 
 	// Deactivate
 	inactive := false
-	input := app.UpdateGroupInput{IsActive: &inactive}
+	input := accesscontrol.UpdateGroupInput{IsActive: &inactive}
 	result, err := svc.UpdateGroup(context.Background(), g.ID().String(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("Deactivate failed: %v", err)
@@ -514,7 +514,7 @@ func TestUpdateGroup_ActivateDeactivate(t *testing.T) {
 
 	// Activate
 	active := true
-	input = app.UpdateGroupInput{IsActive: &active}
+	input = accesscontrol.UpdateGroupInput{IsActive: &active}
 	result, err = svc.UpdateGroup(context.Background(), g.ID().String(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("Activate failed: %v", err)
@@ -587,7 +587,7 @@ func TestListGroups_WithFilters(t *testing.T) {
 	createTestGroup(t, svc, tenantID, "Group B", "group-b")
 	createTestGroup(t, svc, otherTenantID, "Other Group", "other-group")
 
-	result, err := svc.ListGroups(context.Background(), app.ListGroupsInput{
+	result, err := svc.ListGroups(context.Background(), accesscontrol.ListGroupsInput{
 		TenantID: tenantID.String(),
 		Limit:    50,
 	})
@@ -612,7 +612,7 @@ func TestListGroups_Pagination(t *testing.T) {
 		createTestGroup(t, svc, tenantID, "Group "+string(rune('A'+i)), "group-"+string(rune('a'+i)))
 	}
 
-	result, err := svc.ListGroups(context.Background(), app.ListGroupsInput{
+	result, err := svc.ListGroups(context.Background(), accesscontrol.ListGroupsInput{
 		TenantID: tenantID.String(),
 		Limit:    10,
 		Offset:   0,
@@ -631,7 +631,7 @@ func TestListGroups_EmptyResult(t *testing.T) {
 	svc := newTestGroupService(repo)
 	tenantID := shared.NewID()
 
-	result, err := svc.ListGroups(context.Background(), app.ListGroupsInput{
+	result, err := svc.ListGroups(context.Background(), accesscontrol.ListGroupsInput{
 		TenantID: tenantID.String(),
 		Limit:    50,
 	})
@@ -648,7 +648,7 @@ func TestListGroups_InvalidTenantID(t *testing.T) {
 	repo := newMockGroupRepo()
 	svc := newTestGroupService(repo)
 
-	_, err := svc.ListGroups(context.Background(), app.ListGroupsInput{
+	_, err := svc.ListGroups(context.Background(), accesscontrol.ListGroupsInput{
 		TenantID: "not-a-uuid",
 	})
 	if err == nil {
@@ -671,7 +671,7 @@ func TestAddMember_Success(t *testing.T) {
 
 	g := createTestGroup(t, svc, tenantID, "Team Alpha", "team-alpha")
 
-	input := app.AddGroupMemberInput{
+	input := accesscontrol.AddGroupMemberInput{
 		GroupID: g.ID().String(),
 		UserID:  userID,
 		Role:    "member",
@@ -702,7 +702,7 @@ func TestAddMember_AlreadyAMember(t *testing.T) {
 	g := createTestGroup(t, svc, tenantID, "Team Beta", "team-beta")
 
 	// Add member first time
-	input := app.AddGroupMemberInput{
+	input := accesscontrol.AddGroupMemberInput{
 		GroupID: g.ID().String(),
 		UserID:  userID,
 		Role:    "member",
@@ -730,7 +730,7 @@ func TestAddMember_InvalidRole(t *testing.T) {
 
 	g := createTestGroup(t, svc, tenantID, "Team Gamma", "team-gamma")
 
-	input := app.AddGroupMemberInput{
+	input := accesscontrol.AddGroupMemberInput{
 		GroupID: g.ID().String(),
 		UserID:  shared.NewID(),
 		Role:    "invalid_role",
@@ -749,7 +749,7 @@ func TestAddMember_InvalidGroupID(t *testing.T) {
 	repo := newMockGroupRepo()
 	svc := newTestGroupService(repo)
 
-	input := app.AddGroupMemberInput{
+	input := accesscontrol.AddGroupMemberInput{
 		GroupID: "not-a-uuid",
 		UserID:  shared.NewID(),
 		Role:    "member",
@@ -778,7 +778,7 @@ func TestRemoveMember_Success(t *testing.T) {
 	g := createTestGroup(t, svc, tenantID, "Team Delta", "team-delta")
 
 	// Add an extra owner (so creator is not the last owner)
-	ownerInput := app.AddGroupMemberInput{
+	ownerInput := accesscontrol.AddGroupMemberInput{
 		GroupID: g.ID().String(),
 		UserID:  ownerID,
 		Role:    "owner",
@@ -789,7 +789,7 @@ func TestRemoveMember_Success(t *testing.T) {
 	}
 
 	// Add a regular member
-	memberInput := app.AddGroupMemberInput{
+	memberInput := accesscontrol.AddGroupMemberInput{
 		GroupID: g.ID().String(),
 		UserID:  memberID,
 		Role:    "member",
@@ -832,7 +832,7 @@ func TestRemoveMember_LastOwner(t *testing.T) {
 	tenantID := shared.NewID()
 	creatorID := shared.NewID()
 
-	input := app.CreateGroupInput{
+	input := accesscontrol.CreateGroupInput{
 		TenantID:  tenantID.String(),
 		Name:      "Team Zeta",
 		Slug:      "team-zeta",
@@ -866,7 +866,7 @@ func TestListGroupMembers_Success(t *testing.T) {
 
 	// Add extra members
 	for i := 0; i < 3; i++ {
-		input := app.AddGroupMemberInput{
+		input := accesscontrol.AddGroupMemberInput{
 			GroupID: g.ID().String(),
 			UserID:  shared.NewID(),
 			Role:    "member",
@@ -927,7 +927,7 @@ func TestAssignAsset_NoAccessControlRepo(t *testing.T) {
 
 	g := createTestGroup(t, svc, tenantID, "Asset Team", "asset-team")
 
-	input := app.AssignAssetInput{
+	input := accesscontrol.AssignAssetInput{
 		GroupID:       g.ID().String(),
 		AssetID:       shared.NewID().String(),
 		OwnershipType: "primary",
@@ -946,7 +946,7 @@ func TestUnassignAsset_NoAccessControlRepo(t *testing.T) {
 
 	g := createTestGroup(t, svc, tenantID, "Unassign Team", "unassign-team")
 
-	input := app.UnassignAssetInput{
+	input := accesscontrol.UnassignAssetInput{
 		GroupID: g.ID().String(),
 		AssetID: shared.NewID().String(),
 	}
@@ -961,9 +961,9 @@ func TestAssignAsset_InvalidGroupID(t *testing.T) {
 	repo := newMockGroupRepo()
 	log := logger.NewNop()
 	acRepo := &mockACRepoForBulk{}
-	svc := app.NewGroupService(repo, log, app.WithAccessControlRepository(acRepo))
+	svc := accesscontrol.NewGroupService(repo, log, accesscontrol.WithAccessControlRepository(acRepo))
 
-	input := app.AssignAssetInput{
+	input := accesscontrol.AssignAssetInput{
 		GroupID:       "not-a-uuid",
 		AssetID:       shared.NewID().String(),
 		OwnershipType: "primary",
@@ -982,12 +982,12 @@ func TestAssignAsset_InvalidOwnershipType(t *testing.T) {
 	repo := newMockGroupRepo()
 	log := logger.NewNop()
 	acRepo := &mockACRepoForBulk{}
-	svc := app.NewGroupService(repo, log, app.WithAccessControlRepository(acRepo))
+	svc := accesscontrol.NewGroupService(repo, log, accesscontrol.WithAccessControlRepository(acRepo))
 	tenantID := shared.NewID()
 
 	g := createTestGroup(t, svc, tenantID, "Test OT", "test-ot")
 
-	input := app.AssignAssetInput{
+	input := accesscontrol.AssignAssetInput{
 		GroupID:       g.ID().String(),
 		AssetID:       shared.NewID().String(),
 		OwnershipType: "invalid_type",
