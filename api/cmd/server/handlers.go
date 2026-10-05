@@ -328,6 +328,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SCIMToken: func() *handler.SCIMTokenHandler {
 			h := handler.NewSCIMTokenHandler(svc.SCIMToken, log)
 			h.SetGroupService(svc.SCIMGroups)
+			h.SetAuditService(svc.Audit)
 			return h
 		}(),
 		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
@@ -360,7 +361,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
 
 		// File Attachments (shared across pentest/retest/campaign)
-		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, log),
+		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, svc.Audit, log),
 
 		// Compliance Framework Management
 		Compliance: handler.NewComplianceHandler(svc.Compliance, log),
@@ -388,7 +389,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
 
 		// Suppressions
-		Suppression: handler.NewSuppressionHandler(svc.Suppression, log),
+		Suppression: newSuppressionHandler(svc, log),
 
 		// Access Control
 		Group:          handler.NewGroupHandler(svc.Group, v, log),
@@ -639,10 +640,11 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
-func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, log *logger.Logger) *handler.AttachmentHandler {
+func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *app.AuditService, log *logger.Logger) *handler.AttachmentHandler {
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
 	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
+	h.SetAuditService(auditSvc)
 	return h
 }
 
@@ -764,6 +766,14 @@ func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImpo
 // trail.
 func newReportScheduleHandler(svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
 	h := handler.NewReportScheduleHandler(svc.ReportSchedule, log)
+	h.SetAuditService(svc.Audit)
+	return h
+}
+
+// newSuppressionHandler wires the suppression handler with the tenant audit log
+// (approvals, and self-approvals at Critical severity, are recorded there).
+func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.SuppressionHandler {
+	h := handler.NewSuppressionHandler(svc.Suppression, log)
 	h.SetAuditService(svc.Audit)
 	return h
 }
