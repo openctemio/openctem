@@ -195,6 +195,7 @@
 "POST /api/v1/auth/reset-password": {},
 "POST /api/v1/auth/saml/{org}/acs": {},
 "POST /api/v1/auth/sso/{provider}/callback": {},
+"POST /api/v1/auth/step-up": {},
 "POST /api/v1/auth/token": {},
 "POST /api/v1/auth/verify-email": {},
 "POST /api/v1/business-services": {"permissions":["ctem:business_services:write"]},

@@ -2588,12 +2588,36 @@ definitions:
       position:
         type: integer
     type: object
+  github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod:
+    enum:
+    - totp
+    - password
+    - fresh_sign_in
+    - ""
+    type: string
+    x-enum-varnames:
+    - StepUpTOTP
+    - StepUpPassword
+    - StepUpFreshSignIn
+    - stepUpNothingNeeded
   github_com_openctemio_openctem_api_internal_app_auth.StepUpProof:
     properties:
       password:
         type: string
       totp:
         type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_auth.StepUpState:
+    properties:
+      method:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod'
+      valid_until:
+        description: ValidUntil is when the current window closes; nil when it is
+          closed.
+        type: string
+      window_seconds:
+        description: WindowSeconds is the length of a window opened by a step-up.
+        type: integer
     type: object
   github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord:
     properties:
@@ -14653,6 +14677,22 @@ definitions:
       step_key:
         type: string
     type: object
+  internal_infra_http_handler.StepUpRequest:
+    properties:
+      password:
+        maxLength: 128
+        type: string
+      totp:
+        maxLength: 16
+        type: string
+    type: object
+  internal_infra_http_handler.StepUpResponse:
+    properties:
+      valid_until:
+        type: string
+      window_seconds:
+        type: integer
+    type: object
   internal_infra_http_handler.SyncResponse:
     properties:
       message:
@@ -20169,6 +20209,71 @@ paths:
               type: string
             type: object
       summary: Reset password
+      tags:
+      - Authentication
+  /auth/step-up:
+    get:
+      description: 'method is totp (an authenticator code), password, or fresh_sign_in
+        (an SSO account without an authenticator: sign in again). valid_until is set
+        while the session is inside its window.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_auth.StepUpState'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Step-up re-authentication state
+      tags:
+      - Authentication
+    post:
+      consumes:
+      - application/json
+      description: Verifies a current authenticator code (accounts with two-factor
+        authentication; recovery codes are not accepted) or the password (other local
+        accounts) and lets this session perform sensitive actions for 10 minutes.
+        The window belongs to this session only and is extended only by another successful
+        step-up. Failures count towards the account lockout. SSO accounts without
+        an authenticator get STEP_UP_UNAVAILABLE and sign in again instead.
+      parameters:
+      - description: Authenticator code or password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.StepUpRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.StepUpResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Step-up re-authentication
       tags:
       - Authentication
   /auth/token:

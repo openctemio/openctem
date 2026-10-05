@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -244,6 +245,11 @@ type Handlers struct {
 	// limits count in, so every API replica spends one budget. nil keeps them
 	// in-memory per process (tests, single-instance dev).
 	AuthRateLimitBackend middleware.AuthRateLimitBackend
+
+	// StepUp answers the step-up check on sensitive routes. nil uses the
+	// local auth handler's (sessions.step_up_at); route tests that are not
+	// about step-up pass a stub. No checker at all refuses those routes.
+	StepUp middleware.RecentAuthChecker
 }
 
 // AuthConfig holds authentication configuration for route registration.
@@ -311,6 +317,12 @@ func Register(
 	// /tenants/{tenant}) stay JWT-only. Reset on every Register so a previous
 	// router's setting can't leak into this one.
 	authRateLimitBackend = h.AuthRateLimitBackend
+	// Step-up re-authentication for sensitive routes. Reset on every Register
+	// so a previous router's checker cannot leak into this one.
+	stepUpChecker = h.StepUp
+	if stepUpChecker == nil && h.LocalAuth != nil {
+		stepUpChecker = h.LocalAuth.RecentAuthChecker()
+	}
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
 		apiKeyOrJWT = h.APIKeyAuth.OrJWT
@@ -991,6 +1003,18 @@ var ssoEnforcementMiddleware Middleware //nolint:gochecknoglobals // set once du
 // ipAllowlistMiddleware enforces each organization's Security.IPWhitelist on
 // user sessions. Set once during Register; nil disables it (tests).
 var ipAllowlistMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// stepUpChecker answers RequireRecentAuth (step-up re-authentication,
+// docs/architecture/step-up-reauth.md). Set once during Register from the
+// local auth handler; nil makes every step-up route refuse (fail closed).
+var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set once during init
+
+// requireStepUp is the middleware for a sensitive route: the caller's session
+// must have signed in or stepped up within authapp.StepUpWindow, otherwise
+// 403 STEP_UP_REQUIRED. Mount it after the route's permission check.
+func requireStepUp() Middleware {
+	return middleware.RequireRecentAuth(stepUpChecker, authapp.StepUpWindow)
+}
 
 // tenantSecurityPolicyAdapter adapts tenant.Repository to
 // middleware.TenantSecurityPolicyProvider (the organization's security

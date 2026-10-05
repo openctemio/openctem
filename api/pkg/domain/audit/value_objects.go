@@ -161,6 +161,10 @@ const (
 	ActionAuthMFARecoveryCodesRegenerated Action = "auth.mfa_recovery_codes_regenerated"
 	ActionAuthSessionRevoked              Action = "auth.session_revoked"
 	ActionAuthPasswordChanged             Action = "auth.password_changed"
+	// Step-up re-authentication: the signed-in user proved their identity
+	// again (TOTP or password) before a sensitive action, or failed to.
+	ActionAuthStepUp       Action = "auth.step_up"
+	ActionAuthStepUpFailed Action = "auth.step_up_failed"
 
 	// Settings actions
 	ActionSettingsUpdated Action = "settings.updated"
@@ -537,6 +541,7 @@ func (a Action) IsValid() bool {
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthStepUp, ActionAuthStepUpFailed,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
@@ -649,7 +654,8 @@ func (a Action) Category() string {
 		return "scan"
 	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
-		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged:
+		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthStepUp, ActionAuthStepUpFailed:
 		return "security"
 	case ActionSettingsUpdated:
 		return "settings"
@@ -889,6 +895,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSCIMGroupMappingsUpdated,
 		ActionUserSuspended, ActionUserDeactivated,
 		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthStepUpFailed,
 		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
@@ -908,6 +915,7 @@ func SeverityForAction(a Action) Severity {
 	// Medium - important changes
 	case ActionUserCreated, ActionUserActivated,
 		ActionAuthMFAEnabled, ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthStepUp,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,

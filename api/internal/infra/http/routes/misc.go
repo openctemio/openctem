@@ -125,7 +125,7 @@ func registerAuditRoutes(
 		// it overwrites the tamper-evident chain, so an administrator must not
 		// be able to erase the evidence of their own changes (owner decision
 		// 2026-10-02).
-		r.POST("/rebaseline", h.RebaselineChain, middleware.RequireOwner())
+		r.POST("/rebaseline", h.RebaselineChain, middleware.RequireOwner(), requireStepUp())
 	}, tenantMiddlewares...)
 }
 
@@ -358,9 +358,9 @@ func registerAPIKeyRoutes(
 
 	router.Group("/api/v1/api-keys", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.APIKeysRead))
-		r.POST("/", h.Create, middleware.Require(permission.APIKeysWrite))
+		r.POST("/", h.Create, middleware.Require(permission.APIKeysWrite), requireStepUp())
 		r.GET("/{id}", h.Get, middleware.Require(permission.APIKeysRead))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.APIKeysDelete))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.APIKeysDelete), requireStepUp())
 		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.APIKeysWrite))
 	}, tenantMiddlewares...)
 }

@@ -6678,6 +6678,118 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/auth/step-up': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Step-up re-authentication state
+     * @description method is totp (an authenticator code), password, or fresh_sign_in (an SSO account without an authenticator: sign in again). valid_until is set while the session is inside its window.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.StepUpState']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Step-up re-authentication
+     * @description Verifies a current authenticator code (accounts with two-factor authentication; recovery codes are not accepted) or the password (other local accounts) and lets this session perform sensitive actions for 10 minutes. The window belongs to this session only and is extended only by another successful step-up. Failures count towards the account lockout. SSO accounts without an authenticator get STEP_UP_UNAVAILABLE and sign in again instead.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Authenticator code or password */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.StepUpRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.StepUpResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/auth/token': {
     parameters: {
       query?: never
@@ -35726,9 +35838,19 @@ export interface components {
       offset_ns?: number
       position?: number
     }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod':
+      'totp' | 'password' | 'fresh_sign_in' | ''
     'github_com_openctemio_openctem_api_internal_app_auth.StepUpProof': {
       password?: string
       totp?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_auth.StepUpState': {
+      method?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod']
+      /** @description ValidUntil is when the current window closes; nil when it is closed. */
+      valid_until?: string
+      /** @description WindowSeconds is the length of a window opened by a step-up. */
+      window_seconds?: number
     }
     'github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord': {
       host?: string
@@ -42139,6 +42261,14 @@ export interface components {
       status?: string
       step_id?: string
       step_key?: string
+    }
+    'internal_infra_http_handler.StepUpRequest': {
+      password?: string
+      totp?: string
+    }
+    'internal_infra_http_handler.StepUpResponse': {
+      valid_until?: string
+      window_seconds?: number
     }
     'internal_infra_http_handler.SyncResponse': {
       message?: string
