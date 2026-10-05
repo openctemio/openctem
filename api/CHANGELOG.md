@@ -47,7 +47,7 @@ published at https://docs.openctem.io (operations/release-notes-*).
 ### Security: data scope follows group and rule changes in the same transaction
 
 - `user_accessible_assets` is now kept in step with its sources by database
-  triggers, in the writing transaction (migration **001045**, RFC-050 W6):
+  triggers, in the writing transaction (migration **001051**, RFC-050 W6):
   group asset assign/unassign, a member leaving a group, a group deactivated,
   re-activated or deleted, a scope rule deactivated or deleted. Before, a
   deactivated or deleted access group kept granting its assets indefinitely
