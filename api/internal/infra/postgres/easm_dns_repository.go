@@ -48,7 +48,8 @@ func (r *EASMDNSRepository) DueTargets(ctx context.Context, tenantID shared.ID, 
 	if err != nil {
 		return nil, err
 	}
-	all := append(targets, names...)
+	targets = append(targets, names...)
+	all := targets
 	sort.SliceStable(all, func(i, j int) bool {
 		a, b := all[i].checked, all[j].checked
 		if a.Valid != b.Valid {
