@@ -50,7 +50,6 @@ export {
   tenants,
   invitations,
   assets,
-  projects,
   components,
   vulnerabilities,
   findings,
@@ -323,13 +322,10 @@ export type {
   ScanConfigListResponse,
   ScanConfigListFilters,
   ScanConfigStatsData,
-  ScanRunStatus,
   ScanSessionStatus,
 } from './scan-types'
 
 export {
-  SCAN_RUN_STATUSES,
-  SCAN_RUN_STATUS_LABELS,
   SCAN_SESSION_STATUSES,
   SCAN_SESSION_STATUS_LABELS,
   isTerminalStatus,
@@ -617,12 +613,7 @@ export type {
 } from './capability-types'
 
 // Fallback constants (deprecated - use helper functions with API data instead)
-export {
-  CAPABILITY_ICONS,
-  CAPABILITY_COLORS,
-  FALLBACK_CAPABILITY_ICONS,
-  FALLBACK_CAPABILITY_COLORS,
-} from './capability-types'
+export { FALLBACK_CAPABILITY_ICONS, FALLBACK_CAPABILITY_COLORS } from './capability-types'
 
 // Validation helpers
 export {
