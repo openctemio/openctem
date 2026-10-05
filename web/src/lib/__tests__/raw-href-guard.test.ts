@@ -58,7 +58,8 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
 const REVIEWED = new Set([
   // Navigation config (src/config/*) and settings/category tables in code.
   'app/(dashboard)/settings/page.tsx|LinkCard|href={item.url}',
-  "app/(dashboard)/settings/integrations/page.tsx|Link|href={categoryMeta[row.original.category]?.href ?? '/settings/integrations'}",
+  // integrationManageHref returns one of the constant settings paths only.
+  'app/(dashboard)/settings/integrations/page.tsx|Link|href={integrationManageHref(row.original)}',
   'app/(dashboard)/settings/integrations/page.tsx|LinkCard|href={category.href}',
   'components/profile-dropdown.tsx|Link|href={item.url}',
   'components/layout/grouped-nav.tsx|SidebarLink|href={item.url}',
