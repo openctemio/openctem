@@ -172,6 +172,11 @@ type Sensor struct {
 	// a person or a policy (responses, health, dispatch) must use KeyState.
 	APIKeyHash      string
 	InlineKeyPrefix string
+	// AuthKind is how the sensor authenticates: a bearer key (the fields
+	// above) or its own Ed25519 key with signed requests (RFC-052, key-bound;
+	// sensor_keys). A key-bound sensor has no bearer key: APIKeyHash holds
+	// an unmatchable placeholder (KeyBoundHashPlaceholder).
+	AuthKind AuthKind
 	// InlineKeyExpiresAt is when the inline key stops authenticating.
 	// nil = never expires (the default for created/admin-regenerated keys and
 	// every row predating RFC-014 Phase 1b).

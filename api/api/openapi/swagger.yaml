@@ -2884,6 +2884,17 @@ definitions:
       total:
         type: integer
     type: object
+  github_com_openctemio_openctem_api_internal_app_easm.SweepTicket:
+    properties:
+      ct_included:
+        type: boolean
+      dns_included:
+        type: boolean
+      next_run_now_at:
+        type: string
+      started_at:
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_easm.TypeCount:
     properties:
       count:
@@ -9244,6 +9255,58 @@ definitions:
         type: boolean
       label:
         type: string
+    type: object
+  internal_infra_http_handler.EASMSettingsResponse:
+    properties:
+      ct_available:
+        description: |-
+          CTAvailable / DNSAvailable: false when the operator turned the part
+          off for the whole platform; the switch then has no effect.
+        type: boolean
+      ct_effective_interval_hours:
+        description: Effective cadence, platform defaults and floors.
+        type: integer
+      ct_enabled:
+        description: |-
+          CTEnabled: the Certificate Transparency monitor runs for the
+          organization (its domain names are sent to crt.sh and Cert Spotter).
+        type: boolean
+      ct_interval_hours:
+        description: 'CTIntervalHours / DNSIntervalHours: 0 = the platform default.'
+        type: integer
+      dns_available:
+        type: boolean
+      dns_checks_enabled:
+        description: 'DNSChecksEnabled: dangling CNAME/NS, lame delegation and email
+          posture.'
+        type: boolean
+      dns_effective_interval_hours:
+        type: integer
+      dns_interval_hours:
+        type: integer
+      last_ct_sweep_at:
+        description: Freshness.
+        type: string
+      last_dns_check_at:
+        type: string
+      max_interval_hours:
+        type: integer
+      min_interval_hours:
+        type: integer
+      run_now_available_at:
+        type: string
+    type: object
+  internal_infra_http_handler.EASMSettingsUpdateRequest:
+    properties:
+      ct_enabled:
+        type: boolean
+      ct_interval_hours:
+        description: 0 = platform default; otherwise 6..168.
+        type: integer
+      dns_checks_enabled:
+        type: boolean
+      dns_interval_hours:
+        type: integer
     type: object
   internal_infra_http_handler.EmbeddedCategoryResponse:
     properties:
@@ -23590,6 +23653,61 @@ paths:
       summary: Change an EASM seed
       tags:
       - Attack Surface
+  /easm/settings:
+    get:
+      description: Whether the Certificate Transparency monitor and the DNS-only checks
+        run for the organization, their cadence (platform floor 6 h), and when each
+        last ran.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.EASMSettingsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Attack-surface monitoring settings
+      tags:
+      - Attack Surface
+    put:
+      consumes:
+      - application/json
+      description: 'Turn the Certificate Transparency monitor (sends the organization''s
+        domain names to crt.sh and Cert Spotter) or the DNS-only checks off or on,
+        and set their interval in hours: 0 for the platform default, otherwise 6 to
+        168. Audited.'
+      parameters:
+      - description: Settings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMSettingsUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.EASMSettingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change attack-surface monitoring settings
+      tags:
+      - Attack Surface
   /easm/summary:
     get:
       description: 'The external attack surface in one call: surface assets by type
@@ -23617,6 +23735,27 @@ paths:
       security:
       - BearerAuth: []
       summary: EASM overview
+      tags:
+      - Attack Surface
+  /easm/sweeps:
+    post:
+      description: Starts the Certificate Transparency monitor and then the DNS-only
+        checks for the organization in the background (each only if it is on). At
+        most once per 15 minutes per organization (429 with Retry-After). Audited.
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SweepTicket'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Run discovery and DNS checks now
       tags:
       - Attack Surface
   /exposures:
