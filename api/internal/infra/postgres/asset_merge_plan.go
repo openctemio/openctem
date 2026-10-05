@@ -103,6 +103,13 @@ var assetMergeRefs = []mergeRef{
 	// a merged asset's state for a check the kept one never ran moves.
 	{table: "easm_dns_check_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"check_kind"}}}},
+	// Scan stage chaining (research/27 P0-3): what a step produced follows
+	// the asset (one row per step run and asset), and a run's target
+	// provenance names the kept asset.
+	{table: "scan_step_outputs", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"step_run_id"}}}},
+	{table: "scan_run_targets", column: "asset_id", tenantCol: "tenant_id"},
+	{table: "scan_run_targets", column: "parent_asset_id", tenantCol: "tenant_id"},
 }
 
 // assetMergeEdgeRefs are directed edges between two assets. An edge between

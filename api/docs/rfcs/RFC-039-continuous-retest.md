@@ -10,12 +10,9 @@
 > leases), [RFC-036](RFC-036-easm.md) (only confirmed assets are actively
 > checked, #835) and the claim-once scheduler pattern of #830 / #847.
 >
-> Source: recommendation **R1** of the ProjectDiscovery deep dive
-> (`research/01b-projectdiscovery-neo.md`, findings 5 and 14). ProjectDiscovery
-> Cloud retests **all open and fixed** vulnerabilities daily ("Auto Retest") and
-> has a per-finding **Retest** that sets *Fixed* when the issue is gone and keeps
-> the original status when it is still there. This RFC takes the idea, not the
-> code: PD Cloud is commercial.
+> Goal: **all open and fixed** vulnerabilities are re-checked on a schedule
+> (auto-retest), and every finding has a **Retest** action that sets *Fixed*
+> when the issue is gone and keeps the original status when it is still there.
 
 ## 1. Answer in short
 
@@ -469,7 +466,5 @@ fix (§7.4, §7.5).
 
 ## 12. Sources
 
-- ProjectDiscovery Cloud — Retesting: <https://docs.projectdiscovery.io/cloud/scanning/retesting.md>
-- `research/01b-projectdiscovery-neo.md`, findings 5 and 14 (R1).
 - nuclei rate limiting and template tags: <https://docs.projectdiscovery.io/tools/nuclei/running>
 - OpenCTEM code at the commits named in §2.
