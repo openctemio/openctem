@@ -63,6 +63,9 @@ ACCESS_TOKEN=$(jq -r .access_token <<<"$BODY")
 log "assets"
 call POST /api/v1/assets '{"name":"e2e-web.example.com","type":"domain","criticality":"high","description":"e2e asset","tags":["e2e"]}'
 call POST /api/v1/assets '{"name":"10.20.30.40","type":"ip_address","criticality":"medium"}'
+# Active scans touch only assets the organization owns (RFC-036 active probe
+# gate): a scope target covering the e2e domain lets the seed scan run.
+call POST /api/v1/scope/targets '{"target_type":"domain","pattern":"e2e-web.example.com","description":"e2e scope"}'
 
 log "sensors and a CTIS report"
 # The seed pushes its report from a worker sensor without a command. A new
