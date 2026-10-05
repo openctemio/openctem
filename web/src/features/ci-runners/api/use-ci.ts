@@ -33,7 +33,7 @@ import {
   type PipelineListFilters,
 } from '../lib/pipeline'
 
-import { coverageURL, type CoverageFilters } from '../lib/coverage'
+import { coverageExpectationURL, coverageURL, type CoverageFilters } from '../lib/coverage'
 
 export const CI_BASE = '/api/v1/ci'
 const TRUST = `${CI_BASE}/trust-configs`
@@ -218,7 +218,7 @@ export function useSetCoverageExpectation() {
       _url: string,
       { arg }: { arg: { assetId: string; expected: boolean; capabilities?: string[] } }
     ) => {
-      const url = `${CI_BASE}/coverage/expectations/${encodeURIComponent(arg.assetId)}`
+      const url = coverageExpectationURL(CI_BASE, arg.assetId)
       return arg.expected
         ? put<unknown>(url, { capabilities: arg.capabilities ?? [] })
         : del<void>(url)
