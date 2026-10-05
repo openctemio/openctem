@@ -591,7 +591,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	if u.IsLocked() {
 		return nil, ErrAccountLocked
 	}
-	if u.Status() == userdom.StatusSuspended {
+	if !u.IsActive() {
 		return nil, ErrAccountSuspended
 	}
 
@@ -1889,8 +1889,10 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	// Check if user is already a member. A suspended membership cannot be
 	// bypassed via invitation accept — that would silently erase the
 	// suspension audit trail. The admin must reactivate via Members page.
+	// An offboarded tombstone is not a membership: accepting re-joins from
+	// zero (AcceptInvitationTx re-activates the row).
 	existingMembership, err := s.tenantRepo.GetMembership(ctx, u.ID(), invitation.TenantID())
-	if err == nil {
+	if err == nil && !existingMembership.IsOffboarded() {
 		if existingMembership.IsSuspended() {
 			return nil, fmt.Errorf(
 				"%w: your access to this team is suspended — please contact an administrator to be reactivated",
@@ -1899,7 +1901,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		}
 		return nil, fmt.Errorf("%w: you are already a member of this team", shared.ErrValidation)
 	}
-	if !errors.Is(err, shared.ErrNotFound) {
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 

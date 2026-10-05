@@ -136,6 +136,9 @@ func (h *agaHarness) seed() {
 	h.exec(`UPDATE assets SET deleted_at = now() WHERE id = $1`, h.assetDeleted.String())
 	h.exec(`INSERT INTO groups (id, tenant_id, name, slug) VALUES ($1, $2, 'aga-group', $3)`,
 		h.groupA.String(), h.tenantA.String(), "aga-"+h.groupA.String())
+	// The group member is an active member of tenant A: only an active
+	// principal gets scope rows (member lifecycle, migration 001044).
+	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, h.memberA.String(), h.tenantA.String())
 	h.exec(`INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member')`, h.groupA.String(), h.memberA.String())
 }
 
