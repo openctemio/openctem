@@ -25,7 +25,11 @@ import {
   Lock,
   History,
 } from 'lucide-react'
-import { EASMOverview, useAttackSurfaceStats } from '@/features/attack-surface'
+import {
+  AttackSurfaceSectionTabs,
+  EASMOverview,
+  useAttackSurfaceStats,
+} from '@/features/attack-surface'
 import { newInWindow } from '@/features/attack-surface/lib/trend'
 import { formatDistanceToNow } from 'date-fns'
 import type { LucideIcon } from 'lucide-react'
@@ -115,6 +119,7 @@ export default function AttackSurfacePage() {
         title="Attack surface"
         description="What your organization exposes, and how it changed this week."
       />
+      <AttackSurfaceSectionTabs />
 
       {error && (
         <Alert variant="destructive" className="mt-5">
