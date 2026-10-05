@@ -469,7 +469,7 @@ func (r *TenantToolConfigRepository) ListToolsWithConfig(
 			t.category_id, t.install_method, t.install_cmd, t.update_cmd,
 			t.version_cmd, t.version_regex, t.current_version, t.latest_version,
 			t.config_file_path, t.config_schema, t.default_config,
-			t.capabilities, t.supported_targets, t.output_formats,
+			t.capabilities, t.supported_targets, t.output_formats, t.output_types,
 			t.docs_url, t.github_url, t.is_active, t.is_builtin, t.tags, t.metadata,
 			t.created_by, t.created_at, t.updated_at,
 			tc.id as config_id, tc.config as tenant_config, tc.is_enabled,
@@ -519,6 +519,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		capabilities     pq.StringArray // PostgreSQL text[] array
 		supportedTargets pq.StringArray // PostgreSQL text[] array
 		outputFormats    pq.StringArray // PostgreSQL text[] array
+		outputTypes      pq.StringArray
 		tags             pq.StringArray // PostgreSQL text[] array
 		metadata         []byte
 		logoURL          sql.NullString
@@ -556,7 +557,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		&categoryID, &installMethod, &installCmd, &updateCmd,
 		&versionCmd, &versionRegex, &currentVersion, &latestVersion,
 		&configFilePath, &configSchema, &defaultConfig,
-		&capabilities, &supportedTargets, &outputFormats,
+		&capabilities, &supportedTargets, &outputFormats, &outputTypes,
 		&docsURL, &githubURL, &t.IsActive, &t.IsBuiltin, &tags, &metadata,
 		&createdBy, &t.CreatedAt, &t.UpdatedAt,
 		&configID, &tenantConfig, &isEnabled,
@@ -604,6 +605,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 	t.Capabilities = capabilities
 	t.SupportedTargets = supportedTargets
 	t.OutputFormats = outputFormats
+	t.OutputTypes = outputTypes
 	t.Tags = tags
 	if len(metadata) > 0 {
 		_ = json.Unmarshal(metadata, &t.Metadata)
