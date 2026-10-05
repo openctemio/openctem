@@ -203,21 +203,23 @@ func (r *CIRunRepository) PurgeExpiredJTIs(ctx context.Context, before time.Time
 const ciRunColumns = `id, tenant_id, trust_config_id, repository_asset_id, provider, issuer, repository, ref, branch,
 	commit_sha, pull_request, default_branch, is_default_branch, event, environment, actor, external_run_id,
 	run_attempt, workflow, pipeline_url, fork, token_expires_at, status, verdict, verdict_detail, evaluated_at,
-	reports_count, findings_count, created_at, updated_at`
+	reports_count, findings_count, pipeline_id, sensor_version, scan_failures, tools, template_ref, created_at, updated_at`
 
 func scanCIRun(row ciScanner) (cirun.Run, error) {
 	var (
 		run                  cirun.Run
 		id, tid, asset, prov string
 		trust, verdict       sql.NullString
+		pipeline             sql.NullString
 		tokenExp, evaluated  sql.NullTime
-		detail               []byte
+		detail, tools        []byte
+		failures             sql.NullInt64
 	)
 	if err := row.Scan(&id, &tid, &trust, &asset, &prov, &run.Issuer, &run.Repository, &run.Ref, &run.Branch,
 		&run.CommitSHA, &run.PullRequest, &run.DefaultBranch, &run.IsDefaultBranch, &run.Event, &run.Environment,
 		&run.Actor, &run.ExternalRunID, &run.RunAttempt, &run.Workflow, &run.PipelineURL, &run.Fork, &tokenExp,
-		&run.Status, &verdict, &detail, &evaluated, &run.ReportsCount, &run.FindingsCount, &run.CreatedAt,
-		&run.UpdatedAt); err != nil {
+		&run.Status, &verdict, &detail, &evaluated, &run.ReportsCount, &run.FindingsCount, &pipeline,
+		&run.SensorVersion, &failures, &tools, &run.TemplateRef, &run.CreatedAt, &run.UpdatedAt); err != nil {
 		return run, err
 	}
 	run.ID, _ = shared.IDFromString(id)
@@ -231,6 +233,12 @@ func scanCIRun(row ciScanner) (cirun.Run, error) {
 		run.VerdictDetail = json.RawMessage(detail)
 	}
 	run.EvaluatedAt = optTime(evaluated)
+	run.PipelineID = parseOptID(pipeline)
+	if failures.Valid {
+		n := int(failures.Int64)
+		run.ScanFailures = &n
+	}
+	run.Tools = decodeToolLabels(tools)
 	return run, nil
 }
 
@@ -239,14 +247,14 @@ func (r *CIRunRepository) CreateRun(ctx context.Context, run *cirun.Run) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_runs (id, tenant_id, trust_config_id, repository_asset_id,
 		provider, issuer, repository, ref, branch, commit_sha, pull_request, default_branch, is_default_branch, event,
 		environment, actor, external_run_id, run_attempt, workflow, pipeline_url, fork, token_hash, token_expires_at,
-		status, created_at, updated_at)
+		status, created_at, updated_at, pipeline_id, sensor_version, template_ref)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		$23, $24, $25, $25)`,
+		$23, $24, $25, $25, $26, $27, $28)`,
 		run.ID.String(), run.TenantID.String(), nullID(run.TrustConfigID), run.RepositoryAssetID.String(),
 		string(run.Provider), run.Issuer, run.Repository, run.Ref, run.Branch, run.CommitSHA, run.PullRequest,
 		run.DefaultBranch, run.IsDefaultBranch, run.Event, run.Environment, run.Actor, run.ExternalRunID,
 		run.RunAttempt, run.Workflow, run.PipelineURL, run.Fork, run.TokenHash, run.TokenExpiresAt,
-		run.Status, run.CreatedAt)
+		run.Status, run.CreatedAt, nullID(run.PipelineID), run.SensorVersion, run.TemplateRef)
 	return err
 }
 
@@ -293,6 +301,10 @@ func (r *CIRunRepository) ListRuns(ctx context.Context, tenantID shared.ID, f ci
 	if f.RepositoryAssetID != nil {
 		args = append(args, f.RepositoryAssetID.String())
 		where = append(where, fmt.Sprintf("repository_asset_id = $%d", len(args)))
+	}
+	if f.PipelineID != nil {
+		args = append(args, f.PipelineID.String())
+		where = append(where, fmt.Sprintf("pipeline_id = $%d", len(args)))
 	}
 	if f.Verdict != "" {
 		if f.Verdict == cirun.VerdictNone {

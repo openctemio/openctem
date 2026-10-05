@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions R-1..R-6, 2026-10-05); R1 and R2 implemented |
+| Status | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05); R1, R2 and F1 implemented |
 | Research | research/33 (runner mode), research/36 §3 (CI row), research/37 S14 (runner mode in the SDK kit) |
 | Related | RFC-008 (shift-left CI scanning), RFC-023 (sensors), RFC-040 (result binding), RFC-043 (finding identity), RFC-050 (asset access model) |
 
@@ -16,8 +16,11 @@ it against the organization's **CI trust configurations** and returns a
 the platform for a **verdict**: pass or fail, with reasons and links, decided by
 a **central gate policy** instead of a flag in each pipeline.
 
-A CI run is not a sensor: it has no row in `sensors`, no heartbeat, no offline
-alert and no key to rotate. The console shows it under **CI runners**.
+A CI run is not a sensor row: it has no row in `sensors`, no heartbeat, no
+offline alert and no key to rotate. Its logical identity is the **CI
+pipeline** (one workflow file of one repository, section 10), listed on the
+Sensors page as a sensor in **runner mode**: fresh or stale against its own
+cadence, never offline, never dispatched.
 
 ```
 CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs (tenant) ──▶ run + octci_ token (≤15 min)
@@ -189,6 +192,13 @@ The sensor's one-shot mode, through sdk-go `pkg/sensorkit` (`CIRun`):
 | Stolen run token | 15 minutes, one run, one repository, upload/evaluate only; hash stored, never the token |
 | Cross-tenant | Configurations, runs, policies and overrides tenant-scoped (composite FKs to the tenant's assets); the audience names the tenant; another tenant's ids answer 404 |
 | Data scope (RFC-050) | Run list and overrides filtered to the caller's repositories; by id out of scope is 404 |
+| A runner inventing pipelines | Pipelines are created only at a verified, admitted exchange; key from signed ids only; per-tenant and per-configuration caps; creation audited |
+| Branch, job or tool names multiplying rows | Never part of the key; tools sanitized and capped at 20 per run |
+| Fork code steering the pipeline | Fork runs never refresh names, freshness, gates or cadence |
+| A CI identity receiving work | Pipelines are a separate table with no key and no zone; no claim query reads them |
+| Withdrawn trust | Disabling, deleting or re-pointing a configuration revokes its pipelines and its running runs' tokens at once |
+| Personal data in claims | `user_email` never read; actor login only |
+| Cross-tenant through the fleet union | Each source tenant-scoped; the union adds no query; tests assert another tenant's fleet lists none of the pipelines |
 | A report on another asset | `REPORT_OUT_OF_SCOPE`; the `ci_run` binding can change only the repository asset |
 | Baseline poisoning | The baseline branch is server-side (known default branch, else the configuration's); a run's branch comes from the token |
 | SSRF through a self-managed GitLab issuer | SSRF-guarded client, https only, JWKS pinned to the issuer's host |
@@ -210,7 +220,155 @@ custom roles).
 | R3 | Diff-aware scans, fingerprint stability across commits | Open |
 | R4 | Remote repository execution by a zoned daemon sensor | Open (needs the executor sandbox and the credential broker) |
 | R5 | Signed runner image, GitHub Action and GitLab component, SARIF upload | Open |
+| F1 | CI pipelines: identity, JIT creation, caps, revocation, status, fleet read model (section 10, migration 001063) | Implemented |
+| F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Open |
+| F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6) | Open |
+| F4, F5 | Sensor pools; policy timeouts for daemons (section 10.7) | Design only |
 
 Open points: GitHub Enterprise Server issuers (a GitHub configuration accepts
 only the github.com issuer today); a merge request's target branch on GitLab is
 not in the ID token, so the baseline is always the default branch.
+
+## 10. Pipelines in the fleet
+
+The fleet shows what is deployed and accountable, not each execution. A
+long-running sensor is one registration with one instance (its heartbeat is
+its liveness). A CI pipeline is a registration with no instance at all, only
+executions (its runs). Liveness is computed per kind; nothing short-lived is
+ever listed as "offline".
+
+### 10.1 Decisions
+
+- **FI-1** Two levels: the logical identity is listed; instances and
+  executions are nested under it and expire without alerting.
+- **FI-2** A pipeline's key is immutable provider ids from verified claims:
+  GitHub `repository_id` + the `workflow_ref` path, GitLab `project_id` + the
+  `ci_config_ref_uri` path (both without `@ref` and without the repository
+  prefix, so a rename keeps the pipeline). Branch, job and tools are
+  attributes of a run.
+- **FI-3** Liveness per kind: heartbeat for daemons; for pipelines, freshness
+  against the expected cadence. "Offline" is never used for a pipeline.
+- **FI-4** Pipelines live in their own table (`ci_pipelines`) and are never
+  dispatchable: no key, no zone, no claim query reads them. One read model
+  (`GET /api/v1/fleet`) unifies the console.
+- **FI-5** Alerts only on signals (missed schedule, coverage regression,
+  opt-in failing gate, outdated runner), never per run (section 10.6).
+- **FI-6** Coverage (repository x capability) is a first-class output
+  (section 10.6).
+- **FI-7** The same two-level model applies later to autoscaled daemons
+  (sensor pools, section 10.7).
+
+Counts (fleet header, licensing) count registrations, never runs or
+instances.
+
+### 10.2 Identity and creation
+
+| Provider | Key (immutable) | Display (refreshed by each non-fork run) | Template (drift) |
+|---|---|---|---|
+| GitHub | `repository_id` + `workflow_ref` path | repository, `workflow` name | `job_workflow_ref` / `job_workflow_sha` when the job runs a reusable workflow |
+| GitLab | `project_id` + `ci_config_ref_uri` path (`.gitlab-ci.yml` when absent) | project path | `ci_config_ref_uri` / `ci_config_sha` when the configuration lives in another project |
+
+- A pipeline is created **just in time** at an exchange that a trust
+  configuration admitted and whose token verified. A token without a numeric
+  repository id or a usable workflow path (control characters, `.`/`..`
+  segments, over 500 bytes) is refused (`pipeline_identity`, audited).
+- **Caps**: 2,000 pipelines per tenant and 1,000 per trust configuration by
+  default. At the cap a new pipeline is refused (`pipeline_cap`, audited);
+  existing pipelines keep running. Creation is audited
+  (`ci_pipeline.created`).
+- **Fork runs** (only when the configuration admits fork pull requests) carry
+  the upstream repository's identity and attach to its pipeline flagged
+  `fork`. They never refresh its display names, never make it fresh, never set
+  its gates or its cadence.
+- **Labels**: the tools a run's reports declare are sanitized (`[a-z0-9._-]`,
+  64 bytes, versions normalized), de-duplicated and capped at 20 per run; the
+  workflow name drops control and format characters and is capped. The
+  runner's version is read from its User-Agent. None is ever part of a key.
+- **No personal data beyond the actor login**: GitLab's `user_email` claim is
+  never read; runs keep the actor login only (covered by member erasure,
+  RFC-050).
+- **Rename**: the pipeline row and its history survive; it follows the
+  repository asset of its latest run (a renamed repository may be a new asset
+  until the inventory merges the two).
+- **Backfill**: runs recorded before pipelines existed get one pipeline per
+  repository asset and workflow path with the key `legacy:<asset id>`; the
+  first verified run of the same asset and workflow adopts the row and writes
+  the real id.
+
+### 10.3 Status
+
+Three dimensions, kept apart, and one badge:
+
+| Dimension | Values | Source |
+|---|---|---|
+| Freshness | running · fresh · stale · archived · never | Last non-fork run against the cadence: two missed cycles of its schedule when it has scheduled runs (`event`/`pipeline_source` = `schedule`), else three times the median interval between its CI runs (jobs of one CI run count once), at least 7 and at most 30 days. Archived after 90 days idle; the next run revives it |
+| Gate | passing · failing · none | Last default-branch verdict of a non-fork run (pull request verdicts shown apart) |
+| Execution health | ok · degraded · unknown | Scanner failures the runner reported at the last evaluation; a runner older than `SENSOR_MIN_VERSION` |
+
+Badge, in severity order: revoked > archived > never > failing > degraded >
+stale > running > fresh. Revoked, archived and never-run pipelines are
+**inactive**: hidden by default, listed on request. Hidden is never deleted:
+rows, runs, findings and audit records stay.
+
+### 10.4 Revocation
+
+Disabling or deleting a trust configuration, or pointing it at another
+issuer or audience, revokes the pipelines it admitted last and invalidates
+the upload tokens of its runs still running, at once (audited,
+`ci_pipeline.revoked`). The next run a configuration admits clears the
+revocation.
+
+### 10.5 API
+
+| Endpoint | Permission |
+|---|---|
+| `GET /api/v1/fleet?mode=all\|daemon\|runner` (`role`, `status`, `attention`, `include_inactive`, `search`, paging) | `sensors:read` for daemon rows, `scans:ci:read` (and the scans module) for runner rows; each mode filtered by its own permission, 403 with neither |
+| `GET /api/v1/ci/pipelines` (`status`, `include_inactive`, `provider`, `repository_asset_id`, `search`, paging; status counts) | `scans:ci:read` |
+| `GET /api/v1/ci/pipelines/{id}` (status, branches, default-branch gate trend) | `scans:ci:read` |
+| `GET /api/v1/ci/runs?pipeline_id=` | `scans:ci:read` |
+
+Mode is `daemon` (a row in `sensors`) or `runner` (a CI pipeline); the
+sensor's role (scanner, collector) is independent of the mode. The legacy v1
+`type` value `runner` on a sensor row is unrelated and never reported as the
+mode. Pipelines follow the repository data scope (list: SQL condition; by id
+out of scope: 404).
+
+### 10.6 Coverage and alerts (F3)
+
+Coverage is computed per repository x capability (SAST, SCA, secrets, IaC)
+from any executor: a fresh pipeline whose runs reported the capability, and
+daemon scans where the data allows. An administrator can mark a repository as
+expected to be covered, so "never scanned" shows as a gap. Template drift
+compares the `job_workflow_ref` versions of pipelines running the same
+template.
+
+Findings whose only source is a stale or archived pipeline are shown as not
+observed with the reason "source stale"; an administrator can retire a
+pipeline, which closes its sole findings as "source retired" (audited,
+reopenable). Findings another source still observes are untouched.
+
+Alerts go through the notification outbox, de-duplicated per pipeline:
+scheduled scan missed (two cycles), coverage regression, default branch
+failing the gate (opt-in), runner below the minimum supported version.
+
+### 10.7 Future work: sensor pools (F4) and policy timeouts (F5)
+
+Design only; nothing here is implemented.
+
+- **Pool**: an enrollment token defines a pool and its policy (minimum
+  instances, instance TTL, inactivity timeout). Pods of an autoscaled
+  deployment are instances with short-lived credentials derived from the pool
+  enrollment; the pool is the listed registration and counts once.
+- **Liveness**: live instances >= the minimum; an instance that stops
+  heartbeating is dropped silently after its TTL (default one hour), never
+  listed offline.
+- **Goodbye on drain**: an instance draining on SIGTERM sends a signed
+  goodbye; it is removed at once and its credential revoked. A crash falls back
+  to the TTL.
+- **Dispatch**: a pool is a dispatch target through zones and capability
+  matching, like a daemon, with work split and failover across its instances.
+  A CI pipeline never is.
+- **Policy timeouts** for daemons: an inactivity timeout hides a silent sensor
+  as inactive (not deleted); an optional unenrollment timeout revokes its
+  credential.
+- **Caps**: instances per pool, pools per tenant.

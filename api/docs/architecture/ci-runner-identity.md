@@ -41,7 +41,9 @@ graph TD
 | Repository | `internal/infra/postgres/ci_run_repository.go` |
 | Routes and their chains | `internal/infra/http/routes/ci.go` |
 | Console | `web/src/features/ci-runners` (`/ci-runners`, `/settings/scanning/ci`) |
-| Migration | `001058_ci_runner_identity` |
+| Pipelines: identity, status, fleet rows | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
+| Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
+| Migration | `001058_ci_runner_identity`, `001063_ci_pipelines` |
 
 ## Request chains
 
@@ -50,7 +52,8 @@ graph TD
 | `POST /api/v1/ci/oidc/exchange` | per-IP token-exchange limit (60/min, shared store) → handler (32 KB body, unknown fields refused) |
 | `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
-| `/api/v1/ci/{trust-configs,runs,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
+| `/api/v1/ci/{trust-configs,runs,pipelines,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
+| `GET /api/v1/fleet` | session tenant chain → `sensors:read` or `scans:ci:read`; the handler lists each mode under its own permission (runner rows also need the `scans` module) |
 
 ## Data model
 
@@ -63,11 +66,39 @@ graph TD
 - `ci_oidc_replay`: `(issuer, jti)`, global.
 - `ci_gate_policies`: one per `(tenant, scope_type, scope_id)`.
 - `ci_gate_overrides`: per tenant, composite FK to the repository asset.
+- `ci_pipelines`: per tenant, unique `(tenant, provider, issuer,
+  external_repo_id, workflow_path)`, composite FK to the repository asset
+  (cascade; moved by asset merge). Holds the run summary the status is
+  computed from (last run, fork run, default-branch and pull request
+  verdicts, scanner failures, runner version, tools, median and schedule
+  intervals, revocation). `ci_runs.pipeline_id` (composite FK) links each run.
+
+### Exchange and pipeline flow
+
+```mermaid
+sequenceDiagram
+  participant J as CI job
+  participant S as cirun.Service
+  participant DB as Postgres
+  J->>S: OIDC token
+  S->>S: verify, admit (trust rules)
+  S->>S: PipelineKeyFromClaims (repository id + workflow path)
+  S->>DB: claim jti
+  S->>DB: UpsertPipeline (advisory lock per tenant, caps, legacy adoption)
+  S->>DB: CreateRun (pipeline_id, runner version)
+  S->>DB: RefreshPipeline (summary from runs; fork runs excluded)
+  S-->>J: run + octci_ token
+```
 
 ## Invariants
 
-- A run never creates a sensor row and has no heartbeat; fleet views and
-  offline alerts never see it.
+- A run never creates a sensor row and has no heartbeat; offline alerts never
+  see it. Its pipeline is listed in the fleet in runner mode and is never
+  offline and never dispatched.
+- A pipeline is created only at a verified, admitted exchange, keyed by signed
+  immutable ids; branch, job and tool labels never create rows.
+- Every fleet source is tenant-scoped and the runner rows follow the data
+  scope; the fleet handler adds no query of its own.
 - The run's branch, commit, pull request and pipeline URL come from the
   verified token; the report's own branch information is replaced.
 - A run's report changes only its repository asset; the baseline branch is
