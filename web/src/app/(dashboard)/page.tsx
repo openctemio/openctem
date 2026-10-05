@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import {
   Plus,
   ChevronDown,
@@ -18,6 +19,7 @@ import { useSWRConfig } from 'swr'
 
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { PageHeader } from '@/features/shared'
 // (Run scan removed from the dashboard header — kept clean; scans live in the Scans nav.)
@@ -32,15 +34,43 @@ import {
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { CtemDashboard } from '@/features/dashboard/components/ctem-dashboard'
-import { ClassicDashboard } from '@/features/dashboard/components/classic-dashboard'
-import { DashboardCanvas } from '@/features/dashboards/components/dashboard-canvas'
-import { DashboardCanvasEditor } from '@/features/dashboards/components/dashboard-canvas-editor'
 import {
   useMyDashboards,
   useRevalidateDashboards,
   setDefaultDashboard,
   deleteDashboard,
 } from '@/features/dashboards/api/use-dashboards-api'
+
+/** Placeholder while an on-demand dashboard view's code loads. */
+function DashboardViewSkeleton() {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-busy="true">
+      {Array.from({ length: 8 }, (_, i) => (
+        <Skeleton key={i} className="h-32" />
+      ))}
+    </div>
+  )
+}
+
+// Only one view renders at a time and CTEM is the default, so the other views
+// load on demand: the Classic view and the custom canvas pull in their own
+// widgets, and the editor adds the drag-and-drop kit (@dnd-kit) that only
+// "Customize" needs. Statically imported, all of it was in every visit's JS.
+const ClassicDashboard = dynamic(
+  () => import('@/features/dashboard/components/classic-dashboard').then((m) => m.ClassicDashboard),
+  { ssr: false, loading: () => <DashboardViewSkeleton /> }
+)
+const DashboardCanvas = dynamic(
+  () => import('@/features/dashboards/components/dashboard-canvas').then((m) => m.DashboardCanvas),
+  { ssr: false, loading: () => <DashboardViewSkeleton /> }
+)
+const DashboardCanvasEditor = dynamic(
+  () =>
+    import('@/features/dashboards/components/dashboard-canvas-editor').then(
+      (m) => m.DashboardCanvasEditor
+    ),
+  { ssr: false, loading: () => <DashboardViewSkeleton /> }
+)
 
 const STORAGE_KEY = 'openctem:dashboard-view'
 const BUILTINS = ['ctem', 'classic'] as const

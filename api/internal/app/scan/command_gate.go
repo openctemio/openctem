@@ -55,6 +55,9 @@ func (s *Service) GateCommandPayload(ctx context.Context, tenantID shared.ID, se
 	if err != nil {
 		return nil, err
 	}
+	if err := s.refuseDisabledOptInPayload(ctx, tenantID, fields); err != nil {
+		return nil, err
+	}
 
 	validated, err := s.validateScanTargets(ctx, CreateScanInput{TenantID: tenantID.String(), Targets: targets})
 	if err != nil {
