@@ -1669,6 +1669,11 @@ export const pipelineRunEndpoints = {
   cancel: (runId: string) => `/api/v1/pipeline-runs/${runId}/cancel`,
 
   /**
+   * How each stage of a run was planned (counts by reason; research/27).
+   */
+  stages: (runId: string) => `/api/v1/pipeline-runs/${encodeURIComponent(runId)}/stages`,
+
+  /**
    * One cursor page of a run's tasks (the run read embeds the first page and
    * its tasks_next_cursor).
    */
