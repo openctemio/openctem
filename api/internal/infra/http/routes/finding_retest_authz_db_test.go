@@ -306,6 +306,6 @@ func TestRetestSettingsAuthz_AdminOnlyAndTokenTenant(t *testing.T) {
 // scope exclusions, attribution and scan zones.
 func realProbeGate(pg *postgres.DB, log *logger.Logger) *scanapp.Service {
 	scope := scopeapp.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg),
-		nil, postgres.NewAssetRepository(pg), log)
+		postgres.NewAssetRepository(pg), log)
 	return scanapp.NewTargetGate(scope, easmapp.NewActiveGate(postgres.NewAttributionRepository(pg), postgres.NewAssetRepository(pg), scope, postgres.NewEASMSeedRepository(pg)), postgres.NewScanZoneRepository(pg), nil, log)
 }

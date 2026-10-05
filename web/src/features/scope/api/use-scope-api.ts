@@ -19,23 +19,17 @@ import type {
   ApiScopeTargetListResponse,
   ApiScopeExclusion,
   ApiScopeExclusionListResponse,
-  ApiScanSchedule,
-  ApiScanScheduleListResponse,
   ApiScopeStats,
   ApiCheckScopeResponse,
   CheckScopeInput,
   ScopeTargetFilters,
   ScopeExclusionFilters,
-  ScanScheduleFilters,
   CreateScopeTargetInput,
   UpdateScopeTargetInput,
   CreateScopeExclusionInput,
   UpdateScopeExclusionInput,
-  CreateScanScheduleInput,
-  UpdateScanScheduleInput,
   BulkDeleteTargetsInput,
   BulkDeleteExclusionsInput,
-  BulkDeleteSchedulesInput,
   BulkUpdateTargetsInput,
   BulkOperationResponse,
 } from './scope-api.types'
@@ -109,24 +103,6 @@ function buildExclusionsEndpoint(filters?: ScopeExclusionFilters): string {
   return queryString ? `${url}?${queryString}` : url
 }
 
-function buildSchedulesEndpoint(filters?: ScanScheduleFilters): string {
-  const url = `${BASE_URL}/schedules`
-  if (!filters) return url
-
-  const params = new URLSearchParams()
-
-  if (filters.scan_type) params.set('scan_type', filters.scan_type)
-  if (filters.enabled !== undefined) params.set('enabled', String(filters.enabled))
-  if (filters.search) params.set('search', filters.search)
-  if (filters.page) params.set('page', String(filters.page))
-  if (filters.per_page) params.set('per_page', String(filters.per_page))
-  if (filters.sort_by) params.set('sort_by', filters.sort_by)
-  if (filters.sort_order) params.set('sort_order', filters.sort_order)
-
-  const queryString = params.toString()
-  return queryString ? `${url}?${queryString}` : url
-}
-
 // ============================================
 // FETCHER FUNCTIONS
 // ============================================
@@ -145,14 +121,6 @@ async function fetchExclusions(url: string): Promise<ApiScopeExclusionListRespon
 
 async function fetchExclusion(url: string): Promise<ApiScopeExclusion> {
   return get<ApiScopeExclusion>(url)
-}
-
-async function fetchSchedules(url: string): Promise<ApiScanScheduleListResponse> {
-  return get<ApiScanScheduleListResponse>(url)
-}
-
-async function fetchSchedule(url: string): Promise<ApiScanSchedule> {
-  return get<ApiScanSchedule>(url)
 }
 
 async function fetchStats(url: string): Promise<ApiScopeStats> {
@@ -432,130 +400,6 @@ export function useBulkDeleteExclusionsApi() {
 }
 
 // ============================================
-// SCHEDULES HOOKS
-// ============================================
-
-/**
- * Fetch scan schedules list for current tenant
- */
-export function useScanSchedulesApi(filters?: ScanScheduleFilters, config?: SWRConfiguration) {
-  const { currentTenant } = useTenant()
-
-  const key = currentTenant ? buildSchedulesEndpoint(filters) : null
-
-  return useSWR<ApiScanScheduleListResponse>(key, fetchSchedules, { ...defaultConfig, ...config })
-}
-
-/**
- * Fetch a single scan schedule by ID
- */
-export function useScanScheduleApi(scheduleId: string | null, config?: SWRConfiguration) {
-  const { currentTenant } = useTenant()
-
-  const key = currentTenant && scheduleId ? `${BASE_URL}/schedules/${scheduleId}` : null
-
-  return useSWR<ApiScanSchedule>(key, fetchSchedule, { ...defaultConfig, ...config })
-}
-
-/**
- * Create a new scan schedule
- */
-export function useCreateScanScheduleApi() {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant ? `${BASE_URL}/schedules` : null,
-    async (url: string, { arg }: { arg: CreateScanScheduleInput }) => {
-      return post<ApiScanSchedule>(url, arg)
-    }
-  )
-}
-
-/**
- * Update a scan schedule
- */
-export function useUpdateScanScheduleApi(scheduleId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && scheduleId ? `${BASE_URL}/schedules/${scheduleId}` : null,
-    async (url: string, { arg }: { arg: UpdateScanScheduleInput }) => {
-      return put<ApiScanSchedule>(url, arg)
-    }
-  )
-}
-
-/**
- * Delete a scan schedule
- */
-export function useDeleteScanScheduleApi(scheduleId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && scheduleId ? `${BASE_URL}/schedules/${scheduleId}` : null,
-    async (url: string) => {
-      return del<void>(url)
-    }
-  )
-}
-
-/**
- * Enable a scan schedule
- */
-export function useEnableScheduleApi(scheduleId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && scheduleId ? `${BASE_URL}/schedules/${scheduleId}/enable` : null,
-    async (url: string) => {
-      return post<ApiScanSchedule>(url, {})
-    }
-  )
-}
-
-/**
- * Disable a scan schedule
- */
-export function useDisableScheduleApi(scheduleId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && scheduleId ? `${BASE_URL}/schedules/${scheduleId}/disable` : null,
-    async (url: string) => {
-      return post<ApiScanSchedule>(url, {})
-    }
-  )
-}
-
-/**
- * Run a scan schedule immediately
- */
-export function useRunScheduleNowApi(scheduleId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && scheduleId ? `${BASE_URL}/schedules/${scheduleId}/run` : null,
-    async (url: string) => {
-      return post<ApiScanSchedule>(url, {})
-    }
-  )
-}
-
-/**
- * Bulk delete scan schedules
- */
-export function useBulkDeleteSchedulesApi() {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant ? `${BASE_URL}/schedules/bulk/delete` : null,
-    async (url: string, { arg }: { arg: BulkDeleteSchedulesInput }) => {
-      return post<BulkOperationResponse>(url, arg)
-    }
-  )
-}
-
-// ============================================
 // STATS HOOK
 // ============================================
 
@@ -618,16 +462,6 @@ export async function invalidateScopeTargetsCache() {
 export async function invalidateScopeExclusionsCache() {
   const { mutate } = await import('swr')
   await mutate((key) => typeof key === 'string' && key.includes('/scope/exclusions'), undefined, {
-    revalidate: true,
-  })
-}
-
-/**
- * Invalidate scan schedules cache
- */
-export async function invalidateScanSchedulesCache() {
-  const { mutate } = await import('swr')
-  await mutate((key) => typeof key === 'string' && key.includes('/scope/schedules'), undefined, {
     revalidate: true,
   })
 }
