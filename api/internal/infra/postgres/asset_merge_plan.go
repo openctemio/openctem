@@ -60,6 +60,9 @@ var assetMergeRefs = []mergeRef{
 	// A retest's asset follows its finding (RFC-039): the per-asset in-flight
 	// cap counts by asset_id.
 	{table: "finding_retests", column: "asset_id", tenantCol: "tenant_id"},
+	// CI runs and break-glass overrides (RFC-051) follow their repository.
+	{table: "ci_runs", column: "repository_asset_id", tenantCol: "tenant_id"},
+	{table: "ci_gate_overrides", column: "repository_asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
