@@ -87,7 +87,7 @@ func (r *IntegrationNotificationExtensionRepository) GetByIntegrationID(ctx cont
 	query := `
 		SELECT integration_id,
 			   COALESCE(enabled_severities, '["critical", "high"]'::jsonb),
-			   COALESCE(enabled_event_types, '["security_alert", "new_finding", "new_exposure"]'::jsonb),
+			   COALESCE(enabled_event_types, '["new_finding", "new_exposure"]'::jsonb),
 			   message_template, include_details, min_interval_minutes
 		FROM integration_notification_extensions
 		WHERE integration_id = $1
@@ -201,7 +201,7 @@ func (r *IntegrationNotificationExtensionRepository) ListIntegrationsWithNotific
 			i.last_sync_at, i.next_sync_at, i.sync_interval_minutes, i.sync_error,
 			i.config, i.metadata, i.stats, i.created_at, i.updated_at, i.created_by,
 			COALESCE(n.enabled_severities, '["critical", "high"]'::jsonb),
-			COALESCE(n.enabled_event_types, '["security_alert", "new_finding", "new_exposure"]'::jsonb),
+			COALESCE(n.enabled_event_types, '["new_finding", "new_exposure"]'::jsonb),
 			n.message_template, n.include_details, n.min_interval_minutes
 		FROM integrations i
 		LEFT JOIN integration_notification_extensions n ON i.id = n.integration_id
