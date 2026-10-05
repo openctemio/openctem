@@ -76,7 +76,7 @@ func (s *Service) handleRefusal(ctx context.Context, cmd *commanddom.Command, in
 				return nil, true, ErrLeaseLost
 			}
 			s.logger.Info("command re-queued after a sensor refused it", "command_id", cmd.ID.String(),
-				"sensor_id", input.SensorID, "layer", ref.Layer, "rule", ref.Rule, "refusals", len(all))
+				"sensor_id", logSafe(input.SensorID), "layer", logSafe(ref.Layer), "rule", logSafe(ref.Rule), "refusals", len(all))
 			requeued, err := s.Get(ctx, cmd.TenantID.String(), cmd.ID.String())
 			return requeued, true, err
 		}
@@ -131,6 +131,13 @@ func aggregateRefusals(last *sensordom.DispatchRefusal, all []commanddom.Refusal
 		others = append(others, fmt.Sprintf("sensor %s: %s/%s", shortID(r.SensorID), r.Layer, r.Rule))
 	}
 	return fmt.Sprintf("%s (refused by %d sensors; also: %s)", msg, len(all), strings.Join(others, "; "))
+}
+
+// logSafe strips line breaks from a value that came from a sensor before it
+// is logged (no forged log lines). The values are already sanitized to
+// closed sets and patterns; this keeps the log safe on its own.
+func logSafe(v string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(v, "\n", ""), "\r", "")
 }
 
 func shortID(id string) string {
