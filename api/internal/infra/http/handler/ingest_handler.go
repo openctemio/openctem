@@ -316,7 +316,7 @@ type HeartbeatRequest struct {
 
 	// Disk/network throughput in MB/s. Optional — sensors that omit them leave
 	// the corresponding load-balancing terms at zero. Accepted here so the
-	// AGENT_LB_DISK_IO_WEIGHT / AGENT_LB_NETWORK_WEIGHT knobs have real inputs.
+	// SENSOR_LB_DISK_IO_WEIGHT / SENSOR_LB_NETWORK_WEIGHT knobs have real inputs.
 	DiskReadMBPS  float64 `json:"disk_read_mbps,omitempty"`
 	DiskWriteMBPS float64 `json:"disk_write_mbps,omitempty"`
 	NetworkRxMBPS float64 `json:"network_rx_mbps,omitempty"`

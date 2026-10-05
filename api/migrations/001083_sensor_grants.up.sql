@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 001079: per-sensor grants (RFC-052 §5)
+-- Migration 001083: per-sensor grants (RFC-052 §5)
 -- =============================================================================
 -- One row per sensor: what that sensor may do, checked by the platform on
 -- every poll, claim, unsolicited result and heartbeat action. NULL in a list

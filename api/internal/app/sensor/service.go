@@ -83,7 +83,7 @@ type SensorService struct {
 	memNonces      *memoryNonceStore
 	// lbWeights are the load-balancing weights used to recompute a sensor's
 	// load_score on every heartbeat. Defaults to the compiled-in set;
-	// SetLoadBalancingWeights installs the operator's AGENT_LB_* values.
+	// SetLoadBalancingWeights installs the operator's SENSOR_LB_* values.
 	lbWeights sensordom.LoadBalancingWeights
 	// events stores the sensor's activity timeline (sensor_events); nil
 	// records nothing. activity reads the merged timeline.
