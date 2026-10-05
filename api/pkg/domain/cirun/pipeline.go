@@ -99,8 +99,13 @@ type Pipeline struct {
 	ScheduleInterval time.Duration
 
 	RevokedAt *time.Time
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	// RetiredAt: an administrator retired the pipeline (its sole findings
+	// were closed as "source retired"). The next verified run revives it.
+	RetiredAt    *time.Time
+	RetiredBy    *shared.ID
+	RetireReason string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // IsLegacy reports whether the pipeline was backfilled without a repository
@@ -375,6 +380,7 @@ const (
 type PipelineStatus string
 
 const (
+	PipelineRetired  PipelineStatus = "retired"
 	PipelineRevoked  PipelineStatus = "revoked"
 	PipelineFailing  PipelineStatus = "failing"
 	PipelineDegraded PipelineStatus = "degraded"
@@ -387,14 +393,15 @@ const (
 
 // AllPipelineStatuses lists every combined status (for counts and filters).
 func AllPipelineStatuses() []PipelineStatus {
-	return []PipelineStatus{PipelineRevoked, PipelineFailing, PipelineDegraded, PipelineStale, PipelineRunning,
+	return []PipelineStatus{PipelineRetired, PipelineRevoked, PipelineFailing, PipelineDegraded, PipelineStale, PipelineRunning,
 		PipelineFresh, PipelineNever, PipelineArchived}
 }
 
 // IsInactive reports the statuses hidden by default (archived, revoked,
-// never ran). Hidden is not deleted: the rows, runs and findings stay.
+// retired, never ran). Hidden is not deleted: the rows, runs and findings
+// stay.
 func (s PipelineStatus) IsInactive() bool {
-	return s == PipelineArchived || s == PipelineRevoked || s == PipelineNever
+	return s == PipelineArchived || s == PipelineRevoked || s == PipelineNever || s == PipelineRetired
 }
 
 // Freshness thresholds.
@@ -487,6 +494,8 @@ func (p *Pipeline) Assess(now time.Time, pol StatusPolicy) Assessment {
 	}
 
 	switch {
+	case p.RetiredAt != nil:
+		a.Status = PipelineRetired
 	case p.RevokedAt != nil:
 		a.Status = PipelineRevoked
 	case a.Freshness == FreshnessArchived:
