@@ -35,7 +35,7 @@
 - [Ticketing Integration (Jira)](architecture/ticketing-integration.md) - Per-tenant client resolver, create/link/webhook, Mobilization
 - [Tenable.sc sensor connector](architecture/tenable-sc-connector.md) - RFC-047 pull path: connector_sync commands, sensor-held keys, cursor, source-asserted resolve
 - [Tenable — User & Data Flow](architecture/tenable-user-and-data-flow.md) - How operators interact with Tenable on the UI + end-to-end data flow (agent/direct/upload)
-- [Data Sources](architecture/data-sources.md) - Multi-source asset tracking, collectors, scanners
+- [Data provenance](architecture/data-sources.md) - where assets and findings come from (sensors, integrations, imports)
 - [Global Catalog Trust](architecture/global-catalog-trust.md) - Who may write the CVE, component and license catalogs every tenant shares: trusted feeds only, tenant input creates but never changes, tenant views read the tenant's own observation first
 - [Asset Schema](architecture/asset-schema.md) - Standard JSON schema for asset ingestion
 - [Asset Properties Schema](asset-properties-schema.md) - JSONB properties schema per asset type
