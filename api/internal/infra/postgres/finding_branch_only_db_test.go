@@ -13,7 +13,7 @@ import (
 )
 
 // Branch-only findings (docs/architecture/branch-only-findings.md, migration
-// 001131): marked on insert when first seen on a branch that does not count,
+// 001132): marked on insert when first seen on a branch that does not count,
 // promoted when a counting branch sees them, left out of the default list,
 // expired when no branch still shows them. Every write is tenant-scoped.
 
