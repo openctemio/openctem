@@ -52,7 +52,7 @@ func registerSCIMRoutes(
 			// which is application-administrator only. RequireAdmin reads the
 			// JWT IsAdmin flag on this JWT-tenant chain.
 			r.GET("/", tokenHandler.List, middleware.RequireAdmin())
-			r.POST("/", tokenHandler.Create, middleware.RequireOwner())
+			r.POST("/", tokenHandler.Create, middleware.RequireOwner(), requireStepUp())
 			// Group → role mappings (register before /{id} so the literal wins).
 			r.GET("/group-mappings", tokenHandler.GetGroupMappings, middleware.RequireAdmin())
 			r.PUT("/group-mappings", tokenHandler.SetGroupMappings, middleware.RequireAdmin())
