@@ -215,7 +215,10 @@ func TestPriorityRuleSafetyMigration_DisablesInvalidRules_DB(t *testing.T) {
 			t.Fatalf("%.80s: %v", q, err)
 		}
 	}
-	testdb.LockForDDL(t, ctx, tx, "priority_override_rules")
+	// 000942 creates and drops priority_rule_safety_report, whose FK takes a lock
+	// on tenants: lock tenants first, as LockForDDL asks, or a parallel test that
+	// writes tenants closes a deadlock with this one.
+	testdb.LockForDDL(t, ctx, tx, "tenants", "priority_override_rules", "priority_rule_safety_report")
 	exec(string(down))
 
 	ids := map[string]string{}
