@@ -15,7 +15,7 @@ import (
 )
 
 // EASM alerts through the notification outbox against the real schema
-// (migration 000980; research/22 P0-7 acceptance tests). Requires
+// (migration 001014; research/22 P0-7 acceptance tests). Requires
 // DATABASE_URL.
 func TestEASMAlerts(t *testing.T) {
 	sqlDB := openSensorDB(t)

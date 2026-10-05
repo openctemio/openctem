@@ -806,7 +806,7 @@ One entry per item; the sensor items (P0-1 to P0-4) live in the sensor and
 sdk-go repositories, P0-5 with the scan-engine work (research/27).
 
 - **P0-7 EASM alerts through the notification outbox:** shipped (this PR,
-  migration `000980`). The CT monitor, the DNS checks and takeover
+  migration `001014`). The CT monitor, the DNS checks and takeover
   confirmation write exposures through one writer that announces inserted
   and reopened rows as `new_exposure` in the same transaction: immediate for
   medium or higher on approved assets, a daily digest otherwise, never for
