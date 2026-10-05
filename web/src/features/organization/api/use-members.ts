@@ -30,10 +30,14 @@ export interface UseMembersOptions {
   includeRoles?: boolean
   /** Search term for name or email (case-insensitive) */
   search?: string
-  /** Max results (default 10, max 100) */
+  /** Max results (server default 100, max 100) */
   limit?: number
   /** Pagination offset */
   offset?: number
+  /** Membership status filter (server-side) */
+  status?: 'active' | 'suspended'
+  /** Effective system role filter (server-side) */
+  role?: 'owner' | 'admin' | 'member' | 'viewer'
 }
 
 /**
@@ -73,6 +77,12 @@ export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMemb
   }
   if (options?.offset && options.offset > 0) {
     params.set('offset', String(options.offset))
+  }
+  if (options?.status) {
+    params.set('status', options.status)
+  }
+  if (options?.role) {
+    params.set('role', options.role)
   }
 
   const { data, error, isLoading, mutate } = useSWR<MemberListResponse>(
@@ -302,6 +312,12 @@ export function getMembersKey(tenantIdOrSlug: string, options?: UseMembersOption
   }
   if (options?.offset && options.offset > 0) {
     params.set('offset', String(options.offset))
+  }
+  if (options?.status) {
+    params.set('status', options.status)
+  }
+  if (options?.role) {
+    params.set('role', options.role)
   }
 
   return `${tenantEndpoints.members(tenantIdOrSlug)}?${params.toString()}`
