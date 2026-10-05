@@ -9,7 +9,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // =============================================================================
@@ -165,24 +164,11 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 	return data, nil
 }
 
-// decodeScanConfigExport parses an exported scan configuration. Files
-// exported before the agent → sensor rename carry the selection mode under
-// its old key; it is read so such a file does not silently fall back to
-// "auto".
+// decodeScanConfigExport parses an exported scan configuration.
 func decodeScanConfigExport(data []byte) (ScanConfigExport, error) {
 	var export ScanConfigExport
-	if err := json.Unmarshal(data, &export); err != nil {
-		return export, err
-	}
-	if export.SensorPreference == "" {
-		var raw map[string]json.RawMessage
-		if json.Unmarshal(data, &raw) == nil {
-			if v, ok := raw[legacyv1.ScanExportKeySensorPreference]; ok {
-				_ = json.Unmarshal(v, &export.SensorPreference)
-			}
-		}
-	}
-	return export, nil
+	err := json.Unmarshal(data, &export)
+	return export, err
 }
 
 // ImportConfig creates a new scan from imported JSON configuration.

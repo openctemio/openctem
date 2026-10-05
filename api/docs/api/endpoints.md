@@ -869,19 +869,13 @@ Admin endpoints for managing bootstrap tokens.
 | POST | `/admin/platform/bootstrap-tokens` | Create token | Admin |
 | DELETE | `/admin/platform/bootstrap-tokens/{id}` | Revoke token | Admin |
 
-### Runtime Telemetry (Agent API Key Auth)
+### Runtime Telemetry (retired)
 
-Endpoint for endpoint-agents (EDR/XDR style) to push runtime observations.
-Feeds the IOC correlator (invariant B6 — runtime hits on known IOCs auto-reopen
-the originating finding).
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| POST | `/telemetry-events` | Batch-ingest runtime events. Body: `{"events":[{"event_type":"network_connect","observed_at":"<rfc3339>","properties":{"remote_ip":"..."}}]}`. Max 100 events/request, 50 MB body limit. Returns 202 Accepted on partial/full success, 400 when the whole batch is rejected. | Agent API key |
-
-Recognised `event_type` values: `process_start`, `process_stop`,
-`network_connect`, `file_write`, `file_delete`, `dns_query`, `auth_attempt`,
-`kernel_module_load`, `other` (see migration 000155).
+> **Retired 2026-10-05.** This route was part of sensor protocol v1
+> (`/api/v1/agent/telemetry-events`), which was removed
+> ([RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md)).
+> Protocol v2 has no telemetry route yet, so SIEM inbound is unavailable
+> until one ships. Stored events and the IOC catalogue are kept.
 
 ### Sensor Results, Protocol v2 (Sensor API Key Auth)
 

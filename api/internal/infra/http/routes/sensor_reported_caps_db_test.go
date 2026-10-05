@@ -95,10 +95,9 @@ func TestReportedCaps_DispatchByReportedTool(t *testing.T) {
 	b := h.newLimitedSensor(h.tenantID, "declared-nuclei", []string{"nuclei"}, []string{"nuclei"}, 0)
 	h.heartbeatV2(b, map[string]any{"status": "running",
 		"tools": []map[string]any{{"name": "nuclei", "installed": false}}, "capabilities": []string{}})
-	// C: an old sensor that reports nothing, declared semgrep (v1 heartbeat).
+	// C: a sensor that reports nothing, declared semgrep.
 	c := h.newLimitedSensor(h.tenantID, "old-semgrep", []string{"semgrep"}, []string{"semgrep"}, 0)
-	resp, raw := h.call(c.key, http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{"status": "running"})
-	h.want(resp, raw, 200, "")
+	h.heartbeatV2(c, map[string]any{"status": "running"})
 
 	got := h.load(a)
 	if got.Reported.ReportedAt == nil || got.Reported.OS != "linux" || got.Reported.Arch != "amd64" ||
@@ -250,29 +249,18 @@ func TestReportedCaps_PollUsesEffectiveCapabilities(t *testing.T) {
 		}
 		return cmd.ID.String()
 	}
-	polled := func(s ctlSensor, v2 bool) []string {
+	polled := func(s ctlSensor) []string {
 		t.Helper()
-		path := "/api/v1/agent/commands"
-		if v2 {
-			path = "/api/v2/sensor/commands"
-		}
-		resp, raw := h.call(s.key, http.MethodGet, path, nil)
+		resp, raw := h.call(s.key, http.MethodGet, "/api/v2/sensor/commands", nil)
 		h.want(resp, raw, 200, "")
-		type idOnly struct {
-			ID string `json:"id"`
+		var l struct {
+			Commands []struct {
+				ID string `json:"id"`
+			} `json:"commands"`
 		}
-		var out []idOnly
-		if v2 {
-			var l struct {
-				Commands []idOnly `json:"commands"`
-			}
-			_ = json.Unmarshal(raw, &l)
-			out = l.Commands
-		} else {
-			_ = json.Unmarshal(raw, &out) // v1: a bare array
-		}
+		_ = json.Unmarshal(raw, &l)
 		var got []string
-		for _, c := range out {
+		for _, c := range l.Commands {
 			got = append(got, c.ID)
 		}
 		return got
@@ -285,14 +273,14 @@ func TestReportedCaps_PollUsesEffectiveCapabilities(t *testing.T) {
 	h.heartbeatV2(declaredOnly, map[string]any{"capabilities": []string{}})
 	old := h.newLimitedSensor(h.tenantID, "old-validate", nil, []string{"validate"}, 0)
 
-	if !slices.Contains(polled(reports, true), cmd) {
-		t.Fatal("a sensor that reports validate does not see the validate command (v2)")
+	if !slices.Contains(polled(reports), cmd) {
+		t.Fatal("a sensor that reports validate does not see the validate command")
 	}
-	if slices.Contains(polled(declaredOnly, true), cmd) || slices.Contains(polled(declaredOnly, false), cmd) {
+	if slices.Contains(polled(declaredOnly), cmd) {
 		t.Fatal("a sensor whose report lacks validate sees the validate command")
 	}
-	if !slices.Contains(polled(old, false), cmd) {
-		t.Fatal("an old sensor lost its declared capability (v1)")
+	if !slices.Contains(polled(old), cmd) {
+		t.Fatal("a sensor that reports nothing lost its declared capability")
 	}
 }
 
@@ -305,8 +293,7 @@ func TestReportedCaps_AbsentPartsAreKept(t *testing.T) {
 		"capabilities": []string{"dast"}, "max_concurrent_jobs": 2})
 	first := h.load(s).Reported
 
-	resp, raw := h.call(s.key, http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{"status": "running"})
-	h.want(resp, raw, 200, "")
+	h.heartbeatV2(s, map[string]any{"status": "running"})
 	h.heartbeatV2(s, map[string]any{"tools": []map[string]any{{"name": "semgrep", "installed": true}}})
 
 	got := h.load(s).Reported
