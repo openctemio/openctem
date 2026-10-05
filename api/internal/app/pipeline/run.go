@@ -15,7 +15,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // ========== Run Operations (Orchestration) ==========
@@ -287,7 +286,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 		stepRun.SetConditionResult(shouldRun)
 
 		if !shouldRun {
-			stepRun.Skip("Condition not met")
+			stepRun.Skip(step.ConditionSkipReason())
 			// FIXED: Don't silently suppress errors - log them instead
 			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
 				s.logger.Error("failed to update skipped step run", "step_key", step.StepKey, "error", err)
@@ -298,16 +297,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 		// Queue the step - create a command that sensors can poll
 		if err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings); err != nil {
 			s.logger.Error("failed to queue step", "step_key", step.StepKey, "error", err)
-			code := "QUEUE_ERROR"
-			var de *shared.DomainError
-			if errors.As(err, &de) && de.Code != "" {
-				code = de.Code // e.g. INCOMPATIBLE_TARGETS
-			}
-			stepRun.Fail("Failed to queue: "+err.Error(), code)
-			// FIXED: Don't silently suppress errors - log them instead
-			if updateErr := s.stepRunRepo.Update(ctx, stepRun); updateErr != nil {
-				s.logger.Error("failed to update failed step run", "step_key", step.StepKey, "error", updateErr)
-			}
+			s.failQueuedStep(ctx, stepRun, step.StepKey, err)
 		} else {
 			// Successfully queued, increment running count
 			runningSteps++
@@ -319,7 +309,17 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 
 // queueStepForExecutionWithSettings creates a command with specific settings.
 func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings) error {
-	s.logger.Info("queueing step for execution", "step_key", step.StepKey, "tool", step.Tool, "sensor_preference", settings.SensorPreference)
+	// The tool the step runs: its pinned tool, or the implementation of its
+	// capability the planner picks (F1: a capability-only step used to
+	// reach the sensor with no scanner). Every check below and the payload
+	// read the resolved tool.
+	resolved, err := scanapp.ResolveStepTool(ctx, s.toolRepo, run.TenantID, step)
+	if err != nil {
+		return fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
+	step = resolved.WithTool(step)
+	s.logger.Info("queueing step for execution", "step_key", step.StepKey, "tool", step.Tool,
+		"pinned", resolved.Pinned, "sensor_preference", settings.SensorPreference)
 
 	// Security validation: Last line of defense before sending to sensor
 	if s.securityValidator != nil {
@@ -349,7 +349,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		}
 	}
 
-	payload, err := stepCommandPayload(run, step, stepRun, settings, stepTargets)
+	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), settings.SensorPreference, stepTargets)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
@@ -391,8 +391,15 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		return s.stepRunRepo.Update(ctx, stepRun)
 	}
 
-	// Determine sensor routing based on preference
-	usePlatform, sensorID := s.determineSensorRouting(ctx, run.TenantID, step.Tool, settings.SensorPreference)
+	// Determine sensor routing based on preference. A scan that runs on the
+	// tenant's own sensors only (scans.run_on_tenant_runner, carried in the
+	// run context) never goes to platform sensors, whatever the template
+	// says.
+	pref := settings.SensorPreference
+	if tenantRunnerOnly(run.Context) {
+		pref = pipeline.SensorPreferenceTenant
+	}
+	usePlatform, sensorID := s.determineSensorRouting(ctx, run.TenantID, step.Tool, pref)
 
 	//nolint:gocritic // if-else chain is clearer than switch for bool+pointer conditions
 	if usePlatform {
@@ -1413,43 +1420,52 @@ func (s *Service) FailStepRun(ctx context.Context, stepRunID, errorMessage, erro
 	return s.stepRunRepo.UpdateStatus(ctx, srid, pipeline.StepRunStatusFailed, errorMessage, errorCode)
 }
 
-// stepCommandPayload is the command payload of one pipeline step. The
-// step's settings go under PayloadKeyConfig, the key the sensor reads (see
-// pipeline.NormalizeStepConfig); a setting the sensor would refuse fails the
-// step before a command is created.
-func stepCommandPayload(run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings, st *scanapp.StepTargets) (map[string]any, error) {
-	config, err := pipeline.NormalizeStepConfig(step.Tool, step.Config)
+// tenantRunnerOnly reports whether the run's scan may run only on the
+// tenant's own sensors (the scan trigger records it as tenant_runner_only).
+func tenantRunnerOnly(runContext map[string]any) bool {
+	v, _ := runContext["tenant_runner_only"].(bool)
+	return v
+}
+
+// QueueRunStep queues one step of a run: the dispatcher a scan's workflow
+// trigger hands its first steps to, so every step command of every run is
+// built by queueStepForExecutionWithSettings (research/27 P0-2). A step that
+// cannot be queued is failed with the reason's code and the error returned.
+func (s *Service) QueueRunStep(ctx context.Context, run *pipeline.Run, step *pipeline.Step) error {
+	if run == nil || step == nil {
+		return fmt.Errorf("%w: run and step are required", shared.ErrValidation)
+	}
+	template, err := s.templateRepo.GetByID(ctx, run.PipelineID)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("load the run's template: %w", err)
 	}
-	payload := map[string]any{
-		"pipeline_run_id":                   run.ID.String(),
-		"step_run_id":                       stepRun.ID.String(),
-		"step_id":                           step.ID.String(),
-		"step_key":                          step.StepKey,
-		pipeline.PayloadKeyConfig:           config,
-		"required_capabilities":             step.Capabilities,
-		"preferred_tool":                    step.Tool,
-		"timeout_seconds":                   step.TimeoutSeconds,
-		"context":                           scanapp.StepRunContext(run.Context, st),
-		legacyv1.PayloadKeySensorPreference: string(settings.SensorPreference),
-	}
-	// The sensor SDK runs the scanner named in `scanner` (ScanCommandPayload);
-	// a step carrying only preferred_tool failed with "scanner not found: ".
-	if step.Tool != "" {
-		payload["scanner"] = step.Tool
-	}
-	// Step targets come from the run context (direct targets); the sensor
-	// reads them at the top level.
-	if targets, ok := run.Context["targets"]; ok {
-		payload["targets"] = targets
-		if st != nil && st.Targets != nil {
-			payload["targets"] = st.Targets
+	stepRun := run.GetStepRun(step.StepKey)
+	if stepRun == nil {
+		if stepRun, err = s.stepRunRepo.GetByStepKey(ctx, run.ID, step.StepKey); err != nil {
+			return fmt.Errorf("load step run %s: %w", step.StepKey, err)
 		}
 	}
-
-	if run.AssetID != nil {
-		payload["asset_id"] = run.AssetID.String()
+	if qerr := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings); qerr != nil {
+		s.failQueuedStep(ctx, stepRun, step.StepKey, qerr)
+		return qerr
 	}
-	return payload, nil
+	return nil
+}
+
+// failQueuedStep records a step that could not be queued: failed, with the
+// domain code of the reason (INCOMPATIBLE_TARGETS, NO_MATCHING_TOOL, ...) or
+// QUEUE_ERROR.
+func (s *Service) failQueuedStep(ctx context.Context, stepRun *pipeline.StepRun, stepKey string, err error) {
+	if stepRun == nil {
+		return
+	}
+	code := "QUEUE_ERROR"
+	var de *shared.DomainError
+	if errors.As(err, &de) && de.Code != "" {
+		code = de.Code
+	}
+	stepRun.Fail("Failed to queue: "+err.Error(), code)
+	if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
+		s.logger.Error("failed to update failed step run", "step_key", stepKey, "error", uerr)
+	}
 }
