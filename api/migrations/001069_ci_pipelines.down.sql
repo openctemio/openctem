@@ -1,4 +1,4 @@
--- Reverses 001063_ci_pipelines.up.sql. Runs keep everything they had before
+-- Reverses 001069_ci_pipelines.up.sql. Runs keep everything they had before
 -- the up migration; only the pipeline link and the run attributes it added
 -- go.
 

@@ -94,9 +94,12 @@ func (r *ScanProfileRepository) GetByTenantAndID(ctx context.Context, tenantID, 
 }
 
 // GetAccessibleByID retrieves a scan profile by ID if it belongs to the tenant
-// or is a system profile (tenant_id IS NULL). Enforces tenant scoping at SQL layer.
+// or is a system profile. Enforces tenant scoping at SQL layer. System profiles
+// are seeded under the system tenant with is_system = true (never tenant_id
+// NULL; the column is NOT NULL), so the old "tenant_id IS NULL" arm never
+// matched and a system profile could not be attached to a scan.
 func (r *ScanProfileRepository) GetAccessibleByID(ctx context.Context, tenantID, id shared.ID) (*scanprofile.ScanProfile, error) {
-	query := r.selectQuery() + " WHERE id = $2 AND (tenant_id = $1 OR tenant_id IS NULL)"
+	query := r.selectQuery() + " WHERE id = $2 AND (tenant_id = $1 OR is_system = true)"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 	return r.scanProfile(row)
 }
