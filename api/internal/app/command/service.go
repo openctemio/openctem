@@ -30,6 +30,9 @@ type Service struct {
 	// privatePolicy keeps private targets from sensors without a local
 	// policy when the tenant asks (local_policy.go); nil: never.
 	privatePolicy PrivateTargetPolicy
+	// optIns withholds commands asking for an opt-in the tenant has not
+	// enabled (local_policy.go, research/25 D3); nil: not applied.
+	optIns OptInPolicy
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
