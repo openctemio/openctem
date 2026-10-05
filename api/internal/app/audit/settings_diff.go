@@ -221,7 +221,7 @@ func truncateDiffValue(v any) any {
 }
 
 // stripURLPassword hides the password of a URL with user info
-// (https://user:token@host/...), so a credential embedded in a URL is not
+// (user info with a password before the host), so a credential embedded in a URL is not
 // recorded either.
 func stripURLPassword(v string) string {
 	if !strings.Contains(v, "://") || !strings.Contains(v, "@") {
