@@ -221,6 +221,17 @@ export const sidebarData: SidebarData = {
           permission: Permission.SensorsRead,
           module: 'sensors',
         },
+        // CI/CD integration: the pipelines that scan repositories from
+        // GitHub Actions and GitLab CI (api RFC-051), their runs, repository
+        // coverage, and trust and gate setup. Not sensors: a pipeline has no
+        // key and no heartbeat.
+        {
+          title: 'CI/CD',
+          url: '/ci-cd',
+          icon: Workflow,
+          permission: Permission.CIRead,
+          module: 'scans',
+        },
         // What is exposed, summarised from the inventory below (moved from
         // Scoping: it is a Discovery output, not a scoping decision).
         {

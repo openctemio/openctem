@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * The Sensors page in runner mode (api RFC-051 §10): CI pipelines, one per
+ * The CI/CD integration page (api RFC-051 §10), also the Sensors page's
+ * Runner mode: CI pipelines, one per
  * workflow file of each repository, and their runs. A pipeline is fresh or
  * stale against its own cadence and never offline; archived, retired, revoked
  * and never-run pipelines are hidden until "Show inactive" (nothing is
@@ -267,7 +268,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
             description="A CI pipeline shows up here after its first run: add a CI trust configuration, then run the sensor in a GitHub Actions or GitLab CI job. It proves who it is with the job's OIDC token, so no secret is stored in CI."
             action={
               <Button asChild size="sm">
-                <Link href="/settings/scanning/ci">Set up CI trust</Link>
+                <Link href="/ci-cd?tab=setup">Set up CI trust</Link>
               </Button>
             }
           />
