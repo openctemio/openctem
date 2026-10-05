@@ -461,7 +461,7 @@ func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, tenantID strin
 					s.logger.Error("panic in scope rule reconciliation", "group_id", gid.String(), "recover", r)
 				}
 			}()
-			s.scopeRuleReconciler(context.Background(), gid)
+			s.scopeRuleReconciler(context.Background(), tid, gid)
 		}()
 	}
 
@@ -513,7 +513,7 @@ func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, tenantID 
 					s.logger.Error("panic in scope rule reconciliation", "group_id", gid.String(), "recover", r)
 				}
 			}()
-			s.scopeRuleReconciler(context.Background(), gid)
+			s.scopeRuleReconciler(context.Background(), tid, gid)
 		}()
 	}
 

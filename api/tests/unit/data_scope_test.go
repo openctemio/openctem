@@ -220,7 +220,7 @@ func (m *mockAccessControlRepo) ListTenantsWithActiveScopeRules(_ context.Contex
 func (m *mockAccessControlRepo) ListGroupsWithActiveScopeRules(_ context.Context, _ shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
-func (m *mockAccessControlRepo) ListGroupsWithAssetGroupMatchRule(_ context.Context, _ shared.ID) ([]shared.ID, error) {
+func (m *mockAccessControlRepo) ListGroupsWithAssetGroupMatchRule(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
 

@@ -140,7 +140,7 @@ type Repository interface {
 	// Scope rule controller queries
 	ListTenantsWithActiveScopeRules(ctx context.Context) ([]shared.ID, error)
 	ListGroupsWithActiveScopeRules(ctx context.Context, tenantID shared.ID) ([]shared.ID, error)
-	ListGroupsWithAssetGroupMatchRule(ctx context.Context, assetGroupID shared.ID) ([]shared.ID, error)
+	ListGroupsWithAssetGroupMatchRule(ctx context.Context, tenantID, assetGroupID shared.ID) ([]shared.ID, error)
 }
 
 // AssignmentRuleFilter contains filter options for listing assignment rules.
