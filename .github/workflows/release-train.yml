@@ -157,6 +157,12 @@ jobs:
               echo
             fi
             cat "$RUNNER_TEMP/notes.md"
+            echo
+            echo "### API changelog (from api/changelog.d)"
+            echo
+            echo "After the tag: one PR into develop runs \`python3 api/scripts/changelog.py release ${VERSION}\`."
+            echo
+            python3 api/scripts/changelog.py preview
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
