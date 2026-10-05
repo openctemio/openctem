@@ -3,14 +3,17 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
+	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
@@ -18,6 +21,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -219,6 +224,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager = controller.NewManager(&controller.ManagerConfig{
 		Logger:  log.With("component", "controller-manager"),
 		Metrics: controllerMetrics(),
+		// Exclusive controllers (retention sweeps, threat-intel refresh) run
+		// on one replica at a time under a controller lease (RFC-046 P1.8).
+		Leases:      postgres.NewControllerLeaseRepository(&postgres.DB{DB: deps.DB}),
+		LeaseHolder: postgres.LeaseHolderID(),
 	})
 
 	// Register controllers
@@ -281,28 +290,31 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
-	// Coverage scheduler: license-aware rolling Tenable scan coverage (RFC-007).
-	// Dispatches license-sized batches to runners for coverage-enabled, unlimited
-	// (Nessus Pro) Tenable integrations and advances the rotation cursor. Capped
-	// engines (Tenable.sc) are skipped until active-IP accounting ships.
-	w.ControllerManager.Register(controller.NewCoverageScheduler(
-		repos.Integration,
-		repos.ScanCoverage,
-		scancoverage.NewDispatcher(repos.Command),
-		&controller.CoverageSchedulerConfig{
-			Interval: 5 * time.Minute,
-			// Each batch passes a scan trigger's target checks (RFC-042 F16).
-			Gate:   svc.Scan,
-			Logger: log.With("controller", "coverage-scheduler"),
-		},
-	))
+	// Coverage scheduler: license-aware rolling coverage (RFC-007), rebuilt on
+	// the Tenable.sc sensor connector (RFC-047 §9): each batch is a
+	// connector_scan sized against Tenable.sc's own license numbers. Behind
+	// the connector switch (integrationdom.TenableConnectorEnabled, D-14).
+	if integrationdom.TenableConnectorEnabled && svc.TenableSC != nil {
+		w.ControllerManager.Register(controller.NewCoverageScheduler(
+			repos.Integration,
+			repos.ScanCoverage,
+			connectorCoverageDispatcher{svc: svc.TenableSC},
+			&controller.CoverageSchedulerConfig{
+				Interval: 5 * time.Minute,
+				// Each batch passes a scan trigger's target checks (RFC-042 F16).
+				Gate:      svc.Scan,
+				Connector: svc.TenableSC,
+				Logger:    log.With("controller", "coverage-scheduler"),
+			},
+		))
+	}
 
 	// Report scheduler: runs due report_schedules, renders the executive summary,
 	// and emails it to recipients. Only registered when email is configured
 	// (otherwise every run would fail delivery). This is the controller that was
 	// missing — schedules could be created in the UI but never executed.
 	if svc.Email != nil && svc.Email.IsConfigured() {
-		w.ControllerManager.Register(controller.NewReportScheduler(
+		reportScheduler := controller.NewReportScheduler(
 			repos.ReportSchedule,
 			repos.Finding,
 			svc.Email,
@@ -310,7 +322,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.Module, // ModuleGuard: skip tenants without the reports module
 			controller.ReportSchedulerConfig{Interval: time.Minute},
 			log,
-		))
+		)
+		// Recipients are re-checked at send time: members or allowed domains (D12).
+		reportScheduler.SetRecipientPolicy(repos.Tenant)
+		// Each report renders under its creator's data scope (D6).
+		reportScheduler.SetScopeResolver(svc.DataScope)
+		w.ControllerManager.Register(reportScheduler)
 	}
 
 	// Continuous retest (RFC-039): settle stale retests and serve due
@@ -326,10 +343,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewDataExpirationController(
 		repos.Suppression,
 		repos.ScopeExcl,
-		repos.Audit,
+		svc.Audit,
 		&controller.DataExpirationControllerConfig{
 			Interval:           1 * time.Hour,
-			AuditRetentionDays: 365,
+			AuditRetentionDays: cfg.AuditRetention.Days,
+			AuditArchiveDir:    cfg.AuditRetention.ArchiveDir,
 			Logger:             log.With("controller", "data-expiration"),
 		},
 	))
@@ -383,6 +401,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Tenable.sc sensor connector (RFC-047): settle finished connector_sync
+	// commands and queue the next sync of each connector integration when due.
+	if svc.TenableSC != nil && integrationdom.TenableConnectorEnabled {
+		w.ControllerManager.Register(controller.NewTenableSCSyncController(repos.Integration, svc.TenableSC, log))
+	}
+
 	// RFC-013 Phase 2c: periodically pull due DefectDojo integrations so the
 	// co-existence sync is hands-off (nil-safe when the sync service is absent).
 	if svc.DefectDojoSync != nil {
@@ -421,13 +445,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Interval:    cfg.Worker.CertMonitorInterval,
 				Logger:      log.With("controller", "cert-monitor"),
 				ModuleGuard: svc.Module, // skip tenants without the attack-surface module
+				DNSFollowUp: dnsFollowUp(svc.EASMDNS),
 			},
 		))
 	}
 
 	// EASM DNS-only checks — daily, fail-open, passive (RFC-036 P1): dangling
-	// CNAME/NS and email posture of the tenant's own domains. Disable with
-	// EASM_DNS_CHECKS_ENABLED=false.
+	// CNAME/NS and email posture of the tenant's own domains. On by default
+	// (research/22 E3); disable platform-wide with EASM_DNS_CHECKS_ENABLED=false.
+	// The CT controller also runs them for a tenant right after its CT sweep,
+	// so names CT just promoted are checked in the same pass.
 	if svc.EASMDNS != nil {
 		w.ControllerManager.Register(controller.NewEASMDNSController(
 			svc.EASMDNS,
@@ -469,7 +496,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.ReclassifyQueue,
 			svc.Reclassifier,
 			&controller.PriorityReclassifyConfig{
-				Logger: log.With("controller", "priority-reclassify"),
+				// Drained every minute: an attribution decision reclassifies
+				// its assets' findings within two minutes (research/22 P0-9).
+				Interval: time.Minute,
+				Logger:   log.With("controller", "priority-reclassify"),
 			},
 		))
 
@@ -554,6 +584,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Interval:      24 * time.Hour,
 				RetentionDays: 30,
 				Logger:        log.With("controller", "asset-purge"),
+			},
+		))
+	}
+
+	// Scanner output retention: plugin output of findings closed more than
+	// 365 days ago is dropped (research 24 P0-2, owner decision C9).
+	if repos.Finding != nil {
+		w.ControllerManager.Register(controller.NewScannerOutputRetentionController(
+			repos.Finding,
+			&controller.ScannerOutputRetentionConfig{
+				Logger: log.With("controller", "finding-scanner-output-retention"),
 			},
 		))
 	}
@@ -897,4 +938,31 @@ func (w *Workers) Stop(log *logger.Logger) {
 		log.Error("controller manager stop error", "error", err)
 	}
 	log.Info("controller manager stopped")
+}
+
+// connectorCoverageDispatcher dispatches a coverage batch as a connector_scan
+// of the batch's Tenable.sc connector (RFC-047 §9).
+type connectorCoverageDispatcher struct {
+	svc *tenablesc.Service
+}
+
+func (d connectorCoverageDispatcher) DispatchTenableScan(ctx context.Context, in scancoverage.DispatchTenableInput) (shared.ID, string, error) {
+	if in.IntegrationID == nil {
+		return shared.ID{}, "", errors.New("coverage batch names no Tenable.sc connector")
+	}
+	session := in.SessionID
+	if session == "" {
+		session = shared.NewID().String()
+	}
+	id, err := d.svc.DispatchCoverageBatch(ctx, in.TenantID, *in.IntegrationID, in.Targets, session)
+	return id, session, err
+}
+
+// dnsFollowUp returns the DNS checks for the CT controller to run after each
+// tenant's CT sweep, or nil when they are off (a typed nil would not be nil).
+func dnsFollowUp(s *easmdnsapp.Service) controller.EASMDNSChecker {
+	if s == nil {
+		return nil
+	}
+	return s
 }

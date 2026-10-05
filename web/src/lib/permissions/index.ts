@@ -56,4 +56,13 @@ export {
   useNavItemAccess,
   useVisibleSectionTabs,
 } from './use-filtered-sidebar'
-export { subModuleStatus } from './sub-modules'
+export { subModuleStatus, isHiddenReleaseStatus } from './sub-modules'
+
+// Mutating controls follow the API route gates (generated map)
+export {
+  useCanMutate,
+  passesRouteGate,
+  routeGate,
+  type ApiRouteKey,
+  type RouteGate,
+} from './can-mutate'

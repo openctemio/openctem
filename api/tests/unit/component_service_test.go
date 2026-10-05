@@ -141,16 +141,19 @@ func (m *mockComponentRepo) LinkAsset(_ context.Context, dep *component.AssetDep
 	return nil
 }
 
-func (m *mockComponentRepo) GetDependency(_ context.Context, id shared.ID) (*component.AssetDependency, error) {
+func (m *mockComponentRepo) GetDependency(_ context.Context, tenantID, id shared.ID) (*component.AssetDependency, error) {
 	m.getDependencyCalls++
 	if m.getDependencyErr != nil {
 		return nil, m.getDependencyErr
 	}
 	if m.getDependencyResult != nil {
+		if m.getDependencyResult.TenantID() != tenantID {
+			return nil, shared.ErrNotFound
+		}
 		return m.getDependencyResult, nil
 	}
 	d, ok := m.dependencies[id.String()]
-	if !ok {
+	if !ok || d.TenantID() != tenantID {
 		return nil, shared.ErrNotFound
 	}
 	return d, nil
@@ -161,7 +164,7 @@ func (m *mockComponentRepo) UpdateDependency(_ context.Context, _ *component.Ass
 	return m.updateDependencyErr
 }
 
-func (m *mockComponentRepo) DeleteDependency(_ context.Context, _ shared.ID) error {
+func (m *mockComponentRepo) DeleteDependency(_ context.Context, _, _ shared.ID) error {
 	m.deleteDependCalls++
 	return m.deleteDependencyErr
 }
@@ -183,7 +186,7 @@ func (m *mockComponentRepo) GetAssetDependency(_ context.Context, _, _, _ shared
 	return m.getAssetDepResult, m.getAssetDepErr
 }
 
-func (m *mockComponentRepo) UpdateAssetDependencyParent(_ context.Context, _ shared.ID, _ shared.ID, _ int) error {
+func (m *mockComponentRepo) UpdateAssetDependencyParent(_ context.Context, _, _ shared.ID, _ shared.ID, _ int) error {
 	return m.updateAssetDepParentErr
 }
 
@@ -217,7 +220,7 @@ func (m *mockComponentRepo) GetLicenseStats(_ context.Context, _ shared.ID) ([]c
 	return m.getLicenseStatsResult, m.getLicenseStatsErr
 }
 
-func (m *mockComponentRepo) ListAssetUsage(_ context.Context, _ shared.ID, _ shared.ID, _ bool, page pagination.Pagination) (pagination.Result[component.ComponentAssetUsage], error) {
+func (m *mockComponentRepo) ListAssetUsage(_ context.Context, _ shared.ID, _ shared.ID, _ bool, _ *shared.DataScope, page pagination.Pagination) (pagination.Result[component.ComponentAssetUsage], error) {
 	return pagination.NewResult([]component.ComponentAssetUsage{}, 0, page), nil
 }
 

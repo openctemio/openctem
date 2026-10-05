@@ -2,6 +2,8 @@
 package ingest
 
 import (
+	"context"
+
 	"github.com/openctemio/ctis"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -110,6 +112,20 @@ type Options struct {
 	// Route names the ingest route for a quarantined report (ctis, sarif,
 	// recon, scan, chunk).
 	Route string
+	// Actor, when set, limits an ingest a person started (an upload) to the
+	// assets that person may change: an existing asset outside it is not
+	// touched at all (not even marked seen), a host the report names that
+	// is not an existing in-scope asset is not created, and the findings of
+	// both are skipped. Both cases count as AssetsSkippedOutOfScope, so the
+	// response does not tell a hidden asset from a missing one. Nil means
+	// unrestricted.
+	Actor ActorScope
+}
+
+// ActorScope is the data scope of the person behind an upload.
+type ActorScope interface {
+	// AssetsInScope returns the subset of assetIDs the actor may change.
+	AssetsInScope(ctx context.Context, assetIDs []shared.ID) ([]shared.ID, error)
 }
 
 // GetBranchInfo returns branch info from Input or Report metadata.
@@ -159,22 +175,38 @@ type Output struct {
 	AssetsUpdated int    `json:"assets_updated"`
 	// AssetsSkippedExcluded counts new assets not added because they match
 	// an active scope exclusion (RFC-042 F16).
-	AssetsSkippedExcluded int      `json:"assets_skipped_excluded,omitempty"`
-	FindingsCreated       int      `json:"findings_created"`
-	FindingsUpdated       int      `json:"findings_updated"`
-	FindingsSkipped       int      `json:"findings_skipped"`
-	FindingsAutoResolved  int      `json:"findings_auto_resolved,omitempty"`
-	FindingsAutoReopened  int      `json:"findings_auto_reopened,omitempty"`
-	FindingsSuppressed    int      `json:"findings_suppressed,omitempty"`
-	ComponentsCreated     int      `json:"components_created,omitempty"`
-	ComponentsUpdated     int      `json:"components_updated,omitempty"`
-	DependenciesLinked    int      `json:"dependencies_linked,omitempty"`
-	LicensesDiscovered    int      `json:"licenses_discovered,omitempty"`
-	LicensesLinked        int      `json:"licenses_linked,omitempty"`
-	CVEsCreated           int      `json:"cves_created,omitempty"`
-	CVEsUpdated           int      `json:"cves_updated,omitempty"`
-	Errors                []string `json:"errors,omitempty"`
-	Warnings              []string `json:"warnings,omitempty"`
+	AssetsSkippedExcluded int `json:"assets_skipped_excluded,omitempty"`
+	// AssetsSkippedOutOfScope counts report assets an upload's actor may not
+	// change (Options.Actor): existing assets outside their data scope and
+	// hosts that would have been new. Their findings are skipped.
+	AssetsSkippedOutOfScope int `json:"assets_skipped_out_of_scope,omitempty"`
+	FindingsCreated         int `json:"findings_created"`
+	FindingsUpdated         int `json:"findings_updated"`
+	FindingsSkipped         int `json:"findings_skipped"`
+	FindingsAutoResolved    int `json:"findings_auto_resolved,omitempty"`
+	FindingsAutoReopened    int `json:"findings_auto_reopened,omitempty"`
+	// FindingsSourceResolved counts open findings resolved because their
+	// source reported them mitigated (Tenable.sc, RFC-047); in dry_run mode
+	// FindingsSourceWouldResolve counts them instead.
+	FindingsSourceResolved     int `json:"findings_source_resolved,omitempty"`
+	FindingsSourceWouldResolve int `json:"findings_source_would_resolve,omitempty"`
+	// FindingsSourceMitigated counts the report's findings its source said
+	// are mitigated; they are never created or updated as sightings.
+	FindingsSourceMitigated int `json:"findings_source_mitigated,omitempty"`
+	// SourceResolveIDs are the findings source-asserted resolve closed (or,
+	// in dry_run, would close); SourceResolveMode is the mode it ran in.
+	SourceResolveIDs   []shared.ID       `json:"-"`
+	SourceResolveMode  SourceResolveMode `json:"-"`
+	FindingsSuppressed int               `json:"findings_suppressed,omitempty"`
+	ComponentsCreated  int               `json:"components_created,omitempty"`
+	ComponentsUpdated  int               `json:"components_updated,omitempty"`
+	DependenciesLinked int               `json:"dependencies_linked,omitempty"`
+	LicensesDiscovered int               `json:"licenses_discovered,omitempty"`
+	LicensesLinked     int               `json:"licenses_linked,omitempty"`
+	CVEsCreated        int               `json:"cves_created,omitempty"`
+	CVEsUpdated        int               `json:"cves_updated,omitempty"`
+	Errors             []string          `json:"errors,omitempty"`
+	Warnings           []string          `json:"warnings,omitempty"`
 
 	// Binding is the authority the report was applied under: command,
 	// unsolicited or trusted (RFC-040 §5.3).
@@ -204,6 +236,11 @@ type Output struct {
 	// added because they match a scope exclusion. Their findings are skipped,
 	// never attached to another asset of the report.
 	ExcludedAssetRefs map[string]bool `json:"-"`
+
+	// OutOfScopeAssetRefs are the CTIS asset ids of the report skipped
+	// because the upload's actor may not change them (Options.Actor). Their
+	// findings are skipped, never attached to another asset of the report.
+	OutOfScopeAssetRefs map[string]bool `json:"-"`
 }
 
 // FailedFinding contains details about a finding that failed during ingestion.

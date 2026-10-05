@@ -253,6 +253,9 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectAdminOnlyPermissions(input.Permissions); err != nil {
+		return nil, err
+	}
 	if err := creator.mayCarry(input.Permissions, input.HasFullDataAccess); err != nil {
 		return nil, err
 	}
@@ -322,6 +325,16 @@ func assertRoleTenant(r *roledom.Role, tenantID string) error {
 	return nil
 }
 
+// roleForTenant loads a role visible to the caller's tenant (a system role or
+// one of its own). Another tenant's role is ErrRoleNotFound.
+func (s *RoleService) roleForTenant(ctx context.Context, tenantID string, id roledom.ID) (*roledom.Role, error) {
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.roleRepo.GetByID(ctx, tid, id)
+}
+
 // ValidateRolesForTenant checks that every id names a role the tenant may
 // grant: a system role or one of the tenant's own custom roles. Another
 // tenant's role, an unknown id and a malformed id all fail with
@@ -346,7 +359,7 @@ func (s *RoleService) GetRole(ctx context.Context, tenantID, roleID string) (*ro
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, id)
+	r, err := s.roleForTenant(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +399,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, id)
+	r, err := s.roleForTenant(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -438,6 +451,11 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 	if err != nil {
 		return nil, err
 	}
+	if input.Permissions != nil {
+		if err := rejectAdminOnlyPermissions(input.Permissions); err != nil {
+			return nil, err
+		}
+	}
 	if err := editor.mayCarry(newPerms, hasFullDataAccess); err != nil {
 		return nil, err
 	}
@@ -465,27 +483,31 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 		}
 	}
 
+	// A permission change must reach every holder of the role. Load the
+	// holders BEFORE writing: if they cannot be listed, the edit is refused
+	// instead of committing and leaving revoked permissions live in their
+	// caches until the TTL expires. Updating a role does not change who holds
+	// it, so the list taken here is the set to invalidate afterwards.
+	var holderIDs []string
+	tenantIDStr := ""
+	if input.Permissions != nil && r.TenantID() != nil {
+		tenantIDStr = r.TenantID().String()
+		members, err := s.roleRepo.ListRoleMembers(ctx, *r.TenantID(), id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list role members for permission invalidation: %w", err)
+		}
+		holderIDs = make([]string, len(members))
+		for i, m := range members {
+			holderIDs[i] = m.UserID.String()
+		}
+	}
+
 	if err := s.roleRepo.Update(ctx, r); err != nil {
 		return nil, fmt.Errorf("failed to update role: %w", err)
 	}
 
-	// If permissions changed, invalidate all users with this role
-	if input.Permissions != nil {
-		tenantIDStr := ""
-		if r.TenantID() != nil {
-			tenantIDStr = r.TenantID().String()
-		}
-		if tenantIDStr != "" {
-			// Get all users with this role
-			members, err := s.roleRepo.ListRoleMembers(ctx, *r.TenantID(), id)
-			if err == nil && len(members) > 0 {
-				userIDs := make([]string, len(members))
-				for i, m := range members {
-					userIDs[i] = m.UserID.String()
-				}
-				s.invalidateUsersPermissions(ctx, tenantIDStr, userIDs)
-			}
-		}
+	if len(holderIDs) > 0 {
+		s.invalidateUsersPermissions(ctx, tenantIDStr, holderIDs)
 	}
 
 	s.logger.Info("role updated", "id", roleID)
@@ -510,7 +532,7 @@ func (s *RoleService) DeleteRole(ctx context.Context, tenantID, roleID string, a
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, id)
+	r, err := s.roleForTenant(ctx, tenantID, id)
 	if err != nil {
 		return err
 	}
@@ -546,7 +568,7 @@ func (s *RoleService) DeleteRole(ctx context.Context, tenantID, roleID string, a
 		tenantIDStr = r.TenantID().String()
 	}
 
-	if err := s.roleRepo.Delete(ctx, id); err != nil {
+	if err := s.roleRepo.Delete(ctx, tid, id); err != nil {
 		if errors.Is(err, roledom.ErrRoleInUse) {
 			return fmt.Errorf("%w: role is assigned to users and cannot be deleted", shared.ErrValidation)
 		}
@@ -695,7 +717,7 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 	}
 
 	// Verify role exists and is available for tenant
-	r, err := s.roleRepo.GetByID(ctx, rid)
+	r, err := s.roleRepo.GetByID(ctx, tid, rid)
 	if err != nil {
 		return err
 	}
@@ -715,6 +737,9 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 		return err
 	}
 	if err := actor.mayGrant(r); err != nil {
+		return err
+	}
+	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, []roledom.ID{rid}); err != nil {
 		return err
 	}
 	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
@@ -768,7 +793,7 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, rid)
+	r, err := s.roleRepo.GetByID(ctx, tid, rid)
 	if err != nil {
 		return err
 	}
@@ -850,7 +875,7 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		}
 
 		// Verify role exists and is available for tenant
-		r, err := s.roleRepo.GetByID(ctx, rid)
+		r, err := s.roleRepo.GetByID(ctx, tid, rid)
 		if err != nil {
 			return fmt.Errorf("role not found: %s", ridStr)
 		}
@@ -870,6 +895,9 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		roleNames = append(roleNames, r.Name())
 	}
 
+	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, roleIDs); err != nil {
+		return err
+	}
 	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, keepsOwner); err != nil {
 		return err
 	}
@@ -952,7 +980,7 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 	}
 
 	// Verify role exists and is available for tenant
-	r, err := s.roleRepo.GetByID(ctx, rid)
+	r, err := s.roleRepo.GetByID(ctx, tid, rid)
 	if err != nil {
 		return nil, err
 	}
@@ -985,6 +1013,9 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 				"tenant_id", input.TenantID, "user_id", logger.SanitizeValue(uidStr), "error", err)
 			skipped++
 			continue
+		}
+		if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, []roledom.ID{rid}); err != nil {
+			return nil, err
 		}
 		if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
 			return nil, err

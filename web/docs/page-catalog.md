@@ -23,7 +23,7 @@ Grouped by CTEM stage in `src/config/sidebar-data.ts`:
 
 - **Dashboard** — `/`
 - **Scoping** (docs/ui/scoping-ia-2026-10.md) — Overview (`/scoping`, the
-  readiness hub; the section header opens it), Cycles (`/cycles`, detail
+  readiness hub, its first row; the section header only expands), Cycles (`/cycles`, detail
   `/cycles/[id]`), Business context (tabs Crown jewels · Services · Units),
   Boundaries (`/scope-config`: Targets · Exclusions), Threat model (tabs
   Threats · Attacker profiles).
@@ -73,17 +73,12 @@ That is now wrong. Each is sidebar-linked and backed by a real, domain-scoped ho
 - **Detail / new / edit** `[id]`, `/new`, `/edit`, `/notifications` → reached from
   their list pages / notification bell.
 
-## 3. Genuine scaffolds — dashboard-total only, NOT sidebar-linked
+## 3. Genuine scaffolds — none left
 
-Only three pages remain that render `useDashboardStats` totals under a domain title
-with no domain-scoped data source of their own. They are intentionally **not** in
-the sidebar, so they mislead no one; keep the route and either build the feature or
-replace with `ComingSoonPage`.
-
-- `/progress` — `useDashboardStats` only.
-- `/trending` — `useDashboardStats` (has one generic `useSWR` fetch but is still
-  dashboard-total heavy).
-- `/insights/analytics/mttr` — `useDashboardStats` + `useMTTRMetrics`.
+The last pages that rendered `useDashboardStats` totals under a domain title
+(`/progress`, `/trending`, `/insights/analytics/mttr`, `/simulation/scenarios`)
+were deleted (owner decision D-31) and redirect to the real page for the same
+question (`LEGACY_ORPHAN_ROUTE_REDIRECTS` in `src/config/legacy-routes.ts`).
 
 The wide "hidden placeholder" clusters listed in older revisions
 (`/collaboration/*`, `/response/*`, `/threats/*`, `/identity/*`,

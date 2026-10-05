@@ -4,6 +4,7 @@ package pipeline
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -51,7 +52,7 @@ type ScanDeactivator interface {
 // the scan it belongs to still read last_run_status NULL, i.e. "never run",
 // after a scan that had just finished and produced findings.
 type ScanRunRecorder interface {
-	RecordRun(ctx context.Context, scanID shared.ID, runID shared.ID, status string) error
+	RecordRun(ctx context.Context, tenantID, scanID shared.ID, runID shared.ID, status string) error
 }
 
 // SecurityValidator interface for security validation.
@@ -183,11 +184,13 @@ type Service struct {
 	securityValidator SecurityValidator
 	sensorSelector    SensorSelector // Optional: for platform sensor support
 	auditService      AuditService
-	scanDeactivator   ScanDeactivator      // Optional: for cascade scan deactivation
-	scanRunRecorder   ScanRunRecorder      // Optional: records run outcome back onto the scan
-	runCompleted      RunCompletedCallback // Optional: fires scan_completed automation
-	db                TransactionDB        // Optional: for transaction support
-	targetGate        TargetGate           // checks run-context targets; nil refuses runs that carry targets
+	scanDeactivator   ScanDeactivator        // Optional: for cascade scan deactivation
+	scanRunRecorder   ScanRunRecorder        // Optional: records run outcome back onto the scan
+	runCompleted      RunCompletedCallback   // Optional: fires scan_completed automation
+	db                TransactionDB          // Optional: for transaction support
+	targetGate        TargetGate             // checks run-context targets; nil refuses runs that carry targets
+	assetRefChecker   AssetRefChecker        // tenant + scope check of a run's asset_id; nil refuses runs that carry one
+	hops              pipeline.HopRepository // stage chaining (hop_router.go); nil keeps every step on the run's seeds
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)
@@ -248,11 +251,38 @@ type TargetGate interface {
 	ResolveDispatchTargets(ctx context.Context, in scanapp.DispatchTargetsInput) (*scanapp.DispatchTargets, error)
 }
 
+// StepTargetFilter gates a run's typed targets for one step's tool
+// (RFC-042 §6.3.8 O6): a step is handed only the targets its tool can scan.
+// A target gate that implements it (*scan.Service does) is used at every
+// step dispatch.
+type StepTargetFilter interface {
+	FilterStepTargets(ctx context.Context, toolName string, runContext map[string]any) (*scanapp.StepTargets, error)
+}
+
 // WithTargetGate wires the target gate. Without it a run started with
 // targets is refused (fail closed).
 func WithTargetGate(g TargetGate) Option {
 	return func(s *Service) {
 		s.targetGate = g
+	}
+}
+
+// ErrRunAssetNotFound is the one answer for a run asset_id that is unknown,
+// soft-deleted, of another tenant, or outside the caller's data scope.
+var ErrRunAssetNotFound = fmt.Errorf("%w: asset not found", shared.ErrNotFound)
+
+// AssetRefChecker decides whether a caller may start a run on an asset:
+// shared.ErrNotFound unless the asset is a live asset of the tenant and in
+// the caller's data scope. datascope.Enforcer.AssertAssetRef implements it.
+type AssetRefChecker interface {
+	AssertAssetRef(ctx context.Context, tenantID, assetID shared.ID) error
+}
+
+// WithAssetRefChecker wires the check a run's asset_id goes through. Without
+// it a run started with an asset_id is refused (fail closed).
+func WithAssetRefChecker(c AssetRefChecker) Option {
+	return func(s *Service) {
+		s.assetRefChecker = c
 	}
 }
 

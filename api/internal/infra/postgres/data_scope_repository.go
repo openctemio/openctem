@@ -23,16 +23,23 @@ func NewDataScopeRepository(db *DB) *DataScopeRepository {
 	return &DataScopeRepository{db: db}
 }
 
-// HasAnyScopeAssignment reports whether the user has any scope row in the tenant.
-func (r *DataScopeRepository) HasAnyScopeAssignment(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
-	var exists bool
+// HasFullDataRole reports whether the user holds a role with
+// has_full_data_access in the tenant. Only an ACTIVE member with an ACTIVE
+// account holds anything: a disabled or offboarded member never gets the
+// bypass, whatever roles are still on file (member lifecycle, RFC-050).
+func (r *DataScopeRepository) HasFullDataRole(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	var full bool
 	err := r.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $1 AND tenant_id = $2)`,
-		userID.String(), tenantID.String()).Scan(&exists)
+		`SELECT principal_is_active($1, $2) AND EXISTS (
+			SELECT 1 FROM user_roles ur
+			JOIN roles ro ON ro.id = ur.role_id
+			WHERE ur.tenant_id = $1 AND ur.user_id = $2 AND ro.has_full_data_access = TRUE
+			  AND (ro.tenant_id IS NULL OR ro.tenant_id = ur.tenant_id))`,
+		tenantID.String(), userID.String()).Scan(&full)
 	if err != nil {
-		return false, fmt.Errorf("check scope assignment: %w", err)
+		return false, fmt.Errorf("check full data role: %w", err)
 	}
-	return exists, nil
+	return full, nil
 }
 
 // AssetIDsInScope returns the subset of assetIDs the user has a scope row for.
@@ -88,6 +95,35 @@ func (r *DataScopeRepository) FindingIDsInScope(ctx context.Context, tenantID, u
 		var id shared.ID
 		if err := rows.Scan(&id); err != nil {
 			return nil, fmt.Errorf("scan in-scope finding: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// AssetIDsInTenant returns the subset of assetIDs that are live assets of
+// the tenant.
+func (r *DataScopeRepository) AssetIDsInTenant(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) ([]shared.ID, error) {
+	if len(assetIDs) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, len(assetIDs))
+	for i, id := range assetIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id FROM assets
+		 WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL`,
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("list tenant assets: %w", err)
+	}
+	defer rows.Close()
+	out := make([]shared.ID, 0, len(assetIDs))
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan tenant asset: %w", err)
 		}
 		out = append(out, id)
 	}

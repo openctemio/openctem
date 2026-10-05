@@ -36,9 +36,8 @@ import {
   generateSlug,
 } from '@/features/access-control'
 import { GroupDetailSheet } from '@/features/access-control/components/group-detail-sheet'
-import { NoTeamAccessCard } from '@/features/access-control/components/no-team-access-card'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('en-US', {
@@ -136,7 +135,7 @@ export function TeamsSection({ header }: SectionProps) {
               {
                 label: 'Edit team',
                 icon: Pencil,
-                permission: Permission.GroupsWrite,
+                route: 'PUT /api/v1/groups/{groupId}',
                 onClick: () => setSelectedGroupId(group.id),
               },
               {
@@ -144,7 +143,8 @@ export function TeamsSection({ header }: SectionProps) {
                 icon: Trash2,
                 destructive: true,
                 separatorBefore: true,
-                permission: Permission.GroupsDelete,
+                // Owner only on the API (RequireOwner), so admins do not see it.
+                route: 'DELETE /api/v1/groups/{groupId}',
                 onClick: () => {
                   setGroupToDelete(group)
                   setDeleteDialogOpen(true)
@@ -204,7 +204,7 @@ export function TeamsSection({ header }: SectionProps) {
     <>
       {header(
         <>
-          <Can permission={Permission.GroupsWrite} mode="disable">
+          <Can route="POST /api/v1/groups" mode="disable">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
               Create team
@@ -251,7 +251,7 @@ export function TeamsSection({ header }: SectionProps) {
                 title="No teams yet"
                 description="Create a team to group users and scope their access to assets."
                 action={
-                  <Can permission={Permission.GroupsWrite}>
+                  <Can route="POST /api/v1/groups">
                     <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
                       Create team
@@ -272,7 +272,12 @@ export function TeamsSection({ header }: SectionProps) {
             )}
           </div>
 
-          <NoTeamAccessCard className="mt-5" />
+          {/* Members in no team see nothing (owner decision D2); there is
+              no per-organization "see everything" switch. */}
+          <p className="mt-5 text-sm text-muted-foreground" data-testid="no-team-access-note">
+            Members who are in no team see no assets or findings until you add them to a team or
+            grant them an asset. Owners, admins and roles with full data access see everything.
+          </p>
         </>
       )}
 

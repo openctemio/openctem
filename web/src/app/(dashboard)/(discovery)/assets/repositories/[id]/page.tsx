@@ -45,6 +45,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
 import { EntityActivity } from '@/features/activity/components/entity-activity'
+import { AssetSlaPolicyCard } from '@/features/sla/components/sla-windows'
 import type { ActivityItem } from '@/features/activity/types'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -259,16 +260,6 @@ interface ActivityLog {
   }
 }
 
-interface SLAPolicy {
-  id: string
-  name: string
-  rules: Array<{
-    severity: Severity
-    days_to_remediate: number
-    warning_threshold_percent: number
-  }>
-}
-
 /** Map API Branch to local BranchDetail shape */
 function mapBranchToDetail(b: import('@/features/repositories').Branch): BranchDetail {
   return {
@@ -359,18 +350,6 @@ function repositoryActivityItems(logs: ActivityLog[]): ActivityItem[] {
       detail: a.comment,
     }
   })
-}
-
-const defaultSLAPolicy: SLAPolicy = {
-  id: 'default',
-  name: 'Default Security SLA',
-  rules: [
-    { severity: 'critical', days_to_remediate: 2, warning_threshold_percent: 50 },
-    { severity: 'high', days_to_remediate: 15, warning_threshold_percent: 70 },
-    { severity: 'medium', days_to_remediate: 30, warning_threshold_percent: 80 },
-    { severity: 'low', days_to_remediate: 60, warning_threshold_percent: 90 },
-    { severity: 'info', days_to_remediate: 90, warning_threshold_percent: 90 },
-  ],
 }
 
 const getOverdueFindingsCount = (findings: FindingDetail[]) =>
@@ -1519,6 +1498,7 @@ function FindingsTab({
           | 'confirmed'
           | 'in_progress'
           | 'fix_applied'
+          | 'not_observed'
           | 'resolved'
           | 'false_positive'
           | 'accepted_risk',
@@ -1605,6 +1585,7 @@ function FindingsTab({
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="fix_applied">Fix Applied</SelectItem>
+                  <SelectItem value="not_observed">Not Observed</SelectItem>
                   <SelectItem value="resolved">Resolved</SelectItem>
                   <SelectItem value="false_positive">False Positive</SelectItem>
                 </SelectContent>
@@ -1983,38 +1964,8 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
         </CardContent>
       </Card>
 
-      {/* SLA Policy */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Timer className="h-4 w-4" />
-            SLA Policy
-          </CardTitle>
-          <CardDescription>{defaultSLAPolicy.name}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Severity</TableHead>
-                <TableHead>Time to Remediate</TableHead>
-                <TableHead>Warning Threshold</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {defaultSLAPolicy.rules.map((rule) => (
-                <TableRow key={rule.severity}>
-                  <TableCell>
-                    <SeverityBadge severity={rule.severity} />
-                  </TableCell>
-                  <TableCell>{rule.days_to_remediate} days</TableCell>
-                  <TableCell>{rule.warning_threshold_percent}%</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      {/* SLA policy in force for this repository (read from the API, not a mock) */}
+      <AssetSlaPolicyCard assetId={repository.id} />
 
       {/* Security Features */}
       <Card>

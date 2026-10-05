@@ -18,6 +18,7 @@ package httpsec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -226,6 +227,14 @@ type ValidationResult struct {
 func ValidateURL(rawURL string) (*ValidationResult, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
+		// url.Parse wraps its error in *url.Error, whose text repeats the whole
+		// input. The input is often a credential (a Slack or Teams webhook URL,
+		// a URL with a token in its query), and this error reaches status
+		// fields and logs, so keep only the reason.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {

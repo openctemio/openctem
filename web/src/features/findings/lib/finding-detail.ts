@@ -31,6 +31,7 @@ const STATUS_MAP: Record<string, FindingStatus> = {
   confirmed: 'confirmed',
   in_progress: 'in_progress',
   fix_applied: 'fix_applied',
+  not_observed: 'not_observed',
   resolved: 'resolved',
   false_positive: 'false_positive',
   accepted: 'accepted',
@@ -167,6 +168,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     source: api.source as FindingDetail['source'],
     scanner: api.tool_name,
     scanId: api.scan_id,
+    duplicateOf: api.duplicate_of || undefined,
     relatedFindings: [],
 
     assignee: api.assigned_to
@@ -333,6 +335,27 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
           expected: api.misconfig_expected,
           actual: api.misconfig_actual,
           cause: api.misconfig_cause,
+        }
+      : undefined,
+
+    scannerFacts: {
+      family: api.family || undefined,
+      vprScore: api.vpr_score ?? undefined,
+      cvssVersion: api.cvss_version || undefined,
+      cvssV2Vector: api.cvss_v2_vector || undefined,
+      cvssV3Vector: api.cvss_v3_vector || undefined,
+      cveIds: api.cve_ids ?? [],
+      patchPublishedAt: api.patch_published_at || undefined,
+      exploitAvailable: api.exploit_available || undefined,
+      networkPort: api.network_port || undefined,
+      networkTransport: api.network_transport || undefined,
+      networkService: api.network_service || undefined,
+    },
+    scannerOutput: api.scanner_output?.text
+      ? {
+          text: api.scanner_output.text,
+          updatedAt: api.scanner_output.updated_at,
+          truncated: api.scanner_output.truncated,
         }
       : undefined,
 

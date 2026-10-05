@@ -82,8 +82,15 @@ func (m *mockExposureRepo) GetByID(_ context.Context, id shared.ID) (*exposure.E
 	}
 	return e, nil
 }
-func (m *mockExposureRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*exposure.ExposureEvent, error) {
-	return m.GetByID(context.Background(), id)
+func (m *mockExposureRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*exposure.ExposureEvent, error) {
+	e, err := m.GetByID(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	if e.TenantID() != tenantID {
+		return nil, shared.ErrNotFound
+	}
+	return e, nil
 }
 
 func (m *mockExposureRepo) GetByFingerprint(_ context.Context, _ shared.ID, _ string) (*exposure.ExposureEvent, error) {
@@ -102,12 +109,12 @@ func (m *mockExposureRepo) Update(_ context.Context, event *exposure.ExposureEve
 	return nil
 }
 
-func (m *mockExposureRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockExposureRepo) Delete(_ context.Context, tenantID, id shared.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
-	if _, ok := m.events[id.String()]; !ok {
+	if e, ok := m.events[id.String()]; !ok || e.TenantID() != tenantID {
 		return shared.ErrNotFound
 	}
 	delete(m.events, id.String())
@@ -355,6 +362,7 @@ func TestExposureService_CreateExposure_WithAssetID(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
+	svc.SetDataScope(tenantAssetEnforcer(tenantAssets{assetID: tenantID}))
 
 	input := validCreateExposureInput(tenantID.String())
 	input.AssetID = assetID.String()
@@ -523,13 +531,13 @@ func TestExposureService_CreateExposure_AllEventTypes(t *testing.T) {
 // GetExposure Tests
 // =============================================================================
 
-func TestExposureService_GetExposure_Success(t *testing.T) {
+func TestExposureService_GetExposureSecure_Success(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 	tenantID := shared.NewID()
 
 	created := createTestExposureEvent(t, svc, tenantID.String())
 
-	fetched, err := svc.GetExposure(context.Background(), created.ID().String())
+	fetched, err := svc.GetExposureSecure(context.Background(), tenantID.String(), created.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -542,10 +550,10 @@ func TestExposureService_GetExposure_Success(t *testing.T) {
 	}
 }
 
-func TestExposureService_GetExposure_InvalidID(t *testing.T) {
+func TestExposureService_GetExposureSecure_InvalidID(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 
-	_, err := svc.GetExposure(context.Background(), "not-a-uuid")
+	_, err := svc.GetExposureSecure(context.Background(), shared.NewID().String(), "not-a-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -554,11 +562,11 @@ func TestExposureService_GetExposure_InvalidID(t *testing.T) {
 	}
 }
 
-func TestExposureService_GetExposure_NotFound(t *testing.T) {
+func TestExposureService_GetExposureSecure_NotFound(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 	nonExistentID := shared.NewID()
 
-	_, err := svc.GetExposure(context.Background(), nonExistentID.String())
+	_, err := svc.GetExposureSecure(context.Background(), shared.NewID().String(), nonExistentID.String())
 	if err == nil {
 		t.Fatal("expected error for non-existent exposure")
 	}
@@ -567,12 +575,12 @@ func TestExposureService_GetExposure_NotFound(t *testing.T) {
 	}
 }
 
-func TestExposureService_GetExposure_RepoError(t *testing.T) {
+func TestExposureService_GetExposureSecure_RepoError(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
 
 	repo.getErr = fmt.Errorf("database error")
 
-	_, err := svc.GetExposure(context.Background(), shared.NewID().String())
+	_, err := svc.GetExposureSecure(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -795,6 +803,7 @@ func TestExposureService_IngestExposure_WithAssetID(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
+	svc.SetDataScope(tenantAssetEnforcer(tenantAssets{assetID: tenantID}))
 
 	input := validCreateExposureInput(tenantID.String())
 	input.AssetID = assetID.String()
@@ -1063,6 +1072,77 @@ func TestExposureService_BulkIngestExposures_WithInvalidAssetID(t *testing.T) {
 	}
 }
 
+// An exposure asset_id must be a live asset of the tenant (research doc 21b,
+// C3): another tenant's or an unknown id is refused with one generic error on
+// create and ingest, and dropped with one generic reason in a bulk ingest.
+// Nothing is written for a refused id; without an enforcer every asset id is
+// refused (fail closed).
+func TestExposureService_AssetRefRefused(t *testing.T) {
+	tenantA, tenantB := shared.NewID(), shared.NewID()
+	own, foreign := shared.NewID(), shared.NewID()
+	owners := tenantAssets{own: tenantA, foreign: tenantB}
+
+	for name, assetID := range map[string]shared.ID{"foreign": foreign, "unknown": shared.NewID()} {
+		t.Run("create "+name, func(t *testing.T) {
+			svc, repo, _ := newExposureTestService()
+			svc.SetDataScope(tenantAssetEnforcer(owners))
+			in := validCreateExposureInput(tenantA.String())
+			in.AssetID = assetID.String()
+			if _, err := svc.CreateExposure(context.Background(), in); !errors.Is(err, app.ErrExposureAssetNotFound) {
+				t.Fatalf("err = %v, want ErrExposureAssetNotFound", err)
+			}
+			if _, err := svc.IngestExposure(context.Background(), in); !errors.Is(err, app.ErrExposureAssetNotFound) {
+				t.Fatalf("ingest err = %v, want ErrExposureAssetNotFound", err)
+			}
+			if repo.createCalls != 0 || repo.upsertCalls != 0 {
+				t.Errorf("writes: create=%d upsert=%d, want none", repo.createCalls, repo.upsertCalls)
+			}
+		})
+	}
+
+	t.Run("no enforcer", func(t *testing.T) {
+		svc, repo, _ := newExposureTestService()
+		in := validCreateExposureInput(tenantA.String())
+		in.AssetID = own.String()
+		if _, err := svc.CreateExposure(context.Background(), in); !errors.Is(err, app.ErrExposureAssetNotFound) {
+			t.Fatalf("err = %v, want ErrExposureAssetNotFound", err)
+		}
+		if repo.createCalls != 0 {
+			t.Errorf("%d create calls, want 0", repo.createCalls)
+		}
+	})
+
+	t.Run("bulk", func(t *testing.T) {
+		svc, _, _ := newExposureTestService()
+		svc.SetDataScope(tenantAssetEnforcer(owners))
+		mk := func(asset shared.ID, title string) app.CreateExposureInput {
+			in := validCreateExposureInput(tenantA.String())
+			in.Title = title
+			if !asset.IsZero() {
+				in.AssetID = asset.String()
+			}
+			return in
+		}
+		res, err := svc.BulkIngestExposuresReport(context.Background(), []app.CreateExposureInput{
+			mk(own, "own"), mk(foreign, "foreign"), mk(shared.NewID(), "unknown"), mk(shared.ID{}, "asset-less"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Events) != 2 {
+			t.Errorf("%d events ingested, want 2 (own asset, asset-less)", len(res.Events))
+		}
+		if len(res.Failures) != 2 {
+			t.Fatalf("failures = %+v, want 2", res.Failures)
+		}
+		for _, f := range res.Failures {
+			if f.Reason != "asset not found" {
+				t.Errorf("failure %d reason %q, want the generic %q", f.Index, f.Reason, "asset not found")
+			}
+		}
+	})
+}
+
 // =============================================================================
 // ResolveExposure Tests
 // =============================================================================
@@ -1074,7 +1154,7 @@ func TestExposureService_ResolveExposure_Success(t *testing.T) {
 
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
-	resolved, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "Fixed the issue")
+	resolved, err := svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "Fixed the issue")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1115,7 +1195,7 @@ func TestExposureService_ResolveExposure_InvalidUserID(t *testing.T) {
 
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
-	_, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), "not-a-uuid", "")
+	_, err := svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), "not-a-uuid", "")
 	if err == nil {
 		t.Fatal("expected error for invalid user ID")
 	}
@@ -1142,13 +1222,13 @@ func TestExposureService_ResolveExposure_AlreadyResolved(t *testing.T) {
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
 	// Resolve it first
-	_, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "First resolve")
+	_, err := svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "First resolve")
 	if err != nil {
 		t.Fatalf("expected first resolve to succeed, got %v", err)
 	}
 
 	// Try to resolve again - should fail because resolved cannot transition to resolved
-	_, err = svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "Second resolve")
+	_, err = svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "Second resolve")
 	if err == nil {
 		t.Fatal("expected error when resolving already-resolved exposure")
 	}
@@ -1163,7 +1243,7 @@ func TestExposureService_ResolveExposure_UpdateError(t *testing.T) {
 
 	repo.updateErr = fmt.Errorf("update failed")
 
-	_, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "")
+	_, err := svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "")
 	if err == nil {
 		t.Fatal("expected error from repo update")
 	}
@@ -1180,7 +1260,7 @@ func TestExposureService_AcceptExposure_Success(t *testing.T) {
 
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
-	accepted, err := svc.AcceptExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "Accepted risk")
+	accepted, err := svc.AcceptExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "Accepted risk")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1212,7 +1292,7 @@ func TestExposureService_AcceptExposure_InvalidUserID(t *testing.T) {
 
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
-	_, err := svc.AcceptExposure(context.Background(), shared.NewID().String(), event.ID().String(), "bad-id", "")
+	_, err := svc.AcceptExposure(context.Background(), event.TenantID().String(), event.ID().String(), "bad-id", "")
 	if err == nil {
 		t.Fatal("expected error for invalid user ID")
 	}
@@ -1229,7 +1309,7 @@ func TestExposureService_MarkFalsePositive_Success(t *testing.T) {
 
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
-	fp, err := svc.MarkFalsePositive(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "Not a real exposure")
+	fp, err := svc.MarkFalsePositive(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "Not a real exposure")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1267,13 +1347,13 @@ func TestExposureService_ReactivateExposure_Success(t *testing.T) {
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
 	// First resolve
-	_, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "Resolved")
+	_, err := svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "Resolved")
 	if err != nil {
 		t.Fatalf("expected resolve to succeed, got %v", err)
 	}
 
 	// Then reactivate
-	reactivated, err := svc.ReactivateExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String())
+	reactivated, err := svc.ReactivateExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1301,13 +1381,13 @@ func TestExposureService_ReactivateExposure_FromAccepted(t *testing.T) {
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
 	// Accept first
-	_, err := svc.AcceptExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "Accepted")
+	_, err := svc.AcceptExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "Accepted")
 	if err != nil {
 		t.Fatalf("expected accept to succeed, got %v", err)
 	}
 
 	// Then reactivate
-	reactivated, err := svc.ReactivateExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String())
+	reactivated, err := svc.ReactivateExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1325,13 +1405,13 @@ func TestExposureService_ReactivateExposure_FromFalsePositive(t *testing.T) {
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
 	// Mark false positive first
-	_, err := svc.MarkFalsePositive(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "FP")
+	_, err := svc.MarkFalsePositive(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "FP")
 	if err != nil {
 		t.Fatalf("expected mark false positive to succeed, got %v", err)
 	}
 
 	// Then reactivate
-	reactivated, err := svc.ReactivateExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String())
+	reactivated, err := svc.ReactivateExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1349,7 +1429,7 @@ func TestExposureService_ReactivateExposure_AlreadyActive(t *testing.T) {
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
 	// Try to reactivate an already-active exposure
-	_, err := svc.ReactivateExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String())
+	_, err := svc.ReactivateExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String())
 	if err == nil {
 		t.Fatal("expected error when reactivating already-active exposure")
 	}
@@ -1384,14 +1464,14 @@ func TestExposureService_ReactivateExposure_UpdateError(t *testing.T) {
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
 	// Resolve it first
-	_, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "")
+	_, err := svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "")
 	if err != nil {
 		t.Fatalf("expected resolve to succeed, got %v", err)
 	}
 
 	repo.updateErr = fmt.Errorf("update failed")
 
-	_, err = svc.ReactivateExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String())
+	_, err = svc.ReactivateExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String())
 	if err == nil {
 		t.Fatal("expected error from repo update")
 	}
@@ -1405,13 +1485,13 @@ func TestExposureService_ReactivateExposure_WithEmptyUserID(t *testing.T) {
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
 	// Resolve first
-	_, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "")
+	_, err := svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "")
 	if err != nil {
 		t.Fatalf("expected resolve to succeed, got %v", err)
 	}
 
 	// Reactivate with empty user ID (should still work)
-	reactivated, err := svc.ReactivateExposure(context.Background(), shared.NewID().String(), event.ID().String(), "")
+	reactivated, err := svc.ReactivateExposure(context.Background(), event.TenantID().String(), event.ID().String(), "")
 	if err != nil {
 		t.Fatalf("expected no error with empty user ID, got %v", err)
 	}
@@ -1427,16 +1507,16 @@ func TestExposureService_ReactivateExposure_WithEmptyUserID(t *testing.T) {
 func TestExposureService_StateTransitions(t *testing.T) {
 	tests := []struct {
 		name       string
-		setup      func(svc *app.ExposureService, eventID, userID string) error
-		transition func(svc *app.ExposureService, eventID, userID string) (*exposure.ExposureEvent, error)
+		setup      func(svc *app.ExposureService, tenantID, eventID, userID string) error
+		transition func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error)
 		wantState  exposure.State
 		wantErr    bool
 	}{
 		{
 			name:  "active to resolved",
 			setup: nil,
-			transition: func(svc *app.ExposureService, eventID, userID string) (*exposure.ExposureEvent, error) {
-				return svc.ResolveExposure(context.Background(), shared.NewID().String(), eventID, userID, "resolved")
+			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+				return svc.ResolveExposure(context.Background(), tenantID, eventID, userID, "resolved")
 			},
 			wantState: exposure.StateResolved,
 			wantErr:   false,
@@ -1444,8 +1524,8 @@ func TestExposureService_StateTransitions(t *testing.T) {
 		{
 			name:  "active to accepted",
 			setup: nil,
-			transition: func(svc *app.ExposureService, eventID, userID string) (*exposure.ExposureEvent, error) {
-				return svc.AcceptExposure(context.Background(), shared.NewID().String(), eventID, userID, "accepted risk")
+			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+				return svc.AcceptExposure(context.Background(), tenantID, eventID, userID, "accepted risk")
 			},
 			wantState: exposure.StateAccepted,
 			wantErr:   false,
@@ -1453,76 +1533,76 @@ func TestExposureService_StateTransitions(t *testing.T) {
 		{
 			name:  "active to false_positive",
 			setup: nil,
-			transition: func(svc *app.ExposureService, eventID, userID string) (*exposure.ExposureEvent, error) {
-				return svc.MarkFalsePositive(context.Background(), shared.NewID().String(), eventID, userID, "false positive")
+			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+				return svc.MarkFalsePositive(context.Background(), tenantID, eventID, userID, "false positive")
 			},
 			wantState: exposure.StateFalsePositive,
 			wantErr:   false,
 		},
 		{
 			name: "resolved to active (reactivate)",
-			setup: func(svc *app.ExposureService, eventID, userID string) error {
-				_, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), eventID, userID, "")
+			setup: func(svc *app.ExposureService, tenantID, eventID, userID string) error {
+				_, err := svc.ResolveExposure(context.Background(), tenantID, eventID, userID, "")
 				return err
 			},
-			transition: func(svc *app.ExposureService, eventID, userID string) (*exposure.ExposureEvent, error) {
-				return svc.ReactivateExposure(context.Background(), shared.NewID().String(), eventID, userID)
+			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+				return svc.ReactivateExposure(context.Background(), tenantID, eventID, userID)
 			},
 			wantState: exposure.StateActive,
 			wantErr:   false,
 		},
 		{
 			name: "accepted to active (reactivate)",
-			setup: func(svc *app.ExposureService, eventID, userID string) error {
-				_, err := svc.AcceptExposure(context.Background(), shared.NewID().String(), eventID, userID, "")
+			setup: func(svc *app.ExposureService, tenantID, eventID, userID string) error {
+				_, err := svc.AcceptExposure(context.Background(), tenantID, eventID, userID, "")
 				return err
 			},
-			transition: func(svc *app.ExposureService, eventID, userID string) (*exposure.ExposureEvent, error) {
-				return svc.ReactivateExposure(context.Background(), shared.NewID().String(), eventID, userID)
+			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+				return svc.ReactivateExposure(context.Background(), tenantID, eventID, userID)
 			},
 			wantState: exposure.StateActive,
 			wantErr:   false,
 		},
 		{
 			name: "accepted to resolved",
-			setup: func(svc *app.ExposureService, eventID, userID string) error {
-				_, err := svc.AcceptExposure(context.Background(), shared.NewID().String(), eventID, userID, "")
+			setup: func(svc *app.ExposureService, tenantID, eventID, userID string) error {
+				_, err := svc.AcceptExposure(context.Background(), tenantID, eventID, userID, "")
 				return err
 			},
-			transition: func(svc *app.ExposureService, eventID, userID string) (*exposure.ExposureEvent, error) {
-				return svc.ResolveExposure(context.Background(), shared.NewID().String(), eventID, userID, "now resolved")
+			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+				return svc.ResolveExposure(context.Background(), tenantID, eventID, userID, "now resolved")
 			},
 			wantState: exposure.StateResolved,
 			wantErr:   false,
 		},
 		{
 			name: "false_positive to active (reactivate)",
-			setup: func(svc *app.ExposureService, eventID, userID string) error {
-				_, err := svc.MarkFalsePositive(context.Background(), shared.NewID().String(), eventID, userID, "")
+			setup: func(svc *app.ExposureService, tenantID, eventID, userID string) error {
+				_, err := svc.MarkFalsePositive(context.Background(), tenantID, eventID, userID, "")
 				return err
 			},
-			transition: func(svc *app.ExposureService, eventID, userID string) (*exposure.ExposureEvent, error) {
-				return svc.ReactivateExposure(context.Background(), shared.NewID().String(), eventID, userID)
+			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+				return svc.ReactivateExposure(context.Background(), tenantID, eventID, userID)
 			},
 			wantState: exposure.StateActive,
 			wantErr:   false,
 		},
 		{
 			name: "resolved cannot resolve again",
-			setup: func(svc *app.ExposureService, eventID, userID string) error {
-				_, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), eventID, userID, "")
+			setup: func(svc *app.ExposureService, tenantID, eventID, userID string) error {
+				_, err := svc.ResolveExposure(context.Background(), tenantID, eventID, userID, "")
 				return err
 			},
-			transition: func(svc *app.ExposureService, eventID, userID string) (*exposure.ExposureEvent, error) {
-				return svc.ResolveExposure(context.Background(), shared.NewID().String(), eventID, userID, "again")
+			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+				return svc.ResolveExposure(context.Background(), tenantID, eventID, userID, "again")
 			},
 			wantErr: true,
 		},
 		{
 			name:  "active cannot reactivate",
 			setup: nil,
-			transition: func(svc *app.ExposureService, eventID, userID string) (*exposure.ExposureEvent, error) {
-				return svc.ReactivateExposure(context.Background(), shared.NewID().String(), eventID, userID)
+			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+				return svc.ReactivateExposure(context.Background(), tenantID, eventID, userID)
 			},
 			wantErr: true,
 		},
@@ -1537,12 +1617,12 @@ func TestExposureService_StateTransitions(t *testing.T) {
 			event := createTestExposureEvent(t, svc, tenantID.String())
 
 			if tt.setup != nil {
-				if err := tt.setup(svc, event.ID().String(), userID.String()); err != nil {
+				if err := tt.setup(svc, tenantID.String(), event.ID().String(), userID.String()); err != nil {
 					t.Fatalf("setup failed: %v", err)
 				}
 			}
 
-			result, err := tt.transition(svc, event.ID().String(), userID.String())
+			result, err := tt.transition(svc, tenantID.String(), event.ID().String(), userID.String())
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error but got none")
@@ -1571,11 +1651,11 @@ func TestExposureService_GetStateHistory_Success(t *testing.T) {
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
 	// Create some state changes
-	_, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "Resolved")
+	_, err := svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "Resolved")
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}
-	_, err = svc.ReactivateExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String())
+	_, err = svc.ReactivateExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String())
 	if err != nil {
 		t.Fatalf("reactivate failed: %v", err)
 	}
@@ -1796,7 +1876,7 @@ func TestExposureService_DeleteExposure_Success(t *testing.T) {
 	}
 
 	// Verify it is gone
-	_, err = svc.GetExposure(context.Background(), event.ID().String())
+	_, err = svc.GetExposureSecure(context.Background(), tenantID.String(), event.ID().String())
 	if err == nil {
 		t.Fatal("expected error after deletion")
 	}
@@ -1861,7 +1941,7 @@ func TestExposureService_DeleteExposure_CrossTenantIsolation(t *testing.T) {
 	}
 
 	// Verify the event still exists
-	_, err = svc.GetExposure(context.Background(), event.ID().String())
+	_, err = svc.GetExposureSecure(context.Background(), tenantA.String(), event.ID().String())
 	if err != nil {
 		t.Fatalf("expected event to still exist, got %v", err)
 	}
@@ -2054,7 +2134,7 @@ func TestExposureService_ResolveExposure_WithEmptyNotes(t *testing.T) {
 
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
-	resolved, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "")
+	resolved, err := svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -2076,7 +2156,7 @@ func TestExposureService_FullLifecycle(t *testing.T) {
 	}
 
 	// 2. Resolve
-	resolved, err := svc.ResolveExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "Fixed")
+	resolved, err := svc.ResolveExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "Fixed")
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}
@@ -2085,7 +2165,7 @@ func TestExposureService_FullLifecycle(t *testing.T) {
 	}
 
 	// 3. Reactivate
-	reactivated, err := svc.ReactivateExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String())
+	reactivated, err := svc.ReactivateExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String())
 	if err != nil {
 		t.Fatalf("reactivate failed: %v", err)
 	}
@@ -2094,7 +2174,7 @@ func TestExposureService_FullLifecycle(t *testing.T) {
 	}
 
 	// 4. Accept
-	accepted, err := svc.AcceptExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "Accept risk")
+	accepted, err := svc.AcceptExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "Accept risk")
 	if err != nil {
 		t.Fatalf("accept failed: %v", err)
 	}
@@ -2103,7 +2183,7 @@ func TestExposureService_FullLifecycle(t *testing.T) {
 	}
 
 	// 5. Reactivate again
-	reactivated2, err := svc.ReactivateExposure(context.Background(), shared.NewID().String(), event.ID().String(), userID.String())
+	reactivated2, err := svc.ReactivateExposure(context.Background(), event.TenantID().String(), event.ID().String(), userID.String())
 	if err != nil {
 		t.Fatalf("second reactivate failed: %v", err)
 	}
@@ -2112,7 +2192,7 @@ func TestExposureService_FullLifecycle(t *testing.T) {
 	}
 
 	// 6. Mark false positive
-	fp, err := svc.MarkFalsePositive(context.Background(), shared.NewID().String(), event.ID().String(), userID.String(), "Not real")
+	fp, err := svc.MarkFalsePositive(context.Background(), event.TenantID().String(), event.ID().String(), userID.String(), "Not real")
 	if err != nil {
 		t.Fatalf("mark false positive failed: %v", err)
 	}

@@ -30,7 +30,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
 | Scans | 22 | `scans:read/write/delete/execute`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
 | Sensors | 9 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete` |
-| Team | 23 | `team:*`, `members:*`, `groups:*`, `roles:*`, `permission_sets:*`, `assignment_rules:*` |
+| Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
 | Attack Surface | 4 | `scope:read/write/delete`, `scope:exclusions:approve` |
@@ -131,7 +131,7 @@ Details: [api-keys.md](./api-keys.md).
 |----------|---------------------|
 | `GET /api/v1/assets` | `assets:read` |
 | `GET /api/v1/assets/{id}` | `assets:read` |
-| `POST /api/v1/assets` | `assets:write` |
+| `POST /api/v1/assets` | `assets:write`. A name (or correlated address) that already exists in the organization is a 409 and changes nothing; `details.existing_asset_id` is set only when that asset is in the caller's data scope, otherwise the conflict is generic. Another organization's assets never match. Ingest keeps its own merge path. |
 | `PUT /api/v1/assets/{id}` | `assets:write` |
 | `DELETE /api/v1/assets/{id}` | `assets:delete` + data scope. Refused with 409 (`asset_has_findings`) while the asset has any finding (archive it instead); otherwise a soft delete, audited `asset.deleted` (see [asset-deletion.md](asset-deletion.md)) |
 
@@ -167,6 +167,7 @@ Details: [api-keys.md](./api-keys.md).
 | `DELETE /api/v1/findings/{id}` | `findings:delete` |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status` |
 | `POST /api/v1/findings/{id}/triage` | `findings:triage` |
+| `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; also `findings:approve` when either finding is a false positive or risk acceptance (service check). Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
@@ -209,6 +210,7 @@ two-person control:
 | `POST /api/v1/scope/exclusions` · `PUT /{id}` · `POST /{id}/activate` · `/{id}/deactivate` | `attack_surface:scope:write` |
 | `POST /api/v1/scope/exclusions/{id}/approve` · `/{id}/reject` | `attack_surface:scope:exclusions:approve` (owner, admin) |
 | `DELETE /api/v1/scope/exclusions/{id}` · `POST /bulk/delete` | `attack_surface:scope:delete` |
+| Taking an exclusion **in effect** out of effect: `/{id}/deactivate`, `DELETE`, bulk delete, or a `PUT` that moves `expires_at` earlier (a past date included) | in addition `attack_surface:scope:exclusions:approve`, and the caller must not be the requester (403 otherwise; research doc 15, L-07) |
 
 - A new exclusion is created `pending` and is applied nowhere — not to scan
   target selection, not to `POST /scope/check`, not to coverage — until it is
@@ -228,6 +230,16 @@ two-person control:
   be used to skip the approval.
 - Extending the window of an approved exclusion (a later `expires_at`, or
   removing it) sends it back to `pending`; shortening it keeps the approval.
+- Removing protection is the same two-person control as granting it
+  (`Exclusion.AuthorizeReduction`): deactivating, deleting or shortening an
+  exclusion in effect needs the approve permission and someone other than the
+  requester. Before, `scope:write` (a member default) could switch off the
+  exclusion protecting a production host and then scan it. Changes to an
+  exclusion not in effect (pending, inactive, rejected, expired) and edits of
+  the reason keep their ordinary permission. The web console disables the
+  switch for callers without the approve permission.
+- Known gap: rows from before `created_by` was recorded have no requester, so
+  the not-the-requester check cannot apply to them.
 - Every change to a scope target or exclusion (create, update, delete, bulk
   delete, activate, deactivate, approve, reject) is one audit entry
   (`scope_target.*`, `scope_exclusion.*`) with the caller and the state before
@@ -291,8 +303,21 @@ create's target validator, exclusions, zone routing) in one call.
 > owner and admin only; migration `000246` removed `sensors:write` from the
 > member role (viewer never had it). Members and viewers keep `sensors:read`.
 > Scan-zone sensor assignment (`sensors:zones:write`) hands out no key and was
-> already owner/admin only (`000231`). A custom role carries `sensors:write`
-> only if an owner or administrator gave it one.
+> already owner/admin only (`000231`).
+>
+> **No custom role may carry them** (settings decision B1, 2026-10-04):
+> `sensors:write`, `sensors:delete`, `sensors:commands:delete`,
+> `sensors:zones:write` and `sensors:zones:delete` are admin-only
+> (`pkg/domain/permission/admin_only.go`). The role service refuses them on
+> create and update, whoever edits the role (400), and a trigger on
+> `role_permissions` refuses a row that would put one on a custom role
+> (migration `000945`, which also stripped them from existing custom roles and
+> kept the report in `role_permissions_admin_only_stripped`). Custom roles
+> keep the read permissions and `sensors:commands:write`.
+>
+> **Revoking a sensor goes through `POST /{id}/revoke` only**: `PUT /{id}`
+> with `status: revoked` returns 400, so every revocation carries a reason and
+> the Critical `sensor.revoked` audit event.
 
 #### Audit log (`/api/v1/audit-logs`)
 
@@ -324,11 +349,14 @@ create's target validator, exclusions, zone routing) in one call.
 
 | Endpoint | Gate |
 |----------|------|
-| `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`) |
+| `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`); a `PUT` that adds, changes or removes a mapping **to admin** is owner only (service check, 403) |
 | `POST /api/v1/scim-tokens` · `DELETE /{id}` | **owner only** (`RequireOwner`) |
 
 > A SCIM token can create, suspend and re-role every member, so minting and
-> revoking one is the owner's decision (owner decision 2026-10-02).
+> revoking one is the owner's decision (owner decision 2026-10-02). Which IdP
+> group makes someone an administrator is the owner's decision too: only an
+> owner-configured mapping grants or removes admin through SCIM (23b S-H1; see
+> `scim-provisioning.md`).
 
 #### Billing
 
@@ -362,7 +390,15 @@ the billing page in the UI.
 | `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
 | `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
-| Secret store `GET` / `POST`,`PUT` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+
+> **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
+> leaves absent fields unchanged (`description: ""` clears it, `expires_at: null`
+> clears the expiry; `expires_at` is RFC 3339 and must be in the future). The
+> secret is replaced only by `POST /secret-store/{id}/rotate` (same credential
+> type; `key_version` and `last_rotated_at` advance). Update, rotate (High),
+> delete (High) and decrypt (High) are audited with the acting user, or a named
+> system actor for a scheduled template sync. All lookups are by tenant and id.
 
 > **A stored credential goes only where someone entitled to it pointed it.**
 > A sync decrypts the source's `credential_id` and sends it to the source's
@@ -454,7 +490,11 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/members` | Team admin+ |
 | `PATCH /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
 | `POST /api/v1/tenants/{tenant}/members/{id}/suspend` · `/reactivate` | Team admin+; **owner only when the target is an administrator** |
-| `DELETE /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
+| `DELETE /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator**. An **offboarding** with no reassignment plan (member lifecycle, RFC-050): 409 `reassignment_required` when the member owns work; the membership row is never deleted |
+| `GET /api/v1/tenants/{tenant}/members/{id}/access-report` | Team admin+ (`members:read`): what the member holds and owns |
+| `POST /api/v1/tenants/{tenant}/members/{id}/offboard` | Team admin+ (`members:write`); **owner only when the target is an administrator**; reassignment targets must be active members of the same organization |
+| `POST /api/v1/tenants/{tenant}/members/{id}/erase` | **Team owner only**; only after offboarding and when the person belongs to no other organization |
+| `POST /api/v1/tenants/{tenant}/members/{id}/reset-2fa` | Team admin+; **owner only when the target is an owner or administrator**; never the caller themself; the caller needs the same authority in **every other organization** the target belongs to (the factor is account-wide). See `user-two-factor-authentication.md` › Recovery |
 | `POST /api/v1/tenants/{tenant}/invitations` | Team admin+ |
 | `DELETE /api/v1/tenants/{tenant}/invitations/{id}` | Team admin+ |
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
@@ -469,7 +509,21 @@ These routes require the tenant ID in the URL path and use database-based member
 > paths (`/api/v1/users/{id}/roles`, assign/remove/bulk): only an owner may
 > change another administrator's role set (`grant_guard.go`). Administrators
 > still manage members and viewers, and may change their own membership. SCIM
-> (no human actor) is not a peer and keeps its own rules.
+> (no human actor) is not a peer and keeps its own rules: it grants or removes
+> admin only through a mapping the owner configured, and the role changes a
+> mapping save causes run as the person who saved it.
+>
+> **Only the owner makes someone an administrator** (settings decision B2,
+> 2026-10-04). Adding a member as `admin`, changing a member's role to
+> `admin`, inviting someone or creating a user with the system admin role, and
+> granting the system admin role on the RBAC paths (assign, set, bulk) all need
+> the caller to be the owner; anyone else gets 403
+> (`TenantService.authorizeAdminPromotion`,
+> `RoleService.authorizeAdminPromotion`). An administrator who edits their own
+> role set may keep the admin role they hold. Step-up re-authentication for
+> this action is planned with the step-up primitive (settings plan P1-01).
+> A membership role change is one transaction (label and system role
+> together).
 >
 > **Granting roles** (invitations and created users) is anti-escalation checked:
 > a caller who is not an organization admin may grant only roles whose
@@ -483,8 +537,12 @@ These routes require the tenant ID in the URL path and use database-based member
 
 | Endpoint | Required Role |
 |----------|---------------|
-| `GET /api/v1/invitations/{token}` | Any authenticated |
-| `POST /api/v1/invitations/{token}/accept` | Any authenticated (email must match) |
+| `POST /api/v1/invitations/lookup` | Public (token in the body, rate limited) |
+| `POST /api/v1/invitations/decline` | Public (token in the body, rate limited) |
+| `POST /api/v1/invitations/accept` | Any authenticated (email must match) |
+| `POST /api/v1/invitations/accept-with-refresh` | Refresh token (email must match) |
+
+The `/api/v1/invitations/{token}/...` paths are deprecated aliases of these (RFC-041) with the same chains.
 
 ### User Routes (`/api/v1/users`)
 
@@ -779,6 +837,11 @@ owner-managed) are enforced, not just stored. See
 
 ## Data scope (Layer 2: access groups)
 
+Scans act on assets, so the data scope also limits scan targets: a restricted
+member scans only assets in their scope, and an unrestricted actor's free-text
+targets must match a scope target (decision D9). See
+[active-probe-gate.md](active-probe-gate.md#act-scope-who-may-scan-what).
+
 Permissions decide what *kind* of thing a member may do; the data scope decides
 *which* assets — and so which findings, exposures and other asset-bound rows —
 they may see and change. Scope rows live in `user_accessible_assets`, computed
@@ -793,8 +856,8 @@ from exactly two sources:
 Naming a user as an owner of an asset, in any RACI role or through the
 `owner_ref` email match, is an assignment (accountability, finding
 assignment, notifications) and never changes what that user can see. Before
-O1 it did: `assets:write` alone could narrow a fail-open member to that one
-asset, or widen a fail-closed one. Migration `000372` turned every such
+O1 it did: `assets:write` alone could narrow a member who saw everything
+to that one asset, or widen one who saw nothing. Migration `000372` turned every such
 owner-derived access row into an explicit grant (source `migration`), so
 nobody lost an asset at the upgrade; administrators review and revoke them
 on the asset's Owners tab (*Direct access*). A group owner remains the
@@ -804,35 +867,103 @@ group's assignment, which is why adding or removing one needs
 | Route | Gate |
 |---|---|
 | `GET /api/v1/assets/{id}/access-grants` | `team:groups:read` + data scope on the asset |
-| `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 409 when the grant exists; audited `asset.access_granted` |
+| `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 403 when the user is the caller (no self-grant, so access held through a group cannot be turned into a personal grant before leaving it); 409 when the grant exists; audited `asset.access_granted` |
 | `DELETE /api/v1/assets/{id}/access-grants/{grant_id}` | `team:groups:write`; the grant must be on that asset of the caller's organization (404); audited `asset.access_revoked`. The user keeps the asset only if a group still holds it |
 | `POST /api/v1/assets/{id}/owners` with `group_id` · `DELETE /api/v1/assets/{id}/owners/{id}` of a group owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise) |
+| `POST /api/v1/groups/{g}/assets` · `/assets/bulk` · scope rules | `team:groups:write`; the group must be in the caller's organization, and each asset must be a live asset of the **group's** organization. A single assign answers 404 for a foreign, deleted or unknown asset id alike; a bulk assign counts them as failed |
+
+**You can only hand out scope you hold** (owner decision D13, research doc 15
+L-09). A custom role with `groups:write` / `groups:members` (a "team lead")
+could otherwise widen anyone's scope, their own included:
+
+| Change | A caller whose own scope is restricted |
+|---|---|
+| `POST /groups/{g}/assets`, `/assets/bulk` | only assets in their scope; another asset answers 404 (bulk: counted as failed) |
+| `POST /groups/{g}/members` | only when every asset the group holds is in their scope (403 otherwise); never themselves: joining a group needs full data access (admin or a `has_full_data_access` role), 403 otherwise |
+| `POST/PUT /groups/{g}/scope-rules` | refused (403): a rule adds every matching asset, now and later, so it cannot be capped when it is written |
+| `/assets/{id}/access-grants`, a group owner on `/assets/{id}/owners` | already limited to assets the caller sees (route guard on `/assets/{id}`) |
+
+"Restricted" is the enforcer's decision (`Enforcer.Delegable`): an admin, a
+full-data role and an internal call are unrestricted. `POST /groups/{g}/members` also refuses
+(404) a user who is not a member of the organization (L-14).
+
+**Group asset rows are same-tenant only.** `asset_owners` has no `tenant_id`,
+so every insert path (`CreateAssetOwner`, the bulk and scope-rule inserts) is an
+`INSERT … SELECT` joined to the asset's tenant, every read of a group's assets
+joins the asset to the group's tenant, and the access-refresh functions only
+materialize assets of the group's tenant. Trigger `asset_owners_same_tenant`
+(migration `000455`) refuses a cross-tenant group row from any writer, and the
+same migration removed any such row written before (research doc 15, L-01).
+
+**Every route has a data-scope class** (research doc 15 P1-3,
+`tests/unit/route_scope_classification_test.go`). `dataSurfaceRegistry`
+classifies each route by its longest path prefix: `scoped` (asset-derived rows
+limited to the caller's scope), `partial` (rows scoped, some counts
+tenant-wide), `gap` (asset-derived and not yet scoped; the note cites the
+research finding that tracks it), `separate` (another access model, e.g.
+pentest membership), `config` or `system`. A new route without a class, a
+stale entry, or a gap without a tracking reference fails CI. When you add a
+route, classify it there in the same PR; when you close a gap, move its entry
+to `scoped`.
 
 **Who is restricted:**
 
 | Caller | Sees |
 |---|---|
 | Owner / admin (`IsAdmin`) | everything in the tenant |
+| A user holding a role with `has_full_data_access` (the system Owner and Administrator roles, or a custom role such as a "Global Reader") | everything in the tenant, whatever their group rows; **not** through an API key |
 | Internal calls with no user (jobs, sensors, ingest) | everything in the tenant |
 | Member with ≥ 1 scope row | only their in-scope assets |
-| Member with no scope row | the organization's policy: **everything** or **nothing** |
+| Member with no scope row | **nothing**, in every organization |
 
-**Policy for members without an access group** (owner decision 2026-10-02):
-`tenants.members_without_group_see` (migration `000247`), `everything`
-(fail-open) or `nothing` (fail-closed, Tenable's "No Access").
+**Full data access is the Layer 2 bypass** (owner decision D3, research doc
+15 L-11). `roles.has_full_data_access` used to be stored, shown in the role
+editor ("Access all data regardless of group membership") and guarded on
+grant, but nothing read it. Now `datascope.Enforcer.ResolveFor` checks it
+(`DataScopeRepository.HasFullDataRole`, one indexed query per resolve) before
+the scope rows, and the older list paths (asset list, stats and facets,
+finding list and stats, asset and finding by id) use the same decision
+through `Enforcer.FullData`. A lookup error restricts. A request made with an
+API key never gets full data from its holder's role; a dedicated full-data key
+is future work (research doc 15, §5.7). Granting the flag is capped by the
+grant guard (you cannot give what you do not hold). A view-only level is part
+of the view/act work (P2).
 
-- Organizations that existed when the migration ran keep `everything`, so
-  nobody lost access; one that had switched on the earlier settings flag
-  (`settings.security.restricted_data_scope = true`, no longer read) keeps
-  `nothing`.
-- New organizations start with `nothing` (column default).
-- `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`
-  (`{"members_without_group_see": "everything"|"nothing"}`), owner/admin
-  (`RequireTeamAdmin`). A change is audited (`tenant.settings_updated`,
-  severity high, before/after in `changes`) and drops the enforcer's 60-second
-  policy cache for that organization at once.
-- A failure to read the policy is treated as `everything` (a database hiccup
-  must not hide all data); every other scope-lookup error denies.
+**No "see everything" mode** (owner decision D2, research doc 15 L-04; owner
+signoff 2026-10-04 to finish the retirement). A member with no scope row and
+no `has_full_data_access` role sees nothing, everywhere: lists, searches,
+counts, exports, dashboards, reports, notifications and WebSocket channels,
+and every by-id read answers 404. There is no per-organization switch back.
+
+- Before, `tenants.members_without_group_see` (migration `000247`) let an
+  organization show such members **everything** (fail-open; every
+  organization created before `000247` started that way). In fail-open
+  organizations a member who lost their last scope row (a tag change, an
+  emptied group, a deleted asset) silently widened to the whole tenant.
+- The enforcer, the older list paths (asset list, stats and facets, finding
+  list, search and stats, finding groups) and the real-time push recipients no
+  longer read the column: the SQL predicate is always
+  `asset_id IN (SELECT asset_id FROM user_accessible_assets …)`, and a user
+  scope without a tenant matches nothing. The `NOT EXISTS … OR` bypass, the
+  per-tenant policy cache (which also treated a read failure as
+  `everything`) and `DataScopeStrict`/`ScopeStrict` are gone.
+- An unparseable acting user on the finding list or stats is refused instead
+  of falling through to tenant-wide results.
+- The switch surface is gone: `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`,
+  the `GET /api/v1/organization/settings/data-scope/impact` pre-flight report,
+  the web console's "see everything" banner and the Settings → Teams card.
+  Settings → Teams states the rule instead.
+- The column itself is retired in steps:
+  1. no code reads it for visibility;
+  2. migration `000910` (expand) stores `nothing` in every organization, keeps
+     the `nothing` default and replaces the CHECK with
+     `members_without_group_see = 'nothing'`, so `everything` can never be
+     stored again; its down migration restores the `000247` CHECK and does
+     **not** flip any organization back;
+  3. **follow-up (contract), after the release that ships `000910`:** drop the
+     column and its CHECK (`ALTER TABLE tenants DROP COLUMN
+     members_without_group_see`), once no deployed binary can still select
+     it.
 
 **One enforcement point.** `internal/app/datascope.Enforcer` resolves the
 caller's scope (caller and admin flag come from the HTTP auth context, wired in
@@ -857,16 +988,72 @@ results an out-of-scope id is reported exactly like an unknown id.
   groups resolve the scope in `remediation.GroupService` and pass it to the
   key repository (`ListGroups`, `OpenFindingIDs`). Do not set
   `FindingFilter.DataScopeUserID` by hand in new code: use the enforcer
-  (`Resolve` + `WithDataScope`), which knows who is an administrator and the
-  organization's policy. Inside the finding package every filter-driven path
+  (`Resolve` + `WithDataScope`), which knows who is an administrator or holds
+  full data access. Inside the finding package every filter-driven path
   goes through one helper (`visibleFilter`: `visibleTo`, `ListFindingIDs`).
   Three older paths still set the field themselves with the caller's admin
-  flag and `DataScopeStrict` from the same policy — the findings list/search,
-  the asset list and `/findings/stats`; their SQL gives the same answer as a
-  resolved scope (fail-open bypass only when the policy is `everything`).
+  and full-data decision — the findings list/search, the asset list and
+  `/findings/stats`; their SQL gives the same answer as a resolved scope (no
+  scope row, nothing).
+- **Scheduled scans act as their owner, never as the system** (21b H2/H3):
+  clone and import set `created_by` to the actor (act scope checked on the
+  direct targets); a scheduled run refuses a scan with no owner and pauses a
+  scan whose owner is no longer an active member (`scan.refuseOwnerlessSchedule`).
+
+- **Asset findings list** (`GET /assets/{id}/findings`) goes through the
+  same `visibleFilter` as the findings list: scope plus the pentest-membership
+  rule, so a pentest finding (PoC in its metadata) reaches campaign members
+  only (21b H5).
+
+- **Asset-less exposures are full-data only for writes too** (D11, research
+  21b H1): exposure create, ingest and bulk ingest refuse an exposure with no
+  `asset_id` from a restricted caller (400), so the fingerprint upsert cannot
+  overwrite an asset-less exposure a restricted member cannot see.
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
+- **Only an active principal has scope** (member lifecycle, RFC-050,
+  migration 001044). `user_accessible_assets` holds rows only for an ACTIVE
+  membership of an ACTIVE account: every refresh function is gated by
+  `principal_is_active(tenant, user)`, a disable drops the rows in its
+  transaction and a re-enable recomputes them (`refresh_access_for_user`)
+  from the frozen groups and grants. `HasFullDataRole` is false for an
+  inactive member, and `datascope.MembershipAdminLookup` answers
+  `ErrInactivePrincipal` for a disabled or offboarded member, so a background
+  job acting for them (scheduled scan, report) refuses instead of running
+  with a bypass the person no longer holds.
+- **The scope follows its sources in the same transaction** (migration
+  001051, RFC-050 W6). Database triggers keep `user_accessible_assets` in
+  step whatever code path writes: a group asset row inserted or deleted
+  (`asset_owners_scope_sync`), a member leaving a group
+  (`group_members_scope_sync`), a group deactivated or re-activated
+  (`groups_active_scope_sync`, recomputes every member), a group deleted (its
+  asset rows go first, `groups_delete_scope_sync`), a scope rule deleted or
+  deactivated (its auto-assigned rows go, instead of `ON DELETE SET NULL`
+  orphaning them). A user keeps an asset another active group or a direct
+  grant still gives. Narrowing a rule reconciles the whole group (stale
+  auto-assignments removed), and an asset-group change reconciles the rules
+  of that tenant (it used to look them up with a zero tenant id). Before,
+  deactivating a group never removed the access it granted (21b H6/L-12).
+
+### Member lifecycle (disable, offboard, erase)
+
+A person is never hard-deleted (RFC-050 §2). Every membership gate is a
+positive check (`Membership.IsActive()`), never `!IsSuspended()`, and
+`users.status` must be `active` on every authenticated request.
+
+| Action | Access | Held sources | Owned work |
+|---|---|---|---|
+| Disable (`/suspend`, SCIM `active=false`) | cut at once: sessions, refresh tokens, sockets, keys `suspended`, scope rows dropped | frozen (groups, grants, ownership kept) | scan schedules `paused`, report schedules and workflows deactivated, administrators notified |
+| Re-enable (`/reactivate`) | restored: keys re-activated, scope recomputed | unchanged | stays paused until an administrator resumes it |
+| Offboard (`/offboard`, `DELETE`, SCIM delete) | gone: keys `revoked` | stripped: groups, grants, engagement memberships, roles, invitations; membership kept as an `offboarded` tombstone | reassigned (mandatory) to another active member of the tenant; open findings may go back to the queue |
+| Erase (`/erase`, owner) | — | — | — ; name and email anonymised, rows and foreign keys kept |
+
+SCIM delete offboards when the member owns nothing to reassign; otherwise it
+disables and asks administrators to finish. A re-invite, admin add, SCIM
+provisioning or SSO JIT re-activates a tombstone from zero (only the new
+role). Tombstones yield no token, no tenant-switcher entry, are left out of
+the default member list (`?status=offboarded|all` shows them) and out of SCIM.
 
 ### Coverage
 
@@ -905,6 +1092,69 @@ results an out-of-scope id is reported exactly like an unknown id.
 | `GET /vulnerabilities/{id}/affected-assets`, `/cve/{cve}/affected-assets` | bypass | filtered |
 | In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
+| `GET /notification-outbox` (+ `/stats`, `/{id}`, retry, delete), `GET /integrations/{id}/notification-events` | **bypass (every finding/asset event, owner emails) to members and viewers via `notifications:read` / `integrations:read`** | channel managers only: `integrations:manage` in addition (owner/admin by default); not scoped, because a channel manager already routes the whole stream (L-03) |
+| `POST /assets/import/nessus-findings` | **bypass (write)**: ran as a trusted server-side sensor, so a member added findings to any host and auto-resolved any tool's findings on it (`?tool=`) | runs with the uploader's rights (`ingest.Options.Actor`): a restricted uploader only adds findings to existing in-scope assets, creates no asset, never auto-resolves; hidden and unknown hosts both count as `assets_skipped_out_of_scope`. An unrestricted uploader auto-resolves only with the default `tenable` tool (any other `?tool=` = partial coverage). Audited `asset.imported` (L-05) |
+| `GET /components/{id}/assets` (reverse lookup), `GET /components` (incl. `?asset_id=`, export), `POST/PUT/DELETE /components[/{id}]`, `POST /components/import?asset_id=`, `GET /vulnerabilities/...` dependency detail | **bypass**: names, criticality and risk of every asset using a package; writes on any asset of the tenant | the reverse lookup and list only show in-scope assets (`dataScopeCond` in SQL); an out-of-scope asset id or dependency id answers 404 (`ComponentService`, `SBOMImportService`; L-10) |
+| `/repositories/{id}/branches/**` (list, get, default, compare, create, update, delete) | **bypass** (tenant only) | the repository must be in scope (`AssetService.GetAssetInCallerScope`): 404 otherwise (L-10) |
+| `GET /threat-models` (+ `/{id}`, `/{id}/coverage`), `POST /threat-models/generate` | **bypass** (crown-jewel model names, threat paths through any asset) | crown-jewel models of out-of-scope assets are hidden (404 by id, also on generate, which names the asset); a threat is listed and counted in coverage only when its entry point, target, hop and evidence finding are all in scope. Model rollup counters stay graph-wide (L-10) |
+| `GET/POST/DELETE /business-services/{id}/assets`, `POST/DELETE /business-units/{id}/assets` | **bypass** (names; links change an asset's effective criticality) | the list shows in-scope (and not deleted) assets; linking or unlinking an out-of-scope asset answers 404 (L-10) |
+| `GET /ctem-cycles/{id}/scope` | bypass (asset names of the snapshot) | in-scope assets of the snapshot only (L-10) |
+| `/credentials/**` (list, identities, identity exposures, related, stats, get, reveal, resolve, accept, false-positive, reactivate) | **bypass**: every leak of the tenant, incl. reveal and state changes, while `/exposures/{id}` hid the same row | leaks on in-scope assets only (`dataScopeCond`); an asset-less leak is in nobody's asset scope (unrestricted callers only); by id: 404. Stats count only those (and only credentials) (L-10) |
+| `GET /vulnerabilities/active`, `/active/stats`, MCP `list_active_cves` | bypass (CVE ids, affected counts) | aggregated only over findings on in-scope assets (L-10) |
+| `GET /groups/{g}/assets` (`groups:read`, a member default) | **bypass** (any team's asset names) | only the group's assets in the caller's scope are listed and counted (L-10) |
+
+### Dashboards follow the viewer
+
+Owner decision D6 (research doc 15 P1-4): a dashboard number means "in what
+you can see". `GET /dashboard/stats` counts (assets and findings by type,
+status, severity, averages, repositories, the monthly finding trend) are
+computed with the same SQL condition as every scoped list:
+
+| Viewer | Counts |
+|---|---|
+| Owner / admin / full-data role / unrestricted member | the organization |
+| Restricted member | only their in-scope assets and those assets' findings (0 in a fail-closed organization without a group) |
+| Restricted member with **`dashboard:aggregate`** (new permission, migration `000774`; owner and admin by default, custom roles when granted) | the organization totals; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see |
+
+Recent activity and top risks are row data and stay limited to the viewer's
+scope whatever the permission. MTTR (`GET /dashboard/mttr` and
+`/dashboard/mttr-analytics`) follows the viewer the same way (research 24
+§5.1): a restricted member averages their own in-scope findings, with
+`dashboard:aggregate` the organization. The other dashboard metrics
+(velocity, data quality, risk trend, program, process and executive metrics)
+move the same way in a follow-up; until then they stay in the table below.
+
+Remediation campaign progress follows the reader too (research 15 L-18,
+research 24): a restricted member reading a campaign (`GET`, list, and the
+responses of update, status and refresh) sees the finding and resolved counts
+of their own in-scope findings. The stored counts stay organization-wide,
+because auto-complete reads them; a restricted read never persists its view.
+### Scheduled report recipients
+
+A scheduled report mails organization posture out, so its recipients are
+limited (owner decision D12, research doc 15 L-19): an **active member of the
+organization**, or an address in one of its **`Security.AllowedDomains`**
+(exact domain, case-insensitive; no allowed domains means members only).
+
+- `POST /reports/schedules` refuses (400) any other recipient; activating a
+  schedule (`PATCH /reports/schedules/{id}/toggle`) re-checks, so a schedule
+  written before the rule, or whose recipient has left, is not switched back
+  on with them.
+- The scheduler re-checks every recipient at send time and skips the ones no
+  longer allowed (logged); with nobody left it sends nothing (`no_recipients`).
+- Create, activate and delete are audited (`report_schedule.*`, with the
+  recipients on create).
+- The report body is still tenant-wide; rendering under the creator's scope is
+  part of P1-4 (D6).
+### Scheduled reports render under their creator's scope
+
+Owner decision D6 (research doc 15 P1-4): a scheduled report shows what its
+creator can see, decided at each run (`datascope.Enforcer.ForUser`, the same
+admin and full-data rules as a request). A restricted creator's report
+counts only their in-scope assets and findings (none without a scope row; the
+trend window takes the same scope). A schedule with no recorded creator, or whose creator can no
+longer be resolved (left the organization), is not rendered or sent
+(`failed`).
 
 ### Deliberately tenant-wide (counts only, no row data)
 
@@ -914,21 +1164,50 @@ query; none exposes a row, name, title or id of an out-of-scope object.
 
 | Endpoint | Why tenant-wide |
 |---|---|
-| `GET /dashboard/stats` counts (assets/findings by type, status, severity, avg risk/CVSS, repositories, finding trend) | one batched aggregate query; counts only |
-| `GET /dashboard/{mttr,velocity,data-quality,risk-trend,mttr-analytics,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
+| `GET /dashboard/{velocity,data-quality,risk-trend,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
 | `GET /attack-surface/stats` average risk score and per-type breakdown | aggregate; the counts and row lists on that endpoint are scoped |
 | `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
 | `GET /exposures/stats` | counts by state/severity, MTTR |
-| `GET /findings/analytics/sources`, `/vulnerabilities/active`, `/active/stats` | counts per tool / per CVE |
+| `GET /findings/analytics/sources` | counts per tool |
 | `GET /approvals` `total` | the page is filtered; the total is the tenant's pending count |
 
 **Not covered by data scope** (separate access models): pentest findings and
-attachments (campaign membership), threat models and remediation campaigns,
+attachments (campaign membership), remediation campaigns,
 scans, audit logs, report schedules, and access-control administration
 (`/groups/{id}/assets/{assetId}`, which defines scope and needs `groups:write`).
 The reachability oracle used by priority classification and threat models reads
 the full graph on purpose (`GetExposureChains` stays unscoped).
+
+**Asset references a caller writes** go through `datascope.Enforcer.AssertAssetRef`:
+the asset must be a live asset of the tenant (checked for unrestricted callers
+too) **and** in the caller's scope; a foreign, unknown, deleted or out-of-scope
+id all answer 404. It fails closed when not wired (research doc 15, L-02;
+research doc 21b, C1/C3/C4). Used by:
+
+- `POST /pentest/campaigns/{id}/findings` (`asset_id`);
+- `POST /findings` (`asset_id`; a `branch_id` must also be a branch of that
+  asset, which pins it to the tenant);
+- `POST /exposures` and `POST /exposures/ingest` (`asset_id`; the bulk ingest
+  uses the batch form `FilterAssetRefs` and drops refused items with the one
+  reason `asset not found`);
+- `POST /pipelines/{id}/runs` (`asset_id`, which is copied into every step
+  command; a workflow trigger with no user gets the tenant check).
+
+**Database backstop** (migrations 000920-000922): every column that references
+`assets(id)` from a table with a `tenant_id` also has a composite foreign key
+`(tenant_id, <asset column>) → assets(tenant_id, id)`, so a cross-tenant
+reference is refused by the database whatever code writes it, including
+internal writers (ingest, EASM, CT monitor). A new table that references
+assets must add one; `TestAssetRefTenantFKs_Schema` fails otherwise. Tables
+without a `tenant_id` (`asset_owners`, which has its own same-tenant trigger,
+`asset_repositories`, `asset_group_members`, `asset_sources`,
+`attack_path_nodes`, `compensating_control_assets`) are not covered; their
+writers join the asset in the caller's tenant.
+
+Pre-delete counts are tenant-scoped: `DELETE /assets/{id}` counts only the
+tenant's own findings, so a row another tenant pointed at the asset neither
+blocks the delete nor has its count disclosed.
 
 Outside a request (WebSocket subscriptions, cross-organization dashboard) admin
 status is the team role from `v_user_effective_role` (owner/admin) — the same
@@ -1111,7 +1390,8 @@ URL-Tenant Routes (Role-based):
 └── /api/v1/tenants/{tenant}             → admin+ (U), owner (D)
 
 Invitations:
-└── /api/v1/invitations/{token}/*        → Any authenticated
+└── /api/v1/invitations/{lookup,decline,accept,accept-with-refresh}
+                                         → token in the body; accept needs the invited email
 ```
 
 Legend: (R) = Read, (W) = Write, (U) = Update, (D) = Delete
@@ -1123,12 +1403,22 @@ and standardized. The following are **decisions**, not accidents — each was ma
 deliberately and, where a design choice was involved, benchmarked against
 Tenable.sc's RBAC.
 
-1. **Allow-only, default-deny.** A user's effective permission set is the *union*
-   of what their roles grant. There is **no deny-override**: a permission-set can
-   only *add* capability, never subtract it at the enforcement layer. A "deny" that
-   appears in the UI/permission-set model is advisory (Layer-2), it does **not**
-   gate the API. This mirrors Tenable.sc, which is purely additive with no
-   deny-override. → we will **not** build a permission-set deny-gate.
+1. **Allow-only, default-deny, roles only.** A user's effective permissions are
+   the *union* of what their roles grant, and roles are the **only** source of
+   permissions. There is no deny-override. This mirrors Tenable.sc, which is
+   purely additive with no deny-override.
+
+   Groups (teams) carry **only data scope** (which assets their members see),
+   never permissions. Group permission sets and per-group permission overrides
+   were removed: they were never read by enforcement, yet the UI said members
+   inherit them. The `/api/v1/permission-sets` and
+   `/api/v1/groups/{id}/permission-sets` routes are gone, no code reads or
+   writes their tables, and `team:permission_sets:*` left the catalog
+   (migration 000670 archives those catalog rows and role grants in
+   `access_control_removed_archive`). The tables themselves are dropped by a
+   later contract migration, after a release (expand-contract).
+   `GET /api/v1/me/permissions` now returns the caller's role-derived
+   permissions (it used to return the group-derived set).
 
 2. **Backend is the only authority.** The frontend hides controls the user lacks
    perms for as a UX nicety; it is never the boundary. Every mutation is
@@ -1269,26 +1559,83 @@ Tenable.sc's RBAC.
   (which would also fix `IsOwner` under OIDC) is a phased refactor —
   **deferred** because a missing membership middleware on any chain would 403 a
   whole route group.
-- **Data scope for members without a group is a per-organization choice.**
-  Decided 2026-10-02: existing organizations stay `everything` (fail-open), new
-  ones start `nothing`, administrators choose (see *Data scope* above). Do not
-  change an organization's value in a migration without its owner.
+- **Members without a scope row see nothing, in every organization.** The
+  2026-10-02 per-organization choice (`everything` for existing
+  organizations) was retired with the owner's signoff on 2026-10-04 (decision
+  D2, see *Data scope* above). Do not add a fail-open mode back.
 - **RLS is shadow-mode.** ~99 policies exist, 0 tables have RLS enabled. This is
   intentional (staged rollout), not a dead control. Tenant isolation is enforced by
   convention (`WHERE tenant_id = $n`) today; do not assume RLS backstops it.
 
+## Granular permissions enforced (D-4, migrations 000771/000772)
+
+Thirty permissions were defined, seeded and shown in the role editor, yet no
+route checked them. Each is now either enforced or removed.
+
+**Enforced on top of the route's existing gate** (`RequireAll(old, new)`, so no
+role gains anything). Migration 000771 grants the new permission to every role,
+system or custom, that held the old gate, recording each grant in
+`granular_permission_backfill` (its down removes exactly those), so every
+role keeps its abilities. An administrator can now remove the new permission
+from a custom role to deny that one action.
+
+| Permission | Routes | Old gate |
+|---|---|---|
+| `assets:import` | `POST /assets/import/{csv,nessus,nessus-findings,kubernetes}` | `assets:write` |
+| `scans:execute` | `POST /scans/{id}/trigger`, `POST /scans/quick`, `POST /assets/{id}/scan` | `scans:write` / `assets:write` |
+| `integrations:pipelines:execute` | `POST /pipelines/{id}/runs` | `integrations:pipelines:write` |
+| `ai_triage:read` | `GET /findings/{id}/ai-triage*`, `GET /findings/ai-triage/config` | `findings:read` |
+| `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` | `findings:write` |
+| `findings:exposures:read` | `GET /exposures`, `/{id}`, `/stats`, `/{id}/history` | `findings:read` |
+| `findings:exposures:write` | `POST /exposures`, `/ingest`, `PUT /{id}/ctem-id` | `findings:write` |
+| `findings:exposures:triage` | `POST /exposures/{id}/resolve`, `/reactivate` (with `findings:write`), `/accept`, `/false-positive` (with `findings:approve`) | as listed |
+| `findings:exposures:delete` | `DELETE /exposures/{id}` | `findings:delete` |
+| `integrations:scm:read` | `GET /integrations/scm` | `integrations:read` |
+| `integrations:scm:write` / `:delete` | create/update / delete of an SCM-category integration (checked in the handler) | `integrations:manage` |
+| `team:groups:assets` | `POST/PUT/DELETE /groups/{id}/assets*` | `team:groups:write` |
+| `team:read` | `GET /tenants/{tenant}` | membership |
+| `team:members:read` | `GET /tenants/{tenant}/members`, `/members/stats`, `/invitations` | membership |
+| `settings:read` | `GET /tenants/{tenant}/settings`, admin `GET .../settings/*` | membership / team admin |
+| `team:update` | `PATCH /tenants/{tenant}` | team admin |
+| `team:members:write` | member add/role/suspend/reactivate/remove, admin-created users and setup links | team admin |
+| `team:members:invite` | create/resend/delete invitations | team admin |
+| `settings:write` | every `PATCH/PUT/POST .../settings/*` (owner-only ones stay owner-only) | team admin / owner |
+| `team:delete` | `DELETE /tenants/{tenant}` | team owner |
+
+`/tenants/{tenant}/...` routes name the tenant in the path, which may differ
+from the credential's tenant, so they use `RequireTenantPermission`: the
+caller's permissions are resolved **in the path tenant** (owner passes); a
+permission held in another tenant never counts. Every member could read the
+organization, its members and its settings, so 000771 also grants
+`team:read`, `team:members:read` and `settings:read` to every existing custom
+role. A custom role created later needs them explicitly for those reads.
+
+`findings:export` gates the server-side findings export (RFC-048, #1058); `assets:export` is kept for the planned asset export of the same RFC and is not removed.
+
+**Removed** (000772; catalog rows and grants archived in
+`access_control_removed_archive`, restored by its down):
+
+| Permission | Why it is meaningless |
+|---|---|
+| `compliance:frameworks:write` | Frameworks are a read-only seeded catalog; no API writes them. |
+| `compliance:reports:read` | No compliance report API; the page is a redirect. |
+| `findings:policies:*` | The policies module was retired (000215) without ever having routes. |
+| `settings:billing:read`, `settings:billing:write` | No billing API or page. |
+
 ## CI invariants that keep this from drifting
 
-Two tests fail the build if the model erodes. Treat them as executable spec:
+These tests fail the build if the model erodes. Treat them as executable spec:
 
 | Invariant | Test | What it guarantees |
 |-----------|------|--------------------|
 | **Every route is gated or explicitly allowlisted** | `tests/unit/route_authz_coverage_test.go` (AUTHZ-02) | A go/ast walk of `routes/*.go` resolves chi `.Group` nesting + inherited gates; any route with no `Require*`/`RequireTeam*`/`RequireRole` and not in `allowlistPrefixes` fails the build, naming the route. Removing one `Require(...)` → red. |
 | **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
+| **No tenantless by-id statement on a tenant-scoped table** | `tools/lint/tenantsql` (D-11) | Folds the SQL each `internal/infra/postgres` function sends and fails on `WHERE id = $n` against a table with a `tenant_id` column when the statement has no tenant predicate, unless the method is named `...ForPlatform`/`...Unscoped` (never callable from an HTTP handler) or the shrink-only `allowlist.txt` records why. See `tools/lint/tenantsql/README.md`. |
+| **Every referenced permission exists** | `tests/unit/permission_references_exist_test.go` | Every value in `module.ModulePermissionMapping` (sidebar/bootstrap), every `permission.X` constant used in api Go code, and every value of the web `Permission` object (`web/src/lib/permissions/constants.ts`) is in `permission.AllPermissions()`. A reference to a permission no role can hold (which silently hides a module from every non-admin) → red. |
 
-The permission strings themselves are also mirrored in the UI (TS constants); the
-sync test covers Go↔DB, and code review covers UI drift until the monorepo contract
-codegen (RFC-020) subsumes both.
+Each module in `ModulePermissionMapping` names the permission its routes gate
+on, so the sidebar and the API agree (for example Attack Surface → `assets:read`,
+CTEM Cycles → `ctem:cycles:read`, Scan Pipelines → `integrations:pipelines:read`).
 
 ## How to … (recipes that stay inside the invariants)
 
@@ -1334,3 +1681,16 @@ answer "may they touch *this* row". For that:
 - Never authorize a mutation off the request body's tenant/owner fields — derive the
   principal's tenant from the authenticated context (or, for agents, from the agent
   key), never from client-supplied data.
+
+## Web console: mutating controls follow the route table
+
+The web console shows a mutating control (Save, Delete, Add, Test, Sync) only
+when the caller passes the gate of the API route it calls. The gates come from
+`web/src/config/api-route-permissions.json`, which
+`tests/unit/route_permission_map_test.go` generates from the route source
+(`UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run TestRoutePermissionMapIsCurrent`;
+CI fails when it is stale). Components call `useCanMutate("METHOD /path")`
+(`web/src/lib/permissions/can-mutate.ts`) instead of picking a permission by
+hand, which is how about 15 settings controls drifted from the API (shown and
+then 403, or hidden although allowed). This is UX only; the API gate stays the
+authority.

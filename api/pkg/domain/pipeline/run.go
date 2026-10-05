@@ -48,6 +48,14 @@ func (s RunStatus) IsTerminal() bool {
 var ErrRunAlreadyFinished = shared.NewDomainError("RUN_ALREADY_FINISHED",
 	"pipeline run has already finished", shared.ErrConflict)
 
+// ErrScanRunActive is returned when a scheduled run is created while the
+// scan already has an active run (overlap policy skip, RFC-046 D4). The check
+// runs under the scan row lock that serializes every trigger of the scan, in
+// the transaction that inserts the run (§6.2), so a manual trigger cannot
+// slip in between the check and the insert.
+var ErrScanRunActive = shared.NewDomainError("SCAN_RUN_IN_PROGRESS",
+	"the scan's previous run is still active", shared.ErrConflict)
+
 // ErrOccurrenceAlreadyRun is returned when a run is created for a schedule
 // occurrence of a scan that already has a run: a second scheduler instance,
 // or a retried trigger, firing the same slot.
@@ -97,6 +105,16 @@ type Run struct {
 	// that was not started by the scheduler). A scan has at most one run per
 	// occurrence: UNIQUE(scan_id, scheduled_for).
 	ScheduledFor *time.Time
+
+	// DeadlineAt is when the reaper settles the run if it is still open:
+	// started_at plus the scan timeout, capped at 24 h, fixed when the run
+	// starts (RFC-046 §6.3). Nil for runs started before migration 000674.
+	DeadlineAt *time.Time
+
+	// UnfinishedTargetCount is how many targets were still open when the run
+	// was settled at its deadline. The targets themselves are read with
+	// RolloverStore.GetUnfinishedTargets.
+	UnfinishedTargetCount int
 
 	// Step runs (loaded separately)
 	StepRuns []*StepRun

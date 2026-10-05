@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -49,8 +50,64 @@ type TriggerScanExecInput struct {
 
 // ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
 // the scan's previous run still active.
-var ErrScanRunInProgress = shared.NewDomainError("SCAN_RUN_IN_PROGRESS",
-	"the scan's previous run is still active", shared.ErrConflict)
+var ErrScanRunInProgress = pipeline.ErrScanRunActive
+
+// ErrScanActorRequired is returned when a scan would be created (clone,
+// import) without the person who owns it.
+var ErrScanActorRequired = fmt.Errorf("%w: the acting user is required", shared.ErrValidation)
+
+// ErrScanHasNoOwner is returned when a scheduled run is due for a scan with
+// no owner (created_by). Such a run would act as the unrestricted system, so
+// it is refused (research 21b H2/H3, RFC-050 SP-3).
+var ErrScanHasNoOwner = shared.NewDomainError("SCAN_HAS_NO_OWNER",
+	"This scan has no owner, so its scheduled runs are refused. Clone or re-save it as a member to take ownership.",
+	shared.ErrValidation)
+
+// ErrScanOwnerInactive is returned when a scheduled run is due for a scan
+// whose owner is no longer an active member; the scan is paused.
+var ErrScanOwnerInactive = shared.NewDomainError("SCAN_OWNER_INACTIVE",
+	"This scan's owner is disabled or left the organization, so the scan was paused. Reassign it to resume.",
+	shared.ErrValidation)
+
+// OwnerActivity reports whether a user is an active member of a tenant with
+// an active account (postgres.AccessControlRepository.IsActiveTenantMember).
+type OwnerActivity interface {
+	IsActiveTenantMember(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+}
+
+// SetOwnerActivity wires the owner check of scheduled runs.
+func (s *Service) SetOwnerActivity(o OwnerActivity) { s.ownerActivity = o }
+
+// refuseOwnerlessSchedule stops a scheduled run that would act for nobody:
+// a scan without an owner is refused, a scan whose owner is no longer active
+// is paused and refused. A lookup error refuses (fail closed).
+func (s *Service) refuseOwnerlessSchedule(ctx context.Context, sc *scan.Scan) error {
+	if sc.CreatedBy == nil || sc.CreatedBy.IsZero() {
+		s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
+			NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), ErrScanHasNoOwner).
+				WithResourceName(sc.Name).WithMessage("Scheduled run refused: the scan has no owner"))
+		return ErrScanHasNoOwner
+	}
+	if s.ownerActivity == nil {
+		return nil
+	}
+	active, err := s.ownerActivity.IsActiveTenantMember(ctx, sc.TenantID, *sc.CreatedBy)
+	if err != nil {
+		return fmt.Errorf("check scan owner, run refused: %w", err)
+	}
+	if active {
+		return nil
+	}
+	if perr := sc.Pause(); perr == nil {
+		if uerr := s.scanRepo.Update(ctx, sc); uerr != nil {
+			s.logger.Warn("failed to pause a scan whose owner is inactive", "scan_id", sc.ID.String(), "error", uerr)
+		}
+	}
+	s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
+		NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), ErrScanOwnerInactive).
+			WithResourceName(sc.Name).WithMessage("Scheduled run refused and scan paused: the owner is not an active member"))
+	return ErrScanOwnerInactive
+}
 
 // TriggerScan triggers a scan execution.
 func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (*pipeline.Run, error) {
@@ -77,6 +134,9 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 
 	// NOTE: Concurrent run limits are now checked atomically in CreateRunIfUnderLimit
 	// to prevent race conditions where multiple triggers bypass the limit.
+	// This early check only saves the work of resolving targets for an
+	// occurrence that will be skipped; the guarantee is the same check in
+	// CreateRunIfUnderLimit, under the scan row lock, for every scheduled run.
 	if input.SkipIfRunning {
 		active, err := s.runRepo.CountActiveByScanID(ctx, sc.ID)
 		if err != nil {
@@ -89,6 +149,27 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	triggerType := input.TriggerType
 	if triggerType == "" {
 		triggerType = pipeline.TriggerTypeManual
+	}
+	// A scheduled run acts as the scan's owner: refuse when there is none
+	// and pause when the owner is no longer an active member.
+	if triggerType == pipeline.TriggerTypeSchedule {
+		if err := s.refuseOwnerlessSchedule(ctx, sc); err != nil {
+			return nil, err
+		}
+	}
+
+	// The organization's sensor opt-ins (research/25 D3): interactsh is
+	// removed for this run, custom templates refuse the trigger.
+	optInWarning, err := s.applyOptInsAtTrigger(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	if optInWarning != "" {
+		if input.Context == nil {
+			input.Context = map[string]any{}
+		}
+		warnings, _ := input.Context["dispatch_warnings"].([]string)
+		input.Context["dispatch_warnings"] = append(warnings, optInWarning)
 	}
 
 	// Validate tools are still available and active before triggering
@@ -129,7 +210,7 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	// ran (a pause, a config change), and never stored the run status anyway
 	// (the generic Update does not carry the run columns). The run is counted
 	// when it finishes (RecordRun / the timeout reaper).
-	if err := s.scanRepo.RecordRunStarted(ctx, sc.ID, run.ID); err != nil {
+	if err := s.scanRepo.RecordRunStarted(ctx, sc.TenantID, sc.ID, run.ID); err != nil {
 		s.logger.Warn("failed to record run in scan", "error", err)
 	}
 
@@ -193,6 +274,13 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
 	runContext["routing_tags"] = sc.Tags
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
+	// Who the run acts for (act scope of chained stages): the person who
+	// triggered it, else the scan's owner. Never sent to a sensor.
+	if actor := userIDPtr(triggeredBy); actor != nil {
+		runContext[RunContextKeyActor] = actor.String()
+	} else if sc.CreatedBy != nil {
+		runContext[RunContextKeyActor] = sc.CreatedBy.String()
+	}
 	// Resolve the targets server-side (direct targets + asset-group members,
 	// minus scope exclusions) and carry them to the step commands; sensors do
 	// not resolve asset groups, so without this a group scan scans nothing.
@@ -203,6 +291,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
 	}
+	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
 	targets := resolved.Targets
 	zones, err := s.loadZones(ctx, sc.TenantID)
 	if err != nil {
@@ -310,6 +399,13 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
 	}
+	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
+
+	// A connector scan (RFC-047) is one command for the connector's sensor;
+	// the sensor's zone routing and platform routing below do not apply.
+	if _, connector := s.isConnectorScanner(ctx, sc.ScannerName); connector {
+		return s.triggerConnectorScan(ctx, sc, resolved, triggerType, triggeredBy, runContext, retryAttempt, scheduledFor)
+	}
 
 	// Scan zones (RFC-023): once the tenant has zones, a network scanner's
 	// targets are routed to the narrowest zone, batched, and pinned to a
@@ -340,6 +436,14 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		return nil, err
 	}
 	routing.record(runContext)
+
+	// Targets for the tenant's sensors outside any zone go only where a
+	// sensor's reported local policy accepts them (research/25 §3.6).
+	if !routing.usePlatform() {
+		if err := s.applyUnzonedPreflight(ctx, sc, plan, resolved.Targets, runContext); err != nil {
+			return nil, err
+		}
+	}
 
 	// Outside zones too, a scanner that reads one target per job gets one
 	// command per target, not one command that scans only the first.
@@ -444,13 +548,16 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *pipeline.Run, 
 		}
 		roots++
 		if !step.ConditionMet(run) {
-			s.skipWorkflowStep(ctx, run, step, "Condition not met")
+			s.skipWorkflowStep(ctx, run, step, step.ConditionSkipReason())
 			continue
 		}
 		if queued >= maxParallel {
 			continue // started by the pipeline service as slots free up
 		}
-		if err := s.queueWorkflowStep(ctx, run, step); err != nil {
+		if s.stepQueuer == nil {
+			return ErrStepQueuerUnavailable
+		}
+		if err := s.stepQueuer.QueueRunStep(ctx, run, step); err != nil {
 			return err
 		}
 		queued++
@@ -491,98 +598,6 @@ func (s *Service) skipWorkflowStep(ctx context.Context, run *pipeline.Run, step 
 			return
 		}
 	}
-}
-
-// queueWorkflowStep queues a workflow step for execution.
-func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step *pipeline.Step) error {
-	// Find the step run first to include in payload
-	var stepRunID string
-	stepRuns, _ := s.stepRunRepo.GetByPipelineRunID(ctx, run.ID)
-	for _, sr := range stepRuns {
-		if sr.StepID == step.ID {
-			stepRunID = sr.ID.String()
-			break
-		}
-	}
-
-	payloadMap, err := workflowStepPayload(run, step, stepRunID)
-	if err != nil {
-		// A setting the sensor would refuse fails the step here, with the
-		// reason, instead of a command that fails on the sensor.
-		for _, sr := range stepRuns {
-			if sr.StepID == step.ID {
-				sr.Fail(err.Error(), "INVALID_STEP_CONFIG")
-				if uerr := s.stepRunRepo.Update(ctx, sr); uerr != nil {
-					s.logger.Warn("failed to fail step run", "step_key", step.StepKey, "error", uerr)
-				}
-				break
-			}
-		}
-		return fmt.Errorf("%w: step %s: %w", shared.ErrValidation, step.StepKey, err)
-	}
-	payload, _ := json.Marshal(payloadMap)
-
-	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
-	if err != nil {
-		return fmt.Errorf("failed to create command: %w", err)
-	}
-	if zoneID := pipeline.ScanZoneFromContext(run.Context); zoneID != nil {
-		cmd.SetScanZone(*zoneID) // only the zone's sensors may claim it
-	}
-
-	if err := s.commandRepo.Create(ctx, cmd); err != nil {
-		return fmt.Errorf("failed to create command: %w", err)
-	}
-
-	// Update step run status to queued
-	for _, sr := range stepRuns {
-		if sr.StepID == step.ID {
-			sr.CommandID = &cmd.ID
-			sr.Queue()
-			if err := s.stepRunRepo.Update(ctx, sr); err != nil {
-				s.logger.Warn("failed to update step run", "error", err)
-			}
-			break
-		}
-	}
-
-	return nil
-}
-
-// workflowStepPayload is the command payload of one workflow step, with
-// consistent field names for pipeline progression. The step's settings go
-// under PayloadKeyConfig, the key the sensor reads (see
-// pipeline.NormalizeStepConfig).
-func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID string) (map[string]any, error) {
-	config, err := pipeline.NormalizeStepConfig(step.Tool, step.Config)
-	if err != nil {
-		return nil, err
-	}
-	payloadMap := map[string]any{
-		pipeline.PayloadKeyPipelineRunID: run.ID.String(),
-		pipeline.PayloadKeyStepRunID:     stepRunID,
-		pipeline.PayloadKeyStepKey:       step.StepKey,
-		"step_id":                        step.ID.String(),
-		pipeline.PayloadKeyConfig:        config,
-		"required_capabilities":          step.Capabilities,
-		"preferred_tool":                 step.Tool,
-		"timeout_seconds":                step.TimeoutSeconds,
-		"context":                        run.Context,
-	}
-	// The sensor SDK runs the scanner the payload names in `scanner`
-	// (ScanCommandPayload); without it every step failed on the sensor with
-	// "scanner not found: ". preferred_tool stays for the platform's tool
-	// gate and older readers.
-	if step.Tool != "" {
-		payloadMap["scanner"] = step.Tool
-	}
-	// Surface direct targets at the top level of the payload — sensor executors
-	// read job.Payload["targets"], not the nested run context. Without this a
-	// workflow driven by ad-hoc targets (QuickScan) would receive none.
-	if targets, ok := run.Context["targets"]; ok {
-		payloadMap["targets"] = targets
-	}
-	return payloadMap, nil
 }
 
 // EmbeddedTemplate represents a template embedded in scan command payload.
@@ -654,7 +669,7 @@ func (s *Service) scannerPayload(
 		"routing_tags":                      sc.Tags,
 		"tenant_runner_only":                sc.RunOnTenantRunner,
 		legacyv1.PayloadKeySensorPreference: string(sc.SensorPreference),
-		"context":                           runContext,
+		"context":                           StepRunContext(runContext, nil),
 		// The sensor SDK (ScanCommandPayload) reads `scanner`, `config` and a
 		// single `target`, not `scanner_name`/`scanner_config` — send both sets
 		// so the command dispatches correctly (contract drift previously left
@@ -821,16 +836,16 @@ func (s *Service) lazySyncTemplatesIfNeeded(ctx context.Context, tenantID shared
 		}
 
 		// Record metrics
-		metrics.TemplateSyncsTotal.WithLabelValues(tenantID.String(), string(source.SourceType)).Inc()
+		metrics.TemplateSyncsTotal.WithLabelValues(string(source.SourceType)).Inc()
 		if result.Success {
-			metrics.TemplateSyncsSuccessTotal.WithLabelValues(tenantID.String()).Inc()
+			metrics.TemplateSyncsSuccessTotal.WithLabelValues().Inc()
 			s.logger.Info("template source synced",
 				"source_id", source.ID.String(),
 				"source_name", source.Name,
 				"templates_found", result.TemplatesFound,
 				"templates_added", result.TemplatesAdded)
 		} else {
-			metrics.TemplateSyncsFailedTotal.WithLabelValues(tenantID.String()).Inc()
+			metrics.TemplateSyncsFailedTotal.WithLabelValues().Inc()
 		}
 	}
 
@@ -1021,6 +1036,9 @@ func (s *Service) validateSingleScanTool(ctx context.Context, scannerName string
 			shared.ErrValidation,
 		)
 	}
+	if tool.IsConnector() && s.connectorScans == nil {
+		return ErrConnectorScansUnavailable
+	}
 
 	return nil
 }
@@ -1075,21 +1093,18 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 				shared.ErrValidation,
 			)
 		}
-	case len(step.Capabilities) > 0:
-		matchingTool, err := s.toolRepo.FindByCapabilities(ctx, tenantID, step.Capabilities)
-		if err != nil || matchingTool == nil {
+		if tool.IsConnector() {
 			return shared.NewDomainError(
-				"NO_MATCHING_TOOL",
-				fmt.Sprintf("No active tool found for step '%s' with capabilities %v. Please configure a tool for this step.", step.StepKey, step.Capabilities),
+				"TOOL_NOT_SCANNER",
+				fmt.Sprintf("'%s' used by step '%s' is a connector, not a scanner: it runs on its integration's connector commands. Use a scanner.", step.Tool, step.StepKey),
 				shared.ErrValidation,
 			)
 		}
-		if !matchingTool.IsActive {
-			return shared.NewDomainError(
-				"TOOL_DISABLED",
-				fmt.Sprintf("Tool '%s' matching step '%s' capabilities is disabled.", matchingTool.Name, step.StepKey),
-				shared.ErrValidation,
-			)
+	case len(step.Capabilities) > 0:
+		// The planner's own rule (step_plan.go), so a step that validates
+		// is a step the dispatcher can name a scanner for (F1).
+		if _, err := ResolveStepTool(ctx, s.toolRepo, tenantID, step); err != nil {
+			return err
 		}
 	default:
 		return shared.NewDomainError(
@@ -1116,14 +1131,26 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 		runContext["archived_target_count"] = r.Archived
 	}
 	if len(r.Warnings) > 0 {
-		runContext["dispatch_warnings"] = r.Warnings
+		prev, _ := runContext["dispatch_warnings"].([]string)
+		runContext["dispatch_warnings"] = append(prev, r.Warnings...)
 	}
 	if r.Unconfirmed > 0 {
 		runContext["unconfirmed_target_count"] = r.Unconfirmed
 	}
+	if r.Incompatible > 0 {
+		runContext["incompatible_target_count"] = r.Incompatible
+	}
+	if len(r.TargetTypes) > 0 {
+		runContext[RunContextKeyTargetTypes] = r.TargetTypes
+	}
+	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
+		return shared.NewDomainError(codeNoCompatibleTargets,
+			fmt.Sprintf("Scan %q has no target its scanner can scan: %s. Pick a scanner for these asset types or change the asset group.", sc.Name, r.IncompatibleReason),
+			shared.ErrValidation)
+	}
 	if len(r.Targets) == 0 && r.Unconfirmed > 0 && r.Excluded == 0 {
 		return shared.NewDomainError("ALL_TARGETS_UNCONFIRMED",
-			fmt.Sprintf("Every target of scan %q is an asset whose ownership is not confirmed yet; nothing to scan. Review their attribution first.", sc.Name),
+			fmt.Sprintf("No target of scan %q is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Targets.", sc.Name),
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.Excluded > 0 {
@@ -1147,6 +1174,8 @@ type groupScanMember struct {
 	ID          shared.ID
 	Name        string
 	MatchValues []string
+	// Type is the stored (type, sub_type) the scanner type gate reads.
+	Type asset.TypeRef
 }
 
 // groupScanMemberPage is the keyset page size for group members; the
@@ -1174,6 +1203,7 @@ func (s *Service) listGroupScanMembers(ctx context.Context, tenantID, groupID sh
 				ID:          m.ID,
 				Name:        m.Name,
 				MatchValues: scope.AssetExclusionValues(m.Type, m.Name, m.Properties),
+				Type:        asset.TypeRef{Type: asset.AssetType(m.Type), SubType: m.SubType},
 			})
 		}
 		// Stop before materializing a huge group: exclusions only remove
@@ -1212,7 +1242,7 @@ func (s *Service) filterAssetsForSingleScan(ctx context.Context, sc *scan.Scan) 
 	}
 
 	// Get asset type counts across every asset group of the scan
-	assetTypeCounts := map[string]int64{}
+	assetTypeCounts := map[asset.TypeRef]int64{}
 	listed := map[shared.ID]bool{}
 	for _, groupID := range sc.GetAllAssetGroupIDs() {
 		if listed[groupID] {

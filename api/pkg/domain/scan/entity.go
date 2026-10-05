@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ type Scan struct {
 	// Schedule
 	ScheduleType     ScheduleType
 	ScheduleCron     string     // Cron expression (for crontab type)
+	ScheduleRRule    string     // RFC 5545 RRULE (for rrule type), e.g. FREQ=WEEKLY;BYDAY=MO;BYHOUR=2
 	ScheduleDay      *int       // Day of week (0-6) or month (1-31)
 	ScheduleTime     *time.Time // Time of day to run
 	ScheduleTimezone string
@@ -253,8 +255,16 @@ func (s *Scan) SetSchedule(scheduleType ScheduleType, cron string, day *int, t *
 		}
 		// Parse with the parser the scheduler uses. An expression it cannot
 		// parse used to be stored and then quietly run every 24 hours.
-		if _, err := cronParser.Parse(cron); err != nil {
+		sched, err := cronParser.Parse(cron)
+		if err != nil {
 			return shared.NewDomainError("VALIDATION", "cannot parse cron expression: "+err.Error(), shared.ErrValidation)
+		}
+		// Minimum interval (RFC-046 B8): a schedule that fires more often
+		// than every MinScheduleInterval is a scan storm, refused on save.
+		if gap := minCronGap(sched, time.Now().UTC()); gap < MinScheduleInterval {
+			return shared.NewDomainError("VALIDATION",
+				fmt.Sprintf("schedule fires every %s; the minimum interval is %s", gap, MinScheduleInterval),
+				shared.ErrValidation)
 		}
 	default:
 		return shared.NewDomainError("VALIDATION", "invalid schedule_type", shared.ErrValidation)
@@ -275,6 +285,7 @@ func (s *Scan) SetSchedule(scheduleType ScheduleType, cron string, day *int, t *
 
 	s.ScheduleType = scheduleType
 	s.ScheduleCron = cron
+	s.ScheduleRRule = ""
 	s.ScheduleDay = day
 	s.ScheduleTime = t
 	s.ScheduleTimezone = timezone
@@ -297,10 +308,77 @@ func (s *Scan) computeNextRunAt() {
 	s.NextRunAt = next
 }
 
+// MinScheduleInterval is the shortest gap between two scheduled runs of a
+// scan (RFC-046 B8).
+const MinScheduleInterval = 15 * time.Minute
+
+// minCronGap is the shortest gap between consecutive firings of sched over the
+// next week from now (a cron expression repeats within a week, except for
+// day-of-month rules, whose gaps are larger than any sub-hour one).
+func minCronGap(sched cron.Schedule, now time.Time) time.Duration {
+	horizon := now.Add(7 * 24 * time.Hour)
+	prev := sched.Next(now)
+	if prev.IsZero() {
+		return 0
+	}
+	gap := time.Duration(1<<63 - 1)
+	for i := 0; i < 2000 && prev.Before(horizon); i++ {
+		next := sched.Next(prev)
+		if next.IsZero() {
+			break
+		}
+		gap = min(gap, next.Sub(prev))
+		prev = next
+	}
+	return gap
+}
+
 // calculateNextRun computes the next run time based on schedule.
 // Honors ScheduleTimezone — schedule_time is interpreted in the configured timezone,
 // and cron expressions are evaluated in the same timezone.
+//
+// While the scan's current occurrence is due (the scheduler claiming it), the
+// next one is at least MinScheduleInterval after it: a crontab stored before
+// the minimum existed (every minute) runs every 15 minutes, not every minute.
 func (s *Scan) calculateNextRun() *time.Time {
+	now := time.Now()
+	base := now
+	if s.NextRunAt != nil && !s.NextRunAt.After(now) {
+		if floor := s.NextRunAt.Add(MinScheduleInterval - time.Second); floor.After(base) {
+			base = floor
+		}
+	}
+	return s.occurrenceAfter(base)
+}
+
+// OccurrenceAfter returns the schedule's first occurrence strictly after t,
+// in UTC, or nil for a manual scan or an unusable schedule.
+func (s *Scan) OccurrenceAfter(t time.Time) *time.Time {
+	return s.occurrenceAfter(t)
+}
+
+// MaxUpcomingOccurrences bounds UpcomingOccurrences (a preview, not a plan).
+const MaxUpcomingOccurrences = 10
+
+// UpcomingOccurrences returns the schedule's next n occurrences strictly after
+// t, in UTC, in order: the occurrences the scheduler fires (OccurrenceAfter
+// applied n times). n is capped at MaxUpcomingOccurrences; a manual scan or an
+// unusable schedule has none, and a rule that ends (UNTIL) returns fewer.
+func (s *Scan) UpcomingOccurrences(t time.Time, n int) []time.Time {
+	n = min(n, MaxUpcomingOccurrences)
+	out := make([]time.Time, 0, max(n, 0))
+	for len(out) < n {
+		next := s.occurrenceAfter(t)
+		if next == nil || !next.After(t) {
+			break
+		}
+		out = append(out, *next)
+		t = *next
+	}
+	return out
+}
+
+func (s *Scan) occurrenceAfter(t time.Time) *time.Time {
 	if s.ScheduleType == ScheduleManual {
 		return nil
 	}
@@ -311,7 +389,7 @@ func (s *Scan) calculateNextRun() *time.Time {
 		loc = time.UTC
 	}
 
-	now := time.Now().In(loc)
+	now := t.In(loc)
 	var next time.Time
 
 	switch s.ScheduleType {
@@ -321,6 +399,15 @@ func (s *Scan) calculateNextRun() *time.Time {
 		next = nextAtWeekday(now, s.ScheduleDay, s.ScheduleTime)
 	case ScheduleMonthly:
 		next = nextAtDayOfMonth(now, s.ScheduleDay, s.ScheduleTime)
+	case ScheduleRRule:
+		r, err := parseScheduleRRule(s.ScheduleRRule, loc)
+		if err != nil {
+			return nil
+		}
+		next = r.After(now, false)
+		if next.IsZero() {
+			return nil
+		}
 	case ScheduleCrontab:
 		// Parse cron expression with timezone-aware schedule. SetSchedule
 		// refuses an unparseable expression; one stored before that check gets

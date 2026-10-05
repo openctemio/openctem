@@ -285,6 +285,22 @@ func (m *MockAssetRepository) GetPropertyFacets(_ context.Context, _ shared.ID, 
 	return nil, nil
 }
 
+func (m *MockAssetRepository) SetCrownJewel(_ context.Context, tenantID, id shared.ID, isCrownJewel bool, score float64, notes string) error {
+	a, ok := m.assets[id.String()]
+	if !ok || a.TenantID() != tenantID {
+		return shared.ErrNotFound
+	}
+	a.SetCrownJewel(isCrownJewel)
+	props := a.Properties()
+	if props == nil {
+		props = map[string]any{}
+	}
+	props["business_impact_score"] = score
+	props["business_impact_notes"] = notes
+	a.SetProperties(props)
+	return nil
+}
+
 func (m *MockAssetRepository) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
 	return nil, nil
 }
@@ -475,7 +491,7 @@ func TestAssetService_CreateAsset_WithTenantID(t *testing.T) {
 	}
 }
 
-func TestAssetService_CreateAsset_DuplicateName_Upserts(t *testing.T) {
+func TestAssetService_CreateAsset_DuplicateName_IsConflict(t *testing.T) {
 	svc, repo := newTestService()
 
 	input := app.CreateAssetInput{
@@ -493,75 +509,56 @@ func TestAssetService_CreateAsset_DuplicateName_Upserts(t *testing.T) {
 		t.Fatalf("failed to create first asset: %v", err)
 	}
 
-	// Create duplicate — should upsert (merge), not error
+	// A second create of the same name is a conflict that names the existing
+	// asset (no data scope is wired: the caller sees everything) and changes
+	// nothing.
 	input.Description = "Updated"
 	input.Tags = []string{"tag2"}
-	a2, err := svc.CreateAsset(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected upsert, got error: %v", err)
+	_, err = svc.CreateAsset(context.Background(), input)
+	var dup *app.DuplicateAssetError
+	if !errors.As(err, &dup) || !errors.Is(err, shared.ErrAlreadyExists) {
+		t.Fatalf("duplicate create error = %v, want a DuplicateAssetError", err)
 	}
-
-	// Should return same asset (updated)
-	if a2.ID() != a1.ID() {
-		t.Errorf("expected same asset ID, got different: %s vs %s", a1.ID(), a2.ID())
+	if dup.ExistingID != a1.ID() {
+		t.Errorf("conflict names %s, want the existing asset %s", dup.ExistingID, a1.ID())
 	}
-	if a2.Description() != "Updated" {
-		t.Errorf("expected updated description, got %s", a2.Description())
+	if got := repo.assets[a1.ID().String()]; got == nil || got.Description() == "Updated" || len(got.Tags()) != len(a1.Tags()) {
+		t.Errorf("duplicate create changed the existing asset")
 	}
-	// Tags should be merged
-	if len(a2.Tags()) < 2 {
-		t.Errorf("expected merged tags (>=2), got %d: %v", len(a2.Tags()), a2.Tags())
-	}
-	// Should be 1 asset in repo, not 2
 	if len(repo.assets) != 1 {
-		t.Errorf("expected 1 asset (upsert), got %d", len(repo.assets))
+		t.Errorf("expected 1 asset, got %d", len(repo.assets))
 	}
 }
 
-func TestAssetService_CreateAsset_IPCorrelation(t *testing.T) {
+func TestAssetService_CreateAsset_IPCorrelation_IsConflict(t *testing.T) {
 	svc, repo := newTestService()
 
-	// Create host named by IP (simulating Splunk ingest)
-	input1 := app.CreateAssetInput{
+	// A host named by IP (for example from a Splunk import).
+	a1, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "10.0.1.5",
 		Type:        "host",
 		Criticality: "medium",
 		Description: "From Splunk",
-	}
-	a1, err := svc.CreateAsset(context.Background(), input1)
+	})
 	if err != nil {
 		t.Fatalf("failed to create IP-named host: %v", err)
 	}
-	if a1.Name() != "10.0.1.5" {
-		t.Errorf("expected name 10.0.1.5, got %s", a1.Name())
-	}
-	if len(repo.assets) != 1 {
-		t.Errorf("expected 1 asset, got %d", len(repo.assets))
-	}
 
-	// Create same host with hostname (simulating ESXi ingest)
-	// This should match by name "10.0.1.5" (exact match via GetByName)
-	// and upsert with new description
-	input2 := app.CreateAssetInput{
+	// The same address again is the same asset: a conflict naming it.
+	_, err = svc.CreateAsset(context.Background(), app.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "10.0.1.5",
 		Type:        "host",
 		Criticality: "high",
 		Description: "From ESXi",
+	})
+	var dup *app.DuplicateAssetError
+	if !errors.As(err, &dup) || dup.ExistingID != a1.ID() {
+		t.Fatalf("duplicate address create error = %v, want a conflict naming %s", err, a1.ID())
 	}
-	a2, err := svc.CreateAsset(context.Background(), input2)
-	if err != nil {
-		t.Fatalf("expected upsert, got error: %v", err)
-	}
-	if a2.ID() != a1.ID() {
-		t.Errorf("expected same asset, got different ID")
-	}
-	if a2.Description() != "From ESXi" {
-		t.Errorf("expected updated description, got %s", a2.Description())
-	}
-	if len(repo.assets) != 1 {
-		t.Errorf("expected still 1 asset, got %d", len(repo.assets))
+	if len(repo.assets) != 1 || repo.assets[a1.ID().String()].Description() != "From Splunk" {
+		t.Errorf("duplicate address create changed or added assets")
 	}
 }
 
@@ -744,18 +741,24 @@ func TestAssetService_CreateAsset_GetByNameError(t *testing.T) {
 	}
 }
 
+// Every input name is accepted, and only the core type is stored: an alias
+// becomes (core type, sub_type) (RFC-042 §6.3.8 R1).
 func TestAssetService_CreateAsset_AllAssetTypes(t *testing.T) {
-	assetTypes := []string{
-		"domain", "subdomain", "ip_address", "website", "web_application",
-		"api", "repository", "host", "container", "database", "network",
-		"cloud_account", "compute", "storage", "unclassified",
+	stored := map[string][2]string{
+		"domain": {"domain", ""}, "subdomain": {"subdomain", ""}, "ip_address": {"ip_address", ""},
+		"website": {"application", "website"}, "web_application": {"application", "website"},
+		"api": {"application", "api"}, "repository": {"repository", ""}, "host": {"host", ""},
+		"container": {"container", ""}, "database": {"database", ""}, "network": {"network", ""},
+		"cloud_account": {"cloud_account", ""}, "compute": {"host", "compute"}, "storage": {"storage", ""},
+		"unclassified": {"unclassified", ""}, "s3_bucket": {"storage", "bucket"},
+		"firewall": {"network", "firewall"}, "kubernetes_cluster": {"kubernetes", "cluster"},
 	}
 
-	for _, at := range assetTypes {
+	for at, want := range stored {
 		t.Run(at, func(t *testing.T) {
 			svc, _ := newTestService()
 			input := app.CreateAssetInput{
-				Name:        "Test " + at,
+				Name:        "test-" + at,
 				Type:        at,
 				Criticality: "medium",
 			}
@@ -763,8 +766,11 @@ func TestAssetService_CreateAsset_AllAssetTypes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create asset with type %s: %v", at, err)
 			}
-			if a.Type().String() != at {
-				t.Errorf("expected type %s, got %s", at, a.Type().String())
+			if a.Type().String() != want[0] || a.SubType() != want[1] {
+				t.Errorf("input %s stored as (%s, %q), want (%s, %q)", at, a.Type(), a.SubType(), want[0], want[1])
+			}
+			if !a.Type().IsStored() {
+				t.Errorf("stored type %s is not a core type", a.Type())
 			}
 		})
 	}

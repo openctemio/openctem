@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -173,6 +175,11 @@ func (r *FindingRepository) ResolveCoverageStale(ctx context.Context, tenantID s
 	if len(ids) == 0 {
 		return nil, nil
 	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
+		return nil, nil
+	}
 	idStrs := make([]string, len(ids))
 	for i, id := range ids {
 		idStrs[i] = id.String()
@@ -208,4 +215,69 @@ func (r *FindingRepository) ResolveCoverageStale(ctx context.Context, tenantID s
 		return nil, fmt.Errorf("iterate resolved findings: %w", err)
 	}
 	return resolved, nil
+}
+
+// ResolveSourceMitigated resolves the open findings a source said are
+// mitigated (docs/rfcs/RFC-047-tenable-sc-sensor-connector.md §7.6), or with
+// dryRun only returns the ones it would resolve. A finding qualifies only
+// when it is the tenant's, on the stated asset, under the stated key, open,
+// not from a human source, last seen by the same tool, and last seen no later
+// than the mitigation. Returns the ids resolved (or that would be).
+func (r *FindingRepository) ResolveSourceMitigated(ctx context.Context, tenantID shared.ID, tool string,
+	items []vulnerability.SourceMitigation, dryRun bool) ([]shared.ID, error) {
+	if len(items) == 0 || tool == "" {
+		return nil, nil
+	}
+	fps := make([]string, len(items))
+	assets := make([]string, len(items))
+	ats := make([]time.Time, len(items))
+	for i, it := range items {
+		fps[i] = it.Fingerprint
+		assets[i] = it.AssetID.String()
+		ats[i] = it.MitigatedAt.UTC()
+	}
+	match := `
+		WITH m AS (
+			SELECT * FROM unnest($3::text[], $4::uuid[], $5::timestamptz[]) AS m(fingerprint, asset_id, mitigated_at)
+		)
+		SELECT f.id
+		FROM findings f
+		JOIN m ON m.fingerprint = f.fingerprint AND m.asset_id = f.asset_id
+		WHERE f.tenant_id = $1
+			AND f.status IN ` + coverageOpenStatuses + `
+			AND f.source NOT IN ` + coverageProtectedSources + `
+			AND COALESCE(f.last_seen_tool, f.tool_name) = $2
+			AND COALESCE(f.last_seen_at, f.created_at) <= m.mitigated_at`
+	query := `SELECT id::text FROM (` + match + `) x`
+	if !dryRun {
+		query = `
+		UPDATE findings f
+		SET status = 'resolved',
+			resolution = 'auto_fixed',
+			resolution_method = 'source_mitigated',
+			resolved_at = NOW(),
+			updated_at = NOW()
+		WHERE f.tenant_id = $1 AND f.id IN (` + match + `)
+			AND f.status IN ` + coverageOpenStatuses + `
+		RETURNING f.id::text`
+	}
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), tool, pq.Array(fps), pq.Array(assets), pq.Array(ats))
+	if err != nil {
+		return nil, fmt.Errorf("resolve source-mitigated findings: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var idStr string
+		if err := rows.Scan(&idStr); err != nil {
+			return nil, fmt.Errorf("scan source-mitigated finding id: %w", err)
+		}
+		if id, err := shared.IDFromString(idStr); err == nil {
+			out = append(out, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate source-mitigated findings: %w", err)
+	}
+	return out, nil
 }

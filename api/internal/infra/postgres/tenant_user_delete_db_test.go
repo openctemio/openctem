@@ -44,7 +44,6 @@ var auditTables = map[string]bool{
 	"asset_state_history":      true,
 	"exposure_state_history":   true,
 	"finding_activities":       true,
-	"permission_set_versions":  true,
 	"suppression_rule_audit":   true,
 	"finding_status_approvals": true,
 }
@@ -55,6 +54,7 @@ var orphanAllowlist = map[string]string{
 	"audit_log_chain":                "hash chain of audit_logs; audit_logs keep their rows (tenant_id SET NULL) and the chain must stay verifiable",
 	"audit_chain_rebaselines":        "record of an admin re-signing the audit chain; evidence, no FK to tenants by design",
 	"audit_chain_rebaseline_entries": "hashes a chain rebaseline overwrote; evidence, no FK to tenants by design",
+	"audit_chain_anchors":            "chain head left by an audit retention prune; evidence, no FK to tenants by design",
 	"priority_class_audit_log":       "append-only priority audit trail; no FK to tenants by design",
 }
 
@@ -226,18 +226,51 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"audit_log_chain": func(*schemaSeeder) map[string]any {
 		return map[string]any{"hash": strings.Repeat("ab", 32), "prev_hash": ""}
 	},
+	"audit_chain_anchors": func(*schemaSeeder) map[string]any {
+		h := strings.Repeat("ab", 32)
+		return map[string]any{"anchor_hash": h, "archive_sha256": h, "pruned_count": 1}
+	},
 	"audit_chain_rebaseline_entries": func(*schemaSeeder) map[string]any {
 		h := strings.Repeat("ab", 32)
 		return map[string]any{"old_hash": h, "old_prev_hash": "", "new_hash": h, "new_prev_hash": ""}
 	},
 	// fingerprint has a NOT LIKE CHECK; its literal is the excluded pattern.
 	"finding_fingerprints": func(s *schemaSeeder) map[string]any { return map[string]any{"fingerprint": s.uniq()} },
+	// target_version has a range CHECK.
+	"finding_rekey_runs": func(*schemaSeeder) map[string]any { return map[string]any{"target_version": "2"} },
 	// emoji has a length CHECK.
 	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
 	"scan_zones":        func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
 	"sensors":           func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
 	// type has a format CHECK, not a list of literals.
 	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
+	// Definitions (RFC-044): namespace has a format CHECK; a tenant
+	// definition is not a CVE and comes from a report or a user.
+	"vulnerabilities": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"kind": "exposure", "namespace": "NUCLEI", "external_id": s.uniq(), "origin": "report"}
+	},
+	"definition_identifiers": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"namespace": "NUCLEI", "external_id": s.uniq(), "is_primary": "false", "asserted_by": "report"}
+	},
+	"definition_taxonomy": func(*schemaSeeder) map[string]any {
+		return map[string]any{"namespace": "CWE", "external_id": "CWE-79", "asserted_by": "report"}
+	},
+	// An edge needs two different definitions in the tenant's scope.
+	"definition_relations": func(s *schemaSeeder) map[string]any {
+		var second string
+		if err := s.tx.QueryRowContext(s.ctx, `INSERT INTO vulnerabilities (tenant_id, kind, namespace, external_id, title, origin)
+			VALUES ($1, 'exposure', 'NUCLEI', $2, 't', 'report') RETURNING id`, s.tenantID, s.uniq()).Scan(&second); err != nil {
+			s.t.Fatalf("insert second definition: %v", err)
+		}
+		return map[string]any{"to_id": second, "to_scope": s.tenantID, "scope_tenant_id": s.tenantID, "asserted_by": "report"}
+	},
+	// The primary link is ord 0.
+	"finding_definitions": func(*schemaSeeder) map[string]any {
+		return map[string]any{"role": "primary", "ord": "0", "asserted_by": "report"}
+	},
+	// findings.definition_id must name one of the finding's own links, which
+	// do not exist yet when the finding is seeded.
+	"findings": func(*schemaSeeder) map[string]any { return map[string]any{"definition_id": nil} },
 	// digest has a format CHECK; manifest and ignored have type CHECKs.
 	"sensor_manifests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"digest": "sha256:" + strings.Repeat("ab", 32), "manifest": "{}", "ignored": "[]"}
@@ -518,7 +551,10 @@ func (s *schemaSeeder) fkValues(st *seedTable, strict bool) (map[string]any, boo
 		required := false
 		for _, c := range fk.cols {
 			for _, col := range st.cols {
-				if col.name == c && col.notNull && !col.hasDef {
+				// tenant_id is always the seeded tenant, so it never makes a
+				// key required: findings (id, tenant_id, definition_id) ->
+				// finding_definitions is optional while definition_id is NULL.
+				if col.name == c && c != "tenant_id" && col.notNull && !col.hasDef {
 					required = true
 				}
 			}
@@ -795,15 +831,16 @@ func TestAssetStateHistory_AuditTriggers(t *testing.T) {
 		}
 		return tenantID, userID, historyID
 	}
-	inTx := func(t *testing.T, fn func(tx *sql.Tx)) {
+	inTxOn := func(t *testing.T, conn *sql.DB, fn func(tx *sql.Tx)) {
 		t.Helper()
-		tx, err := db.BeginTx(ctx, nil)
+		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			t.Fatalf("begin: %v", err)
 		}
 		defer func() { _ = tx.Rollback() }()
 		fn(tx)
 	}
+	inTx := func(t *testing.T, fn func(tx *sql.Tx)) { t.Helper(); inTxOn(t, db, fn) }
 	mustFail := func(t *testing.T, tx *sql.Tx, want, q string, args ...any) {
 		t.Helper()
 		mustExecTx(t, tx, "SAVEPOINT expect_fail")
@@ -852,7 +889,8 @@ func TestAssetStateHistory_AuditTriggers(t *testing.T) {
 	// is reached while its asset still exists. Recreate the assets FK to get
 	// that order and check the delete does not depend on it.
 	t.Run("deleting the tenant does not depend on cascade order", func(t *testing.T) {
-		inTx(t, func(tx *sql.Tx) {
+		// Recreating the FK is DDL: the schema owner, not the app role.
+		inTxOn(t, testdb.OpenMigrator(t), func(tx *sql.Tx) {
 			// The ALTER locks assets and tenants, which concurrently running
 			// packages use all the time: take both up front, never waiting
 			// while holding one, or the ALTER deadlocks with them.

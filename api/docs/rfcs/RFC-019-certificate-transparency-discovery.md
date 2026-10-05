@@ -1,6 +1,6 @@
 # RFC-019 — Certificate-Transparency (CT) exposure discovery
 
-- Status: **Implemented (Phase 1)** — the buildable core ships in this PR: crt.sh client + parser, per-tenant scheduled controller, and two exposure types emitted. Phase 2 (lookalike/typosquat detection, asset promotion) is scoped but **not** built.
+- Status: **Implemented (Phase 1); Phase 2 partial** — Phase 1 (#480): crt.sh client + parser, per-tenant scheduled controller, and two exposure types emitted. Since then, under RFC-036: every watched domain covered, crt.sh retries and a Cert Spotter fallback with the `ct_monitor_state` table (#811, migration `000266`), `certificate_expired` for the newest certificate, and CT names promoted to assets with attribution (#839, migration `000324`). Not built: lookalike/typosquat detection (checked 2026-10-04).
 - Area: CTEM Discovery — external-exposure connectors, external attack surface.
 - Related: RFC-018 (identity exposure discovery — the sibling connector; it shipped only the *vocabulary*), `internal/app/ctemid` (the public-JSON-feed refresh pattern this mirrors), `internal/app/exposurebridge` (the exposure projection this joins), `pkg/httpsec` (SSRF guard).
 

@@ -95,13 +95,14 @@ func (m *mockRoleRepo) Create(_ context.Context, r *role.Role) error {
 	return nil
 }
 
-func (m *mockRoleRepo) GetByID(_ context.Context, id role.ID) (*role.Role, error) {
+func (m *mockRoleRepo) GetByID(_ context.Context, tenantID, id role.ID) (*role.Role, error) {
 	m.getByIDCalls++
 	if m.getByIDErr != nil {
 		return nil, m.getByIDErr
 	}
 	r, ok := m.roles[id.String()]
-	if !ok {
+	// Like the repository: a system role, or one of tenantID's own.
+	if !ok || (r.TenantID() != nil && *r.TenantID() != tenantID) {
 		return nil, role.ErrRoleNotFound
 	}
 	return r, nil
@@ -153,7 +154,7 @@ func (m *mockRoleRepo) Update(_ context.Context, r *role.Role) error {
 	return nil
 }
 
-func (m *mockRoleRepo) Delete(_ context.Context, id role.ID) error {
+func (m *mockRoleRepo) Delete(_ context.Context, _ role.ID, id role.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -905,8 +906,10 @@ func TestAssignRole_RoleBelongsToDifferentTenant(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for cross-tenant role assignment")
 	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
+	// Another tenant's custom role is invisible to this tenant (D-11): the
+	// lookup itself answers not-found, without disclosing that it exists.
+	if !errors.Is(err, role.ErrRoleNotFound) {
+		t.Errorf("expected ErrRoleNotFound, got %v", err)
 	}
 }
 
@@ -1248,5 +1251,75 @@ func TestBulkAssignRole_SkipsNonMembers(t *testing.T) {
 	}
 	if repo.bulkAssignUserN != 1 {
 		t.Errorf("expected only the 1 member passed to the repo, got %d", repo.bulkAssignUserN)
+	}
+}
+
+// recordingMembershipCache records which users had their cached membership
+// dropped, so a test can see whether a role edit reached every holder.
+type recordingMembershipCache struct {
+	invalidated []string
+}
+
+func (c *recordingMembershipCache) Invalidate(_ context.Context, tenantID, userID string) {
+	c.invalidated = append(c.invalidated, tenantID+":"+userID)
+}
+
+// A permission edit whose holder lookup fails must not commit: committing
+// would leave the revoked permissions live in every holder's cache until the
+// TTL expires, with nothing in the response to say so.
+func TestUpdateRole_PermissionEdit_MemberLookupFails_RefusesWithoutWriting(t *testing.T) {
+	roleRepo := newMockRoleRepo()
+	cache := &recordingMembershipCache{}
+	svc := app.NewRoleService(roleRepo, newMockPermissionRepo(), logger.NewNop(),
+		app.WithRoleMembershipCacheInvalidator(cache))
+	tenantID := role.NewID()
+	r := seedCustomRole(roleRepo, tenantID, "analyst", "Analyst", []string{"findings:read", "findings:write"})
+	roleRepo.listMembersErr = errors.New("db unavailable")
+
+	_, err := svc.UpdateRole(context.Background(), tenantID.String(), r.ID().String(),
+		app.UpdateRoleInput{Permissions: []string{"findings:read"}}, app.AuditContext{})
+	if err == nil {
+		t.Fatal("expected the edit to fail when role holders cannot be listed")
+	}
+	if roleRepo.updateCalls != 0 {
+		t.Fatalf("role was written (%d update calls) although its holders could not be invalidated", roleRepo.updateCalls)
+	}
+}
+
+// A permission edit invalidates every holder of the role.
+func TestUpdateRole_PermissionEdit_InvalidatesEveryHolder(t *testing.T) {
+	roleRepo := newMockRoleRepo()
+	cache := &recordingMembershipCache{}
+	svc := app.NewRoleService(roleRepo, newMockPermissionRepo(), logger.NewNop(),
+		app.WithRoleMembershipCacheInvalidator(cache))
+	tenantID := role.NewID()
+	r := seedCustomRole(roleRepo, tenantID, "analyst", "Analyst", []string{"findings:read", "findings:write"})
+	u1, u2 := role.NewID(), role.NewID()
+	roleRepo.roleMembers = []*role.UserRole{{UserID: u1}, {UserID: u2}}
+
+	if _, err := svc.UpdateRole(context.Background(), tenantID.String(), r.ID().String(),
+		app.UpdateRoleInput{Permissions: []string{"findings:read"}}, app.AuditContext{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := map[string]bool{tenantID.String() + ":" + u1.String(): true, tenantID.String() + ":" + u2.String(): true}
+	if len(cache.invalidated) != 2 || !want[cache.invalidated[0]] || !want[cache.invalidated[1]] {
+		t.Fatalf("expected both holders invalidated, got %v", cache.invalidated)
+	}
+}
+
+// A name-only edit does not need the holder list, so a failing lookup must
+// not block it.
+func TestUpdateRole_NameOnly_DoesNotListMembers(t *testing.T) {
+	svc, repo, _ := newTestRoleService()
+	tenantID := role.NewID()
+	r := seedCustomRole(repo, tenantID, "analyst", "Analyst", nil)
+	repo.listMembersErr = errors.New("db unavailable")
+	name := "Renamed"
+	if _, err := svc.UpdateRole(context.Background(), tenantID.String(), r.ID().String(),
+		app.UpdateRoleInput{Name: &name}, app.AuditContext{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.listMembersCalls != 0 {
+		t.Fatalf("name-only edit listed members %d times", repo.listMembersCalls)
 	}
 }

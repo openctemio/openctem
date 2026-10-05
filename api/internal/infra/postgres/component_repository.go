@@ -199,8 +199,8 @@ func (r *ComponentRepository) LinkAsset(ctx context.Context, dep *component.Asse
 	return nil
 }
 
-// GetDependency retrieves a dependency by ID.
-func (r *ComponentRepository) GetDependency(ctx context.Context, id shared.ID) (*component.AssetDependency, error) {
+// GetDependency retrieves a dependency of the tenant by ID.
+func (r *ComponentRepository) GetDependency(ctx context.Context, tenantID, id shared.ID) (*component.AssetDependency, error) {
 	// We need to join with components to get full details
 	query := `
 		SELECT
@@ -208,9 +208,9 @@ func (r *ComponentRepository) GetDependency(ctx context.Context, id shared.ID) (
 			c.id, c.name, c.version, c.ecosystem, c.purl, c.description, c.homepage, c.vulnerability_count, c.metadata, c.created_at, c.updated_at
 		FROM asset_components ac
 		JOIN components c ON ac.component_id = c.id
-		WHERE ac.id = $1
+		WHERE ac.tenant_id = $1 AND ac.id = $2
 	`
-	row := r.db.QueryRowContext(ctx, query, id.String())
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 	return r.scanDependency(row)
 }
 
@@ -222,26 +222,33 @@ func (r *ComponentRepository) UpdateDependency(ctx context.Context, dep *compone
 			path = $3,
 			manifest_file = $4,
 			updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $5
 	`
-	_, err := r.db.ExecContext(ctx, query,
+	result, err := r.db.ExecContext(ctx, query,
 		dep.ID().String(),
 		dep.DependencyType().String(),
 		dep.Path(),
 		nullString(dep.ManifestFile()),
+		dep.TenantID().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update dependency: %w", err)
 	}
+	if n, err := result.RowsAffected(); err == nil && n == 0 {
+		return shared.ErrNotFound
+	}
 	return nil
 }
 
-// DeleteDependency removes a specific dependency link.
-func (r *ComponentRepository) DeleteDependency(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM asset_components WHERE id = $1`
-	_, err := r.db.ExecContext(ctx, query, id.String())
+// DeleteDependency removes a dependency link of the tenant.
+func (r *ComponentRepository) DeleteDependency(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM asset_components WHERE tenant_id = $1 AND id = $2`
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete dependency: %w", err)
+	}
+	if n, err := result.RowsAffected(); err == nil && n == 0 {
+		return shared.ErrNotFound
 	}
 	return nil
 }
@@ -328,13 +335,13 @@ func (r *ComponentRepository) GetAssetDependency(ctx context.Context, tenantID, 
 }
 
 // UpdateAssetDependencyParent updates the parent_component_id and depth of an asset_component.
-func (r *ComponentRepository) UpdateAssetDependencyParent(ctx context.Context, id shared.ID, parentID shared.ID, depth int) error {
+func (r *ComponentRepository) UpdateAssetDependencyParent(ctx context.Context, tenantID, id shared.ID, parentID shared.ID, depth int) error {
 	query := `
 		UPDATE asset_components
 		SET parent_component_id = $1, depth = $2, updated_at = NOW()
-		WHERE id = $3
+		WHERE id = $3 AND tenant_id = $4
 	`
-	result, err := r.db.ExecContext(ctx, query, parentID.String(), depth, id.String())
+	result, err := r.db.ExecContext(ctx, query, parentID.String(), depth, id.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to update dependency parent: %w", err)
 	}
@@ -646,6 +653,13 @@ func (r *ComponentRepository) buildWhereClause(filter component.Filter) (string,
 			sub += fmt.Sprintf(" AND asset_id = $%d", argIndex)
 			args = append(args, filter.AssetID.String())
 		}
+		if filter.DataScope != nil {
+			// Only components used by an asset the caller may see.
+			argIndex++
+			cond, scopeArgs := dataScopeCondAt("asset_id", filter.DataScope, argIndex)
+			sub += " AND " + cond
+			args = append(args, scopeArgs...)
+		}
 		conditions = append(conditions, fmt.Sprintf("id IN (%s)", sub))
 	} else if filter.AssetID != nil {
 		conditions = append(conditions, fmt.Sprintf("id IN (SELECT component_id FROM asset_components WHERE asset_id = $%d)", argIndex))
@@ -933,9 +947,21 @@ func (r *ComponentRepository) ListAssetUsage(
 	tenantID shared.ID,
 	componentID shared.ID,
 	atRiskOnly bool,
+	scope *shared.DataScope,
 	page pagination.Pagination,
 ) (pagination.Result[component.ComponentAssetUsage], error) {
 	empty := pagination.NewResult([]component.ComponentAssetUsage{}, 0, page)
+
+	// Only the assets the caller may see: the list names them and shows
+	// their criticality and risk ($3, $4 when restricted).
+	args := []any{tenantID.String(), componentID.String()}
+	scopeFilter := ""
+	if scope != nil {
+		var cond string
+		cond, args = dataScopeCond("ac.asset_id", scope, args)
+		scopeFilter = " AND " + cond
+	}
+	limitAt := len(args) + 1
 
 	atRiskFilter := ""
 	if atRiskOnly {
@@ -956,7 +982,7 @@ func (r *ComponentRepository) ListAssetUsage(
 		SELECT COUNT(DISTINCT ac.asset_id)
 		FROM asset_components ac
 		JOIN assets a ON a.id = ac.asset_id
-		WHERE ac.tenant_id = $1 AND ac.component_id = $2` + atRiskFilter
+		WHERE ac.tenant_id = $1 AND ac.component_id = $2` + atRiskFilter + scopeFilter
 
 	listQuery := `
 		SELECT
@@ -969,7 +995,7 @@ func (r *ComponentRepository) ListAssetUsage(
 			ac.created_at
 		FROM asset_components ac
 		JOIN assets a ON a.id = ac.asset_id
-		WHERE ac.tenant_id = $1 AND ac.component_id = $2` + atRiskFilter + `
+		WHERE ac.tenant_id = $1 AND ac.component_id = $2` + atRiskFilter + scopeFilter + `
 		ORDER BY
 			CASE a.criticality
 				WHEN 'critical' THEN 1
@@ -980,19 +1006,17 @@ func (r *ComponentRepository) ListAssetUsage(
 			END,
 			a.risk_score DESC,
 			a.name ASC
-		LIMIT $3 OFFSET $4
-	`
+		` + fmt.Sprintf("LIMIT $%d OFFSET $%d", limitAt, limitAt+1)
 
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String(), componentID.String()).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return empty, fmt.Errorf("failed to count component asset usage: %w", err)
 	}
 	if total == 0 {
 		return empty, nil
 	}
 
-	rows, err := r.db.QueryContext(ctx, listQuery,
-		tenantID.String(), componentID.String(), page.Limit(), page.Offset())
+	rows, err := r.db.QueryContext(ctx, listQuery, append(args, page.Limit(), page.Offset())...)
 	if err != nil {
 		return empty, fmt.Errorf("failed to list component asset usage: %w", err)
 	}

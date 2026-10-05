@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"net/url"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
@@ -22,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -162,9 +165,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	tenantHandler.SetRoleService(svc.Role)
 	tenantHandler.SetAssetService(svc.Asset)
 	tenantHandler.SetModuleService(svc.Module)
-	if svc.DataScopePolicy != nil {
-		tenantHandler.SetDataScopePolicyInvalidator(svc.DataScopePolicy.Invalidate)
-	}
 	lastTenantHandler = tenantHandler
 
 	// Vulnerability handler with user and asset services for enrichment
@@ -173,6 +173,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetAssetService(svc.Asset)
 	vulnHandler.SetAuditService(svc.Audit)
 	vulnHandler.SetComponentService(svc.Component)
+	vulnHandler.SetSavedViews(svc.SavedView)
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
@@ -193,6 +194,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
 	findingActionsHandler.SetValidationRunner(svc.ValidationRun)
 	findingActionsHandler.SetSourceAnalytics(svc.SourceAnalytics)
+	findingActionsHandler.SetSavedViews(svc.SavedView)
 
 	// Validation handler + coverage KPI reader.
 	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
@@ -260,7 +262,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
-		EASM:          handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log),
+		EASM:          newEASMHandler(repos, svc, log),
+		EASMSeed:      newEASMSeedHandler(repos, svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -273,8 +276,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            newAssetImportHandler(svc, log),
-		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
+		ReportSchedule:         newReportScheduleHandler(svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
+		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:             vulnHandler,
@@ -300,8 +304,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}(),
 
 		// Integration
-		Integration: handler.NewIntegrationHandler(svc.Integration, v, log),
-		DefectDojo:  handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
+		Integration: func() *handler.IntegrationHandler {
+			h := handler.NewIntegrationHandler(svc.Integration, v, log)
+			// A sync of a Tenable.sc connector queues connector_sync (RFC-047).
+			h.SetTenableSCConnector(svc.TenableSC)
+			return h
+		}(),
+		DefectDojo: handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Sensors & Commands
 		Command:          commandHandler,
@@ -322,6 +331,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SCIMToken: func() *handler.SCIMTokenHandler {
 			h := handler.NewSCIMTokenHandler(svc.SCIMToken, log)
 			h.SetGroupService(svc.SCIMGroups)
+			h.SetAuditService(svc.Audit)
 			return h
 		}(),
 		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
@@ -354,7 +364,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
 
 		// File Attachments (shared across pentest/retest/campaign)
-		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, log),
+		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, svc.Audit, log),
 
 		// Compliance Framework Management
 		Compliance: handler.NewComplianceHandler(svc.Compliance, log),
@@ -372,21 +382,19 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		BusinessUnit: handler.NewBusinessUnitHandler(svc.BusinessUnit, log),
 
 		// Business Services (Phase 3)
-		BusinessService: handler.NewBusinessServiceHandler(deps.DB.DB, log),
+		BusinessService: handler.NewBusinessServiceHandler(deps.DB.DB, log).WithDataScope(svc.DataScope),
 
 		// API Keys & Webhooks
-		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
-		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),
+		APIKey: handler.NewAPIKeyHandler(svc.APIKey, v, log),
 
 		// AI Triage (always initialized - handler returns 503 if service is nil)
 		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
 
 		// Suppressions
-		Suppression: handler.NewSuppressionHandler(svc.Suppression, log),
+		Suppression: newSuppressionHandler(svc, log),
 
 		// Access Control
 		Group:          handler.NewGroupHandler(svc.Group, v, log),
-		PermissionSet:  handler.NewPermissionSetHandler(svc.Permission, v, log),
 		Role:           handler.NewRoleHandler(svc.Role, v, log),
 		Permission:     handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
 		AssignmentRule: handler.NewAssignmentRuleHandler(svc.AssignmentRule, v, log),
@@ -433,7 +441,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
-		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
@@ -457,6 +465,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// tools and their tenant config, scanner templates) too (RFC-040 §5.11).
 	handlers.Scope.SetAuditService(svc.Audit)
 	handlers.Tool.SetAuditService(svc.Audit)
+	// Configuration changes audited with a before/after diff.
+	handlers.Integration.SetAuditService(svc.Audit)
+	handlers.TemplateSource.SetAuditService(svc.Audit)
+	handlers.SLA.SetAuditService(svc.Audit)
+	handlers.AssignmentRule.SetAuditService(svc.Audit)
+	handlers.ScopeRule.SetAuditService(svc.Audit)
+	handlers.Outbox.SetAuditService(svc.Audit)
+	handlers.PriorityRule.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
 	handlers.ScannerTemplate.SetAuditService(svc.Audit)
@@ -634,10 +650,11 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
-func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, log *logger.Logger) *handler.AttachmentHandler {
+func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *app.AuditService, log *logger.Logger) *handler.AttachmentHandler {
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
 	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
+	h.SetAuditService(auditSvc)
 	return h
 }
 
@@ -714,19 +731,74 @@ func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Ser
 	return handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
 }
 
+// newEASMHandler builds the EASM overview and review queue handler; every
+// review decision is audited (RFC-036).
+func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMHandler {
+	h := handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log)
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	review := easmapp.NewReviewService(repos.Attribution, svc.DataScope)
+	review.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	return h.SetReview(review, audit)
+}
+
+// easmDecisionEffects reclassifies the decided assets' findings now and, on a
+// rejection, resolves the name's EASM exposures (research/22 P0-9).
+func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger) *easmapp.DecisionEffects {
+	var reclassify easmapp.AssetReclassifier
+	if pub := svc.ControlChangePub; pub != nil {
+		reclassify = func(ctx context.Context, tenantID shared.ID, ids []shared.ID) {
+			pub.PublishAssetReclassify(ctx, tenantID, ids, controller.ReasonAssetChange, "attribution decided")
+		}
+	}
+	return easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
+}
+
+// newEASMSeedHandler builds the seeds handler; every change is audited.
+func newEASMSeedHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMSeedHandler {
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewEASMSeedHandler(easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed), audit, log)
+}
+
 // newAssetAttributionHandler builds the attribution handler with its audit
 // trail (RFC-036: every human attribution decision is audited).
 func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.AssetAttributionHandler {
 	h := handler.NewAssetAttributionHandler(repos.Attribution, svc.Asset, log)
+	if svc.ActiveGate != nil {
+		h.SetActiveGate(svc.ActiveGate)
+	}
 	if svc.Audit != nil {
 		h.SetAuditService(svc.Audit)
 	}
+	h.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
 	return h
 }
 
 // newAssetImportHandler builds the asset import handler with its audit trail.
 func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
 	h := handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log)
+	h.SetAuditService(svc.Audit)
+	h.SetDataScope(svc.DataScope)
+	return h
+}
+
+// newReportScheduleHandler builds the report schedule handler with its audit
+// trail.
+func newReportScheduleHandler(svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
+	h := handler.NewReportScheduleHandler(svc.ReportSchedule, log)
+	h.SetAuditService(svc.Audit)
+	return h
+}
+
+// newSuppressionHandler wires the suppression handler with the tenant audit log
+// (approvals, and self-approvals at Critical severity, are recorded there).
+func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.SuppressionHandler {
+	h := handler.NewSuppressionHandler(svc.Suppression, log)
 	h.SetAuditService(svc.Audit)
 	return h
 }

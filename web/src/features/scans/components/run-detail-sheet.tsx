@@ -24,6 +24,11 @@ import { get } from '@/lib/api/client'
 import { pipelineRunEndpoints } from '@/lib/api/endpoints'
 import type { PipelineRun } from '@/lib/api/scan-types'
 import { copyToClipboard } from '@/lib/clipboard'
+import { toDisplayText } from '@/lib/untrusted-text'
+import { formatScanDuration } from '@/features/scans/lib/format'
+import { elapsedMs, runRefreshInterval, runTaskProgress } from '@/features/scans/lib/run-display'
+import { RunTasksTable } from './run-tasks-table'
+import { RunStageLanes } from './run-stage-lanes'
 
 interface RunDetailSheetProps {
   runId: string | null
@@ -35,11 +40,32 @@ function formatTime(ts?: string) {
 }
 
 function durationOf(run: PipelineRun): string | null {
-  if (!run.started_at || !run.completed_at) return null
-  const s = Math.max(0, (Date.parse(run.completed_at) - Date.parse(run.started_at)) / 1000)
-  if (!Number.isFinite(s)) return null
-  const m = Math.floor(s / 60)
-  return m > 0 ? `${m}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`
+  const ms = elapsedMs(run)
+  if (ms === undefined) return null
+  const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
+  return run.completed_at ? label : `${label} so far`
+}
+
+/** The callout over a run's message: what its status means, in its tone. */
+export function runOutcomeCallout(status: string): {
+  tone: 'warning' | 'destructive' | 'info'
+  title: string
+} {
+  switch (status) {
+    case 'partial':
+      return {
+        tone: 'warning',
+        title: 'Some work did not finish; the results that came back are kept',
+      }
+    case 'timeout':
+      return { tone: 'destructive', title: 'Run timed out' }
+    case 'canceled':
+      return { tone: 'info', title: 'Run canceled' }
+    case 'failed':
+      return { tone: 'destructive', title: 'Run failed' }
+    default:
+      return { tone: 'info', title: 'Run message' }
+  }
 }
 
 /**
@@ -55,9 +81,15 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
   } = useSWR<PipelineRun>(
     runId ? pipelineRunEndpoints.get(runId) : null,
     (url: string) => get<PipelineRun>(url),
-    { revalidateOnFocus: false }
+    {
+      revalidateOnFocus: false,
+      // Live while the run is: status, task counts and duration refresh every
+      // 5 s until it settles, then polling stops (a finished run never moves).
+      refreshInterval: runRefreshInterval,
+    }
   )
   const duration = run ? durationOf(run) : null
+  const progress = run ? runTaskProgress(run.task_summary) : null
 
   return (
     <DetailSheet
@@ -96,17 +128,43 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
       ) : (
         <div className="space-y-5">
           {run.error_message && (
-            <DetailCallout tone="destructive" icon={CircleAlert} title="Run failed">
-              {run.error_message}
+            <DetailCallout
+              tone={runOutcomeCallout(run.status).tone}
+              icon={CircleAlert}
+              title={runOutcomeCallout(run.status).title}
+            >
+              {/* Sensor and tool output can shape this text: control and
+                  direction characters are shown as escapes, never applied. */}
+              <span dir="auto" className="break-words [unicode-bidi:isolate]">
+                {toDisplayText(run.error_message)}
+              </span>
             </DetailCallout>
           )}
 
           <DetailStatGrid aria-label="Key numbers">
             <DetailStat label="Findings" value={run.total_findings} />
+            {progress && <DetailStat label="Tasks" value={progress.label} />}
             {duration && <DetailStat label="Duration" value={duration} />}
           </DetailStatGrid>
 
           <DetailSections>
+            <DetailSection title="Stages">
+              <RunStageLanes runId={run.id} refreshInterval={runRefreshInterval(run)} />
+            </DetailSection>
+            <DetailSection title="Tasks" count={run.task_summary?.total}>
+              {run.tasks && run.tasks.length > 0 ? (
+                <RunTasksTable
+                  runId={run.id}
+                  tasks={run.tasks}
+                  total={run.task_summary?.total ?? run.tasks.length}
+                  nextCursor={run.tasks_truncated ? run.tasks_next_cursor : undefined}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  This run has not dispatched any task.
+                </p>
+              )}
+            </DetailSection>
             <DetailSection title="Dispatch">
               {run.dispatch ? (
                 <RunDispatchPanel dispatch={run.dispatch} />

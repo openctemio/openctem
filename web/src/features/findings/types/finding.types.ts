@@ -27,6 +27,7 @@ export type FindingStatus =
   | 'confirmed' // Verified as real issue, needs fix
   | 'in_progress' // Developer working on fix
   | 'fix_applied' // Dev/owner marked as fixed — awaiting scan verification
+  | 'not_observed' // Not seen by recent scans, no proof the check ran: stale, NOT fixed (SLA keeps running)
   | 'resolved' // Verified fixed (by scan or security review)
   | 'false_positive' // Not a real issue (requires approval)
   | 'accepted' // Risk accepted (requires approval, has expiration)
@@ -83,6 +84,14 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
     bgColor: 'bg-yellow-600/20',
     textColor: 'text-yellow-500',
     icon: 'wrench',
+    category: 'in_progress',
+  },
+  not_observed: {
+    label: 'Not Observed',
+    color: 'border-zinc-500/50', // palette-ok: status scheme, like every status here
+    bgColor: 'bg-zinc-500/20', // palette-ok: status scheme
+    textColor: 'text-zinc-400', // palette-ok: status scheme
+    icon: 'eye-off',
     category: 'in_progress',
   },
   resolved: {
@@ -187,6 +196,8 @@ export const STATUS_TRANSITIONS: Record<FindingStatus, FindingStatus[]> = {
   in_progress: ['fix_applied', 'confirmed'],
   // Fix applied — awaiting a proof-of-fix retest or manual security review
   fix_applied: ['resolved', 'in_progress'],
+  // Not observed — set by the platform only; seen again, triaged, or closed with proof
+  not_observed: ['confirmed', 'in_progress', 'resolved', 'duplicate', 'false_positive', 'accepted'],
   // Closed states (can reopen to confirmed)
   resolved: ['confirmed'],
   false_positive: ['confirmed'],
@@ -207,6 +218,7 @@ export const AUTOMATED_STATUSES: FindingStatus[] = [
   'confirmed',
   'in_progress',
   'fix_applied',
+  'not_observed',
   'resolved',
   'false_positive',
   'accepted',
@@ -1077,8 +1089,34 @@ export interface MisconfigurationDetails {
 // FINDING DETAIL (Extended for detail page)
 // ============================================
 
+/** Scanner facts kept since research 17 R2 / research 24 P0-2 (display only). */
+export interface FindingScannerFacts {
+  family?: string
+  /** Tenable VPR: an input shown for reference, never part of P0-P3 (C10). */
+  vprScore?: number
+  cvssVersion?: string
+  cvssV2Vector?: string
+  cvssV3Vector?: string
+  /** Every CVE the scanner named on this finding, primary first. */
+  cveIds: string[]
+  patchPublishedAt?: string
+  exploitAvailable?: boolean
+  networkPort?: number
+  networkTransport?: string
+  networkService?: string
+}
+
+/** The scanner's output for the finding: attacker-influenced plain text. */
+export interface FindingScannerOutput {
+  text: string
+  updatedAt?: string
+  truncated: boolean
+}
+
 export interface FindingDetail extends Finding {
   activities: Activity[]
+  scannerFacts?: FindingScannerFacts
+  scannerOutput?: FindingScannerOutput
   /** The affected package, for SCA / container findings. */
   component?: FindingComponent
   /** The CVE record, when the finding is an instance of one. */

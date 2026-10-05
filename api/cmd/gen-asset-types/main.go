@@ -30,6 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -114,12 +115,34 @@ func checkDrift(goSrc []byte, tsSrc, sqlSrc, migDir string) error {
 		problems = append(problems, fmt.Sprintf(
 			"%s: the asset-type-registry block does not match configs/asset-types.yaml. "+
 				"Do not edit an applied migration: add a new one whose body is `make asset-types-sql`", file))
+	case strings.Contains(block, "chk_assets_core_type CHECK") && strings.Contains(block, "NOT VALID") && !validatesAfterBlock(file):
+		problems = append(problems, fmt.Sprintf(
+			"%s: the block adds chk_assets_core_type NOT VALID; validate it after the block "+
+				"(%q), once the rows the registry change moves are moved", file, validateCoreType))
 	}
 	if len(problems) > 0 {
 		return errors.New("asset type registry drift:\n  - " + strings.Join(problems, "\n  - "))
 	}
 	fmt.Println("asset type registry: YAML, generated code and migration block agree")
 	return nil
+}
+
+// validateCoreType is the statement a registry migration runs after its block.
+const validateCoreType = "ALTER TABLE assets VALIDATE CONSTRAINT chk_assets_core_type;"
+
+// validatesAfterBlock reports whether the migration validates the core-type
+// CHECK after its registry block.
+func validatesAfterBlock(file string) bool {
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return false
+	}
+	s := string(raw)
+	end := strings.Index(s, sqlEndMarker)
+	if end < 0 {
+		return false
+	}
+	return strings.Contains(s[end:], validateCoreType)
 }
 
 // newestMigrationBlock returns the registry block of the highest-numbered
@@ -166,7 +189,11 @@ type config struct {
 	CoreFields       []string     `yaml:"core_fields"`
 	IdentityKinds    []string     `yaml:"identity_kinds"`
 	VirtualTypes     []virtualCfg `yaml:"virtual_types"`
-	Types            []typeCfg    `yaml:"types"`
+	// TypeInputs maps a legacy type name that is still accepted on input,
+	// but is no type of its own, to what it is stored as (RFC-042 §6.3.8:
+	// web_application is stored as (application, website), O3).
+	TypeInputs map[string]inputCfg `yaml:"type_inputs"`
+	Types      []typeCfg           `yaml:"types"`
 }
 
 type idLabel struct {
@@ -193,6 +220,22 @@ type virtualCfg struct {
 	Name    string `yaml:"name"`
 	Type    string `yaml:"type"`
 	SubType string `yaml:"sub_type"`
+	// Unmodelled marks a name the relationship constraints use for a
+	// concept that has no core type yet (for example `credential`, a secret:
+	// RFC-042 §6.3.8 O4). Its constraints are skipped, not resolved to a
+	// wrong type.
+	Unmodelled bool `yaml:"unmodelled"`
+}
+
+// inputCfg is what an input resolves to: a core type (the declaring type
+// when empty), a sub-type from that type's closed list ("" for none), an
+// assets.provider value and attribute values. Provider and attributes are
+// only set when the asset has none: an existing value is never overwritten.
+type inputCfg struct {
+	Type       string            `yaml:"type" json:"type,omitempty"`
+	SubType    string            `yaml:"sub_type" json:"sub_type,omitempty"`
+	Provider   string            `yaml:"provider" json:"provider,omitempty"`
+	Attributes map[string]string `yaml:"attributes" json:"attributes,omitempty"`
 }
 
 type typeRef struct {
@@ -209,20 +252,31 @@ type attrCfg struct {
 }
 
 type typeCfg struct {
-	Type           string    `yaml:"type"`
-	Label          string    `yaml:"label"`
-	Plural         string    `yaml:"plural"`
-	Icon           string    `yaml:"icon"`
-	Class          string    `yaml:"class"`
-	AliasOf        *typeRef  `yaml:"alias_of"`
-	SubTypes       []string  `yaml:"sub_types"`
-	LegacyCategory string    `yaml:"legacy_category"`
-	Storage        string    `yaml:"storage"`
-	IdentityKeys   []string  `yaml:"identity_keys"`
-	Attributes     []attrCfg `yaml:"attributes"`
-	Columns        []string  `yaml:"columns"`
-	Card           string    `yaml:"card"`
-	Sections       []string  `yaml:"sections"`
+	Type     string    `yaml:"type"`
+	Label    string    `yaml:"label"`
+	Plural   string    `yaml:"plural"`
+	Icon     string    `yaml:"icon"`
+	Class    string    `yaml:"class"`
+	AliasOf  *inputCfg `yaml:"alias_of"`
+	SubTypes []string  `yaml:"sub_types"`
+	// SubTypeInputs maps a legacy sub-type value, still accepted on input,
+	// to what it is stored as (RFC-042 §6.3.8 R2).
+	SubTypeInputs map[string]inputCfg `yaml:"sub_type_inputs"`
+	// ScannableBy lists the tool target types (a tool's supported_targets
+	// vocabulary) that can scan the type. On an alias it is the sub-type's
+	// own list; otherwise an alias inherits its core type's list.
+	ScannableBy []string `yaml:"scannable_by"`
+	// ExposureDefault is the exposure an asset has by nature (domains and
+	// web applications are internet-facing); ingest applies it when the
+	// scanner sent none. "" = no default.
+	ExposureDefault string    `yaml:"exposure_default"`
+	LegacyCategory  string    `yaml:"legacy_category"`
+	Storage         string    `yaml:"storage"`
+	IdentityKeys    []string  `yaml:"identity_keys"`
+	Attributes      []attrCfg `yaml:"attributes"`
+	Columns         []string  `yaml:"columns"`
+	Card            string    `yaml:"card"`
+	Sections        []string  `yaml:"sections"`
 }
 
 type relConfig struct {
@@ -241,7 +295,11 @@ type relConfig struct {
 // =============================================================================
 
 type model struct {
-	Version          string       `json:"-"`
+	Version string `json:"-"`
+	// Inputs maps every accepted input (type, sub_type) that is not stored
+	// as such to what it is stored as: aliases (sub_type "") and the legacy
+	// sub-types of core types. Part of the version hash.
+	Inputs           []inputOut   `json:"inputs"`
 	Lenses           []lensOut    `json:"lenses"`
 	Classes          []classOut   `json:"classes"`
 	Types            []typeOut    `json:"types"`
@@ -270,8 +328,11 @@ type classOut struct {
 }
 
 type relRule struct {
-	Relationship string    `json:"relationship"`
-	Peers        []typeRef `json:"peers"`
+	Relationship string `json:"relationship"`
+	// SubType restricts the rule to this type's assets of one sub-type
+	// ("" = any sub-type).
+	SubType string    `json:"sub_type,omitempty"`
+	Peers   []typeRef `json:"peers"`
 }
 
 type typeRels struct {
@@ -279,25 +340,33 @@ type typeRels struct {
 	In  []relRule `json:"in"`
 }
 
+// inputOut is one entry of model.Inputs.
+type inputOut struct {
+	From typeRef  `json:"from"`
+	To   inputCfg `json:"to"`
+}
+
 type typeOut struct {
-	Type           string    `json:"type"`
-	Label          string    `json:"label"`
-	Plural         string    `json:"plural"`
-	Icon           string    `json:"icon"`
-	Class          string    `json:"class"`
-	Lens           string    `json:"lens,omitempty"`
-	AliasOf        *typeRef  `json:"alias_of,omitempty"`
-	SubTypes       []string  `json:"sub_types"`
-	LegacyCategory string    `json:"legacy_category"`
-	Storage        string    `json:"storage"`
-	IdentityKeys   []string  `json:"identity_keys"`
-	Attributes     []attrCfg `json:"attributes"`
-	Facets         []string  `json:"facets"`
-	GroupBy        []string  `json:"group_by"`
-	Columns        []string  `json:"columns"`
-	Card           string    `json:"card"`
-	Sections       []string  `json:"sections"`
-	Relationships  typeRels  `json:"relationships"`
+	Type            string    `json:"type"`
+	Label           string    `json:"label"`
+	Plural          string    `json:"plural"`
+	Icon            string    `json:"icon"`
+	Class           string    `json:"class"`
+	Lens            string    `json:"lens,omitempty"`
+	AliasOf         *typeRef  `json:"alias_of,omitempty"`
+	SubTypes        []string  `json:"sub_types"`
+	LegacyCategory  string    `json:"legacy_category"`
+	Storage         string    `json:"storage"`
+	IdentityKeys    []string  `json:"identity_keys"`
+	Attributes      []attrCfg `json:"attributes"`
+	Facets          []string  `json:"facets"`
+	GroupBy         []string  `json:"group_by"`
+	Columns         []string  `json:"columns"`
+	Card            string    `json:"card"`
+	Sections        []string  `json:"sections"`
+	Relationships   typeRels  `json:"relationships"`
+	ScannableBy     []string  `json:"scannable_by"`
+	ExposureDefault string    `json:"exposure_default,omitempty"`
 }
 
 // =============================================================================
@@ -503,13 +572,22 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 				return nil, fmt.Errorf("%s: alias_of unknown type %q", where, t.AliasOf.Type)
 			case core.AliasOf != nil:
 				return nil, fmt.Errorf("%s: alias_of %q, which is itself an alias", where, t.AliasOf.Type)
-			case t.AliasOf.SubType == "":
-				return nil, fmt.Errorf("%s: alias_of needs a sub_type", where)
+			case len(t.SubTypes) > 0 || len(t.SubTypeInputs) > 0:
+				return nil, fmt.Errorf("%s: an alias has no sub_types or sub_type_inputs of its own", where)
+			case t.AliasOf.SubType == "" && t.Class != core.Class:
+				// The class of a stored pair is looked up by its sub-type;
+				// without one the alias could not keep a class of its own.
+				return nil, fmt.Errorf("%s: alias_of needs a sub_type (class %q differs from %s's %q)", where, t.Class, core.Type, core.Class)
+			case t.AliasOf.SubType != "" && !slices.Contains(core.SubTypes, t.AliasOf.SubType):
+				return nil, fmt.Errorf("%s: alias_of sub_type %q is not in %s's sub_types", where, t.AliasOf.SubType, core.Type)
 			}
-			if other, taken := aliasPairs[*t.AliasOf]; taken {
-				return nil, fmt.Errorf("%s: alias_of %v is already used by %s", where, *t.AliasOf, other)
+			if t.AliasOf.SubType != "" {
+				pair := typeRef{Type: t.AliasOf.Type, SubType: t.AliasOf.SubType}
+				if other, taken := aliasPairs[pair]; taken {
+					return nil, fmt.Errorf("%s: alias_of %v is already used by %s", where, pair, other)
+				}
+				aliasPairs[pair] = t.Type
 			}
-			aliasPairs[*t.AliasOf] = t.Type
 		}
 
 		attrNames := map[string]bool{}
@@ -555,21 +633,42 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 			}
 		}
 
+		if err := dup(where+" sub_type_inputs", sortedKeys(t.SubTypeInputs)); err != nil {
+			return nil, err
+		}
+		if err := dup(where+" scannable_by", t.ScannableBy); err != nil {
+			return nil, err
+		}
+		for _, tt := range t.ScannableBy {
+			if !knownTargetTypes[tt] {
+				return nil, fmt.Errorf("%s: scannable_by %q is not a tool target type", where, tt)
+			}
+		}
+		if t.ExposureDefault != "" && !knownExposures[t.ExposureDefault] {
+			return nil, fmt.Errorf("%s: exposure_default %q is not an exposure", where, t.ExposureDefault)
+		}
 		storage := t.Storage
 		if storage == "" {
 			storage = "core"
 		}
 		out := typeOut{
 			Type: t.Type, Label: t.Label, Plural: t.Plural, Icon: t.Icon,
-			Class: t.Class, Lens: classLens[t.Class], AliasOf: t.AliasOf,
+			Class: t.Class, Lens: classLens[t.Class], AliasOf: aliasRef(t.AliasOf),
 			SubTypes: nonNil(t.SubTypes), LegacyCategory: t.LegacyCategory, Storage: storage,
 			IdentityKeys: t.IdentityKeys, Attributes: nonNilAttrs(t.Attributes),
 			Facets: nonNil(facets), GroupBy: nonNil(groupBy),
 			Columns: t.Columns, Card: t.Card, Sections: t.Sections,
+			ScannableBy: nonNil(t.ScannableBy), ExposureDefault: t.ExposureDefault,
 		}
 		m.Types = append(m.Types, out)
 		classTypes[t.Class] = append(classTypes[t.Class], t.Type)
 	}
+
+	inputs, err := resolveInputs(cfg, byType)
+	if err != nil {
+		return nil, err
+	}
+	m.Inputs = inputs
 
 	for _, c := range cfg.Classes {
 		if len(classTypes[c.ID]) == 0 {
@@ -609,30 +708,70 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 // so the constraints can no longer name types the backend does not have.
 func resolveRelationships(m *model, types map[string]bool, rel *relConfig) error {
 	virtual := map[string]typeRef{}
+	unmodelled := map[string]bool{}
+	subTypes := map[string][]string{}
+	for _, t := range m.Types {
+		subTypes[t.Type] = t.SubTypes
+	}
+	aliasOf := map[string]bool{}
+	for _, t := range m.Types {
+		aliasOf[t.Type] = t.AliasOf != nil
+	}
 	for _, v := range m.VirtualTypes {
 		switch {
 		case types[v.Name]:
 			return fmt.Errorf("virtual type %q shadows a registry type", v.Name)
+		case v.Unmodelled && (v.Type != "" || v.SubType != ""):
+			return fmt.Errorf("virtual type %q: an unmodelled name has no type", v.Name)
+		case v.Unmodelled:
 		case !types[v.Type]:
 			return fmt.Errorf("virtual type %q: unknown type %q", v.Name, v.Type)
+		case aliasOf[v.Type]:
+			return fmt.Errorf("virtual type %q: %q is an alias; name the core type and sub_type", v.Name, v.Type)
+		case v.SubType != "" && !slices.Contains(subTypes[v.Type], v.SubType):
+			return fmt.Errorf("virtual type %q: sub_type %q is not in %s's sub_types", v.Name, v.SubType, v.Type)
 		}
-		if _, dupName := virtual[v.Name]; dupName {
+		if _, dupName := virtual[v.Name]; dupName || unmodelled[v.Name] {
 			return fmt.Errorf("duplicate virtual type %q", v.Name)
+		}
+		if v.Unmodelled {
+			unmodelled[v.Name] = true
+			continue
 		}
 		virtual[v.Name] = typeRef{Type: v.Type, SubType: v.SubType}
 	}
+	aliasPair := map[string]typeRef{}
+	for _, t := range m.Types {
+		if t.AliasOf != nil {
+			aliasPair[t.Type] = *t.AliasOf
+		}
+	}
+	errSkip := errors.New("unmodelled")
 	resolveName := func(rt, name string) (typeRef, error) {
+		// An alias names its stored pair: `website` is (application, website).
+		if p, ok := aliasPair[name]; ok {
+			return p, nil
+		}
 		if types[name] {
 			return typeRef{Type: name}, nil
 		}
 		if v, ok := virtual[name]; ok {
 			return v, nil
 		}
+		if unmodelled[name] {
+			return typeRef{}, errSkip
+		}
 		return typeRef{}, fmt.Errorf("%s: relationship %q names %q, which is neither an asset type nor a virtual_types entry", relationshipPath, rt, name)
 	}
 
-	type key struct{ typ, rel string }
+	type key struct{ typ, sub, rel string }
 	out, in := map[key][]typeRef{}, map[key][]typeRef{}
+	subsOf := map[string][]string{} // own sub-types seen per type, in order
+	noteSub := func(r typeRef) {
+		if !slices.Contains(subsOf[r.Type], r.SubType) {
+			subsOf[r.Type] = append(subsOf[r.Type], r.SubType)
+		}
+	}
 	add := func(m map[key][]typeRef, k key, r typeRef) {
 		for _, x := range m[k] {
 			if x == r {
@@ -647,16 +786,24 @@ func resolveRelationships(m *model, types map[string]bool, rel *relConfig) error
 		for _, c := range rt.Constraints {
 			for _, s := range c.Sources {
 				src, err := resolveName(rt.ID, s)
+				if errors.Is(err, errSkip) {
+					continue
+				}
 				if err != nil {
 					return err
 				}
 				for _, t := range c.Targets {
 					tgt, err := resolveName(rt.ID, t)
+					if errors.Is(err, errSkip) {
+						continue
+					}
 					if err != nil {
 						return err
 					}
-					add(out, key{src.Type, rt.ID}, tgt)
-					add(in, key{tgt.Type, rt.ID}, src)
+					add(out, key{src.Type, src.SubType, rt.ID}, tgt)
+					add(in, key{tgt.Type, tgt.SubType, rt.ID}, src)
+					noteSub(src)
+					noteSub(tgt)
 				}
 			}
 		}
@@ -664,16 +811,142 @@ func resolveRelationships(m *model, types map[string]bool, rel *relConfig) error
 	for i := range m.Types {
 		t := &m.Types[i]
 		t.Relationships = typeRels{Out: []relRule{}, In: []relRule{}}
+		subs := slices.Clone(subsOf[t.Type])
+		sort.Strings(subs) // "" (any sub-type) first
 		for _, r := range relOrder {
-			if peers := out[key{t.Type, r}]; len(peers) > 0 {
-				t.Relationships.Out = append(t.Relationships.Out, relRule{Relationship: r, Peers: peers})
-			}
-			if peers := in[key{t.Type, r}]; len(peers) > 0 {
-				t.Relationships.In = append(t.Relationships.In, relRule{Relationship: r, Peers: peers})
+			for _, sub := range subs {
+				if peers := out[key{t.Type, sub, r}]; len(peers) > 0 {
+					t.Relationships.Out = append(t.Relationships.Out, relRule{Relationship: r, SubType: sub, Peers: peers})
+				}
+				if peers := in[key{t.Type, sub, r}]; len(peers) > 0 {
+					t.Relationships.In = append(t.Relationships.In, relRule{Relationship: r, SubType: sub, Peers: peers})
+				}
 			}
 		}
 	}
 	return nil
+}
+
+// knownTargetTypes are the tool target types (pkg/domain/tool
+// ValidTargetTypes; a test keeps the two equal).
+var knownTargetTypes = set([]string{"url", "domain", "ip", "host", "repository", "file", "container", "kubernetes",
+	"cloud_account", "compute", "storage", "serverless", "network", "service", "port", "database", "mobile", "api", "certificate"})
+
+// knownExposures are the assets.exposure values a type may default to.
+var knownExposures = set([]string{"public", "restricted", "private", "isolated"})
+
+// knownProviders are the assets.provider values (pkg/domain/asset
+// AllProviders; a test keeps the two equal).
+var knownProviders = set([]string{"github", "gitlab", "bitbucket", "azure_devops", "aws", "azure", "gcp", "manual", "other"})
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func aliasRef(a *inputCfg) *typeRef {
+	if a == nil {
+		return nil
+	}
+	return &typeRef{Type: a.Type, SubType: a.SubType}
+}
+
+// checkTarget validates what an input resolves to: a core type, a sub-type
+// from its closed list, a known provider and declared attribute values.
+func checkTarget(where string, to inputCfg, byType map[string]*typeCfg) error {
+	core, ok := byType[to.Type]
+	switch {
+	case !ok:
+		return fmt.Errorf("%s: unknown type %q", where, to.Type)
+	case core.AliasOf != nil:
+		return fmt.Errorf("%s: resolves to %q, which is an alias, not a core type", where, to.Type)
+	case to.SubType != "" && !slices.Contains(core.SubTypes, to.SubType):
+		return fmt.Errorf("%s: sub_type %q is not in %s's sub_types", where, to.SubType, to.Type)
+	case to.Provider != "" && !knownProviders[to.Provider]:
+		return fmt.Errorf("%s: provider %q is not an assets.provider value", where, to.Provider)
+	}
+	for _, k := range sortedKeys(to.Attributes) {
+		var def *attrCfg
+		for i := range core.Attributes {
+			if core.Attributes[i].Name == k {
+				def = &core.Attributes[i]
+			}
+		}
+		switch {
+		case def == nil:
+			return fmt.Errorf("%s: attribute %q is not an attribute of %s", where, k, to.Type)
+		case def.Type == "enum" && !slices.Contains(def.Values, to.Attributes[k]):
+			return fmt.Errorf("%s: attribute %s=%q is not one of %v", where, k, to.Attributes[k], def.Values)
+		case def.Type != "enum" && def.Type != "string":
+			return fmt.Errorf("%s: attribute %q is a %s; inputs set only string and enum attributes", where, k, def.Type)
+		}
+	}
+	return nil
+}
+
+// typeInputNames are the `type_inputs` names, in input order.
+func typeInputNames(m *model) []string {
+	isType := make(map[string]bool, len(m.Types))
+	for _, t := range m.Types {
+		isType[t.Type] = true
+	}
+	var out []string
+	for _, in := range m.Inputs {
+		if in.From.SubType == "" && !isType[in.From.Type] {
+			out = append(out, in.From.Type)
+		}
+	}
+	return out
+}
+
+// resolveInputs lists every accepted input that is not stored as such:
+// each alias (keyed by its name, sub_type "") and each legacy sub-type of a
+// core type, in registry order with the sub-type inputs sorted.
+func resolveInputs(cfg *config, byType map[string]*typeCfg) ([]inputOut, error) {
+	var out []inputOut
+	for i := range cfg.Types {
+		t := &cfg.Types[i]
+		if t.AliasOf != nil {
+			if err := checkTarget("type "+t.Type+" alias_of", *t.AliasOf, byType); err != nil {
+				return nil, err
+			}
+			out = append(out, inputOut{From: typeRef{Type: t.Type}, To: *t.AliasOf})
+			continue
+		}
+		for _, legacy := range sortedKeys(t.SubTypeInputs) {
+			to := t.SubTypeInputs[legacy]
+			where := fmt.Sprintf("type %s sub_type_inputs %q", t.Type, legacy)
+			if slices.Contains(t.SubTypes, legacy) {
+				return nil, fmt.Errorf("%s: is already one of the type's sub_types", where)
+			}
+			if to.Type == "" {
+				to.Type = t.Type
+			}
+			if err := checkTarget(where, to, byType); err != nil {
+				return nil, err
+			}
+			out = append(out, inputOut{From: typeRef{Type: t.Type, SubType: legacy}, To: to})
+		}
+	}
+	for _, name := range sortedKeys(cfg.TypeInputs) {
+		to := cfg.TypeInputs[name]
+		where := fmt.Sprintf("type_inputs %q", name)
+		if _, isType := byType[name]; isType {
+			return nil, fmt.Errorf("%s: is a registry type; a type input names a type that is not one", where)
+		}
+		if to.Type == "" {
+			return nil, fmt.Errorf("%s: needs a type", where)
+		}
+		if err := checkTarget(where, to, byType); err != nil {
+			return nil, err
+		}
+		out = append(out, inputOut{From: typeRef{Type: name}, To: to})
+	}
+	return out, nil
 }
 
 func nonNil(s []string) []string {
@@ -739,7 +1012,11 @@ func goRules(rules []relRule) string {
 		for i, p := range r.Peers {
 			refs[i] = goTypeRef(p)
 		}
-		fmt.Fprintf(&b, "\n{Relationship: %q, Peers: []TypeRef{%s}},", r.Relationship, strings.Join(refs, ", "))
+		sub := ""
+		if r.SubType != "" {
+			sub = fmt.Sprintf(" SubType: %q,", r.SubType)
+		}
+		fmt.Fprintf(&b, "\n{Relationship: %q,%s Peers: []TypeRef{%s}},", r.Relationship, sub, strings.Join(refs, ", "))
 	}
 	if len(rules) > 0 {
 		b.WriteString("\n")
@@ -819,7 +1096,12 @@ func renderGo(m *model) ([]byte, error) {
 		}
 		w("},\nFacets: %s,\nGroupBy: %s,\nColumns: %s,\nCard: %q,\nSections: %s,\n",
 			goStrings(t.Facets), goStrings(t.GroupBy), goStrings(t.Columns), t.Card, goStrings(t.Sections))
-		w("Relationships: TypeRelationships{\nOut: %s,\nIn: %s,\n},\n},\n", goRules(t.Relationships.Out), goRules(t.Relationships.In))
+		w("Relationships: TypeRelationships{\nOut: %s,\nIn: %s,\n},\n", goRules(t.Relationships.Out), goRules(t.Relationships.In))
+		w("ScannableBy: %s,\n", goStrings(t.ScannableBy))
+		if t.ExposureDefault != "" {
+			w("ExposureDefault: %q,\n", t.ExposureDefault)
+		}
+		w("},\n")
 	}
 	w("}\n\nvar registrySections = []SectionDefinition{\n")
 	for _, s := range m.Sections {
@@ -832,12 +1114,56 @@ func renderGo(m *model) ([]byte, error) {
 	}
 	w("}\n\n")
 	w("// TypeAliases maps legacy types to their consolidated core type + sub_type,\n")
-	w("// from the `alias_of` entries of the registry. Used by ingest to normalize\n// incoming data.\n")
+	w("// from the `alias_of` entries and the `type_inputs` of the registry. Used by\n// ingest to normalize incoming data.\n")
 	w("var TypeAliases = map[AssetType]struct {\nCoreType AssetType\nSubType  string\n}{\n")
 	for _, t := range m.Types {
 		if t.AliasOf != nil {
 			w("%q: {CoreType: %q, SubType: %q},\n", t.Type, t.AliasOf.Type, t.AliasOf.SubType)
 		}
+	}
+	for _, name := range typeInputNames(m) {
+		for _, in := range m.Inputs {
+			if in.From.Type == name && in.From.SubType == "" {
+				w("%q: {CoreType: %q, SubType: %q},\n", name, in.To.Type, in.To.SubType)
+			}
+		}
+	}
+	w("}\n\n")
+	w("// registryTypeInputs are the legacy type names accepted on input that are no\n")
+	w("// type of their own (`type_inputs`).\nvar registryTypeInputs = []AssetType{")
+	for _, name := range typeInputNames(m) {
+		w("%q, ", name)
+	}
+	w("}\n\n")
+
+	w("// registryStoredTypes are the core types, in registry order: the only values\n")
+	w("// assets.asset_type may hold (RFC-042 §6.3.8 R1).\nvar registryStoredTypes = []AssetType{")
+	for _, t := range m.Types {
+		if t.AliasOf == nil {
+			w("%q, ", t.Type)
+		}
+	}
+	w("}\n\n")
+	w("// registryInputs maps every accepted input that is not stored as such to\n")
+	w("// what it is stored as: an alias by its name ({Type: alias}) and a legacy\n")
+	w("// sub-type of a core type ({Type: core, SubType: legacy}).\n")
+	w("var registryInputs = map[TypeRef]TypeInput{\n")
+	for _, in := range m.Inputs {
+		w("%s: {Type: %q", goTypeRef(in.From), in.To.Type)
+		if in.To.SubType != "" {
+			w(", SubType: %q", in.To.SubType)
+		}
+		if in.To.Provider != "" {
+			w(", Provider: %q", in.To.Provider)
+		}
+		if len(in.To.Attributes) > 0 {
+			w(", Attributes: map[string]string{")
+			for _, k := range sortedKeys(in.To.Attributes) {
+				w("%q: %q, ", k, in.To.Attributes[k])
+			}
+			w("}")
+		}
+		w("},\n")
 	}
 	w("}\n")
 	return format.Source([]byte(b.String()))
@@ -939,6 +1265,94 @@ func renderTS(m *model) string {
 	for _, c := range m.LegacyCategories {
 		w("  %s: %s,\n", c.ID, tsString(c.Label))
 	}
+	w("}\n\n")
+
+	var stored []string
+	for _, t := range m.Types {
+		if t.AliasOf == nil {
+			stored = append(stored, t.Type)
+		}
+	}
+	w("/** The core types: the only values an asset's `type` holds (RFC-042 §6.3.8). */\n")
+	w("export type StoredAssetType =%s\n\n", tsUnion(stored))
+	w("export const STORED_ASSET_TYPES: readonly StoredAssetType[] = [\n")
+	for _, t := range stored {
+		w("  '%s',\n", t)
+	}
+	w("]\n\n")
+	w("/** The closed sub-type list of each core type (a sub-type is a kind). */\n")
+	w("export const ASSET_SUB_TYPES: Readonly<Record<StoredAssetType, readonly string[]>> = {\n")
+	for _, t := range m.Types {
+		if t.AliasOf != nil {
+			continue
+		}
+		q := make([]string, len(t.SubTypes))
+		for i, st := range t.SubTypes {
+			q[i] = "'" + st + "'"
+		}
+		line := fmt.Sprintf("  %s: [%s],", t.Type, strings.Join(q, ", "))
+		if len(line) > 100 {
+			w("  %s: [\n", t.Type)
+			for _, x := range q {
+				w("    %s,\n", x)
+			}
+			w("  ],\n")
+			continue
+		}
+		w("%s\n", line)
+	}
+	w("}\n\n")
+	w("/**\n * Every non-core name the relationship constraints use (aliases and virtual\n")
+	w(" * names), resolved to the stored (core type, sub-type). A core type name\n")
+	w(" * stands for itself with any sub-type.\n */\n")
+	w("export const ASSET_RELATIONSHIP_NAMES: Readonly<\n  Record<string, { type: StoredAssetType; subType?: string }>\n> = {\n")
+	for _, t := range m.Types {
+		if t.AliasOf == nil {
+			continue
+		}
+		if t.AliasOf.SubType == "" {
+			w("  %s: { type: '%s' },\n", t.Type, t.AliasOf.Type)
+			continue
+		}
+		w("  %s: { type: '%s', subType: '%s' },\n", t.Type, t.AliasOf.Type, t.AliasOf.SubType)
+	}
+	for _, v := range m.VirtualTypes {
+		if v.Unmodelled {
+			continue
+		}
+		if v.SubType == "" {
+			w("  %s: { type: '%s' },\n", v.Name, v.Type)
+			continue
+		}
+		w("  %s: { type: '%s', subType: '%s' },\n", v.Name, v.Type, v.SubType)
+	}
+	w("}\n\n")
+	w("/** Input-only alias names and the (core type, sub-type) they are stored as. */\n")
+	w("export const ASSET_TYPE_ALIASES: Readonly<\n  Record<string, { type: StoredAssetType; subType?: string }>\n> = {\n")
+	for _, t := range m.Types {
+		if t.AliasOf == nil {
+			continue
+		}
+		if t.AliasOf.SubType == "" {
+			w("  %s: { type: '%s' },\n", t.Type, t.AliasOf.Type)
+			continue
+		}
+		w("  %s: { type: '%s', subType: '%s' },\n", t.Type, t.AliasOf.Type, t.AliasOf.SubType)
+	}
+	isType := make(map[string]bool, len(m.Types))
+	for _, t := range m.Types {
+		isType[t.Type] = true
+	}
+	for _, in := range m.Inputs {
+		if in.From.SubType != "" || isType[in.From.Type] {
+			continue // a sub-type input, or an alias written above
+		}
+		if in.To.SubType == "" {
+			w("  %s: { type: '%s' },\n", in.From.Type, in.To.Type)
+			continue
+		}
+		w("  %s: { type: '%s', subType: '%s' },\n", in.From.Type, in.To.Type, in.To.SubType)
+	}
 	w("}\n")
 	return b.String()
 }
@@ -966,10 +1380,20 @@ func sqlList(items []string) string {
 	return strings.Join(q, ", ")
 }
 
+// sqlArray renders a text[] literal.
+func sqlArray(items []string) string {
+	if len(items) == 0 {
+		return "'{}'"
+	}
+	return "ARRAY[" + sqlList(items) + "]::text[]"
+}
+
 // renderSQL is the migration block: the class and lens CHECKs, one upsert
-// row per registry type, `other` for every legacy code, and the backfill of
+// row per registry type, `other` for every legacy code, the backfill of
 // assets.asset_class / asset_lens (asset_registry_backfill, created by the
-// migration that introduced the columns).
+// migration that introduced the columns) and the CHECK that assets store only
+// core types (added by the data normalisation, migration 000684: a block may
+// only be emitted after every stored row is a core type).
 func renderSQL(m *model) string {
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format, args...) }
@@ -993,7 +1417,7 @@ func renderSQL(m *model) string {
 	w("ALTER TABLE asset_types ADD CONSTRAINT chk_asset_types_class CHECK (class IN (%s));\n", sqlList(classIDs))
 	w("ALTER TABLE asset_types DROP CONSTRAINT IF EXISTS chk_asset_types_lens;\n")
 	w("ALTER TABLE asset_types ADD CONSTRAINT chk_asset_types_lens CHECK (lens IS NULL OR lens IN (%s));\n", sqlList(lensIDs))
-	w("\nINSERT INTO asset_types (code, name, class, lens, alias_of, alias_sub_type) VALUES\n")
+	w("\nINSERT INTO asset_types (code, name, class, lens, alias_of, alias_sub_type, sub_types, is_storable) VALUES\n")
 	for i, t := range m.Types {
 		alias, sub := "", ""
 		if t.AliasOf != nil {
@@ -1003,20 +1427,51 @@ func renderSQL(m *model) string {
 		if i == len(m.Types)-1 {
 			sep = ""
 		}
-		w("    (%s, %s, %s, %s, %s, %s)%s\n", sqlString(t.Type), sqlString(t.Label), sqlString(t.Class),
-			sqlNullable(t.Lens), sqlNullable(alias), sqlNullable(sub), sep)
+		w("    (%s, %s, %s, %s, %s, %s, %s, %t)%s\n", sqlString(t.Type), sqlString(t.Label), sqlString(t.Class),
+			sqlNullable(t.Lens), sqlNullable(alias), sqlNullable(sub), sqlArray(t.SubTypes), t.AliasOf == nil, sep)
 	}
 	w("ON CONFLICT (code) DO UPDATE SET\n    class = EXCLUDED.class,\n    lens = EXCLUDED.lens,\n")
-	w("    alias_of = EXCLUDED.alias_of,\n    alias_sub_type = EXCLUDED.alias_sub_type;\n\n")
+	w("    alias_of = EXCLUDED.alias_of,\n    alias_sub_type = EXCLUDED.alias_sub_type,\n")
+	w("    sub_types = EXCLUDED.sub_types,\n    is_storable = EXCLUDED.is_storable;\n\n")
 	w("-- Codes that are not registry types (legacy rows kept for the assets FK).\n")
-	w("UPDATE asset_types SET class = 'other', lens = NULL, alias_of = NULL, alias_sub_type = NULL\n")
+	w("UPDATE asset_types SET class = 'other', lens = NULL, alias_of = NULL, alias_sub_type = NULL,\n")
+	w("    sub_types = '{}', is_storable = false\n")
 	w("WHERE code NOT IN (%s);\n\n", sqlList(typeIDs))
+	w("-- Accepted inputs that are not stored as such: aliases (from_sub_type '')\n")
+	w("-- and legacy sub-types, with what they are stored as.\n")
+	w("DELETE FROM asset_type_input_map;\n")
+	w("INSERT INTO asset_type_input_map (from_type, from_sub_type, to_type, to_sub_type, provider, attributes) VALUES\n")
+	for i, in := range m.Inputs {
+		sep := ","
+		if i == len(m.Inputs)-1 {
+			sep = ";"
+		}
+		attrs := "'{}'"
+		if len(in.To.Attributes) > 0 {
+			raw, _ := json.Marshal(in.To.Attributes) // map keys are sorted
+			attrs = sqlString(string(raw))
+		}
+		w("    (%s, %s, %s, %s, %s, %s)%s\n", sqlString(in.From.Type), sqlString(in.From.SubType),
+			sqlString(in.To.Type), sqlNullable(in.To.SubType), sqlNullable(in.To.Provider), attrs, sep)
+	}
+	w("\n")
 	w("-- Re-derive assets.asset_class / asset_lens in batches, without touching\n-- updated_at.\n")
 	w("ALTER TABLE assets DISABLE TRIGGER trigger_assets_updated_at;\n")
 	w("DO $$\nDECLARE\n    cursor_id uuid := NULL;\nBEGIN\n    LOOP\n")
 	w("        SELECT b.last_id INTO cursor_id FROM asset_registry_backfill(cursor_id, 5000) b;\n")
 	w("        EXIT WHEN cursor_id IS NULL;\n    END LOOP;\nEND $$;\n")
-	w("ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;\n")
+	w("ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;\n\n")
+	stored := make([]string, 0, len(m.Types))
+	for _, t := range m.Types {
+		if t.AliasOf == nil {
+			stored = append(stored, t.Type)
+		}
+	}
+	w("-- Only core types are stored (RFC-042 §6.3.8). Added NOT VALID: the\n")
+	w("-- migration moves the rows a registry change leaves outside the list,\n")
+	w("-- then validates it after this block (SHARE UPDATE EXCLUSIVE lock).\n")
+	w("ALTER TABLE assets DROP CONSTRAINT IF EXISTS chk_assets_core_type;\n")
+	w("ALTER TABLE assets ADD CONSTRAINT chk_assets_core_type CHECK (asset_type IN (%s)) NOT VALID;\n", sqlList(stored))
 	w("%s\n", sqlEndMarker)
 	return b.String()
 }

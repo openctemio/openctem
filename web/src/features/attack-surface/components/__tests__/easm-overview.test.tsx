@@ -59,6 +59,11 @@ describe('EASMOverview', () => {
     expect(screen.getByText('CT lookups failing')).toBeInTheDocument()
     expect(screen.getByText(/7 open in total/)).toBeInTheDocument()
     expect(screen.getByText(/Dangling CNAME · old.acme.com/)).toBeInTheDocument()
+    // Names waiting for review link to the review queue.
+    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
+      'href',
+      '/attack-surface/review'
+    )
   })
 
   it('shows the empty state when nothing is open', async () => {
@@ -75,6 +80,7 @@ describe('EASMOverview', () => {
 
   it('labels exposure types in words', () => {
     expect(exposureTypeLabel('email_security_weak')).toBe('Weak email security')
-    expect(exposureTypeLabel('bucket_public')).toBe('bucket public')
+    expect(exposureTypeLabel('bucket_public')).toBe('Bucket Public')
+    expect(exposureTypeLabel('not_a_type')).toBe('not a type')
   })
 })

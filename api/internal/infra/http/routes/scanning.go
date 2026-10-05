@@ -412,9 +412,9 @@ func registerPipelineRoutes(
 		r.GET("/{id}/runs", h.ListRuns, middleware.Require(permission.PipelinesRead))
 		// Apply rate limiting to pipeline triggers
 		if triggerRateLimiter != nil {
-			r.POST("/{id}/runs", h.TriggerRun, middleware.Require(permission.PipelinesWrite), triggerRateLimiter.PipelineMiddleware())
+			r.POST("/{id}/runs", h.TriggerRun, middleware.RequireAll(permission.PipelinesWrite, permission.PipelinesExecute), triggerRateLimiter.PipelineMiddleware())
 		} else {
-			r.POST("/{id}/runs", h.TriggerRun, middleware.Require(permission.PipelinesWrite))
+			r.POST("/{id}/runs", h.TriggerRun, middleware.RequireAll(permission.PipelinesWrite, permission.PipelinesExecute))
 		}
 	}, tenantMiddlewares...)
 
@@ -423,6 +423,10 @@ func registerPipelineRoutes(
 		// Read operations
 		r.GET("/", h.ListRuns, middleware.Require(permission.PipelinesRead))
 		r.GET("/{id}", h.GetRun, middleware.Require(permission.PipelinesRead))
+		// A run's tasks, paged by cursor (the run read embeds the first page).
+		r.GET("/{id}/tasks", h.ListRunTasks, middleware.Require(permission.PipelinesRead))
+		// How each stage of the run was planned (counts by reason).
+		r.GET("/{id}/stages", h.ListRunStages, middleware.Require(permission.PipelinesRead))
 
 		// Write operations. Scan runs are pipeline runs, and this is how a
 		// scan run is stopped, so it also needs scans:write (owner decision
@@ -635,11 +639,15 @@ func registerScanRoutes(
 		r.GET("/overview-stats", h.GetOverviewStats, middleware.Require(permission.ScansRead))
 		// License-aware rolling coverage status (RFC-007 Phase 4 observability)
 		r.GET("/coverage", h.CoverageStatus, middleware.Require(permission.ScansRead))
+		// Scans affected by the sensor opt-ins (research/25 D3 banner).
+		r.GET("/sensor-opt-in-impact", h.SensorOptInImpact, middleware.Require(permission.ScansRead))
+		// Next occurrences of a schedule (stateless; the wizard and the scan page)
+		r.POST("/schedule-preview", h.PreviewSchedule, middleware.Require(permission.ScansRead))
 		// Quick scan (consolidated from /quick-scan)
 		if triggerRateLimiter != nil {
-			r.POST("/quick", h.QuickScan, middleware.Require(permission.ScansWrite), triggerRateLimiter.QuickScanMiddleware())
+			r.POST("/quick", h.QuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.QuickScanMiddleware())
 		} else {
-			r.POST("/quick", h.QuickScan, middleware.Require(permission.ScansWrite))
+			r.POST("/quick", h.QuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
 		}
 
 		// Bulk operations (must be before /{id} to avoid matching)
@@ -650,6 +658,9 @@ func registerScanRoutes(
 
 		// Import scan config (must be before /{id} to avoid matching)
 		r.POST("/import", h.ImportConfig, middleware.Require(permission.ScansWrite))
+
+		// Scan stage catalog: static platform data (must be before /{id})
+		r.GET("/stages", h.ListStages, middleware.Require(permission.ScansRead))
 
 		// Read operations
 		r.GET("/", h.ListScans, middleware.Require(permission.ScansRead))
@@ -666,9 +677,9 @@ func registerScanRoutes(
 
 		// Trigger scan execution - apply rate limiting
 		if triggerRateLimiter != nil {
-			r.POST("/{id}/trigger", h.TriggerScan, middleware.Require(permission.ScansWrite), triggerRateLimiter.ScanMiddleware())
+			r.POST("/{id}/trigger", h.TriggerScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.ScanMiddleware())
 		} else {
-			r.POST("/{id}/trigger", h.TriggerScan, middleware.Require(permission.ScansWrite))
+			r.POST("/{id}/trigger", h.TriggerScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
 		}
 
 		// Clone scan
@@ -812,6 +823,7 @@ func registerSecretStoreRoutes(
 		// Write operations
 		r.POST("/", h.Create, middleware.Require(permission.SecretStoreWrite))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.SecretStoreWrite))
+		r.POST("/{id}/rotate", h.Rotate, middleware.Require(permission.SecretStoreWrite))
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SecretStoreDelete))

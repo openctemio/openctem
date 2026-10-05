@@ -28,6 +28,7 @@
 import { useCallback, useMemo } from 'react'
 import { usePermissions } from './hooks'
 import { isRoleAtLeast, type RoleString } from './constants'
+import { isHiddenReleaseStatus } from './sub-modules'
 import { useBootstrapModules } from '@/context/bootstrap-provider'
 import type {
   SidebarData,
@@ -59,7 +60,8 @@ interface FilteredSidebarResult {
  * Check if user has access to a nav item
  * Supports module, permission, role, and minRole checks
  *
- * Note: Coming soon modules are NOT filtered out - they're shown with releaseStatus
+ * Modules with a hidden release status (coming_soon, disabled, deprecated) are
+ * filtered out; beta modules are shown and marked.
  */
 function hasItemAccess(
   item: {
@@ -85,8 +87,13 @@ function hasItemAccess(
   if (item.module) {
     const releaseStatus = getModuleReleaseStatus(item.module)
 
-    // If module is coming_soon or beta, always show it (will be marked in UI)
-    if (releaseStatus === 'coming_soon' || releaseStatus === 'beta') {
+    // Not built yet (or retired): never shown.
+    if (isHiddenReleaseStatus(releaseStatus)) {
+      return false
+    }
+
+    // Beta is shown and marked in the UI.
+    if (releaseStatus === 'beta') {
       return true
     }
 
@@ -244,7 +251,7 @@ function filterNavGroup(group: NavGroup, checks: AccessCheckFunctions): NavGroup
     return null
   }
 
-  // The header links to the overview only while its row is visible.
+  // The rail flyout heading links to the overview only while its row is visible.
   const overviewVisible =
     group.url !== undefined && filteredItems.some((item) => 'url' in item && item.url === group.url)
 

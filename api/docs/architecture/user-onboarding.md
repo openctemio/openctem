@@ -14,9 +14,32 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Platform admin recovers an organization whose owners are all suspended | `POST /api/v1/admin/tenants/{tenantId}/users` with `"recovery": true` | console session, **super_admin** (403 otherwise); link emailed only; audited as `organization.owner_recovery` and at critical severity in the organization |
 | Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account) | console session, ops_admin+ (audited) |
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
-| Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/{token}/accept` | owner/admin to invite; the token + matching email to accept |
+| Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/accept` with `{"token"}` in the body | owner/admin to invite; the token + matching email to accept |
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain + allowed domains |
 | Self-registration | `POST /api/v1/auth/register` | `AUTH_ALLOW_REGISTRATION=true` only (default false) |
+
+### Invitation tokens stay out of URLs
+
+The invitation token is a bearer credential (whoever holds it can see and
+decline the invitation; accepting also needs the invited email). It never
+appears in a URL a server or proxy records (RFC-041 §3.2 P4):
+
+- The emailed link is `{APP_URL}/invitations#token=...`. A fragment is never
+  sent to a server or put in a `Referer`. The web page reads it, keeps it in the
+  tab's `sessionStorage` (so it survives the trip through `/login` or
+  `/register?returnTo=/invitations`), and removes it from the address bar and
+  history with `history.replaceState`.
+- The API takes the token in the JSON body: `POST /api/v1/invitations/lookup`,
+  `/accept`, `/accept-with-refresh` and `/decline`.
+- Links sent before this change (`/invitations/{token}`) still work: the web
+  page redirects them to the fragment form. The API aliases
+  `/api/v1/invitations/{token}/...` answer with `Deprecation`/`Sunset`
+  headers until 2027-01-15 and are counted in
+  `deprecated_route_requests_total{plane="auth"}`.
+- For those legacy paths, the API access log, HTTP metric labels and trace
+  attributes record `/api/v1/invitations/{redacted}/...`
+  (`middleware.RedactPath`), and the gateway's access log records
+  `REDACTED`. No log line records a token or a token prefix.
 
 ### First owner (platform administrator)
 
@@ -89,13 +112,21 @@ removed when the list changes.
 ### IP allowlist (`security.ip_whitelist`)
 
 Empty = no restriction. Otherwise every request made with a user's access token
-for this organization must come from a listed IP or CIDR, or it gets
-`403 {"code":"IP_NOT_ALLOWED"}`. Applies to the organization in the URL
-(`/api/v1/tenants/{tenant}/...`) or, elsewhere, the organization the token is
-for. Not applied to: sensor/agent and tenant API keys, the platform admin
-console, public routes (login, token exchange), and the platform administrator.
-Changes take effect within 30 seconds on every API instance (immediately on the
-one that saved them).
+or one of the organization's `oct_` API keys must come from a listed IP or CIDR,
+or it gets `403 {"code":"IP_NOT_ALLOWED"}`. Applies to the organization in the
+URL (`/api/v1/tenants/{tenant}/...`) or, elsewhere, the organization the token
+or key belongs to. Changes take effect within 30 seconds on every API instance
+(immediately on the one that saved them).
+
+| Surface | Allowlist | Why |
+|---|---|---|
+| User sessions (REST, WebSocket upgrade) | enforced | the people the policy is for |
+| `oct_` API keys on the tenant REST API | enforced | automation acting as a member |
+| `oct_` API keys on `POST /api/v1/mcp` | enforced | same key, same policy as REST (23b S-H2) |
+| Sensor keys (`/api/v1/agent/*`, `/api/v2/sensor`) | not applied | sensors run in scan zones and customer networks; own enrollment, key and egress controls |
+| SCIM (`/scim/v2`) | not applied | the caller is the organization's IdP (a SaaS whose egress is not the users' network); gating it would also block deprovisioning. The owner-minted SCIM token is the boundary |
+| Inbound integration webhooks (Jira) | not applied | sent from the vendor's cloud, authenticated by the per-tenant webhook secret |
+| Platform admin console, public routes, platform administrator | not applied | not an organization's members |
 
 **Lockout guard.** Saving a non-empty list that does not contain your current IP
 is refused with 400 `IP allowlist must include your current IP address (<ip>)`.

@@ -97,7 +97,7 @@ func (m *scanSessionMockRepo) List(_ context.Context, _ scansession.Filter, page
 	}, nil
 }
 
-func (m *scanSessionMockRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *scanSessionMockRepo) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}

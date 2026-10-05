@@ -4672,6 +4672,8 @@ export interface paths {
           last_seen_after?: string
           /** @description Filter assets last seen at/before this time (RFC3339 or YYYY-MM-DD) */
           last_seen_before?: string
+          /** @description Filter by attribution (comma-separated): confirmed (includes assets with no record), needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (confirmed+unknown+dependency+monitor_only) */
+          attribution?: string
           /** @description Sort field (e.g., -created_at, name, -risk_score) */
           sort?: string
           /** @description Page number */
@@ -4734,7 +4736,7 @@ export interface paths {
     put?: never
     /**
      * Create asset
-     * @description Creates a new asset for the current tenant
+     * @description Creates a new asset for the current tenant. A name (or a correlated address) that matches an existing asset is a 409 and nothing is changed; details.existing_asset_id names the existing asset only when it is in the caller's data scope.
      */
     post: {
       parameters: {
@@ -7100,7 +7102,7 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description Page number */
+          /** @description Page number (1-based; 0 or missing means 1) */
           page?: number
           /** @description Items per page */
           per_page?: number
@@ -7259,7 +7261,7 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description Page number */
+          /** @description Page number (1-based; 0 or missing means 1) */
           page?: number
           /** @description Items per page */
           per_page?: number
@@ -7369,7 +7371,7 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description Page number */
+          /** @description Page number (1-based; 0 or missing means 1) */
           page?: number
           /** @description Items per page */
           per_page?: number
@@ -11382,6 +11384,384 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/easm/candidates': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * EASM review queue
+     * @description Assets the platform found but could not prove are the organization's (attribution needs_review or candidate by default), most confident first, each with its evidence. Narrowed to the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Attribution states (comma-separated); default needs_review,candidate */
+          states?: string
+          /** @description Asset types (comma-separated) */
+          types?: string
+          /** @description Minimum confidence 0-100 */
+          min_confidence?: number
+          /** @description Substring of the asset name */
+          search?: string
+          /** @description Page number */
+          page?: number
+          /** @description Items per page */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/candidates/decisions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Decide EASM attribution in bulk
+     * @description Record whether each asset is the organization's: confirmed lets scans reach it; rejected, dependency and monitor_only keep it passive. At most 200 assets per call. Assets that are not the organization's, are deleted or are outside the caller's data scope are listed in not_found. Each decision is audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Decision */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMDecisionRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.DecisionResult']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/seeds': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List EASM seeds
+     * @description The organization's seeds: what external-surface discovery expands from. A root_domain seed is verified (dns_txt) while the organization has a verified DNS TXT record for it or a parent.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMSeedListResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Add an EASM seed
+     * @description Adds a seed discovery expands from. The caller must attest that the organization is authorized to have it discovered and checked (recorded with the user and time). Public suffixes and providers' shared domains are refused. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Seed */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMSeedCreateRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/seeds/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Remove an EASM seed
+     * @description Removes a seed. Assets already discovered from it stay in the inventory with their evidence. Audited.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Seed ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    /**
+     * Change an EASM seed
+     * @description Changes a seed's label or turns discovery from it on or off. The kind and value cannot change: delete and add instead. Audited.
+     */
+    patch: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Seed ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Changes */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMSeedUpdateRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    trace?: never
+  }
   '/easm/summary': {
     parameters: {
       query?: never
@@ -12588,31 +12968,272 @@ export interface paths {
     }
     /**
      * List findings
-     * @description Retrieves a paginated list of findings for the current tenant
+     * @description Retrieves a paginated list of findings for the current tenant.
+     *     Filters follow the list query contract (RFC-048): every param is ANDed, a comma list is OR
+     *     within one field, and operators are suffixes (`_not`, `_gte`, `_gt`, `_lte`, `_lt`, `_contains`).
+     *     A bad value or an unsortable field is 400 INVALID_FILTER. Old names (severities, statuses,
+     *     exclude_statuses, sources, priority_classes, finding_ids, cve_ids, finding_types, asset_tags,
+     *     epss_min, search, assigned_to_me) still work and answer with Deprecation and Sunset headers.
      */
     get: {
       parameters: {
         query?: {
-          /** @description Filter by asset ID */
-          asset_id?: string
-          /** @description Filter by branch ID */
-          branch_id?: string
-          /** @description Filter by component ID */
-          component_id?: string
-          /** @description Filter by vulnerability ID */
-          vulnerability_id?: string
-          /** @description Filter by severities (comma-separated) */
-          severities?: string
-          /** @description Filter by statuses (comma-separated) */
-          statuses?: string
-          /** @description Exclude statuses (comma-separated) */
-          exclude_statuses?: string
-          /** @description Filter by sources */
-          sources?: string
-          /** @description Filter by SLA status (comma-separated: on_track,warning,overdue,exceeded,not_applicable) */
-          sla_status?: string
-          /** @description Filter by tool name */
-          tool_name?: string
+          /** @description id: any of (comma list) */
+          id?: string[]
+          /** @description id: none of (comma list) */
+          id_not?: string[]
+          /** @description asset id: any of (comma list) */
+          asset_id?: string[]
+          /** @description asset id: none of (comma list) */
+          asset_id_not?: string[]
+          /** @description branch id: any of (comma list) */
+          branch_id?: string[]
+          /** @description open on branch id: any of (comma list) */
+          open_on_branch_id?: string[]
+          /** @description fixed on branch id: any of (comma list) */
+          fixed_on_branch_id?: string[]
+          /** @description component id: any of (comma list) */
+          component_id?: string[]
+          /** @description component id: none of (comma list) */
+          component_id_not?: string[]
+          /** @description vulnerability id: any of (comma list) */
+          vulnerability_id?: string[]
+          /** @description vulnerability id: none of (comma list) */
+          vulnerability_id_not?: string[]
+          /** @description severity: any of (comma list) */
+          severity?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description severity: none of (comma list) */
+          severity_not?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description status: any of (comma list) */
+          status?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description status: none of (comma list) */
+          status_not?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
+          /** @description source: any of (comma list) */
+          source?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description source: none of (comma list) */
+          source_not?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description sla status: any of (comma list) */
+          sla_status?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description sla status: none of (comma list) */
+          sla_status_not?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description priority class: any of (comma list) */
+          priority_class?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description priority class: none of (comma list) */
+          priority_class_not?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description cve id: any of (comma list) */
+          cve_id?: string[]
+          /** @description cve id: none of (comma list) */
+          cve_id_not?: string[]
+          /** @description family: any of (comma list) */
+          family?: string[]
+          /** @description family: none of (comma list) */
+          family_not?: string[]
+          /** @description finding type: any of (comma list) */
+          finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
+          /** @description finding type: none of (comma list) */
+          finding_type_not?: (
+            'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
+          )[]
+          /** @description is in kev equals */
+          is_in_kev?: boolean
+          /** @description is reachable equals */
+          is_reachable?: boolean
+          /** @description epss score at least */
+          epss_score_gte?: number
+          /** @description epss score at most */
+          epss_score_lte?: number
+          /** @description epss score greater than */
+          epss_score_gt?: number
+          /** @description epss score less than */
+          epss_score_lt?: number
+          /** @description tool name: any of (comma list) */
+          tool_name?: string[]
+          /** @description tool name: none of (comma list) */
+          tool_name_not?: string[]
+          /** @description rule id: any of (comma list) */
+          rule_id?: string[]
+          /** @description rule id: none of (comma list) */
+          rule_id_not?: string[]
+          /** @description scan id: any of (comma list) */
+          scan_id?: string[]
+          /** @description scan id: none of (comma list) */
+          scan_id_not?: string[]
+          /** @description file path contains */
+          file_path?: string
+          /** @description file path contains */
+          file_path_contains?: string
+          /** @description asset tag: any of (comma list) */
+          asset_tag?: string[]
+          /** @description asset tag: none of (comma list) */
+          asset_tag_not?: string[]
+          /** @description related to equals */
+          related_to?: 'me'
+          /** @description cvss score at least */
+          cvss_score_gte?: number
+          /** @description cvss score at most */
+          cvss_score_lte?: number
+          /** @description cvss score greater than */
+          cvss_score_gt?: number
+          /** @description cvss score less than */
+          cvss_score_lt?: number
+          /** @description first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gte?: string
+          /** @description first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lte?: string
+          /** @description first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gt?: string
+          /** @description first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lt?: string
+          /** @description last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gte?: string
+          /** @description last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lte?: string
+          /** @description last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gt?: string
+          /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
+          /** @description network port: any of (comma list) */
+          network_port?: number[]
+          /** @description network port: none of (comma list) */
+          network_port_not?: number[]
+          /** @description network port at least */
+          network_port_gte?: number
+          /** @description network port at most */
+          network_port_lte?: number
+          /** @description network transport: any of (comma list) */
+          network_transport?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network transport: none of (comma list) */
+          network_transport_not?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network service: any of (comma list) */
+          network_service?: string[]
+          /** @description network service: none of (comma list) */
+          network_service_not?: string[]
+          /** @description assigned to: any of (comma list) */
+          assigned_to?: string[]
+          /** @description assigned to is unset (true) or set (false) */
+          assigned_to_null?: boolean
+          /** @description assigned to: none of (comma list) */
+          assigned_to_not?: string[]
+          /** @description asset criticality: any of (comma list) */
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset criticality: none of (comma list) */
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
+          /** @description exploit available equals */
+          exploit_available?: boolean
+          /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gte?: string
+          /** @description created at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lte?: string
+          /** @description created at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gt?: string
+          /** @description created at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lt?: string
+          /** @description updated at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gte?: string
+          /** @description updated at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lte?: string
+          /** @description updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gt?: string
+          /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lt?: string
+          /** @description Saved view ID: its filter, with the other params overriding it field by field */
+          view?: string
+          /** @description Free text over title, description and file path */
+          q?: string
+          /** @description Sort keys, - for descending (default priority_class,severity,-created_at) */
+          sort?: string
           /** @description Page number */
           page?: number
           /** @description Items per page */
@@ -12641,9 +13262,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': {
-              [key: string]: string
-            }
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Unauthorized */
@@ -13252,6 +13871,89 @@ export interface paths {
     }
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/findings/{id}/duplicates': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Mark a finding as a duplicate of this one
+     * @description Folds the finding named in the body into the finding in the path, the original (RFC-043 §9). Both must be in the caller's organization and data scope and on the same asset, and neither may already be a duplicate. The canonical finding keeps the stronger status and inherits the duplicate's comments, activities, retests, evidence, tickets and fingerprints; the duplicate stays as a tombstone (status duplicate, duplicate_of). Merging with a false positive or risk acceptance also requires findings:approve. Pentest findings are managed in the pentest module. Returns the canonical finding.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description ID of the original finding */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description The finding that duplicates it */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AddFindingDuplicateRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     delete?: never
     options?: never
     head?: never
@@ -13897,6 +14599,1013 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/export': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Export findings
+     * @description Streams every finding the list's filter selects as CSV (default) or NDJSON (`format=ndjson`),
+     *     in id order, at most 100,000 rows; the X-Export-Truncated trailer says whether rows were left
+     *     out. Same scope as GET /findings. Needs findings:export. One export per user at a time (429
+     *     otherwise). Audit-logged without filter values. CSV formula cells are neutralized.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description csv (default) or ndjson */
+          format?: 'csv' | 'ndjson'
+          /** @description id: any of (comma list) */
+          id?: string[]
+          /** @description id: none of (comma list) */
+          id_not?: string[]
+          /** @description asset id: any of (comma list) */
+          asset_id?: string[]
+          /** @description asset id: none of (comma list) */
+          asset_id_not?: string[]
+          /** @description branch id: any of (comma list) */
+          branch_id?: string[]
+          /** @description open on branch id: any of (comma list) */
+          open_on_branch_id?: string[]
+          /** @description fixed on branch id: any of (comma list) */
+          fixed_on_branch_id?: string[]
+          /** @description component id: any of (comma list) */
+          component_id?: string[]
+          /** @description component id: none of (comma list) */
+          component_id_not?: string[]
+          /** @description vulnerability id: any of (comma list) */
+          vulnerability_id?: string[]
+          /** @description vulnerability id: none of (comma list) */
+          vulnerability_id_not?: string[]
+          /** @description severity: any of (comma list) */
+          severity?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description severity: none of (comma list) */
+          severity_not?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description status: any of (comma list) */
+          status?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description status: none of (comma list) */
+          status_not?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
+          /** @description source: any of (comma list) */
+          source?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description source: none of (comma list) */
+          source_not?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description sla status: any of (comma list) */
+          sla_status?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description sla status: none of (comma list) */
+          sla_status_not?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description priority class: any of (comma list) */
+          priority_class?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description priority class: none of (comma list) */
+          priority_class_not?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description cve id: any of (comma list) */
+          cve_id?: string[]
+          /** @description cve id: none of (comma list) */
+          cve_id_not?: string[]
+          /** @description family: any of (comma list) */
+          family?: string[]
+          /** @description family: none of (comma list) */
+          family_not?: string[]
+          /** @description finding type: any of (comma list) */
+          finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
+          /** @description finding type: none of (comma list) */
+          finding_type_not?: (
+            'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
+          )[]
+          /** @description is in kev equals */
+          is_in_kev?: boolean
+          /** @description is reachable equals */
+          is_reachable?: boolean
+          /** @description epss score at least */
+          epss_score_gte?: number
+          /** @description epss score at most */
+          epss_score_lte?: number
+          /** @description epss score greater than */
+          epss_score_gt?: number
+          /** @description epss score less than */
+          epss_score_lt?: number
+          /** @description tool name: any of (comma list) */
+          tool_name?: string[]
+          /** @description tool name: none of (comma list) */
+          tool_name_not?: string[]
+          /** @description rule id: any of (comma list) */
+          rule_id?: string[]
+          /** @description rule id: none of (comma list) */
+          rule_id_not?: string[]
+          /** @description scan id: any of (comma list) */
+          scan_id?: string[]
+          /** @description scan id: none of (comma list) */
+          scan_id_not?: string[]
+          /** @description file path contains */
+          file_path?: string
+          /** @description file path contains */
+          file_path_contains?: string
+          /** @description asset tag: any of (comma list) */
+          asset_tag?: string[]
+          /** @description asset tag: none of (comma list) */
+          asset_tag_not?: string[]
+          /** @description related to equals */
+          related_to?: 'me'
+          /** @description cvss score at least */
+          cvss_score_gte?: number
+          /** @description cvss score at most */
+          cvss_score_lte?: number
+          /** @description cvss score greater than */
+          cvss_score_gt?: number
+          /** @description cvss score less than */
+          cvss_score_lt?: number
+          /** @description first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gte?: string
+          /** @description first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lte?: string
+          /** @description first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gt?: string
+          /** @description first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lt?: string
+          /** @description last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gte?: string
+          /** @description last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lte?: string
+          /** @description last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gt?: string
+          /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
+          /** @description network port: any of (comma list) */
+          network_port?: number[]
+          /** @description network port: none of (comma list) */
+          network_port_not?: number[]
+          /** @description network port at least */
+          network_port_gte?: number
+          /** @description network port at most */
+          network_port_lte?: number
+          /** @description network transport: any of (comma list) */
+          network_transport?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network transport: none of (comma list) */
+          network_transport_not?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network service: any of (comma list) */
+          network_service?: string[]
+          /** @description network service: none of (comma list) */
+          network_service_not?: string[]
+          /** @description assigned to: any of (comma list) */
+          assigned_to?: string[]
+          /** @description assigned to is unset (true) or set (false) */
+          assigned_to_null?: boolean
+          /** @description assigned to: none of (comma list) */
+          assigned_to_not?: string[]
+          /** @description asset criticality: any of (comma list) */
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset criticality: none of (comma list) */
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
+          /** @description exploit available equals */
+          exploit_available?: boolean
+          /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gte?: string
+          /** @description created at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lte?: string
+          /** @description created at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gt?: string
+          /** @description created at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lt?: string
+          /** @description updated at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gte?: string
+          /** @description updated at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lte?: string
+          /** @description updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gt?: string
+          /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lt?: string
+          /** @description Saved view ID: its filter, with the other params overriding it field by field */
+          view?: string
+          /** @description Free text */
+          q?: string
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description CSV or NDJSON stream */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': string
+            'application/x-ndjson': string
+          }
+        }
+        /** @description INVALID_FILTER */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': {
+              [key: string]: unknown
+            }
+            'application/x-ndjson': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': {
+              [key: string]: unknown
+            }
+            'application/x-ndjson': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Export findings selected by a filter document
+     * @description POST /findings/search's FilterDocument body, streamed like GET /findings/export.
+     */
+    post: {
+      parameters: {
+        query?: {
+          /** @description csv (default) or ndjson */
+          format?: 'csv' | 'ndjson'
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.FindingSearchRequest']
+      responses: {
+        /** @description CSV or NDJSON stream */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': string
+            'application/x-ndjson': string
+          }
+        }
+        /** @description INVALID_FILTER */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': {
+              [key: string]: unknown
+            }
+            'application/x-ndjson': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'text/csv': {
+              [key: string]: unknown
+            }
+            'application/x-ndjson': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/findings/groups': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Group findings
+     * @description Findings grouped by one dimension, with per-group counts. Takes every filter param of GET /findings
+     *     (RFC-048), so a grouped view counts exactly the rows the list shows.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description cve_id (default), rule_id, asset_id, owner_id, component_id, severity, source, finding_type, family */
+          group_by?: string
+          /** @description id: any of (comma list) */
+          id?: string[]
+          /** @description id: none of (comma list) */
+          id_not?: string[]
+          /** @description asset id: any of (comma list) */
+          asset_id?: string[]
+          /** @description asset id: none of (comma list) */
+          asset_id_not?: string[]
+          /** @description branch id: any of (comma list) */
+          branch_id?: string[]
+          /** @description open on branch id: any of (comma list) */
+          open_on_branch_id?: string[]
+          /** @description fixed on branch id: any of (comma list) */
+          fixed_on_branch_id?: string[]
+          /** @description component id: any of (comma list) */
+          component_id?: string[]
+          /** @description component id: none of (comma list) */
+          component_id_not?: string[]
+          /** @description vulnerability id: any of (comma list) */
+          vulnerability_id?: string[]
+          /** @description vulnerability id: none of (comma list) */
+          vulnerability_id_not?: string[]
+          /** @description severity: any of (comma list) */
+          severity?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description severity: none of (comma list) */
+          severity_not?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description status: any of (comma list) */
+          status?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description status: none of (comma list) */
+          status_not?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
+          /** @description source: any of (comma list) */
+          source?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description source: none of (comma list) */
+          source_not?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description sla status: any of (comma list) */
+          sla_status?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description sla status: none of (comma list) */
+          sla_status_not?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description priority class: any of (comma list) */
+          priority_class?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description priority class: none of (comma list) */
+          priority_class_not?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description cve id: any of (comma list) */
+          cve_id?: string[]
+          /** @description cve id: none of (comma list) */
+          cve_id_not?: string[]
+          /** @description family: any of (comma list) */
+          family?: string[]
+          /** @description family: none of (comma list) */
+          family_not?: string[]
+          /** @description finding type: any of (comma list) */
+          finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
+          /** @description finding type: none of (comma list) */
+          finding_type_not?: (
+            'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
+          )[]
+          /** @description is in kev equals */
+          is_in_kev?: boolean
+          /** @description is reachable equals */
+          is_reachable?: boolean
+          /** @description epss score at least */
+          epss_score_gte?: number
+          /** @description epss score at most */
+          epss_score_lte?: number
+          /** @description epss score greater than */
+          epss_score_gt?: number
+          /** @description epss score less than */
+          epss_score_lt?: number
+          /** @description tool name: any of (comma list) */
+          tool_name?: string[]
+          /** @description tool name: none of (comma list) */
+          tool_name_not?: string[]
+          /** @description rule id: any of (comma list) */
+          rule_id?: string[]
+          /** @description rule id: none of (comma list) */
+          rule_id_not?: string[]
+          /** @description scan id: any of (comma list) */
+          scan_id?: string[]
+          /** @description scan id: none of (comma list) */
+          scan_id_not?: string[]
+          /** @description file path contains */
+          file_path?: string
+          /** @description file path contains */
+          file_path_contains?: string
+          /** @description asset tag: any of (comma list) */
+          asset_tag?: string[]
+          /** @description asset tag: none of (comma list) */
+          asset_tag_not?: string[]
+          /** @description related to equals */
+          related_to?: 'me'
+          /** @description cvss score at least */
+          cvss_score_gte?: number
+          /** @description cvss score at most */
+          cvss_score_lte?: number
+          /** @description cvss score greater than */
+          cvss_score_gt?: number
+          /** @description cvss score less than */
+          cvss_score_lt?: number
+          /** @description first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gte?: string
+          /** @description first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lte?: string
+          /** @description first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gt?: string
+          /** @description first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lt?: string
+          /** @description last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gte?: string
+          /** @description last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lte?: string
+          /** @description last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gt?: string
+          /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
+          /** @description network port: any of (comma list) */
+          network_port?: number[]
+          /** @description network port: none of (comma list) */
+          network_port_not?: number[]
+          /** @description network port at least */
+          network_port_gte?: number
+          /** @description network port at most */
+          network_port_lte?: number
+          /** @description network transport: any of (comma list) */
+          network_transport?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network transport: none of (comma list) */
+          network_transport_not?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network service: any of (comma list) */
+          network_service?: string[]
+          /** @description network service: none of (comma list) */
+          network_service_not?: string[]
+          /** @description assigned to: any of (comma list) */
+          assigned_to?: string[]
+          /** @description assigned to is unset (true) or set (false) */
+          assigned_to_null?: boolean
+          /** @description assigned to: none of (comma list) */
+          assigned_to_not?: string[]
+          /** @description asset criticality: any of (comma list) */
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset criticality: none of (comma list) */
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
+          /** @description exploit available equals */
+          exploit_available?: boolean
+          /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gte?: string
+          /** @description created at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lte?: string
+          /** @description created at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gt?: string
+          /** @description created at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lt?: string
+          /** @description updated at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gte?: string
+          /** @description updated at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lte?: string
+          /** @description updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gt?: string
+          /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lt?: string
+          /** @description Saved view ID: its filter, with the other params overriding it field by field */
+          view?: string
+          /** @description Free text */
+          q?: string
+          /** @description Ignored by groups (accepted for URL parity with the list) */
+          sort?: string
+          /** @description Page number */
+          page?: number
+          /** @description Groups per page */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/findings/related-cves/{cveId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Related CVEs
+     * @description CVEs sharing a component with the given CVE, among the open findings the filter selects
+     *     (the params of GET /findings, RFC-048). The source CVE's components come only from findings
+     *     the caller may see.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description id: any of (comma list) */
+          id?: string[]
+          /** @description id: none of (comma list) */
+          id_not?: string[]
+          /** @description asset id: any of (comma list) */
+          asset_id?: string[]
+          /** @description asset id: none of (comma list) */
+          asset_id_not?: string[]
+          /** @description branch id: any of (comma list) */
+          branch_id?: string[]
+          /** @description open on branch id: any of (comma list) */
+          open_on_branch_id?: string[]
+          /** @description fixed on branch id: any of (comma list) */
+          fixed_on_branch_id?: string[]
+          /** @description component id: any of (comma list) */
+          component_id?: string[]
+          /** @description component id: none of (comma list) */
+          component_id_not?: string[]
+          /** @description vulnerability id: any of (comma list) */
+          vulnerability_id?: string[]
+          /** @description vulnerability id: none of (comma list) */
+          vulnerability_id_not?: string[]
+          /** @description severity: any of (comma list) */
+          severity?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description severity: none of (comma list) */
+          severity_not?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description status: any of (comma list) */
+          status?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description status: none of (comma list) */
+          status_not?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
+          /** @description source: any of (comma list) */
+          source?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description source: none of (comma list) */
+          source_not?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description sla status: any of (comma list) */
+          sla_status?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description sla status: none of (comma list) */
+          sla_status_not?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description priority class: any of (comma list) */
+          priority_class?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description priority class: none of (comma list) */
+          priority_class_not?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description cve id: any of (comma list) */
+          cve_id?: string[]
+          /** @description cve id: none of (comma list) */
+          cve_id_not?: string[]
+          /** @description family: any of (comma list) */
+          family?: string[]
+          /** @description family: none of (comma list) */
+          family_not?: string[]
+          /** @description finding type: any of (comma list) */
+          finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
+          /** @description finding type: none of (comma list) */
+          finding_type_not?: (
+            'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
+          )[]
+          /** @description is in kev equals */
+          is_in_kev?: boolean
+          /** @description is reachable equals */
+          is_reachable?: boolean
+          /** @description epss score at least */
+          epss_score_gte?: number
+          /** @description epss score at most */
+          epss_score_lte?: number
+          /** @description epss score greater than */
+          epss_score_gt?: number
+          /** @description epss score less than */
+          epss_score_lt?: number
+          /** @description tool name: any of (comma list) */
+          tool_name?: string[]
+          /** @description tool name: none of (comma list) */
+          tool_name_not?: string[]
+          /** @description rule id: any of (comma list) */
+          rule_id?: string[]
+          /** @description rule id: none of (comma list) */
+          rule_id_not?: string[]
+          /** @description scan id: any of (comma list) */
+          scan_id?: string[]
+          /** @description scan id: none of (comma list) */
+          scan_id_not?: string[]
+          /** @description file path contains */
+          file_path?: string
+          /** @description file path contains */
+          file_path_contains?: string
+          /** @description asset tag: any of (comma list) */
+          asset_tag?: string[]
+          /** @description asset tag: none of (comma list) */
+          asset_tag_not?: string[]
+          /** @description related to equals */
+          related_to?: 'me'
+          /** @description cvss score at least */
+          cvss_score_gte?: number
+          /** @description cvss score at most */
+          cvss_score_lte?: number
+          /** @description cvss score greater than */
+          cvss_score_gt?: number
+          /** @description cvss score less than */
+          cvss_score_lt?: number
+          /** @description first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gte?: string
+          /** @description first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lte?: string
+          /** @description first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gt?: string
+          /** @description first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lt?: string
+          /** @description last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gte?: string
+          /** @description last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lte?: string
+          /** @description last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gt?: string
+          /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
+          /** @description network port: any of (comma list) */
+          network_port?: number[]
+          /** @description network port: none of (comma list) */
+          network_port_not?: number[]
+          /** @description network port at least */
+          network_port_gte?: number
+          /** @description network port at most */
+          network_port_lte?: number
+          /** @description network transport: any of (comma list) */
+          network_transport?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network transport: none of (comma list) */
+          network_transport_not?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network service: any of (comma list) */
+          network_service?: string[]
+          /** @description network service: none of (comma list) */
+          network_service_not?: string[]
+          /** @description assigned to: any of (comma list) */
+          assigned_to?: string[]
+          /** @description assigned to is unset (true) or set (false) */
+          assigned_to_null?: boolean
+          /** @description assigned to: none of (comma list) */
+          assigned_to_not?: string[]
+          /** @description asset criticality: any of (comma list) */
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset criticality: none of (comma list) */
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
+          /** @description exploit available equals */
+          exploit_available?: boolean
+          /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gte?: string
+          /** @description created at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lte?: string
+          /** @description created at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gt?: string
+          /** @description created at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lt?: string
+          /** @description updated at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gte?: string
+          /** @description updated at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lte?: string
+          /** @description updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gt?: string
+          /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lt?: string
+          /** @description Free text */
+          q?: string
+        }
+        header?: never
+        path: {
+          /** @description CVE id */
+          cveId: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description INVALID_FILTER */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/remediation-groups': {
     parameters: {
       query?: never
@@ -13980,6 +15689,72 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/search': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Search findings with a filter document
+     * @description Lists findings selected by a FilterDocument (RFC-048): all/any/not groups with field/op/value
+     *     leaves, for OR, nesting and id lists of up to 500. Same fields, permission, scope and
+     *     response as GET /findings. Limits: 50 leaves, depth 3, 32 KB body. A bad document is 400
+     *     INVALID_FILTER with the JSON path of each problem. Read-only.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.FindingSearchRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description INVALID_FILTER with details[].path */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/stats': {
     parameters: {
       query?: never
@@ -13989,22 +15764,267 @@ export interface paths {
     }
     /**
      * Get finding statistics
-     * @description Returns aggregated statistics for findings. Optional asset_id query
-     *     parameter scopes the stats to a single asset (used by the Findings
-     *     page when filtered by `?assetId=…` so the severity cards match the
-     *     filtered table instead of showing global tenant counts).
-     *     Optional sources query parameter (comma-separated, same values and
-     *     validation as the list endpoint's sources filter) scopes every
-     *     number to those sources; the Exposures type pages use it to get
-     *     their counts in one request instead of walking the list.
+     * @description Aggregated statistics over the findings a filter selects. Takes every filter param of
+     *     GET /findings (RFC-048) and compiles the same WHERE, so the numbers always match the table
+     *     (the old asset_id and sources params are part of that filter).
      */
     get: {
       parameters: {
         query?: {
-          /** @description Restrict stats to a single asset */
-          asset_id?: string
-          /** @description Restrict stats to these finding sources (comma-separated, max 25) */
-          sources?: string
+          /** @description id: any of (comma list) */
+          id?: string[]
+          /** @description id: none of (comma list) */
+          id_not?: string[]
+          /** @description asset id: any of (comma list) */
+          asset_id?: string[]
+          /** @description asset id: none of (comma list) */
+          asset_id_not?: string[]
+          /** @description branch id: any of (comma list) */
+          branch_id?: string[]
+          /** @description open on branch id: any of (comma list) */
+          open_on_branch_id?: string[]
+          /** @description fixed on branch id: any of (comma list) */
+          fixed_on_branch_id?: string[]
+          /** @description component id: any of (comma list) */
+          component_id?: string[]
+          /** @description component id: none of (comma list) */
+          component_id_not?: string[]
+          /** @description vulnerability id: any of (comma list) */
+          vulnerability_id?: string[]
+          /** @description vulnerability id: none of (comma list) */
+          vulnerability_id_not?: string[]
+          /** @description severity: any of (comma list) */
+          severity?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description severity: none of (comma list) */
+          severity_not?: ('critical' | 'high' | 'medium' | 'low' | 'info' | 'none')[]
+          /** @description status: any of (comma list) */
+          status?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description status: none of (comma list) */
+          status_not?: (
+            | 'new'
+            | 'confirmed'
+            | 'in_progress'
+            | 'fix_applied'
+            | 'validated_fixed'
+            | 'not_observed'
+            | 'resolved'
+            | 'false_positive'
+            | 'accepted'
+            | 'duplicate'
+            | 'draft'
+            | 'in_review'
+            | 'remediation'
+            | 'retest'
+            | 'verified'
+            | 'accepted_risk'
+          )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
+          /** @description source: any of (comma list) */
+          source?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description source: none of (comma list) */
+          source_not?: (
+            | 'sast'
+            | 'dast'
+            | 'sca'
+            | 'secret'
+            | 'iac'
+            | 'container'
+            | 'cspm'
+            | 'easm'
+            | 'va'
+            | 'rasp'
+            | 'waf'
+            | 'siem'
+            | 'manual'
+            | 'pentest'
+            | 'bug_bounty'
+            | 'red_team'
+            | 'external'
+            | 'threat_intel'
+            | 'vendor'
+            | 'sarif'
+            | 'sca_tool'
+          )[]
+          /** @description sla status: any of (comma list) */
+          sla_status?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description sla status: none of (comma list) */
+          sla_status_not?: ('on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable')[]
+          /** @description priority class: any of (comma list) */
+          priority_class?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description priority class: none of (comma list) */
+          priority_class_not?: ('P0' | 'P1' | 'P2' | 'P3')[]
+          /** @description cve id: any of (comma list) */
+          cve_id?: string[]
+          /** @description cve id: none of (comma list) */
+          cve_id_not?: string[]
+          /** @description family: any of (comma list) */
+          family?: string[]
+          /** @description family: none of (comma list) */
+          family_not?: string[]
+          /** @description finding type: any of (comma list) */
+          finding_type?: ('vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3')[]
+          /** @description finding type: none of (comma list) */
+          finding_type_not?: (
+            'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
+          )[]
+          /** @description is in kev equals */
+          is_in_kev?: boolean
+          /** @description is reachable equals */
+          is_reachable?: boolean
+          /** @description epss score at least */
+          epss_score_gte?: number
+          /** @description epss score at most */
+          epss_score_lte?: number
+          /** @description epss score greater than */
+          epss_score_gt?: number
+          /** @description epss score less than */
+          epss_score_lt?: number
+          /** @description tool name: any of (comma list) */
+          tool_name?: string[]
+          /** @description tool name: none of (comma list) */
+          tool_name_not?: string[]
+          /** @description rule id: any of (comma list) */
+          rule_id?: string[]
+          /** @description rule id: none of (comma list) */
+          rule_id_not?: string[]
+          /** @description scan id: any of (comma list) */
+          scan_id?: string[]
+          /** @description scan id: none of (comma list) */
+          scan_id_not?: string[]
+          /** @description file path contains */
+          file_path?: string
+          /** @description file path contains */
+          file_path_contains?: string
+          /** @description asset tag: any of (comma list) */
+          asset_tag?: string[]
+          /** @description asset tag: none of (comma list) */
+          asset_tag_not?: string[]
+          /** @description related to equals */
+          related_to?: 'me'
+          /** @description cvss score at least */
+          cvss_score_gte?: number
+          /** @description cvss score at most */
+          cvss_score_lte?: number
+          /** @description cvss score greater than */
+          cvss_score_gt?: number
+          /** @description cvss score less than */
+          cvss_score_lt?: number
+          /** @description first detected at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gte?: string
+          /** @description first detected at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lte?: string
+          /** @description first detected at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_gt?: string
+          /** @description first detected at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          first_detected_at_lt?: string
+          /** @description last seen at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gte?: string
+          /** @description last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lte?: string
+          /** @description last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_gt?: string
+          /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
+          /** @description network port: any of (comma list) */
+          network_port?: number[]
+          /** @description network port: none of (comma list) */
+          network_port_not?: number[]
+          /** @description network port at least */
+          network_port_gte?: number
+          /** @description network port at most */
+          network_port_lte?: number
+          /** @description network transport: any of (comma list) */
+          network_transport?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network transport: none of (comma list) */
+          network_transport_not?: ('tcp' | 'udp' | 'sctp')[]
+          /** @description network service: any of (comma list) */
+          network_service?: string[]
+          /** @description network service: none of (comma list) */
+          network_service_not?: string[]
+          /** @description assigned to: any of (comma list) */
+          assigned_to?: string[]
+          /** @description assigned to is unset (true) or set (false) */
+          assigned_to_null?: boolean
+          /** @description assigned to: none of (comma list) */
+          assigned_to_not?: string[]
+          /** @description asset criticality: any of (comma list) */
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset criticality: none of (comma list) */
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
+          /** @description exploit available equals */
+          exploit_available?: boolean
+          /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gte?: string
+          /** @description created at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lte?: string
+          /** @description created at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_gt?: string
+          /** @description created at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          created_at_lt?: string
+          /** @description updated at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gte?: string
+          /** @description updated at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lte?: string
+          /** @description updated at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_gt?: string
+          /** @description updated at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          updated_at_lt?: string
+          /** @description Saved view ID: its filter, with the other params overriding it field by field */
+          view?: string
+          /** @description Free text */
+          q?: string
         }
         header?: never
         path?: never
@@ -14027,9 +16047,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': {
-              [key: string]: string
-            }
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Response']
           }
         }
         /** @description Unauthorized */
@@ -14708,155 +16726,6 @@ export interface paths {
           content: {
             '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/groups/{groupId}/permission-sets': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * List permission sets assigned to a group
-     * @description Get all permission sets assigned to the group with full details
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Group ID */
-          groupId: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetResponse'][]
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    /**
-     * Assign a permission set to a group
-     * @description Assign a permission set to the group
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Group ID */
-          groupId: string
-        }
-        cookie?: never
-      }
-      /** @description Permission set details */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.AssignPermissionSetRequest']
-        }
-      }
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/groups/{groupId}/permission-sets/{permissionSetId}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    /**
-     * Remove a permission set from a group
-     * @description Remove a permission set assignment from the group
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Group ID */
-          groupId: string
-          /** @description Permission Set ID */
-          permissionSetId: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
         }
         /** @description Not Found */
         404: {
@@ -16487,6 +18356,291 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/invitations/accept': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Accept an invitation
+     * @description Joins the organization of the invitation. The caller must be signed in as the invited email. The token travels in the body, never in the URL.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.InvitationTokenRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.MemberResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/invitations/accept-with-refresh': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Accept an invitation with a refresh token
+     * @description For an invited user without an organization yet: accepts the invitation and issues an access token for the new organization. The refresh token comes from the body or the httpOnly cookie (cookie requires the CSRF pair). The invitation token travels in the body, never in the URL.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Invitation token and optional refresh token */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.AcceptInvitationWithRefreshRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.AcceptInvitationWithRefreshResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/invitations/decline': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Decline an invitation
+     * @description Deletes the invitation. Holding the token is the authorization, so no sign-in is needed. The token travels in the body, never in the URL.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.InvitationTokenRequest']
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/invitations/lookup': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Look up an invitation
+     * @description What an invitation token grants, readable before sign-in: the organization, the invited email and role, and whether it is still pending. The token travels in the body, never in the URL.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.InvitationTokenRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.InvitationLookupResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/me/assets': {
     parameters: {
       query?: never
@@ -16758,8 +18912,78 @@ export interface paths {
       cookie?: never
     }
     /**
-     * Get effective permissions for current user
-     * @description Get all effective permissions for the current user based on their group memberships
+     * Get current user permissions
+     * @description Returns the permissions for the authenticated user in the current tenant.
+     *     Supports ETag-based caching: send If-None-Match header to check for changes.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: {
+          /** @description ETag from previous response */
+          'If-None-Match'?: string
+        }
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.PermissionsResponse']
+          }
+        }
+        /** @description Not Modified - permissions unchanged */
+        304: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/meta/filters/findings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Findings filter contract
+     * @description The machine-readable filter contract of the findings list (RFC-048): fields, types, operators,
+     *     flat param names, enums, sortability, old param aliases and limits, plus the FilterDocument
+     *     JSON Schema. Fields the caller may not use are left out.
      */
     get: {
       parameters: {
@@ -16776,7 +19000,9 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['internal_infra_http_handler.EffectivePermissionsResponse']
+            'application/json': {
+              [key: string]: unknown
+            }
           }
         }
       }
@@ -17440,6 +19666,287 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/organization/members/{member_id}/access-report': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Member access report
+     * @description Everything the member holds in the organization (roles, access groups, API keys, pentest engagements, direct grants, visible assets) and owns (scans, report schedules, workflows, open assigned findings, assets). Drives the offboarding wizard. Owner or administrator.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Membership ID */
+          member_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/members/{member_id}/erase': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Erase an offboarded member's personal data
+     * @description Owner only, after offboarding, and only when the person belongs to no other organization: the name becomes "Deleted user #<hash>", the email a non-deliverable placeholder, and credentials, second factor and federated identity are cleared. Rows and foreign keys stay, so history shows the placeholder.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Membership ID */
+          member_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/members/{member_id}/mfa': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Reset a member's two-factor authentication
+     * @description An owner or administrator turns off the second factor of a member of their organization who lost their authenticator and recovery codes. The member is signed out everywhere and e-mailed. An owner or administrator target needs the owner; a member who also belongs to another organization needs the same authority there; nobody resets their own factor here.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Membership ID */
+          member_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: string
+            }
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/members/{member_id}/offboard': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Offboard a member
+     * @description Reassigns the member's owned work (mandatory for every category they own something in) to another active member, revokes their API keys, removes their access groups, grants, engagements, roles and invitations, and keeps the membership as a tombstone so history stays valid. A later invitation starts from zero. 409 reassignment_required lists the categories still without a new owner. Owner or administrator; only the owner offboards an administrator.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Membership ID */
+          member_id: string
+        }
+        cookie?: never
+      }
+      /** @description Who takes over the member's work */
+      requestBody?: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.OffboardMemberRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.OffboardResult']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/organization/settings/retest': {
     parameters: {
       query?: never
@@ -17543,7 +20050,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/permission-sets': {
+  '/pipeline-runs/{id}/stages': {
     parameters: {
       query?: never
       header?: never
@@ -17551,120 +20058,62 @@ export interface paths {
       cookie?: never
     }
     /**
-     * List permission sets
-     * @description List all permission sets for the tenant
+     * List a run's stage plans
+     * @description How each stage of the run was planned: inputs, planned targets and skipped targets by reason (counts only). A run of another organization is not found.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.RunStageListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pipeline-runs/{id}/tasks': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List a run's tasks
+     * @description One page of the run's tasks (one dispatched command each) in dispatch order. Page with next_cursor. Targets are counted, not listed.
      */
     get: {
       parameters: {
         query?: {
-          /** @description Include system permission sets */
-          include_system?: boolean
-          /** @description Filter by type */
-          type?: string
-          /** @description Search by name */
-          search?: string
-          /** @description Limit results */
-          limit?: number
-          /** @description Offset for pagination */
-          offset?: number
+          /** @description next_cursor of the previous page */
+          cursor?: string
+          /** @description Tasks per page (1-200) */
+          per_page?: number
         }
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetListResponse']
-          }
-        }
-      }
-    }
-    put?: never
-    /**
-     * Create a new permission set
-     * @description Create a new permission set for access control
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description Permission set details */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.CreatePermissionSetRequest']
-        }
-      }
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/permission-sets/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get a permission set by ID
-     * @description Get detailed information about a permission set
-     */
-    get: {
-      parameters: {
-        query?: never
         header?: never
         path: {
-          /** @description Permission set ID */
+          /** @description Run ID */
           id: string
         }
         cookie?: never
@@ -17677,48 +20126,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetWithItemsResponse']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    /**
-     * Update a permission set
-     * @description Update an existing permission set
-     */
-    put: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Permission set ID */
-          id: string
-        }
-        cookie?: never
-      }
-      /** @description Update details */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.UpdatePermissionSetRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetResponse']
+            'application/json': components['schemas']['internal_infra_http_handler.RunTaskPageResponse']
           }
         }
         /** @description Bad Request */
@@ -17737,209 +20145,6 @@ export interface paths {
           }
           content: {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    post?: never
-    /**
-     * Delete a permission set
-     * @description Delete a permission set
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Permission set ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/permission-sets/{id}/permissions': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Add a permission to a set
-     * @description Add a permission to a permission set
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Permission set ID */
-          id: string
-        }
-        cookie?: never
-      }
-      /** @description Permission details */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.AddPermissionRequest']
-        }
-      }
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/permission-sets/{id}/permissions/{permissionId}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    /**
-     * Remove a permission from a set
-     * @description Remove a permission from a permission set
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Permission set ID */
-          id: string
-          /** @description Permission ID */
-          permissionId: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/permission-sets/system': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * List system permission sets
-     * @description List all system-defined permission sets
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.PermissionSetResponse'][]
           }
         }
       }
@@ -20629,6 +22834,8 @@ export interface paths {
           search?: string
           /** @description Also list unsaved quick scans (ad_hoc) */
           include_ad_hoc?: boolean
+          /** @description One sort key, - for descending: name, created_at, last_run_at, next_run_at, total_runs */
+          sort?: string
           /** @description Page number */
           page?: number
           /** @description Items per page */
@@ -22097,6 +24304,166 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scans/schedule-preview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Preview a scan schedule
+     * @description Validates a schedule exactly as saving a scan would (cron or
+     *     RRULE, timezone, the 15-minute minimum) and lists its next
+     *     occurrences in its timezone. Reads and stores nothing.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Schedule */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.SchedulePreviewRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SchedulePreviewResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scans/sensor-opt-in-impact': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Scans affected by the sensor opt-ins
+     * @description The organization's switches for out-of-band callbacks (interactsh) and custom templates in sensor jobs (both off unless an owner enabled them, research/25 D3), and the scans whose scanner_config asks for either (at most 100; truncated says more exist). While a switch is off, those scans run without interactsh or are refused (custom templates).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.OptInImpact']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scans/stages': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List scan stages
+     * @description The scan stage catalog: each capability with the asset types it consumes and produces, its intrusiveness tier and the tools that implement it.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanStageListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/scans/stats': {
     parameters: {
       query?: never
@@ -22459,6 +24826,15 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Not Found */
         404: {
           headers: {
@@ -22505,6 +24881,15 @@ export interface paths {
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester */
+        403: {
           headers: {
             [name: string]: unknown
           }
@@ -22738,6 +25123,15 @@ export interface paths {
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Takes an exclusion in effect out of effect or shortens it without the approval permission, or by its requester */
+        403: {
           headers: {
             [name: string]: unknown
           }
@@ -24437,6 +26831,80 @@ export interface paths {
         }
       }
     }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/secret-store/{id}/rotate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Rotate credential
+     * @description Replace the secret of a credential in place. Send the data field matching the credential's type. Sources bound to the credential use the new value on their next fetch.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Credential ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description New secret */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.RotateCredentialRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CredentialResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
     options?: never
     head?: never
     patch?: never
@@ -28749,142 +31217,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/tenants/{tenant}/settings/data-scope': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get the data scope of members without an access group
-     * @description Returns what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything.
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tenant ID or slug */
-          tenant: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.DataScopePolicyResponse']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    /**
-     * Set the data scope of members without an access group
-     * @description Sets what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything. The change is audited.
-     */
-    patch: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tenant ID or slug */
-          tenant: string
-        }
-        cookie?: never
-      }
-      /** @description Policy */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.UpdateDataScopePolicyRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.DataScopePolicyResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    trace?: never
-  }
   '/tenants/{tenant}/settings/sso/changes': {
     parameters: {
       query?: never
@@ -30136,7 +32468,7 @@ export interface paths {
     put?: never
     /**
      * Enable 2FA
-     * @description Confirms the authenticator with a code and turns 2FA on. Signs out every other session. Returns recovery codes, shown once.
+     * @description Confirms the authenticator with a code and turns 2FA on. Needs the current password. Signs out every other session. Returns recovery codes, shown once.
      */
     post: {
       parameters: {
@@ -30145,7 +32477,12 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.MFACodeRequest']
+      /** @description Current password and authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.MFAEnableRequest']
+        }
+      }
       responses: {
         /** @description OK */
         200: {
@@ -30206,7 +32543,12 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.MFACodeRequest']
+      /** @description Authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.MFACodeRequest']
+        }
+      }
       responses: {
         /** @description OK */
         200: {
@@ -30442,7 +32784,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['internal_infra_http_handler.UserResponse']
+            'application/json': components['schemas']['internal_infra_http_handler.PreferencesDTO']
           }
         }
         /** @description Bad Request */
@@ -30723,6 +33065,238 @@ export interface paths {
     put?: never
     post?: never
     delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/views': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List saved views
+     * @description The caller's saved views of a page and the ones shared with their groups.
+     */
+    get: {
+      parameters: {
+        query: {
+          /** @description Page */
+          page: 'findings'
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Save a view
+     * @description Saves a filter (a FilterDocument, or the page's flat query) and page state. Validated against
+     *     the page's filter fields (400 INVALID_FILTER). group_id shares it with one of the caller's groups.
+     *     from_view_id instead copies a view the caller can see into a new personal view (A1).
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.SavedViewRequest']
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SavedViewResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Limit reached */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/views/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a saved view */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description View ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SavedViewResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    /**
+     * Update a saved view
+     * @description Only the owner may change a view (403 for a shared view of someone else; duplicate it instead).
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description View ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.SavedViewRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SavedViewResponse']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
+    post?: never
+    /** Delete a saved view */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description View ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: unknown
+            }
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': {
+              [key: string]: unknown
+            }
+          }
+        }
+      }
+    }
     options?: never
     head?: never
     patch?: never
@@ -32735,6 +35309,15 @@ export interface components {
       rejected?: number
       review_oldest_since?: string
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.Decision': {
+      asset_id?: string
+      from?: string
+      to?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.DecisionResult': {
+      decided?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.Decision'][]
+      not_found?: string[]
+    }
     'github_com_openctemio_openctem_api_internal_app_easm.ExposureBlock': {
       by_severity?: {
         [key: string]: number
@@ -32754,6 +35337,32 @@ export interface components {
       last_30_days?: number
       since_cycle?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence': {
+      first_observed_at?: string
+      last_observed_at?: string
+      observed?: {
+        [key: string]: unknown
+      }
+      rule?: string
+      source?: string
+      technique?: string
+      weight?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.ReviewItem': {
+      asset_id?: string
+      confidence?: number
+      evidence?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence'][]
+      in_queue_since?: string
+      last_seen?: string
+      name?: string
+      reason?: string
+      state?: string
+      type?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.ReviewPage': {
+      data?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ReviewItem'][]
+      total?: number
+    }
     'github_com_openctemio_openctem_api_internal_app_easm.Risk': {
       asset_id?: string
       asset_name?: string
@@ -32762,6 +35371,23 @@ export interface components {
       severity?: string
       title?: string
       type?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.SeedView': {
+      attested_at?: string
+      attested_by?: string
+      created_at?: string
+      discovery_enabled?: boolean
+      id?: string
+      kind?: string
+      label?: string
+      updated_at?: string
+      value?: string
+      /**
+       * @description Verification: dns_txt when the organization proved control of the
+       *     domain (or a parent) with a DNS TXT record; none otherwise.
+       */
+      verification?: string
+      verified_domain?: string
     }
     'github_com_openctemio_openctem_api_internal_app_easm.Summary': {
       attribution?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock']
@@ -32874,6 +35500,19 @@ export interface components {
       pending?: number
       rate_pct?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_scan.OptInImpact': {
+      opt_ins?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns']
+      scans?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan'][]
+      /** @description Truncated: more scans are affected than listed. */
+      truncated?: boolean
+    }
+    'github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan': {
+      id?: string
+      name?: string
+      status?: string
+      uses_custom_templates?: boolean
+      uses_interactsh?: boolean
+    }
     'github_com_openctemio_openctem_api_internal_app_scan.PreviewError': {
       code?: string
       message?: string
@@ -32955,6 +35594,7 @@ export interface components {
       | 'UPSTREAM_ERROR'
       | 'MFA_ENROLLMENT_REQUIRED'
       | 'APPROVAL_REQUIRED'
+      | 'INVALID_FILTER'
     'github_com_openctemio_openctem_api_pkg_apierror.Error': {
       /** @description Machine-readable error code */
       code?: components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Code']
@@ -33078,6 +35718,11 @@ export interface components {
     'github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipRule': {
       peers?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRef'][]
       relationship?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType']
+      /**
+       * @description SubType restricts the rule to the type's assets of one sub-type
+       *     ("" = any sub-type).
+       */
+      sub_type?: string
     }
     /** @enum {string} */
     'github_com_openctemio_openctem_api_pkg_domain_asset.RelationshipType':
@@ -33086,6 +35731,7 @@ export interface components {
       | 'contains'
       | 'exposes'
       | 'resolves_to'
+      | 'serves_certificate'
       | 'cname_of'
       | 'depends_on'
       | 'peer_of'
@@ -33109,6 +35755,8 @@ export interface components {
       card?: string
       class?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Class']
       columns?: string[]
+      /** @description ExposureDefault is the exposure the type has by nature ("" = none). */
+      exposure_default?: string
       facets?: string[]
       group_by?: string[]
       icon?: string
@@ -33118,6 +35766,11 @@ export interface components {
       lens?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.Lens']
       plural?: string
       relationships?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_asset.TypeRelationships']
+      /**
+       * @description ScannableBy lists the tool target types (supported_targets) that can
+       *     scan the type (RFC-042 §6.3.8 R5).
+       */
+      scannable_by?: string[]
       sections?: string[]
       storage?: string
       sub_types?: string[]
@@ -33480,6 +36133,10 @@ export interface components {
       target_types?: string[]
       version?: string
     }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns': {
+      allow_custom_templates?: boolean
+      allow_interactsh?: boolean
+    }
     'github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity': {
       active_jobs?: number
       per_tool?: {
@@ -33586,6 +36243,55 @@ export interface components {
       region?: string
       /** @description For cross-account */
       role_arn?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport': {
+      api_keys?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      /** @description AssignedFindings counts the member's open (not closed) findings. */
+      assigned_findings?: number
+      campaigns?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      /** @description DirectGrants is the number of per-user asset grants. */
+      direct_grants?: number
+      groups?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      membership_id?: string
+      /** @description OwnedAssets counts the assets the member is a named (user) owner of. */
+      owned_assets?: number
+      owned_report_schedules?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      /** @description Owned work that an offboarding must hand to someone else. */
+      owned_scans?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      owned_workflows?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      /** @description Access sources. */
+      roles?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      status?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.MemberStatus']
+      user_id?: string
+      /**
+       * @description VisibleAssets is the number of materialized scope rows (0 while the
+       *     member is disabled: the rows return when re-enabled).
+       */
+      visible_assets?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef': {
+      /**
+       * @description Detail is a short type-specific note: a key prefix, a campaign role, a
+       *     schedule type.
+       */
+      detail?: string
+      id?: string
+      name?: string
+      status?: string
+    }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.MemberStatus':
+      'active' | 'suspended' | 'offboarded'
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.OffboardResult': {
+      offboarded_at?: string
+      reassigned_assets?: number
+      reassigned_findings?: number
+      reassigned_schedules?: number
+      removed_campaigns?: number
+      removed_grants?: number
+      removed_groups?: number
+      report?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport']
+      revoked_keys?: number
     }
     'github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings': {
       auto_enabled?: boolean
@@ -33777,6 +36483,20 @@ export interface components {
       external_id?: string
       role_arn: string
     }
+    'internal_infra_http_handler.AcceptInvitationWithRefreshRequest': {
+      refresh_token?: string
+      token?: string
+    }
+    'internal_infra_http_handler.AcceptInvitationWithRefreshResponse': {
+      access_token?: string
+      expires_in?: number
+      refresh_token?: string
+      role?: string
+      tenant_id?: string
+      tenant_name?: string
+      tenant_slug?: string
+      token_type?: string
+    }
     'internal_infra_http_handler.AcceptQuarantinedResultResponse': {
       assets_created?: number
       assets_updated?: number
@@ -33807,15 +36527,13 @@ export interface components {
       /** @description IsInternal keeps the comment inside the organization. */
       is_internal?: boolean
     }
+    'internal_infra_http_handler.AddFindingDuplicateRequest': {
+      finding_id: string
+    }
     'internal_infra_http_handler.AddGroupMemberRequest': {
       /** @enum {string} */
       role: 'owner' | 'lead' | 'member'
       user_id: string
-    }
-    'internal_infra_http_handler.AddPermissionRequest': {
-      /** @enum {string} */
-      modification_type?: 'add' | 'remove'
-      permission_id: string
     }
     'internal_infra_http_handler.AdminAuditChainRebaselineRequest': {
       /** @description Fingerprint of the classification the administrator reviewed. */
@@ -34033,6 +36751,14 @@ export interface components {
     'internal_infra_http_handler.AssetAttributionResponse': {
       /** @description ActiveChecksAllowed: whether a scan may touch the asset. */
       active_checks_allowed?: boolean
+      /**
+       * @description ActiveChecksBlockedBy says why a scan may not touch the asset when
+       *     active_checks_allowed is false: its state (needs_review, candidate,
+       *     dependency, monitor_only, rejected; rejected also for a name under a
+       *     rejected name), or unattributed: no record, and neither inside a scope
+       *     target nor under a root-domain seed or verified domain.
+       */
+      active_checks_blocked_by?: string
       confidence?: number
       decided_at?: string
       evidence?: components['schemas']['internal_infra_http_handler.AssetAttributionEvidence'][]
@@ -34149,6 +36875,8 @@ export interface components {
       /** @description CTEM Scoping: CIA impact rating (low | moderate | high; empty = not rated) */
       impact_confidentiality?: string
       impact_integrity?: string
+      /** @description IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel. */
+      is_crown_jewel?: boolean
       is_internet_accessible?: boolean
       last_seen?: string
       last_synced_at?: string
@@ -34349,6 +37077,8 @@ export interface components {
       /** @description CTEM Scoping: CIA impact rating (low | moderate | high; empty = not rated) */
       impact_confidentiality?: string
       impact_integrity?: string
+      /** @description IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel. */
+      is_crown_jewel?: boolean
       is_internet_accessible?: boolean
       last_seen?: string
       last_synced_at?: string
@@ -34389,9 +37119,6 @@ export interface components {
     }
     'internal_infra_http_handler.AssignFindingRequest': {
       user_id: string
-    }
-    'internal_infra_http_handler.AssignPermissionSetRequest': {
-      permission_set_id: string
     }
     'internal_infra_http_handler.AttackPathScoreResponse': {
       asset_id?: string
@@ -34890,6 +37617,12 @@ export interface components {
         [key: string]: unknown
       }
       scope?: string
+      /**
+       * @description SubType is the kind within the type, from the registry's closed list
+       *     (GET /asset-types). A legacy value of the type is mapped; anything
+       *     else is a 400.
+       */
+      sub_type?: string
       tags?: string[]
       type: string
     }
@@ -35062,15 +37795,6 @@ export interface components {
       /** @enum {string} */
       provider: 'slack' | 'teams' | 'telegram' | 'webhook' | 'email' | 'splunk'
     }
-    'internal_infra_http_handler.CreatePermissionSetRequest': {
-      description?: string
-      name: string
-      parent_set_id?: string
-      permissions?: string[]
-      /** @enum {string} */
-      set_type: 'custom' | 'extended' | 'cloned'
-      slug: string
-    }
     'internal_infra_http_handler.CreateRepositoryAssetRequest': {
       /** @description URLs */
       clone_url?: string
@@ -35115,9 +37839,6 @@ export interface components {
       asset_id?: string
       critical_days: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days: number
       info_days: number
@@ -35125,6 +37846,11 @@ export interface components {
       low_days: number
       medium_days: number
       name: string
+      /** @description P0Days..P3Days are optional; an omitted class keeps its default window. */
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       warning_threshold_pct?: number
     }
     'internal_infra_http_handler.CreateScanProfileRequest': {
@@ -35163,9 +37889,14 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      /**
+       * @description ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+       *     evaluated in timezone; at most every 15 minutes.
+       */
+      schedule_rrule?: string
       schedule_time?: string
       /** @enum {string} */
-      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab'
+      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab' | 'rrule'
       /** @enum {string} */
       sensor_preference?: 'auto' | 'tenant' | 'platform'
       tags?: string[]
@@ -35426,14 +38157,6 @@ export interface components {
       /** @description Ordered steps from source to sink */
       steps?: components['schemas']['internal_infra_http_handler.DataFlowStepResponse'][]
     }
-    'internal_infra_http_handler.DataScopePolicyResponse': {
-      /**
-       * @description MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
-       *     (fail-closed). Owners and admins always see everything.
-       * @enum {string}
-       */
-      members_without_group_see?: 'everything' | 'nothing'
-    }
     'internal_infra_http_handler.DedupKeyRequest': {
       branch?: string
       breach_date?: string
@@ -35454,11 +38177,35 @@ export interface components {
       type?: string
       url?: string
     }
-    'internal_infra_http_handler.EffectivePermissionsResponse': {
-      group_count?: number
-      permissions?: string[]
-      tenant_id?: string
-      user_id?: string
+    'internal_infra_http_handler.EASMDecisionRequest': {
+      asset_ids?: string[]
+      /** @description Note is an optional reason, kept in the audit log. */
+      note?: string
+      /** @description State: confirmed, rejected, dependency, monitor_only or needs_review. */
+      state?: string
+    }
+    'internal_infra_http_handler.EASMSeedCreateRequest': {
+      /**
+       * @description Attested must be true: the caller states the organization is authorized
+       *     to have this seed discovered and checked. Recorded with the user and time.
+       */
+      attested?: boolean
+      /** @description DiscoveryEnabled defaults to true. */
+      discovery_enabled?: boolean
+      /**
+       * @description Kind: root_domain (other RFC-036 kinds are accepted once their
+       *     collectors exist).
+       */
+      kind?: string
+      label?: string
+      value?: string
+    }
+    'internal_infra_http_handler.EASMSeedListResponse': {
+      data?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SeedView'][]
+    }
+    'internal_infra_http_handler.EASMSeedUpdateRequest': {
+      discovery_enabled?: boolean
+      label?: string
     }
     'internal_infra_http_handler.EmbeddedCategoryResponse': {
       color?: string
@@ -35697,8 +38444,16 @@ export interface components {
       correlation_id?: string
       created_at?: string
       cve_id?: string
+      /** @description Every CVE the scanner named, primary first */
+      cve_ids?: string[]
       cvss_score?: number
+      /** @description Detail only (GET /findings/{id}), never in lists or exports (research 24 P0-2). */
+      cvss_v2_vector?: string
+      /** @description CVSS v3.x vector the scanner reported */
+      cvss_v3_vector?: string
       cvss_vector?: string
+      /** @description Version of cvss_score (2.0, 3.x, 3.1, 4.0) */
+      cvss_version?: string
       cwe_ids?: string[]
       data_exposure_risk?: string
       /** @description Full data when fetching single finding */
@@ -35712,8 +38467,12 @@ export interface components {
       /** @description Threat Intel Enrichment (RFC-004) */
       epss_score?: number
       estimated_fix_time?: number
+      /** @description The scanner reported a public exploit */
+      exploit_available?: boolean
       /** @description CTEM Fields */
       exposure_vector?: string
+      /** @description Scanner details kept since research 17 R2 (not priority inputs). */
+      family?: string
       file_path?: string
       /** @description Finding Type discriminator */
       finding_type?: string
@@ -35768,6 +38527,8 @@ export interface components {
       partial_fingerprints?: {
         [key: string]: string
       }
+      /** @description When the vendor published the fix */
+      patch_published_at?: string
       /** @description Priority Classification (RFC-004) */
       priority_class?: string
       priority_class_override?: boolean
@@ -35788,6 +38549,8 @@ export interface components {
       rule_id?: string
       rule_name?: string
       scan_id?: string
+      /** @description The scanner's proof (plugin output); untrusted plain text */
+      scanner_output?: components['schemas']['internal_infra_http_handler.ScannerOutputResponse']
       secret_age_in_days?: number
       secret_commit_count?: number
       secret_entropy?: number
@@ -35824,6 +38587,8 @@ export interface components {
       updated_at?: string
       verified_at?: string
       verified_by?: string
+      /** @description Tenable VPR 0.1-10, display only */
+      vpr_score?: number
       /** @description Embedded CVE record (single-finding response) */
       vulnerability?: components['schemas']['internal_infra_http_handler.FindingVulnerabilityInfo']
       vulnerability_class?: string[]
@@ -35857,6 +38622,31 @@ export interface components {
       target?: string
       template_id?: string
       trigger?: string
+    }
+    'internal_infra_http_handler.FindingSearchPage': {
+      page?: number
+      per_page?: number
+    }
+    'internal_infra_http_handler.FindingSearchRequest': {
+      /**
+       * @description Filter is a node ({"all":[...]}, {"any":[...]}, {"not":{...}} or a
+       *     {"field","op","value"} leaf) or the flat-name shorthand
+       *     ({"severity":["critical"],"epss_score_gte":0.1}).
+       */
+      filter?: {
+        [key: string]: unknown
+      }
+      /** @description Page selects the page: {"page": 1, "per_page": 50}. */
+      page?: components['schemas']['internal_infra_http_handler.FindingSearchPage']
+      /** @description Q is free text over title, description and file path. */
+      q?: string
+      /** @description Sort keys, "-" for descending. */
+      sort?: string[]
+      /**
+       * @description V is the document version (1).
+       * @example 1
+       */
+      v?: number
     }
     'internal_infra_http_handler.FindingSeverityResponse': {
       critical?: number
@@ -35907,6 +38697,15 @@ export interface components {
         [key: string]: number
       }
       by_source?: {
+        [key: string]: number
+      }
+      /**
+       * @description ByState counts the state lenses of the same filter: open, fixed,
+       *     dispositioned (false positive, accepted, duplicate; never counted as
+       *     fixed) and all. Send state=all with the other filters to label a lens
+       *     switcher.
+       */
+      by_state?: {
         [key: string]: number
       }
       by_status?: {
@@ -36386,6 +39185,27 @@ export interface components {
       data?: components['schemas']['internal_infra_http_handler.InvitationListItem'][]
       total?: number
     }
+    'internal_infra_http_handler.InvitationLookupInvitation': {
+      email?: string
+      expires_at?: string
+      id?: string
+      inviter_name?: string
+      pending?: boolean
+      role?: string
+    }
+    'internal_infra_http_handler.InvitationLookupResponse': {
+      invitation?: components['schemas']['internal_infra_http_handler.InvitationLookupInvitation']
+      tenant?: components['schemas']['internal_infra_http_handler.InvitationLookupTenant']
+    }
+    'internal_infra_http_handler.InvitationLookupTenant': {
+      id?: string
+      name?: string
+      slug?: string
+    }
+    'internal_infra_http_handler.InvitationTokenRequest': {
+      /** @example Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0Z2FycGx5d2FsZG8 */
+      token?: string
+    }
     'internal_infra_http_handler.LicensingModuleResponse': {
       category?: string
       description?: string
@@ -36624,6 +39444,10 @@ export interface components {
       code: string
       password: string
     }
+    'internal_infra_http_handler.MFAEnableRequest': {
+      code: string
+      password: string
+    }
     'internal_infra_http_handler.MFAEnrollmentConfirmRequest': {
       code: string
       mfa_token: string
@@ -36637,6 +39461,13 @@ export interface components {
     'internal_infra_http_handler.MFASetupResponse': {
       otpauth_uri?: string
       secret?: string
+    }
+    'internal_infra_http_handler.MemberResponse': {
+      id?: string
+      invited_by?: string
+      joined_at?: string
+      role?: string
+      user_id?: string
     }
     'internal_infra_http_handler.NotificationEventCategoryResponse': {
       /** @example finding */
@@ -36676,8 +39507,7 @@ export interface components {
       channel_name?: string
       /**
        * @example [
-       *       "[\"security_alert\"",
-       *       "\"new_finding\"",
+       *       "[\"new_finding\"",
        *       "\"new_exposure\"]"
        *     ]
        */
@@ -36716,6 +39546,19 @@ export interface components {
       tenant_id?: string
       title?: string
       url?: string
+    }
+    'internal_infra_http_handler.OffboardMemberRequest': {
+      /** @description New owner of the assets the member owns. */
+      assets_to?: string
+      /** @description New assignee of the member's open findings. */
+      findings_to?: string
+      /**
+       * @description New owner of the member's scans, report schedules and workflows.
+       * @example 01929c4e-0000-7000-8000-000000000001
+       */
+      schedules_to?: string
+      /** @description Put the open findings back in the queue instead (when findings_to is empty). */
+      unassign_findings?: boolean
     }
     'internal_infra_http_handler.OpenPortResult': {
       banner?: string
@@ -36774,45 +39617,6 @@ export interface components {
       next?: string
       prev?: string
       self?: string
-    }
-    'internal_infra_http_handler.PermissionItemResponse': {
-      modification_type?: string
-      permission_id?: string
-    }
-    'internal_infra_http_handler.PermissionSetListResponse': {
-      limit?: number
-      offset?: number
-      permission_sets?: components['schemas']['internal_infra_http_handler.PermissionSetResponse'][]
-      total_count?: number
-    }
-    'internal_infra_http_handler.PermissionSetResponse': {
-      created_at?: string
-      description?: string
-      id?: string
-      is_active?: boolean
-      is_system?: boolean
-      name?: string
-      parent_set_id?: string
-      set_type?: string
-      slug?: string
-      tenant_id?: string
-      updated_at?: string
-    }
-    'internal_infra_http_handler.PermissionSetWithItemsResponse': {
-      created_at?: string
-      description?: string
-      id?: string
-      is_active?: boolean
-      is_system?: boolean
-      items?: components['schemas']['internal_infra_http_handler.PermissionItemResponse'][]
-      name?: string
-      parent_set_id?: string
-      /** @description Resolved permissions */
-      permissions?: string[]
-      set_type?: string
-      slug?: string
-      tenant_id?: string
-      updated_at?: string
     }
     'internal_infra_http_handler.PermissionsResponse': {
       permissions?: string[]
@@ -37129,6 +39933,17 @@ export interface components {
       id?: string
       secret_value?: string
     }
+    'internal_infra_http_handler.RotateCredentialRequest': {
+      api_key?: components['schemas']['internal_infra_http_handler.APIKeyDataRequest']
+      aws_role?: components['schemas']['internal_infra_http_handler.AWSRoleDataRequest']
+      azure_service_principal?: components['schemas']['internal_infra_http_handler.AzureServicePrincipalDataRequest']
+      basic_auth?: components['schemas']['internal_infra_http_handler.BasicAuthDataRequest']
+      bearer_token?: components['schemas']['internal_infra_http_handler.BearerTokenDataRequest']
+      gcp_service_account?: components['schemas']['internal_infra_http_handler.GCPServiceAccountDataRequest']
+      github_app?: components['schemas']['internal_infra_http_handler.GitHubAppDataRequest']
+      gitlab_token?: components['schemas']['internal_infra_http_handler.GitLabTokenDataRequest']
+      ssh_key?: components['schemas']['internal_infra_http_handler.SSHKeyDataRequest']
+    }
     'internal_infra_http_handler.RunDispatchResponse': {
       excluded_targets?: number
       resolved_targets?: number
@@ -37146,6 +39961,8 @@ export interface components {
       completed_at?: string
       completed_steps?: number
       created_at?: string
+      /** @description DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3). */
+      deadline_at?: string
       dispatch?: components['schemas']['internal_infra_http_handler.RunDispatchResponse']
       error_message?: string
       failed_steps?: number
@@ -37154,6 +39971,11 @@ export interface components {
       pipeline_id?: string
       quality_gate_result?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult']
       scan_id?: string
+      /**
+       * @description ScanName names the run's scan (list rows only; empty when the scan was
+       *     deleted).
+       */
+      scan_name?: string
       scan_profile_id?: string
       /** @description ScheduledFor is the schedule occurrence this run serves (scheduled runs only). */
       scheduled_for?: string
@@ -37161,6 +39983,20 @@ export interface components {
       started_at?: string
       status?: string
       step_runs?: components['schemas']['internal_infra_http_handler.StepRunResponse'][]
+      /**
+       * @description TaskSummary counts the run's tasks (the commands it dispatched) by
+       *     status. Present on list rows and on the run, once it has tasks.
+       */
+      task_summary?: components['schemas']['internal_infra_http_handler.RunTaskSummaryResponse']
+      /** @description Tasks lists the run's tasks (GET /pipeline-runs/{id} only). */
+      tasks?: components['schemas']['internal_infra_http_handler.RunTaskResponse'][]
+      /**
+       * @description TasksNextCursor continues the task list after Tasks
+       *     (GET /pipeline-runs/{id}/tasks?cursor=) when TasksTruncated.
+       */
+      tasks_next_cursor?: string
+      /** @description TasksTruncated is true when the run has more tasks than Tasks lists. */
+      tasks_truncated?: boolean
       tenant_id?: string
       total_findings?: number
       total_steps?: number
@@ -37168,6 +40004,84 @@ export interface components {
       triggered_by?: string
       /** @description display name, when triggered_by is a user id */
       triggered_by_name?: string
+      /**
+       * @description UnfinishedTargetCount is how many targets were still open when the run
+       *     was settled at its deadline; the next scheduled run plans them first.
+       */
+      unfinished_target_count?: number
+    }
+    'internal_infra_http_handler.RunStageListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.RunStageResponse'][]
+    }
+    'internal_infra_http_handler.RunStageResponse': {
+      /** @description Chained: the stage took targets an earlier stage produced. */
+      chained?: boolean
+      /**
+       * @description Inputs is how many targets were considered (seeds plus outputs of the
+       *     types the stage takes); Planned how many were handed to the stage.
+       */
+      inputs?: number
+      /**
+       * @description MaxHop is the furthest discovery hop from a seed among planned
+       *     targets.
+       */
+      max_hop?: number
+      planned?: number
+      planned_at?: string
+      /**
+       * @description Skipped counts the targets left out, by reason: excluded,
+       *     unconfirmed, refused, other_zone, hop_limit, over_cap, duplicate,
+       *     invalid, incompatible_type.
+       */
+      skipped?: {
+        [key: string]: number
+      }
+      /**
+       * @description Stage is the catalog capability ("" when the catalog cannot place
+       *     the step).
+       */
+      stage?: string
+      /** @description StageKey is the step key of the stage in the run's template. */
+      stage_key?: string
+      /** @enum {string} */
+      tier?: 'T0' | 'T1' | 'T2'
+      tool?: string
+    }
+    'internal_infra_http_handler.RunTaskPageResponse': {
+      data?: components['schemas']['internal_infra_http_handler.RunTaskResponse'][]
+      /** @description NextCursor continues after Data; absent on the last page. */
+      next_cursor?: string
+    }
+    'internal_infra_http_handler.RunTaskResponse': {
+      attempts?: number
+      completed_at?: string
+      created_at?: string
+      error_message?: string
+      id?: string
+      /**
+       * @description Platform is true when a shared platform sensor runs the task; it is
+       *     never named.
+       */
+      platform?: boolean
+      sensor_id?: string
+      sensor_name?: string
+      started_at?: string
+      /** @description Status is queued, running, completed, failed or canceled. */
+      status?: string
+      step_key?: string
+      step_run_id?: string
+      targets?: number
+      tool?: string
+    }
+    'internal_infra_http_handler.RunTaskSummaryResponse': {
+      canceled?: number
+      completed?: number
+      failed?: number
+      queued?: number
+      running?: number
+      /** @description Sensors is how many distinct sensors claimed one of the tasks. */
+      sensors?: number
+      total?: number
     }
     'internal_infra_http_handler.RunUncoveredTarget': {
       reason?: string
@@ -37241,9 +40155,6 @@ export interface components {
       created_at?: string
       critical_days?: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days?: number
       id?: string
@@ -37253,6 +40164,15 @@ export interface components {
       low_days?: number
       medium_days?: number
       name?: string
+      /**
+       * @description P0Days..P3Days are the remediation windows per CTEM priority class.
+       *     They take precedence over the severity windows for every finding that
+       *     has a priority class.
+       */
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       tenant_id?: string
       updated_at?: string
       warning_threshold_pct?: number
@@ -37288,6 +40208,41 @@ export interface components {
     }
     'internal_infra_http_handler.SaveScanRequest': {
       name: string
+    }
+    'internal_infra_http_handler.SavedViewRequest': {
+      columns?: string[]
+      density?: string
+      description?: string
+      filter?: Record<string, never>
+      /**
+       * @description FromViewID duplicates a view the caller can see into a new personal
+       *     view (how a team member changes a shared view, decision A1); the
+       *     other fields are ignored then, except name.
+       */
+      from_view_id?: string
+      group_by?: string
+      group_id?: string
+      name?: string
+      page?: string
+      query?: string
+    }
+    'internal_infra_http_handler.SavedViewResponse': {
+      columns?: string[]
+      created_at?: string
+      density?: string
+      description?: string
+      filter?: Record<string, never>
+      group_by?: string
+      group_id?: string
+      group_name?: string
+      id?: string
+      /** @description IsOwner says whether the caller may edit or delete it (decision A1). */
+      is_owner?: boolean
+      name?: string
+      owner_id?: string
+      owner_name?: string
+      page?: string
+      updated_at?: string
     }
     'internal_infra_http_handler.ScanDetailResponse': {
       /** @description AdHoc: an unsaved quick scan (not listed as a configuration until saved). */
@@ -37331,6 +40286,7 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      schedule_rrule?: string
       schedule_time?: string
       schedule_timezone?: string
       schedule_type?: string
@@ -37427,6 +40383,35 @@ export interface components {
       status?: string
       tenant_id?: string
     }
+    'internal_infra_http_handler.ScanStageImplementationResponse': {
+      default?: boolean
+      tool?: string
+    }
+    'internal_infra_http_handler.ScanStageListResponse': {
+      /**
+       * @description MaxHops is how many discovery hops a derived target may be from the
+       *     run's seeds.
+       */
+      max_hops?: number
+      stages?: components['schemas']['internal_infra_http_handler.ScanStageResponse'][]
+    }
+    'internal_infra_http_handler.ScanStageResponse': {
+      description?: string
+      findings?: boolean
+      implementations?: components['schemas']['internal_infra_http_handler.ScanStageImplementationResponse'][]
+      /**
+       * @description Inputs and Outputs are stored type labels: "type" or
+       *     "type/sub_type" (service/http is an HTTP service).
+       */
+      inputs?: string[]
+      key?: string
+      max_fanout?: number
+      name?: string
+      outputs?: string[]
+      relations?: string[]
+      /** @enum {string} */
+      tier?: 'T0' | 'T1' | 'T2'
+    }
     'internal_infra_http_handler.ScanStatsResponse': {
       active?: number
       by_scan_type?: {
@@ -37491,6 +40476,13 @@ export interface components {
       tenant_id?: string
       updated_at?: string
     }
+    'internal_infra_http_handler.ScannerOutputResponse': {
+      text?: string
+      /** @description Cut at 64 KiB */
+      truncated?: boolean
+      /** @description When the latest sighting wrote it */
+      updated_at?: string
+    }
     'internal_infra_http_handler.ScannerTemplateResponse': {
       content_hash?: string
       created_at?: string
@@ -37509,6 +40501,23 @@ export interface components {
       updated_at?: string
       validation_error?: string
       version?: string
+    }
+    'internal_infra_http_handler.SchedulePreviewRequest': {
+      /** @description Count is how many occurrences to list, 1-10 (default 5). */
+      count?: number
+      schedule_cron?: string
+      schedule_day?: number
+      schedule_rrule?: string
+      /** @description HH:MM */
+      schedule_time?: string
+      schedule_type?: string
+      timezone?: string
+    }
+    'internal_infra_http_handler.SchedulePreviewResponse': {
+      /** @description Occurrences are RFC 3339 timestamps with the timezone's offset, in order. */
+      occurrences?: string[]
+      /** @description Timezone the schedule is evaluated in (IANA; UTC when none was given). */
+      timezone?: string
     }
     'internal_infra_http_handler.ScopeBulkOperationResponse': {
       affected_count?: number
@@ -38419,6 +41428,11 @@ export interface components {
       }
       name?: string
       output_formats?: string[]
+      /**
+       * @description OutputTypes are the asset types a report of the tool may create
+       *     (scan stage catalog); read-only.
+       */
+      output_types?: string[]
       supported_targets?: string[]
       tags?: string[]
       /** @description nil for platform tools, UUID for custom tools */
@@ -38496,6 +41510,11 @@ export interface components {
         [key: string]: unknown
       }
       scope?: string
+      /**
+       * @description SubType changes the kind within the asset's type (closed list from
+       *     GET /asset-types); "" clears it. The type itself cannot change.
+       */
+      sub_type?: string
       tags?: string[]
     }
     'internal_infra_http_handler.UpdateAssetServiceRequest': {
@@ -38553,12 +41572,12 @@ export interface components {
     }
     'internal_infra_http_handler.UpdateCredentialRequest': {
       description?: string
+      /**
+       * Format: date-time
+       * @description ExpiresAt: RFC 3339 timestamp in the future, or null to clear.
+       */
       expires_at?: string
       name?: string
-    }
-    'internal_infra_http_handler.UpdateDataScopePolicyRequest': {
-      /** @enum {string} */
-      members_without_group_see: 'everything' | 'nothing'
     }
     'internal_infra_http_handler.UpdateFindingStatusRequest': {
       resolution?: string
@@ -38611,11 +41630,6 @@ export interface components {
       min_interval_minutes?: number
       name?: string
     }
-    'internal_infra_http_handler.UpdatePermissionSetRequest': {
-      description?: string
-      is_active?: boolean
-      name?: string
-    }
     'internal_infra_http_handler.UpdatePreferencesRequest': {
       /** @enum {string} */
       language?: 'en' | 'vi'
@@ -38666,9 +41680,6 @@ export interface components {
     'internal_infra_http_handler.UpdateSLAPolicyRequest': {
       critical_days?: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days?: number
       info_days?: number
@@ -38677,6 +41688,10 @@ export interface components {
       low_days?: number
       medium_days?: number
       name?: string
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       warning_threshold_pct?: number
     }
     'internal_infra_http_handler.UpdateScanProfileRequest': {
@@ -38708,9 +41723,14 @@ export interface components {
       scanner_name?: string
       schedule_cron?: string
       schedule_day?: number
+      /**
+       * @description ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
+       *     evaluated in timezone; at most every 15 minutes.
+       */
+      schedule_rrule?: string
       schedule_time?: string
       /** @enum {string} */
-      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab'
+      schedule_type?: 'manual' | 'daily' | 'weekly' | 'monthly' | 'crontab' | 'rrule'
       /** @enum {string} */
       sensor_preference?: 'auto' | 'tenant' | 'platform'
       tags?: string[]
@@ -38924,10 +41944,28 @@ export interface components {
   responses: never
   parameters: never
   requestBodies: {
+    /** @description View */
+    'internal_infra_http_handler.SavedViewRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.SavedViewRequest']
+      }
+    }
     /** @description Update data */
     'internal_infra_http_handler.UpdateToolRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.UpdateToolRequest']
+      }
+    }
+    /** @description Filter document */
+    'internal_infra_http_handler.FindingSearchRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.FindingSearchRequest']
+      }
+    }
+    /** @description Invitation token */
+    'internal_infra_http_handler.InvitationTokenRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.InvitationTokenRequest']
       }
     }
     /** @description Content to refresh */
@@ -38946,12 +41984,6 @@ export interface components {
     'internal_infra_http_handler.BulkToolIDsRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.BulkToolIDsRequest']
-      }
-    }
-    /** @description Authenticator code */
-    'internal_infra_http_handler.MFACodeRequest': {
-      content: {
-        'application/json': components['schemas']['internal_infra_http_handler.MFACodeRequest']
       }
     }
   }

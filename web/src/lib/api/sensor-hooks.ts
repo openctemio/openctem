@@ -28,6 +28,7 @@ import type {
   SensorActivityItem,
   SensorActivityResponse,
   SensorManifestListResponse,
+  SensorConfigReport,
   SensorHeartbeatHistoryResponse,
 } from './sensor-types'
 
@@ -238,6 +239,21 @@ export function useSensorManifests(sensorId: string | null, enabled = true) {
       refreshInterval: SENSOR_REFRESH_MS * 2,
     }
   )
+}
+
+/**
+ * A sensor's setup report (GET /sensors/{id}/config-report): the checks the
+ * sensor ran on itself, explained by the platform catalog. Errors are shown
+ * in place (no toast).
+ */
+export function useSensorConfigReport(sensorId: string | null, enabled = true) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && sensorId && enabled ? sensorEndpoints.configReport(sensorId) : null
+  return useSWR<SensorConfigReport>(key, (url: string) => get<SensorConfigReport>(url), {
+    ...defaultConfig,
+    onError: undefined,
+    refreshInterval: SENSOR_REFRESH_MS * 2,
+  })
 }
 
 /**

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scanner/nessus"
@@ -24,7 +26,38 @@ type AssetImportHandler struct {
 	ingest       *ingest.Service
 	logger       *logger.Logger
 	auditService *auditapp.AuditService
+	dataScope    *datascope.Enforcer
 }
+
+// SetDataScope wires the caller's data scope into the Nessus findings
+// upload. Without it the upload is refused (fail closed).
+func (h *AssetImportHandler) SetDataScope(e *datascope.Enforcer) {
+	h.dataScope = e
+}
+
+// uploaderScope is the data scope of a person uploading a report, as the
+// ingest service consumes it.
+type uploaderScope struct {
+	enforcer *datascope.Enforcer
+	scope    *shared.DataScope
+}
+
+func (u uploaderScope) AssetsInScope(ctx context.Context, ids []shared.ID) ([]shared.ID, error) {
+	admit, err := u.enforcer.Filter(ctx, u.scope, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]shared.ID, 0, len(ids))
+	for _, id := range ids {
+		if admit(id) {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// defaultNessusTool is the tool name the converter uses without ?tool=.
+const defaultNessusTool = "tenable"
 
 // SetAuditService wires the audit logger: every import records who imported
 // what and how many assets it created or updated.
@@ -45,6 +78,33 @@ func (h *AssetImportHandler) auditImport(r *http.Request, source string, result 
 		WithMetadata("updated", result.AssetsUpdated).
 		WithMetadata("skipped", result.AssetsSkipped).
 		WithMetadata("errors", len(result.Errors))
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	_ = h.auditService.LogEvent(r.Context(), actx, event)
+}
+
+// auditNessusFindings records a Nessus findings upload (counts only).
+func (h *AssetImportHandler) auditNessusFindings(r *http.Request, restricted bool, out *ingest.Output) {
+	if h.auditService == nil || out == nil {
+		return
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionAssetImported, auditdom.ResourceTypeAsset, "").
+		WithMessage("Findings imported from a Nessus upload").
+		WithSeverity(auditdom.SeverityForAction(auditdom.ActionAssetImported)).
+		WithMetadata("source", "nessus_findings").
+		WithMetadata("restricted_uploader", restricted).
+		WithMetadata("assets_created", out.AssetsCreated).
+		WithMetadata("assets_updated", out.AssetsUpdated).
+		WithMetadata("assets_skipped_out_of_scope", out.AssetsSkippedOutOfScope).
+		WithMetadata("findings_created", out.FindingsCreated).
+		WithMetadata("findings_updated", out.FindingsUpdated).
+		WithMetadata("findings_auto_resolved", out.FindingsAutoResolved)
 	actx := auditapp.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
 		ActorID:    middleware.GetUserID(r.Context()),
@@ -122,11 +182,33 @@ func (h *AssetImportHandler) ImportNessus(w http.ResponseWriter, r *http.Request
 //
 // Query params: session_id (optional, default generated — unique per batch),
 // tool (default "tenable"), min_severity (0..4, default 1 = skip info).
+//
+// The upload runs with the uploader's rights, never a sensor's (research
+// doc 15, L-05):
+//   - a person with a limited data scope only adds findings to existing
+//     assets in their scope; other hosts (hidden or unknown alike) are
+//     skipped and counted as assets_skipped_out_of_scope, and the upload
+//     never auto-resolves anything;
+//   - an unrestricted person (owner, admin, full-data role) auto-resolves
+//     only Tenable findings:
+//     with any other ?tool= the batch is treated as partial coverage, so the
+//     tool name a person types cannot close another scanner's findings.
 func (h *AssetImportHandler) IngestNessusFindings(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+	if h.dataScope == nil {
+		h.logger.Error("nessus findings upload refused: data scope not configured")
+		apierror.InternalServerError("ingest failed").WriteJSON(w)
+		return
+	}
+	scope, err := h.dataScope.Resolve(r.Context(), tid)
+	if err != nil {
+		h.logger.Error("nessus findings upload: resolve data scope", "error", err)
+		apierror.InternalServerError("ingest failed").WriteJSON(w)
 		return
 	}
 
@@ -144,9 +226,10 @@ func (h *AssetImportHandler) IngestNessusFindings(w http.ResponseWriter, r *http
 		}
 	}
 
+	toolName := strings.TrimSpace(r.URL.Query().Get("tool"))
 	report, err := nessus.Convert(r.Body, nessus.ConvertOptions{
 		ScanSessionID: sessionID,
-		ToolName:      r.URL.Query().Get("tool"),
+		ToolName:      toolName,
 		MinSeverity:   minSeverity,
 	})
 	if err != nil {
@@ -154,11 +237,22 @@ func (h *AssetImportHandler) IngestNessusFindings(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Tenant-initiated upload (not a sensor push): build a synthetic sensor for
-	// the tenant, mirroring the ingest job processor.
+	input := ingest.Input{Report: report}
+	if scope != nil {
+		input.Options.Actor = uploaderScope{enforcer: h.dataScope, scope: scope}
+	}
+	if scope != nil || (toolName != "" && !strings.EqualFold(toolName, defaultNessusTool)) {
+		// No auto-resolve: a restricted uploader never closes findings, and
+		// a typed tool name is not trusted to choose whose findings close.
+		input.CoverageType = ingest.CoverageTypePartial
+	}
+
+	// The ingest service takes its tenant from a sensor record; this one
+	// only carries the tenant. The uploader's rights come from Actor and
+	// the coverage above, not from the record.
 	agt := &sensor.Sensor{TenantID: &tid, Status: sensor.SensorStatusActive}
 
-	output, err := h.ingest.Ingest(r.Context(), agt, ingest.Input{Report: report})
+	output, err := h.ingest.Ingest(r.Context(), agt, input)
 	if err != nil {
 		if strings.Contains(err.Error(), "validation") || strings.Contains(err.Error(), "INVALID") {
 			apierror.BadRequest(err.Error()).WriteJSON(w)
@@ -168,6 +262,8 @@ func (h *AssetImportHandler) IngestNessusFindings(w http.ResponseWriter, r *http
 		apierror.InternalServerError("ingest failed").WriteJSON(w)
 		return
 	}
+
+	h.auditNessusFindings(r, scope != nil, output)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

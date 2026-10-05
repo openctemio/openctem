@@ -21,9 +21,6 @@ type Repository interface {
 	// Create creates a new scan profile.
 	Create(ctx context.Context, profile *ScanProfile) error
 
-	// GetByID retrieves a scan profile by ID.
-	GetByID(ctx context.Context, id shared.ID) (*ScanProfile, error)
-
 	// GetByTenantAndID retrieves a scan profile by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*ScanProfile, error)
 
@@ -53,7 +50,7 @@ type Repository interface {
 	Update(ctx context.Context, profile *ScanProfile) error
 
 	// Delete deletes a scan profile.
-	Delete(ctx context.Context, id shared.ID) error
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// ClearDefaultForTenant clears the default flag for all profiles in a tenant.
 	ClearDefaultForTenant(ctx context.Context, tenantID shared.ID) error

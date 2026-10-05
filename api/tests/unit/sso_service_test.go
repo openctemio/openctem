@@ -210,8 +210,11 @@ func (m *ssoMockTenantRepo) GetBySlug(_ context.Context, slug string) (*tenant.T
 	return t, nil
 }
 
-func (m *ssoMockTenantRepo) Update(_ context.Context, _ *tenant.Tenant) error {
+func (m *ssoMockTenantRepo) UpdateProfile(_ context.Context, _ *tenant.Tenant) error {
 	return m.updateErr
+}
+func (m *ssoMockTenantRepo) UpdateSettingsSection(_ context.Context, _ shared.ID, _ string, _ any, _ bool, _ any) error {
+	return nil
 }
 
 func (m *ssoMockTenantRepo) Delete(_ context.Context, _ shared.ID) error {
@@ -259,7 +262,7 @@ func (m *ssoMockTenantRepo) GetMembership(_ context.Context, _ shared.ID, _ shar
 	return nil, shared.ErrNotFound
 }
 
-func (m *ssoMockTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID) (*tenant.Membership, error) {
+func (m *ssoMockTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Membership, error) {
 	if m.getMembershipByIDErr != nil {
 		return nil, m.getMembershipByIDErr
 	}
@@ -270,7 +273,7 @@ func (m *ssoMockTenantRepo) UpdateMembership(_ context.Context, _ *tenant.Member
 	return m.updateMembershipErr
 }
 
-func (m *ssoMockTenantRepo) DeleteMembership(_ context.Context, _ shared.ID) error {
+func (m *ssoMockTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return m.deleteMembershipErr
 }
 
@@ -324,7 +327,7 @@ func (m *ssoMockTenantRepo) GetInvitationByToken(_ context.Context, _ string) (*
 	return nil, shared.ErrNotFound
 }
 
-func (m *ssoMockTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID) (*tenant.Invitation, error) {
+func (m *ssoMockTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Invitation, error) {
 	return nil, shared.ErrNotFound
 }
 
@@ -332,7 +335,7 @@ func (m *ssoMockTenantRepo) UpdateInvitation(_ context.Context, _ *tenant.Invita
 	return nil
 }
 
-func (m *ssoMockTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID) error {
+func (m *ssoMockTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 
@@ -1199,7 +1202,7 @@ func TestSSOService_CreateProvider_OwnerRoleRejected(t *testing.T) {
 }
 
 func TestSSOService_CreateProvider_ValidDefaultRoles(t *testing.T) {
-	validRoles := []string{"admin", "member", "viewer", ""}
+	validRoles := []string{"member", "viewer", ""}
 	for _, role := range validRoles {
 		t.Run("role_"+role, func(t *testing.T) {
 			ipRepo := newSSOmockIPRepo()
@@ -1313,8 +1316,9 @@ func TestSSOService_CreateProvider_ScopesValidation(t *testing.T) {
 		{"empty scopes allowed", nil, false},
 		{"too many scopes", makeScopesList(21), true},
 		{"scope too long", []string{strings.Repeat("a", 129)}, true},
-		{"max scopes allowed", makeScopesList(20), false},
-		{"max length scope allowed", []string{strings.Repeat("a", 128)}, false},
+		{"max scopes allowed", append([]string{"openid"}, makeScopesList(19)...), false},
+		{"max length scope allowed", []string{"openid", strings.Repeat("a", 128)}, false},
+		{"scopes without openid rejected", []string{"email", "profile"}, true},
 	}
 
 	for _, tt := range tests {
@@ -1720,7 +1724,7 @@ func TestSSOService_UpdateProvider_AllFields(t *testing.T) {
 	issuer := "https://issuer.example.com"
 	tid := "new-tenant-id"
 	autoProvision := false
-	role := "admin"
+	role := "member"
 	active := false
 
 	result, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
@@ -1761,7 +1765,7 @@ func TestSSOService_UpdateProvider_AllFields(t *testing.T) {
 	if result.AutoProvision() {
 		t.Fatal("expected auto-provision to be false")
 	}
-	if result.DefaultRole() != "admin" {
+	if result.DefaultRole() != "member" {
 		t.Fatalf("unexpected default role: %q", result.DefaultRole())
 	}
 	if result.IsActive() {
@@ -2512,5 +2516,35 @@ func TestSSOService_CompleteFederatedLogin_NewUser_NotAdmitted(t *testing.T) {
 				t.Fatal("no account may be created for a refused login")
 			}
 		})
+	}
+}
+
+// The services mutate the user they hold before calling these targeted
+// updates, and this mock stores that same pointer, so there is nothing more to
+// write here.
+func (m *ssoMockUserRepo) RecordFailedLogin(_ context.Context, _ shared.ID, _ int, _ time.Duration) (*time.Time, error) {
+	return nil, nil
+}
+
+func (m *ssoMockUserRepo) RecordSuccessfulLogin(_ context.Context, _ shared.ID) error { return nil }
+
+func (m *ssoMockUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ string) error {
+	return nil
+}
+
+// An SSO provider can never auto-provision administrators (owner decision
+// B18): an IdP misconfiguration would otherwise be a takeover path.
+func TestSSOService_CreateProvider_AdminDefaultRoleRefused(t *testing.T) {
+	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
+	_, err := svc.CreateProvider(context.Background(), app.CreateProviderInput{
+		TenantID:     shared.NewID().String(),
+		Provider:     string(identityprovider.ProviderEntraID),
+		DisplayName:  "SSO Provider",
+		ClientID:     "client-123",
+		ClientSecret: "super-secret",
+		DefaultRole:  "admin",
+	})
+	if !errors.Is(err, app.ErrSSOInvalidDefaultRole) {
+		t.Fatalf("admin default role: err = %v, want ErrSSOInvalidDefaultRole", err)
 	}
 }

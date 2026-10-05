@@ -77,7 +77,10 @@ type TypeRef struct {
 // type, in one direction.
 type RelationshipRule struct {
 	Relationship RelationshipType `json:"relationship"`
-	Peers        []TypeRef        `json:"peers"`
+	// SubType restricts the rule to the type's assets of one sub-type
+	// ("" = any sub-type).
+	SubType string    `json:"sub_type,omitempty"`
+	Peers   []TypeRef `json:"peers"`
 }
 
 // TypeRelationships are the relationships a type may take part in, resolved
@@ -107,6 +110,11 @@ type TypeDefinition struct {
 	Card           string                `json:"card"`
 	Sections       []string              `json:"sections"`
 	Relationships  TypeRelationships     `json:"relationships"`
+	// ScannableBy lists the tool target types (supported_targets) that can
+	// scan the type (RFC-042 §6.3.8 R5).
+	ScannableBy []string `json:"scannable_by"`
+	// ExposureDefault is the exposure the type has by nature ("" = none).
+	ExposureDefault string `json:"exposure_default,omitempty"`
 }
 
 // SectionDefinition is one detail section from the closed set the web
@@ -240,6 +248,16 @@ func CategoryForType(t AssetType) Category {
 	if d, ok := registryTypeIndex[t]; ok {
 		return d.LegacyCategory
 	}
+	// A legacy type input (web_application) has the category of the pair it
+	// is stored as.
+	if a, ok := TypeAliases[t]; ok {
+		if d, ok := registryAliasIndex[TypeRef{Type: a.CoreType, SubType: a.SubType}]; ok {
+			return d.LegacyCategory
+		}
+		if d, ok := registryTypeIndex[a.CoreType]; ok {
+			return d.LegacyCategory
+		}
+	}
 	return CategoryOther
 }
 
@@ -272,4 +290,15 @@ func TypesInCategory(c Category) []AssetType {
 		}
 	}
 	return types
+}
+
+// TypeInput is what an accepted input is stored as (RFC-042 §6.3.8): a core
+// type, a sub-type from its closed list ("" for none), a provider and
+// attribute values. Provider and Attributes apply only where the asset has
+// no value yet.
+type TypeInput struct {
+	Type       AssetType
+	SubType    string
+	Provider   Provider
+	Attributes map[string]string
 }

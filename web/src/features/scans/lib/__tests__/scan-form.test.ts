@@ -182,3 +182,48 @@ describe('scanConfigToFormData + formDataToUpdateRequest (Edit)', () => {
     expect(req.scanner_name).toBeUndefined()
   })
 })
+
+describe('a Tenable.sc scan (scanner tenable_sc)', () => {
+  const tenable = (cfg: Record<string, unknown> | undefined) =>
+    form({ scannerName: 'tenable_sc', scannerConfig: cfg })
+
+  it('needs the connector, a policy and a repository', () => {
+    expect(basicInfoError(tenable(undefined))).toMatch(/connector/)
+    expect(basicInfoError(tenable({ integration_id: 'i1', repository_id: 5 }))).toMatch(/policy/)
+    expect(basicInfoError(tenable({ integration_id: 'i1', policy_id: 7 }))).toMatch(/repository/)
+    expect(
+      basicInfoError(tenable({ integration_id: 'i1', policy_id: 7, repository_id: 5 }))
+    ).toBeNull()
+  })
+
+  it('sends its scanner_config on create; other scanners send none', () => {
+    const req = formDataToCreateRequest(
+      tenable({ integration_id: 'i1', policy_id: 7, repository_id: 5, zone_id: 0 })
+    )
+    expect(req.scanner_name).toBe('tenable_sc')
+    expect(req.scanner_config).toEqual({ integration_id: 'i1', policy_id: 7, repository_id: 5 })
+    expect(formDataToCreateRequest(form()).scanner_config).toBeUndefined()
+  })
+
+  it('round-trips through edit, keeping keys it does not manage', () => {
+    const stored = config({
+      scanner_name: 'tenable_sc',
+      scanner_config: {
+        integration_id: 'i1',
+        policy_id: 7,
+        repository_id: 5,
+        max_scan_seconds: 3600,
+      },
+    })
+    const f = scanConfigToFormData(stored)
+    expect(f.scannerConfig).toMatchObject({ policy_id: 7 })
+    const changed = { ...f, scannerConfig: { ...f.scannerConfig, policy_id: 8 } }
+    const req = formDataToUpdateRequest(changed, stored, { canSetZone: false })
+    expect(req.scanner_config).toEqual({
+      integration_id: 'i1',
+      policy_id: 8,
+      repository_id: 5,
+      max_scan_seconds: 3600,
+    })
+  })
+})

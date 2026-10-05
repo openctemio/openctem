@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
+
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -28,6 +30,11 @@ type Service struct {
 	// privatePolicy keeps private targets from sensors without a local
 	// policy when the tenant asks (local_policy.go); nil: never.
 	privatePolicy PrivateTargetPolicy
+	// optIns withholds commands asking for an opt-in the tenant has not
+	// enabled (local_policy.go, research/25 D3); nil: not applied.
+	optIns OptInPolicy
+	// now is the clock (tests replace it).
+	now func() time.Time
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
@@ -63,6 +70,7 @@ func NewService(repo commanddom.Repository, log *logger.Logger, opts ...Option) 
 	s := &Service{
 		repo:   repo,
 		logger: log.With("service", "command"),
+		now:    time.Now,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -245,19 +253,127 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 		limit = 100
 	}
 
-	cmds, err := s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, limit)
+	cmds, err := s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, candidateLimit(limit))
 	if err != nil {
 		return nil, err
 	}
-	// The tenant keeps private targets away from sensors without a local
-	// policy (RFC-040 Q3 (a)): they stay pending for one that has it.
-	if anyPrivateTarget(cmds) && s.withholdPrivate(ctx, tenantID, sensorID) {
-		cmds = withoutPrivateTargets(cmds)
+	// A sensor never gets a command its reported local policy refuses, nor
+	// one with private targets when the tenant requires a local policy for
+	// them (RFC-040 §5.7, research/25 §3.6): those stay pending for a
+	// sensor that accepts them.
+	cmds = s.gateFor(ctx, tenantID, sensorID, cmds).accepted(cmds)
+	if len(cmds) > limit {
+		cmds = cmds[:limit]
 	}
 	if input.MaxScanCommands != nil {
 		cmds = capScanCommands(cmds, *input.MaxScanCommands)
 	}
 	return s.signTemplates(input.SensorID, cmds), nil
+}
+
+// ClaimInput is a claim-N poll: the sensor takes its work in one request.
+type ClaimInput struct {
+	TenantID     string
+	SensorID     string
+	Capabilities []string
+	// Limit caps the commands returned (1..100, default 10).
+	Limit int
+	// MaxJobs is the sensor's effective job limit; the scan commands
+	// claimed never exceed MaxJobs minus the scans it already holds, counted
+	// from the commands themselves rather than from its last heartbeat.
+	MaxJobs int
+	// ReportedFree, when set, is the free slots the sensor last reported;
+	// the claim takes the smaller of the two.
+	ReportedFree *int
+}
+
+// Claim is the claim-N poll (RFC-046 §11, RFC-030 §5.3): it selects what the
+// sensor may run in the fair dispatch order (priority class with aging,
+// round-robin across runs), withholds what the sensor's reported local
+// policy refuses (and private targets from a sensor without one), caps scans at the sensor's free slots, and claims the lot in
+// one statement. The commands returned are already acknowledged to the
+// sensor with a lease; its later claim of each is a replay. Commands another
+// sensor took in the meantime are simply not returned.
+//
+// Falls back to Poll (nothing claimed) when the repository cannot claim in
+// batch.
+func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Command, error) {
+	claimer, ok := s.repo.(commanddom.BatchClaimer)
+	if !ok || input.SensorID == "" {
+		return s.Poll(ctx, PollInput{TenantID: input.TenantID, SensorID: input.SensorID,
+			Capabilities: input.Capabilities, Limit: input.Limit, MaxScanCommands: input.ReportedFree})
+	}
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	sensorID, err := shared.IDFromString(input.SensorID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
+	}
+
+	held, err := claimer.CountHeldScans(ctx, tenantID, sensorID)
+	if err != nil {
+		return nil, err
+	}
+	slots := freeScanSlots(input.MaxJobs, held, input.ReportedFree)
+
+	limit := input.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	limit = min(limit, 100)
+	cands, err := s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, input.Capabilities, candidateLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	cands = s.gateFor(ctx, tenantID, &sensorID, cands).accepted(cands)
+	if len(cands) > limit {
+		cands = cands[:limit]
+	}
+	cands = capScanCommands(cands, slots)
+	if len(cands) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]shared.ID, len(cands))
+	for i, c := range cands {
+		ids[i] = c.ID
+	}
+	claimed, err := claimer.ClaimManyForSensor(ctx, tenantID, sensorID, input.Capabilities, ids)
+	if err != nil {
+		return nil, err
+	}
+	won := make(map[shared.ID]bool, len(claimed))
+	for _, id := range claimed {
+		won[id] = true
+	}
+	out := make([]*commanddom.Command, 0, len(claimed))
+	for _, c := range cands {
+		if !won[c.ID] {
+			continue
+		}
+		// Re-read: the claim set the sensor, the lease and its epoch.
+		cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, c.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, cmd)
+	}
+	return s.signTemplates(input.SensorID, out), nil
+}
+
+// freeScanSlots is how many more scans a sensor may take: its job limit
+// (at least 1) minus what it holds, and no more than it reported free.
+func freeScanSlots(maxJobs, held int, reportedFree *int) int {
+	if maxJobs <= 0 {
+		maxJobs = 1
+	}
+	free := maxJobs - held
+	if reportedFree != nil {
+		free = min(free, *reportedFree)
+	}
+	return max(free, 0)
 }
 
 // signTemplates signs the custom templates of each command for sensorID, on
@@ -308,8 +424,11 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	if !cmd.CanBeAcknowledged() {
 		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
 	}
-	if sid, err := shared.IDFromString(sensorID); err == nil && HasPrivateTarget(cmd.Payload) && s.withholdPrivate(ctx, cmd.TenantID, &sid) {
-		return nil, ErrLocalPolicyRequired
+	if sid, err := shared.IDFromString(sensorID); err == nil {
+		cmds := []*commanddom.Command{cmd}
+		if err := s.gateFor(ctx, cmd.TenantID, &sid, cmds).claimError(cmd); err != nil {
+			return nil, err
+		}
 	}
 
 	// Atomic claim: only one concurrent poller can transition a pending
@@ -324,6 +443,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	if !claimed {
 		return nil, shared.NewDomainError("CONFLICT", "command already claimed by another sensor", shared.ErrConflict)
 	}
+	metrics.CommandClaimsTotal.WithLabelValues("claim").Inc()
 
 	// Return the freshly-claimed state.
 	return s.Get(ctx, tenantID, commandID)
@@ -442,6 +562,10 @@ type FailInput struct {
 	ErrorMessage string `json:"error_message"`
 	// LeaseEpoch: see CompleteInput.LeaseEpoch.
 	LeaseEpoch *int `json:"-"`
+	// Refusal is the structured policy refusal a v2 sensor reported, or
+	// nil (then a failure reason with the local-policy prefix still counts
+	// as one). research/25 §3.6.
+	Refusal *sensordom.DispatchRefusal `json:"-"`
 }
 
 // MaxFailErrorMessageBytes caps the sensor-supplied error message stored on a
@@ -478,13 +602,30 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 		return nil, ErrLeaseLost
 	}
 
+	// A policy refusal (research/25 D8): routed work goes to another
+	// eligible sensor, the refuser is excluded; the timeline and audit
+	// hear about every refusal.
+	if ref := sensordom.RefusalOf(input.Refusal, input.ErrorMessage); ref != nil {
+		sensorID := cmd.SensorID
+		if s.refusals != nil && sensorID != nil {
+			s.refusals.ObserveLocalPolicyRefusal(ctx, cmd.TenantID, *sensorID, cmd.ID.String(), ref.Message())
+		}
+		out, done, err := s.handleRefusal(ctx, cmd, input, ref)
+		if done {
+			return out, err
+		}
+		fence := fenceOf(cmd, input.SensorID)
+		cmd.Fail(truncateUTF8(ref.Message(), MaxFailErrorMessageBytes))
+		if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
+			return nil, err
+		}
+		return cmd, nil
+	}
+
 	fence := fenceOf(cmd, input.SensorID)
 	cmd.Fail(truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes))
 	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
-	}
-	if s.refusals != nil && cmd.SensorID != nil {
-		s.refusals.ObserveLocalPolicyRefusal(ctx, cmd.TenantID, *cmd.SensorID, cmd.ID.String(), cmd.ErrorMessage)
 	}
 
 	return cmd, nil
@@ -568,5 +709,5 @@ func (s *Service) DeleteCommand(ctx context.Context, tenantID, commandID string)
 		return err
 	}
 
-	return s.repo.Delete(ctx, cid)
+	return s.repo.Delete(ctx, tid, cid)
 }

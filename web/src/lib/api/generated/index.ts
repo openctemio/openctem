@@ -163,3 +163,25 @@ export type AuditChainClass =
 /** GET /api/v1/easm/summary — the EASM overview (RFC-036). */
 export type EASMSummary = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Summary']
 export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
+
+/** A scan run's tasks (RFC-046): GET /api/v1/pipeline-runs and /pipeline-runs/{id}. */
+export type RunTaskSummary = Schemas['internal_infra_http_handler.RunTaskSummaryResponse']
+export type RunTask = Schemas['internal_infra_http_handler.RunTaskResponse']
+/** GET /api/v1/pipeline-runs/{id}/tasks — one cursor page of a run's tasks. */
+export type RunTaskPage = Schemas['internal_infra_http_handler.RunTaskPageResponse']
+/** GET /api/v1/pipeline-runs/{id}/stages — how each stage of a run was planned. */
+export type RunStage = Schemas['internal_infra_http_handler.RunStageResponse']
+export type RunStageList = Schemas['internal_infra_http_handler.RunStageListResponse']
+/** GET /api/v1/easm/candidates — the attribution review queue. */
+export type EASMReviewPage =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']
+export type EASMReviewItem =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewItem']
+export type EASMReviewEvidence =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence']
+/** POST /api/v1/easm/candidates/decisions */
+export type EASMDecisionResult =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.DecisionResult']
+/** GET/POST/PATCH /api/v1/easm/seeds — EASM seeds (RFC-036 §6.3). */
+export type EASMSeed = Schemas['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
+export type EASMSeedList = Schemas['internal_infra_http_handler.EASMSeedListResponse']

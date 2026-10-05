@@ -96,13 +96,6 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 	return nil
 }
 
-// GetByID retrieves a command by its ID.
-func (r *CommandRepository) GetByID(ctx context.Context, id shared.ID) (*command.Command, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanCommand(row)
-}
-
 // GetByTenantAndID retrieves a command by tenant and ID.
 func (r *CommandRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*command.Command, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
@@ -126,36 +119,8 @@ func (r *CommandRepository) GetByTenantAndID(ctx context.Context, tenantID, id s
 // A command with no (or an empty) required_capabilities is returned to any
 // sensor, preserving the pre-existing behavior for every scan/collect command.
 func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, capabilities []string, limit int) ([]*command.Command, error) {
-	query := r.selectQuery() + `
-		WHERE tenant_id = $1
-		AND ` + pendingReadyPredicate
-
-	args := []any{tenantID.String()}
-
-	if sensorID != nil {
-		query += " AND (sensor_id = $2 OR sensor_id IS NULL) AND " + zoneClaimPredicate("$2") +
-			" AND " + toolClaimPredicate("$2")
-		args = append(args, sensorID.String())
-	} else {
-		// No sensor identity: nothing pinned, no zone membership and no tools
-		// to prove.
-		query += " AND sensor_id IS NULL AND scan_zone_id IS NULL AND " + commandToolSQL + " IS NULL"
-	}
-
-	query += " AND " + capabilityClaimPredicate(fmt.Sprintf("$%d", len(args)+1))
-	args = append(args, pq.Array(capabilities))
-
-	query += fmt.Sprintf(`
-		ORDER BY
-			CASE priority
-				WHEN 'critical' THEN 1
-				WHEN 'high' THEN 2
-				WHEN 'normal' THEN 3
-				WHEN 'low' THEN 4
-			END,
-			created_at ASC
-		LIMIT %d
-	`, limit)
+	where, args := pendingForSensorWhere(tenantID, sensorID, capabilities)
+	query := fairPendingQuery(r.selectQuery(), where, limit)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -176,6 +141,73 @@ func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID sh
 	}
 
 	return commands, nil
+}
+
+// pendingForSensorWhere is the poll's predicate for sensorID in tenantID:
+// pending and due, pinned to the sensor or unpinned, the zone claim
+// predicate, the tool gate and the capability gate. Arguments: $1 tenant,
+// $2 sensor (when given), then the capabilities.
+func pendingForSensorWhere(tenantID shared.ID, sensorID *shared.ID, capabilities []string) (string, []any) {
+	where := `commands.tenant_id = $1 AND ` + pendingReadyPredicate
+	args := []any{tenantID.String()}
+	if sensorID != nil {
+		where += " AND (commands.sensor_id = $2 OR commands.sensor_id IS NULL) AND " + zoneClaimPredicate("$2") +
+			" AND " + toolClaimPredicate("$2") + " AND " + refusedByPredicate("$2")
+		args = append(args, sensorID.String())
+	} else {
+		// No sensor identity: nothing pinned, no zone membership and no tools
+		// to prove.
+		where += " AND commands.sensor_id IS NULL AND commands.scan_zone_id IS NULL AND " + commandToolSQL + " IS NULL"
+	}
+	where += " AND " + capabilityClaimPredicate(fmt.Sprintf("$%d", len(args)+1))
+	args = append(args, pq.Array(capabilities))
+	return where, args
+}
+
+// claimAgingSeconds is how long a command waits before it moves up one
+// priority class (RFC-046 §11, RFC-030 §5.3: +1 class per 30 minutes).
+const claimAgingSeconds = 1800
+
+// fairCandidateWindow bounds the candidates ranked for fairness on one poll:
+// the oldest pending commands of each class, so the ranking stays cheap on a
+// deep queue.
+const fairCandidateWindow = 1000
+
+// claimClassSQL is a command's priority class for dispatch, 1 (critical)
+// to 4 (low), raised one class per claimAgingSeconds waited. Aging never
+// lifts a command into the critical class, which stays for verification
+// work, and a created_at slightly in the future (clock skew between API
+// replicas) never lowers one.
+var claimClassSQL = fmt.Sprintf(`(CASE commands.priority
+		WHEN 'critical' THEN 1
+		ELSE GREATEST(2,
+			(CASE commands.priority WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END)
+			- LEAST(2, GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - commands.created_at)) / %d)::int)))
+	END)`, claimAgingSeconds)
+
+// fairPendingQuery orders the commands matching where for dispatch (RFC-046
+// §11): by priority class (with aging), then round-robin across runs (the
+// first pending command of every run before the second of any), then age.
+// One large run therefore no longer starves a small run queued after it.
+// selectSQL is the repository's column list FROM commands.
+func fairPendingQuery(selectSQL, where string, limit int) string {
+	return `
+		WITH cand AS (
+			SELECT commands.id AS c_id, ` + claimClassSQL + ` AS c_cls, commands.created_at AS c_at,
+			       COALESCE(commands.payload->>'pipeline_run_id', commands.id::text) AS c_run
+			FROM commands
+			WHERE ` + where + `
+			ORDER BY c_cls, c_at
+			LIMIT ` + fmt.Sprint(fairCandidateWindow) + `
+		), ranked AS (
+			SELECT c_id, c_cls, c_at,
+			       ROW_NUMBER() OVER (PARTITION BY c_cls, c_run ORDER BY c_at, c_id) AS c_rn
+			FROM cand
+		)
+		` + selectSQL + `
+		JOIN ranked ON ranked.c_id = commands.id
+		ORDER BY ranked.c_cls, ranked.c_rn, ranked.c_at, commands.id
+		LIMIT ` + fmt.Sprint(limit)
 }
 
 // pendingReadyPredicate keeps a command that is waiting and due: pending, not
@@ -219,6 +251,7 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 	claimable := pendingReadyPredicate + `
 		AND ` + zoneClaimPredicate("$2") + `
 		AND ` + toolClaimPredicate("$2") + `
+		AND ` + refusedByPredicate("$2") + `
 		AND ` + capabilityClaimPredicate("$3")
 	query := `
 		SELECT
@@ -238,6 +271,13 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 					  AND ` + claimable + `
 					LIMIT $4) unpinned)
 			) AS pending,
+			(SELECT count(*) FROM (
+				SELECT 1 FROM commands
+				WHERE commands.tenant_id = $1 AND commands.sensor_id = $2
+				  AND commands.status = 'canceled'
+				  AND commands.acknowledged_at IS NOT NULL
+				  AND COALESCE(commands.completed_at, commands.acknowledged_at) > NOW() - make_interval(secs => $5)
+				LIMIT $4) canceled) AS recently_canceled,
 			COALESCE((
 				SELECT string_agg(z.id::text || '@' || to_char(z.updated_at AT TIME ZONE 'UTC', 'YYYYMMDDHH24MISSUS'), ',' ORDER BY z.id)
 				FROM scan_zone_sensors zs
@@ -246,8 +286,8 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 			), '') AS zones`
 
 	var out sensordom.PendingWork
-	err := r.db.QueryRowContext(ctx, query, tenantID.String(), sensorID.String(), pq.Array(capabilities), limit).
-		Scan(&out.Count, &out.ZoneFingerprint)
+	err := r.db.QueryRowContext(ctx, query, tenantID.String(), sensorID.String(), pq.Array(capabilities), limit, r.leaseSeconds()).
+		Scan(&out.Count, &out.RecentlyCanceled, &out.ZoneFingerprint)
 	if err != nil {
 		return sensordom.PendingWork{}, fmt.Errorf("failed to read pending work: %w", err)
 	}
@@ -380,6 +420,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND (sensor_id IS NULL OR sensor_id = $3)
 		  AND ` + zoneClaimPredicate("$3") + `
 		  AND ` + toolClaimPredicate("$3") + `
+		  AND ` + refusedByPredicate("$3") + `
 	`
 	result, err := r.db.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID, r.leaseSeconds())
 	if err != nil {
@@ -390,6 +431,71 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		return false, fmt.Errorf("failed to read rows affected: %w", err)
 	}
 	return rowsAffected > 0, nil
+}
+
+var _ command.BatchClaimer = (*CommandRepository)(nil)
+
+// ClaimManyForSensor acknowledges for sensorID those of ids that are still
+// claimable by it, in one statement. The candidate rows are locked with FOR
+// UPDATE SKIP LOCKED, so two sensors claiming at once take disjoint sets and
+// never wait on each other; the gates are the poll's (tenant, pinning, zone,
+// tool, capability), re-checked at claim time because the ids came from an
+// earlier read. A command of another tenant is never claimed, whatever id is
+// passed.
+func (r *CommandRepository) ClaimManyForSensor(ctx context.Context, tenantID, sensorID shared.ID, capabilities []string, ids []shared.ID) ([]shared.ID, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	want := make([]string, len(ids))
+	for i, id := range ids {
+		want[i] = id.String()
+	}
+	where, args := pendingForSensorWhere(tenantID, &sensorID, capabilities)
+	args = append(args, pq.Array(want), r.leaseSeconds())
+	idsParam, leaseParam := fmt.Sprintf("$%d", len(args)-1), fmt.Sprintf("$%d", len(args))
+	query := `
+		UPDATE commands c
+		SET status = 'acknowledged', sensor_id = $2, acknowledged_at = NOW(),
+		    lease_epoch = c.lease_epoch + 1,
+		    lease_expires_at = NOW() + make_interval(secs => ` + leaseParam + `)
+		WHERE c.id IN (
+			SELECT commands.id FROM commands
+			WHERE ` + where + `
+			  AND commands.id = ANY(` + idsParam + `::uuid[])
+			FOR UPDATE SKIP LOCKED
+		)
+		  AND c.tenant_id = $1 AND c.status = 'pending'
+		RETURNING c.id`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to claim commands: %w", err)
+	}
+	defer rows.Close()
+	out := make([]shared.ID, 0, len(ids))
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan claimed command: %w", err)
+		}
+		if cid, err := shared.IDFromString(id); err == nil {
+			out = append(out, cid)
+		}
+	}
+	return out, rows.Err()
+}
+
+// CountHeldScans counts the scan commands sensorID holds in tenantID.
+func (r *CommandRepository) CountHeldScans(ctx context.Context, tenantID, sensorID shared.ID) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT count(*) FROM commands
+		WHERE tenant_id = $1 AND sensor_id = $2 AND type = 'scan'
+		  AND status IN ('acknowledged', 'running')`,
+		tenantID.String(), sensorID.String()).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count held commands: %w", err)
+	}
+	return n, nil
 }
 
 // Update updates a command.
@@ -444,10 +550,11 @@ func (r *CommandRepository) Update(ctx context.Context, cmd *command.Command) er
 	return nil
 }
 
-// Delete deletes a command.
-func (r *CommandRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM commands WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete deletes a command of tenantID. A command of another tenant is not
+// found.
+func (r *CommandRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM commands WHERE tenant_id = $1 AND id = $2"
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete command: %w", err)
 	}
@@ -1003,9 +1110,17 @@ func (r *CommandRepository) GetNextPlatformJob(ctx context.Context, sensorID sha
 		return nil, nil
 	}
 
-	// Fetch the full command object
-	id, _ := shared.IDFromString(commandID.String)
-	return r.GetByID(ctx, id)
+	// Fetch the full command object, in the tenant the queue function claimed
+	// it for (commands.tenant_id is NOT NULL).
+	id, err := shared.IDFromString(commandID.String)
+	if err != nil {
+		return nil, fmt.Errorf("platform job returned an invalid command id: %w", err)
+	}
+	tid, err := shared.IDFromString(tenantID.String)
+	if err != nil {
+		return nil, fmt.Errorf("platform job %s returned an invalid tenant id: %w", id, err)
+	}
+	return r.GetByTenantAndID(ctx, tid, id)
 }
 
 // UpdateQueuePriorities recalculates queue priorities for all pending platform jobs.
@@ -1459,7 +1574,8 @@ func (r *CommandRepository) CancelByPipelineRunID(ctx context.Context, tenantID,
 		SET status = 'canceled',
 		    -- NOTE: commands has no updated_at column (no migration adds one), so
 		    -- assigning it made every pipeline cancel fail with 42703.
-		    completed_at = NOW()
+		    completed_at = NOW(),
+		    lease_expires_at = NULL
 		WHERE c.tenant_id = $1
 		  AND c.status IN ('pending', 'acknowledged', 'running')
 		  AND (

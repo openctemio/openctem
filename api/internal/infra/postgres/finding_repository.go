@@ -181,16 +181,19 @@ var findingCreateSQL = `
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
 			ingest_channel,
 			sla_deadline, sla_status, tags, rule_name,
+			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
-			` + findingNetworkColumnsSQL + `
+			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
 			$83, $84, $85, $86, $87, $88,
-			$89, $90, $91, $92` + findingTypePlaceholders(93) +
-	findingNetworkPlaceholders(93+findingTypeColumnCount) + `)
+			$89, $90, $91, $92, $93, $94` + findingTypePlaceholders(95) +
+	findingNetworkPlaceholders(95+findingTypeColumnCount) +
+	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -311,10 +314,13 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 		pq.Array(finding.Tags()), // $91
 		// Rule name. Also left out of the INSERT, so the scanner's rule name
 		// (a nuclei template's, a semgrep rule's) arrived only on a re-sighting.
-		nullString(finding.RuleName()), // $92
+		nullString(finding.RuleName()),  // $92
+		finding.FingerprintVersion(),    // $93
+		nullJSON(finding.IdentityKey()), // $94
 	}
-	args = append(args, findingTypeArgs(finding)...) // $93…
+	args = append(args, findingTypeArgs(finding)...) // $95…
 	args = append(args, findingNetworkArgs(finding)...)
+	args = append(args, findingScannerArgs(finding)...)
 	return args, nil
 }
 
@@ -578,8 +584,10 @@ func findingInsertColumnsSQL() string {
 			ingest_channel,
 			sla_deadline, sla_status, tags, rule_name,
 			last_seen_tool,
+			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
-			` + findingNetworkColumnsSQL + `
+			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `
 		)`
 }
 
@@ -695,7 +703,7 @@ func findingUpsertConflictSQL() string {
 			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
 			-- Rule name: first non-empty one wins, as in EnrichFrom.
 			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
-		findingTypeConflictSQL() + findingNetworkConflictSQL() + "\n\t"
+		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + "\n\t"
 }
 
 // findingTagsMergeSQL is the SQL expression merging a stored and an incoming
@@ -728,7 +736,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 92 + findingTypeColumnCount + findingNetworkColumnCount
+const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -860,7 +868,10 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		nullString(finding.RuleName()),
 		// Tool of this sighting (RFC-043 interim auto-resolve guard).
 		nullString(finding.LastSeenTool()),
-	}, append(findingTypeArgs(finding), findingNetworkArgs(finding)...)...), nil
+		// Identity recipe version and tuple (RFC-043 §6).
+		finding.FingerprintVersion(),
+		nullJSON(finding.IdentityKey()),
+	}, append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...)...), nil
 }
 
 // IsPentestCampaignMember reports whether the user belongs to the given
@@ -1207,9 +1218,10 @@ func (r *FindingRepository) ListByComponentID(ctx context.Context, tenantID, com
 //   - KEV is the finding's feed-derived is_in_kev or the catalog's KEV
 //     columns, which only the KEV feed writes;
 //   - exploit availability is the catalog flag (KEV feed) or this tenant's
-//     own scanner verdict kept on its findings.
-const (
-	tenantCVEAggColumns = `
+//     own scanner verdict (findings.exploit_available), through the same
+//     predicate as the list filter (vulnerability.FindingExploitAvailableSQL),
+//     which is why tenantCVEAggColumns is a var.
+var tenantCVEAggColumns = `
 				MIN(CASE f.severity
 					WHEN 'critical' THEN 1
 					WHEN 'high'     THEN 2
@@ -1220,7 +1232,9 @@ const (
 				MAX(f.cvss_score)                      AS t_cvss,
 				MAX(f.epss_score)                      AS t_epss,
 				BOOL_OR(COALESCE(f.is_in_kev, false))  AS t_kev,
-				BOOL_OR(f.metadata->>'` + vulnerability.FindingMetaScannerExploitAvailable + `' = 'true') AS t_exploit`
+				BOOL_OR(` + vulnerability.FindingExploitAvailableSQL("f") + `) AS t_exploit`
+
+const (
 	tenantCVESeverity = `(ARRAY['critical','high','medium','low','info','unknown']::text[])[agg.sev_rank]`
 	tenantCVECVSS     = `COALESCE(agg.t_cvss, v.cvss_score)`
 	tenantCVEEPSS     = `COALESCE(agg.t_epss, v.epss_score)`
@@ -1243,12 +1257,19 @@ func (r *FindingRepository) ListActiveCVEsByTenant(
 	// Build dynamic WHERE for outer filters
 	var whereClauses []string
 	args := []any{tenantID.String()}
-	argN := 2
 
 	statusFilter := ""
 	if !filter.IncludeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
 	}
+	// Layer 2: a restricted caller's CVEs, counts and dates come only from
+	// findings on assets in their scope ($2, $3).
+	if filter.DataScope != nil {
+		var cond string
+		cond, args = dataScopeCond("f.asset_id", filter.DataScope, args)
+		statusFilter += " AND " + cond
+	}
+	argN := len(args) + 1
 
 	if len(filter.SeverityIn) > 0 {
 		placeholders := make([]string, 0, len(filter.SeverityIn))
@@ -1404,10 +1425,17 @@ func (r *FindingRepository) GetActiveCVEStats(
 	ctx context.Context,
 	tenantID shared.ID,
 	includeResolved bool,
+	scope *shared.DataScope,
 ) (*vulnerability.ActiveCVEStats, error) {
 	statusFilter := ""
 	if !includeResolved {
 		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+	args := []any{tenantID.String()}
+	if scope != nil {
+		var cond string
+		cond, args = dataScopeCond("f.asset_id", scope, args)
+		statusFilter += " AND " + cond
 	}
 
 	query := `
@@ -1432,7 +1460,7 @@ func (r *FindingRepository) GetActiveCVEStats(
 
 	var stats vulnerability.ActiveCVEStats
 	var crit, high, med, low, info int
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&stats.Total, &crit, &high, &med, &low, &info,
 		&stats.KEVCount, &stats.ExploitAvailableCount,
 	); err != nil {
@@ -1771,6 +1799,11 @@ func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Contex
 	if scanID == "" {
 		return 0, nil
 	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
+		return 0, nil
+	}
 	const query = `
 		UPDATE finding_branch_occurrences o
 		SET status = 'auto_fixed', resolved_at = NOW(), resolved_reason = 'not_seen_in_scan', updated_at = NOW()
@@ -1828,17 +1861,26 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 
 // UpdateStatusBatch updates the status of multiple findings.
 // Security: Requires tenantID to prevent cross-tenant status modification.
-func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {
+//
+// A move to resolved must name how the finding was resolved (method), so every
+// closure carries its evidence class; any other status clears
+// resolution_method, so a reopened or dispositioned finding never keeps a
+// stale "fixed" claim.
+func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod) error {
 	if len(ids) == 0 {
 		return nil
+	}
+	methodArg, err := resolutionMethodArg(status, method)
+	if err != nil {
+		return err
 	}
 
 	// Security: tenant_id is first parameter for isolation
 	placeholders := make([]string, len(ids))
-	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy)}
+	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg}
 
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+5)
+		placeholders[i] = fmt.Sprintf("$%d", i+6)
 		args = append(args, id.String())
 	}
 
@@ -1853,16 +1895,27 @@ func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shar
 	// Security: Exclude pentest findings — they must be managed via the pentest module
 	query := fmt.Sprintf(`
 		UPDATE findings
-		SET status = $2, resolution = $3, resolved_by = $4%s, updated_at = NOW()
+		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5%s, updated_at = NOW()
 		WHERE tenant_id = $1 AND source != 'pentest' AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
-	_, err := r.db.ExecContext(ctx, query, args...)
-	if err != nil {
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("failed to update findings status: %w", err)
 	}
 
 	return nil
+}
+
+// resolutionMethodArg is the resolution_method value a status write stores:
+// the (required, valid) method for resolved, NULL for everything else.
+func resolutionMethodArg(status vulnerability.FindingStatus, method vulnerability.ResolutionMethod) (any, error) {
+	if status != vulnerability.FindingStatusResolved {
+		return nil, nil
+	}
+	if !method.IsValid() {
+		return nil, fmt.Errorf("%w: resolving a finding needs a valid resolution method, got %q", shared.ErrValidation, method)
+	}
+	return method.String(), nil
 }
 
 // DeleteByScanID removes all findings for a scan.
@@ -2060,6 +2113,7 @@ func (r *FindingRepository) selectQuery() string {
 			remediation, created_by, ingest_channel,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2196,6 +2250,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 
 	var typeCols findingTypeScan
 	var netCols findingNetworkScan
+	var scanCols findingScannerScan
 	dests := []any{
 		&idStr, &tenantIDStr, &vulnerabilityID, &assetIDStr, &branchID, &componentID, &source,
 		&toolName, &toolID, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
@@ -2224,6 +2279,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	}
 	dests = append(dests, typeCols.dests()...)
 	dests = append(dests, netCols.dests()...)
+	dests = append(dests, scanCols.dests()...)
 	dests = append(dests, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
@@ -2270,6 +2326,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	}
 	f.RestoreTypeDetails(typeCols.details())
 	f.RestoreNetwork(netCols.location())
+	f.RestoreScannerDetails(scanCols.details())
 	return f, nil
 }
 
@@ -2675,18 +2732,21 @@ func (r *FindingRepository) ListByAssetID(ctx context.Context, tenantID, assetID
 // CountWindow returns, for the trailing `days` window, how many findings were
 // newly detected (created_at) and how many were resolved (resolved_at, status
 // resolved/verified) — the new-vs-resolved trend a digest reports. Tenant-scoped.
-func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID, days int) (newCount, resolvedCount int64, err error) {
+func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (newCount, resolvedCount int64, err error) {
 	if days <= 0 {
 		days = 7
 	}
+	// A non-nil scope counts only findings on in-scope assets ($3, $4).
+	args := []any{tenantID.String(), days}
+	inScope, args := dataScopeCond("asset_id", scope, args)
 	query := `
 		SELECT
 			COALESCE(SUM(CASE WHEN created_at >= NOW() - ($2::int || ' days')::interval THEN 1 ELSE 0 END), 0) AS new_count,
 			COALESCE(SUM(CASE WHEN resolved_at >= NOW() - ($2::int || ' days')::interval
 				AND status IN ('resolved','verified') THEN 1 ELSE 0 END), 0) AS resolved_count
 		FROM findings
-		WHERE tenant_id = $1`
-	if err = r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(&newCount, &resolvedCount); err != nil {
+		WHERE tenant_id = $1 AND ` + inScope
+	if err = r.db.QueryRowContext(ctx, query, args...).Scan(&newCount, &resolvedCount); err != nil {
 		return 0, 0, fmt.Errorf("failed to count finding window: %w", err)
 	}
 	return newCount, resolvedCount, nil
@@ -2788,11 +2848,51 @@ func (r *FindingRepository) DeleteByAssetID(ctx context.Context, tenantID, asset
 // dataScopeUserID: if non-nil, only count findings for assets accessible to this user.
 // filter: optional asset / source narrowing, applied to every number returned.
 func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, filter vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
-	stats := vulnerability.NewFindingStats()
-
 	// Query for total and counts by severity, status, source in one go
 	// Statuses: new, confirmed, in_progress, resolved, false_positive, accepted, duplicate
-	query := `
+	query := findingStatsSelect + `
+		WHERE tenant_id = $1
+	`
+
+	args := []any{tenantID.String()}
+
+	// Layer 2: Data Scope - count only the user's in-scope findings. Fail
+	// closed: a user with no scope row counts nothing.
+	if dataScopeUserID != nil {
+		query += ` AND asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)`
+		args = append(args, dataScopeUserID.String())
+	}
+
+	// Asset filter — used when the page is `/findings?assetId=…` so
+	// the severity cards reflect the same filtered table the user is
+	// looking at, not the global tenant counts.
+	if filter.AssetID != nil {
+		args = append(args, filter.AssetID.String())
+		query += fmt.Sprintf(" AND asset_id = $%d", len(args))
+	}
+
+	// Source filter — used by the Exposures type pages (vulnerabilities,
+	// secrets, code, misconfigurations) so their counts come from one
+	// aggregate instead of walking the whole findings list. Same `source IN`
+	// shape as the list endpoint's filter; values are bound, never inlined.
+	if len(filter.Sources) > 0 {
+		placeholders := make([]string, len(filter.Sources))
+		for i, src := range filter.Sources {
+			args = append(args, src.String())
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
+		}
+		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
+	}
+
+	return r.queryFindingStats(ctx, query, args)
+}
+
+// findingStatsSelect is the one aggregate behind every findings stats read:
+// totals by severity, status and source, the state lens counts and the open
+// risk posture. Callers append the WHERE clause. A var because the lens
+// predicates come from vulnerability.FindingLensSQL, the same ones the
+// "state" filter compiles to.
+var findingStatsSelect = `
 		SELECT
 			COUNT(*) as total,
 			COALESCE(SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END), 0) as critical,
@@ -2825,46 +2925,16 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			-- Risk posture, open findings only (status not in a closed category).
 			COALESCE(SUM(CASE WHEN is_in_kev AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as kev_open,
 			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
-			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached
+			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached,
+			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensOpen) + `) as state_open,
+			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensFixed) + `) as state_fixed,
+			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensDispositioned) + `) as state_dispositioned
 		FROM findings
-		WHERE tenant_id = $1
-	`
+`
 
-	args := []any{tenantID.String()}
-
-	// Layer 2: Data Scope - filter stats by user's group membership. Fail-OPEN:
-	// no assignment ⇒ NOT EXISTS bypasses ⇒ all (backward compat). Fail-CLOSED is
-	// handled one level up in the service (it returns empty stats when the tenant
-	// enforces RestrictedDataScope and the user has no assignment), so this query
-	// stays unchanged and its interface signature stable.
-	if dataScopeUserID != nil {
-		query += ` AND (
-			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
-			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
-		)`
-		args = append(args, dataScopeUserID.String())
-	}
-
-	// Asset filter — used when the page is `/findings?assetId=…` so
-	// the severity cards reflect the same filtered table the user is
-	// looking at, not the global tenant counts.
-	if filter.AssetID != nil {
-		args = append(args, filter.AssetID.String())
-		query += fmt.Sprintf(" AND asset_id = $%d", len(args))
-	}
-
-	// Source filter — used by the Exposures type pages (vulnerabilities,
-	// secrets, code, misconfigurations) so their counts come from one
-	// aggregate instead of walking the whole findings list. Same `source IN`
-	// shape as the list endpoint's filter; values are bound, never inlined.
-	if len(filter.Sources) > 0 {
-		placeholders := make([]string, len(filter.Sources))
-		for i, src := range filter.Sources {
-			args = append(args, src.String())
-			placeholders[i] = fmt.Sprintf("$%d", len(args))
-		}
-		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
-	}
+// queryFindingStats runs a findingStatsSelect query and maps its row.
+func (r *FindingRepository) queryFindingStats(ctx context.Context, query string, args []any) (*vulnerability.FindingStats, error) {
+	stats := vulnerability.NewFindingStats()
 
 	var (
 		total, critical, high, medium, low, info                     int64
@@ -2876,6 +2946,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		sourceIac, sourceContainer, sourceManual, sourcePentest      int64
 		sourceExternal                                               int64
 		kevOpen, epssHighOpen, slaBreached                           int64
+		stateOpen, stateFixed, stateDispositioned                    int64
 	)
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
@@ -2889,6 +2960,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		&sourceIac, &sourceContainer, &sourceManual, &sourcePentest,
 		&sourceExternal,
 		&kevOpen, &epssHighOpen, &slaBreached,
+		&stateOpen, &stateFixed, &stateDispositioned,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get finding stats: %w", err)
@@ -2937,6 +3009,11 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	stats.KevOpen = kevOpen
 	stats.EpssHighOpen = epssHighOpen
 	stats.SLABreached = slaBreached
+
+	stats.ByState[vulnerability.FindingLensOpen] = stateOpen
+	stats.ByState[vulnerability.FindingLensFixed] = stateFixed
+	stats.ByState[vulnerability.FindingLensDispositioned] = stateDispositioned
+	stats.ByState[vulnerability.FindingLensAll] = total
 
 	return stats, nil
 }
@@ -3222,25 +3299,18 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		)`, uIdx, tIdx))
 	}
 
-	// Layer 2: Data Scope - filter findings by user's group membership on assets.
-	// Default (fail-OPEN): if the user has no rows in user_accessible_assets the
-	// NOT EXISTS bypasses and they see all — backward compatible. When the tenant
-	// enables RestrictedDataScope (filter.DataScopeStrict), the bypass is dropped:
-	// no assignment ⇒ no findings (fail-CLOSED, Tenable "No Access" default).
-	if filter.DataScopeUserID != nil && filter.TenantID != nil {
-		userIDIdx := argIndex
-		tenantIDIdx := argIndex + 1
-		args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
-		// argIndex not incremented — this is the last block that consumes it.
-		if filter.DataScopeStrict {
+	// Layer 2: Data Scope - only findings on the user's in-scope assets. Fail
+	// closed: a user with no scope row sees no finding, and a user scope
+	// without a tenant matches nothing.
+	if filter.DataScopeUserID != nil {
+		if filter.TenantID == nil {
+			conditions = append(conditions, "FALSE")
+		} else {
+			args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
+			// argIndex not incremented — this is the last block that consumes it.
 			conditions = append(conditions, fmt.Sprintf(
 				`asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
-				userIDIdx, tenantIDIdx))
-		} else {
-			conditions = append(conditions, fmt.Sprintf(`(
-				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-				OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+				argIndex, argIndex+1))
 		}
 	}
 
@@ -3260,6 +3330,11 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 	// silently resolve the tenant's entire finding set. Without a scan identity
 	// staleness is undeterminable, so resolve nothing.
 	if currentScanID == "" {
+		return nil, nil
+	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
 		return nil, nil
 	}
 	// Auto-resolve findings that:
@@ -3355,6 +3430,11 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 	// Same guard as AutoResolveStale: without a scan identity, staleness is
 	// undeterminable and would resolve everything.
 	if currentScanID == "" || len(assetIDs) == 0 {
+		return nil, nil
+	}
+	// A re-fingerprint run is re-keying this tenant (RFC-043 D11): a finding
+	// whose old key this scan did not produce must not be closed as fixed.
+	if autoResolvePaused(ctx, r.db, tenantID.String()) {
 		return nil, nil
 	}
 
@@ -3514,6 +3594,8 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 					(status IN ('resolved', 'verified')
 						AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed')))
 					OR status = 'validated_fixed'
+					-- Seen again: a not_observed finding is observed (O2).
+					OR status = 'not_observed'
 				)
 			FOR UPDATE
 		)
@@ -3574,9 +3656,10 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	return result, nil
 }
 
-// ExpireFeatureBranchFindings marks stale feature branch findings as resolved.
-// This is called by a background job to clean up findings on non-default branches
-// that have not been seen for a configurable period.
+// ExpireFeatureBranchFindings marks stale feature branch findings as
+// not_observed: not seen for a configurable period on a non-default branch is
+// stale, not fixed (research 18 F7, owner decision O2), so the finding is never
+// counted as fixed and its SLA keeps running. A sighting reopens it.
 // Uses JOIN with repository_branches to determine default branch status.
 func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, tenantID shared.ID, defaultExpiryDays int) (int64, error) {
 	// Expire findings that:
@@ -3584,12 +3667,14 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 	// 2. The branch allows expiry (keep_when_inactive = false)
 	// 3. Have active status (new, open)
 	// 4. Have not been seen for the configured expiry period (per-branch or default)
-	// Resolution is set to 'branch_expired' to distinguish from other auto-resolve types
+	// Resolution 'branch_expired' records why the finding is not observed.
 	query := `
 		UPDATE findings f
-		SET status = 'resolved',
+		SET status = 'not_observed',
 			resolution = 'branch_expired',
-			resolved_at = NOW(),
+			resolution_method = NULL,
+			resolved_at = NULL,
+			resolved_by = NULL,
 			updated_at = NOW()
 		FROM repository_branches rb
 		WHERE f.tenant_id = $1
@@ -3761,13 +3846,14 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			remediation, created_by, ingest_channel,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
+			` + findingScannerColumnsSQL + `,
 			FALSE AS has_data_flow
 		FROM findings
 	`
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 67
+const enrichColumnsPerRow = 73
 
 // enrichBatchChunkSize limits rows per batch UPDATE to stay under PostgreSQL's 65535 parameter limit.
 // 1000 rows × 50 columns = 50,000 params (safely under limit).
@@ -3851,6 +3937,12 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"network_port", "int"},
 	{"network_transport", "text"},
 	{"network_service", "text"},
+	{"family", "text"},
+	{"exploit_available", "boolean"},
+	{"vpr_score", "numeric"},
+	{"cvss_version", "text"},
+	{"cve_ids", "text[]"},
+	{"patch_published_at", "timestamptz"},
 }
 
 // EnrichBatchByFingerprints enriches existing findings with new scan data using domain EnrichFrom() rules.
@@ -4036,7 +4128,7 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		f.SLAStatus().String(),
 		nullString(f.LastSeenTool()),
 		// Network location — EnrichFrom fills it first-wins (enrichNetwork).
-	}, findingNetworkArgs(f)...), nil
+	}, append(findingNetworkArgs(f), findingScannerArgs(f)...)...), nil
 }
 
 // buildBatchEnrichQuery builds a VALUES-based UPDATE query for the given number of rows.

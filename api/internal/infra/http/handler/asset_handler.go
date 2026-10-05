@@ -167,6 +167,25 @@ func (h *AssetHandler) auditCreateMerged(r *http.Request, a *asset.Asset, change
 	_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
 }
 
+// DuplicateAssetDetails is the details object of the 409 a create returns
+// when the asset already exists. ExistingAssetID is present only when the
+// caller may see that asset.
+type DuplicateAssetDetails struct {
+	ExistingAssetID string `json:"existing_asset_id,omitempty"`
+}
+
+// writeDuplicateAsset writes the 409 for a create that matched an existing
+// asset. The body names the existing asset only when the service set its id
+// (the asset is in the caller's data scope); otherwise it is the same generic
+// conflict for every match, so it reveals nothing about the asset.
+func writeDuplicateAsset(w http.ResponseWriter, dup *app.DuplicateAssetError) {
+	e := apierror.Conflict("Asset already exists")
+	if !dup.ExistingID.IsZero() {
+		e = e.WithDetails(DuplicateAssetDetails{ExistingAssetID: dup.ExistingID.String()})
+	}
+	e.WriteJSON(w)
+}
+
 // SnoozeLifecycleRequest is the body for POST /assets/{id}/lifecycle/snooze.
 // Duration is expressed in days so the HTTP contract is simple;
 // service layer converts to an absolute timestamp on the server
@@ -296,6 +315,8 @@ type AssetResponse struct {
 	Tags                  []string                 `json:"tags,omitempty"`
 	Properties            map[string]any           `json:"properties,omitempty"`
 	PrimaryOwner          *OwnerBriefResponse      `json:"primary_owner,omitempty"`
+	// IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel.
+	IsCrownJewel bool `json:"is_crown_jewel"`
 
 	// Discovery
 	DiscoverySource string     `json:"discovery_source,omitempty"`
@@ -353,8 +374,12 @@ type OwnerBriefResponse struct {
 
 // CreateAssetRequest represents the request to create an asset.
 type CreateAssetRequest struct {
-	Name        string         `json:"name" validate:"required,min=1,max=255"`
-	Type        string         `json:"type" validate:"required,asset_type"`
+	Name string `json:"name" validate:"required,min=1,max=255"`
+	Type string `json:"type" validate:"required,asset_type"`
+	// SubType is the kind within the type, from the registry's closed list
+	// (GET /asset-types). A legacy value of the type is mapped; anything
+	// else is a 400.
+	SubType     string         `json:"sub_type,omitempty" validate:"omitempty,max=50"`
 	Criticality string         `json:"criticality" validate:"required,criticality"`
 	Scope       string         `json:"scope" validate:"omitempty,scope"`
 	Exposure    string         `json:"exposure" validate:"omitempty,exposure"`
@@ -374,6 +399,9 @@ type UpdateAssetRequest struct {
 	OwnerRef    *string        `json:"owner_ref" validate:"omitempty,max=500"`
 	Tags        []string       `json:"tags" validate:"omitempty,max=50,dive,max=50"`
 	Properties  map[string]any `json:"properties,omitempty"`
+	// SubType changes the kind within the asset's type (closed list from
+	// GET /asset-types); "" clears it. The type itself cannot change.
+	SubType *string `json:"sub_type,omitempty" validate:"omitempty,max=50"`
 
 	// CTEM Scoping: CIA impact rating (low | moderate | high). Empty string clears.
 	ImpactConfidentiality *string `json:"impact_confidentiality" validate:"omitempty,impact_rating"`
@@ -413,6 +441,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		Description:  a.Description(),
 		Tags:         a.Tags(),
 		Properties:   a.Properties(),
+		IsCrownJewel: a.IsCrownJewel(),
 
 		// Discovery
 		DiscoverySource: a.DiscoverySource(),
@@ -556,6 +585,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        providers             query string false "Filter by provider/source (comma-separated)"
 // @Param        last_seen_after       query string false "Filter assets last seen at/after this time (RFC3339 or YYYY-MM-DD)"
 // @Param        last_seen_before      query string false "Filter assets last seen at/before this time (RFC3339 or YYYY-MM-DD)"
+// @Param        attribution           query string false "Filter by attribution (comma-separated): confirmed (includes assets with no record), needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (confirmed+unknown+dependency+monitor_only)"
 // @Param        sort          query     string  false  "Sort field (e.g., -created_at, name, -risk_score)"
 // @Param        page          query     int     false  "Page number"  default(1)
 // @Param        per_page      query     int     false  "Items per page"  default(20)  maximum(100)
@@ -596,6 +626,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Providers:            parseQueryArray(query.Get("providers")),
 		LastSeenAfter:        parseQueryTimePtr(query.Get("last_seen_after")),
 		LastSeenBefore:       parseQueryTimePtr(query.Get("last_seen_before")),
+		Attribution:          parseQueryArray(query.Get("attribution")),
 		Sort:                 query.Get("sort"),
 		Page:                 parseQueryInt(query.Get("page"), 1),
 		PerPage:              parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
@@ -685,7 +716,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/v1/assets
 // @Summary      Create asset
-// @Description  Creates a new asset for the current tenant
+// @Description  Creates a new asset for the current tenant. A name (or a correlated address) that matches an existing asset is a 409 and nothing is changed; details.existing_asset_id names the existing asset only when it is in the caller's data scope.
 // @Tags         Assets
 // @Accept       json
 // @Produce      json
@@ -715,6 +746,7 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		TenantID:    tenantID,
 		Name:        req.Name,
 		Type:        req.Type,
+		SubType:     req.SubType,
 		Criticality: req.Criticality,
 		Scope:       req.Scope,
 		Exposure:    req.Exposure,
@@ -724,17 +756,18 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Properties:  req.Properties,
 	}
 
-	a, outcome, err := h.service.CreateAssetWithOutcome(r.Context(), input)
+	a, err := h.service.CreateAsset(r.Context(), input)
 	if err != nil {
+		var dup *app.DuplicateAssetError
+		if errors.As(err, &dup) {
+			writeDuplicateAsset(w, dup)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
-	if outcome.Merged {
-		h.auditCreateMerged(r, a, outcome.ChangedFields)
-	} else {
-		h.auditAsset(r, auditdom.ActionAssetCreated, a.ID().String(), a.Name(), "Asset created",
-			map[string]any{"type": a.Type().String(), "criticality": a.Criticality().String()})
-	}
+	h.auditAsset(r, auditdom.ActionAssetCreated, a.ID().String(), a.Name(), "Asset created",
+		map[string]any{"type": a.Type().String(), "criticality": a.Criticality().String()})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -830,6 +863,7 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Description:           req.Description,
 		OwnerRef:              req.OwnerRef,
 		Tags:                  req.Tags,
+		SubType:               req.SubType,
 		Properties:            req.Properties,
 		ImpactConfidentiality: req.ImpactConfidentiality,
 		ImpactIntegrity:       req.ImpactIntegrity,
@@ -2117,41 +2151,35 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	a, err := h.service.GetAsset(r.Context(), tenantID, assetID)
+	// The previous state, for the audit event. The route's data-scope guard
+	// has already refused an asset outside the caller's scope.
+	before, err := h.service.GetAsset(r.Context(), tenantID, assetID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Store crown jewel data in properties (DB columns added by migration 000126)
-	props := a.Properties()
-	if props == nil {
-		props = make(map[string]any)
-	}
-	before := map[string]any{}
-	for _, k := range []string{"is_crown_jewel", "business_impact_score", "business_impact_notes"} {
-		if v, ok := props[k]; ok {
-			before[k] = v
-		}
-	}
-	props["is_crown_jewel"] = req.IsCrownJewel
-	props["business_impact_score"] = req.BusinessImpactScore
-	props["business_impact_notes"] = req.BusinessImpactNotes
-	a.SetProperties(props)
-
-	if err := h.service.SaveAsset(r.Context(), a); err != nil {
+	// The flag is the assets.is_crown_jewel column; business impact stays in
+	// properties. One statement writes both.
+	a, err := h.service.UpdateCrownJewel(r.Context(), tenantID, assetID,
+		req.IsCrownJewel, req.BusinessImpactScore, req.BusinessImpactNotes)
+	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+
 	changed := []string{}
-	for _, k := range changedPropertyKeys(before, map[string]any{
-		"is_crown_jewel": req.IsCrownJewel, "business_impact_score": req.BusinessImpactScore,
-		"business_impact_notes": req.BusinessImpactNotes,
-	}) {
+	if before.IsCrownJewel() != a.IsCrownJewel() {
+		changed = append(changed, "is_crown_jewel")
+	}
+	for _, k := range changedPropertyKeys(
+		pickProperties(before.Properties(), asset.PropKeyBusinessImpactScore, asset.PropKeyBusinessImpactNotes),
+		pickProperties(a.Properties(), asset.PropKeyBusinessImpactScore, asset.PropKeyBusinessImpactNotes),
+	) {
 		changed = append(changed, k[len("properties."):])
 	}
 	h.auditAsset(r, auditdom.ActionAssetCrownJewelChanged, a.ID().String(), a.Name(), "Crown-jewel designation changed",
-		map[string]any{"is_crown_jewel": req.IsCrownJewel, "changed_fields": changed})
+		map[string]any{"is_crown_jewel": a.IsCrownJewel(), "changed_fields": changed})
 
 	writeJSON(w, http.StatusOK, toAssetResponse(a))
 }

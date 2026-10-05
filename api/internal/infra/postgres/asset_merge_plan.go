@@ -103,6 +103,13 @@ var assetMergeRefs = []mergeRef{
 	// a merged asset's state for a check the kept one never ran moves.
 	{table: "easm_dns_check_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"check_kind"}}}},
+	// Scan stage chaining (research/27 P0-3): what a step produced follows
+	// the asset (one row per step run and asset), and a run's target
+	// provenance names the kept asset.
+	{table: "scan_step_outputs", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"step_run_id"}}}},
+	{table: "scan_run_targets", column: "asset_id", tenantCol: "tenant_id"},
+	{table: "scan_run_targets", column: "parent_asset_id", tenantCol: "tenant_id"},
 }
 
 // assetMergeEdgeRefs are directed edges between two assets. An edge between
@@ -131,6 +138,10 @@ var assetMergeLeftAlone = map[string]string{
 	"asset_merge_log.merged_asset_id":     "the merge record itself",
 	"ctem_cycle_scope_snapshots.asset_id": "historical snapshot of a closed scope",
 	"ingest_reports.touched_asset_ids":    "historical record of one report",
+	// The type normalisation ledger (migration 000684) describes the row as
+	// that migration moved it; its down migration restores only rows still
+	// holding that pair, so a merged asset's entry goes with it.
+	"asset_type_reclassifications.asset_id": "ledger of one migration; removed with the merged asset",
 }
 
 // mergeAssetReferences moves everything that references mergeIDs onto keepID.

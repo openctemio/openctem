@@ -1,19 +1,26 @@
 # EASM DNS-only checks: dangling DNS and email posture
 
 > RFC-036 P1. Built. Passive (tier T0): the platform asks its own recursive
-> resolver about the tenant's names. Nothing is sent to the tenant's hosts or
-> to the CNAME targets, and no HTTP request is made.
+> resolver about the tenant's names. The only direct queries are DNS
+> questions about the tenant's own name to the name servers of its parent
+> zone and of its delegation, for the lame-delegation check below. Nothing is
+> sent to the tenant's hosts or to the CNAME targets, and no HTTP request is
+> made.
 
 ## What runs
 
 A daily controller (`internal/infra/controller/easm_dns_checks.go`, name
 `easm-dns-checks`) runs two checks for every active tenant that has the
-`attack_surface` module (O10):
+`attack_surface` module (O10). They are **on by default** (research/22 owner
+decision E3). The CT controller also runs both checks for a tenant right
+after that tenant's CT sweep, so a name CT just promoted is checked in the
+same pass, not a full interval later (names checked within the re-check
+window are not asked again):
 
 | Check | Names | Finds | Exposure type |
 |---|---|---|---|
 | Dangling DNS | active `domain` and `subdomain` assets | a CNAME whose target does not exist; a delegation whose name servers do not exist | `dangling_cname`, `dangling_ns` |
-| Email posture | active `domain` assets that are registrable domains (subdomains inherit the organisation's DMARC policy) | SPF, DMARC, MTA-STS and TLS-RPT gaps | `email_security_weak` |
+| Email posture | active `domain` assets that are registrable domains (subdomains inherit the organisation's DMARC policy), plus root-domain seeds (discovery on) and verified domains that no domain asset covers, checked by name (22c B3; state in `easm_dns_name_state`, migration 001017; the exposure is linked to no asset until a domain asset exists, whose first check clears it) | SPF, DMARC, MTA-STS and TLS-RPT gaps | `email_security_weak` |
 
 Code: `internal/app/easmdns` (checks, service), `pkg/dnsprobe` (DNS client),
 `internal/infra/postgres/easm_dns_repository.go`, migration 000325.
@@ -37,6 +44,8 @@ hides this, hence `pkg/dnsprobe`). Names without a CNAME are then asked for
 | CNAME to a provider that [can-i-take-over-xyz](https://github.com/EdOverflow/can-i-take-over-xyz) marks *Vulnerable*, target `NXDOMAIN` | medium | anyone can claim that name at the provider. Medium until a sensor confirms (nuclei `takeover`, T1) — the exposure carries `confirmation: pending` |
 | all name servers of a delegation missing (their domain registered) | medium | the zone does not resolve; one registration away from takeover if the provider allows it |
 | some name servers missing | low | broken redundancy |
+| every delegated name server exists but none answers authoritatively for the zone (lame delegation) | medium | the name does not resolve; at many DNS providers whoever creates the zone on those servers controls it |
+| some delegated name servers lame | low | broken redundancy |
 | CNAME to any other missing target | low | a broken record, not a known takeover path |
 
 "Registrable domain" is one label below the ICANN public suffix. Private
@@ -50,6 +59,35 @@ is the project's `fingerprints.json`, copied unmodified, under CC BY 4.0 (the
 FSF lists it as GPLv3-compatible); attribution and the source commit are in
 `fingerprints/NOTICE.md`. Only `service`, `cname`, `status` and `nxdomain` are
 read.
+
+## Takeover confirmation
+
+A `dangling_cname` stays medium with `confirmation: pending` until a sensor
+confirms it. Confirmation is a **nuclei takeover template** (tagged
+`takeover`, or a template id `<provider>-takeover[-detection]`) that matches
+the same name in a scan the tenant ran (`internal/app/ingest/takeover.go`,
+`internal/app/easmdns/takeover.go`):
+
+- the report must be bound to a command the tenant's sensor ran (RFC-040
+  §5.3), and the asset must be one the report created or the command's
+  targets cover; unsolicited reports, uploads and imports confirm nothing;
+- the asset must have an **active** `dangling_cname` from this check; a
+  template match alone (an HTTP fingerprint) never raises a high;
+- the platform then raises `subdomain_takeover` (**high**, migration
+  000485; details: template, sensor, command, matched text, the
+  dangling exposure) and sets `confirmation: confirmed` on the
+  `dangling_cname`.
+
+**No new probe path.** The confirming request is an ordinary tenant scan,
+which went through the active-probe gate (scope exclusions, attribution:
+only confirmed assets, zones; see
+[active-probe-gate.md](active-probe-gate.md)) before the command existed.
+Nothing is dispatched from here.
+
+**Lifecycle.** The takeover shares the name's identity with the DNS check: a
+check that finds the CNAME fixed (or replaced by a delegation) resolves the
+takeover with the `dangling_cname`, and a takeover this check resolved is
+reopened by the next confirmation. A person's resolution is never reopened.
 
 ## Email posture
 
@@ -91,14 +129,29 @@ MTA-STS policy file (fetched over HTTPS from the tenant's host, not DNS-only).
 - Resolver failure (SERVFAIL, timeout): nothing is concluded, raised or
   resolved; the outcome `unknown` is stored.
 
-**Known limit (follow-up).** The checks ask a recursive resolver. When every
-name server of a *delegated* sub-zone is dead but still resolves (a lame
-delegation), the resolver answers SERVFAIL and the name is stored as
-`unknown`, not `dangling_ns`; the case above (name servers that do not exist)
-is caught. Seeing the referral itself needs a non-recursive query to the
-parent zone's authoritative servers, which `pkg/dnsprobe` does not do yet.
-A name that stays `unknown` run after run is visible in
-`easm_dns_check_state.last_outcome`.
+**Lame delegation.** When the resolver answers SERVFAIL for a name (what a
+lame delegation looks like through a recursive resolver), the check
+(`internal/app/easmdns/lame.go`):
+
+1. finds the parent zone by asking the resolver for `NS` of each ancestor,
+   stopping at the registrable domain, so public-suffix (TLD) servers are
+   never asked;
+2. asks up to 3 addresses of the parent's name servers for the name's `NS`
+   **without recursion** (`dnsprobe.QueryServer`, RD=0) and reads the referral
+   from the authority section (an authoritative answer means the name is not
+   delegated: nothing concluded);
+3. asks each delegated name server (at most 8) for the name's `SOA` without
+   recursion; a server that does not answer authoritatively is lame, one that
+   does not exist is missing.
+
+All servers lame or missing: `dangling_ns` medium with `lame_name_servers` in
+the details; some: low; none: nothing concluded (`unknown`, the SERVFAIL has
+another cause, e.g. DNSSEC). **Safety:** every server address comes from DNS
+data, so `QueryServer` accepts only a public IP literal under the platform's
+SSRF policy (`httpsec.IsIPBlocked`: loopback, RFC 1918, link-local/metadata,
+CGNAT … refused before anything is sent), always port 53, through the same
+rate limiter and 3 s bound. A delegated server reachable only at a refused
+address is not judged at all, so a private name server is never called lame.
 
 ## Scale and politeness
 
@@ -108,14 +161,14 @@ A name that stays `unknown` run after run is visible in
 - Per tenant and check: names checked longest ago first, at most
   `EASM_DNS_MAX_NAMES_PER_RUN` (500) per run, a 30-minute budget, a name
   checked within 5/6 of the interval is not due (restarts do not re-check),
-  and a per-tenant advisory lock so two API replicas never run the same
+  and a per-tenant controller lease (`easm_dns:<tenant>:<kind>`, RFC-046 P1.8) so two API replicas never run the same
   tenant's check at once. State: `easm_dns_check_state`.
 
 ## Configuration
 
 | Variable | Default | |
 |---|---|---|
-| `EASM_DNS_CHECKS_ENABLED` | `false` | off until the scans P1 work lands (claim-N with `SKIP LOCKED`, controller leases, write-amplification fixes): a daily controller over every tenant should not run by default before that. Turn it on per deployment; the per-run cap and budget bound it |
+| `EASM_DNS_CHECKS_ENABLED` | `true` | on by default (research/22 E3); each tenant's run holds a controller lease and the per-run cap, QPS and budget bound it. `false` turns the checks off platform-wide |
 | `EASM_DNS_RESOLVER` | first `nameserver` of `/etc/resolv.conf` | `host[:port]` of a recursive resolver |
 | `EASM_DNS_QPS` | `20` | |
 | `EASM_DNS_CHECK_INTERVAL` | `24h` | RFC-036 O9: daily light checks |

@@ -4,10 +4,10 @@ package shared
 // the rows of user_accessible_assets for (TenantID, UserID). It is the
 // resolved form of the Layer 2 (group) data scope.
 //
-// A nil *DataScope means "unrestricted" (an administrator, an internal call,
-// or a member with no scope assignment in a fail-open tenant). A non-nil
-// scope always restricts: a member of a fail-closed tenant with no
-// assignment gets a scope whose set is empty, so they see nothing.
+// A nil *DataScope means "unrestricted" (an administrator, a holder of a
+// has_full_data_access role, or an internal call). A non-nil scope always
+// restricts: a member with no scope row gets a scope whose set is empty, so
+// they see nothing.
 //
 // Findings, exposures, notifications and other asset-bound rows are in scope
 // when their asset is.

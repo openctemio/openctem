@@ -106,6 +106,9 @@ type CheckResult struct {
 	Outcome string
 	Summary string
 	Missing bool
+	// TemplateDigest is the sha256 of the template the re-run used
+	// (evidence.template_digest, sensor#134); "" when not reported.
+	TemplateDigest string
 }
 
 const (
@@ -140,6 +143,35 @@ func Decide(check, reach CheckResult) (Outcome, string) {
 	}
 }
 
+// ApplyTemplateDrift turns a conclusive retest outcome into OutcomeUnknown
+// when the template content changed since the finding's last sighting
+// (research/18 O6, "template digest drift → inconclusive"): baseline is
+// the template digest recorded at that sighting, check the re-run. A
+// re-run that reports no digest, or a different one, proves nothing about
+// the finding: a tightened matcher reads as fixed, a widened one as still
+// present. Without a baseline (sighted before provenance existed, or by
+// another tool) the outcome stands. Re-baselining is a new sighting.
+func ApplyTemplateDrift(outcome Outcome, reason, baseline string, check CheckResult) (Outcome, string) {
+	if baseline == "" || check.Missing || (outcome != OutcomeFixed && outcome != OutcomeStillPresent) {
+		return outcome, reason
+	}
+	switch {
+	case check.TemplateDigest == "":
+		return OutcomeUnknown, "inconclusive: the re-run reported no template digest, so it cannot be tied to the template recorded at the last sighting (" + shortDigest(baseline) + "); a new scan sighting re-baselines it"
+	case check.TemplateDigest != baseline:
+		return OutcomeUnknown, "inconclusive: the template changed since the last sighting (recorded " + shortDigest(baseline) + ", re-run " + shortDigest(check.TemplateDigest) + "); a new scan sighting re-baselines it"
+	}
+	return outcome, reason
+}
+
+// shortDigest is "sha256:" and the first 12 hex digits of d.
+func shortDigest(d string) string {
+	if len(d) > len("sha256:")+12 {
+		return d[:len("sha256:")+12]
+	}
+	return d
+}
+
 // eligibleStatuses are the statuses a retest may run on and move. Deliberate
 // dispositions (false positive, accepted risk, duplicate) and the pentest
 // workflow are never retested.
@@ -149,6 +181,7 @@ var eligibleStatuses = map[vulnerability.FindingStatus]bool{ //nolint:gochecknog
 	vulnerability.FindingStatusInProgress:     true,
 	vulnerability.FindingStatusFixApplied:     true,
 	vulnerability.FindingStatusValidatedFixed: true,
+	vulnerability.FindingStatusNotObserved:    true, // a retest is the proof a stale finding needs
 	vulnerability.FindingStatusResolved:       true,
 }
 
@@ -160,7 +193,8 @@ func EligibleStatuses() []string {
 	return []string{
 		string(vulnerability.FindingStatusNew), string(vulnerability.FindingStatusConfirmed),
 		string(vulnerability.FindingStatusInProgress), string(vulnerability.FindingStatusFixApplied),
-		string(vulnerability.FindingStatusValidatedFixed), string(vulnerability.FindingStatusResolved),
+		string(vulnerability.FindingStatusValidatedFixed), string(vulnerability.FindingStatusNotObserved),
+		string(vulnerability.FindingStatusResolved),
 	}
 }
 
@@ -168,9 +202,9 @@ func EligibleStatuses() []string {
 // and whether it changes. Unknown never moves a finding; neither does an
 // ineligible status.
 //
-//	fixed:          open / fix_applied / validated_fixed → resolved; resolved stays
+//	fixed:          open / fix_applied / validated_fixed / not_observed → resolved; resolved stays
 //	still_present:  resolved → confirmed (regression); fix_applied → in_progress;
-//	                validated_fixed → confirmed; open stays
+//	                validated_fixed / not_observed → confirmed; open stays
 func NextStatus(prior vulnerability.FindingStatus, outcome Outcome) (vulnerability.FindingStatus, bool) {
 	if !EligibleStatus(prior) {
 		return prior, false
@@ -183,7 +217,8 @@ func NextStatus(prior vulnerability.FindingStatus, outcome Outcome) (vulnerabili
 		return vulnerability.FindingStatusResolved, true
 	case OutcomeStillPresent:
 		switch prior {
-		case vulnerability.FindingStatusResolved, vulnerability.FindingStatusValidatedFixed:
+		case vulnerability.FindingStatusResolved, vulnerability.FindingStatusValidatedFixed,
+			vulnerability.FindingStatusNotObserved:
 			return vulnerability.FindingStatusConfirmed, true
 		case vulnerability.FindingStatusFixApplied:
 			return vulnerability.FindingStatusInProgress, true

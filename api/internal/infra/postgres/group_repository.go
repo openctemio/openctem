@@ -89,19 +89,6 @@ func (r *GroupRepository) Create(ctx context.Context, g *group.Group) error {
 	return nil
 }
 
-// GetByID retrieves a group by ID.
-func (r *GroupRepository) GetByID(ctx context.Context, id shared.ID) (*group.Group, error) {
-	query := `
-		SELECT id, tenant_id, name, slug, description, group_type,
-			   external_id, external_source, settings, notification_config,
-			   metadata, is_active, created_at, updated_at
-		FROM groups
-		WHERE id = $1
-	`
-
-	return r.scanGroup(r.db.QueryRowContext(ctx, query, id.String()))
-}
-
 // GetByTenantAndID retrieves a group by tenant and ID.
 func (r *GroupRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*group.Group, error) {
 	query := `
@@ -150,7 +137,7 @@ func (r *GroupRepository) Update(ctx context.Context, g *group.Group) error {
 		SET name = $2, slug = $3, description = $4, group_type = $5,
 			external_id = $6, external_source = $7, settings = $8,
 			notification_config = $9, metadata = $10, is_active = $11, updated_at = $12
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $13
 	`
 
 	var externalID, externalSource sql.NullString
@@ -174,6 +161,7 @@ func (r *GroupRepository) Update(ctx context.Context, g *group.Group) error {
 		metadata,
 		g.IsActive(),
 		g.UpdatedAt(),
+		g.TenantID().String(),
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "groups_tenant_id_slug_key") {
@@ -193,11 +181,11 @@ func (r *GroupRepository) Update(ctx context.Context, g *group.Group) error {
 	return nil
 }
 
-// Delete removes a group.
-func (r *GroupRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM groups WHERE id = $1`
+// Delete removes a group of tenantID. A group of another tenant is not found.
+func (r *GroupRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM groups WHERE tenant_id = $1 AND id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete group: %w", err)
 	}
@@ -730,100 +718,6 @@ func (r *GroupRepository) ListGroupIDsByUser(ctx context.Context, tenantID, user
 // =============================================================================
 // Permission Set Assignment
 // =============================================================================
-
-// AssignPermissionSet assigns a permission set to a group.
-func (r *GroupRepository) AssignPermissionSet(ctx context.Context, groupID, permissionSetID shared.ID, assignedBy *shared.ID) error {
-	query := `
-		INSERT INTO group_permission_sets (group_id, permission_set_id, assigned_at, assigned_by)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (group_id, permission_set_id) DO NOTHING
-	`
-
-	var assignedByStr sql.NullString
-	if assignedBy != nil {
-		assignedByStr = sql.NullString{String: assignedBy.String(), Valid: true}
-	}
-
-	_, err := r.db.ExecContext(ctx, query,
-		groupID.String(),
-		permissionSetID.String(),
-		time.Now().UTC(),
-		assignedByStr,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to assign permission set: %w", err)
-	}
-
-	return nil
-}
-
-// RemovePermissionSet removes a permission set from a group.
-func (r *GroupRepository) RemovePermissionSet(ctx context.Context, groupID, permissionSetID shared.ID) error {
-	query := `DELETE FROM group_permission_sets WHERE group_id = $1 AND permission_set_id = $2`
-
-	_, err := r.db.ExecContext(ctx, query, groupID.String(), permissionSetID.String())
-	if err != nil {
-		return fmt.Errorf("failed to remove permission set: %w", err)
-	}
-
-	return nil
-}
-
-// ListPermissionSetIDs lists permission set IDs assigned to a group.
-func (r *GroupRepository) ListPermissionSetIDs(ctx context.Context, groupID shared.ID) ([]shared.ID, error) {
-	query := `
-		SELECT permission_set_id
-		FROM group_permission_sets
-		WHERE group_id = $1
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, groupID.String())
-	if err != nil {
-		return nil, fmt.Errorf("failed to list permission set IDs: %w", err)
-	}
-	defer rows.Close()
-
-	var ids []shared.ID
-	for rows.Next() {
-		var idStr string
-		if err := rows.Scan(&idStr); err != nil {
-			return nil, fmt.Errorf("failed to scan permission set ID: %w", err)
-		}
-		id, _ := shared.IDFromString(idStr)
-		ids = append(ids, id)
-	}
-
-	return ids, rows.Err()
-}
-
-// ListGroupsWithPermissionSet lists groups that have a specific permission set.
-func (r *GroupRepository) ListGroupsWithPermissionSet(ctx context.Context, permissionSetID shared.ID) ([]*group.Group, error) {
-	query := `
-		SELECT g.id, g.tenant_id, g.name, g.slug, g.description, g.group_type,
-			   g.external_id, g.external_source, g.settings, g.notification_config,
-			   g.metadata, g.is_active, g.created_at, g.updated_at
-		FROM groups g
-		INNER JOIN group_permission_sets gps ON g.id = gps.group_id
-		WHERE gps.permission_set_id = $1
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, permissionSetID.String())
-	if err != nil {
-		return nil, fmt.Errorf("failed to list groups with permission set: %w", err)
-	}
-	defer rows.Close()
-
-	var groups []*group.Group
-	for rows.Next() {
-		g, err := r.scanGroupRow(rows)
-		if err != nil {
-			return nil, err
-		}
-		groups = append(groups, g)
-	}
-
-	return groups, rows.Err()
-}
 
 // =============================================================================
 // Helper Functions

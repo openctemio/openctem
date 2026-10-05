@@ -178,8 +178,11 @@ func (m *mockAITriageTenantRepo) Create(_ context.Context, _ *tenant.Tenant) err
 func (m *mockAITriageTenantRepo) GetBySlug(_ context.Context, _ string) (*tenant.Tenant, error) {
 	return nil, nil
 }
-func (m *mockAITriageTenantRepo) Update(_ context.Context, _ *tenant.Tenant) error { return nil }
-func (m *mockAITriageTenantRepo) Delete(_ context.Context, _ shared.ID) error      { return nil }
+func (m *mockAITriageTenantRepo) UpdateProfile(_ context.Context, _ *tenant.Tenant) error { return nil }
+func (m *mockAITriageTenantRepo) UpdateSettingsSection(_ context.Context, _ shared.ID, _ string, _ any, _ bool, _ any) error {
+	return nil
+}
+func (m *mockAITriageTenantRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
 func (m *mockAITriageTenantRepo) ExistsBySlug(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }
@@ -195,13 +198,15 @@ func (m *mockAITriageTenantRepo) CreateMembership(_ context.Context, _ *tenant.M
 func (m *mockAITriageTenantRepo) GetMembership(_ context.Context, _, _ shared.ID) (*tenant.Membership, error) {
 	return nil, nil
 }
-func (m *mockAITriageTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID) (*tenant.Membership, error) {
+func (m *mockAITriageTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Membership, error) {
 	return nil, nil
 }
 func (m *mockAITriageTenantRepo) UpdateMembership(_ context.Context, _ *tenant.Membership) error {
 	return nil
 }
-func (m *mockAITriageTenantRepo) DeleteMembership(_ context.Context, _ shared.ID) error { return nil }
+func (m *mockAITriageTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, _ shared.ID) error {
+	return nil
+}
 func (m *mockAITriageTenantRepo) ListMembersByTenant(_ context.Context, _ shared.ID) ([]*tenant.Membership, error) {
 	return nil, nil
 }
@@ -238,13 +243,15 @@ func (m *mockAITriageTenantRepo) CreateInvitation(_ context.Context, _ *tenant.I
 func (m *mockAITriageTenantRepo) GetInvitationByToken(_ context.Context, _ string) (*tenant.Invitation, error) {
 	return nil, nil
 }
-func (m *mockAITriageTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID) (*tenant.Invitation, error) {
+func (m *mockAITriageTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Invitation, error) {
 	return nil, nil
 }
 func (m *mockAITriageTenantRepo) UpdateInvitation(_ context.Context, _ *tenant.Invitation) error {
 	return nil
 }
-func (m *mockAITriageTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID) error { return nil }
+func (m *mockAITriageTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID, _ shared.ID) error {
+	return nil
+}
 func (m *mockAITriageTenantRepo) ListPendingInvitationsByTenant(_ context.Context, _ shared.ID) ([]*tenant.Invitation, error) {
 	return nil, nil
 }

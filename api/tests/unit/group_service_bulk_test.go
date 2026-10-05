@@ -180,8 +180,8 @@ func (m *mockGroupRepoForBulk) Create(_ context.Context, _ *group.Group) error {
 func (m *mockGroupRepoForBulk) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForBulk) Update(_ context.Context, _ *group.Group) error { return nil }
-func (m *mockGroupRepoForBulk) Delete(_ context.Context, _ shared.ID) error    { return nil }
+func (m *mockGroupRepoForBulk) Update(_ context.Context, _ *group.Group) error           { return nil }
+func (m *mockGroupRepoForBulk) Delete(_ context.Context, _ shared.ID, _ shared.ID) error { return nil }
 func (m *mockGroupRepoForBulk) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }
@@ -220,18 +220,6 @@ func (m *mockGroupRepoForBulk) ListGroupsByUser(_ context.Context, _, _ shared.I
 	return nil, nil
 }
 func (m *mockGroupRepoForBulk) ListGroupIDsByUser(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-func (m *mockGroupRepoForBulk) AssignPermissionSet(_ context.Context, _, _ shared.ID, _ *shared.ID) error {
-	return nil
-}
-func (m *mockGroupRepoForBulk) RemovePermissionSet(_ context.Context, _, _ shared.ID) error {
-	return nil
-}
-func (m *mockGroupRepoForBulk) ListPermissionSetIDs(_ context.Context, _ shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-func (m *mockGroupRepoForBulk) ListGroupsWithPermissionSet(_ context.Context, _ shared.ID) ([]*group.Group, error) {
 	return nil, nil
 }
 

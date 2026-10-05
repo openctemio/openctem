@@ -79,6 +79,9 @@ func (h *SensorControlV2Handler) Features() []string {
 	if h.ingest != nil {
 		out = append(out, protov2.FeatureLocalPolicy)
 	}
+	if h.commands != nil {
+		out = append(out, protov2.FeatureCapacity, protov2.FeatureRefusal)
+	}
 	return out
 }
 
@@ -391,18 +394,32 @@ const maxManifestDigestLen = 71
 // =============================================================================
 
 // PollCommands handles GET /api/v2/sensor/commands?limit=n: the commands this
-// sensor may claim now, by the v1 poll's predicate.
+// sensor may claim now, by the v1 poll's predicate, in the fair dispatch
+// order. With the capacity feature they come back already claimed (claim-N).
 func (h *SensorControlV2Handler) PollCommands(w http.ResponseWriter, r *http.Request) {
 	s := sensorForV2(w, r)
 	if s == nil {
 		return
 	}
 	limit := parseQueryInt(r.URL.Query().Get("limit"), 10)
-	cmds, err := h.commands.service.Poll(r.Context(), command.PollInput{
-		TenantID: s.TenantID.String(), SensorID: s.ID.String(),
-		Capabilities: s.EffectiveCapabilities(), Limit: limit,
-		MaxScanCommands: freeSlotsNow(s),
-	})
+	var (
+		cmds []*commanddom.Command
+		err  error
+	)
+	if protov2.HasFeature(r.Header.Values(protov2.HeaderSensorFeatures), protov2.FeatureCapacity) {
+		// Claim-N: the listed commands are claimed for this sensor.
+		cmds, err = h.commands.service.Claim(r.Context(), command.ClaimInput{
+			TenantID: s.TenantID.String(), SensorID: s.ID.String(),
+			Capabilities: s.EffectiveCapabilities(), Limit: limit,
+			MaxJobs: s.EffectiveMaxConcurrentJobs(), ReportedFree: freeSlotsNow(s),
+		})
+	} else {
+		cmds, err = h.commands.service.Poll(r.Context(), command.PollInput{
+			TenantID: s.TenantID.String(), SensorID: s.ID.String(),
+			Capabilities: s.EffectiveCapabilities(), Limit: limit,
+			MaxScanCommands: freeSlotsNow(s),
+		})
+	}
 	if err != nil {
 		h.internal(w, "commands", err)
 		return
@@ -489,6 +506,9 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		in.ErrorMessage = req.ErrorMessage
+		if req.Refusal != nil {
+			in.Refusal = &sensor.DispatchRefusal{Layer: req.Refusal.Layer, Rule: req.Refusal.Rule, Detail: req.Refusal.Detail}
+		}
 	default:
 		var ignored struct{}
 		if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &ignored) {
@@ -512,7 +532,10 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			h.commands.triggerSimulationFinalize(res.Command)
 			h.commands.triggerCoverageAutoResolve(res.Command)
 		case command.TransitionFail:
-			h.commands.triggerPipelineFailed(r.Context(), res.Command, in.ErrorMessage)
+			// A refused job re-queued to another sensor has not failed.
+			if res.Command.Status == commanddom.CommandStatusFailed {
+				h.commands.triggerPipelineFailed(r.Context(), res.Command, res.Command.ErrorMessage)
+			}
 		}
 	}
 	writeV2JSON(w, http.StatusOK, toV2Command(res.Command))

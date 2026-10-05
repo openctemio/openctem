@@ -11,7 +11,6 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/certmonitor"
-	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -22,10 +21,7 @@ type AttributionRepository struct {
 	db *DB
 }
 
-var (
-	_ certmonitor.AttributionStore = (*AttributionRepository)(nil)
-	_ scan.AttributionGate         = (*AttributionRepository)(nil)
-)
+var _ certmonitor.AttributionStore = (*AttributionRepository)(nil)
 
 // NewAttributionRepository creates the repository.
 func NewAttributionRepository(db *DB) *AttributionRepository {
@@ -205,9 +201,10 @@ func (r *AttributionRepository) Get(ctx context.Context, tenantID shared.ID, ass
 	return view, found, rows.Err()
 }
 
-// ActiveCheckBlocked returns the subset of the given assets whose
-// attribution forbids active checks (any stored state other than confirmed).
-// Assets without a record are legacy and allowed.
+// ActiveCheckBlocked returns the subset of the given assets whose stored
+// attribution is not confirmed. It reads records only (the finding priority
+// cap uses it); the active-scan gate, which also refuses unattributed and
+// rejected-parent names, is easm.ActiveGate.
 func (r *AttributionRepository) ActiveCheckBlocked(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.State, error) {
 	out := map[string]attribution.State{}
 	if len(assetIDs) == 0 {
@@ -242,8 +239,13 @@ func (r *AttributionRepository) SaveDecision(ctx context.Context, tenantID share
 	if id, err := shared.IDFromString(decidedBy); err == nil {
 		by = id.String()
 	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("save attribution decision: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
 	var got string
-	err := r.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, reason, decided_by, decided_at)
 		SELECT a.id, a.tenant_id, $3, 0, '', (SELECT u.id FROM users u WHERE u.id = $4::uuid), now()
 		FROM assets a WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
@@ -258,6 +260,12 @@ func (r *AttributionRepository) SaveDecision(ctx context.Context, tenantID share
 		return false, nil
 	}
 	if err != nil {
+		return false, fmt.Errorf("save attribution decision: %w", err)
+	}
+	if err := syncTombstones(ctx, tx, tenantID, []string{got}, state, by); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
 		return false, fmt.Errorf("save attribution decision: %w", err)
 	}
 	return true, nil

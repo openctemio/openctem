@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/openctemio/ctis"
 
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
@@ -44,6 +46,9 @@ type AssetProcessor struct {
 	identityReviewer IdentityReviewer
 	propsValidator   *validator.PropertiesValidator
 	logger           *logger.Logger
+	// ports reads and closes open_port assets (research/22 P0-6; nil = ports
+	// are only ever added).
+	ports PortReconciler
 
 	// assetsDiscoveredCallback receives the assets THIS ingest actually
 	// inserted (nil = disabled). It drives the `asset_discovered` workflow
@@ -343,6 +348,12 @@ func (p *AssetProcessor) processBatch(
 		}
 	}()
 
+	// Open ports listed on an address become open_port assets that go
+	// through the rules below like any reported asset (research/22 P0-6).
+	if n := expandOpenPorts(report); n > 0 {
+		p.logger.Debug("expanded open ports into port assets", "count", n)
+	}
+
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),
@@ -399,9 +410,8 @@ func (p *AssetProcessor) processBatch(
 			continue
 		}
 		// Normalize name before lookup so it matches existing normalized assets
-		assetType := mapCTISAssetType(ctisAsset.Type)
-		coreType, subType := asset.ResolveTypeAlias(assetType)
-		name = asset.NormalizeName(name, coreType, subType)
+		rt := resolveCTISAssetType(ctisAsset)
+		name = asset.NormalizeName(name, rt.normType, rt.normSubType)
 		if name == "" {
 			continue
 		}
@@ -473,9 +483,9 @@ func (p *AssetProcessor) processBatch(
 		}
 
 		// Normalize name (same as Step 1)
-		assetType := mapCTISAssetType(ctisAsset.Type)
-		coreType, subType := asset.ResolveTypeAlias(assetType)
-		normalizedName := asset.NormalizeName(name, coreType, subType)
+		rt := resolveCTISAssetType(ctisAsset)
+		normalizedName := asset.NormalizeName(name, rt.normType, rt.normSubType)
+		coreType := rt.stored.Type
 		if normalizedName == "" {
 			continue
 		}
@@ -486,6 +496,12 @@ func (p *AssetProcessor) processBatch(
 		// ownership, identifiers or reactivation.
 		mergeInto := func(existing *asset.Asset) {
 			id := existing.ID().String()
+			// An upload's actor may not touch an existing asset outside
+			// their data scope at all (Options.Actor).
+			if !isNew[id] && scope.actorDenies(existing.ID()) {
+				skipOutOfScope(output, ctisAsset.ID)
+				return
+			}
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
 				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
@@ -522,6 +538,12 @@ func (p *AssetProcessor) processBatch(
 		}
 		// createNew inserts this report asset as a new asset.
 		createNew := func() {
+			// A restricted upload's actor creates no asset: it could not see
+			// it, and skipping it answers like a hidden existing asset.
+			if scope.actorRestricted() {
+				skipOutOfScope(output, ctisAsset.ID)
+				return
+			}
 			newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
 			if createErr != nil {
 				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, shortName(normalizedName), createErr))
@@ -633,8 +655,7 @@ func (p *AssetProcessor) processBatch(
 			switch coreType {
 			case asset.AssetTypeRepository:
 				result, corrErr = p.correlator.CorrelateRepository(ctx, tenantID, normalizedName, "")
-			case asset.AssetTypeCloudAccount, asset.AssetTypeIdentity,
-				asset.AssetTypeIAMUser, asset.AssetTypeIAMRole, asset.AssetTypeServiceAccount:
+			case asset.AssetTypeCloudAccount, asset.AssetTypeIdentity:
 				// Try external_id from properties (account_id, arn, etc.)
 				props := p.buildPropertiesFromCTIS(ctisAsset)
 				externalID := ""
@@ -780,6 +801,36 @@ func (p *AssetProcessor) processBatch(
 		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered, excl)
 	}
 
+	// Step 9: Ports: address → port edges, host name → address, and ports a
+	// port scan no longer sees are closed (research/22 P0-6).
+	p.surfacePorts(ctx, tenantID, report, existingMap, func(id shared.ID) bool {
+		if scope == nil || scope.all {
+			return true
+		}
+		for ref := range alterRefs {
+			if mid, ok := assetMap[ref]; ok && mid == id {
+				return true
+			}
+		}
+		return false
+	})
+
+	// Step 8: Typed edges from related_assets (service -> the certificate
+	// it served).
+	if p.relRepo != nil {
+		p.createRelatedAssetRelationships(ctx, tenantID, report, assetMap, alterRefs)
+	}
+
+	// What this ingest wrote, for attribution (scan_attribution.go): every
+	// asset it created (report assets, root domains, resolved addresses) and
+	// every existing one it updated.
+	for _, a := range discovered {
+		scope.note(a, a.ID(), true)
+	}
+	for _, a := range updateAssets {
+		scope.note(a, a.ID(), false)
+	}
+
 	// Announce every asset this ingest created (report assets plus the root
 	// domains and resolved IPs derived from them) in ONE callback, so the
 	// workflow trigger and the notifier see the batch as a whole.
@@ -877,6 +928,15 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		if !isValidDomainName(rootDomain) {
 			continue
 		}
+		// The report names the root; it must be a registrable parent of the
+		// name it came with, or a sensor could create any domain (and through
+		// it a Certificate Transparency watch) it likes (research/22b S2).
+		rootDomain = strings.ToLower(strings.TrimSuffix(rootDomain, "."))
+		if !isRegistrableParent(rootDomain, getAssetName(ctisAsset)) {
+			p.logger.Warn("ingest: root_domain is not a registrable parent of the subdomain; not created",
+				"root_domain", logger.SanitizeValue(rootDomain), "subdomain", logger.SanitizeValue(getAssetName(ctisAsset)))
+			continue
+		}
 
 		// Skip if root domain already exists in current batch
 		if _, exists := existingMap[rootDomain]; exists {
@@ -969,6 +1029,21 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		"created", created,
 		"domains", domainNames,
 	)
+}
+
+// isRegistrableParent reports whether root is a strict parent of name and
+// is itself registrable: at or below its public suffix plus one label
+// (example.com, example.co.uk; never com or co.uk).
+func isRegistrableParent(root, name string) bool {
+	name = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
+	if root == "" || !strings.HasSuffix(name, "."+root) {
+		return false
+	}
+	etld1, err := publicsuffix.EffectiveTLDPlusOne(root)
+	if err != nil {
+		return false
+	}
+	return root == etld1 || strings.HasSuffix(root, "."+etld1)
 }
 
 // createSubdomainRelationships creates member_of relationships between subdomain and parent domain assets.
@@ -1699,9 +1774,13 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	ctisAsset *ctis.Asset,
 	tool *ctis.Tool,
 ) (*asset.Asset, error) {
-	rawType := mapCTISAssetType(ctisAsset.Type)
-	// Resolve type aliases: e.g., "firewall" → type=network, sub_type=firewall
-	coreType, subType := asset.ResolveTypeAlias(rawType)
+	// Resolve aliases and legacy sub-types to the stored (type, sub_type):
+	// e.g. "firewall" → (network, firewall). Aliases are never stored.
+	rt := resolveCTISAssetType(ctisAsset)
+	if rt.stored.NativeSubType != "" {
+		p.logger.Warn("unknown asset sub_type from sensor kept as x_native_sub_type",
+			"asset_type", string(rt.stored.Type), "sub_type", logger.SanitizeValue(rt.stored.NativeSubType))
+	}
 	criticality := mapCTISCriticality(ctisAsset.Criticality)
 
 	name := getAssetName(ctisAsset)
@@ -1715,7 +1794,7 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	// assets.name varchar(255) and failed the whole report's upsert.
 	// Create with the sub-type so the stored name is normalized with the same
 	// (type, sub-type) key the lookup above used (RFC-043 section 10).
-	newAsset, err := asset.NewAssetWithSubType(name, coreType, subType, criticality)
+	newAsset, err := asset.NewAssetWithSubType(name, rt.normType, rt.normSubType, criticality)
 	if err != nil {
 		return nil, err
 	}
@@ -1751,13 +1830,9 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		newAsset.AddTag(tag)
 	}
 
-	// Promote sub_type from properties if not already set via TypeAliases
-	if newAsset.SubType() == "" {
-		if st, ok := ctisAsset.Properties["sub_type"].(string); ok && st != "" {
-			newAsset.SetSubType(st)
-			delete(ctisAsset.Properties, "sub_type")
-		}
-	}
+	// properties.sub_type was resolved with the type above; it is a column,
+	// not a property.
+	delete(ctisAsset.Properties, "sub_type")
 
 	// Set discovery info
 	discoverySource := legacyv1.DiscoverySourceSensor
@@ -1786,9 +1861,11 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		newAsset.SetOwnerRef(ownerRef)
 	}
 
-	// Build and set properties (with validation)
+	// Build and set properties (with validation), then what the input type
+	// implied (sub-type, provider, attributes) where nothing is set.
 	properties := p.buildPropertiesFromCTIS(ctisAsset)
 	newAsset.SetProperties(properties)
+	newAsset.ApplyResolvedType(rt.stored)
 
 	// Carry the scanner's explicit CTEM signals that were previously dropped at
 	// this seam — internet-exposure, compliance scope, data classification, and
@@ -1852,10 +1929,11 @@ func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset)
 // normalisation (normalizeHostIPProperties) moves the legacy `ip` string into
 // `ip_addresses` and deletes `ip`, so reading `ip` alone never saw a host's IP.
 func inferAssetExposure(a *asset.Asset) asset.Exposure {
-	switch a.Type() {
-	case asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeCertificate,
-		asset.AssetTypeWebsite, asset.AssetTypeAPI:
-		return asset.ExposurePublic
+	// Internet-facing by nature, declared in the registry (exposure_default):
+	// it used to compare against website/api, which ingest never stores, so
+	// web applications and APIs were never marked public (RFC-042 §6.3.8).
+	if e := asset.DefaultExposure(a.Type(), a.SubType()); e != asset.ExposureUnknown {
+		return e
 	}
 	for _, ip := range ExtractAllIPs(a.Properties(), a.Name()) {
 		if isPublicIP(ip) {
@@ -1916,18 +1994,10 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 		}
 	}
 
-	// Promote sub_type if existing asset doesn't have one
-	if existing.SubType() == "" {
-		// Try explicit sub_type from CTIS properties
-		if st, ok := ctisAsset.Properties["sub_type"].(string); ok && st != "" {
-			existing.SetSubType(st)
-		} else if ctisAsset.Type != "" {
-			// Try TypeAliases inference (e.g., "firewall" → network + firewall)
-			if _, subType := asset.ResolveTypeAlias(asset.AssetType(ctisAsset.Type)); subType != "" {
-				existing.SetSubType(subType)
-			}
-		}
-	}
+	// Fill the sub-type (and provider, attributes) the report implies when the
+	// existing asset has none; only from the registry's closed list, and
+	// only for an asset of the same type.
+	existing.ApplyResolvedType(resolveCTISAssetType(ctisAsset).stored)
 
 	// Update discovery tool if not set
 	if existing.DiscoveryTool() == "" && tool != nil {

@@ -50,6 +50,19 @@ type Config struct {
 	// AdminAuditRetention controls pruning of the platform-level
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
+
+	// AuditRetention controls the tenant audit log retention (hash-chain
+	// prefix archive and prune).
+	AuditRetention AuditRetentionConfig
+}
+
+// AuditRetentionConfig controls tenant audit-log retention. Entries older than
+// Days are written to a gzip JSONL archive under ArchiveDir, the chain head
+// they leave is recorded as an anchor, then they are deleted. Without an
+// ArchiveDir nothing is deleted. Days below 365 are raised to 365.
+type AuditRetentionConfig struct {
+	Days       int    // AUDIT_RETENTION_DAYS, default 365, minimum 365
+	ArchiveDir string // AUDIT_ARCHIVE_DIR, default "" (retention off)
 }
 
 // AdminAuditRetentionConfig controls the admin-audit-log retention controller.
@@ -133,6 +146,12 @@ type IngestConfig struct {
 	// "would resolve" audit entry, no state change) or "enforce".
 	// INGEST_COVERAGE_AUTO_RESOLVE.
 	CoverageAutoResolve string
+
+	// SourceResolve is the mode of source-asserted resolve: a connector
+	// source (Tenable.sc) reporting a finding as mitigated resolves the
+	// matching open finding (RFC-047 §7.6): "off", "dry_run" (default: count
+	// and log, no state change) or "enforce". INGEST_SOURCE_RESOLVE.
+	SourceResolve string
 }
 
 // AsyncEnabled reports whether async ingest mode is on.
@@ -735,9 +754,10 @@ type SensorConfig struct {
 	// EASMDNSChecksEnabled toggles the daily DNS-only EASM checks (dangling
 	// CNAME/NS, email posture; RFC-036 P1). Passive: the platform's resolver
 	// is asked about the tenant's own names. EASM_DNS_CHECKS_ENABLED, default
-	// false: daily background work across every tenant waits for the scans
-	// P1 work (claim-N with SKIP LOCKED, controller leases, write
-	// amplification); an operator turns it on deliberately until then.
+	// true (research/22 owner decision E3): cheap T0 checks for every tenant
+	// with the attack-surface module; each tenant's run holds a controller
+	// lease, and the per-run name cap and QPS bound the work. Set false to
+	// turn them off platform-wide.
 	EASMDNSChecksEnabled bool
 	// EASMDNSResolver is the recursive resolver (host[:port]) the checks ask.
 	// Empty: the first nameserver of /etc/resolv.conf. EASM_DNS_RESOLVER.
@@ -1156,7 +1176,7 @@ func Load() (*Config, error) {
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
 			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
-			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", false),
+			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
 			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
 			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),
 			EASMDNSInterval:             getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
@@ -1192,11 +1212,16 @@ func Load() (*Config, error) {
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
 			CoverageAutoResolve:   getEnv("INGEST_COVERAGE_AUTO_RESOLVE", "dry_run"),
+			SourceResolve:         getEnv("INGEST_SOURCE_RESOLVE", "dry_run"),
 		},
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.
 			Public: getEnvBool("METRICS_PUBLIC", false),
 			Token:  getEnv("METRICS_TOKEN", ""),
+		},
+		AuditRetention: AuditRetentionConfig{
+			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
+			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),

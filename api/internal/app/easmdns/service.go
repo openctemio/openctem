@@ -61,6 +61,9 @@ type Target struct {
 type Store interface {
 	DueTargets(ctx context.Context, tenantID shared.ID, kind string, checkedBefore time.Time, limit int) ([]Target, error)
 	SaveState(ctx context.Context, tenantID, assetID shared.ID, kind, outcome, lastErr string, at time.Time) error
+	// SaveNameState records the outcome for a name target (a root-domain
+	// seed or verified domain with no domain asset; email check only).
+	SaveNameState(ctx context.Context, tenantID shared.ID, name, kind, outcome, lastErr string, at time.Time) error
 	ResolveAuto(ctx context.Context, tenantID shared.ID, source string, fingerprints []string, note string) (int, error)
 	ReopenAuto(ctx context.Context, tenantID shared.ID, source string, fingerprints []string, note string) (int, error)
 	TryLockTenant(ctx context.Context, tenantID shared.ID, kind string) (func(), bool, error)
@@ -171,7 +174,13 @@ func (s *Service) run(ctx context.Context, tenantID shared.ID, kind string, chec
 			}
 			clearFPs = append(clearFPs, clear...)
 		}
-		if err := s.store.SaveState(ctx, tenantID, t.AssetID, kind, outcome, errText, s.now()); err != nil {
+		var saveErr error
+		if t.AssetID.IsZero() {
+			saveErr = s.store.SaveNameState(ctx, tenantID, t.Name, kind, outcome, errText, s.now())
+		} else {
+			saveErr = s.store.SaveState(ctx, tenantID, t.AssetID, kind, outcome, errText, s.now())
+		}
+		if err := saveErr; err != nil {
 			s.logger.Warn("easm dns: failed to save state", "tenant_id", tenantID.String(), "error", err)
 		}
 	}
@@ -212,13 +221,19 @@ func (s *Service) checkDanglingTarget(ctx context.Context, tenantID shared.ID, t
 	if err != nil {
 		return OutcomeUnknown, nil, nil, err
 	}
+	// A confirmed takeover of this name stays open while the CNAME dangles,
+	// and is resolved with it once the record is fixed or removed.
+	takeover, err := takeoverEvent(tenantID, t, nil, nil)
+	if err != nil {
+		return OutcomeUnknown, nil, nil, err
+	}
 	switch d.Outcome {
 	case OutcomeDanglingCNAME:
 		return d.Outcome, []*exposuredom.ExposureEvent{cname}, []string{ns.Fingerprint()}, nil
 	case OutcomeDanglingNS:
-		return d.Outcome, []*exposuredom.ExposureEvent{ns}, []string{cname.Fingerprint()}, nil
+		return d.Outcome, []*exposuredom.ExposureEvent{ns}, []string{cname.Fingerprint(), takeover.Fingerprint()}, nil
 	default:
-		return OutcomeOK, nil, []string{cname.Fingerprint(), ns.Fingerprint()}, nil
+		return OutcomeOK, nil, []string{cname.Fingerprint(), ns.Fingerprint(), takeover.Fingerprint()}, nil
 	}
 }
 
@@ -252,6 +267,10 @@ func danglingEvent(tenantID shared.ID, t Target, typ exposuredom.EventType, d Da
 		details["missing_name_servers"] = d.Missing
 		details["name_servers_total"] = d.Total
 	}
+	if len(d.Lame) > 0 {
+		details["lame_name_servers"] = d.Lame
+		details["name_servers_total"] = d.Total
+	}
 	ev, err := exposuredom.NewExposureEvent(tenantID, typ, sev, title, Source, details)
 	if err != nil {
 		return nil, err
@@ -260,6 +279,10 @@ func danglingEvent(tenantID shared.ID, t Target, typ exposuredom.EventType, d Da
 	if typ == exposuredom.EventTypeDanglingNS {
 		desc = fmt.Sprintf("%s is delegated to name servers that do not exist (%s): %s. Remove the delegation or fix the name servers.",
 			t.Name, strings.Join(d.Missing, ", "), d.Reason)
+		if len(d.Lame) > 0 {
+			desc = fmt.Sprintf("%s is delegated to name servers that do not serve the zone (%s): %s. Remove the delegation or recreate the zone at the provider.",
+				t.Name, strings.Join(append(append([]string{}, d.Missing...), d.Lame...), ", "), d.Reason)
+		}
 	}
 	ev.UpdateDescription(desc)
 	id := t.AssetID

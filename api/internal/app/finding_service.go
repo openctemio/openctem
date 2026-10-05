@@ -8,6 +8,7 @@ import "github.com/openctemio/openctem/api/internal/app/finding"
 
 type (
 	VulnerabilityService            = finding.VulnerabilityService
+	AssigneeChecker                 = finding.AssigneeChecker
 	FindingActionsService           = finding.FindingActionsService
 	SourceAnalyticsService          = finding.SourceAnalyticsService
 	SourceAnalytics                 = finding.SourceAnalytics
@@ -56,6 +57,8 @@ type (
 	KEVData                       = finding.KEVData
 	KEVRepository                 = finding.KEVRepository
 	ListFindingsInput             = finding.ListFindingsInput
+	FilterCaller                  = finding.FilterCaller
+	ExportResult                  = finding.ExportResult
 	ListVulnerabilitiesInput      = finding.ListVulnerabilitiesInput
 	ListActiveCVEsInput           = finding.ListActiveCVEsInput
 	PriorityAuditEntry            = finding.PriorityAuditEntry
@@ -71,10 +74,14 @@ type (
 	TenantLister                  = finding.TenantLister
 	UpdateCommentInput            = finding.UpdateCommentInput
 	UpdateFindingStatusInput      = finding.UpdateFindingStatusInput
+	MarkDuplicateInput            = finding.MarkDuplicateInput
 	UpdateRemediationInput        = finding.UpdateRemediationInput
 	UpdateVulnerabilityInput      = finding.UpdateVulnerabilityInput
 	VerifyByFilterInput           = finding.VerifyByFilterInput
 )
+
+// MaxExportRows caps one findings export.
+const MaxExportRows = finding.MaxExportRows
 
 var (
 	NewVulnerabilityService                = finding.NewVulnerabilityService
@@ -96,4 +103,6 @@ var (
 	ErrBulkNegativeSize        = finding.ErrBulkNegativeSize
 	ErrBulkTooLarge            = finding.ErrBulkTooLarge
 	ErrPriorityFloodSuppressed = finding.ErrPriorityFloodSuppressed
+	ErrInvalidAssignee         = finding.ErrInvalidAssignee
+	ErrFindingAssetNotFound    = finding.ErrFindingAssetNotFound
 )

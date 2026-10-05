@@ -12,6 +12,7 @@
  */
 
 import { useMemo } from 'react'
+import { ADMIN_ONLY_PERMISSIONS } from '@/lib/permissions/constants'
 import { usePermissionModules } from './use-roles'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 // Note: PermissionModule is re-exported from usePermissionModules, no need to import here
@@ -128,7 +129,6 @@ const PERMISSION_TO_LICENSE_MODULE: Record<string, string> = {
   'asset-groups': 'assets',
   'scan-profiles': 'scans',
   'scm-connections': 'integrations',
-  'permission-sets': 'team',
   'assignment-rules': 'team',
   'tenant-tools': 'scans',
 
@@ -140,7 +140,6 @@ const PERMISSION_TO_LICENSE_MODULE: Record<string, string> = {
   groups: 'team',
   roles: 'team',
   members: 'team',
-  permission_sets: 'team',
   assignment_rules: 'team',
   workflows: 'findings',
   billing: 'settings',
@@ -183,12 +182,27 @@ function isModuleAvailable(permissionModuleId: string, enabledModuleIds: string[
  * }
  * ```
  */
-export function useTenantPermissionModules(filterByPlan: boolean = true) {
+export function useTenantPermissionModules(
+  filterByPlan: boolean = true,
+  { forCustomRole = false }: { forCustomRole?: boolean } = {}
+) {
   const {
-    modules: allModules,
+    modules: rawModules,
     isLoading: modulesLoading,
     error: modulesError,
   } = usePermissionModules()
+  // A custom role may not carry the admin-only permissions (settings decision
+  // B1; the API refuses them), so the role editors do not offer them.
+  const allModules = useMemo(
+    () =>
+      forCustomRole
+        ? rawModules.map((m) => ({
+            ...m,
+            permissions: m.permissions.filter((p) => !ADMIN_ONLY_PERMISSIONS.includes(p.id)),
+          }))
+        : rawModules,
+    [rawModules, forCustomRole]
+  )
   const { moduleIds: enabledModuleIds, isLoading: tenantModulesLoading } = useTenantModules()
 
   const filteredModules = useMemo(() => {

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -77,13 +78,20 @@ func (h *RemediationCampaignHandler) List(w http.ResponseWriter, r *http.Request
 
 	resp := make([]RemediationCampaignResponse, 0, len(result.Data))
 	for _, c := range result.Data {
-		item := toRemediationCampaignResp(c)
+		item := h.campaignResp(r.Context(), c)
 		if t := tickets[c.ID().String()]; t != nil {
 			item.Ticket = t
 		}
 		resp = append(resp, item)
 	}
 	writeJSON(w, http.StatusOK, pagination.NewResult(resp, result.Total, page))
+}
+
+// campaignResp builds a campaign response with the progress counts the
+// caller may see: a restricted member's in-scope findings only (L-18).
+func (h *RemediationCampaignHandler) campaignResp(ctx context.Context, c *remediation.Campaign) RemediationCampaignResponse {
+	h.service.ApplyViewerScope(ctx, c)
+	return toRemediationCampaignResp(c)
 }
 
 // Create creates a new campaign.
@@ -115,7 +123,7 @@ func (h *RemediationCampaignHandler) Create(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, toRemediationCampaignResp(campaign))
+	writeJSON(w, http.StatusCreated, h.campaignResp(r.Context(), campaign))
 }
 
 // Get retrieves a campaign.
@@ -129,7 +137,7 @@ func (h *RemediationCampaignHandler) Get(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resp := toRemediationCampaignResp(campaign)
+	resp := h.campaignResp(r.Context(), campaign)
 	if tid, terr := shared.IDFromString(tenantID); terr == nil {
 		if link, lerr := h.service.CampaignTicketFor(r.Context(), tid, campaign.ID()); lerr == nil {
 			resp.Ticket = link
@@ -194,7 +202,7 @@ func (h *RemediationCampaignHandler) UpdateStatus(w http.ResponseWriter, r *http
 		h.handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
+	writeJSON(w, http.StatusOK, h.campaignResp(r.Context(), campaign))
 }
 
 // Update updates campaign fields (name, description, priority, tags, due_date).
@@ -223,7 +231,7 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 		h.handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
+	writeJSON(w, http.StatusOK, h.campaignResp(r.Context(), campaign))
 }
 
 // Refresh recomputes a campaign's finding counts/progress on demand and
@@ -237,7 +245,7 @@ func (h *RemediationCampaignHandler) Refresh(w http.ResponseWriter, r *http.Requ
 		h.handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
+	writeJSON(w, http.StatusOK, h.campaignResp(r.Context(), campaign))
 }
 
 // CreateTicket creates (or returns the existing) Jira epic for a campaign.
@@ -296,6 +304,9 @@ func (h *RemediationCampaignHandler) handleError(w http.ResponseWriter, err erro
 		apierror.NotFound("campaign not found").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		// e.g. resolving the campaign's findings without findings:verify.
+		apierror.Forbidden(err.Error()).WriteJSON(w)
 	default:
 		h.logger.Error("remediation campaign error", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)

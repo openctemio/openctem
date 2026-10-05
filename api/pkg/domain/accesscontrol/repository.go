@@ -16,7 +16,8 @@ type Repository interface {
 	DeleteAssetOwner(ctx context.Context, assetID, groupID shared.ID) error
 	ListAssetOwners(ctx context.Context, assetID shared.ID) ([]*AssetOwner, error)
 	ListAssetsByGroup(ctx context.Context, groupID shared.ID) ([]shared.ID, error)
-	ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, limit, offset int) ([]*AssetOwnerWithAsset, int64, error)
+	// scope limits the listed assets to the caller's data scope (nil: all).
+	ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, scope *shared.DataScope, limit, offset int) ([]*AssetOwnerWithAsset, int64, error)
 	ListGroupsByAsset(ctx context.Context, assetID shared.ID) ([]shared.ID, error)
 	CountAssetOwners(ctx context.Context, assetID shared.ID) (int64, error)
 	CountAssetsByGroups(ctx context.Context, groupIDs []shared.ID) (map[shared.ID]int, error)
@@ -71,7 +72,8 @@ type Repository interface {
 	// (asset_owners has no tenant_id column, so the principal is otherwise
 	// unscoped). Mirrors the `groups WHERE tenant_id` screen used on reads.
 	IsGroupInTenant(ctx context.Context, tenantID, groupID shared.ID) (bool, error)
-	// IsUserInTenant reports whether the user is a member of the tenant.
+	// IsUserInTenant reports whether the user is an ACTIVE member of the
+	// tenant (active membership and account).
 	// Mirrors the `tenant_members WHERE tenant_id` screen used on reads.
 	IsUserInTenant(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 
@@ -79,17 +81,6 @@ type Repository interface {
 	ListAccessibleAssets(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
 	CanAccessAsset(ctx context.Context, userID, assetID shared.ID) (bool, error)
 	GetUserAssetAccess(ctx context.Context, userID, assetID shared.ID) (*UserAssetAccess, error)
-	// HasAnyScopeAssignment checks if a user has any rows in user_accessible_assets.
-	// Used for backward compat: if false, user sees all data (no groups configured).
-	HasAnyScopeAssignment(ctx context.Context, tenantID, userID shared.ID) (bool, error)
-
-	// Group Permissions (custom overrides)
-	CreateGroupPermission(ctx context.Context, gp *GroupPermission) error
-	GetGroupPermission(ctx context.Context, groupID shared.ID, permissionID string) (*GroupPermission, error)
-	UpdateGroupPermission(ctx context.Context, gp *GroupPermission) error
-	DeleteGroupPermission(ctx context.Context, groupID shared.ID, permissionID string) error
-	ListGroupPermissions(ctx context.Context, groupID shared.ID) ([]*GroupPermission, error)
-	ListGroupPermissionsByEffect(ctx context.Context, groupID shared.ID, effect PermissionEffect) ([]*GroupPermission, error)
 
 	// Assignment Rules
 	CreateAssignmentRule(ctx context.Context, rule *AssignmentRule) error
@@ -149,7 +140,7 @@ type Repository interface {
 	// Scope rule controller queries
 	ListTenantsWithActiveScopeRules(ctx context.Context) ([]shared.ID, error)
 	ListGroupsWithActiveScopeRules(ctx context.Context, tenantID shared.ID) ([]shared.ID, error)
-	ListGroupsWithAssetGroupMatchRule(ctx context.Context, assetGroupID shared.ID) ([]shared.ID, error)
+	ListGroupsWithAssetGroupMatchRule(ctx context.Context, tenantID, assetGroupID shared.ID) ([]shared.ID, error)
 }
 
 // AssignmentRuleFilter contains filter options for listing assignment rules.

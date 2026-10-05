@@ -119,14 +119,22 @@ func (m *mockAuditRepo) GetByID(_ context.Context, id shared.ID) (*audit.AuditLo
 	return log, nil
 }
 
-func (m *mockAuditRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*audit.AuditLog, error) {
+func (m *mockAuditRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*audit.AuditLog, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.chainLogs == nil {
-		return nil, nil
+	if m.chainLogs != nil {
+		log, ok := m.chainLogs[id]
+		if !ok {
+			return nil, shared.ErrNotFound
+		}
+		return log, nil
 	}
-	log, ok := m.chainLogs[id]
-	if !ok {
+	m.getByIDCalls++
+	if m.getByIDErr != nil {
+		return nil, m.getByIDErr
+	}
+	log, ok := m.logs[id]
+	if !ok || log.TenantID() == nil || *log.TenantID() != tenantID {
 		return nil, shared.ErrNotFound
 	}
 	return log, nil
@@ -470,9 +478,11 @@ func TestAuditService_GetAuditLog_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit log: %v", err)
 	}
+	tenantID := shared.NewID()
+	log.WithTenantID(tenantID)
 	repo.logs[log.ID()] = log
 
-	result, err := svc.GetAuditLog(ctx, log.ID().String())
+	result, err := svc.GetAuditLog(ctx, tenantID, log.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -491,7 +501,7 @@ func TestAuditService_GetAuditLog_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	id := shared.NewID()
-	_, err := svc.GetAuditLog(ctx, id.String())
+	_, err := svc.GetAuditLog(ctx, shared.NewID(), id.String())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -505,11 +515,38 @@ func TestAuditService_GetAuditLog_NotFound(t *testing.T) {
 	}
 }
 
+// Another tenant's log, or a system log (tenant_id IS NULL), is not found by
+// the tenant-facing getter.
+func TestAuditService_GetAuditLog_OtherTenantOrSystemNotFound(t *testing.T) {
+	svc, repo := newTestAuditService()
+	ctx := context.Background()
+
+	other, err := audit.NewAuditLog(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1", audit.ResultSuccess)
+	if err != nil {
+		t.Fatalf("failed to create audit log: %v", err)
+	}
+	other.WithTenantID(shared.NewID())
+	repo.logs[other.ID()] = other
+
+	system, err := audit.NewAuditLog(audit.ActionUserCreated, audit.ResourceTypeUser, "user-2", audit.ResultSuccess)
+	if err != nil {
+		t.Fatalf("failed to create audit log: %v", err)
+	}
+	repo.logs[system.ID()] = system
+
+	caller := shared.NewID()
+	for _, id := range []shared.ID{other.ID(), system.ID()} {
+		if _, err := svc.GetAuditLog(ctx, caller, id.String()); !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("GetAuditLog(%s) = %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
 func TestAuditService_GetAuditLog_InvalidID(t *testing.T) {
 	svc, _ := newTestAuditService()
 	ctx := context.Background()
 
-	_, err := svc.GetAuditLog(ctx, "not-a-uuid")
+	_, err := svc.GetAuditLog(ctx, shared.NewID(), "not-a-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid id, got nil")
 	}
@@ -751,81 +788,6 @@ func TestAuditService_GetUserActivity_InvalidUserID(t *testing.T) {
 	}
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected ErrValidation, got %v", err)
-	}
-}
-
-// =============================================================================
-// CleanupOldLogs Tests
-// =============================================================================
-
-func TestAuditService_CleanupOldLogs_Success(t *testing.T) {
-	svc, repo := newTestAuditService()
-	ctx := context.Background()
-
-	repo.deleteOlderCount = 150
-
-	count, err := svc.CleanupOldLogs(ctx, 90)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	if repo.deleteOlderCalls != 1 {
-		t.Fatalf("expected 1 deleteOlderThan call, got %d", repo.deleteOlderCalls)
-	}
-
-	if count != 150 {
-		t.Errorf("expected count 150, got %d", count)
-	}
-
-	// Verify the before time is approximately correct (90 days ago)
-	expectedBefore := time.Now().AddDate(0, 0, -90)
-	diff := repo.lastDeleteBefore.Sub(expectedBefore)
-	if diff < -time.Second || diff > time.Second {
-		t.Errorf("expected delete before ~%v, got %v", expectedBefore, repo.lastDeleteBefore)
-	}
-}
-
-func TestAuditService_CleanupOldLogs_RetentionTooShort(t *testing.T) {
-	svc, repo := newTestAuditService()
-	ctx := context.Background()
-
-	// Should reject retention < 30 days
-	_, err := svc.CleanupOldLogs(ctx, 29)
-	if err == nil {
-		t.Fatal("expected error for retention < 30 days, got nil")
-	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
-	}
-
-	// Repo should not be called
-	if repo.deleteOlderCalls != 0 {
-		t.Fatalf("expected 0 deleteOlderThan calls, got %d", repo.deleteOlderCalls)
-	}
-
-	// Boundary: exactly 30 days should be accepted
-	repo.deleteOlderCount = 5
-	count, err := svc.CleanupOldLogs(ctx, 30)
-	if err != nil {
-		t.Fatalf("expected no error for retention = 30 days, got %v", err)
-	}
-	if count != 5 {
-		t.Errorf("expected count 5, got %d", count)
-	}
-}
-
-func TestAuditService_CleanupOldLogs_RepositoryError(t *testing.T) {
-	svc, repo := newTestAuditService()
-	ctx := context.Background()
-
-	repo.deleteOlderErr = errors.New("storage error")
-
-	count, err := svc.CleanupOldLogs(ctx, 90)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if count != 0 {
-		t.Errorf("expected count 0 on error, got %d", count)
 	}
 }
 

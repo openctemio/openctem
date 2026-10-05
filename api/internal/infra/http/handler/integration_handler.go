@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,21 +11,50 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
+// SetTenableSCConnector wires the Tenable.sc sensor connector: a sync of a
+// connector integration queues a connector_sync command for its sensor
+// (docs/rfcs/RFC-047-tenable-sc-sensor-connector.md).
+func (h *IntegrationHandler) SetTenableSCConnector(svc *tenablesc.Service) { h.connector = svc }
+
 // IntegrationHandler handles integration-related HTTP requests.
 type IntegrationHandler struct {
 	service              *app.IntegrationService
+	connector            *tenablesc.Service
 	validator            *validator.Validator
 	logger               *logger.Logger
 	testNotifRateLimiter *testNotificationRateLimiter
+	audit                *auditapp.AuditService
+}
+
+// SetAuditService wires the audit log for integration changes.
+func (h *IntegrationHandler) SetAuditService(a *auditapp.AuditService) { h.audit = a }
+
+// auditIntegration records an integration change. before/after are the
+// redacted API views, so credentials never reach the log; a credentials
+// change is flagged in metadata instead.
+func (h *IntegrationHandler) auditIntegration(r *http.Request, action auditdom.Action, id, name string,
+	before, after any, severity auditdom.Severity, message string, meta map[string]any) {
+	event := auditapp.NewChangeEvent(action, auditdom.ResourceTypeIntegration, id, integrationAuditView(before), integrationAuditView(after)).
+		WithResourceName(name).
+		WithSeverity(severity).
+		WithMessage(message)
+	for k, v := range meta {
+		event = event.WithMetadata(k, v)
+	}
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r), event)
 }
 
 // testNotificationRateLimiter limits test notification requests per user+integration.
@@ -661,6 +691,13 @@ func (h *IntegrationHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Suppress unused variable warning for userID (may be used for audit logging)
 	_ = userID
 
+	// An SCM connection additionally needs integrations:scm:write.
+	if integration.Category(req.Category) == integration.CategorySCM &&
+		!middleware.HasPermission(r.Context(), permission.SCMConnectionsWrite.String()) {
+		apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+		return
+	}
+
 	input := app.CreateIntegrationInput{
 		TenantID:        tenantID,
 		Name:            req.Name,
@@ -679,6 +716,10 @@ func (h *IntegrationHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	created := toIntegrationWithSCMResponse(intg)
+	h.auditIntegration(r, auditdom.ActionIntegrationCreated, created.ID, created.Name, nil, created,
+		auditdom.SeverityMedium, fmt.Sprintf("Integration %q created", created.Name),
+		map[string]any{"provider": created.Provider, "category": created.Category})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -782,6 +823,10 @@ func (h *IntegrationHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if !h.allowSCMChange(w, r, id, tenantID, permission.SCMConnectionsWrite) {
+		return
+	}
+
 	input := app.UpdateIntegrationInput{
 		Name:            req.Name,
 		Description:     req.Description,
@@ -791,11 +836,18 @@ func (h *IntegrationHandler) Update(w http.ResponseWriter, r *http.Request) {
 		SCMOrganization: req.SCMOrganization,
 	}
 
+	var before any
+	if prev, gerr := h.service.GetIntegration(r.Context(), id); gerr == nil && prev.TenantID().String() == tenantID {
+		before = toIntegrationResponse(prev)
+	}
+
 	intg, err := h.service.UpdateIntegration(r.Context(), id, tenantID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	updated := toIntegrationWithSCMResponse(intg)
+	h.auditIntegrationUpdate(r, updated.ID, updated.Name, before, toIntegrationResponse(intg.Integration), req.Credentials)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -826,10 +878,21 @@ func (h *IntegrationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.allowSCMChange(w, r, id, tenantID, permission.SCMConnectionsDelete) {
+		return
+	}
+
+	var before IntegrationResponse
+	if prev, gerr := h.service.GetIntegration(r.Context(), id); gerr == nil && prev.TenantID().String() == tenantID {
+		before = toIntegrationResponse(prev)
+	}
+
 	if err := h.service.DeleteIntegration(r.Context(), id, tenantID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditIntegration(r, auditdom.ActionIntegrationDeleted, id, before.Name, before, nil,
+		auditdom.SeverityHigh, fmt.Sprintf("Integration %q deleted", before.Name), nil)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -957,6 +1020,12 @@ func (h *IntegrationHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.connector != nil {
+		if done := h.syncConnector(w, r, tenantID, id); done {
+			return
+		}
+	}
+
 	intg, err := h.service.SyncIntegration(r.Context(), id, tenantID)
 	if err != nil {
 		h.handleServiceError(w, err)
@@ -966,6 +1035,48 @@ func (h *IntegrationHandler) Sync(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toIntegrationWithSCMResponse(intg))
+}
+
+// syncConnector queues a connector_sync for a Tenable.sc connector
+// integration and writes the response. It returns false, writing nothing,
+// when the integration is not a connector (the regular sync then runs). The
+// integration is read tenant-scoped: another tenant's id is not found.
+func (h *IntegrationHandler) syncConnector(w http.ResponseWriter, r *http.Request, tenantID, id string) bool {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant").WriteJSON(w)
+		return true
+	}
+	iid, err := shared.IDFromString(id)
+	if err != nil {
+		apierror.BadRequest("Invalid integration ID").WriteJSON(w)
+		return true
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   tenantID,
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	res, err := h.connector.RequestSync(r.Context(), tid, iid, tenablesc.TriggerManual, &actx)
+	switch {
+	case errors.Is(err, tenablesc.ErrNotConnector):
+		return false
+	case errors.Is(err, tenablesc.ErrSensorUnavailable), errors.Is(err, tenablesc.ErrDisabled):
+		var de *shared.DomainError
+		_ = errors.As(err, &de)
+		apierror.New(http.StatusConflict, apierror.Code(de.Code), de.Message).WriteJSON(w)
+		return true
+	case err != nil:
+		h.handleServiceError(w, err)
+		return true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toIntegrationResponse(res.Integration))
+	return true
 }
 
 // Enable handles POST /api/v1/integrations/{id}/enable
@@ -997,6 +1108,8 @@ func (h *IntegrationHandler) Enable(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditIntegration(r, auditdom.ActionIntegrationEnabled, id, intg.Name(), nil, nil,
+		auditdom.SeverityMedium, fmt.Sprintf("Integration %q enabled", intg.Name()), nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1032,6 +1145,8 @@ func (h *IntegrationHandler) Disable(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditIntegration(r, auditdom.ActionIntegrationDisabled, id, intg.Name(), nil, nil,
+		auditdom.SeverityMedium, fmt.Sprintf("Integration %q disabled", intg.Name()), nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1132,7 +1247,7 @@ type NotificationExtensionResponse struct {
 	ChannelID          string   `json:"channel_id,omitempty" example:"C123456"`            // Deprecated: use metadata.chat_id
 	ChannelName        string   `json:"channel_name,omitempty" example:"#security-alerts"` // Deprecated: use metadata.channel_name
 	EnabledSeverities  []string `json:"enabled_severities" example:"[\"critical\",\"high\"]"`
-	EnabledEventTypes  []string `json:"enabled_event_types" example:"[\"security_alert\",\"new_finding\",\"new_exposure\"]"`
+	EnabledEventTypes  []string `json:"enabled_event_types" example:"[\"new_finding\",\"new_exposure\"]"`
 	MessageTemplate    string   `json:"message_template,omitempty"`
 	IncludeDetails     bool     `json:"include_details" example:"true"`
 	MinIntervalMinutes int      `json:"min_interval_minutes" example:"5"`
@@ -1296,6 +1411,10 @@ func (h *IntegrationHandler) CreateNotification(w http.ResponseWriter, r *http.R
 		h.handleServiceError(w, err)
 		return
 	}
+	createdNotif := toIntegrationWithNotificationResponse(intg)
+	h.auditIntegration(r, auditdom.ActionIntegrationCreated, createdNotif.ID, createdNotif.Name, nil, createdNotif,
+		auditdom.SeverityMedium, fmt.Sprintf("Notification channel %q created", createdNotif.Name),
+		map[string]any{"provider": createdNotif.Provider, "category": createdNotif.Category})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -1372,11 +1491,18 @@ func (h *IntegrationHandler) UpdateNotification(w http.ResponseWriter, r *http.R
 		Metadata:           req.Metadata,
 	}
 
+	var beforeNotif any
+	if prev, gerr := h.service.GetNotificationIntegration(r.Context(), id, tenantID); gerr == nil {
+		beforeNotif = toIntegrationWithNotificationResponse(prev)
+	}
+
 	intg, err := h.service.UpdateNotificationIntegration(r.Context(), id, tenantID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	afterNotif := toIntegrationWithNotificationResponse(intg)
+	h.auditIntegrationUpdate(r, afterNotif.ID, afterNotif.Name, beforeNotif, afterNotif, req.Credentials)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1593,6 +1719,9 @@ func (h *IntegrationHandler) GetJiraWebhookSecret(w http.ResponseWriter, r *http
 		h.handleServiceError(w, err)
 		return
 	}
+	// The response carries the raw secret: every read is audited.
+	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRead, tenantID, "Jira inbound webhook", nil, nil,
+		auditdom.SeverityHigh, "Jira inbound webhook secret viewed", map[string]any{"provider": "jira"})
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(tenantID, secret))
@@ -1614,6 +1743,8 @@ func (h *IntegrationHandler) RotateJiraWebhookSecret(w http.ResponseWriter, r *h
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRotated, tenantID, "Jira inbound webhook", nil, nil,
+		auditdom.SeverityHigh, "Jira inbound webhook secret rotated", map[string]any{"provider": "jira"})
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(tenantID, secret))
@@ -1652,6 +1783,9 @@ func (h *IntegrationHandler) GetGitHubWebhookSecret(w http.ResponseWriter, r *ht
 		h.handleServiceError(w, err)
 		return
 	}
+	// The response carries the raw secret: every read is audited.
+	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRead, tenantID, "GitHub inbound webhook", nil, nil,
+		auditdom.SeverityHigh, "GitHub inbound webhook secret viewed", map[string]any{"provider": "github"})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(githubWebhookConfig(tenantID, secret))
 }
@@ -1669,6 +1803,8 @@ func (h *IntegrationHandler) RotateGitHubWebhookSecret(w http.ResponseWriter, r 
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditIntegration(r, auditdom.ActionIntegrationWebhookSecretRotated, tenantID, "GitHub inbound webhook", nil, nil,
+		auditdom.SeverityHigh, "GitHub inbound webhook secret rotated", map[string]any{"provider": "github"})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(githubWebhookConfig(tenantID, secret))
 }
@@ -1692,4 +1828,67 @@ func (h *IntegrationHandler) ImportRepositories(w http.ResponseWriter, r *http.R
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// allowSCMChange refuses a change to an SCM connection when the caller lacks
+// perm (integrations:scm:write or :delete) on top of the route's
+// integrations:manage. A missing or other-tenant integration passes through:
+// the service answers it as not found, in the tenant scope.
+func (h *IntegrationHandler) allowSCMChange(w http.ResponseWriter, r *http.Request, id, tenantID string, perm permission.Permission) bool {
+	intg, err := h.service.GetIntegration(r.Context(), id)
+	if err != nil || intg.TenantID().String() != tenantID || !intg.IsSCM() {
+		return true
+	}
+	if middleware.HasPermission(r.Context(), perm.String()) {
+		return true
+	}
+	apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+	return false
+}
+
+// auditIntegrationUpdate records an integration update. A credentials change
+// or a new destination (base URL) is High: either can redirect where data or
+// tokens go.
+func (h *IntegrationHandler) auditIntegrationUpdate(r *http.Request, id, name string, before, after any, credentials *string) {
+	changes := auditapp.DiffChanges(integrationAuditView(before), integrationAuditView(after))
+	credsChanged := credentials != nil && *credentials != ""
+	severity := auditdom.SeverityMedium
+	for _, f := range auditapp.ChangedFields(changes) {
+		if f == "base_url" || strings.HasSuffix(f, ".base_url") || strings.HasSuffix(f, "url") {
+			severity = auditdom.SeverityHigh
+		}
+	}
+	action := auditdom.ActionIntegrationUpdated
+	if credsChanged {
+		severity = auditdom.SeverityHigh
+		action = auditdom.ActionIntegrationCredentialsChanged
+	}
+	h.auditIntegration(r, action, id, name, before, after, severity,
+		fmt.Sprintf("Integration %q updated", name), map[string]any{"credentials_changed": credsChanged})
+}
+
+// integrationVolatileFields change on their own (sync runs, counters) and
+// would only add noise to an audit diff.
+var integrationVolatileFields = []string{
+	"status", "status_message", "last_sync_at", "next_sync_at", "sync_error", "stats",
+	"updated_at", "created_at", "total_assets", "total_findings", "total_repositories", "repository_count",
+}
+
+// integrationAuditView is the redacted API view without volatile fields.
+func integrationAuditView(v any) any {
+	if v == nil {
+		return nil
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if json.Unmarshal(data, &m) != nil {
+		return nil
+	}
+	for _, k := range integrationVolatileFields {
+		delete(m, k)
+	}
+	return m
 }

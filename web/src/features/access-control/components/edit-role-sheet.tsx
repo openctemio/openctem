@@ -87,7 +87,12 @@ function getPermissionType(permissionId: string): string {
 
 export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleSheetProps) {
   const { updateRole, isUpdating } = useUpdateRole(role?.id || null)
-  const { modules: permissionModules, isLoading: isLoadingModules } = useTenantPermissionModules()
+  const { modules: permissionModules, isLoading: isLoadingModules } = useTenantPermissionModules(
+    true,
+    {
+      forCustomRole: true,
+    }
+  )
 
   // Form state
   const [form, setForm] = useState({
@@ -249,7 +254,8 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
     try {
       await updateRole({
         name: form.name,
-        description: form.description || undefined,
+        // "" clears the description (absent would mean unchanged).
+        description: form.description.trim(),
         has_full_data_access: form.hasFullDataAccess,
         permissions: form.permissions,
       })

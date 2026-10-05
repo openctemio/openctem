@@ -281,10 +281,23 @@ POST /api/v1/notification-outbox/{id}/retry # Retry failed entry
 DELETE /api/v1/notification-outbox/{id}   # Delete entry
 ```
 
-**Permissions Required:**
+**Permissions Required** (every route also needs `integrations:manage`):
 - `integrations:notifications:read` for GET endpoints
 - `integrations:notifications:write` for POST (retry)
 - `integrations:notifications:delete` for DELETE
+
+`GET /api/v1/integrations/{id}/notification-events` (a channel's delivery
+history) needs `integrations:manage`.
+
+**Why channel managers only:** the outbox gets a row for every event, whether
+or not a channel is configured: new findings (message, asset id, owner name
+and email), new assets, exposures, SLA and approval events, for the whole
+organization and without data scope. Members and viewers hold
+`integrations:notifications:read` for their own in-app notices; before
+research doc 15 (L-03) that also opened this stream to them. Whoever holds
+`integrations:manage` already decides which of these events leave for Slack,
+Teams or a webhook, so the history shows them nothing new. The web console
+hides *View events* and *Queue* without that permission.
 
 ### Event History API (TODO)
 
@@ -397,6 +410,24 @@ lists the exempt ones (approval events, `new_asset`, `sensor.offline`), whose
 severity is a constant chosen by the emitter. The outbox honours that list when
 it matches an entry to a channel.
 
+**Only emitted types are listed** (settings plan P0-08). A type goes into
+`AllEventTypes()` together with its producer, which is code that enqueues or
+sends a notification with that type. `tests/unit/event_type_producer_test.go`
+fails on a listed type nothing emits.
+
+These types had no producer and were removed from the catalog:
+
+- `security_alert`, which was on by default;
+- `system_error`, `asset_changed`, `asset_deleted`;
+- `scan_started`, `scan_completed`, `scan_failed`;
+- `finding_confirmed`, `finding_triaged`, `exposure_resolved`.
+
+The "System Events" and "Scan Events" groups went with them. Every remaining
+type belongs to a module, so a tenant with no optional modules is offered no
+types. If a subscription saved earlier still lists a removed type, that entry
+never matches anything. To bring a type back, add its producer in the same
+change.
+
 ### Sensor events
 
 | Event | Emitted by | When |
@@ -506,7 +537,45 @@ The `notification_history` table has been **removed** in migration `000075_drop_
 
 All related code (repository, service methods, API endpoints) has been removed.
 
+### Outbound webhooks `/api/v1/webhooks` (REMOVED)
+
+`/api/v1/webhooks` stored endpoint URLs and signing secrets, but no worker
+ever delivered to them. Nothing was sent, and nothing wrote
+`webhook_deliveries`. Owner decision B9 removed the feature: the routes,
+handler, service, repository and domain package are gone. Migration `001032`
+does three things:
+
+- archives and removes the `integrations:webhooks:*` permissions and their role
+  grants (the down migration restores them);
+- deprecates the `integrations.webhooks` module toggle;
+- keeps the `webhooks` and `webhook_deliveries` tables untouched (no data is
+  destroyed).
+
+For outbound delivery, use a notification channel (Slack, Teams, Telegram,
+email, or a custom webhook channel, all sent through the outbox) or the SIEM
+integration. Inbound webhooks (`/api/v1/webhooks/incoming/*`, HMAC-verified)
+are unaffected. `tests/unit/outbound_webhooks_removed_test.go` keeps the
+permissions and the module toggle from coming back without a sender.
+
 ## Related Documents
 
 - [Clean Architecture](./clean-arch.md)
 - [Security Best Practices](../SECURITY.md)
+
+## Integration safety rules (all categories)
+
+- **Request metadata is an allowlist.** A create or update may only set the
+  non-secret keys `hec_url`, `index`, `sourcetype` and `channel_name` (string,
+  at most 2048 characters). Every other metadata key is written by the server
+  (chat ids, SMTP settings, sync state), and a request that names one is
+  refused with 400. Secrets go in the encrypted credentials field, never in
+  metadata (`internal/app/integration/hardening.go`).
+- **Disabled stays disabled.** A test, a sync or a read (listing an SCM
+  integration's repositories) never moves a disabled integration back to
+  connected or error; only `POST /integrations/{id}/enable` does. Listing the
+  repositories of a disabled SCM integration is refused without calling the
+  provider.
+- **Credentials do not follow a new host.** Changing `base_url` to another
+  scheme, host or port while credentials are stored requires new credentials
+  in the same request (400 otherwise), so a manager cannot point Jira or SCM at
+  their own server and receive the stored token.

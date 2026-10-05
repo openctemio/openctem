@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -13,7 +15,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // ========== Run Operations (Orchestration) ==========
@@ -133,12 +134,25 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 		return nil, err
 	}
 
+	// The run's asset_id is stored on the run and copied into every step
+	// command's payload, so it must be a live asset of this tenant that the
+	// caller may see (pipeline_runs.asset_id references assets(id) without
+	// the tenant; research doc 21b, C4). A workflow trigger has no user in
+	// the context and gets the tenant check only. A malformed id is refused
+	// rather than silently dropped; a refused one answers like an unknown one.
 	var assetID *shared.ID
 	if input.AssetID != "" {
 		aid, err := shared.IDFromString(input.AssetID)
-		if err == nil {
-			assetID = &aid
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid asset id", shared.ErrValidation)
 		}
+		if s.assetRefChecker == nil {
+			return nil, ErrRunAssetNotFound
+		}
+		if err := s.assetRefChecker.AssertAssetRef(ctx, tenantID, aid); err != nil {
+			return nil, ErrRunAssetNotFound
+		}
+		assetID = &aid
 	}
 
 	triggerType := pipeline.TriggerType(input.TriggerType)
@@ -148,7 +162,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 
 	// The run's targets reach every step command; check them the way a scan
 	// trigger does (private-range policy, scope exclusions, scan zones).
-	runContext, err := s.gateRunContext(ctx, tenantID, input.Context)
+	runContext, err := s.gateRunContext(ctx, tenantID, input.TriggeredBy, input.Context)
 	if err != nil {
 		s.logger.Warn("pipeline run refused by the target gate",
 			"template_id", template.ID.String(), "error", err)
@@ -186,8 +200,8 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 	}
 
 	// Record metrics
-	metrics.PipelineRunsTotal.WithLabelValues(tenantID.String(), "running").Inc()
-	metrics.PipelineRunsInProgress.WithLabelValues(tenantID.String()).Inc()
+	metrics.PipelineRunsTotal.WithLabelValues("running").Inc()
+	metrics.PipelineRunsInProgress.WithLabelValues().Inc()
 
 	// Schedule initial runnable steps (no dependencies)
 	// This creates commands that sensors will poll and execute
@@ -243,6 +257,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 
 	// Get runnable steps (no pending dependencies)
 	runnableSteps := template.GetRunnableSteps(completedSteps)
+	settledInline := false
 
 	for _, step := range runnableSteps {
 		// Check if we've reached the max parallel limit
@@ -272,7 +287,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 		stepRun.SetConditionResult(shouldRun)
 
 		if !shouldRun {
-			stepRun.Skip("Condition not met")
+			stepRun.Skip(step.ConditionSkipReason())
 			// FIXED: Don't silently suppress errors - log them instead
 			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
 				s.logger.Error("failed to update skipped step run", "step_key", step.StepKey, "error", err)
@@ -281,25 +296,78 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 		}
 
 		// Queue the step - create a command that sensors can poll
-		if err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings); err != nil {
-			s.logger.Error("failed to queue step", "step_key", step.StepKey, "error", err)
-			stepRun.Fail("Failed to queue: "+err.Error(), "QUEUE_ERROR")
-			// FIXED: Don't silently suppress errors - log them instead
-			if updateErr := s.stepRunRepo.Update(ctx, stepRun); updateErr != nil {
-				s.logger.Error("failed to update failed step run", "step_key", step.StepKey, "error", updateErr)
-			}
-		} else {
-			// Successfully queued, increment running count
+		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step))
+		var noInputs *noInputsError
+		switch {
+		case err == nil:
 			runningSteps++
+		case errors.Is(err, errStageDeferred):
+			// A predecessor's report is still being ingested: the step stays
+			// pending and is planned when the ingest commits (OnCommandIngested).
+			s.logger.Info("chained step waits for its predecessors' ingest",
+				"run_id", run.ID.String(), "step_key", step.StepKey)
+		case errors.Is(err, errStageAlreadyPlanned):
+			// Another planner (a concurrent completion) planned it.
+		case errors.As(err, &noInputs):
+			// Planned, and nothing passed: settled without a command, so its
+			// successors run on what they have.
+			stepRun.Complete(0, map[string]any{"no_inputs": true})
+			stepRun.SkipReason = noInputs.Error()
+			if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
+				s.logger.Error("failed to settle a step with no inputs", "step_key", step.StepKey, "error", uerr)
+			}
+			settledInline = true
+		default:
+			s.logger.Error("failed to queue step", "step_key", step.StepKey, "error", err)
+			s.failQueuedStep(ctx, stepRun, step.StepKey, err)
+			settledInline = true
 		}
 	}
 
+	// A step settled here (no inputs, or a step that could not be queued)
+	// can unblock or end the run: advance again. Each pass settles at
+	// least one step, so this ends.
+	if settledInline {
+		return s.advanceRun(ctx, run, template)
+	}
 	return nil
 }
 
+// predecessorsOf returns the steps of the template that step depends on.
+func predecessorsOf(template *pipeline.Template, step *pipeline.Step) []*pipeline.Step {
+	if template == nil || len(step.DependsOn) == 0 {
+		return nil
+	}
+	out := make([]*pipeline.Step, 0, len(step.DependsOn))
+	for _, dep := range step.DependsOn {
+		for _, t := range template.Steps {
+			if t.StepKey == dep {
+				out = append(out, t)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // queueStepForExecutionWithSettings creates a command with specific settings.
-func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings) error {
-	s.logger.Info("queueing step for execution", "step_key", step.StepKey, "tool", step.Tool, "sensor_preference", settings.SensorPreference)
+//
+// preds are the steps it depends on: when they produce asset types its
+// stage takes, its targets come from the hop router (hop_router.go) and the
+// sentinel errors errStageDeferred, errStageAlreadyPlanned and
+// *noInputsError tell the scheduler to wait, to leave it, or to settle it.
+func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings, preds []*pipeline.Step) error {
+	// The tool the step runs: its pinned tool, or the implementation of its
+	// capability the planner picks (F1: a capability-only step used to
+	// reach the sensor with no scanner). Every check below and the payload
+	// read the resolved tool.
+	resolved, err := scanapp.ResolveStepTool(ctx, s.toolRepo, run.TenantID, step)
+	if err != nil {
+		return fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
+	step = resolved.WithTool(step)
+	s.logger.Info("queueing step for execution", "step_key", step.StepKey, "tool", step.Tool,
+		"pinned", resolved.Pinned, "sensor_preference", settings.SensorPreference)
 
 	// Security validation: Last line of defense before sending to sensor
 	if s.securityValidator != nil {
@@ -313,7 +381,38 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		}
 	}
 
-	payload, err := stepCommandPayload(run, step, stepRun, settings)
+	// The step's tool is handed only the run's targets it can scan; a step
+	// left with none fails here (INCOMPATIBLE_TARGETS), before any sensor
+	// sees it.
+	chained := s.hops != nil && resolved.HasStage && len(feedingPredecessors(run, resolved.Stage, preds)) > 0
+	var stepTargets *scanapp.StepTargets
+	if f, ok := s.targetGate.(StepTargetFilter); ok {
+		st, ferr := f.FilterStepTargets(ctx, step.Tool, run.Context)
+		if ferr != nil {
+			var de *shared.DomainError
+			if !chained || !errors.As(ferr, &de) || de.Code != "INCOMPATIBLE_TARGETS" {
+				return fmt.Errorf("step %s: %w", step.StepKey, ferr)
+			}
+			// A chained step may take no seed: its targets come from
+			// what its predecessors found.
+			st = &scanapp.StepTargets{Targets: []string{}}
+		}
+		stepTargets = st
+		if st != nil && st.Refused > 0 {
+			s.logger.Info("step targets the tool cannot scan were left out",
+				"run_id", run.ID.String(), "step_key", step.StepKey, "refused", st.Refused, "reason", st.Reason)
+		}
+	}
+
+	// The hop router: seeds, plus what the predecessors produced that passes
+	// the per-hop gate; recorded once per (run, stage).
+	planned, err := s.planStage(ctx, run, step, resolved, preds, stepTargets)
+	if err != nil {
+		return fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
+	stepTargets = planned
+
+	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), settings.SensorPreference, stepTargets)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
@@ -340,6 +439,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 	if err != nil {
 		return err
 	}
+	// The command names its step run, so the reports bound to it are
+	// attributed to the step (scan provenance, chained outputs).
+	cmd.SetStepRunID(stepRun.ID)
 
 	// A run routed to a scan zone (RFC-023) keeps every step inside it: the
 	// command is stamped with the zone and left to the zone's sensors (the
@@ -355,8 +457,15 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		return s.stepRunRepo.Update(ctx, stepRun)
 	}
 
-	// Determine sensor routing based on preference
-	usePlatform, sensorID := s.determineSensorRouting(ctx, run.TenantID, step.Tool, settings.SensorPreference)
+	// Determine sensor routing based on preference. A scan that runs on the
+	// tenant's own sensors only (scans.run_on_tenant_runner, carried in the
+	// run context) never goes to platform sensors, whatever the template
+	// says.
+	pref := settings.SensorPreference
+	if tenantRunnerOnly(run.Context) {
+		pref = pipeline.SensorPreferenceTenant
+	}
+	usePlatform, sensorID := s.determineSensorRouting(ctx, run.TenantID, step.Tool, pref)
 
 	//nolint:gocritic // if-else chain is clearer than switch for bool+pointer conditions
 	if usePlatform {
@@ -505,7 +614,7 @@ func (s *Service) recordScanRun(ctx context.Context, run *pipeline.Run, status s
 	if s.scanRunRecorder == nil || run == nil || run.ScanID == nil {
 		return
 	}
-	if err := s.scanRunRecorder.RecordRun(ctx, *run.ScanID, run.ID, status); err != nil {
+	if err := s.scanRunRecorder.RecordRun(ctx, run.TenantID, *run.ScanID, run.ID, status); err != nil {
 		s.logger.Warn("failed to record run outcome on scan",
 			"scan_id", run.ScanID.String(), "run_id", run.ID.String(), "status", status, "error", err)
 	}
@@ -527,8 +636,8 @@ func (s *Service) finishRun(ctx context.Context, run *pipeline.Run, status pipel
 		s.logger.Error("failed to update run status", "run_id", run.ID.String(), "status", string(status), "error", err)
 		return false
 	}
-	metrics.PipelineRunsInProgress.WithLabelValues(run.TenantID.String()).Dec()
-	metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), string(status)).Inc()
+	metrics.PipelineRunsInProgress.WithLabelValues().Dec()
+	metrics.PipelineRunsTotal.WithLabelValues(string(status)).Inc()
 	s.recordScanRun(ctx, run, string(status))
 	return true
 }
@@ -606,7 +715,7 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 			s.logger.Error("failed to update step run status", "step_key", stepKey, "error", err)
 		}
 		// Record step metric
-		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepKey, "completed").Inc()
+		metrics.StepRunsTotal.WithLabelValues(stepKey, "completed").Inc()
 	}
 
 	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
@@ -686,7 +795,7 @@ func (s *Service) settleBatchedStep(ctx context.Context, run *pipeline.Run, step
 		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
 			s.logger.Error("failed to record partial step run", "step_key", stepRun.StepKey, "error", err)
 		}
-		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepRun.StepKey, "partial").Inc()
+		metrics.StepRunsTotal.WithLabelValues(stepRun.StepKey, "partial").Inc()
 	}
 	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
 	if err != nil {
@@ -712,7 +821,7 @@ func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipe
 			s.logger.Error("failed to update step run status to failed", "step_key", stepRun.StepKey, "error", err)
 		}
 		// Record failed step metric
-		metrics.StepRunsTotal.WithLabelValues(run.TenantID.String(), stepRun.StepKey, "failed").Inc()
+		metrics.StepRunsTotal.WithLabelValues(stepRun.StepKey, "failed").Inc()
 	}
 
 	// Get template to check fail_fast setting
@@ -768,7 +877,19 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 	}
 	qgPassed := qgResult == nil || qgResult.Passed
 
-	switch st.outcome() {
+	// Targets zone routing could not place were never scanned (22c B7): a
+	// run whose steps all finished but left targets out is partial, not
+	// completed. Targets refused by policy (exclusions, ownership, act
+	// scope) are not counted: the run did what it was allowed to do.
+	outcome := st.outcome()
+	uncovered := uncoveredTargetCount(run.Context)
+	partialMsg := fmt.Sprintf("Pipeline completed partially: %d of %d steps did not finish all their work", st.failed+st.partial, run.TotalSteps)
+	if outcome == pipeline.RunStatusCompleted && uncovered > 0 {
+		outcome = pipeline.RunStatusPartial
+		partialMsg = fmt.Sprintf("Pipeline completed, but %d target(s) were not scanned: no scan zone or sensor could reach them (see uncovered_targets)", uncovered)
+	}
+
+	switch outcome {
 	case pipeline.RunStatusCompleted:
 		if !s.finishRun(ctx, run, pipeline.RunStatusCompleted, "") {
 			return
@@ -785,8 +906,7 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	case pipeline.RunStatusPartial:
-		msg := fmt.Sprintf("Pipeline completed partially: %d of %d steps did not finish all their work", st.failed+st.partial, run.TotalSteps)
-		if !s.finishRun(ctx, run, pipeline.RunStatusPartial, msg) {
+		if !s.finishRun(ctx, run, pipeline.RunStatusPartial, partialMsg) {
 			return
 		}
 		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
@@ -796,6 +916,7 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 				WithMetadata("completed_steps", st.completed).
 				WithMetadata("partial_steps", st.partial).
 				WithMetadata("failed_steps", st.failed).
+				WithMetadata("uncovered_targets", uncovered).
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	default:
@@ -811,6 +932,28 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	}
+}
+
+// uncoveredTargetCount is how many targets the run's zone routing could not
+// place (the scan trigger records them): the zone summary's count, else the
+// length of the (bounded) uncovered list.
+func uncoveredTargetCount(runContext map[string]any) int {
+	if routing, ok := runContext["zone_routing"].(map[string]any); ok {
+		switch n := routing["uncovered_targets"].(type) {
+		case int:
+			if n > 0 {
+				return n
+			}
+		case float64:
+			if n > 0 {
+				return int(n)
+			}
+		}
+	}
+	if v := reflect.ValueOf(runContext["uncovered_targets"]); v.IsValid() && v.Kind() == reflect.Slice {
+		return v.Len()
+	}
+	return 0
 }
 
 // updateRunStats stores the run's step counters. A partial step is stored
@@ -937,7 +1080,7 @@ func (s *Service) evaluateQualityGate(ctx context.Context, run *pipeline.Run) *s
 	}
 
 	// Get the scan profile
-	profile, err := s.scanProfileRepo.GetByID(ctx, *run.ScanProfileID)
+	profile, err := s.scanProfileRepo.GetByTenantAndID(ctx, run.TenantID, *run.ScanProfileID)
 	if err != nil {
 		s.logger.Warn("failed to get scan profile for quality gate evaluation",
 			"error", err,
@@ -1044,14 +1187,154 @@ func (s *Service) GetRunWithSteps(ctx context.Context, runID string) (*pipeline.
 	return s.runRepo.GetWithStepRuns(ctx, rid)
 }
 
+// GetRunWithStepsForTenant returns a run of tenantID with its step runs. A
+// run of another tenant is not found.
+func (s *Service) GetRunWithStepsForTenant(ctx context.Context, tenantID, runID string) (*pipeline.Run, error) {
+	if _, err := s.GetRun(ctx, tenantID, runID); err != nil {
+		return nil, err
+	}
+	return s.GetRunWithSteps(ctx, runID)
+}
+
+// RunTasks is a run's tasks as the runs page shows them.
+type RunTasks struct {
+	Summary pipeline.TaskSummary
+	Items   []pipeline.Task
+	// Truncated is true when the run has more tasks than Items holds.
+	Truncated bool
+	// NextCursor continues after Items (GET /pipeline-runs/{id}/tasks) when
+	// Truncated; empty otherwise.
+	NextCursor string
+}
+
+// DefaultRunTaskPageSize is the page size of a run's task list.
+const DefaultRunTaskPageSize = 50
+
+// RunTaskPage is one page of a run's tasks.
+type RunTaskPage struct {
+	Items []pipeline.Task
+	// NextCursor continues after Items; empty on the last page.
+	NextCursor string
+}
+
+// ListRunTasksPage returns one page of the tasks of run runID of tenantID, in
+// dispatch order, after cursor (from the first task when empty). A run of
+// another tenant is not found; a malformed cursor or a page size outside
+// 1..pipeline.MaxRunTasks is a validation error.
+func (s *Service) ListRunTasksPage(ctx context.Context, tenantID, runID, cursor string, limit int) (*RunTaskPage, error) {
+	if limit == 0 {
+		limit = DefaultRunTaskPageSize
+	}
+	if limit < 1 || limit > pipeline.MaxRunTasks {
+		return nil, fmt.Errorf("%w: per_page must be between 1 and %d", shared.ErrValidation, pipeline.MaxRunTasks)
+	}
+	var after *pipeline.TaskCursor
+	if cursor != "" {
+		c, err := pipeline.DecodeTaskCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		after = &c
+	}
+	// The run is read for the caller's tenant first: another tenant's run id
+	// answers not found, exactly like GET /pipeline-runs/{id}.
+	run, err := s.GetRun(ctx, tenantID, runID)
+	if err != nil {
+		return nil, err
+	}
+	pager, ok := s.commandRepo.(pipeline.TaskPager)
+	if !ok {
+		return &RunTaskPage{}, nil
+	}
+	// One extra row says whether another page follows.
+	items, err := pager.ListRunTasksAfter(ctx, run.TenantID, run.ID, after, limit+1)
+	if err != nil {
+		return nil, err
+	}
+	page := &RunTaskPage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		page.NextCursor = pipeline.TaskCursorAfter(page.Items[limit-1]).Encode()
+	}
+	return page, nil
+}
+
+// GetRunTasks returns up to pipeline.MaxRunTasks tasks of a run of tenantID
+// and the summary of all of them. Nil when the repository cannot read tasks.
+// The caller must already have read the run for tenantID.
+func (s *Service) GetRunTasks(ctx context.Context, run *pipeline.Run) (*RunTasks, error) {
+	reader, ok := s.commandRepo.(pipeline.TaskReader)
+	if !ok || run == nil {
+		return nil, nil
+	}
+	items, sum, err := reader.ListRunTasks(ctx, run.TenantID, run.ID, pipeline.MaxRunTasks)
+	if err != nil {
+		return nil, err
+	}
+	out := &RunTasks{Summary: sum, Items: items, Truncated: sum.Total > len(items)}
+	if out.Truncated && len(items) > 0 {
+		out.NextCursor = pipeline.TaskCursorAfter(items[len(items)-1]).Encode()
+	}
+	return out, nil
+}
+
+// RunScanNames returns the name of the scan of each run in runs that belongs
+// to a scan of tenantID, keyed by scan id. Nil when the repository cannot
+// name scans. Every run must belong to tenantID; the read is scoped to it.
+func (s *Service) RunScanNames(ctx context.Context, tenantID string, runs []*pipeline.Run) (map[shared.ID]string, error) {
+	namer, ok := s.runRepo.(pipeline.RunScanNamer)
+	if !ok || len(runs) == 0 {
+		return nil, nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	seen := make(map[shared.ID]struct{}, len(runs))
+	ids := make([]shared.ID, 0, len(runs))
+	for _, r := range runs {
+		if r.ScanID == nil {
+			continue
+		}
+		if _, dup := seen[*r.ScanID]; dup {
+			continue
+		}
+		seen[*r.ScanID] = struct{}{}
+		ids = append(ids, *r.ScanID)
+	}
+	return namer.ScanNames(ctx, tid, ids)
+}
+
+// RunTaskSummaries returns the task summary of each run in runs that has
+// tasks, keyed by run id. Every run must belong to tenantID; the read is
+// scoped to it.
+func (s *Service) RunTaskSummaries(ctx context.Context, tenantID string, runs []*pipeline.Run) (map[shared.ID]pipeline.TaskSummary, error) {
+	reader, ok := s.commandRepo.(pipeline.TaskReader)
+	if !ok || len(runs) == 0 {
+		return nil, nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	ids := make([]shared.ID, 0, len(runs))
+	for _, r := range runs {
+		ids = append(ids, r.ID)
+	}
+	return reader.TaskSummaries(ctx, tid, ids)
+}
+
 // ListRunsInput represents the input for listing runs.
 type ListRunsInput struct {
 	TenantID   string `json:"tenant_id" validate:"required,uuid"`
 	PipelineID string `json:"pipeline_id" validate:"omitempty,uuid"`
 	AssetID    string `json:"asset_id" validate:"omitempty,uuid"`
 	Status     string `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout"`
-	Page       int    `json:"page"`
-	PerPage    int    `json:"per_page"`
+	// Sort is one sort key, `field` or `-field` (pipeline.RunListSortFields);
+	// an unknown field is a validation error.
+	Sort    string `json:"sort"`
+	Page    int    `json:"page"`
+	PerPage int    `json:"per_page"`
 }
 
 // ListRuns lists pipeline runs with filters.
@@ -1061,8 +1344,14 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 		return pagination.Result[*pipeline.Run]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
+	sort, err := pipeline.ParseRunListSort(input.Sort)
+	if err != nil {
+		return pagination.Result[*pipeline.Run]{}, err
+	}
+
 	filter := pipeline.RunFilter{
 		TenantID: &tenantID,
+		Sort:     sort,
 	}
 
 	if input.PipelineID != "" {
@@ -1088,13 +1377,26 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 	return s.runRepo.List(ctx, filter, page)
 }
 
-// CancelRun cancels a pipeline run and all its in-flight commands.
+// CancelRun cancels a pipeline run, its open step runs and its open commands
+// (RFC-046 §8, D12). The sensors holding those commands are told to stop on
+// their next heartbeat (cancel_command_ids); an offline sensor is told when
+// it comes back and reports what it runs, and its canceled commands are never
+// re-queued by the expired-lease sweep.
+//
+// Idempotent: canceling a run that is already canceled succeeds and closes
+// anything a previous attempt left open, without recording the run again.
+// Canceling a run that finished otherwise is INVALID_STATE. A run of another
+// tenant is not found.
 func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	run, err := s.GetRun(ctx, tenantID, runID)
 	if err != nil {
 		return err
 	}
 
+	if run.Status == pipeline.RunStatusCanceled {
+		s.closeCanceledRun(ctx, run)
+		return nil
+	}
 	if run.IsComplete() {
 		return shared.NewDomainError("INVALID_STATE", "pipeline run is already complete", shared.ErrValidation)
 	}
@@ -1105,35 +1407,63 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	// on the scan a second time).
 	err = s.runRepo.UpdateStatus(ctx, run.ID, pipeline.RunStatusCanceled, "Canceled by user")
 	if errors.Is(err, pipeline.ErrRunAlreadyFinished) {
+		// Another cancel won the race: same outcome, nothing more to record.
+		if cur, gerr := s.GetRun(ctx, tenantID, runID); gerr == nil && cur.Status == pipeline.RunStatusCanceled {
+			s.closeCanceledRun(ctx, cur)
+			return nil
+		}
 		return shared.NewDomainError("INVALID_STATE", "pipeline run is already complete", shared.ErrValidation)
 	}
 	if err != nil {
 		return err
 	}
 	run.Cancel()
-	metrics.PipelineRunsInProgress.WithLabelValues(run.TenantID.String()).Dec()
-	metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), string(pipeline.RunStatusCanceled)).Inc()
+	metrics.PipelineRunsInProgress.WithLabelValues().Dec()
+	metrics.PipelineRunsTotal.WithLabelValues(string(pipeline.RunStatusCanceled)).Inc()
 	s.recordScanRun(ctx, run, string(pipeline.RunStatusCanceled))
 
-	// Cancel all in-flight commands belonging to this run so sensors stop work.
-	if s.commandRepo != nil {
-		canceled, cancelErr := s.commandRepo.CancelByPipelineRunID(ctx, run.TenantID, run.ID)
-		if cancelErr != nil {
-			// Non-fatal: run is already canceled, commands will eventually be reaped by JobRecoveryController
-			s.logger.Warn("failed to cancel commands for pipeline run",
-				"run_id", runID,
-				"error", cancelErr)
-		} else if canceled > 0 {
-			s.logger.Info("canceled in-flight commands", "run_id", runID, "count", canceled)
-		}
-	}
+	closure := s.closeCanceledRun(ctx, run)
 
-	// Audit log: run canceled
-	s.logAudit(ctx, AuditContext{TenantID: tenantID},
-		NewSuccessEvent(audit.ActionPipelineRunCanceled, audit.ResourceTypePipelineRun, runID).
-			WithMessage("Pipeline run canceled"))
+	event := NewSuccessEvent(audit.ActionPipelineRunCanceled, audit.ResourceTypePipelineRun, runID).
+		WithMessage("Pipeline run canceled").
+		WithMetadata("canceled_steps", closure.Steps).
+		WithMetadata("canceled_commands", closure.Commands).
+		WithMetadata("sensors_told_to_stop", len(closure.Sensors))
+	if run.ScanID != nil {
+		event = event.WithMetadata("scan_id", run.ScanID.String())
+	}
+	s.logAudit(ctx, AuditContext{TenantID: tenantID}, event)
 
 	return nil
+}
+
+// closeCanceledRun ends the open step runs and commands of a canceled run.
+// Best effort: the run is already canceled, and a failure here is retried by
+// canceling again (idempotent) or settled by the timeout reaper.
+func (s *Service) closeCanceledRun(ctx context.Context, run *pipeline.Run) pipeline.CanceledRunClosure {
+	if closer, ok := s.runRepo.(pipeline.CanceledRunCloser); ok {
+		closure, err := closer.CloseCanceledRun(ctx, run.TenantID, run.ID)
+		if err != nil {
+			s.logger.Warn("failed to close the canceled run's steps and commands",
+				"run_id", run.ID.String(), "error", err)
+			return pipeline.CanceledRunClosure{}
+		}
+		if closure.Steps > 0 || closure.Commands > 0 {
+			s.logger.Info("closed canceled run", "run_id", run.ID.String(),
+				"steps", closure.Steps, "commands", closure.Commands, "sensors", len(closure.Sensors))
+		}
+		return closure
+	}
+	// Repositories without the closer: commands only, as before.
+	if s.commandRepo == nil {
+		return pipeline.CanceledRunClosure{}
+	}
+	n, err := s.commandRepo.CancelByPipelineRunID(ctx, run.TenantID, run.ID)
+	if err != nil {
+		s.logger.Warn("failed to cancel commands for pipeline run", "run_id", run.ID.String(), "error", err)
+		return pipeline.CanceledRunClosure{}
+	}
+	return pipeline.CanceledRunClosure{Commands: n}
 }
 
 // CompleteStepRun marks a step run as completed (called by sensor).
@@ -1156,40 +1486,58 @@ func (s *Service) FailStepRun(ctx context.Context, stepRunID, errorMessage, erro
 	return s.stepRunRepo.UpdateStatus(ctx, srid, pipeline.StepRunStatusFailed, errorMessage, errorCode)
 }
 
-// stepCommandPayload is the command payload of one pipeline step. The
-// step's settings go under PayloadKeyConfig, the key the sensor reads (see
-// pipeline.NormalizeStepConfig); a setting the sensor would refuse fails the
-// step before a command is created.
-func stepCommandPayload(run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings) (map[string]any, error) {
-	config, err := pipeline.NormalizeStepConfig(step.Tool, step.Config)
-	if err != nil {
-		return nil, err
-	}
-	payload := map[string]any{
-		"pipeline_run_id":                   run.ID.String(),
-		"step_run_id":                       stepRun.ID.String(),
-		"step_id":                           step.ID.String(),
-		"step_key":                          step.StepKey,
-		pipeline.PayloadKeyConfig:           config,
-		"required_capabilities":             step.Capabilities,
-		"preferred_tool":                    step.Tool,
-		"timeout_seconds":                   step.TimeoutSeconds,
-		"context":                           run.Context,
-		legacyv1.PayloadKeySensorPreference: string(settings.SensorPreference),
-	}
-	// The sensor SDK runs the scanner named in `scanner` (ScanCommandPayload);
-	// a step carrying only preferred_tool failed with "scanner not found: ".
-	if step.Tool != "" {
-		payload["scanner"] = step.Tool
-	}
-	// Step targets come from the run context (direct targets); the sensor
-	// reads them at the top level.
-	if targets, ok := run.Context["targets"]; ok {
-		payload["targets"] = targets
-	}
+// tenantRunnerOnly reports whether the run's scan may run only on the
+// tenant's own sensors (the scan trigger records it as tenant_runner_only).
+func tenantRunnerOnly(runContext map[string]any) bool {
+	v, _ := runContext["tenant_runner_only"].(bool)
+	return v
+}
 
-	if run.AssetID != nil {
-		payload["asset_id"] = run.AssetID.String()
+// QueueRunStep queues one step of a run: the dispatcher a scan's workflow
+// trigger hands its first steps to, so every step command of every run is
+// built by queueStepForExecutionWithSettings (research/27 P0-2). A step that
+// cannot be queued is failed with the reason's code and the error returned.
+func (s *Service) QueueRunStep(ctx context.Context, run *pipeline.Run, step *pipeline.Step) error {
+	if run == nil || step == nil {
+		return fmt.Errorf("%w: run and step are required", shared.ErrValidation)
 	}
-	return payload, nil
+	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
+	if err != nil {
+		return fmt.Errorf("load the run's template: %w", err)
+	}
+	if template == nil {
+		return fmt.Errorf("%w: the run's template", shared.ErrNotFound)
+	}
+	stepRun := run.GetStepRun(step.StepKey)
+	if stepRun == nil {
+		if stepRun, err = s.stepRunRepo.GetByStepKey(ctx, run.ID, step.StepKey); err != nil {
+			return fmt.Errorf("load step run %s: %w", step.StepKey, err)
+		}
+	}
+	if qerr := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step)); qerr != nil {
+		if errors.Is(qerr, errStageAlreadyPlanned) {
+			return nil // queued by a concurrent call
+		}
+		s.failQueuedStep(ctx, stepRun, step.StepKey, qerr)
+		return qerr
+	}
+	return nil
+}
+
+// failQueuedStep records a step that could not be queued: failed, with the
+// domain code of the reason (INCOMPATIBLE_TARGETS, NO_MATCHING_TOOL, ...) or
+// QUEUE_ERROR.
+func (s *Service) failQueuedStep(ctx context.Context, stepRun *pipeline.StepRun, stepKey string, err error) {
+	if stepRun == nil {
+		return
+	}
+	code := "QUEUE_ERROR"
+	var de *shared.DomainError
+	if errors.As(err, &de) && de.Code != "" {
+		code = de.Code
+	}
+	stepRun.Fail("Failed to queue: "+err.Error(), code)
+	if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
+		s.logger.Error("failed to update failed step run", "step_key", stepKey, "error", uerr)
+	}
 }

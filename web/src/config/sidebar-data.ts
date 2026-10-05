@@ -68,6 +68,7 @@ import { type SidebarData } from '@/components/types'
 import { Permission, Role } from '@/lib/permissions'
 import {
   ASSETS_SECTION_TABS,
+  ATTACK_SURFACE_SECTION_TABS,
   BUSINESS_CONTEXT_SECTION_TABS,
   EXPOSURES_SECTION_TABS,
   REMEDIATION_SECTION_TABS,
@@ -140,7 +141,8 @@ export const sidebarData: SidebarData = {
       title: 'Scoping',
       icon: Goal,
       cluster: 'cycle',
-      // The header opens the overview (D7).
+      // The rail flyout heading opens the overview; the expanded header only
+      // folds the section, and the Overview row below opens /scoping.
       url: '/scoping',
       items: [
         {
@@ -228,6 +230,9 @@ export const sidebarData: SidebarData = {
           icon: Target,
           permission: Permission.AssetsRead,
           module: 'attack_surface',
+          // Overview | Review (the ownership queue); the row's badge is the
+          // number of names waiting for review (useDynamicBadges).
+          sections: ATTACK_SURFACE_SECTION_TABS,
         },
         // ----------------------------------------
         // ASSETS: one row for the inventory and what organises it. Its views

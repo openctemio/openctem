@@ -11,7 +11,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import Link from 'next/link'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef, SortingState } from '@tanstack/react-table'
 
 import {
   DataTable,
@@ -19,6 +19,7 @@ import {
   MetricStrip,
   type MetricStripItem,
   RunStatusBadge,
+  TruncatedText,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import {
@@ -28,13 +29,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useUrlFilter } from '@/hooks/use-url-param'
+import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
 import { Can, Permission } from '@/lib/permissions'
 import { usePipelineRuns, useScanManagementStats } from '@/lib/api/pipeline-hooks'
 import type { PipelineRun, PipelineRunListFilters } from '@/lib/api/pipeline-types'
-import { useScanConfigs } from '@/lib/api/scan-hooks'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
+import { elapsedMs, runTaskProgress } from '@/features/scans/lib/run-display'
+import {
+  DEFAULT_RUN_SORT,
+  DEFAULT_SCAN_PAGE_SIZE,
+  RUN_SORT_FIELDS,
+  SCAN_PAGE_SIZES,
+  parsePageSize,
+  parseSortParam,
+  toSortParam,
+} from '@/features/scans/lib/scans-url'
 import { RunDetailSheet } from './run-detail-sheet'
+import { Download, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { exportToCsv } from '@/hooks/use-csv-export'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import {
+  RUN_EXPORT_CAP,
+  RUN_EXPORT_FIELDS,
+  fetchRunsForExport,
+} from '@/features/scans/lib/export-runs'
 
 /** Run statuses as the API stores them (pipeline.RunStatus). */
 export const RUN_STATUS_FILTERS = [
@@ -50,14 +69,7 @@ export const RUN_STATUS_FILTERS = [
 
 type RunStatusFilterValue = (typeof RUN_STATUS_FILTERS)[number]['value']
 
-export const RUNS_PAGE_SIZE = 25
-
-/** Duration of a finished run in ms, or undefined while it runs. */
-export function runDurationMs(run: Pick<PipelineRun, 'started_at' | 'completed_at'>) {
-  if (!run.started_at || !run.completed_at) return undefined
-  const ms = Date.parse(run.completed_at) - Date.parse(run.started_at)
-  return Number.isFinite(ms) && ms >= 0 ? ms : undefined
-}
+export const RUNS_PAGE_SIZE = DEFAULT_SCAN_PAGE_SIZE
 
 export function ScanRunsTab() {
   return (
@@ -79,42 +91,45 @@ function ScanRunsTable() {
     RunStatusFilterValue,
     (v: RunStatusFilterValue) => void,
   ]
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: RUNS_PAGE_SIZE })
+  // Page, page size and sort live in the URL (prefixed: the Configurations
+  // tab shares it) so a paged, sorted view of runs can be linked.
+  const [pageParam, setPageParam] = useUrlFilterNumber('run_page', 1)
+  const [perPageParam, setPerPageParam] = useUrlFilterNumber('run_per_page', RUNS_PAGE_SIZE)
+  const perPage = parsePageSize(perPageParam)
+  const [sortParam, setSortParam] = useUrlFilter('run_sort', DEFAULT_RUN_SORT)
+  const sorting = useMemo<SortingState>(
+    () => parseSortParam(sortParam, RUN_SORT_FIELDS, DEFAULT_RUN_SORT),
+    [sortParam]
+  )
+  const pagination = { pageIndex: pageParam - 1, pageSize: perPage }
   const [openRunId, setOpenRunId] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const swrConfig = useMemo(
     () => ({ revalidateOnFocus: false, refreshInterval: 30000, dedupingInterval: 5000 }),
     []
   )
 
-  // The web's PipelineRunStatus spells canceled "cancelled"; the API filter
-  // takes the stored value, so the status goes through as a string.
-  const filters = {
+  // Statuses are typed as the API stores them, so the filter value goes
+  // through unchanged.
+  const filters: PipelineRunListFilters = {
     status: statusFilter === 'all' ? undefined : statusFilter,
-    page: pagination.pageIndex + 1,
-    per_page: pagination.pageSize,
-  } as PipelineRunListFilters
+    sort: toSortParam(sorting, RUN_SORT_FIELDS, DEFAULT_RUN_SORT),
+    page: pageParam,
+    per_page: perPage,
+  }
 
   const { data, isLoading, error } = usePipelineRuns(filters, swrConfig)
   const { data: overview, isLoading: isLoadingStats } = useScanManagementStats(swrConfig)
-  // Names for the Scan column; one page of configurations is enough to label
-  // the runs on screen, and an unknown id falls back to "Scan".
-  const { data: configs } = useScanConfigs({ per_page: 100 }, { revalidateOnFocus: false })
-  const scanNames = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const c of configs?.items ?? []) m.set(c.id, c.name)
-    return m
-  }, [configs?.items])
-
   const runs = data?.items ?? []
   const counts = overview?.pipelines
 
   const setStatus = useCallback(
     (v: RunStatusFilterValue) => {
       setStatusFilter(v)
-      setPagination((p) => ({ ...p, pageIndex: 0 }))
+      setPageParam(1)
     },
-    [setStatusFilter]
+    [setStatusFilter, setPageParam]
   )
   const toggleStatus = (v: RunStatusFilterValue) => setStatus(statusFilter === v ? 'all' : v)
 
@@ -129,13 +144,18 @@ function ScanRunsTable() {
           if (!run.scan_id) {
             return <span className="text-muted-foreground">Pipeline run</span>
           }
+          // Named by the server (quick scans and every page included); a run
+          // whose scan was deleted keeps its row.
+          if (!run.scan_name) {
+            return <span className="text-muted-foreground">Deleted scan</span>
+          }
           return (
             <Link
-              href={`/scans/${run.scan_id}`}
+              href={`/scans/${encodeURIComponent(run.scan_id)}`}
               className="font-medium hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
-              {scanNames.get(run.scan_id) ?? 'Scan'}
+              {run.scan_name}
             </Link>
           )
         },
@@ -148,36 +168,54 @@ function ScanRunsTable() {
           <div className="space-y-0.5">
             <RunStatusBadge status={row.original.status} />
             {row.original.error_message && (
-              <p
-                className="max-w-[260px] truncate text-xs text-muted-foreground"
-                title={row.original.error_message}
-              >
-                {row.original.error_message}
-              </p>
+              <TruncatedText
+                value={row.original.error_message}
+                label="Run message"
+                className="max-w-[260px] text-xs text-muted-foreground"
+              />
             )}
           </div>
         ),
       },
       {
-        id: 'steps',
-        header: 'Steps',
+        id: 'tasks',
+        header: 'Tasks',
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original
+          const progress = runTaskProgress(r.task_summary)
+          if (!progress) {
+            // No task summary (nothing dispatched yet, or an older API): steps.
+            return (
+              <span className="text-sm tabular-nums">
+                {r.completed_steps}/{r.total_steps} steps
+                {r.failed_steps > 0 && (
+                  <span className="ms-1 text-destructive">({r.failed_steps} failed)</span>
+                )}
+              </span>
+            )
+          }
           return (
-            <span className="text-sm tabular-nums">
-              {r.completed_steps}/{r.total_steps}
-              {r.failed_steps > 0 && (
-                <span className="ms-1 text-destructive">({r.failed_steps} failed)</span>
+            <div className="space-y-0.5">
+              <span className="text-sm tabular-nums">{progress.label}</span>
+              {progress.details.length > 0 && (
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  {progress.details.map((d, i) => (
+                    <span key={d.key} className={d.key === 'failed' ? 'text-destructive' : ''}>
+                      {i > 0 && ' · '}
+                      {d.count} {d.key}
+                    </span>
+                  ))}
+                </p>
               )}
-            </span>
+            </div>
           )
         },
       },
       {
+        id: 'total_findings',
         accessorKey: 'total_findings',
-        header: 'Findings',
-        enableSorting: false,
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
         cell: ({ row }) =>
           row.original.total_findings > 0 ? (
             <span className="tabular-nums">{row.original.total_findings}</span>
@@ -190,25 +228,28 @@ function ScanRunsTable() {
         header: 'Duration',
         enableSorting: false,
         cell: ({ row }) => {
-          const ms = runDurationMs(row.original)
+          const r = row.original
+          const finished = !!r.completed_at
+          const ms = elapsedMs(r)
           if (ms === undefined) {
             return (
               <span className="text-xs text-muted-foreground">
-                {row.original.status === 'running' ? 'Running…' : '-'}
+                {r.status === 'pending' ? 'Not started' : '-'}
               </span>
             )
           }
-          return (
-            <span className="text-sm tabular-nums">
-              {ms < 1000 ? '<1s' : formatScanDuration(ms)}
-            </span>
+          const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
+          return finished ? (
+            <span className="text-sm tabular-nums">{label}</span>
+          ) : (
+            <span className="text-sm text-muted-foreground tabular-nums">{label} so far</span>
           )
         },
       },
       {
-        id: 'started',
+        id: 'started_at',
+        accessorKey: 'started_at',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Started" />,
-        enableSorting: false,
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {formatScanDate(row.original.started_at || row.original.created_at)}
@@ -226,7 +267,7 @@ function ScanRunsTable() {
         ),
       },
     ],
-    [scanNames]
+    []
   )
 
   const metrics: MetricStripItem[] = [
@@ -258,6 +299,13 @@ function ScanRunsTable() {
       onClick: () => toggleStatus('completed'),
       active: statusFilter === 'completed',
     },
+    {
+      key: 'partial',
+      label: 'Partial',
+      value: counts?.partial ?? 0,
+      onClick: () => toggleStatus('partial'),
+      active: statusFilter === 'partial',
+    },
     // The API counts timed-out runs as failed here; the status filter keeps
     // them apart, so this tile does not filter.
     { key: 'failed', label: 'Failed or timed out', value: counts?.failed ?? 0, tone: 'danger' },
@@ -287,6 +335,49 @@ function ScanRunsTable() {
 
   const filtered = statusFilter !== 'all'
 
+  // Exports the list as filtered and sorted, through the same endpoint.
+  const exportRuns = async () => {
+    setExporting(true)
+    try {
+      const {
+        runs: all,
+        total,
+        capped,
+      } = await fetchRunsForExport({
+        status: filters.status,
+        sort: filters.sort,
+      })
+      if (exportToCsv(all, RUN_EXPORT_FIELDS, 'scan-runs') && capped) {
+        toast.info(
+          `Exported the first ${RUN_EXPORT_CAP} of ${total} runs. Narrow the filter to export the rest.`
+        )
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not export the runs'))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const toolbarEnd = (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-9"
+      onClick={() => void exportRuns()}
+      disabled={exporting || !data?.total}
+      aria-busy={exporting}
+    >
+      {exporting ? (
+        <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none sm:me-2" />
+      ) : (
+        <Download className="h-4 w-4 sm:me-2" />
+      )}
+      <span className="hidden sm:inline">Export CSV</span>
+      <span className="sr-only sm:hidden">Export CSV</span>
+    </Button>
+  )
+
   return (
     <>
       <MetricStrip loading={isLoadingStats} items={metrics} />
@@ -306,14 +397,28 @@ function ScanRunsTable() {
             isLoading={isLoading && !data}
             showSearch={false}
             toolbarStart={toolbarStart}
+            toolbarEnd={toolbarEnd}
             getRowId={(r) => r.id}
             onRowClick={(r) => setOpenRunId(r.id)}
             manualPagination
             rowCount={data?.total ?? 0}
             pageCount={data?.total_pages}
             pagination={pagination}
-            onPaginationChange={setPagination}
-            pageSize={pagination.pageSize}
+            onPaginationChange={(next) => {
+              if (next.pageSize !== perPage) {
+                setPerPageParam(next.pageSize)
+                setPageParam(1)
+              } else {
+                setPageParam(next.pageIndex + 1)
+              }
+            }}
+            pageSize={perPage}
+            pageSizeOptions={[...SCAN_PAGE_SIZES]}
+            sorting={sorting}
+            onSortingChange={(next) => {
+              setSortParam(toSortParam(next, RUN_SORT_FIELDS, DEFAULT_RUN_SORT))
+              setPageParam(1)
+            }}
             paginationNoun="runs"
             emptyMessage={filtered ? 'No runs with this status' : 'No scan runs yet'}
             emptyDescription={

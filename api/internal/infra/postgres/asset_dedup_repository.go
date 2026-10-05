@@ -237,9 +237,9 @@ func (r *AssetDedupRepository) EnqueueIdentityReview(ctx context.Context, tenant
 				merge_asset_ids = $2, merge_asset_names = $3,
 				merge_finding_count = merge_finding_count + $4,
 				reason = $5, evidence = $6
-			WHERE id = $1`,
+			WHERE id = $1 AND tenant_id = $7`,
 			existingID, pq.Array(existingIDs), pq.Array(existingNames), rev.MergeFindingCount,
-			rev.Reason, evidence); err != nil {
+			rev.Reason, evidence, tenantID); err != nil {
 			return false, fmt.Errorf("extend identity review: %w", err)
 		}
 	}
@@ -323,7 +323,14 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 
 	// Touch the keep asset. Finding counts are computed on read (JOIN), not
 	// stored on the assets row — there is no assets.finding_count column.
-	_, err = tx.ExecContext(ctx, `UPDATE assets SET updated_at = NOW() WHERE id = $1 AND tenant_id = $2`, keepID, tenantID)
+	// A crown-jewel designation on a merged asset carries over to the kept
+	// one, so a merge never silently demotes a crown jewel.
+	_, err = tx.ExecContext(ctx, `
+		UPDATE assets SET updated_at = NOW(),
+		       is_crown_jewel = is_crown_jewel OR EXISTS (
+		           SELECT 1 FROM assets m
+		            WHERE m.tenant_id = $2 AND m.id = ANY($3::uuid[]) AND m.is_crown_jewel)
+		 WHERE id = $1 AND tenant_id = $2`, keepID, tenantID, pq.Array(mergeIDs))
 	if err != nil {
 		return fmt.Errorf("touch keep asset: %w", err)
 	}
@@ -366,8 +373,8 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 			reviewed_by = $2,
 			reviewed_at = $3,
 			merged_at = $3
-		WHERE id = $1
-	`, reviewID, reviewedBy, now)
+		WHERE id = $1 AND tenant_id = $4
+	`, reviewID, reviewedBy, now, tenantID)
 	if err != nil {
 		return fmt.Errorf("update review status: %w", err)
 	}

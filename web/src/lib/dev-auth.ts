@@ -82,8 +82,6 @@ export const DEV_USER: AuthUser & {
     'team:roles:read',
     'team:roles:write',
     'team:roles:assign',
-    'team:permission_sets:read',
-    'team:permission_sets:write',
     'team:assignment_rules:read',
     'team:assignment_rules:write',
     // Integrations
@@ -93,14 +91,11 @@ export const DEV_USER: AuthUser & {
     'integrations:scm:write',
     'integrations:notifications:read',
     'integrations:notifications:write',
-    'integrations:webhooks:read',
-    'integrations:webhooks:write',
     'integrations:api_keys:read',
     'integrations:api_keys:write',
     'integrations:pipelines:read',
     'integrations:pipelines:write',
     // Settings
-    'settings:billing:read',
     'settings:sla:read',
     'settings:sla:write',
     'settings:sla:delete',

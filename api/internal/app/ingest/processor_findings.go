@@ -28,6 +28,10 @@ type FindingCreatedCallback func(ctx context.Context, tenantID shared.ID, findin
 
 // FindingProcessor handles batch finding processing.
 type FindingProcessor struct {
+	// sourceResolveMode is the source-asserted resolve mode
+	// (source_resolve.go); "" is dry_run.
+	sourceResolveMode SourceResolveMode
+
 	repo         vulnerability.FindingRepository
 	dataFlowRepo vulnerability.DataFlowRepository
 	branchRepo   branch.Repository
@@ -75,6 +79,10 @@ type FindingProcessor struct {
 	// (tenant-scoped). Nil-safe: when unwired, findings are never suppressed at
 	// ingest (prior behavior).
 	suppressionChecker SuppressionChecker
+
+	// suppressionModules, when wired, turns ingest suppression off for a
+	// tenant whose suppressions module is disabled.
+	suppressionModules ModuleGuard
 
 	// secretFingerprinter keys the fingerprint of a reported secret with a
 	// server-held secret. Nil-safe: when unwired, no fingerprint is stored.
@@ -247,6 +255,12 @@ func (p *FindingProcessor) processBatch(
 		branchID    *shared.ID // FK to asset_branches
 		fingerprint string
 		base        string // pre-composite base, persisted for post-merge recompute
+		// v1 is the version-1 key (composite of asset and base). A finding
+		// stored under it is re-keyed to identity on its next sighting.
+		v1 string
+		// identity is the version-2 identity (RFC-043 §4.2), nil when no
+		// recipe applies and the finding keeps its version-1 key.
+		identity *vulnerability.IdentityKey
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -274,7 +288,7 @@ func (p *FindingProcessor) processBatch(
 	var defaultAssetID shared.ID
 	// Not when an asset of the report was skipped by a scope exclusion: its
 	// findings would land on the one asset that was kept.
-	if len(assetMap) == 1 && !strictAssets && len(output.ExcludedAssetRefs) == 0 {
+	if len(assetMap) == 1 && !strictAssets && len(output.ExcludedAssetRefs) == 0 && len(output.OutOfScopeAssetRefs) == 0 {
 		for _, id := range assetMap {
 			defaultAssetID = id
 			break
@@ -292,65 +306,83 @@ func (p *FindingProcessor) processBatch(
 		p.logger.Warn("asset map is empty - all findings will be skipped")
 	}
 
-	for i, ctisFinding := range report.Findings {
-		if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
-			// Its asset matches a scope exclusion and was not added.
-			output.FindingsSkipped++
-			continue
-		}
-		// Determine target asset
-		var targetAssetID shared.ID
-		if ctisFinding.AssetRef != "" {
-			// Try to find by asset reference
-			if id, ok := assetMap[ctisFinding.AssetRef]; ok {
-				targetAssetID = id
-			} else {
-				p.logger.Debug("finding AssetRef not found in assetMap",
-					"finding_index", i,
-					"asset_ref", ctisFinding.AssetRef,
-				)
+	for i, reported := range report.Findings {
+		// A network finding that names several CVEs is one finding per CVE
+		// (RFC-043 decision D3).
+		for _, ctisFinding := range splitMultiCVENetworkFinding(reported) {
+			if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
+				// Its asset matches a scope exclusion and was not added.
+				output.FindingsSkipped++
+				continue
 			}
+			if output.OutOfScopeAssetRefs[ctisFinding.AssetRef] {
+				// The upload's actor may not change its asset.
+				output.FindingsSkipped++
+				continue
+			}
+			// Determine target asset
+			var targetAssetID shared.ID
+			if ctisFinding.AssetRef != "" {
+				// Try to find by asset reference
+				if id, ok := assetMap[ctisFinding.AssetRef]; ok {
+					targetAssetID = id
+				} else {
+					p.logger.Debug("finding AssetRef not found in assetMap",
+						"finding_index", i,
+						"asset_ref", logValue(ctisFinding.AssetRef),
+					)
+				}
+			}
+
+			if targetAssetID.IsZero() && !defaultAssetID.IsZero() {
+				targetAssetID = defaultAssetID
+			}
+
+			if targetAssetID.IsZero() {
+				p.logger.Warn("finding skipped: no target asset",
+					"finding_index", i,
+					"asset_ref", logValue(ctisFinding.AssetRef),
+					"default_asset_available", !defaultAssetID.IsZero(),
+					"asset_map_size", len(assetMap),
+				)
+				addError(output, fmt.Sprintf("finding %d: no target asset", i))
+				output.FindingsSkipped++
+				continue
+			}
+
+			// Generate fingerprint (+ the base, persisted so the composite can be
+			// recomputed for a new asset_id after an asset merge).
+			fp, base := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
+
+			// Get branch ID for this asset (if available)
+			var branchID *shared.ID
+			if bid, ok := branchMap[targetAssetID]; ok {
+				branchID = &bid
+			}
+
+			candidates = append(candidates, findingMeta{
+				index:       i,
+				finding:     ctisFinding,
+				assetID:     targetAssetID,
+				branchID:    branchID,
+				fingerprint: fp,
+				base:        base,
+				v1:          fp,
+			})
 		}
-
-		if targetAssetID.IsZero() && !defaultAssetID.IsZero() {
-			targetAssetID = defaultAssetID
-		}
-
-		if targetAssetID.IsZero() {
-			p.logger.Warn("finding skipped: no target asset",
-				"finding_index", i,
-				"asset_ref", ctisFinding.AssetRef,
-				"default_asset_available", !defaultAssetID.IsZero(),
-				"asset_map_size", len(assetMap),
-			)
-			addError(output, fmt.Sprintf("finding %d: no target asset", i))
-			output.FindingsSkipped++
-			continue
-		}
-
-		// Generate fingerprint (+ the base, persisted so the composite can be
-		// recomputed for a new asset_id after an asset merge).
-		fp, base := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
-
-		// Get branch ID for this asset (if available)
-		var branchID *shared.ID
-		if bid, ok := branchMap[targetAssetID]; ok {
-			branchID = &bid
-		}
-
-		candidates = append(candidates, findingMeta{
-			index:       i,
-			finding:     ctisFinding,
-			assetID:     targetAssetID,
-			branchID:    branchID,
-			fingerprint: fp,
-			base:        base,
-		})
 	}
 
 	if len(candidates) == 0 {
 		return nil
 	}
+
+	// Step 1a: the version-2 identity, computed on the server (RFC-043 §4.2).
+	applyIdentityV2Of(p, tenantID, report.Tool, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
+		func(fm *findingMeta, k vulnerability.IdentityKey) {
+			fm.identity = &k
+			fm.fingerprint = k.Fingerprint()
+			fm.base = ""
+		})
 
 	// Step 1b: a network finding without a CVE used to be keyed without its
 	// port (RFC-043 P0). Hand a row stored under that old key to the first port
@@ -358,8 +390,13 @@ func (p *FindingProcessor) processBatch(
 	// existence check below sees the new key.
 	p.adoptLegacyPortlessFingerprints(ctx, tenantID, validFindingsLegacy(candidates, func(fm findingMeta) (string, string, string) {
 		legacy := legacyPortlessFingerprint(fm.assetID, &fm.finding)
-		return legacy, fm.fingerprint, fm.base
+		_, base := generateFindingFingerprint(fm.assetID, &fm.finding, report.Tool)
+		return legacy, fm.v1, base
 	}))
+
+	// Step 1b': a finding still keyed by its version-1 key takes its
+	// version-2 key on this sighting; the old key stays its alias (RFC-043 §6).
+	adoptV1KeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) (string, *vulnerability.IdentityKey) { return fm.v1, fm.identity })
 
 	// Step 1c: a key a finding gave up (an asset merge, a duplicate folded
 	// into another finding, an older recipe) is an alias of the finding that
@@ -367,9 +404,20 @@ func (p *FindingProcessor) processBatch(
 	// on that finding instead of creating a new one.
 	aliases := resolveFingerprintAliasesOf(ctx, p, tenantID, candidates, func(fm findingMeta) string { return fm.fingerprint })
 
+	var mitigations []vulnerability.SourceMitigation
+	mitigatedNow := time.Now()
 	for _, fm := range candidates {
 		if current, ok := aliases[fm.fingerprint]; ok {
 			fm.fingerprint = current
+		}
+		// The source says it is mitigated (RFC-047 §7.6): not a sighting.
+		if isSourceMitigated(report, &fm.finding) {
+			mitigations = append(mitigations, vulnerability.SourceMitigation{
+				Fingerprint: fm.fingerprint,
+				AssetID:     fm.assetID,
+				MitigatedAt: mitigatedAt(&fm.finding, mitigatedNow),
+			})
+			continue
 		}
 		// One report naming the same finding twice (the same package in two
 		// lockfiles, a template matching twice, two keys of one finding) is
@@ -387,6 +435,11 @@ func (p *FindingProcessor) processBatch(
 
 	if duplicatesInReport > 0 {
 		p.logger.Debug("folded repeated findings within one report", "count", duplicatesInReport)
+	}
+
+	p.applySourceMitigations(ctx, tenantID, report, mitigations, scope, output)
+	if len(validFindings) == 0 {
+		return nil
 	}
 
 	// Step 2: Batch check existing fingerprints
@@ -424,6 +477,7 @@ func (p *FindingProcessor) processBatch(
 			// Build Finding from scan data for enrichment
 			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
+				applyIdentityToFinding(newData, fm.identity, &fm.finding)
 				existingNewData = append(existingNewData, newData)
 			} else {
 				// buildFinding failed — fall back to scan-id-only update for this fingerprint
@@ -431,6 +485,9 @@ func (p *FindingProcessor) processBatch(
 			}
 		} else {
 			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
+			if err == nil {
+				applyIdentityToFinding(f, fm.identity, &fm.finding)
+			}
 			if err != nil {
 				addError(output, fmt.Sprintf("finding %d: %v", fm.index, err))
 				output.FindingsSkipped++
@@ -663,7 +720,41 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 
+	// Step 7: Scanner output and CVSS vectors (research 24 P0-2), matched by
+	// fingerprint like step 6, so new and re-sighted findings both get the
+	// latest output. Best-effort: a failure here must not fail the ingest.
+	evidence := make([]vulnerability.ScannerEvidenceUpdate, 0, len(validFindings))
+	for i := range validFindings {
+		if u := scannerEvidenceUpdate(validFindings[i].fingerprint, &validFindings[i].finding); !u.IsEmpty() {
+			evidence = append(evidence, u)
+		}
+	}
+	p.storeScannerEvidence(ctx, tenantID, evidence)
+
+	// Step 8: the template content each finding was matched with
+	// (research/18 O6): its new baseline for retests and later scans. A
+	// record of the sighting, like the enrichment above; it never changes a
+	// finding's status, and a baseline only narrows what later proves a fix.
+	sightings := make([]vulnerability.TemplateSighting, 0, len(validFindings))
+	for _, fm := range validFindings {
+		if prov := findingTemplateProvenance(&fm.finding, report.Tool); !prov.Empty() {
+			sightings = append(sightings, vulnerability.TemplateSighting{Fingerprint: fm.fingerprint, Provenance: prov})
+		}
+	}
+	p.recordTemplateSightings(ctx, tenantID, sightings)
+
 	return nil
+}
+
+// storeScannerEvidence writes each sighting's scanner output and vectors.
+func (p *FindingProcessor) storeScannerEvidence(ctx context.Context, tenantID shared.ID, updates []vulnerability.ScannerEvidenceUpdate) {
+	w, ok := p.repo.(scannerEvidenceWriter)
+	if !ok || len(updates) == 0 {
+		return
+	}
+	if _, err := w.UpdateScannerEvidenceBatch(ctx, tenantID, updates); err != nil {
+		p.logger.Warn("failed to store scanner output", "error", err, "count", len(updates))
+	}
 }
 
 // CheckFingerprints checks which fingerprints already exist in the database.
@@ -930,6 +1021,7 @@ func (p *FindingProcessor) buildFinding(
 
 	// Set classification (CVE/CWE/OWASP/CVSS)
 	p.setFindingClassification(f, ctisFinding)
+	setFindingScannerDetails(f, ctisFinding)
 
 	// Set tags
 	if len(ctisFinding.Tags) > 0 {

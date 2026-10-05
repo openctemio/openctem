@@ -21,12 +21,24 @@ type TenantSecurityPolicyProvider interface {
 }
 
 // IPAllowlistGate enforces each organization's Security.IPWhitelist on user
-// sessions. It applies to requests authenticated with a user's
-// access token, for the organization the request acts on: the organization in
-// the URL (/tenants/{tenant}/...) when there is one, else the organization the
-// token is scoped to. It does not apply to sensor/agent API keys, tenant API
-// keys, the platform admin console, or public routes, none of which carry a
-// user access token.
+// sessions and on the organization's `oct_` API keys. It applies to requests
+// authenticated with a user's access token or an `oct_` key, for the
+// organization the request acts on: the organization in the URL
+// (/tenants/{tenant}/...) when there is one, else the organization the token
+// or key belongs to. Every surface an `oct_` key can reach runs it: the tenant
+// REST API (buildBaseMiddlewares) and the MCP endpoint (mcpMiddlewares).
+//
+// Deliberately outside the gate (each has its own credential and its caller
+// is not on the organization's network):
+//   - sensor keys: sensors run in scan zones and customer networks, with their
+//     own enrollment, key and egress controls (RFC-023, RFC-032, RFC-034);
+//   - SCIM (/scim/v2): the caller is the organization's identity provider
+//     (Entra ID, Okta), a SaaS whose egress addresses are not the users'
+//     network. Gating it would also stop deprovisioning (leavers stay active).
+//     The owner-minted SCIM token is the boundary;
+//   - inbound integration webhooks (Jira): sent from the vendor's cloud and
+//     authenticated by the per-tenant webhook secret;
+//   - the platform admin console and public routes (login, token exchange).
 //
 // The client IP comes from httpsec.ClientIP: forwarding headers are honored
 // only from SERVER_TRUSTED_PROXIES, so a client cannot claim an allowed IP.

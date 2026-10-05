@@ -462,7 +462,8 @@ func (r *AssetRepository) selectQuery() string {
 			   a.is_internet_accessible, a.exposure_changed_at, a.last_exposure_level,
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at,
 			   a.lifecycle_paused_until, a.manual_status_override,
-			   a.impact_confidentiality, a.impact_integrity, a.impact_availability
+			   a.impact_confidentiality, a.impact_integrity, a.impact_availability,
+			   a.is_crown_jewel
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -779,6 +780,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		impactConfidentiality sql.NullString
 		impactIntegrity       sql.NullString
 		impactAvailability    sql.NullString
+		isCrownJewel          bool
 	)
 
 	err := scan(
@@ -793,6 +795,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		&firstSeen, &lastSeen, &createdAt, &updatedAt,
 		&lifecyclePausedUntil, &manualStatusOverride,
 		&impactConfidentiality, &impactIntegrity, &impactAvailability,
+		&isCrownJewel,
 	)
 	if err != nil {
 		return nil, err
@@ -814,6 +817,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		return nil, err
 	}
 
+	a.SetCrownJewel(isCrownJewel)
 	a.SetFindingSeverityCounts(&asset.FindingSeverityCounts{
 		Critical: findingCritical,
 		High:     findingHigh,
@@ -1104,12 +1108,9 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
-	// Crown jewel filter.
-	// Source of truth is properties->>'is_crown_jewel' (written by the
-	// crown-jewel PATCH endpoint); read from there so filtering reflects what
-	// was set. The dedicated is_crown_jewel column is not written by Update.
+	// Crown jewel filter: the is_crown_jewel column is the only source.
 	if filter.IsCrownJewel != nil {
-		conditions = append(conditions, fmt.Sprintf(crownJewelPropSQL+" = $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("a.is_crown_jewel = $%d", argIndex))
 		args = append(args, *filter.IsCrownJewel)
 		argIndex++
 	}
@@ -1230,6 +1231,31 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
+	// Attribution filter (RFC-036 §6.4). asset_attributions is a side table;
+	// an asset with no row is a legacy asset, matched only when the filter
+	// admits unrecorded assets. The join is pinned to the asset's tenant.
+	if af := filter.Attribution; af != nil {
+		var parts []string
+		if len(af.States) > 0 {
+			states := make([]string, len(af.States))
+			for i, st := range af.States {
+				states[i] = string(st)
+			}
+			parts = append(parts, fmt.Sprintf(
+				"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d))",
+				argIndex))
+			args = append(args, pq.Array(states))
+			argIndex++
+		}
+		if af.Unrecorded {
+			parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id)")
+		}
+		if len(parts) == 0 {
+			parts = append(parts, "FALSE")
+		}
+		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
+	}
+
 	// Data classification filter.
 	if len(filter.DataClassifications) > 0 {
 		placeholders := make([]string, len(filter.DataClassifications))
@@ -1291,12 +1317,15 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
-	// Layer 2: Data Scope - filter by user's group membership
+	// Layer 2: Data Scope - only the user's in-scope assets (a user scope
+	// without a tenant matches nothing).
+	tenantForScope := ""
 	if filter.TenantID != nil {
-		if cond, scopeArgs := dataScopeCondition(filter.AccessScope(), *filter.TenantID, argIndex); cond != "" {
-			conditions = append(conditions, cond)
-			args = append(args, scopeArgs...)
-		}
+		tenantForScope = *filter.TenantID
+	}
+	if cond, scopeArgs := dataScopeCondition(filter.AccessScope(), tenantForScope, argIndex); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, scopeArgs...)
 	}
 
 	return strings.Join(conditions, " AND "), args
@@ -1308,26 +1337,19 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 // argIndex is the first free $N placeholder; the returned args fill it and the
 // next one. It returns "" when the scope restricts nothing.
 //
-// Default (fail-OPEN): no rows in user_accessible_assets ⇒ NOT EXISTS bypasses
-// and the user sees all (backward compatible). When the tenant enables
-// RestrictedDataScope (DataScopeStrict), the bypass is dropped: no
-// assignment ⇒ no assets (fail-CLOSED, Tenable "No Access" default).
+// Always fail closed: a user with no rows in user_accessible_assets sees no
+// asset (there is no "no rows means everything" mode).
 func dataScopeCondition(access asset.AccessScope, tenantID string, argIndex int) (string, []any) {
-	if access.DataScopeUserID == nil || tenantID == "" {
+	if access.DataScopeUserID == nil {
 		return "", nil
 	}
-	userIDIdx := argIndex
-	tenantIDIdx := argIndex + 1
-	args := []any{access.DataScopeUserID.String(), tenantID}
-	if access.DataScopeStrict {
-		return fmt.Sprintf(
-			`a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
-			userIDIdx, tenantIDIdx), args
+	if tenantID == "" {
+		// A user scope without a tenant cannot be matched: admit nothing.
+		return "FALSE", nil
 	}
-	return fmt.Sprintf(`(
-				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-				OR a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx), args
+	return fmt.Sprintf(
+		`a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
+		argIndex, argIndex+1), []any{access.DataScopeUserID.String(), tenantID}
 }
 
 // =============================================================================
@@ -2383,12 +2405,31 @@ func formatPropertyLabel(key string) string {
 	return strings.Join(words, " ")
 }
 
-// crownJewelPropSQL reads the crown-jewel flag from asset a's properties
-// without a cast: only JSON true or the string "true" (any case) count, and
-// any other value (a non-boolean string, a number, an object) reads as
-// false. A ::boolean cast would make one bad value fail every query that
-// reads the flag for the whole tenant.
-const crownJewelPropSQL = `COALESCE(lower(a.properties->>'is_crown_jewel') = 'true', FALSE)`
+// SetCrownJewel sets an asset's crown-jewel flag and its business impact
+// in one statement, scoped to the tenant. It is the only writer of
+// assets.is_crown_jewel: Create, Update and the ingest upsert never touch it,
+// so a save of a stale entity cannot undo the decision.
+func (r *AssetRepository) SetCrownJewel(ctx context.Context, tenantID, assetID shared.ID, isCrownJewel bool, impactScore float64, impactNotes string) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE assets
+		   SET is_crown_jewel = $3,
+		       properties = COALESCE(properties, '{}'::jsonb)
+		           || jsonb_build_object('business_impact_score', $4::numeric, 'business_impact_notes', $5::text),
+		       updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+		tenantID.String(), assetID.String(), isCrownJewel, impactScore, impactNotes)
+	if err != nil {
+		return fmt.Errorf("set crown jewel: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set crown jewel: %w", err)
+	}
+	if n == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
 
 // ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
 // Used by attack path scoring to build the full in-memory directed graph.
@@ -2399,10 +2440,11 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			a.id,
 			a.name,
 			a.asset_type,
+			COALESCE(a.sub_type, ''),
 			a.exposure,
 			a.criticality,
 			a.risk_score,
-			` + crownJewelPropSQL + `,
+			a.is_crown_jewel,
 			COALESCE(fc.finding_count, 0)
 		FROM assets a
 		-- Per-asset indexed count (see selectQuery) instead of a full-findings
@@ -2425,7 +2467,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 	for rows.Next() {
 		var n asset.AssetNode
 		if scanErr := rows.Scan(
-			&n.ID, &n.Name, &n.AssetType, &n.Exposure,
+			&n.ID, &n.Name, &n.AssetType, &n.SubType, &n.Exposure,
 			&n.Criticality, &n.RiskScore, &n.IsCrownJewel, &n.FindingCount,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan node: %w", scanErr)

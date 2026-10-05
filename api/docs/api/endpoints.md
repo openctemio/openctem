@@ -128,18 +128,23 @@ Base URL: `http://localhost:8080/api/v1`
 | GET | `/tenants/:tenant/invitations` | List invitations | Team member |
 | POST | `/tenants/:tenant/invitations` | Create invitation | Team admin+ |
 | DELETE | `/tenants/:tenant/invitations/:id` | Cancel invitation | Team admin+ |
-| GET | `/invitations/:token` | Get invitation details | JWT |
-| POST | `/invitations/:token/accept` | Accept invitation | JWT |
+| POST | `/invitations/lookup` | What an invitation grants (`{"token"}` in the body) | Public, rate limited |
+| POST | `/invitations/accept` | Accept invitation (`{"token"}` in the body) | JWT, invited email |
+| POST | `/invitations/accept-with-refresh` | Accept with the refresh token (no organization yet) | Refresh token |
+| POST | `/invitations/decline` | Decline invitation (`{"token"}` in the body) | Public, rate limited |
+
+The `/invitations/:token/...` paths are deprecated aliases (RFC-041; `Deprecation`/`Sunset` headers, removal 2027-01-15).
 
 ### Team Settings
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|------------|
-| GET | `/tenants/:tenant/settings` | Get all settings | Team member |
+| GET | `/tenants/:tenant/settings` | Get settings (security and risk scoring for owners/admins only) | Team member |
 | PATCH | `/tenants/:tenant/settings/general` | Update general settings | Team admin+ |
 | PATCH | `/tenants/:tenant/settings/security` | Update security settings | Team admin+ |
-| PATCH | `/tenants/:tenant/settings/api` | Update API settings | Team admin+ |
 | PATCH | `/tenants/:tenant/settings/branding` | Update branding settings | Team admin+ |
+
+Each section is saved on its own. Responses carry `etags` (one per section); send a section tag as `If-Match` to get `409 SETTINGS_CONFLICT` instead of overwriting a newer save. See [Organization Settings](../architecture/organization-settings.md).
 
 #### General Settings
 

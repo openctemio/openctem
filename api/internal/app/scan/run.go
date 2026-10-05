@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
@@ -180,6 +181,12 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		return nil, err
 	}
 	input.Targets = validatedTargets
+	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), input.Targets); err != nil {
+		return nil, err
+	}
+	if err := s.refuseUnownedTargets(ctx, tenantID, "quick_scan", input.Targets, IsTakeoverOnlyProbe(input.ScannerName, input.Config)); err != nil {
+		return nil, err
+	}
 
 	// Determine scan type
 	scanType := scan.ScanTypeSingle
@@ -216,9 +223,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	// configuration, hidden from the Configurations list until someone saves
 	// it (SaveQuickScan). No asset group is created: the targets live on the
 	// scan, which both trigger paths read.
-	timestamp := time.Now().Format("20060102-150405")
-	scanName := fmt.Sprintf("Quick Scan - %s", timestamp)
-	sc, err := scan.NewScan(tenantID, scanName, shared.ID{}, scanType)
+	sc, err := scan.NewScan(tenantID, quickScanName(time.Now(), shared.NewID()), shared.ID{}, scanType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scan: %w", err)
 	}
@@ -289,6 +294,13 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		Status:        string(run.Status),
 		TargetCount:   len(input.Targets),
 	}, nil
+}
+
+// quickScanName names an ad-hoc quick scan. The time alone collided when two
+// quick scans started in the same second (409 "scan with this name already
+// exists", 22c B8); a short random suffix keeps every name unique.
+func quickScanName(now time.Time, nonce shared.ID) string {
+	return fmt.Sprintf("Quick Scan - %s-%s", now.Format("20060102-150405"), strings.ReplaceAll(nonce.String(), "-", "")[24:])
 }
 
 // SaveQuickScan turns an ad-hoc quick scan into a saved configuration named

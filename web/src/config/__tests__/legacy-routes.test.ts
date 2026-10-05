@@ -103,7 +103,7 @@ describe('legacy route redirects', () => {
     expect(redirectOnce('/settings/integrations/apps?x=1')).toBe('/settings/integrations?x=1')
     expect(redirectOnce('/settings/integrations')).toBeNull()
     // Validation, campaign-first.
-    expect(redirectOnce('/pentest/findings')).toBe('/findings?sources=pentest')
+    expect(redirectOnce('/pentest/findings')).toBe('/findings?source=pentest')
     expect(redirectOnce('/pentest/findings?campaign=c1')).toBe(
       '/pentest/campaigns/c1?view=findings&campaign=c1'
     )
@@ -127,7 +127,7 @@ describe('legacy route redirects', () => {
     expect(redirectOnce('/settings/access-control/assignment-rules')).toBe(
       '/settings/teams?tab=assignment-rules'
     )
-    expect(redirectOnce('/settings/access-control/permission-sets')).toBeNull()
+    expect(redirectOnce('/settings/access-control/permission-sets')).toBe('/settings/roles')
     expect(redirectOnce('/settings/tenant')).toBe('/settings/general')
     expect(redirectOnce('/settings/tenant?tab=storage')).toBe('/settings/general?tab=storage')
     expect(redirectOnce('/settings/tenant?tab=security')).toBe(
@@ -141,5 +141,10 @@ describe('legacy route redirects', () => {
     expect(redirectOnce('/tools')).toBe('/settings/scanning/tools')
     expect(redirectOnce('/toolsx')).toBeNull()
     expect(redirectOnce('/settings/priority-rules/x?y=1')).toBe('/priority-rules/x?y=1')
+    // Orphaned dashboard-total pages, deleted (D-31).
+    expect(redirectOnce('/trending')).toBe('/insights/executive')
+    expect(redirectOnce('/insights/analytics/mttr')).toBe('/insights/executive')
+    expect(redirectOnce('/progress')).toBe('/remediation')
+    expect(redirectOnce('/simulation/scenarios')).toBe('/attack-simulation')
   })
 })

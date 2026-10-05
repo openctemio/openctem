@@ -10,12 +10,13 @@ import (
 type Repository interface {
 	// Group CRUD operations
 	Create(ctx context.Context, g *Group) error
-	GetByID(ctx context.Context, id shared.ID) (*Group, error)
 	// GetByTenantAndID retrieves a group by tenant and ID (tenant-scoped access control).
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Group, error)
 	GetBySlug(ctx context.Context, tenantID shared.ID, slug string) (*Group, error)
+	// Update writes g; the row must belong to g.TenantID().
 	Update(ctx context.Context, g *Group) error
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete removes the group only when it belongs to tenantID.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// Group queries
 	List(ctx context.Context, tenantID shared.ID, filter ListFilter) ([]*Group, error)
@@ -42,12 +43,6 @@ type Repository interface {
 	// User-centric queries
 	ListGroupsByUser(ctx context.Context, tenantID, userID shared.ID) ([]*GroupWithRole, error)
 	ListGroupIDsByUser(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
-
-	// Permission set assignment
-	AssignPermissionSet(ctx context.Context, groupID, permissionSetID shared.ID, assignedBy *shared.ID) error
-	RemovePermissionSet(ctx context.Context, groupID, permissionSetID shared.ID) error
-	ListPermissionSetIDs(ctx context.Context, groupID shared.ID) ([]shared.ID, error)
-	ListGroupsWithPermissionSet(ctx context.Context, permissionSetID shared.ID) ([]*Group, error)
 }
 
 // ListFilter contains filter options for listing groups.
@@ -93,10 +88,4 @@ type GroupWithRole struct {
 type GroupWithMembers struct {
 	Group   *Group
 	Members []*MemberWithUser
-}
-
-// GroupWithPermissionSets represents a group with its assigned permission sets.
-type GroupWithPermissionSets struct {
-	Group            *Group
-	PermissionSetIDs []shared.ID
 }

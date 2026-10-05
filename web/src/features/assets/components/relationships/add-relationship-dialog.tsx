@@ -66,6 +66,8 @@ export interface AssetOption {
   id: string
   name: string
   type: ExtendedAssetType
+  /** Stored sub-type: the constraint table is keyed by (type, sub-type). */
+  subType?: string
   description?: string
 }
 
@@ -231,16 +233,20 @@ export function AddRelationshipDialog({
   const [isSearching, setIsSearching] = React.useState(false)
 
   // Get valid relationship types for source asset
+  const sourceRef = React.useMemo(
+    () => ({ type: sourceAsset.type, subType: sourceAsset.subType }),
+    [sourceAsset.type, sourceAsset.subType]
+  )
   const validRelationshipTypes = React.useMemo(
-    () => getValidRelationshipTypes(sourceAsset.type),
-    [sourceAsset.type]
+    () => getValidRelationshipTypes(sourceRef),
+    [sourceRef]
   )
 
   // Get valid target types based on selected relationship
   const validTargetTypes = React.useMemo(() => {
     if (!relationshipType) return []
-    return getValidTargetTypes(relationshipType as RelationshipType, sourceAsset.type)
-  }, [relationshipType, sourceAsset.type])
+    return getValidTargetTypes(relationshipType as RelationshipType, sourceRef)
+  }, [relationshipType, sourceRef])
 
   // Run server-side search whenever the debounced query changes (and a
   // relationship type is selected — no point searching before then).
@@ -296,15 +302,17 @@ export function AddRelationshipDialog({
   //   3. exclude assets that are already related (avoid round-trip errors)
   const filteredAssets = React.useMemo(() => {
     let result = searchResults
-    if (validTargetTypes.length > 0) {
-      result = result.filter((asset) => validTargetTypes.includes(asset.type))
+    if (relationshipType && validTargetTypes.length > 0) {
+      result = result.filter((asset) =>
+        isValidRelationship(relationshipType as RelationshipType, sourceRef, asset)
+      )
     }
     result = result.filter((asset) => asset.id !== sourceAsset.id)
     if (takenTargetIds.size > 0) {
       result = result.filter((asset) => !takenTargetIds.has(asset.id))
     }
     return result
-  }, [searchResults, validTargetTypes, sourceAsset.id, takenTargetIds])
+  }, [searchResults, relationshipType, validTargetTypes, sourceRef, sourceAsset.id, takenTargetIds])
 
   // Validation: every selected target must satisfy the constraint table
   // for the chosen relationship type. Any one bad target invalidates
@@ -312,9 +320,9 @@ export function AddRelationshipDialog({
   const isValid = React.useMemo(() => {
     if (!relationshipType || selectedTargets.length === 0) return false
     return selectedTargets.every((target) =>
-      isValidRelationship(relationshipType as RelationshipType, sourceAsset.type, target.type)
+      isValidRelationship(relationshipType as RelationshipType, sourceRef, target)
     )
-  }, [relationshipType, selectedTargets, sourceAsset.type])
+  }, [relationshipType, selectedTargets, sourceRef])
 
   // Reset form when dialog closes
   React.useEffect(() => {

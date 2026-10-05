@@ -26,6 +26,16 @@ path prefix, and each plane has one authenticator. **(lint)**
 | mcp | `/api/v1/mcp` | `oct_` key | |
 | ops | `/health`, `/ready`, `/metrics` | none / metrics bearer | `/metrics` and `/ready` are never exposed publicly |
 
+The same table drives the public gateway. `PlaneEdges` and `EdgeOverrides`
+(`routes/plane/edge.go`) say how the edge treats each plane: straight to the
+API (sensor, inbound, scim, mcp, ops, and the IdP-facing auth paths),
+through the web app's BFF (user, self, auth and admin, which browsers call
+with a session cookie), or never (`/metrics`, `/ready`).
+`api/deploy/gateway/planes.caddy` is generated from it
+(`UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/`), and a
+test fails when the committed file and the table disagree. A new plane or
+prefix therefore reaches the edge in the same PR, or CI is red.
+
 Rules:
 
 - A credential is accepted only on its own plane:
@@ -154,13 +164,19 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   - Do not add `limit`/`offset` or `page_size` to new routes.
 - **Sorting:** `sort=field,-other` (a leading `-` means descending). Do not
   add `sort_by`/`sort_order`/`order`/`order_by` to new routes.
-- **Filtering:**
-  - Equality uses the field's own name, e.g. `status=open`. A list value is
-    the plural name with commas, e.g. `severities=critical,high`.
-  - Ranges use `min_`/`max_` or `_before`/`_after` prefixes and suffixes,
-    e.g. `min_cvss`, `first_seen_after`.
-  - Booleans use `is_`/`has_`, e.g. `is_internet_accessible`.
-  - Free text is `search`.
+- **Filtering** follows [RFC-048](../rfcs/RFC-048-list-query-contract.md)
+  ([how to use it](list-query-contract.md)). It supersedes the older
+  plural / `min_` / `search` style, which stays only as deprecated aliases on
+  migrated endpoints:
+  - The param is the **singular response field name**; a list value uses
+    commas, e.g. `severity=critical,high`.
+  - Operators are suffixes: `_not`, `_gte`, `_gt`, `_lte`, `_lt`, `_null`,
+    `_contains`, e.g. `cvss_score_gte=7`, `last_seen_at_gte=-P30D`.
+  - Booleans use `is_`/`has_`, e.g. `is_in_kev=true`.
+  - Free text is `q`.
+  - OR and nesting: `POST /{collection}/search` with a FilterDocument.
+  - A bad value, an unknown param (after the warn release) or an unsortable
+    field is `400 INVALID_FILTER`.
 
 ## 6. Bodies and errors
 

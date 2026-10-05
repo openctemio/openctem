@@ -89,9 +89,9 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			max_retries, retry_backoff_seconds, status,
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
-			created_by, created_at, updated_at, scan_zone_id, ad_hoc
+			created_by, created_at, updated_at, scan_zone_id, ad_hoc, schedule_rrule
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NULLIF($38, ''))
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -132,6 +132,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		s.UpdatedAt,
 		nullableIDString(s.ScanZoneID),
 		s.AdHoc,
+		s.ScheduleRRule,
 	)
 
 	if err != nil {
@@ -142,13 +143,6 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 	}
 
 	return nil
-}
-
-// GetByID retrieves a scan by ID.
-func (r *ScanRepository) GetByID(ctx context.Context, id shared.ID) (*scan.Scan, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanFromRow(row)
 }
 
 // GetByTenantAndID retrieves a scan by tenant and ID.
@@ -187,7 +181,8 @@ func (r *ScanRepository) List(ctx context.Context, filter scan.Filter, page pagi
 
 	// Apply pagination
 	offset := (page.Page - 1) * page.PerPage
-	baseQuery += fmt.Sprintf(" ORDER BY name LIMIT %d OFFSET %d", page.PerPage, offset)
+	// OrderBy is a constant expression chosen from the domain whitelist.
+	baseQuery += fmt.Sprintf(" ORDER BY %s LIMIT %d OFFSET %d", filter.Sort.OrderBy(), page.PerPage, offset)
 
 	rows, err := r.db.QueryContext(ctx, baseQuery, args...)
 	if err != nil {
@@ -262,7 +257,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    schedule_type = $12, schedule_cron = $13, schedule_day = $14, schedule_time = $15, schedule_timezone = $16, next_run_at = $17,
 		    tags = $18, run_on_tenant_runner = $19, sensor_preference = $20, profile_id = $21, timeout_seconds = $22,
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
-		    updated_at = $26, scan_zone_id = $28, ad_hoc = $29
+		    updated_at = $26, scan_zone_id = $28, ad_hoc = $29, schedule_rrule = NULLIF($30, '')
 		WHERE id = $1 AND tenant_id = $27
 	`
 
@@ -296,6 +291,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		s.TenantID.String(), // $27 — tenant scope: never update another tenant's scan
 		nullableIDString(s.ScanZoneID),
 		s.AdHoc, // $29
+		s.ScheduleRRule,
 	)
 
 	if err != nil {
@@ -313,10 +309,10 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 	return nil
 }
 
-// Delete deletes a scan.
-func (r *ScanRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM scans WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete deletes a scan of tenantID. A scan of another tenant is not found.
+func (r *ScanRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM scans WHERE tenant_id = $1 AND id = $2"
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete scan: %w", err)
 	}
@@ -400,9 +396,9 @@ func (r *ScanRepository) ListDueForExecution(ctx context.Context, now time.Time)
 }
 
 // UpdateNextRunAt updates the next run time for a scan.
-func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, id shared.ID, nextRunAt *time.Time) error {
-	query := "UPDATE scans SET next_run_at = $2, updated_at = NOW() WHERE id = $1"
-	_, err := r.db.ExecContext(ctx, query, id.String(), nextRunAt)
+func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, tenantID, id shared.ID, nextRunAt *time.Time) error {
+	query := "UPDATE scans SET next_run_at = $2, updated_at = NOW() WHERE id = $1 AND tenant_id = $3"
+	_, err := r.db.ExecContext(ctx, query, id.String(), nextRunAt, tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to update next_run_at: %w", err)
 	}
@@ -415,16 +411,16 @@ func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, id shared.ID, next
 // any edit made meanwhile (a pause, a config change) and never stored the
 // 'running' status anyway. Counters are not touched here; RecordRun counts
 // the run when it finishes.
-func (r *ScanRepository) RecordRunStarted(ctx context.Context, id shared.ID, runID shared.ID) error {
+func (r *ScanRepository) RecordRunStarted(ctx context.Context, tenantID, id shared.ID, runID shared.ID) error {
 	const query = `
 		UPDATE scans
 		SET last_run_id = $2,
 		    last_run_at = NOW(),
 		    last_run_status = 'running',
 		    updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $3
 	`
-	if _, err := r.db.ExecContext(ctx, query, id.String(), runID.String()); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), tenantID.String()); err != nil {
 		return fmt.Errorf("failed to record run start: %w", err)
 	}
 	return nil
@@ -433,7 +429,7 @@ func (r *ScanRepository) RecordRunStarted(ctx context.Context, id shared.ID, run
 // RecordRun records a run's terminal outcome on its scan and counts the run.
 // last_run_status follows only while this run is still the scan's latest: an
 // older run finishing late must not relabel a newer one that is running.
-func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error {
+func (r *ScanRepository) RecordRun(ctx context.Context, tenantID, id shared.ID, runID shared.ID, status string) error {
 	var successIncrement, failedIncrement, partialIncrement int
 	switch status {
 	case "completed", "success":
@@ -454,9 +450,9 @@ func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shar
 		    failed_runs = failed_runs + $5,
 		    partial_runs = partial_runs + $6,
 		    updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $7
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), status, successIncrement, failedIncrement, partialIncrement)
+	_, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), status, successIncrement, failedIncrement, partialIncrement, tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to record run: %w", err)
 	}
@@ -468,15 +464,15 @@ func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shar
 // (there is no run) and no counter changes (there was no run to count). Makes a
 // scan that failed to dispatch visible instead of indistinguishable from one
 // that has not run yet.
-func (r *ScanRepository) RecordTriggerFailure(ctx context.Context, id shared.ID, status string) error {
+func (r *ScanRepository) RecordTriggerFailure(ctx context.Context, tenantID, id shared.ID, status string) error {
 	const query = `
 		UPDATE scans
 		SET last_run_at = NOW(),
 		    last_run_status = $2,
 		    updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $3
 	`
-	if _, err := r.db.ExecContext(ctx, query, id.String(), status); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, id.String(), status, tenantID.String()); err != nil {
 		return fmt.Errorf("failed to record trigger failure: %w", err)
 	}
 	return nil
@@ -636,13 +632,13 @@ func (r *ScanRepository) UpdateStatusByAssetGroupID(ctx context.Context, assetGr
 // (its result was ignored), and the lock stayed held by the first session
 // until that connection closed — from then on every attempt to schedule that
 // scan, on every replica, saw "locked by another instance" and skipped it.
-func (r *ScanRepository) ClaimScheduledRun(ctx context.Context, id shared.ID, dueAt time.Time, next *time.Time) (bool, error) {
+func (r *ScanRepository) ClaimScheduledRun(ctx context.Context, tenantID, id shared.ID, dueAt time.Time, next *time.Time) (bool, error) {
 	const query = `
 		UPDATE scans
 		SET next_run_at = $3, updated_at = NOW()
-		WHERE id = $1 AND next_run_at = $2 AND status = 'active'
+		WHERE id = $1 AND next_run_at = $2 AND status = 'active' AND tenant_id = $4
 	`
-	res, err := r.db.ExecContext(ctx, query, id.String(), dueAt, next)
+	res, err := r.db.ExecContext(ctx, query, id.String(), dueAt, next, tenantID.String())
 	if err != nil {
 		return false, fmt.Errorf("failed to claim scheduled run for scan %s: %w", id.String(), err)
 	}
@@ -651,6 +647,34 @@ func (r *ScanRepository) ClaimScheduledRun(ctx context.Context, id shared.ID, du
 }
 
 // selectQuery returns the base SELECT query.
+// ListOptInScans lists the tenant's scans whose scanner_config asks for
+// out-of-band callbacks (allow_interactsh true, as boolean or string) or
+// names custom templates, newest first, at most limit (research/25 D3
+// banner). Tenant-scoped.
+func (r *ScanRepository) ListOptInScans(ctx context.Context, tenantID shared.ID, limit int) ([]*scan.Scan, error) {
+	query := r.selectQuery() + `
+		WHERE tenant_id = $1
+		  AND (lower(scanner_config->>'allow_interactsh') = 'true'
+		       OR (jsonb_typeof(scanner_config->'custom_template_ids') = 'array'
+		           AND jsonb_array_length(scanner_config->'custom_template_ids') > 0))
+		ORDER BY created_at DESC
+		LIMIT $2`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list opt-in scans: %w", err)
+	}
+	defer rows.Close()
+	var out []*scan.Scan
+	for rows.Next() {
+		s, err := r.scanFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func (r *ScanRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, name, description,
@@ -661,7 +685,8 @@ func (r *ScanRepository) selectQuery() string {
 		       max_retries, retry_backoff_seconds, status,
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
-		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs
+		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs,
+		       COALESCE(schedule_rrule, '')
 		FROM scans
 	`
 }
@@ -741,6 +766,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&scanZoneID,
 		&s.AdHoc,
 		&s.PartialRuns,
+		&s.ScheduleRRule,
 	)
 	if err != nil {
 		return nil, err

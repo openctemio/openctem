@@ -1,0 +1,178 @@
+'use client'
+
+import { useState } from 'react'
+import useSWRInfinite from 'swr/infinite'
+import { Info, Loader2 } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { RunStatusBadge, TruncatedText } from '@/features/shared'
+import { get } from '@/lib/api/client'
+import { pipelineRunEndpoints } from '@/lib/api/endpoints'
+import type { RunTask, RunTaskPage } from '@/lib/api/generated'
+import { formatScanDuration } from '@/features/scans/lib/format'
+import { elapsedMs } from '@/features/scans/lib/run-display'
+
+/** Who runs a task: the tenant sensor's name, "Platform sensor", or nobody yet. */
+export function taskSensorLabel(
+  task: Pick<RunTask, 'sensor_name' | 'platform' | 'status'>
+): string {
+  if (task.sensor_name) return task.sensor_name
+  if (task.platform) return 'Platform sensor'
+  return task.status === 'queued' ? 'Waiting for a sensor' : '-'
+}
+
+/** What the API writes into a command handed back by its sensor (RFC-030 §5.12). */
+const RELEASED_PREFIX = 'released by sensor'
+
+/**
+ * The line under a task's status. A queued task that its sensor handed back
+ * (busy host, politeness, draining) carries the sensor's reason in its
+ * message: that is why it waits, not an error, so it reads as information.
+ * Any other message is the task's error.
+ */
+export function taskStatusNote(
+  task: Pick<RunTask, 'status' | 'error_message'>
+): { kind: 'waiting' | 'error'; text: string } | null {
+  const msg = task.error_message?.trim()
+  if (!msg) return null
+  if (task.status === 'queued' && msg.toLowerCase().startsWith(RELEASED_PREFIX)) {
+    const reason = msg
+      .slice(RELEASED_PREFIX.length)
+      .replace(/^[:\s]+/, '')
+      .trim()
+    return {
+      kind: 'waiting',
+      text: reason ? `Handed back: ${reason}` : 'Handed back by its sensor',
+    }
+  }
+  return { kind: 'error', text: msg }
+}
+
+/** Tasks per "Load more" page. */
+export const TASK_PAGE_SIZE = 100
+
+/**
+ * The tasks of one run (RFC-046: one dispatched command = one tool, a slice of
+ * targets, one sensor attempt). Targets are counted, not listed. The run read
+ * embeds the first tasks; when there are more, "Load more" pages through
+ * GET /pipeline-runs/{id}/tasks with the cursor the run read returned.
+ */
+export function RunTasksTable({
+  runId,
+  tasks,
+  total,
+  nextCursor,
+}: {
+  runId: string
+  tasks: RunTask[]
+  total: number
+  /** Continues after `tasks` (the run read's tasks_next_cursor); none when all are shown. */
+  nextCursor?: string
+}) {
+  // Nothing is fetched until the first "Load more".
+  const [started, setStarted] = useState(false)
+  const { data, size, setSize, isValidating, error } = useSWRInfinite<RunTaskPage>(
+    (index, prev: RunTaskPage | null) => {
+      if (!started || !nextCursor) return null
+      const cursor = index === 0 ? nextCursor : prev?.next_cursor
+      return cursor ? pipelineRunEndpoints.tasks(runId, cursor, TASK_PAGE_SIZE) : null
+    },
+    (url: string) => get<RunTaskPage>(url),
+    { revalidateFirstPage: false, revalidateOnFocus: false }
+  )
+  const more = (data ?? []).flatMap((p) => p.data ?? [])
+  const rows = [...tasks, ...more]
+  const lastPage = data?.[data.length - 1]
+  const hasMore = !!nextCursor && (!started || !lastPage || !!lastPage.next_cursor)
+  const loading = started && isValidating && (data?.length ?? 0) < size
+  const remaining = Math.max(0, total - rows.length)
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-sm">
+          <caption className="sr-only">
+            Tasks of this run: {rows.length} of {total} shown
+          </caption>
+          <thead className="bg-muted/50 text-xs text-muted-foreground">
+            <tr>
+              <th scope="col" className="px-3 py-2 text-start font-medium">
+                Status
+              </th>
+              <th scope="col" className="px-3 py-2 text-start font-medium">
+                Tool
+              </th>
+              <th scope="col" className="px-3 py-2 text-start font-medium">
+                Sensor
+              </th>
+              <th scope="col" className="px-3 py-2 text-end font-medium">
+                Targets
+              </th>
+              <th scope="col" className="px-3 py-2 text-end font-medium">
+                Duration
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((t, i) => {
+              const ms = elapsedMs(t)
+              const note = taskStatusNote(t)
+              return (
+                <tr key={t.id ?? i} className="border-t align-top">
+                  <td className="px-3 py-2">
+                    <RunStatusBadge status={t.status ?? ''} />
+                    {note?.kind === 'waiting' && (
+                      <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground">
+                        <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                        <TruncatedText value={note.text} label="Waiting" />
+                      </div>
+                    )}
+                    {note?.kind === 'error' && (
+                      <TruncatedText
+                        value={note.text}
+                        label="Task error"
+                        className="mt-1 max-w-[220px] text-xs text-muted-foreground"
+                      />
+                    )}
+                  </td>
+                  <td className="px-3 py-2">{t.tool || '-'}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{taskSensorLabel(t)}</td>
+                  <td className="px-3 py-2 text-end tabular-nums">{t.targets ?? 0}</td>
+                  <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">
+                    {ms === undefined ? '-' : ms < 1000 ? '<1s' : formatScanDuration(ms)}
+                    {ms !== undefined && !t.completed_at && ' so far'}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {rows.length < total && (
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span aria-live="polite">
+            Showing {rows.length} of {total} tasks.
+          </span>
+          {hasMore && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              aria-busy={loading}
+              onClick={() => {
+                if (!started) setStarted(true)
+                else void setSize(size + 1)
+              }}
+            >
+              {loading && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+              )}
+              Load {Math.min(TASK_PAGE_SIZE, remaining)} more
+            </Button>
+          )}
+          {error && <span className="text-destructive">Could not load more tasks.</span>}
+        </div>
+      )}
+    </div>
+  )
+}

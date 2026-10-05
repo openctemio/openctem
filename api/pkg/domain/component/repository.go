@@ -24,9 +24,11 @@ type Repository interface {
 
 	// Asset Dependency Operations (Links)
 	LinkAsset(ctx context.Context, dep *AssetDependency) error
-	GetDependency(ctx context.Context, id shared.ID) (*AssetDependency, error)
+	// GetDependency, UpdateDependency (by dep.TenantID()) and DeleteDependency
+	// only see the tenant's own rows; another tenant's id is not found.
+	GetDependency(ctx context.Context, tenantID, id shared.ID) (*AssetDependency, error)
 	UpdateDependency(ctx context.Context, dep *AssetDependency) error
-	DeleteDependency(ctx context.Context, id shared.ID) error
+	DeleteDependency(ctx context.Context, tenantID, id shared.ID) error
 	DeleteByAssetID(ctx context.Context, assetID shared.ID) error
 
 	// GetExistingDependencyByPURL retrieves an existing asset_component by asset and component PURL.
@@ -48,7 +50,7 @@ type Repository interface {
 
 	// UpdateAssetDependencyParent updates the parent_component_id and depth of an asset_component.
 	// Used in three-pass ingestion to set parent references after all components are inserted.
-	UpdateAssetDependencyParent(ctx context.Context, id shared.ID, parentID shared.ID, depth int) error
+	UpdateAssetDependencyParent(ctx context.Context, tenantID, id shared.ID, parentID shared.ID, depth int) error
 
 	// ListComponents retrieves global components (optionally filtered by usage).
 	ListComponents(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*Component], error)
@@ -77,11 +79,14 @@ type Repository interface {
 	// finding (status in new/confirmed/in_progress) for this component are
 	// returned. Default false → returns every asset using the component
 	// regardless of vulnerability status (full SBOM view).
+	//
+	// scope limits the assets to the caller's data scope (nil: all).
 	ListAssetUsage(
 		ctx context.Context,
 		tenantID shared.ID,
 		componentID shared.ID,
 		atRiskOnly bool,
+		scope *shared.DataScope,
 		page pagination.Pagination,
 	) (pagination.Result[ComponentAssetUsage], error)
 
@@ -110,6 +115,9 @@ type Filter struct {
 	Statuses           []Status
 	Licenses           []string
 	HasVulnerabilities *bool
+	// DataScope limits the components to those used by assets in the
+	// caller's data scope. Nil means unrestricted.
+	DataScope *shared.DataScope
 }
 
 // NewFilter creates a new empty filter.

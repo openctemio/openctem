@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	componentdom "github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -14,7 +15,16 @@ import (
 type ComponentService struct {
 	repo         componentdom.Repository
 	assetChecker assetTenantChecker
+	dataScope    *datascope.Enforcer
 	logger       *logger.Logger
+}
+
+// SetDataScope applies the caller's data scope (Layer 2) to every component
+// path keyed on an asset: an asset outside it answers 404, and the reverse
+// lookup and the component list only show in-scope assets. Nil (tests)
+// leaves component reads tenant-wide.
+func (s *ComponentService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
 }
 
 // NewComponentService creates a new ComponentService.
@@ -33,13 +43,29 @@ func NewComponentService(repo componentdom.Repository, assetChecker assetTenantC
 // verifyAssetTenant ensures the asset belongs to the tenant before any
 // component operation keyed on asset_id. Returns ErrNotFound (→404) otherwise.
 func (s *ComponentService) verifyAssetTenant(ctx context.Context, tenantID, assetID shared.ID) error {
-	if s.assetChecker == nil {
+	if s.assetChecker != nil {
+		if _, err := s.assetChecker.GetByID(ctx, tenantID, assetID); err != nil {
+			return err
+		}
+	}
+	return s.assertInScope(ctx, tenantID, assetID)
+}
+
+// assertInScope returns shared.ErrNotFound unless the caller may see the
+// asset (a no-op without a data scope).
+func (s *ComponentService) assertInScope(ctx context.Context, tenantID, assetID shared.ID) error {
+	if s.dataScope == nil {
 		return nil
 	}
-	if _, err := s.assetChecker.GetByID(ctx, tenantID, assetID); err != nil {
-		return err
+	return s.dataScope.AssertAsset(ctx, tenantID, assetID)
+}
+
+// callerScope is the caller's resolved data scope (nil: unrestricted).
+func (s *ComponentService) callerScope(ctx context.Context, tenantID shared.ID) (*shared.DataScope, error) {
+	if s.dataScope == nil {
+		return nil, nil
 	}
-	return nil
+	return s.dataScope.Resolve(ctx, tenantID)
 }
 
 // CreateComponentInput represents the input for creating a component.
@@ -155,6 +181,9 @@ func (s *ComponentService) GetAssetDependency(ctx context.Context, tenantID, ass
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid component id format", shared.ErrValidation)
 	}
+	if err := s.assertInScope(ctx, tid, aid); err != nil {
+		return nil, err
+	}
 	return s.repo.GetAssetDependency(ctx, tid, aid, cid)
 }
 
@@ -204,14 +233,20 @@ func (s *ComponentService) UpdateComponent(ctx context.Context, dependencyID str
 		return nil, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
 
-	// 1. Get the existing dependency link
-	dep, err := s.repo.GetDependency(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+
+	// 1. Get the existing dependency link (tenant-scoped: another tenant's
+	// id is not found).
+	dep, err := s.repo.GetDependency(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
-
-	if dep.TenantID().String() != tenantID {
-		return nil, shared.ErrNotFound
+	// The asset the dependency belongs to must be in the caller's scope.
+	if err := s.assertInScope(ctx, dep.TenantID(), dep.AssetID()); err != nil {
+		return nil, err
 	}
 
 	// 2. Handle Contextual Updates (DependencyType, Path)
@@ -258,15 +293,20 @@ func (s *ComponentService) DeleteComponent(ctx context.Context, dependencyID str
 	if tenantID == "" {
 		return fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
-	dep, err := s.repo.GetDependency(ctx, parsedID)
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return shared.ErrNotFound
+	}
+	dep, err := s.repo.GetDependency(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return err
 	}
-	if dep.TenantID().String() != tenantID {
-		return shared.ErrNotFound
+	// The asset the dependency belongs to must be in the caller's scope.
+	if err := s.assertInScope(ctx, dep.TenantID(), dep.AssetID()); err != nil {
+		return err
 	}
 
-	if err := s.repo.DeleteDependency(ctx, parsedID); err != nil {
+	if err := s.repo.DeleteDependency(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
 
@@ -302,8 +342,17 @@ func (s *ComponentService) ListComponents(ctx context.Context, input ListCompone
 		if err != nil {
 			return pagination.Result[*componentdom.Component]{}, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
 		}
+		// A query parameter, so the route guard does not see it.
+		if err := s.verifyAssetTenant(ctx, tenantID, assetID); err != nil {
+			return pagination.Result[*componentdom.Component]{}, err
+		}
 		filter = filter.WithAssetID(assetID)
 	}
+	scope, err := s.callerScope(ctx, tenantID)
+	if err != nil {
+		return pagination.Result[*componentdom.Component]{}, err
+	}
+	filter.DataScope = scope
 
 	if input.Name != "" {
 		filter = filter.WithName(input.Name)
@@ -458,8 +507,12 @@ func (s *ComponentService) ListAssetUsageByComponent(
 		return pagination.Result[componentdom.ComponentAssetUsage]{}, fmt.Errorf("%w: invalid component id format", shared.ErrValidation)
 	}
 
+	scope, err := s.callerScope(ctx, parsedTenantID)
+	if err != nil {
+		return pagination.Result[componentdom.ComponentAssetUsage]{}, err
+	}
 	p := pagination.New(page, perPage)
-	return s.repo.ListAssetUsage(ctx, parsedTenantID, parsedComponentID, atRiskOnly, p)
+	return s.repo.ListAssetUsage(ctx, parsedTenantID, parsedComponentID, atRiskOnly, scope, p)
 }
 
 // GetLicenseStats retrieves license statistics for a tenant.

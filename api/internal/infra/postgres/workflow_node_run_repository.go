@@ -239,6 +239,7 @@ func (r *WorkflowNodeRunRepository) Update(ctx context.Context, nr *workflow.Nod
 		    input = $5, output = $6, condition_result = $7,
 		    started_at = $8, completed_at = $9
 		WHERE id = $1
+		  AND status NOT IN ('completed', 'failed', 'skipped')
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -259,10 +260,42 @@ func (r *WorkflowNodeRunRepository) Update(ctx context.Context, nr *workflow.Nod
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
+		var exists bool
+		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM workflow_node_runs WHERE id = $1)`,
+			nr.ID.String()).Scan(&exists); err != nil {
+			return fmt.Errorf("failed to check node run: %w", err)
+		}
+		if exists {
+			return workflow.ErrNodeRunAlreadyFinished
+		}
 		return shared.ErrNotFound
 	}
 
 	return nil
+}
+
+var _ workflow.NodeRunCanceler = (*WorkflowNodeRunRepository)(nil)
+
+// SkipOpenNodeRuns ends the open node runs of a canceled run (RFC-046 §8):
+// only for a run of tenantID that is canceled, so it can be repeated and
+// never touches a live run.
+func (r *WorkflowNodeRunRepository) SkipOpenNodeRuns(ctx context.Context, tenantID, runID shared.ID) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE workflow_node_runs nr
+		SET status = 'skipped', error_message = 'run canceled', completed_at = NOW()
+		WHERE nr.workflow_run_id = $2
+		  AND nr.status IN ('pending', 'running')
+		  AND EXISTS (SELECT 1 FROM workflow_runs wr
+		              WHERE wr.id = $2 AND wr.tenant_id = $1 AND wr.status = 'canceled')`,
+		tenantID.String(), runID.String())
+	if err != nil {
+		return 0, fmt.Errorf("failed to skip open node runs: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	return n, nil
 }
 
 // Delete deletes a node run.

@@ -90,7 +90,7 @@ types:
       now". For build/deploy events use Deployed To.
     constraints:
       - sources: [service, api, website]
-        targets: [host, container, k8s_workload, cloud_account]
+        targets: [host, endpoint, container, k8s_workload, cloud_account]
       - sources: [database]
         targets: [host, container, cloud_account]
       - sources: [k8s_workload]
@@ -125,7 +125,7 @@ types:
         targets: [host, database, k8s_cluster, network, storage, serverless, load_balancer]
       - sources: [network]
         targets: [host, cloud_account, load_balancer]
-      - sources: [host]
+      - sources: [host, endpoint]
         targets: [container, service, database]
       # K8s hierarchy
       - sources: [k8s_cluster]
@@ -150,7 +150,7 @@ types:
       Asset exposes an access surface (api/service → port/endpoint/public
       interface).
     constraints:
-      - sources: [host, k8s_workload, container]
+      - sources: [host, endpoint, ip_address, k8s_workload, container]
         targets: [api_endpoint, service, api]
       - sources: [domain]
         targets: [website, api, service]
@@ -170,6 +170,18 @@ types:
     constraints:
       - sources: [domain, subdomain]
         targets: [ip_address, load_balancer]
+
+  - id: serves_certificate
+    category: attack_surface_mapping
+    direct: Serves Certificate
+    inverse: Served By
+    description: >-
+      TLS — this service presented this certificate in its handshake (an
+      HTTP probe grabbed the leaf). One certificate can be served by many
+      services; the certificate is identified by its SHA-256 fingerprint.
+    constraints:
+      - sources: [service, http_service]
+        targets: [certificate]
 
   - id: cname_of
     category: attack_surface_mapping
@@ -216,8 +228,8 @@ types:
         targets: [service, api]
       - sources: [database]
         targets: [database]
-      - sources: [host, container]
-        targets: [host, container]
+      - sources: [host, endpoint, container]
+        targets: [host, endpoint, container]
 
   - id: replicates_to
     category: attack_path_analysis

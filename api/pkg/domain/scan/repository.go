@@ -21,6 +21,8 @@ type Filter struct {
 	// ExcludeAdHoc leaves out quick scans that were never saved (Scan.AdHoc):
 	// the Configurations list shows saved configurations only.
 	ExcludeAdHoc bool
+	// Sort orders the list; the zero value is by name.
+	Sort ListSort
 }
 
 // Stats represents aggregated statistics for scans.
@@ -55,9 +57,6 @@ type Repository interface {
 	// Create creates a new scan.
 	Create(ctx context.Context, scan *Scan) error
 
-	// GetByID retrieves a scan by ID.
-	GetByID(ctx context.Context, id shared.ID) (*Scan, error)
-
 	// GetByTenantAndID retrieves a scan by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Scan, error)
 
@@ -70,8 +69,9 @@ type Repository interface {
 	// Update updates a scan.
 	Update(ctx context.Context, scan *Scan) error
 
-	// Delete deletes a scan.
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete deletes a scan of tenantID. A scan of another tenant is
+	// shared.ErrNotFound.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// Scheduling
 
@@ -88,16 +88,16 @@ type Repository interface {
 	CountScheduledWithoutNextRun(ctx context.Context) (int, []string, error)
 
 	// UpdateNextRunAt updates the next run time for a scan.
-	UpdateNextRunAt(ctx context.Context, id shared.ID, nextRunAt *time.Time) error
+	UpdateNextRunAt(ctx context.Context, tenantID, id shared.ID, nextRunAt *time.Time) error
 
 	// RecordRunStarted records a newly created run as the scan's last run
 	// (status 'running') without rewriting the rest of the scan row and without
 	// touching the counters.
-	RecordRunStarted(ctx context.Context, id shared.ID, runID shared.ID) error
+	RecordRunStarted(ctx context.Context, tenantID, id shared.ID, runID shared.ID) error
 
 	// RecordRun records a run's terminal outcome and counts the run.
 	// last_run_status follows only while runID is still the scan's latest run.
-	RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error
+	RecordRun(ctx context.Context, tenantID, id shared.ID, runID shared.ID, status string) error
 
 	// RecordTriggerFailure records that a scheduled trigger failed BEFORE any
 	// run was created (e.g. no sensor available). It sets last_run_at/last_run_status
@@ -106,7 +106,7 @@ type Repository interface {
 	// scan that can never start look identical to one that simply hasn't run yet.
 	// Deliberately does NOT touch the run counters: no run existed, so inflating
 	// total_runs would be a second lie on top of the one this fixes.
-	RecordTriggerFailure(ctx context.Context, id shared.ID, status string) error
+	RecordTriggerFailure(ctx context.Context, tenantID, id shared.ID, status string) error
 
 	// Statistics
 
@@ -132,5 +132,5 @@ type Repository interface {
 	// ClaimScheduledRun atomically moves next_run_at from dueAt to next if it
 	// still equals dueAt and the scan is active. It returns true for exactly
 	// one caller per due occurrence, across replicas.
-	ClaimScheduledRun(ctx context.Context, id shared.ID, dueAt time.Time, next *time.Time) (bool, error)
+	ClaimScheduledRun(ctx context.Context, tenantID, id shared.ID, dueAt time.Time, next *time.Time) (bool, error)
 }

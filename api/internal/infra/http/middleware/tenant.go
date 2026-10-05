@@ -110,10 +110,11 @@ func RequireMembership(reader MembershipReader) func(http.Handler) http.Handler 
 				return
 			}
 
-			// Reject suspended members. The membership row stays in place
-			// (audit trail), but the user has no access until reactivated.
-			if membership.IsSuspended() {
-				apierror.Forbidden("Your access to this tenant has been suspended").WriteJSON(w)
+			// Admit an ACTIVE membership only (fail closed). A suspended
+			// (disabled) row stays for the audit trail; an offboarded row is
+			// a tombstone and answers like no membership at all.
+			if denial := inactiveMembershipDenial(membership); denial != nil {
+				denial.WriteJSON(w)
 				return
 			}
 
@@ -183,7 +184,17 @@ func activeMembershipDenial(ctx context.Context, reader MembershipReader, userID
 		}
 		return apierror.InternalError(fmt.Errorf("failed to check membership"))
 	}
-	if membership.IsSuspended() {
+	return inactiveMembershipDenial(membership)
+}
+
+// inactiveMembershipDenial is the error for a membership that is not active,
+// or nil for an active one. Positive check: any status other than active
+// (suspended, offboarded, or one added later) is refused.
+func inactiveMembershipDenial(membership *tenant.Membership) *apierror.Error {
+	switch {
+	case membership == nil || membership.IsOffboarded():
+		return apierror.Forbidden("You are not a member of this tenant")
+	case !membership.IsActive():
 		return apierror.Forbidden("Your access to this tenant has been suspended")
 	}
 	return nil
