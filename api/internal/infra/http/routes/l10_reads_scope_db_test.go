@@ -106,7 +106,7 @@ func newL10Harness(t *testing.T) *l10Harness {
 	pass := Middleware(func(next http.Handler) http.Handler { return next })
 	credH := handler.NewCredentialImportHandler(credSvc, validator.New(), log)
 	credH.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
-	registerCredentialRoutes(router, credH, nil, auth, nil, pass)
+	registerCredentialRoutes(router, credH, auth, nil, pass)
 	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, validator.New(), log), nil, nil, nil, auth, nil)
 	registerGroupRoutes(router, handler.NewGroupHandler(groupSvc, validator.New(), log), auth, nil)
 	h.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())

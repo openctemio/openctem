@@ -46,7 +46,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
-	iocapp "github.com/openctemio/openctem/api/internal/app/ioc"
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/pipeline"
@@ -625,11 +624,8 @@ type Services struct {
 	ControlChangePub *controller.ControlChangePublisher
 	Reclassifier     *reclassify.Reclassifier
 
-	// B6 runtime loop — indicator catalogue + correlator.
-	// Handlers.go hooks the correlator into RuntimeTelemetryHandler so
-	// every accepted event is matched against active IOCs.
-	IOCRepo       *postgres.IOCRepository
-	IOCCorrelator *iocapp.Correlator
+	// IOC catalog.
+	IOCRepo *postgres.IOCRepository
 
 	// bulk-action guard (attached to finding bulk handlers).
 	BulkGuard *app.BulkGuard
@@ -1078,15 +1074,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Vulnerability.SetSLAApplier(sla.NewApplier(s.SLA))
 	}
 
-	// B6 runtime loop — IOC catalogue + correlator. The correlator is
-	// attached to the runtime telemetry handler in handlers.go so every
-	// accepted event is matched against active IOCs. Match side effects:
-	//   - ioc_matches row (always, per hit)
-	//   - closed finding auto-reopen via reopen_adapter (when IOC links
-	//     back to a finding)
+	// IOC catalog. Runtime telemetry reached the correlator only through
+	// the protocol v1 /telemetry-events route, which is retired.
 	s.IOCRepo = repos.IOC
-	iocReopener := iocapp.NewFindingReopener(repos.Finding, s.Audit)
-	s.IOCCorrelator = iocapp.NewCorrelator(s.IOCRepo, iocReopener, log)
 
 	// bulk-action safety rail. Defaults: 500 rows/request,
 	// 10k rows/tenant/hour. Attached to bulk finding handlers below.
