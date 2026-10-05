@@ -11474,6 +11474,27 @@ definitions:
       secret_value:
         type: string
     type: object
+  internal_infra_http_handler.RotateCredentialRequest:
+    properties:
+      api_key:
+        $ref: '#/definitions/internal_infra_http_handler.APIKeyDataRequest'
+      aws_role:
+        $ref: '#/definitions/internal_infra_http_handler.AWSRoleDataRequest'
+      azure_service_principal:
+        $ref: '#/definitions/internal_infra_http_handler.AzureServicePrincipalDataRequest'
+      basic_auth:
+        $ref: '#/definitions/internal_infra_http_handler.BasicAuthDataRequest'
+      bearer_token:
+        $ref: '#/definitions/internal_infra_http_handler.BearerTokenDataRequest'
+      gcp_service_account:
+        $ref: '#/definitions/internal_infra_http_handler.GCPServiceAccountDataRequest'
+      github_app:
+        $ref: '#/definitions/internal_infra_http_handler.GitHubAppDataRequest'
+      gitlab_token:
+        $ref: '#/definitions/internal_infra_http_handler.GitLabTokenDataRequest'
+      ssh_key:
+        $ref: '#/definitions/internal_infra_http_handler.SSHKeyDataRequest'
+    type: object
   internal_infra_http_handler.RunDispatchResponse:
     properties:
       excluded_targets:
@@ -14161,6 +14182,8 @@ definitions:
         maxLength: 1000
         type: string
       expires_at:
+        description: 'ExpiresAt: RFC 3339 timestamp in the future, or null to clear.'
+        format: date-time
         type: string
       name:
         maxLength: 255
@@ -23055,6 +23078,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -24505,6 +24539,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -25208,6 +25253,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -25878,6 +25934,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -26601,6 +26668,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -32587,6 +32665,49 @@ paths:
       security:
       - BearerAuth: []
       summary: Update credential
+      tags:
+      - Credentials
+  /secret-store/{id}/rotate:
+    post:
+      consumes:
+      - application/json
+      description: Replace the secret of a credential in place. Send the data field
+        matching the credential's type. Sources bound to the credential use the new
+        value on their next fetch.
+      parameters:
+      - description: Credential ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New secret
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.RotateCredentialRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CredentialResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Rotate credential
       tags:
       - Credentials
   /sensors:
