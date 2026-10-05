@@ -337,7 +337,7 @@ func (s *RuleService) UpdateRule(ctx context.Context, tenantID, ruleID string, i
 	// whole group: it adds the new matches AND removes the auto-assignments no
 	// active rule matches any more (a narrowed or deactivated rule used to
 	// keep everything it had granted, research 21b M-2). A deactivation also
-	// drops the rule's rows in the database (migration 001016).
+	// drops the rule's rows in the database (migration 001028).
 	if matchingChanged {
 		rr, err := s.ReconcileGroup(ctx, tid.String(), rule.GroupID().String())
 		if err != nil {

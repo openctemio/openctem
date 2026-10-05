@@ -1,7 +1,7 @@
 package integration
 
 // The scope materialization (user_accessible_assets) follows every source
-// write in the same transaction (migration 001016, RFC-050 W6). Research 21b
+// write in the same transaction (migration 001028, RFC-050 W6). Research 21b
 // H6: deactivating an access group never removed the access it granted.
 
 import (
