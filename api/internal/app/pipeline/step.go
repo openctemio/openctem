@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -264,16 +265,13 @@ func (s *Service) ValidateToolReferences(ctx context.Context, template *pipeline
 			continue
 		}
 
-		// Case 2: Step has no tool but has capabilities - find matching tool
+		// Case 2: Step has no tool but has capabilities: the planner's own
+		// rule (scan.ResolveStepTool), so a step that validates is a step
+		// the dispatcher names a scanner for (research/27 F1).
 		if len(step.Capabilities) > 0 {
-			// Try to find an active tool that matches the capabilities
-			matchingTool, err := s.toolRepo.FindByCapabilities(ctx, tenantID, step.Capabilities)
-			if err != nil || matchingTool == nil {
+			if _, err := scanapp.ResolveStepTool(ctx, s.toolRepo, tenantID, step); err != nil {
 				stepsWithNoMatchingCapabilities = append(stepsWithNoMatchingCapabilities,
-					fmt.Sprintf("step '%s' with capabilities %v", step.StepKey, step.Capabilities))
-			} else if !matchingTool.IsActive {
-				inactiveTools = append(inactiveTools,
-					fmt.Sprintf("%s (step: %s, matched by capabilities)", matchingTool.Name, step.StepKey))
+					fmt.Sprintf("step '%s' with capabilities %v (%s)", step.StepKey, step.Capabilities, resolveReason(err)))
 			}
 			continue
 		}
@@ -552,4 +550,14 @@ func (s *Service) DeleteStepsByPipelineID(ctx context.Context, tenantID, pipelin
 	}
 
 	return s.stepRepo.DeleteByPipelineID(ctx, pid)
+}
+
+// resolveReason is the caller-facing reason a step's capabilities resolved
+// to no tool.
+func resolveReason(err error) string {
+	var de *shared.DomainError
+	if errors.As(err, &de) && de.Message != "" {
+		return de.Message
+	}
+	return "no active tool"
 }

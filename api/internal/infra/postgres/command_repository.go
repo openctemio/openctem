@@ -152,7 +152,7 @@ func pendingForSensorWhere(tenantID shared.ID, sensorID *shared.ID, capabilities
 	args := []any{tenantID.String()}
 	if sensorID != nil {
 		where += " AND (commands.sensor_id = $2 OR commands.sensor_id IS NULL) AND " + zoneClaimPredicate("$2") +
-			" AND " + toolClaimPredicate("$2")
+			" AND " + toolClaimPredicate("$2") + " AND " + refusedByPredicate("$2")
 		args = append(args, sensorID.String())
 	} else {
 		// No sensor identity: nothing pinned, no zone membership and no tools
@@ -251,6 +251,7 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 	claimable := pendingReadyPredicate + `
 		AND ` + zoneClaimPredicate("$2") + `
 		AND ` + toolClaimPredicate("$2") + `
+		AND ` + refusedByPredicate("$2") + `
 		AND ` + capabilityClaimPredicate("$3")
 	query := `
 		SELECT
@@ -419,6 +420,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND (sensor_id IS NULL OR sensor_id = $3)
 		  AND ` + zoneClaimPredicate("$3") + `
 		  AND ` + toolClaimPredicate("$3") + `
+		  AND ` + refusedByPredicate("$3") + `
 	`
 	result, err := r.db.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID, r.leaseSeconds())
 	if err != nil {
