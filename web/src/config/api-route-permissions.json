@@ -113,7 +113,6 @@
 "PATCH /api/v1/scan-zones/{id}": {"permissions":["sensors:zones:write"]},
 "PATCH /api/v1/tenants/{tenant}": {"permissions":["team:update"],"min_role":"admin"},
 "PATCH /api/v1/tenants/{tenant}/members/{userId}": {"permissions":["team:members:write"],"min_role":"admin"},
-"PATCH /api/v1/tenants/{tenant}/settings/api": {"permissions":["settings:write"],"min_role":"owner"},
 "PATCH /api/v1/tenants/{tenant}/settings/asset-identity": {"permissions":["settings:write"],"min_role":"admin"},
 "PATCH /api/v1/tenants/{tenant}/settings/branch": {"permissions":["settings:write"],"min_role":"admin"},
 "PATCH /api/v1/tenants/{tenant}/settings/branding": {"permissions":["settings:write"],"min_role":"admin"},

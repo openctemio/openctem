@@ -57,7 +57,7 @@ specific flags. They are never free-form command-line text.
 | S7 | **The sensor validates against its own schema**: unknown keys, wrong types, out-of-range values and a schema digest it does not have are **rejected**, not dropped. It stores the accepted document atomically (temp + fsync + rename, 0600, dir 0700) on the state volume, applies it from the next job (running jobs keep their settings), and reports `{version, digest, status, errors}` back. |
 | S8 | **Options map to flags in the adapter, typed.** Each option is a field the adapter turns into specific argv entries with `strconv`/fixed strings (e.g. `rate_limit: 150` → `-rate-limit 150`). There is no "extra args" option. Every built argv still passes `core.ValidateExtraArgs` / `DangerousToolFlags` as a backstop. |
 | S9 | **Precedence:** tool default < sensor settings < scan-profile settings < scan settings, and a level may set a key only if its `x-octm-scope` allows that level. The effective value and where it came from are shown in the UI and recorded per job. |
-| S10 | **Secrets are write-only.** In the API and UI they are never returned (Grafana `secureJsonData` / `secureJsonFields`); at rest they are encrypted with the tenant key (`secretstore.Encryptor`, `APP_ENCRYPTION_KEY`); in transit they are HPKE-sealed to the sensor's X25519 key (RFC-032 E10). Legacy `rda_` sensors cannot receive secret settings. |
+| S10 | **Secrets are write-only.** In the API and UI they are never returned (the UI shows only "set / not set"); at rest they are encrypted with the tenant key (`secretstore.Encryptor`, `APP_ENCRYPTION_KEY`); in transit they are HPKE-sealed to the sensor's X25519 key (RFC-032 E10). Legacy `rda_` sensors cannot receive secret settings. |
 | S11 | **Admin-only.** Reading the schemas and effective settings is `sensors:read`; changing sensor-level settings is `sensors:write`, which is owner/admin only (authz audit #2 decisions). Scan-level overrides use the existing scan permissions and only for `scope: scan` keys. Every change is in the hash-chained audit log with a redacted diff. |
 | S12 | **Evolution is additive.** New options are new optional keys with defaults. Removing or narrowing an option is a new schema version; the platform migrates stored values or marks them invalid and shows it. Old sensors (no schema) keep working and show no form. |
 
@@ -117,16 +117,14 @@ sensor, and a key typed into a scan profile silently does nothing.
 | **Terraform provider schemas** [1] | Each attribute is typed (Bool, Int64, String, List, Map, nested), `Required`/`Optional`/`Computed`, `Sensitive` (hidden from logs and plan output), `Validators`, `Default`, `PlanModifiers`, `Description`/`MarkdownDescription`, `DeprecationMessage`. The plugin owns its schema; core only renders and checks it. | The plugin (tool) owns a typed schema; `sensitive`; per-field description and deprecation; the platform renders, it does not invent. |
 | **Kubernetes CRD structural schemas** [2] | OpenAPI v3 schema is mandatory; unknown fields are **pruned**; `default` is applied server-side; `x-kubernetes-validations` carry **CEL** rules with `message`, `messageExpression` and transition rules on `oldSelf`; CEL has a cost budget. | Structural (closed) schemas, server-side defaulting, CEL for cross-field and policy rules with messages, transition rules (e.g. a value may only decrease). We **reject** unknown keys rather than prune them, because a silently dropped scan option is the bug we have today. |
 | **Kubernetes CEL** [3] | Non-Turing-complete, cost-estimable, sandboxed, no I/O, embedded in the API server. | Why CEL for S5. |
-| **Elastic Fleet integration packages** [4][5] | A package manifest declares `vars` per input (`name`, `type`, `title`, `description`, `required`, `show_user`, `default`, `multi`, `secret`, `options`); Fleet renders them, stores them in an agent policy with a revision, pushes the policy to agents, and stores `secret: true` values separately, referenced as `${SECRET_n}`. Version-specific policies for agents too old for an integration. | Per-input vars ≈ per-tool options; `secret` → stored apart and referenced; policy revision → our `version`; "too old for this integration" → no form for sensors whose schema is missing. |
-| **Grafana plugin settings** [6] | `jsonData` (plain, readable by viewers) vs `secureJsonData` (encrypted, never returned to the browser); `secureJsonFields` tells the UI a secret is set without revealing it. | Write-only secret fields, "set / not set" indicator, "replace" instead of "show". |
-| **OpenTelemetry Collector** [7] | Each component owns its `Config` struct and implements `confmap.Validator`; the core calls `Validate()` on every component config before start. | Validation is the component's job; the sensor validates with the same schema it published, so the two sides cannot disagree. |
-| **Nomad task drivers** [8] | A driver plugin returns `ConfigSchema()` (plugin level) and `TaskConfigSchema()` (task level) as `hclspec`; Nomad validates jobs against the driver's schema before placement. | Two scopes: sensor-level (plugin config) and scan-level (task config) → `x-octm-scope`. Platform validates before dispatch. |
-| **Tenable Nessus** [9] | Scanner and policy templates; settings grouped (discovery, assessment, performance); credentials configured apart from settings. | Groups and order in the form; credentials stay a separate mechanism (RFC-032 E10), never a settings field. |
-| **ProjectDiscovery tools** [10] | nuclei/httpx read YAML config files with precedence built-ins < system < user < selected config < CLI. Options include `rate-limit`, `concurrency`, `bulk-size`, `severity`, `tags`, `exclude-tags`, `interactsh-server`, `proxy`, `headless`. | Typed options for the safe subset; `proxy`, `interactsh-server`, `templates`, `headless` stay platform-controlled (RFC-034, RFC-036 tiers), not settings. We pass flags, not config files, so `-config` stays blocked (`DangerousToolFlags`). |
-| **JSON Schema 2020-12** [11] | Validation keywords (`type`, `enum`, `const`, bounds, `pattern`, `required`, `additionalProperties`) and annotations (`title`, `description`, `default`, `deprecated`, `readOnly`, `writeOnly`, `examples`). | The base vocabulary; `writeOnly` for secrets; `deprecated` for evolution. |
-| **JSON Forms** [12] / **react-jsonschema-form** [13] | Generate forms from a data schema plus a UI schema, validate with Ajv. RJSF ships a **shadcn theme** (`@rjsf/shadcn`). | Generate forms from the schema; see §6.9 for why we render our own small renderer instead of adding RJSF. |
-| **The Update Framework** [14] | Signed metadata with version numbers (no rollback), expiry (no freeze attack), role-separated keys. | Signed settings document with monotonic `version` and an optional `expires_at`; the signing key is the pinned job-signing root. |
-| **OPA / Rego** [15] | General policy engine, sidecar or library, Rego language. | Considered for S5, not chosen (§9). |
+| **Grafana plugin settings** [4] | `jsonData` (plain, readable by viewers) vs `secureJsonData` (encrypted, never returned to the browser); `secureJsonFields` tells the UI a secret is set without revealing it. | Write-only secret fields, "set / not set" indicator, "replace" instead of "show". |
+| **OpenTelemetry Collector** [5] | Each component owns its `Config` struct and implements `confmap.Validator`; the core calls `Validate()` on every component config before start. | Validation is the component's job; the sensor validates with the same schema it published, so the two sides cannot disagree. |
+| **Nomad task drivers** [6] | A driver plugin returns `ConfigSchema()` (plugin level) and `TaskConfigSchema()` (task level) as `hclspec`; Nomad validates jobs against the driver's schema before placement. | Two scopes: sensor-level (plugin config) and scan-level (task config) → `x-octm-scope`. Platform validates before dispatch. |
+| **ProjectDiscovery tools** [7] | nuclei/httpx read YAML config files with precedence built-ins < system < user < selected config < CLI. Options include `rate-limit`, `concurrency`, `bulk-size`, `severity`, `tags`, `exclude-tags`, `interactsh-server`, `proxy`, `headless`. | Typed options for the safe subset; `proxy`, `interactsh-server`, `templates`, `headless` stay platform-controlled (RFC-034, RFC-036 tiers), not settings. We pass flags, not config files, so `-config` stays blocked (`DangerousToolFlags`). |
+| **JSON Schema 2020-12** [8] | Validation keywords (`type`, `enum`, `const`, bounds, `pattern`, `required`, `additionalProperties`) and annotations (`title`, `description`, `default`, `deprecated`, `readOnly`, `writeOnly`, `examples`). | The base vocabulary; `writeOnly` for secrets; `deprecated` for evolution. |
+| **JSON Forms** [9] / **react-jsonschema-form** [10] | Generate forms from a data schema plus a UI schema, validate with Ajv. RJSF ships a **shadcn theme** (`@rjsf/shadcn`). | Generate forms from the schema; see §6.9 for why we render our own small renderer instead of adding RJSF. |
+| **The Update Framework** [11] | Signed metadata with version numbers (no rollback), expiry (no freeze attack), role-separated keys. | Signed settings document with monotonic `version` and an optional `expires_at`; the signing key is the pinned job-signing root. |
+| **OPA / Rego** [12] | General policy engine, sidecar or library, Rego language. | Considered for S5, not chosen (§9). |
 
 ## 5. Trust and threat model
 
@@ -530,7 +528,7 @@ caps them at `SENSOR_NUCLEI_MAX_RATE_LIMIT` / `_CONCURRENCY` /
    is the natural home.
 3. Sensor identity from RFC-032 enrollment, so every sensor (not only those
    with `SENSOR_ID`) checks the `sensor_id` binding.
-4. A sensor-local enable switch (Wazuh-style) for any future high-risk
+4. A sensor-local enable switch for any future high-risk
    capability (headless, DAST) rather than code-level defaults.
 5. A key-rotation runbook and a UI field showing the key to pin; reporting
    template-verification failures as a distinct command error code.
@@ -587,15 +585,12 @@ caps them at `SENSOR_NUCLEI_MAX_RATE_LIMIT` / `_CONCURRENCY` /
 1. Terraform Plugin Framework, Attributes: https://developer.hashicorp.com/terraform/plugin/framework/handling-data/attributes
 2. Kubernetes, CustomResourceDefinitions (structural schema, pruning, defaulting, `x-kubernetes-validations`): https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/
 3. Kubernetes, Common Expression Language: https://kubernetes.io/docs/reference/using-api/cel/
-4. Elastic package-spec, integration manifest (`vars`, `secret`, policy templates): https://github.com/elastic/package-spec/blob/main/spec/integration/manifest.spec.yml
-5. Elastic Fleet, agent policies (policy push, secrets): https://www.elastic.co/guide/en/fleet/current/agent-policy.html
-6. Grafana, data source authentication (`jsonData`, `secureJsonData`, `secureJsonFields`): https://grafana.com/developers/plugin-tools/how-to-guides/data-source-plugins/add-authentication-for-data-source-plugins
-7. OpenTelemetry Collector, component `Config` and `confmap.Validator`: https://github.com/open-telemetry/opentelemetry-collector/blob/main/component/config.go
-8. Nomad, task driver plugins (`ConfigSchema`, `TaskConfigSchema`, `hclspec`): https://developer.hashicorp.com/nomad/docs/concepts/plugins/task-drivers
-9. Tenable Nessus, scan and policy templates: https://docs.tenable.com/nessus/Content/ScanAndPolicyTemplates.htm
-10. ProjectDiscovery nuclei, running and configuration: https://docs.projectdiscovery.io/tools/nuclei/running
-11. JSON Schema 2020-12 Validation (incl. `deprecated`, `writeOnly`): https://json-schema.org/draft/2020-12/json-schema-validation
-12. JSON Forms: https://jsonforms.io/docs/
-13. react-jsonschema-form, themes (incl. `@rjsf/shadcn`): https://rjsf-team.github.io/react-jsonschema-form/docs/usage/themes
-14. The Update Framework, overview: https://theupdateframework.io/docs/overview/
-15. Open Policy Agent: https://www.openpolicyagent.org/docs/latest/
+4. Grafana, data source authentication (`jsonData`, `secureJsonData`, `secureJsonFields`): https://grafana.com/developers/plugin-tools/how-to-guides/data-source-plugins/add-authentication-for-data-source-plugins
+5. OpenTelemetry Collector, component `Config` and `confmap.Validator`: https://github.com/open-telemetry/opentelemetry-collector/blob/main/component/config.go
+6. Nomad, task driver plugins (`ConfigSchema`, `TaskConfigSchema`, `hclspec`): https://developer.hashicorp.com/nomad/docs/concepts/plugins/task-drivers
+7. ProjectDiscovery nuclei, running and configuration: https://docs.projectdiscovery.io/tools/nuclei/running
+8. JSON Schema 2020-12 Validation (incl. `deprecated`, `writeOnly`): https://json-schema.org/draft/2020-12/json-schema-validation
+9. JSON Forms: https://jsonforms.io/docs/
+10. react-jsonschema-form, themes (incl. `@rjsf/shadcn`): https://rjsf-team.github.io/react-jsonschema-form/docs/usage/themes
+11. The Update Framework, overview: https://theupdateframework.io/docs/overview/
+12. Open Policy Agent: https://www.openpolicyagent.org/docs/latest/
