@@ -32,7 +32,7 @@ type ExposureRelinker interface {
 func (s *Service) SetRelinker(r ExposureRelinker) { s.relinker = r }
 
 // ctFingerprint is the identity of a CT exposure: tenant, type, title and
-// host, never the linked asset. Migration 000982 re-keys stored rows to it.
+// host, never the linked asset. Migration 001018 re-keys stored rows to it.
 func ctFingerprint(tenantID shared.ID, ev *exposuredom.ExposureEvent, host string) string {
 	return exposuredom.Fingerprint(tenantID.String(), ev.EventType().String(), ev.Title(), Source, "",
 		map[string]any{"domain": host})

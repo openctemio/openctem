@@ -275,6 +275,23 @@ Code: `web/src/features/attack-surface/components/easm-review-queue.tsx`,
   `not_before` and the passive-DNS first-seen give the earliest external
   evidence, which is what MTTD is measured against.
 
+## 5a. After a decision (built, P0-9)
+
+A person's attribution decision (review queue `POST /easm/candidates/decisions`
+or `PUT /assets/{id}/attribution`) is followed by
+`easm.DecisionEffects.AfterDecision`, best effort and only for the assets the
+decision stored (tenant and data scope already checked):
+
+- **Reclassify now** (22c B4): an asset-scoped request on the priority
+  reclassify queue, which is drained every minute, so the P2 cap on findings
+  of unconfirmed assets lifts (or applies) within two minutes instead of the
+  12-hour sweep.
+- **Rejection hygiene** (22c B2): on `rejected`, the name's open CT and
+  DNS-check exposures, and those of every name under it, are resolved with
+  state history; the CT monitor stops writing exposures for rejected and
+  tombstoned names. See
+  [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md#rejected-names-identity-and-linking).
+
 ## 6. Known limits of what is built
 
 - ~~The CT monitor queries only the first 50 domain assets per tenant.~~
