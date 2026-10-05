@@ -20,7 +20,7 @@ window are not asked again):
 | Check | Names | Finds | Exposure type |
 |---|---|---|---|
 | Dangling DNS | active `domain` and `subdomain` assets | a CNAME whose target does not exist; a delegation whose name servers do not exist | `dangling_cname`, `dangling_ns` |
-| Email posture | active `domain` assets that are registrable domains (subdomains inherit the organisation's DMARC policy), plus root-domain seeds (discovery on) and verified domains that no domain asset covers, checked by name (22c B3; state in `easm_dns_name_state`, migration 000981; the exposure is linked to no asset until a domain asset exists, whose first check clears it) | SPF, DMARC, MTA-STS and TLS-RPT gaps | `email_security_weak` |
+| Email posture | active `domain` assets that are registrable domains (subdomains inherit the organisation's DMARC policy), plus root-domain seeds (discovery on) and verified domains that no domain asset covers, checked by name (22c B3; state in `easm_dns_name_state`, migration 001017; the exposure is linked to no asset until a domain asset exists, whose first check clears it) | SPF, DMARC, MTA-STS and TLS-RPT gaps | `email_security_weak` |
 
 Code: `internal/app/easmdns` (checks, service), `pkg/dnsprobe` (DNS client),
 `internal/infra/postgres/easm_dns_repository.go`, migration 000325.
