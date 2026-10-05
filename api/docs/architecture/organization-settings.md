@@ -1,7 +1,7 @@
 # Organization settings: storage, concurrency and failure handling
 
 Organization (tenant) settings live in one JSONB column, `tenants.settings`.
-Each top-level key is a **section**: `general`, `security`, `api`, `branding`,
+Each top-level key is a **section**: `general`, `security`, `branding`,
 `branch`, `ai`, `risk_scoring`, `pentest`, `asset_identity`, `asset_source`,
 `asset_lifecycle`, `retest`. The key `subscribed_bundles` is written by the
 module bundle store. The data-scope policy is the separate column
@@ -12,6 +12,28 @@ Code: `pkg/domain/tenant/settings.go` (typed sections),
 decode), `internal/app/tenant/settings_write.go` (the write path),
 `internal/infra/postgres/tenant_repository.go` (`UpdateSettingsSection`,
 `UpdateProfile`).
+
+## Who reads what
+
+- `GET /tenants` and `GET /tenants/{t}` return the organization **profile
+  only** (id, name, slug, description, logo, plan). They no longer carry the
+  settings blob, which any member could read.
+- `GET /tenants/{t}/settings` returns `general`, `branding` and `pentest` to
+  every member; `security` (IP allowlist, allowed domains, MFA, email
+  verification) and `risk_scoring` only to owners and admins. The fields are
+  absent for other roles (owner decision B20).
+- The legacy `api` section (API key switch, outbound webhook URL and a
+  plaintext `webhook_secret`) was never read by anything. `PATCH
+  /settings/api` is removed and migration 001052 deletes the stored key.
+
+## Organization slug
+
+The slug keys the SAML/SSO sign-in and ACS URLs. Renaming it is owner-only
+(403 for admins; a profile save with the unchanged slug still works for
+admins) and refused while the organization has a usable SSO identity provider
+(400): the URLs registered at the IdP would stop working, and with SSO
+enforced everyone but the owner would be locked out (owner decision B13). A
+rename is audited at High.
 
 ## Writes: one section at a time, compare-and-swap
 
