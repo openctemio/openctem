@@ -345,7 +345,7 @@ Order rationale:
 | **D7**  | Should the Scoping section header (and the dashboard loop tile) open the new Overview?                                                       | yes / no                                                                                                                                                   | **Yes.** It is the "is scope ready?" answer the owner was looking for.                                                                                                                                                                         |
 | **D8**  | Critical assets by **rules** (later)                                                                                                         | manual only / rules + review queue                                                                                                                         | Keep manual for now. Put rules on the roadmap after C11, the pattern all four verified vendors use.                                                                                                                                            |
 | **D9**  | Hub data: aggregate in the browser (≈ 6 + N calls) or add `GET /api/v1/scoping/summary`                                                      | client / api                                                                                                                                               | **API endpoint.** N service-asset calls do not scale, and a summary endpoint also serves the dashboard tile and MCP.                                                                                                                           |
-| **D10** | Remove the inert **Schedules** tab from Boundaries (API kept), or wire it to the scan scheduler                                              | remove / wire                                                                                                                                              | **Remove.** Scans already schedule (4 live scheduled scans vs 0 scope schedules). Two schedulers would be a second source of truth. Follow-up: the scope schedules API and code were removed as well; migration 001067 drops `scan_schedules`. |
+| **D10** | Remove the inert **Schedules** tab from Boundaries (API kept), or wire it to the scan scheduler                                              | remove / wire                                                                                                                                              | **Remove.** Scans already schedule (4 live scheduled scans vs 0 scope schedules). Two schedulers would be a second source of truth. Follow-up: the scope schedules API and code were removed as well; migration 001069 drops `scan_schedules`. |
 
 ---
 
@@ -371,7 +371,7 @@ Order rationale:
 
 **Inert paths**
 
-- `git grep ListDueSchedules` returned only its definition (the scope schedules code has since been removed; migration 001067 drops `scan_schedules`).
+- `git grep ListDueSchedules` returned only its definition (the scope schedules code has since been removed; migration 001069 drops `scan_schedules`).
 - `git grep` shows that `scope_targets` is consumed only by `CheckScope`, and that `scope_exclusions` is consumed by `scan.WithScopeExclusionFilter`.
 
 **Charter snapshot failure.** The query below returns `invalid input syntax for type uuid`:
