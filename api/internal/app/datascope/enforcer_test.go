@@ -315,7 +315,7 @@ func TestEnforcer_FilterAssetRefs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := New(repo, policy(false), ctxCaller, nil)
+			e := New(repo, ctxCaller, nil)
 			admit, err := e.FilterAssetRefs(withCaller(tc.caller), tenant, all)
 			if err != nil {
 				t.Fatal(err)
@@ -337,7 +337,7 @@ func TestEnforcer_FilterAssetRefs(t *testing.T) {
 		t.Errorf("nil enforcer must admit nothing (err=%v)", err)
 	}
 	repo.err = errors.New("db down")
-	if _, err := New(repo, policy(false), ctxCaller, nil).FilterAssetRefs(context.Background(), tenant, all); err == nil {
+	if _, err := New(repo, ctxCaller, nil).FilterAssetRefs(context.Background(), tenant, all); err == nil {
 		t.Error("a lookup error must be returned")
 	}
 }

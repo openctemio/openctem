@@ -103,16 +103,20 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/custom-tools":           {classConfig, "custom tools"},
 	"/api/v1/custom-tool-categories": {classConfig, "custom tool categories"},
 	"/api/v1/custom-capabilities":    {classConfig, "custom capabilities"},
-	"/api/v1/secret-store":           {classConfig, "scanner credentials"},
-	"/api/v1/sla-policies":           {classConfig, "SLA policies"},
-	"/api/v1/priority-rules":         {classConfig, "priority rules"},
-	"/api/v1/assignment-rules":       {classConfig, "finding assignment rules"},
-	"/api/v1/attacker-profiles":      {classConfig, "attacker profiles"},
-	"/api/v1/compensating-controls":  {classConfig, "compensating controls"},
-	"/api/v1/control-tests":          {classConfig, "compensating control tests"},
-	"/api/v1/workflows":              {classConfig, "workflow definitions"},
-	"/api/v1/compliance":             {classConfig, "framework and control catalog, assessments"},
-	"/api/v1/scoping":                {classConfig, "scoping summary (counts, tenant-wide by design)"},
+	// Not catalog data: the stats name the caller's own sensors and custom tools
+	// (tenant-filtered in SQL; platform tools are the only shared rows, 23b SC-H1).
+	"POST /api/v1/capabilities/usage-stats":     {classConfig, "usage of capabilities by the caller tenant's own tools and sensors"},
+	"GET /api/v1/capabilities/{id}/usage-stats": {classConfig, "usage of a capability by the caller tenant's own tools and sensors"},
+	"/api/v1/secret-store":                      {classConfig, "scanner credentials"},
+	"/api/v1/sla-policies":                      {classConfig, "SLA policies"},
+	"/api/v1/priority-rules":                    {classConfig, "priority rules"},
+	"/api/v1/assignment-rules":                  {classConfig, "finding assignment rules"},
+	"/api/v1/attacker-profiles":                 {classConfig, "attacker profiles"},
+	"/api/v1/compensating-controls":             {classConfig, "compensating controls"},
+	"/api/v1/control-tests":                     {classConfig, "compensating control tests"},
+	"/api/v1/workflows":                         {classConfig, "workflow definitions"},
+	"/api/v1/compliance":                        {classConfig, "framework and control catalog, assessments"},
+	"/api/v1/scoping":                           {classConfig, "scoping summary (counts, tenant-wide by design)"},
 
 	// --- scoped ------------------------------------------------------------------
 	"/api/v1/assets":                                      {classScoped, "route guard on /assets/{id}/**, list, stats and facets scoped (RFC-042 F10)"},
@@ -145,7 +149,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/business-units":    {classPartial, "asset links scoped (L-10); the unit list and counts are tenant-wide"},
 	"/api/v1/ctem-cycles":       {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
 	"/api/v1/approvals":         {classPartial, "approvals by id and the page scoped; total tenant-wide (L-18)"},
-	"/api/v1/remediation":       {classPartial, "resolve scoped; campaign progress counts tenant-wide (L-18)"},
+	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign progress counts follow the reader (L-18, research 24)"},
 	"/api/v1/dashboard":         {classPartial, "activity and top risks scoped; counts and trends tenant-wide until P1-4 (D6)"},
 
 	// --- separate ------------------------------------------------------------------
@@ -160,6 +164,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/scan-sessions":               {classGap, "L-06 (scan reads)"},
 	"/api/v1/commands":                    {classGap, "L-06 (command payloads)"},
 	"/api/v1/pipelines":                   {classGap, "L-06 (pipeline reads)"},
+	"POST /api/v1/pipelines/{id}/runs":    {classPartial, "asset_id through AssertAssetRef (research 21b C4), run targets through the act-scope gate (D9); step config targets unchecked (21b LOW)"},
 	"/api/v1/pipeline-runs":               {classGap, "L-06 (run reads)"},
 	"/api/v1/workflow-runs":               {classGap, "L-18 (trigger data)"},
 	"/api/v1/iocs":                        {classGap, "§1.3 IOC matches (L-18)"},

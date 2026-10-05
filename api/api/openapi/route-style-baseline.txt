@@ -157,6 +157,7 @@ R4 GET /api/v1/vulnerabilities/cve/{cveId}/affected-assets
 R4 PATCH /api/v1/admin/threat-intel/sync/{source}
 R4 PATCH /api/v1/threat-intel/sync/{source}
 R4 POST /api/v1/notification-outbox/{id}/retry
+R4 POST /api/v1/secret-store/{id}/rotate
 R4 PUT /api/v1/secret-store/{id}
 R5 DELETE /api/v1/assets/{id}/lifecycle/snooze
 R5 DELETE /api/v1/findings/{id}/link-ticket
@@ -257,7 +258,6 @@ R6 GET /api/v1/tenants/{tenant}/settings
 R6 GET /api/v1/tenants/{tenant}/settings/asset-identity
 R6 GET /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R6 GET /api/v1/tenants/{tenant}/settings/asset-source
-R6 GET /api/v1/tenants/{tenant}/settings/data-scope
 R6 GET /api/v1/tenants/{tenant}/settings/modules
 R6 GET /api/v1/tenants/{tenant}/settings/modules/bundles
 R6 GET /api/v1/tenants/{tenant}/settings/modules/graph
@@ -271,7 +271,6 @@ R6 PATCH /api/v1/tenants/{tenant}/settings/api
 R6 PATCH /api/v1/tenants/{tenant}/settings/asset-identity
 R6 PATCH /api/v1/tenants/{tenant}/settings/branch
 R6 PATCH /api/v1/tenants/{tenant}/settings/branding
-R6 PATCH /api/v1/tenants/{tenant}/settings/data-scope
 R6 PATCH /api/v1/tenants/{tenant}/settings/general
 R6 PATCH /api/v1/tenants/{tenant}/settings/modules
 R6 PATCH /api/v1/tenants/{tenant}/settings/pentest
@@ -316,7 +315,6 @@ R9 GET /api/v1/tenants/{tenant}/settings
 R9 GET /api/v1/tenants/{tenant}/settings/asset-identity
 R9 GET /api/v1/tenants/{tenant}/settings/asset-lifecycle
 R9 GET /api/v1/tenants/{tenant}/settings/asset-source
-R9 GET /api/v1/tenants/{tenant}/settings/data-scope
 R9 GET /api/v1/tenants/{tenant}/settings/modules
 R9 GET /api/v1/tenants/{tenant}/settings/modules/bundles
 R9 GET /api/v1/tenants/{tenant}/settings/modules/graph
@@ -335,7 +333,6 @@ R9 PATCH /api/v1/tenants/{tenant}/settings/api
 R9 PATCH /api/v1/tenants/{tenant}/settings/asset-identity
 R9 PATCH /api/v1/tenants/{tenant}/settings/branch
 R9 PATCH /api/v1/tenants/{tenant}/settings/branding
-R9 PATCH /api/v1/tenants/{tenant}/settings/data-scope
 R9 PATCH /api/v1/tenants/{tenant}/settings/general
 R9 PATCH /api/v1/tenants/{tenant}/settings/modules
 R9 PATCH /api/v1/tenants/{tenant}/settings/pentest

@@ -5260,6 +5260,14 @@ definitions:
       active_checks_allowed:
         description: 'ActiveChecksAllowed: whether a scan may touch the asset.'
         type: boolean
+      active_checks_blocked_by:
+        description: |-
+          ActiveChecksBlockedBy says why a scan may not touch the asset when
+          active_checks_allowed is false: its state (needs_review, candidate,
+          dependency, monitor_only, rejected; rejected also for a name under a
+          rejected name), or unattributed: no record, and neither inside a scope
+          target nor under a root-domain seed or verified domain.
+        type: string
       confidence:
         type: integer
       decided_at:
@@ -7478,9 +7486,6 @@ definitions:
       description:
         maxLength: 500
         type: string
-      escalation_config:
-        additionalProperties: {}
-        type: object
       escalation_enabled:
         type: boolean
       high_days:
@@ -7505,6 +7510,24 @@ definitions:
         maxLength: 100
         minLength: 1
         type: string
+      p0_days:
+        description: P0Days..P3Days are optional; an omitted class keeps its default
+          window.
+        maximum: 365
+        minimum: 1
+        type: integer
+      p1_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p2_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p3_days:
+        maximum: 365
+        minimum: 1
+        type: integer
       warning_threshold_pct:
         maximum: 100
         minimum: 0
@@ -8259,50 +8282,6 @@ definitions:
         items:
           $ref: '#/definitions/internal_infra_http_handler.DataFlowStepResponse'
         type: array
-    type: object
-  internal_infra_http_handler.DataScopeImpactMember:
-    properties:
-      email:
-        type: string
-      name:
-        type: string
-      role:
-        type: string
-      user_id:
-        type: string
-    type: object
-  internal_infra_http_handler.DataScopeImpactResponse:
-    properties:
-      members:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.DataScopeImpactMember'
-        type: array
-      members_without_group_see:
-        enum:
-        - everything
-        - nothing
-        type: string
-      total_count:
-        description: |-
-          TotalCount is the number of members who would see nothing (exact);
-          Members lists at most 500 of them.
-        type: integer
-    type: object
-  internal_infra_http_handler.DataScopePolicyResponse:
-    properties:
-      deprecated:
-        description: |-
-          Deprecated is true while the organization still shows everything: that
-          mode is being retired and only the owner can switch it off.
-        type: boolean
-      members_without_group_see:
-        description: |-
-          MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
-          (fail-closed). Owners and admins always see everything.
-        enum:
-        - everything
-        - nothing
-        type: string
     type: object
   internal_infra_http_handler.DedupKeyRequest:
     properties:
@@ -9276,6 +9255,16 @@ definitions:
         additionalProperties:
           format: int64
           type: integer
+        type: object
+      by_state:
+        additionalProperties:
+          format: int64
+          type: integer
+        description: |-
+          ByState counts the state lenses of the same filter: open, fixed,
+          dispositioned (false positive, accepted, duplicate; never counted as
+          fixed) and all. Send state=all with the other filters to label a lens
+          switcher.
         type: object
       by_status:
         additionalProperties:
@@ -10581,6 +10570,18 @@ definitions:
     - code
     - password
     type: object
+  internal_infra_http_handler.MFAEnableRequest:
+    properties:
+      code:
+        maxLength: 16
+        type: string
+      password:
+        maxLength: 128
+        type: string
+    required:
+    - code
+    - password
+    type: object
   internal_infra_http_handler.MFAEnrollmentConfirmRequest:
     properties:
       code:
@@ -11473,6 +11474,27 @@ definitions:
       secret_value:
         type: string
     type: object
+  internal_infra_http_handler.RotateCredentialRequest:
+    properties:
+      api_key:
+        $ref: '#/definitions/internal_infra_http_handler.APIKeyDataRequest'
+      aws_role:
+        $ref: '#/definitions/internal_infra_http_handler.AWSRoleDataRequest'
+      azure_service_principal:
+        $ref: '#/definitions/internal_infra_http_handler.AzureServicePrincipalDataRequest'
+      basic_auth:
+        $ref: '#/definitions/internal_infra_http_handler.BasicAuthDataRequest'
+      bearer_token:
+        $ref: '#/definitions/internal_infra_http_handler.BearerTokenDataRequest'
+      gcp_service_account:
+        $ref: '#/definitions/internal_infra_http_handler.GCPServiceAccountDataRequest'
+      github_app:
+        $ref: '#/definitions/internal_infra_http_handler.GitHubAppDataRequest'
+      gitlab_token:
+        $ref: '#/definitions/internal_infra_http_handler.GitLabTokenDataRequest'
+      ssh_key:
+        $ref: '#/definitions/internal_infra_http_handler.SSHKeyDataRequest'
+    type: object
   internal_infra_http_handler.RunDispatchResponse:
     properties:
       excluded_targets:
@@ -11785,9 +11807,6 @@ definitions:
         type: integer
       description:
         type: string
-      escalation_config:
-        additionalProperties: {}
-        type: object
       escalation_enabled:
         type: boolean
       high_days:
@@ -11806,6 +11825,18 @@ definitions:
         type: integer
       name:
         type: string
+      p0_days:
+        description: |-
+          P0Days..P3Days are the remediation windows per CTEM priority class.
+          They take precedence over the severity windows for every finding that
+          has a priority class.
+        type: integer
+      p1_days:
+        type: integer
+      p2_days:
+        type: integer
+      p3_days:
+        type: integer
       tenant_id:
         type: string
       updated_at:
@@ -14151,21 +14182,13 @@ definitions:
         maxLength: 1000
         type: string
       expires_at:
+        description: 'ExpiresAt: RFC 3339 timestamp in the future, or null to clear.'
+        format: date-time
         type: string
       name:
         maxLength: 255
         minLength: 1
         type: string
-    type: object
-  internal_infra_http_handler.UpdateDataScopePolicyRequest:
-    properties:
-      members_without_group_see:
-        enum:
-        - everything
-        - nothing
-        type: string
-    required:
-    - members_without_group_see
     type: object
   internal_infra_http_handler.UpdateFindingStatusRequest:
     properties:
@@ -14393,9 +14416,6 @@ definitions:
       description:
         maxLength: 500
         type: string
-      escalation_config:
-        additionalProperties: {}
-        type: object
       escalation_enabled:
         type: boolean
       high_days:
@@ -14422,6 +14442,22 @@ definitions:
         maxLength: 100
         minLength: 1
         type: string
+      p0_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p1_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p2_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p3_days:
+        maximum: 365
+        minimum: 1
+        type: integer
       warning_threshold_pct:
         maximum: 100
         minimum: 0
@@ -19127,7 +19163,7 @@ paths:
     get:
       description: Returns paginated audit logs for the current tenant
       parameters:
-      - description: Page number
+      - description: Page number (1-based; 0 or missing means 1)
         in: query
         name: page
         type: integer
@@ -19249,7 +19285,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Page number
+      - description: Page number (1-based; 0 or missing means 1)
         in: query
         name: page
         type: integer
@@ -19306,7 +19342,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Page number
+      - description: Page number (1-based; 0 or missing means 1)
         in: query
         name: page
         type: integer
@@ -22613,6 +22649,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -22917,6 +22962,22 @@ paths:
         in: query
         name: last_seen_at_lt
         type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
+        type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
         in: query
@@ -23017,6 +23078,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -24038,6 +24110,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -24342,6 +24423,22 @@ paths:
         in: query
         name: last_seen_at_lt
         type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
+        type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
         in: query
@@ -24442,6 +24539,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -24716,6 +24824,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -25020,6 +25137,22 @@ paths:
         in: query
         name: last_seen_at_lt
         type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
+        type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
         in: query
@@ -25120,6 +25253,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -25361,6 +25505,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -25665,6 +25818,22 @@ paths:
         in: query
         name: last_seen_at_lt
         type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
+        type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
         in: query
@@ -25765,6 +25934,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -26059,6 +26239,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -26363,6 +26552,22 @@ paths:
         in: query
         name: last_seen_at_lt
         type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
+        type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
         in: query
@@ -26463,6 +26668,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -28640,37 +28856,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Reset a member's two-factor authentication
-      tags:
-      - Tenants
-  /organization/settings/data-scope/impact:
-    get:
-      description: 'Lists the active members who are not owner or admin, hold no role
-        with full data access, and are in no access group and have no grant: they
-        see everything today only because the organization shows everything to members
-        without a team, and would see nothing after the switch. Owners and admins
-        only.'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.DataScopeImpactResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Members who would see nothing after switching to "nothing"
       tags:
       - Tenants
   /organization/settings/retest:
@@ -32482,6 +32667,49 @@ paths:
       summary: Update credential
       tags:
       - Credentials
+  /secret-store/{id}/rotate:
+    post:
+      consumes:
+      - application/json
+      description: Replace the secret of a credential in place. Send the data field
+        matching the credential's type. Sources bound to the credential use the new
+        value on their next fetch.
+      parameters:
+      - description: Credential ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New secret
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.RotateCredentialRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CredentialResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Rotate credential
+      tags:
+      - Credentials
   /sensors:
     get:
       consumes:
@@ -35142,87 +35370,6 @@ paths:
       summary: List pending invitations
       tags:
       - Tenants
-  /tenants/{tenant}/settings/data-scope:
-    get:
-      description: 'Returns what members who are in no access group see: everything
-        (all assets and findings) or nothing. Owners and admins always see everything.'
-      parameters:
-      - description: Tenant ID or slug
-        in: path
-        name: tenant
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.DataScopePolicyResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get the data scope of members without an access group
-      tags:
-      - Tenants
-    patch:
-      consumes:
-      - application/json
-      description: 'Switches what members who are in no access group see to nothing.
-        "everything" is being retired: an organization that sees nothing cannot switch
-        back (400). Owners only; owners and admins always see everything. The change
-        is audited.'
-      parameters:
-      - description: Tenant ID or slug
-        in: path
-        name: tenant
-        required: true
-        type: string
-      - description: Policy
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.UpdateDataScopePolicyRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.DataScopePolicyResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Set the data scope of members without an access group
-      tags:
-      - Tenants
   /tenants/{tenant}/settings/sso/changes:
     get:
       description: Owner only. SAML and identity-provider changes a platform administrator
@@ -35951,15 +36098,16 @@ paths:
     post:
       consumes:
       - application/json
-      description: Confirms the authenticator with a code and turns 2FA on. Signs
-        out every other session. Returns recovery codes, shown once.
+      description: Confirms the authenticator with a code and turns 2FA on. Needs
+        the current password. Signs out every other session. Returns recovery codes,
+        shown once.
       parameters:
-      - description: Authenticator code
+      - description: Current password and authenticator code
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_infra_http_handler.MFACodeRequest'
+          $ref: '#/definitions/internal_infra_http_handler.MFAEnableRequest'
       produces:
       - application/json
       responses:

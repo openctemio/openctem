@@ -197,6 +197,13 @@ type MFACodeRequest struct {
 	Code string `json:"code" validate:"required,max=16"`
 }
 
+// MFAEnableRequest confirms 2FA setup. The current password is required:
+// a stolen session alone must not be able to bind an authenticator.
+type MFAEnableRequest struct {
+	Password string `json:"password" validate:"required,max=128"`
+	Code     string `json:"code" validate:"required,max=16"`
+}
+
 // MFADisableRequest turns 2FA off. code may be an authenticator code or an
 // unused recovery code.
 type MFADisableRequest struct {
@@ -257,12 +264,12 @@ func (h *LocalAuthHandler) SetupMFA(w http.ResponseWriter, r *http.Request) {
 
 // EnableMFA confirms setup with a code and turns 2FA on.
 // @Summary      Enable 2FA
-// @Description  Confirms the authenticator with a code and turns 2FA on. Signs out every other session. Returns recovery codes, shown once.
+// @Description  Confirms the authenticator with a code and turns 2FA on. Needs the current password. Signs out every other session. Returns recovery codes, shown once.
 // @Tags         Users
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request  body      MFACodeRequest  true  "Authenticator code"
+// @Param        request  body      MFAEnableRequest  true  "Current password and authenticator code"
 // @Success      200  {object}  MFARecoveryCodesResponse
 // @Failure      400  {object}  map[string]string
 // @Failure      401  {object}  map[string]string
@@ -273,7 +280,7 @@ func (h *LocalAuthHandler) EnableMFA(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("User not authenticated").WriteJSON(w)
 		return
 	}
-	var req MFACodeRequest
+	var req MFAEnableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
@@ -282,7 +289,7 @@ func (h *LocalAuthHandler) EnableMFA(w http.ResponseWriter, r *http.Request) {
 		apierror.ValidationFailed("Validation failed", err).WriteJSON(w)
 		return
 	}
-	codes, err := h.authService.EnableMFA(r.Context(), selfAuditContext(r), userID, req.Code)
+	codes, err := h.authService.EnableMFA(r.Context(), selfAuditContext(r), userID, req.Password, req.Code)
 	if err != nil {
 		h.handleSelfServiceMFAError(w, err)
 		return

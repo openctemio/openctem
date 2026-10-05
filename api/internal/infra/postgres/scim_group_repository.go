@@ -233,38 +233,79 @@ func (r *ScimGroupRepository) RoleGroupNamesForUser(ctx context.Context, tenantI
 	return names, rows.Err()
 }
 
-func (r *ScimGroupRepository) GetRoleMappings(ctx context.Context, tenantID shared.ID) (map[string]string, error) {
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT group_name, role FROM scim_group_role_mappings WHERE tenant_id = $1`, tenantID.String())
+func (r *ScimGroupRepository) GetRoleMappings(ctx context.Context, tenantID shared.ID) (map[string]scimgroup.RoleMapping, error) {
+	return queryRoleMappings(ctx, r.db, tenantID, "")
+}
+
+// roleMappingQuerier is *sql.DB or *sql.Tx.
+type roleMappingQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func queryRoleMappings(ctx context.Context, q roleMappingQuerier, tenantID shared.ID, suffix string) (map[string]scimgroup.RoleMapping, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT group_name, role, configured_by, configured_by_owner
+		   FROM scim_group_role_mappings WHERE tenant_id = $1`+suffix, tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("get role mappings: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := map[string]string{}
+	out := map[string]scimgroup.RoleMapping{}
 	for rows.Next() {
-		var name, role string
-		if err := rows.Scan(&name, &role); err != nil {
+		var (
+			name, role string
+			by         sql.NullString
+			byOwner    bool
+		)
+		if err := rows.Scan(&name, &role, &by, &byOwner); err != nil {
 			return nil, fmt.Errorf("scan role mapping: %w", err)
 		}
-		out[name] = role
+		m := scimgroup.RoleMapping{Role: role, ConfiguredByOwner: byOwner}
+		if by.Valid {
+			if id, perr := shared.IDFromString(by.String); perr == nil {
+				m.ConfiguredBy = &id
+			}
+		}
+		out[name] = m
 	}
 	return out, rows.Err()
 }
 
-func (r *ScimGroupRepository) ReplaceRoleMappings(ctx context.Context, tenantID shared.ID, mappings map[string]string) error {
+func (r *ScimGroupRepository) ReplaceRoleMappings(ctx context.Context, tenantID shared.ID, plan scimgroup.RoleMappingPlan) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// One writer per tenant: the plan's checks and the write see the same rows
+	// (the mapping set can be empty, so row locks alone would not serialize).
+	if _, err := tx.ExecContext(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended('scim_group_role_mappings:' || $1::text, 0))`,
+		tenantID.String()); err != nil {
+		return fmt.Errorf("lock role mappings: %w", err)
+	}
+	current, err := queryRoleMappings(ctx, tx, tenantID, " FOR UPDATE")
+	if err != nil {
+		return err
+	}
+	next, err := plan(current)
+	if err != nil {
+		return err
+	}
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM scim_group_role_mappings WHERE tenant_id = $1`, tenantID.String()); err != nil {
 		return fmt.Errorf("clear role mappings: %w", err)
 	}
-	for name, role := range mappings {
+	for name, m := range next {
+		var by any
+		if m.ConfiguredBy != nil {
+			by = m.ConfiguredBy.String()
+		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO scim_group_role_mappings (tenant_id, group_name, role) VALUES ($1, $2, $3)`,
-			tenantID.String(), strings.ToLower(strings.TrimSpace(name)), role,
+			`INSERT INTO scim_group_role_mappings (tenant_id, group_name, role, configured_by, configured_by_owner)
+			 VALUES ($1, $2, $3, $4, $5)`,
+			tenantID.String(), strings.ToLower(strings.TrimSpace(name)), m.Role, by, m.ConfiguredByOwner,
 		); err != nil {
 			return fmt.Errorf("insert role mapping: %w", err)
 		}

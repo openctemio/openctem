@@ -5,6 +5,21 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
+### Security: asset references are tenant-checked in the database (migrations 000920-000922)
+
+- Every table that stores an asset id next to a `tenant_id` (27 columns:
+  findings, exposures, exposure events, pipeline runs, scan sessions,
+  suppressions, SLA policies, scope rows, grants, relationships, ...) gets a
+  composite foreign key `(tenant_id, asset) → assets(tenant_id, id)`: a row of
+  one organization can no longer point at another organization's asset,
+  whatever writes it. Backstop for the application checks on `POST /findings`,
+  exposure create/ingest and pipeline runs (research doc 21b, C1/C3/C4).
+- **Deploy note:** `000921` first counts existing cross-tenant references and
+  refuses to run, changing nothing, if there are any. See
+  `docs/deployment/safe-deploy-and-migrations.md` ("Asset tenant foreign keys")
+  for the listing query and the recovery steps. `000920` builds an index
+  `CONCURRENTLY`; `000922` validates without blocking writes.
+
 ### Security: members without a scope row see nothing, in every organization
 
 - **The "see everything" mode is retired** (research doc 15 L-04, owner
@@ -21,6 +36,14 @@ published at https://docs.openctem.io (operations/release-notes-*).
   finding and finding-group SQL has no `NOT EXISTS … OR` bypass left.
 - Real-time finding/asset pushes now also reach full-data roles, and no
   longer reach members without a scope row.
+- **Migration 000910** stores `nothing` for every organization and adds a
+  CHECK so `everything` can no longer be stored (its down migration relaxes
+  the CHECK without flipping data back). The column is dropped in a later
+  release.
+- **Removed endpoints:** `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`
+  and `GET /api/v1/organization/settings/data-scope/impact` (404 now). The web
+  console's "see everything" banner and the "Members without a team" settings
+  card are gone; Settings → Teams states the rule.
 
 ### Behaviour change: only a proven scan run closes repository findings
 

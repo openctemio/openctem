@@ -83,16 +83,12 @@ func (r *TenantRepository) GetBySlug(ctx context.Context, slug string) (*tenant.
 	return r.scanTenant(r.db.QueryRowContext(ctx, query, slug))
 }
 
-// Update updates an existing tenant.
-func (r *TenantRepository) Update(ctx context.Context, t *tenant.Tenant) error {
-	settings, err := json.Marshal(t.Settings())
-	if err != nil {
-		return fmt.Errorf("failed to marshal settings: %w", err)
-	}
-
+// UpdateProfile writes the organization profile columns. It never touches
+// settings, so a profile save cannot revert a concurrent settings change.
+func (r *TenantRepository) UpdateProfile(ctx context.Context, t *tenant.Tenant) error {
 	query := `
 		UPDATE tenants
-		SET name = $2, slug = $3, description = $4, logo_url = $5, settings = $6, updated_at = $7
+		SET name = $2, slug = $3, description = $4, logo_url = $5, updated_at = $6
 		WHERE id = $1
 	`
 
@@ -102,7 +98,6 @@ func (r *TenantRepository) Update(ctx context.Context, t *tenant.Tenant) error {
 		t.Slug(),
 		t.Description(),
 		t.LogoURL(),
-		settings,
 		t.UpdatedAt(),
 	)
 	if err != nil {
@@ -118,6 +113,67 @@ func (r *TenantRepository) Update(ctx context.Context, t *tenant.Tenant) error {
 	}
 
 	return nil
+}
+
+// UpdateSettingsSection replaces one top-level key of tenants.settings with a
+// compare-and-swap on that key alone (jsonb_set), so writers of different
+// sections never overwrite each other and a writer whose snapshot is stale
+// loses instead of reverting the newer value. jsonb equality is semantic
+// (key order and number formatting do not matter).
+func (r *TenantRepository) UpdateSettingsSection(
+	ctx context.Context, id shared.ID, section string, expected any, expectedPresent bool, next any,
+) error {
+	if !tenant.IsSettingsSection(section) {
+		return fmt.Errorf("%w: unknown settings section %q", shared.ErrValidation, section)
+	}
+	nextJSON, err := json.Marshal(next)
+	if err != nil {
+		return fmt.Errorf("failed to marshal settings section: %w", err)
+	}
+	var expectedJSON any // SQL NULL = the key must be absent
+	if expectedPresent {
+		b, err := json.Marshal(expected)
+		if err != nil {
+			return fmt.Errorf("failed to marshal settings section: %w", err)
+		}
+		expectedJSON = string(b)
+	}
+
+	const query = `
+		UPDATE tenants
+		SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), ARRAY[$2::text], $4::jsonb, true),
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND (COALESCE(settings, '{}'::jsonb) -> $2::text) IS NOT DISTINCT FROM $3::jsonb
+	`
+	result, err := r.db.ExecContext(ctx, query, id.String(), section, expectedJSON, string(nextJSON))
+	if err != nil {
+		return fmt.Errorf("failed to update settings section %s: %w", section, err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rows == 1 {
+		return nil
+	}
+
+	// Nothing updated: the tenant is gone, or the section changed.
+	var current []byte
+	err = r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(settings, '{}'::jsonb) -> $2::text FROM tenants WHERE id = $1`,
+		id.String(), section).Scan(&current)
+	if errors.Is(err, sql.ErrNoRows) {
+		return shared.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read settings section %s: %w", section, err)
+	}
+	var cur any
+	if len(current) > 0 {
+		_ = json.Unmarshal(current, &cur)
+	}
+	return &tenant.SettingsConflictError{Section: section, ETag: tenant.SectionETag(cur), Current: cur}
 }
 
 // Delete removes a tenant.
@@ -351,10 +407,21 @@ func (r *TenantRepository) GetMembershipByID(ctx context.Context, tenantID, id s
 // UpdateMembership updates a membership's role.
 // Role is updated in user_roles table (tenant_members no longer has role column).
 func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membership) error {
-	// Verify membership exists
+	// One transaction: the membership label and the user's system role in
+	// user_roles change together or not at all. As three separate statements a
+	// failure after the DELETE left the user with no system role (settings
+	// audit I-M3), and two concurrent role changes could interleave. The
+	// membership row is locked first so concurrent changes run one after the
+	// other.
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin membership update: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	var userID, tenantID string
-	err := r.db.QueryRowContext(ctx,
-		"SELECT user_id, tenant_id FROM tenant_members WHERE id = $1 AND tenant_id = $2",
+	err = tx.QueryRowContext(ctx,
+		"SELECT user_id, tenant_id FROM tenant_members WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
 		m.ID().String(), m.TenantID().String(),
 	).Scan(&userID, &tenantID)
 	if err != nil {
@@ -366,7 +433,7 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 
 	// Get current role from user_roles via view
 	var oldRole string
-	err = r.db.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		"SELECT COALESCE(role, 'member') FROM v_user_effective_role WHERE user_id = $1 AND tenant_id = $2",
 		userID, tenantID,
 	).Scan(&oldRole)
@@ -374,41 +441,48 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 		return fmt.Errorf("failed to get current role: %w", err)
 	}
 
-	// If role is changing, update both tenant_members and user_roles
-	if oldRole != m.Role().String() {
-		// Update role in tenant_members
-		_, err = r.db.ExecContext(ctx,
-			"UPDATE tenant_members SET role = $1 WHERE id = $2 AND tenant_id = $3",
-			m.Role().String(), m.ID().String(), tenantID,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to update membership role: %w", err)
-		}
-
-		// Remove old system role (only system roles, keep custom roles)
-		_, err = r.db.ExecContext(ctx, `
-			DELETE FROM user_roles
-			WHERE user_id = $1 AND tenant_id = $2 AND role_id IN (
-				SELECT id FROM roles WHERE is_system = TRUE AND tenant_id IS NULL
-			)
-		`, userID, tenantID)
-		if err != nil {
-			return fmt.Errorf("failed to remove old role: %w", err)
-		}
-
-		// Add new role
-		_, err = r.db.ExecContext(ctx, `
-			INSERT INTO user_roles (user_id, tenant_id, role_id, assigned_at)
-			SELECT $1, $2, r.id, NOW()
-			FROM roles r
-			WHERE r.slug = $3 AND r.is_system = TRUE AND r.tenant_id IS NULL
-			ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING
-		`, userID, tenantID, m.Role().String())
-		if err != nil {
-			return fmt.Errorf("failed to add new role: %w", err)
-		}
+	if oldRole == m.Role().String() {
+		return nil
 	}
 
+	// Update role in tenant_members
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE tenant_members SET role = $1 WHERE id = $2 AND tenant_id = $3",
+		m.Role().String(), m.ID().String(), tenantID,
+	); err != nil {
+		return fmt.Errorf("failed to update membership role: %w", err)
+	}
+
+	// Remove old system role (only system roles, keep custom roles)
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM user_roles
+		WHERE user_id = $1 AND tenant_id = $2 AND role_id IN (
+			SELECT id FROM roles WHERE is_system = TRUE AND tenant_id IS NULL
+		)
+	`, userID, tenantID); err != nil {
+		return fmt.Errorf("failed to remove old role: %w", err)
+	}
+
+	// Add new role
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO user_roles (user_id, tenant_id, role_id, assigned_at)
+		SELECT $1, $2, r.id, NOW()
+		FROM roles r
+		WHERE r.slug = $3 AND r.is_system = TRUE AND r.tenant_id IS NULL
+		ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING
+	`, userID, tenantID, m.Role().String())
+	if err != nil {
+		return fmt.Errorf("failed to add new role: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		// The DELETE above removed every system role, so the insert must
+		// have added one; nothing added means no such system role exists.
+		return fmt.Errorf("%w: no system role %q", shared.ErrValidation, m.Role().String())
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit membership update: %w", err)
+	}
 	return nil
 }
 
@@ -1570,72 +1644,4 @@ func (r *TenantRepository) AllowedRecipients(ctx context.Context, tenantID share
 		}
 	}
 	return out, nil
-}
-
-// GetMembersWithoutGroupSee returns the organization's data-scope policy for
-// members without an access group ("everything" or "nothing").
-func (r *TenantRepository) GetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID) (string, error) {
-	var v string
-	err := r.db.QueryRowContext(ctx,
-		`SELECT members_without_group_see FROM tenants WHERE id = $1`, tenantID.String()).Scan(&v)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", shared.ErrNotFound
-	}
-	if err != nil {
-		return "", fmt.Errorf("get data scope policy: %w", err)
-	}
-	return v, nil
-}
-
-// ListMembersWithoutDataScope returns up to limit active members who would
-// see nothing in a fail-closed organization: their effective role is not
-// owner or admin, none of their roles has full data access, and they have no
-// data-scope row in the tenant. The second value is the total count.
-func (r *TenantRepository) ListMembersWithoutDataScope(ctx context.Context, tenantID shared.ID, limit int) ([]tenant.ScopeImpactMember, int, error) {
-	const from = `
-		FROM tenant_members m
-		JOIN users u ON u.id = m.user_id
-		JOIN v_user_effective_role v ON v.user_id = m.user_id AND v.tenant_id = m.tenant_id
-		WHERE m.tenant_id = $1 AND m.status = 'active'
-		  AND v.role NOT IN ('owner', 'admin')
-		  AND NOT EXISTS (
-			SELECT 1 FROM user_roles ur JOIN roles ro ON ro.id = ur.role_id
-			WHERE ur.tenant_id = m.tenant_id AND ur.user_id = m.user_id AND ro.has_full_data_access)
-		  AND NOT EXISTS (
-			SELECT 1 FROM user_accessible_assets uaa
-			WHERE uaa.tenant_id = m.tenant_id AND uaa.user_id = m.user_id)`
-	var total int
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) `+from, tenantID.String()).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count members without data scope: %w", err)
-	}
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT u.id::text, COALESCE(u.name, ''), u.email, v.role `+from+` ORDER BY u.email LIMIT $2`,
-		tenantID.String(), limit)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list members without data scope: %w", err)
-	}
-	defer rows.Close()
-	out := make([]tenant.ScopeImpactMember, 0)
-	for rows.Next() {
-		var m tenant.ScopeImpactMember
-		if err := rows.Scan(&m.UserID, &m.Name, &m.Email, &m.Role); err != nil {
-			return nil, 0, fmt.Errorf("scan member without data scope: %w", err)
-		}
-		out = append(out, m)
-	}
-	return out, total, rows.Err()
-}
-
-// SetMembersWithoutGroupSee stores the organization's data-scope policy.
-func (r *TenantRepository) SetMembersWithoutGroupSee(ctx context.Context, tenantID shared.ID, value string) error {
-	res, err := r.db.ExecContext(ctx,
-		`UPDATE tenants SET members_without_group_see = $2, updated_at = NOW() WHERE id = $1`,
-		tenantID.String(), value)
-	if err != nil {
-		return fmt.Errorf("set data scope policy: %w", err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return shared.ErrNotFound
-	}
-	return nil
 }

@@ -41,6 +41,9 @@ credentials
 ct_monitor_state
 ctem_cycles
 data_sources
+definition_identifiers
+definition_relations
+definition_taxonomy
 easm_dns_check_state
 easm_evidence
 easm_seeds
@@ -50,6 +53,7 @@ exposures
 finding_activities
 finding_branch_occurrences
 finding_comments
+finding_definitions
 finding_fingerprints
 finding_group_assignments
 finding_rekey_runs
@@ -81,11 +85,13 @@ pipeline_runs
 pipeline_templates
 priority_class_audit_log
 priority_override_rules
+priority_rule_safety_report
 relationship_suggestions
 remediation_campaign_tickets
 remediation_campaigns
 report_schedules
 risk_snapshots
+role_permissions_admin_only_stripped
 roles
 rule_bundles
 rule_overrides
@@ -135,6 +141,7 @@ user_dashboards
 user_roles
 validation_evidence
 verified_domains
+vulnerabilities
 webhooks
 workflow_runs
 workflows
