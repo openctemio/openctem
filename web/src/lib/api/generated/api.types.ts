@@ -8411,7 +8411,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/ci/coverage/expected/{id}': {
+  '/ci/coverage/expectations/{id}': {
     parameters: {
       query?: never
       header?: never

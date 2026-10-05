@@ -88,8 +88,8 @@ func registerCIRoutes(
 		r.POST("/pipelines/{id}/retire", admin.RetirePipeline, middleware.Require(permission.CIWrite))
 
 		r.GET("/coverage", admin.GetCoverage, middleware.Require(permission.CIRead))
-		r.PUT("/coverage/expected/{id}", admin.SetCoverageExpectation, middleware.Require(permission.CIWrite))
-		r.DELETE("/coverage/expected/{id}", admin.DeleteCoverageExpectation, middleware.Require(permission.CIWrite))
+		r.PUT("/coverage/expectations/{id}", admin.SetCoverageExpectation, middleware.Require(permission.CIWrite))
+		r.DELETE("/coverage/expectations/{id}", admin.DeleteCoverageExpectation, middleware.Require(permission.CIWrite))
 
 		r.GET("/runs", admin.ListRuns, middleware.Require(permission.CIRead))
 		r.GET("/runs/{id}", admin.GetRun, middleware.Require(permission.CIRead))

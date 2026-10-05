@@ -21362,7 +21362,7 @@ paths:
       summary: Repository coverage
       tags:
       - CI
-  /ci/coverage/expected/{id}:
+  /ci/coverage/expectations/{id}:
     delete:
       description: Audited. 404 when the repository is outside the caller's data scope
         or was not expected.
