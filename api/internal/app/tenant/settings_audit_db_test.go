@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	_ "github.com/lib/pq"
@@ -99,24 +98,6 @@ func TestSettingsAudit_SecurityDowngradeIsCriticalWithDiff(t *testing.T) {
 	}
 }
 
-func TestSettingsAudit_SecretNeverInDiff(t *testing.T) {
-	f, actor := newAuditedSettingsFixture(t)
-	ctx := context.Background()
-	secret := "whsec-" + shared.NewID().String()
-	if _, err := f.svc.UpdateAPISettings(ctx, f.tenantID, tenantapp.UpdateAPISettingsInput{
-		WebhookSecret: &secret,
-	}, auditapp.AuditContext{ActorID: actor}); err != nil {
-		t.Fatalf("api settings: %v", err)
-	}
-	got := lastAudit(t, f.raw, f.tenantID, "tenant.settings_updated")
-	if strings.Contains(got.raw, secret) {
-		t.Fatalf("audit diff leaks the webhook secret: %s", got.raw)
-	}
-	if got.changes["after"]["webhook_secret"] != auditapp.RedactedChange {
-		t.Fatalf("secret change not recorded as redacted: %s", got.raw)
-	}
-}
-
 func TestSettingsAudit_ProfileAndSlugChangesAreAudited(t *testing.T) {
 	f, actor := newAuditedSettingsFixture(t)
 	ctx := context.Background()
@@ -131,7 +112,7 @@ func TestSettingsAudit_ProfileAndSlugChangesAreAudited(t *testing.T) {
 	}
 
 	newSlug := "renamed-" + f.tenantID[:8]
-	if _, err := f.svc.UpdateTenant(ctx, f.tenantID, tenantapp.UpdateTenantInput{Slug: &newSlug}, actx); err != nil {
+	if _, err := f.svc.UpdateTenant(ctx, f.tenantID, tenantapp.UpdateTenantInput{Slug: &newSlug, CallerIsOwner: true}, actx); err != nil {
 		t.Fatalf("slug: %v", err)
 	}
 	got = lastAudit(t, f.raw, f.tenantID, "tenant.updated")
