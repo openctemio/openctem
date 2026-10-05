@@ -1,7 +1,7 @@
 package postgres
 
 // CI coverage, alerts and stale sources (docs/rfcs/RFC-051-ci-runner-identity-and-gate.md
-// §10.6, migration 001082). Every query is tenant-scoped except
+// §10.6, migration 001089). Every query is tenant-scoped except
 // PipelineTenantsForPlatform (the alert job's tenant list).
 
 import (
