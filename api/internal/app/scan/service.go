@@ -181,6 +181,7 @@ type TemplateSyncResult struct {
 // Service handles scan business operations.
 type Service struct {
 	scanRepo            scan.Repository
+	ownerActivity       OwnerActivity
 	templateRepo        pipeline.TemplateRepository
 	assetGroupRepo      assetgroup.Repository
 	runRepo             pipeline.RunRepository

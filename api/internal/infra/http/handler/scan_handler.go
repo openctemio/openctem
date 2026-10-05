@@ -964,7 +964,7 @@ func (h *ScanHandler) CloneScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.service.CloneScan(r.Context(), tenantID, scanID, req.Name)
+	s, err := h.service.CloneScan(r.Context(), tenantID, scanID, req.Name, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1635,7 +1635,7 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data)
+	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

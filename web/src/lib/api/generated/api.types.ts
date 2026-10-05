@@ -24173,6 +24173,45 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scans/stages': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List scan stages
+     * @description The scan stage catalog: each capability with the asset types it consumes and produces, its intrusiveness tier and the tools that implement it.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanStageListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/scans/stats': {
     parameters: {
       query?: never
@@ -39993,6 +40032,35 @@ export interface components {
       status?: string
       tenant_id?: string
     }
+    'internal_infra_http_handler.ScanStageImplementationResponse': {
+      default?: boolean
+      tool?: string
+    }
+    'internal_infra_http_handler.ScanStageListResponse': {
+      /**
+       * @description MaxHops is how many discovery hops a derived target may be from the
+       *     run's seeds.
+       */
+      max_hops?: number
+      stages?: components['schemas']['internal_infra_http_handler.ScanStageResponse'][]
+    }
+    'internal_infra_http_handler.ScanStageResponse': {
+      description?: string
+      findings?: boolean
+      implementations?: components['schemas']['internal_infra_http_handler.ScanStageImplementationResponse'][]
+      /**
+       * @description Inputs and Outputs are stored type labels: "type" or
+       *     "type/sub_type" (service/http is an HTTP service).
+       */
+      inputs?: string[]
+      key?: string
+      max_fanout?: number
+      name?: string
+      outputs?: string[]
+      relations?: string[]
+      /** @enum {string} */
+      tier?: 'T0' | 'T1' | 'T2'
+    }
     'internal_infra_http_handler.ScanStatsResponse': {
       active?: number
       by_scan_type?: {
@@ -41009,6 +41077,11 @@ export interface components {
       }
       name?: string
       output_formats?: string[]
+      /**
+       * @description OutputTypes are the asset types a report of the tool may create
+       *     (scan stage catalog); read-only.
+       */
+      output_types?: string[]
       supported_targets?: string[]
       tags?: string[]
       /** @description nil for platform tools, UUID for custom tools */
