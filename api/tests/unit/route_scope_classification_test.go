@@ -95,6 +95,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/scope":                  {classConfig, "scope targets, exclusions (two-person, L-07) and schedules"},
 	"/api/v1/easm/seeds":             {classConfig, "EASM seeds: tenant boundary configuration, scope permissions (RFC-036 §6.3)"},
 	"/api/v1/sensors":                {classConfig, "sensor management"},
+	"/api/v1/sensor-pairings":        {classConfig, "sensor pairing (RFC-052): a pending request has no tenant until approved; the approver's tenant binds it"},
 	"/api/v1/scan-zones":             {classConfig, "scan zones"},
 	"/api/v1/scan-profiles":          {classConfig, "scan profiles"},
 	"/api/v1/scanner-templates":      {classConfig, "scanner templates"},

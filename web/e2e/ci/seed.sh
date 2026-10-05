@@ -70,6 +70,10 @@ log "sensors and a CTIS report"
 # switch to "warn" so the report is applied, as for tenants that existed
 # before that policy.
 call PUT /api/v1/sensors/result-policy '{"mode":"warn"}'
+# A new tenant requires key-bound identity (RFC-052 D-4): sensors pair, no
+# API key can be created. The seed needs bearer keys (it pushes with curl),
+# so it allows them, as for tenants that existed before that policy.
+call PUT /api/v1/sensors/identity-policy '{"bearer_keys_allowed":true}'
 call POST /api/v1/sensors '{"name":"e2e-sensor","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}'
 KEY=$(jq -r .api_key <<<"$BODY")
 call POST /api/v1/sensors '{"name":"e2e-sensor-b","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}'

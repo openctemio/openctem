@@ -417,6 +417,97 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/pairings:
+    post:
+      summary: Start an interactive pairing (RFC-052)
+      operationId: sensorV2PairingStart
+      description: |
+        No bearer key: the request is signed (RFC 9421, the profile of
+        docs/rfcs/RFC-052-sensor-pairing-and-authorization.md §4.3) with the
+        Ed25519 key in the body, keyid = its RFC 7638 thumbprint. Capped per
+        address (10/hour) and platform-wide; the answer has the same shape
+        whether or not a reverse-mode code matched. The request belongs to no
+        organization until an administrator approves it.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PairingStart" }
+      responses:
+        "201":
+          description: The pairing id, the code to enter (default mode), the platform key, nonce and signature.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairingStarted" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/pairings/{pairing_id}:
+    get:
+      summary: Poll a pairing
+      operationId: sensorV2PairingStatus
+      description: Signed with the key that started the pairing; any other key, or an unknown id, is 404.
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/PairingID" }
+      responses:
+        "200":
+          description: pending, approved (with the identity), completed, denied or expired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairingStatus" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/pairings/{pairing_id}/nonce:
+    put:
+      summary: Reveal the sensor nonce (opens the commitment; fixes the SAS)
+      operationId: sensorV2PairingNonce
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/PairingID" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sensor_nonce]
+              properties:
+                sensor_nonce: { type: string, description: "32 bytes, base64url" }
+      responses:
+        "204": { description: Revealed. }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/pairings/{pairing_id}/complete:
+    post:
+      summary: Confirm the identity an approval granted; the key becomes active
+      operationId: sensorV2PairingComplete
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/PairingID" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sensor_id, key_id, signature]
+              properties:
+                sensor_id: { type: string }
+                key_id: { type: string }
+                signature: { type: string, description: "Ed25519 over the confirm transcript, base64url" }
+      responses:
+        "200":
+          description: Completed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairingStatus" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
 components:
   securitySchemes:
     sensorKey:
@@ -424,6 +515,11 @@ components:
       scheme: bearer
       description: The sensor API key (octs_…, or a legacy rda_… key), as in protocol v1. X-API-Key is accepted too.
   parameters:
+    PairingID:
+      name: pairing_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
     ReportID:
       name: report_id
       in: path
@@ -473,6 +569,54 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
   schemas:
+    PairingStart:
+      type: object
+      required: [protocol, public_key, commitment, host]
+      properties:
+        protocol: { type: string, const: openctem-pairing/v1 }
+        public_key: { type: string, description: "Ed25519 public key, raw 32 bytes, base64url" }
+        commitment: { type: string, description: "SHA-256 commitment to the sensor nonce, base64url" }
+        code: { type: string, description: "Reverse mode: the code an administrator created" }
+        sensor_id: { type: string, description: "Re-pair this existing registration" }
+        host:
+          type: object
+          properties:
+            hostname: { type: string }
+            os: { type: string }
+            arch: { type: string }
+            sensor_version: { type: string }
+            sdk_version: { type: string }
+            product: { type: string }
+            instance_id: { type: string }
+            name: { type: string }
+    PairingStarted:
+      type: object
+      required: [pairing_id, platform_key, platform_nonce, platform_signature, expires_at, poll_interval_seconds]
+      properties:
+        pairing_id: { type: string }
+        user_code: { type: string, description: "XXXX-XXXX, default mode only" }
+        platform_key: { type: string }
+        platform_nonce: { type: string }
+        platform_signature: { type: string }
+        expires_at: { type: string, format: date-time }
+        poll_interval_seconds: { type: integer }
+    PairingStatus:
+      type: object
+      required: [status, expires_at, poll_interval_seconds]
+      properties:
+        status: { type: string, enum: [pending, approved, completed, denied, expired] }
+        expires_at: { type: string, format: date-time }
+        poll_interval_seconds: { type: integer }
+        identity:
+          type: object
+          properties:
+            sensor_id: { type: string }
+            tenant_id: { type: string }
+            tenant_name: { type: string }
+            name: { type: string }
+            key_id: { type: string }
+            approved_at: { type: string, format: date-time }
+            repair: { type: boolean }
     ItemError:
       type: object
       required: [pointer, code, detail]

@@ -1185,6 +1185,8 @@ func (h *SensorHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
+	case errors.Is(err, sensor.ErrBearerKeysDisabled):
+		apierror.New(http.StatusForbidden, "BEARER_KEYS_DISABLED", "This organization requires key-bound identity: pair the sensor instead of creating a key").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
 		apierror.Forbidden("").WriteJSON(w)
 	default:

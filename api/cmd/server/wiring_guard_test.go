@@ -303,8 +303,12 @@ var optionalServiceSetters = map[string]string{
 	"ThreatIntel.SetSyncEnabled":        "request operation, called by the threat-intel handler",
 	"UserDashboard.SetDefault":          "request operation, called by the dashboard handler",
 	"Vulnerability.SetFindingTags":      "request operation, called by the finding handler",
+	"Sensor.SetBearerKeysAllowed":       "request operation, called by the sensor identity-policy handler",
 	// Real seams left at their defaults on purpose.
 	"ScannerTemplate.SetQuota":            "default quota applies; the override exists for tests and future config",
+	"SensorPairing.SetClock":              "test hook; the service uses time.Now",
+	"SensorPairing.SetMaxOpen":            "the RFC-052 default cap applies; the override exists for tests",
+	"SensorPairing.SetApprovalHook":       "the grant hook arrives with per-sensor grants (RFC-052 SP2)",
 	"Retest.SetClock":                     "test clock; production uses time.Now",
 	"Vulnerability.SetFindingNotifier":    "deprecated; superseded by the notification outbox",
 	"WebSocketHub.SetAuthorizeFunc":       "superseded by SetChannelAccessChecker",
