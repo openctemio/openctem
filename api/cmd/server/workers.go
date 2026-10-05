@@ -7,7 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 
 	"github.com/openctemio/openctem/api/internal/app"
@@ -66,9 +69,9 @@ type Workers struct {
 	ScanScheduler             *app.ScanScheduler
 	CommandExpirationChecker  *command.ExpirationChecker
 	OutboxScheduler           *outbox.Scheduler
-	FindingLifecycleScheduler *app.FindingLifecycleScheduler
+	FindingLifecycleScheduler *finding.FindingLifecycleScheduler
 	NotificationCleanupTicker *time.Ticker
-	notificationService       *app.NotificationService
+	notificationService       *integration.NotificationService
 	// SessionCleanupTicker periodically deletes expired/revoked
 	// sessions and refresh tokens. Without this the tables grow
 	// unboundedly because logout marks rows as 'revoked' (not deleted)
@@ -76,7 +79,7 @@ type Workers struct {
 	// SessionService.CleanupExpiredSessions() exists in the codebase
 	// but was never wired into a worker until this hookup.
 	SessionCleanupTicker *time.Ticker
-	sessionService       *app.SessionService
+	sessionService       *auth.SessionService
 	ControllerManager    *controller.Manager
 
 	// cleanupStopCh signals the ticker-driven cleanup goroutines (notification
@@ -195,11 +198,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 
 	// Initialize finding lifecycle scheduler
 	// Handles feature branch finding expiry
-	w.FindingLifecycleScheduler = app.NewFindingLifecycleScheduler(
+	w.FindingLifecycleScheduler = finding.NewFindingLifecycleScheduler(
 		repos.Finding,
-		repos.Tenant,
-		app.DefaultFindingLifecycleSchedulerConfig(),
-		log,
+		repos.Tenant, finding.DefaultFindingLifecycleSchedulerConfig(), log,
 	)
 
 	// Store notification service reference for cleanup worker

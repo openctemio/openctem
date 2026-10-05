@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -35,7 +34,7 @@ func TestAssetService_CreateAsset_RejectsReservedProperties(t *testing.T) {
 		for k, v := range props {
 			patch[k] = v
 		}
-		_, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+		_, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 			TenantID: serviceTenantID.String(), Name: "reserved.example.com", Type: "domain",
 			Criticality: "high", Properties: patch,
 		})
@@ -55,7 +54,7 @@ func TestAssetService_CreateAsset_RejectsReservedProperties(t *testing.T) {
 
 	// Ordinary keys are still accepted.
 	svc, _ := newTestService()
-	if _, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	if _, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID: serviceTenantID.String(), Name: "ok.example.com", Type: "domain",
 		Criticality: "high", Properties: map[string]any{"registrar": "x"},
 	}); err != nil {
@@ -81,8 +80,7 @@ func TestAssetService_UpdateAsset_RejectsChangedReservedProperties(t *testing.T)
 		for k, v := range props {
 			patch[k] = v
 		}
-		_, err := svc.UpdateAsset(context.Background(), a.ID().String(), serviceTenantID.String(),
-			app.UpdateAssetInput{Properties: patch})
+		_, err := svc.UpdateAsset(context.Background(), a.ID().String(), serviceTenantID.String(), assetapp.UpdateAssetInput{Properties: patch})
 		if !errors.Is(err, shared.ErrValidation) {
 			t.Errorf("update with %v: err = %v, want a validation error", props, err)
 		}
@@ -93,7 +91,7 @@ func TestAssetService_UpdateAsset_RejectsChangedReservedProperties(t *testing.T)
 
 	// A full-form PUT echoes the stored values: accepted, other keys applied.
 	desc := "updated"
-	updated, err := svc.UpdateAsset(context.Background(), a.ID().String(), serviceTenantID.String(), app.UpdateAssetInput{
+	updated, err := svc.UpdateAsset(context.Background(), a.ID().String(), serviceTenantID.String(), assetapp.UpdateAssetInput{
 		Description: &desc,
 		Properties:  map[string]any{"business_impact_score": 80, "business_impact_notes": "core", "registrar": "y"},
 	})

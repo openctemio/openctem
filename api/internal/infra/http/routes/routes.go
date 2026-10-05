@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -263,7 +264,7 @@ func Register(
 	log *logger.Logger,
 	authCfg AuthConfig,
 	tenantRepo tenant.Repository,
-	userService *app.UserService,
+	userService *tenantsvc.UserService,
 	// Optional Redis-backed membership reader. When non-nil it is
 	// used by RequireMembership and RequireActiveMembershipFromJWT
 	// instead of querying the database directly. nil falls back to

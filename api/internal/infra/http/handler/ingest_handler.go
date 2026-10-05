@@ -18,8 +18,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	sensorsvc "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/adapters"
 	"github.com/openctemio/openctem/api/internal/infra/adapters/core"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -60,7 +60,7 @@ const sensorIdentityContextKey contextKey = "sensor_identity"
 // It supports CTIS, SARIF, Recon, and raw scanner output formats.
 type IngestHandler struct {
 	ingestService   *ingest.Service
-	sensorService   *app.SensorService
+	sensorService   *sensorsvc.SensorService
 	adapterRegistry *adapters.Registry
 	logger          *logger.Logger
 
@@ -72,7 +72,7 @@ type IngestHandler struct {
 
 	// doorbell computes the heartbeat hints (RFC-023 §9.2a). Nil keeps the
 	// plain v1 heartbeat response.
-	doorbell *app.Doorbell
+	doorbell *sensorsvc.Doorbell
 
 	// v2Advertised: protocol v2 results are served (RFC-026), so a heartbeat
 	// from a sensor that announced the results-v2 feature is answered with
@@ -104,7 +104,7 @@ func (h *IngestHandler) SetV2Advertised(on bool) { h.v2Advertised = on }
 
 // SetDoorbell wires the heartbeat doorbell. Optional; without it the
 // heartbeat answers exactly as protocol v1 did before the doorbell.
-func (h *IngestHandler) SetDoorbell(d *app.Doorbell) {
+func (h *IngestHandler) SetDoorbell(d *sensorsvc.Doorbell) {
 	h.doorbell = d
 }
 
@@ -120,7 +120,7 @@ func (h *IngestHandler) SetAsyncIngest(repo ingestjob.Repository, maxPendingPerT
 // NewIngestHandler creates a new ingest handler.
 func NewIngestHandler(
 	ingestSvc *ingest.Service,
-	sensorSvc *app.SensorService,
+	sensorSvc *sensorsvc.SensorService,
 	log *logger.Logger,
 ) *IngestHandler {
 	return &IngestHandler{
@@ -603,15 +603,15 @@ func sensorHasFeature(r *http.Request, feature string) bool {
 // sensorIdentityFromContext returns the identity AuthenticateSource
 // resolved, falling back to the bare sensor (no paused flag, the sensor's
 // effective key expiry) when only that is in the context.
-func sensorIdentityFromContext(ctx context.Context) app.SensorIdentity {
-	if id, ok := ctx.Value(sensorIdentityContextKey).(app.SensorIdentity); ok && id.Sensor != nil {
+func sensorIdentityFromContext(ctx context.Context) sensorsvc.SensorIdentity {
+	if id, ok := ctx.Value(sensorIdentityContextKey).(sensorsvc.SensorIdentity); ok && id.Sensor != nil {
 		return id
 	}
 	agt := SensorFromContext(ctx)
 	if agt == nil {
-		return app.SensorIdentity{}
+		return sensorsvc.SensorIdentity{}
 	}
-	return app.SensorIdentity{Sensor: agt, KeyExpiresAt: agt.KeyState().ExpiresAt}
+	return sensorsvc.SensorIdentity{Sensor: agt, KeyExpiresAt: agt.KeyState().ExpiresAt}
 }
 
 // SensorFromContext retrieves the authenticated sensor from context.
@@ -918,7 +918,7 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	aware := sensorHasFeature(r, legacyv1.FeatureDoorbell)
 	var hints sensor.HeartbeatHints
 	if h.doorbell != nil {
-		hints = h.doorbell.Ring(r.Context(), app.DoorbellRequest{Identity: id, Aware: aware})
+		hints = h.doorbell.Ring(r.Context(), sensorsvc.DoorbellRequest{Identity: id, Aware: aware})
 	}
 
 	// Update sensor metrics via service. A paused (disabled) sensor is only

@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	findingsvc "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -126,7 +126,7 @@ func getFindingDetail(t *testing.T, h *VulnerabilityHandler, tenant, id string) 
 
 func TestGetFinding_EmbedsVulnerabilityAndComponent(t *testing.T) {
 	fx := newDetailFixture(t)
-	svc := app.NewVulnerabilityService(&detailVulnRepo{v: fx.vuln}, &detailFindingRepo{f: fx.finding}, logger.NewNop())
+	svc := findingsvc.NewVulnerabilityService(&detailVulnRepo{v: fx.vuln}, &detailFindingRepo{f: fx.finding}, logger.NewNop())
 	h := NewVulnerabilityHandler(svc, nil, logger.NewNop())
 
 	dep, err := component.NewAssetDependency(fx.tenant, fx.asset, fx.comp.ID(), "package-lock.json", component.DependencyTypeTransitive)
@@ -179,7 +179,7 @@ func TestGetFinding_EmbedsVulnerabilityAndComponent(t *testing.T) {
 
 func TestGetFinding_OtherTenantGetsNotFoundAndNoLookups(t *testing.T) {
 	fx := newDetailFixture(t)
-	svc := app.NewVulnerabilityService(&detailVulnRepo{v: fx.vuln}, &detailFindingRepo{f: fx.finding}, logger.NewNop())
+	svc := findingsvc.NewVulnerabilityService(&detailVulnRepo{v: fx.vuln}, &detailFindingRepo{f: fx.finding}, logger.NewNop())
 	h := NewVulnerabilityHandler(svc, nil, logger.NewNop())
 	lookup := &detailComponents{c: fx.comp}
 	h.SetComponentService(lookup)
@@ -197,7 +197,7 @@ func TestGetFinding_ContextLookupsAreBestEffort(t *testing.T) {
 	fx := newDetailFixture(t)
 	// The CVE record is missing and the dependency lookup fails: the finding
 	// still loads, with the component (no dependency facts, no fix version).
-	svc := app.NewVulnerabilityService(&detailVulnRepo{}, &detailFindingRepo{f: fx.finding}, logger.NewNop())
+	svc := findingsvc.NewVulnerabilityService(&detailVulnRepo{}, &detailFindingRepo{f: fx.finding}, logger.NewNop())
 	h := NewVulnerabilityHandler(svc, nil, logger.NewNop())
 	h.SetComponentService(&detailComponents{c: fx.comp, depErr: errors.New("db down")})
 
@@ -218,7 +218,7 @@ func TestGetFinding_ContextLookupsAreBestEffort(t *testing.T) {
 
 func TestGetFinding_NoComponentServiceLeavesComponentOut(t *testing.T) {
 	fx := newDetailFixture(t)
-	svc := app.NewVulnerabilityService(&detailVulnRepo{v: fx.vuln}, &detailFindingRepo{f: fx.finding}, logger.NewNop())
+	svc := findingsvc.NewVulnerabilityService(&detailVulnRepo{v: fx.vuln}, &detailFindingRepo{f: fx.finding}, logger.NewNop())
 	h := NewVulnerabilityHandler(svc, nil, logger.NewNop())
 
 	rr, resp := getFindingDetail(t, h, fx.tenant.String(), fx.finding.ID().String())

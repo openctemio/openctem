@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 )
 
 // This guards a defect class this codebase keeps producing: code that runs but
@@ -184,7 +184,7 @@ func TestInertWiringSeams_StayWired(t *testing.T) {
 
 func TestPriorityClassificationSeams_AreWiredOrExplicitlyOptional(t *testing.T) {
 	seams := make([]string, 0, 8)
-	typ := reflect.TypeOf(&app.PriorityClassificationService{})
+	typ := reflect.TypeOf(&finding.PriorityClassificationService{})
 	for i := 0; i < typ.NumMethod(); i++ {
 		if name := typ.Method(i).Name; strings.HasPrefix(name, "Set") {
 			seams = append(seams, name)

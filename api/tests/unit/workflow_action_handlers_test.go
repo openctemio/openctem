@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/domain/workflow"
@@ -265,11 +266,11 @@ func newWfActionTestFinding(tenantID shared.ID, tags []string) *vulnerability.Fi
 }
 
 // newWfActionVulnService creates a VulnerabilityService backed by in-memory mocks.
-func newWfActionVulnService() (*app.VulnerabilityService, *wfActionMockFindingRepo) {
+func newWfActionVulnService() (*finding.VulnerabilityService, *wfActionMockFindingRepo) {
 	vulnRepo := &wfActionMockVulnRepo{}
 	findingRepo := newWfActionMockFindingRepo()
 	log := logger.NewNop()
-	svc := app.NewVulnerabilityService(vulnRepo, findingRepo, log)
+	svc := finding.NewVulnerabilityService(vulnRepo, findingRepo, log)
 	svc.SetAssigneeChecker(anyMember{})
 	return svc, findingRepo
 }

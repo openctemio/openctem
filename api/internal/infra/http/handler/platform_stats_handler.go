@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -12,12 +12,12 @@ import (
 
 // PlatformStatsHandler handles platform stats API requests.
 type PlatformStatsHandler struct {
-	sensorService *app.SensorService
+	sensorService *sensor.SensorService
 	logger        *logger.Logger
 }
 
 // NewPlatformStatsHandler creates a new PlatformStatsHandler.
-func NewPlatformStatsHandler(sensorService *app.SensorService, log *logger.Logger) *PlatformStatsHandler {
+func NewPlatformStatsHandler(sensorService *sensor.SensorService, log *logger.Logger) *PlatformStatsHandler {
 	return &PlatformStatsHandler{
 		sensorService: sensorService,
 		logger:        log.With("handler", "platform_stats"),

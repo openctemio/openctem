@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -104,11 +105,11 @@ func (a *pipelineAuditServiceAdapter) LogEvent(ctx context.Context, actx pipelin
 
 // scanSensorSelectorAdapter adapts SensorSelector to scan.SensorSelector interface.
 type scanSensorSelectorAdapter struct {
-	selector *SensorSelector
+	selector *sensor.SensorSelector
 }
 
 // NewScanSensorSelectorAdapter creates an adapter for the scan package's SensorSelector interface.
-func NewScanSensorSelectorAdapter(selector *SensorSelector) scan.SensorSelector {
+func NewScanSensorSelectorAdapter(selector *sensor.SensorSelector) scan.SensorSelector {
 	return &scanSensorSelectorAdapter{selector: selector}
 }
 
@@ -131,11 +132,11 @@ func (a *scanSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, t
 // SelectSensor implements scan.SensorSelector.
 func (a *scanSensorSelectorAdapter) SelectSensor(ctx context.Context, req scan.SelectSensorRequest) (*scan.SelectSensorResult, error) {
 	// Make the call with app types
-	appReq := SelectSensorRequest{
+	appReq := sensor.SelectSensorRequest{
 		TenantID:     req.TenantID,
 		Capabilities: req.Capabilities,
 		Tool:         req.Tool,
-		Mode:         SelectTenantOnly,
+		Mode:         sensor.SelectTenantOnly,
 		AllowQueue:   req.AllowQueue,
 	}
 
@@ -152,22 +153,22 @@ func (a *scanSensorSelectorAdapter) SelectSensor(ctx context.Context, req scan.S
 
 // pipelineSensorSelectorAdapter adapts SensorSelector to pipeline.SensorSelector interface.
 type pipelineSensorSelectorAdapter struct {
-	selector *SensorSelector
+	selector *sensor.SensorSelector
 }
 
 // NewPipelineSensorSelectorAdapter creates an adapter for the pipeline package's SensorSelector interface.
-func NewPipelineSensorSelectorAdapter(selector *SensorSelector) pipeline.SensorSelector {
+func NewPipelineSensorSelectorAdapter(selector *sensor.SensorSelector) pipeline.SensorSelector {
 	return &pipelineSensorSelectorAdapter{selector: selector}
 }
 
 // SelectSensor implements pipeline.SensorSelector.
 func (a *pipelineSensorSelectorAdapter) SelectSensor(ctx context.Context, req pipeline.SelectSensorRequest) (*pipeline.SelectSensorResult, error) {
 	// Make the call with app types
-	appReq := SelectSensorRequest{
+	appReq := sensor.SelectSensorRequest{
 		TenantID:     req.TenantID,
 		Capabilities: req.Capabilities,
 		Tool:         req.Tool,
-		Mode:         SelectTenantOnly,
+		Mode:         sensor.SelectTenantOnly,
 		AllowQueue:   req.AllowQueue,
 	}
 

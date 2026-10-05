@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -49,5 +50,5 @@ func logOrgSSOEvent(ctx context.Context, svc *app.AuditService, log *logger.Logg
 // normalized text, for recording which certificate was configured without
 // storing it.
 func certificateFingerprint(cert string) string {
-	return app.CertificateFingerprint(cert)
+	return auth.CertificateFingerprint(cert)
 }

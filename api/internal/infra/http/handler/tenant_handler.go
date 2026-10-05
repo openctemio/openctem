@@ -35,9 +35,9 @@ var recalculateLastRun sync.Map
 // TenantHandler handles tenant-related HTTP requests.
 // Note: "Team" is the UI-facing name for tenants.
 type TenantHandler struct {
-	service         *app.TenantService
+	service         *tenantapp.TenantService
 	roleService     *app.RoleService
-	assetService    *app.AssetService
+	assetService    *assetapp.AssetService
 	moduleService   *app.ModuleService
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
@@ -48,14 +48,14 @@ type TenantHandler struct {
 	selfServiceCreation bool
 	// provisioning creates accounts on behalf of organization administrators.
 	// Nil disables POST /tenants/{tenant}/users.
-	provisioning *app.UserProvisioningService
+	provisioning *tenantapp.UserProvisioningService
 	// invalidateSecurityPolicy drops the IP-allowlist gate's cached policy for
 	// an organization after its security settings change.
 	invalidateSecurityPolicy func(tenantID string)
 }
 
 // SetUserProvisioning wires administrator-created accounts.
-func (h *TenantHandler) SetUserProvisioning(svc *app.UserProvisioningService) {
+func (h *TenantHandler) SetUserProvisioning(svc *tenantapp.UserProvisioningService) {
 	h.provisioning = svc
 }
 
@@ -71,7 +71,7 @@ func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 }
 
 // NewTenantHandler creates a new tenant handler.
-func NewTenantHandler(svc *app.TenantService, v *validator.Validator, log *logger.Logger) *TenantHandler {
+func NewTenantHandler(svc *tenantapp.TenantService, v *validator.Validator, log *logger.Logger) *TenantHandler {
 	return &TenantHandler{
 		service:   svc,
 		validator: v,
@@ -85,7 +85,7 @@ func (h *TenantHandler) SetRoleService(svc *app.RoleService) {
 }
 
 // SetAssetService sets the asset service for risk scoring operations.
-func (h *TenantHandler) SetAssetService(svc *app.AssetService) {
+func (h *TenantHandler) SetAssetService(svc *assetapp.AssetService) {
 	h.assetService = svc
 }
 
@@ -469,7 +469,7 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateTenantInput{
+	input := tenantapp.CreateTenantInput{
 		Name:        req.Name,
 		Slug:        req.Slug,
 		Description: req.Description,
@@ -575,7 +575,7 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateTenantInput{
+	input := tenantapp.UpdateTenantInput{
 		Name:        req.Name,
 		Slug:        req.Slug,
 		Description: req.Description,
@@ -882,7 +882,7 @@ func (h *TenantHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.AddMemberInput{
+	input := tenantapp.AddMemberInput{
 		UserID: userID,
 		Role:   req.Role,
 	}
@@ -918,7 +918,7 @@ func (h *TenantHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	input := app.UpdateMemberRoleInput{
+	input := tenantapp.UpdateMemberRoleInput{
 		Role: req.Role,
 	}
 
@@ -1084,7 +1084,7 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 
 	// In simplified model, all invited users are "member"
 	// Permissions come from RBAC roles (roleIDs)
-	input := app.CreateInvitationInput{
+	input := tenantapp.CreateInvitationInput{
 		Email:   req.Email,
 		Role:    "member", // Always "member" - owner is never created via invitation
 		RoleIDs: req.RoleIDs,
@@ -1162,7 +1162,7 @@ type ProvisionedUserResponse struct {
 }
 
 // toProvisionedUserResponse renders a ProvisionedUser for the API.
-func toProvisionedUserResponse(p *app.ProvisionedUser) ProvisionedUserResponse {
+func toProvisionedUserResponse(p *tenantapp.ProvisionedUser) ProvisionedUserResponse {
 	resp := ProvisionedUserResponse{
 		User:        ProvisionedUserInfo{ID: p.User.ID().String(), Email: p.User.Email(), Name: p.User.Name()},
 		EmailSent:   p.EmailSent,
@@ -1186,7 +1186,7 @@ func toProvisionedUserResponse(p *app.ProvisionedUser) ProvisionedUserResponse {
 }
 
 // writeProvisionedUser writes a response that may carry a one-time secret.
-func writeProvisionedUser(w http.ResponseWriter, status int, p *app.ProvisionedUser) {
+func writeProvisionedUser(w http.ResponseWriter, status int, p *tenantapp.ProvisionedUser) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -1196,13 +1196,13 @@ func writeProvisionedUser(w http.ResponseWriter, status int, p *app.ProvisionedU
 // handleProvisioningError maps account-provisioning errors.
 func (h *TenantHandler) handleProvisioningError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, app.ErrAccountExists):
+	case errors.Is(err, tenantapp.ErrAccountExists):
 		apierror.Conflict("An account with this email already exists. Invite them instead.").WriteJSON(w)
 	case errors.Is(err, tenant.ErrPlatformAdminMembership):
 		apierror.Conflict("Platform administrators cannot belong to an organization.").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("User").WriteJSON(w)
-	case errors.Is(err, app.ErrSetupLinkForbidden):
+	case errors.Is(err, tenantapp.ErrSetupLinkForbidden):
 		apierror.Forbidden("You cannot issue a set-password link for this account").WriteJSON(w)
 	default:
 		h.handleServiceError(w, err)
@@ -1252,7 +1252,7 @@ func (h *TenantHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.provisioning.CreateUser(r.Context(), app.CreateUserInput{
+	result, err := h.provisioning.CreateUser(r.Context(), tenantapp.CreateUserInput{
 		TenantID:  tenantID.String(),
 		Email:     req.Email,
 		Name:      req.Name,
@@ -1859,7 +1859,7 @@ func (h *TenantHandler) UpdateGeneralSettings(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	input := app.UpdateGeneralSettingsInput{
+	input := tenantapp.UpdateGeneralSettingsInput{
 		Timezone: req.Timezone,
 		Language: req.Language,
 		Industry: req.Industry,
@@ -1925,7 +1925,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	}
 
 	clientIP := getClientIP(r)
-	input := app.UpdateSecuritySettingsInput{
+	input := tenantapp.UpdateSecuritySettingsInput{
 		MFARequired:           req.MFARequired,
 		SessionTimeoutMin:     req.SessionTimeoutMin,
 		IPWhitelist:           req.IPWhitelist,
@@ -1986,7 +1986,7 @@ func (h *TenantHandler) UpdateBrandingSettings(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	input := app.UpdateBrandingSettingsInput{
+	input := tenantapp.UpdateBrandingSettingsInput{
 		PrimaryColor: req.PrimaryColor,
 		LogoDarkURL:  req.LogoDarkURL,
 		LogoData:     req.LogoData,
@@ -2007,7 +2007,7 @@ func (h *TenantHandler) UpdateBrandingSettings(w http.ResponseWriter, r *http.Re
 
 // UpdateBranchSettingsRequest represents the request to update branch naming convention settings.
 type UpdateBranchSettingsRequest struct {
-	TypeRules []app.BranchTypeRuleInput `json:"type_rules" validate:"dive"`
+	TypeRules []tenantapp.BranchTypeRuleInput `json:"type_rules" validate:"dive"`
 }
 
 // UpdateBranchSettings handles PATCH /api/v1/tenants/{tenant}/settings/branch
@@ -2029,7 +2029,7 @@ func (h *TenantHandler) UpdateBranchSettings(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	input := app.UpdateBranchSettingsInput{
+	input := tenantapp.UpdateBranchSettingsInput{
 		TypeRules: req.TypeRules,
 	}
 
@@ -2094,7 +2094,7 @@ func (h *TenantHandler) UpdatePentestSettings(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	input := app.UpdatePentestSettingsInput{
+	input := tenantapp.UpdatePentestSettingsInput{
 		CampaignTypes: req.CampaignTypes,
 		Methodologies: req.Methodologies,
 	}
@@ -2441,7 +2441,7 @@ func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http
 		return
 	}
 
-	config := app.MapTenantToAssetScoringConfig(&req)
+	config := assetapp.MapTenantToAssetScoringConfig(&req)
 	items, totalAssets, err := h.assetService.PreviewRiskScoreChanges(r.Context(), tenantID, config)
 	if err != nil {
 		h.handleServiceError(w, err)

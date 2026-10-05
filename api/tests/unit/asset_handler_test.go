@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetsvc "github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -235,7 +236,7 @@ func newTestHandler() *handler.AssetHandler {
 	repo := NewHandlerMockRepository()
 	log := logger.NewDevelopment()
 	v := validator.New()
-	svc := app.NewAssetService(repo, log)
+	svc := assetsvc.NewAssetService(repo, log)
 	return handler.NewAssetHandler(svc, v, log)
 }
 
@@ -595,7 +596,7 @@ func TestAssetHandler_List_WithFilters(t *testing.T) {
 // to fail with a bare error the handler could not classify → 500.
 func TestAssetHandler_Sync_NonRepositoryIs400(t *testing.T) {
 	h := newTestHandler()
-	h.SetIntegrationService(&app.IntegrationService{})
+	h.SetIntegrationService(&integration.IntegrationService{})
 
 	body, _ := json.Marshal(map[string]any{"name": "sync-host", "type": "host", "criticality": "high"})
 	req := withTenantContext(httptest.NewRequest(http.MethodPost, "/api/v1/assets", bytes.NewReader(body)))

@@ -21,7 +21,7 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetsvc "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -79,13 +79,13 @@ func newCBSHarness(t *testing.T) *cbsHarness {
 		}, log)
 	assetRepo := postgres.NewAssetRepository(db)
 	compRepo := postgres.NewComponentRepository(db)
-	compSvc := app.NewComponentService(compRepo, assetRepo, log)
+	compSvc := assetsvc.NewComponentService(compRepo, assetRepo, log)
 	compSvc.SetDataScope(enforcer)
-	sbom := app.NewSBOMImportService(compRepo, assetRepo, log)
+	sbom := assetsvc.NewSBOMImportService(compRepo, assetRepo, log)
 	sbom.SetDataScope(enforcer)
-	assetSvc := app.NewAssetService(assetRepo, log)
+	assetSvc := assetsvc.NewAssetService(assetRepo, log)
 	assetSvc.SetDataScope(enforcer)
-	branchH := handler.NewBranchHandler(app.NewBranchService(postgres.NewBranchRepository(db), log), validator.New(), log)
+	branchH := handler.NewBranchHandler(assetsvc.NewBranchService(postgres.NewBranchRepository(db), log), validator.New(), log)
 	branchH.SetAssetService(assetSvc)
 
 	router := infrahttp.NewChiRouter()

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -100,7 +100,7 @@ func twoOrgs(t *testing.T) (*invBodyRepo, *tenantdom.Invitation, *tenantdom.Invi
 }
 
 func newInvBodyHandler(repo *invBodyRepo) *TenantHandler {
-	return NewTenantHandler(app.NewTenantService(repo, logger.NewNop()), validator.New(), logger.NewNop())
+	return NewTenantHandler(tenant.NewTenantService(repo, logger.NewNop()), validator.New(), logger.NewNop())
 }
 
 func postJSON(body string) *http.Request {

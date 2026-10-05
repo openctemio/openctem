@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -21,7 +22,7 @@ import (
 // dedicated, audited reveal path.
 const leakedSecretForTest = "Sup3r-Secret-Leaked-Passw0rd!"
 
-func importLeakedSecret(t *testing.T, svc *app.CredentialImportService, tenantID shared.ID) string {
+func importLeakedSecret(t *testing.T, svc *integration.CredentialImportService, tenantID shared.ID) string {
 	t.Helper()
 	cred := validCredentialImport()
 	cred.SecretValue = leakedSecretForTest
@@ -49,7 +50,7 @@ func TestCredentialReadPaths_DoNotReturnPlaintextSecret(t *testing.T) {
 	id := importLeakedSecret(t, svc, tenantID)
 	ctx := context.Background()
 
-	list, err := svc.List(ctx, tenantID.String(), app.CredentialListOptions{}, 1, 20)
+	list, err := svc.List(ctx, tenantID.String(), integration.CredentialListOptions{}, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +221,7 @@ func TestCredentialImport_RevealWithoutStoredSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = svc.RevealSecret(context.Background(), tenantID.String(), res.Details[0].ID)
-	if !errors.Is(err, app.ErrCredentialNoSecret) {
+	if !errors.Is(err, integration.ErrNoSecret) {
 		t.Fatalf("expected ErrCredentialNoSecret, got %v", err)
 	}
 }

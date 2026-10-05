@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/relationship"
@@ -20,14 +20,14 @@ import (
 
 // RelationshipSuggestionHandler handles relationship suggestion HTTP requests.
 type RelationshipSuggestionHandler struct {
-	service        *app.RelationshipSuggestionService
+	service        *asset.RelationshipSuggestionService
 	logger         *logger.Logger
 	generateMu     sync.Mutex
 	lastGenerateAt map[string]time.Time // tenant_id -> last generate time
 }
 
 // NewRelationshipSuggestionHandler creates a new RelationshipSuggestionHandler.
-func NewRelationshipSuggestionHandler(svc *app.RelationshipSuggestionService, log *logger.Logger) *RelationshipSuggestionHandler {
+func NewRelationshipSuggestionHandler(svc *asset.RelationshipSuggestionService, log *logger.Logger) *RelationshipSuggestionHandler {
 	return &RelationshipSuggestionHandler{
 		service:        svc,
 		logger:         log,

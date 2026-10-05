@@ -19,10 +19,10 @@ import (
 	"testing"
 
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
@@ -89,7 +89,7 @@ func newRetestAuthzHarness(t *testing.T) *rtHarness {
 
 	router := infrahttp.NewChiRouter()
 	registerFindingRetestRoutes(router, handler.NewFindingRetestHandler(svc, log), Middleware(h.auth), nil)
-	tenantSvc := app.NewTenantService(postgres.NewTenantRepository(pg), log)
+	tenantSvc := tenantsvc.NewTenantService(postgres.NewTenantRepository(pg), log)
 	registerRetestSettingsRoutes(router, handler.NewTenantHandler(tenantSvc, validator.New(), log), Middleware(h.auth), nil)
 	h.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(h.srv.Close)

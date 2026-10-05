@@ -108,11 +108,11 @@ export type CriterionOutcome =
 
 // Credentials (leaked-credential inventory)
 export type CredentialItem =
-  Schemas['github_com_openctemio_openctem_api_internal_app.CredentialItem']
+  Schemas['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem']
 export type CredentialListResult =
-  Schemas['github_com_openctemio_openctem_api_internal_app.CredentialListResult']
+  Schemas['github_com_openctemio_openctem_api_internal_app_integration.CredentialListResult']
 export type IdentityListResult =
-  Schemas['github_com_openctemio_openctem_api_internal_app.IdentityListResult']
+  Schemas['github_com_openctemio_openctem_api_internal_app_integration.IdentityListResult']
 export type IdentityExposure =
   Schemas['github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure']
 export type CredentialImportResult =

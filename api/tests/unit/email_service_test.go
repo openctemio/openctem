@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -63,8 +63,8 @@ func emailTestConfig() config.SMTPConfig {
 	}
 }
 
-func emailNewService(sender email.Sender) *app.EmailService {
-	return app.NewEmailService(sender, emailTestConfig(), "OpenCTEM", emailTestLogger())
+func emailNewService(sender email.Sender) *auth.EmailService {
+	return auth.NewEmailService(sender, emailTestConfig(), "OpenCTEM", emailTestLogger())
 }
 
 // =============================================================================
@@ -90,7 +90,7 @@ func TestEmailService_IsConfigured_False(t *testing.T) {
 }
 
 func TestEmailService_IsConfigured_NilSender(t *testing.T) {
-	svc := app.NewEmailService(nil, emailTestConfig(), "OpenCTEM", emailTestLogger())
+	svc := auth.NewEmailService(nil, emailTestConfig(), "OpenCTEM", emailTestLogger())
 
 	if svc.IsConfigured() {
 		t.Error("expected IsConfigured() to return false when sender is nil")
@@ -527,7 +527,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mock := &emailMockSender{isConfigured: true}
 			cfg := config.SMTPConfig{BaseURL: tc.baseURL}
-			svc := app.NewEmailService(mock, cfg, "TestApp", emailTestLogger())
+			svc := auth.NewEmailService(mock, cfg, "TestApp", emailTestLogger())
 
 			// Test verification URL
 			err := svc.SendVerificationEmail(context.Background(), "u@e.com", "U", "t1", time.Hour)
@@ -594,7 +594,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 func TestEmailService_AppName_PropagatedToAllTemplates(t *testing.T) {
 	mock := &emailMockSender{isConfigured: true}
 	customAppName := "MyCustomApp"
-	svc := app.NewEmailService(mock, emailTestConfig(), customAppName, emailTestLogger())
+	svc := auth.NewEmailService(mock, emailTestConfig(), customAppName, emailTestLogger())
 
 	// Verification
 	_ = svc.SendVerificationEmail(context.Background(), "u@e.com", "U", "t", time.Hour)

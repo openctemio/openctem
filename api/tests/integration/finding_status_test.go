@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	findingsvc "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -269,7 +269,7 @@ func TestUpdateFindingStatusInput_ActorIDIsUsed(t *testing.T) {
 	// This test verifies the service layer uses ActorID correctly
 	// In a real integration test, this would use a test database
 
-	input := app.UpdateFindingStatusInput{
+	input := findingsvc.UpdateFindingStatusInput{
 		Status:     "resolved",
 		Resolution: "Fixed the bug",
 		ActorID:    "22222222-2222-2222-2222-222222222222",

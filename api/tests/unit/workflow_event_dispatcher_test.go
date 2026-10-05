@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	findingsvc "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/findingsource"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -466,10 +467,10 @@ func wfDispatchMakeWorkflow(
 
 // newWfDispatchFindingSourceCacheService builds a FindingSourceCacheService backed
 // by a stub repo with the given valid codes (nil Redis = graceful degradation path).
-func newWfDispatchFindingSourceCacheService(t *testing.T, log *logger.Logger, validCodes map[string]bool) *app.FindingSourceCacheService {
+func newWfDispatchFindingSourceCacheService(t *testing.T, log *logger.Logger, validCodes map[string]bool) *findingsvc.FindingSourceCacheService {
 	t.Helper()
 	repo := &wfDispatchStubFindingSourceRepo{validCodes: validCodes}
-	svc, err := app.NewFindingSourceCacheService(nil, repo, log)
+	svc, err := findingsvc.NewFindingSourceCacheService(nil, repo, log)
 	if err != nil {
 		t.Fatalf("failed to create FindingSourceCacheService: %v", err)
 	}

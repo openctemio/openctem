@@ -17,9 +17,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -36,7 +36,7 @@ func newContentRouteHarness(t *testing.T) *authzPolicyHarness {
 	log := logger.NewNop()
 	auditSvc := auditapp.NewAuditService(postgres.NewAuditRepository(db), log)
 	sensorRepo := postgres.NewSensorRepository(db)
-	sensorSvc := app.NewSensorService(sensorRepo, auditSvc, log)
+	sensorSvc := sensorapp.NewSensorService(sensorRepo, auditSvc, log)
 	contentSvc := sensorapp.NewContentService(sensorRepo, sensorSvc, postgres.NewSensorContentPolicyRepository(db),
 		postgres.NewCommandRepository(db), auditSvc, log)
 	sh := handler.NewSensorHandler(sensorSvc, validator.New(), log)
@@ -49,7 +49,7 @@ func newContentRouteHarness(t *testing.T) *authzPolicyHarness {
 		Sensor:        sh,
 		SensorContent: handler.NewSensorContentHandler(contentSvc, sh, log),
 	}, cfg, log, AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: base.gen},
-		postgres.NewTenantRepository(db), app.NewUserService(postgres.NewUserRepository(db), log), nil, nil, nil)
+		postgres.NewTenantRepository(db), tenantsvc.NewUserService(postgres.NewUserRepository(db), log), nil, nil, nil)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)
 	base.srv = srv

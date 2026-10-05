@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -125,7 +125,7 @@ func TestAuthProviders_AdvertisesWiredProviders(t *testing.T) {
 	cfg := oauthTestConfig()
 	// Repos are nil: the authorize leg builds the provider URL from config and
 	// a signed state token, and never touches persistence.
-	oauthSvc := app.NewOAuthService(nil, nil, nil, cfg.OAuth, cfg.Auth, logger.NewNop())
+	oauthSvc := auth.NewOAuthService(nil, nil, nil, cfg.OAuth, cfg.Auth, logger.NewNop())
 	oauthHandler := handler.NewOAuthHandler(oauthSvc, cfg.OAuth, cfg.Auth, logger.NewNop())
 
 	social, mux := advertisedProviders(t, Handlers{OAuth: oauthHandler})

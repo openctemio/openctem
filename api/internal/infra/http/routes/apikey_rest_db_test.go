@@ -20,9 +20,9 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/apikey"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -120,7 +120,7 @@ func newKeyRESTHarness(t *testing.T) *keyRESTHarness {
 	cfg := &config.Config{}
 	cfg.Auth.Provider = config.AuthProviderLocal
 	authCfg := AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}
-	userSvc := app.NewUserService(userRepo, log)
+	userSvc := tenantsvc.NewUserService(userRepo, log)
 
 	router := infrahttp.NewChiRouter()
 	keyAuth := middleware.NewAPIKeyAuth(keys, log)

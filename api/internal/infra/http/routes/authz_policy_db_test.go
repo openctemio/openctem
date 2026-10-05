@@ -43,12 +43,15 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/apikey"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
+	sensorsvc "github.com/openctemio/openctem/api/internal/app/sensor"
 	templateapp "github.com/openctemio/openctem/api/internal/app/template"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -102,7 +105,7 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 	roleRepo := postgres.NewRoleRepository(db)
 	auditSvc := auditapp.NewAuditService(postgres.NewAuditRepository(db), log)
 	keys := apikey.NewService(postgres.NewAPIKeyRepository(db), "authz-policy-pepper", log)
-	tenantSvc := app.NewTenantService(tenantRepo, log, app.WithTenantAuditService(auditSvc))
+	tenantSvc := tenantsvc.NewTenantService(tenantRepo, log, tenantsvc.WithTenantAuditService(auditSvc))
 	v := validator.New()
 
 	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "authz-policy-route-test-secret-0123456789abcdef", Issuer: "test",
@@ -122,7 +125,7 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 
 	router := infrahttp.NewChiRouter()
 	Register(router, Handlers{
-		Sensor:    handler.NewSensorHandler(app.NewSensorService(postgres.NewSensorRepository(db), auditSvc, log), v, log),
+		Sensor:    handler.NewSensorHandler(sensorsvc.NewSensorService(postgres.NewSensorRepository(db), auditSvc, log), v, log),
 		Audit:     handler.NewAuditHandler(auditSvc, v, log),
 		APIKey:    handler.NewAPIKeyHandler(keys, v, log),
 		Tenant:    handler.NewTenantHandler(tenantSvc, v, log),
@@ -134,9 +137,8 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 		Scope: handler.NewScopeHandler(scopeapp.NewService(postgres.NewScopeTargetRepository(db),
 			postgres.NewScopeExclusionRepository(db),
 			postgres.NewAssetRepository(db), log), v, log),
-		BusinessUnit: handler.NewBusinessUnitHandler(
-			app.NewBusinessUnitService(postgres.NewBusinessUnitRepository(db), postgres.NewAssetRepository(db), log), log),
-	}, cfg, log, authCfg, tenantRepo, app.NewUserService(userRepo, log), nil, nil, nil)
+		BusinessUnit: handler.NewBusinessUnitHandler(asset.NewBusinessUnitService(postgres.NewBusinessUnitRepository(db), postgres.NewAssetRepository(db), log), log),
+	}, cfg, log, authCfg, tenantRepo, tenantsvc.NewUserService(userRepo, log), nil, nil, nil)
 
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)
