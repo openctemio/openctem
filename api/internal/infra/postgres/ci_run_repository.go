@@ -276,6 +276,16 @@ func (r *CIRunRepository) GetRunByTokenHash(ctx context.Context, hash []byte, no
 	return &run, nil
 }
 
+// RotateRunToken replaces a running run's upload token.
+func (r *CIRunRepository) RotateRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, expiresAt time.Time) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET token_hash = $3, token_expires_at = $4, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running'`, tenantID.String(), runID.String(), hash, expiresAt)
+	if err != nil {
+		return err
+	}
+	return requireOneRow(res, cirun.ErrRunNotFound)
+}
+
 // ListRuns returns the tenant's runs, newest first, and the total.
 func (r *CIRunRepository) ListRuns(ctx context.Context, tenantID shared.ID, f cirun.RunFilter) ([]cirun.Run, int, error) {
 	args := []any{tenantID.String()}
@@ -285,7 +295,7 @@ func (r *CIRunRepository) ListRuns(ctx context.Context, tenantID shared.ID, f ci
 		where = append(where, fmt.Sprintf("repository_asset_id = $%d", len(args)))
 	}
 	if f.Verdict != "" {
-		if f.Verdict == "none" {
+		if f.Verdict == cirun.VerdictNone {
 			where = append(where, "verdict IS NULL")
 		} else {
 			args = append(args, f.Verdict)

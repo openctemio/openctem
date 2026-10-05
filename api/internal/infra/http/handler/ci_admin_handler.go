@@ -447,7 +447,7 @@ func (h *CIAdminHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	f := cirun.RunFilter{Verdict: q.Get("verdict"), Provider: q.Get("provider")}
-	if f.Verdict != "" && f.Verdict != cirun.VerdictPass && f.Verdict != cirun.VerdictFail && f.Verdict != "none" {
+	if f.Verdict != "" && f.Verdict != cirun.VerdictPass && f.Verdict != cirun.VerdictFail && f.Verdict != cirun.VerdictNone {
 		apierror.BadRequest("verdict must be pass, fail or none").WriteJSON(w)
 		return
 	}
