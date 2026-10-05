@@ -783,6 +783,33 @@ The SDK and the sensor never checked the `rda_` prefix (only test fixtures and
 a log-redaction comment mention it), so no SDK or sensor release is needed for
 `octs_` keys.
 
+### 10.5 TODO (not before 2027-01-03): remove bearer credential storage
+
+Key-bound identity (RFC-052) merged on 2026-10-05 (#1189), so the D8 sunset
+falls **no earlier than 2027-01-03**, and only if enrollment / pairing
+(Phase 2, RFC-052) has shipped by then; otherwise 90 days after it ships.
+RFC-052 D-4 lets existing organizations keep `octs_` bearer keys, so the
+storage can go only once **no** bearer key (`rda_` or `octs_`) is in use, not
+merely when `rda_` is retired.
+
+At that point, in one PR (code and migration together):
+
+- drop `sensor_api_keys` (the bearer-key rotation store) and, on `sensors`,
+  `api_key_hash`, `api_key_prefix`, `key_expires_at`, `key_pepper_id`,
+  `api_key_last_used_at`, `api_key_last_used_ip` with their indexes; keep
+  `auth_kind` (every row is `key_bound` afterwards);
+- remove bearer authentication from the v2 sensor plane, the key
+  create / regenerate / renew / rotate paths, the bearer entries of the token
+  pepper and rekey registries, and the legacy-key UI;
+- the up migration starts with a guard that **aborts** while any non-revoked
+  sensor has `auth_kind = 'bearer'` or an active `sensor_api_keys` row, so a
+  premature deploy cannot lock out a live sensor; the down migration recreates
+  the empty table and columns (no bearer key works after a down).
+
+State on the production restore of 2026-10-05: 8 sensors, all `bearer`
+(7 active, 1 disabled); `sensor_api_keys` 2 rows, both active and used in the
+last 7 days. Every one of them has to be re-paired or revoked first.
+
 ## 11. Sources
 
 Projects (checked 2026-10-02):
