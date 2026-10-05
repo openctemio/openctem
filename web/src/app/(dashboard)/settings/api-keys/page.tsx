@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -270,7 +270,7 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
   return (
     <div className="flex justify-end gap-1">
       {isActive(k) && (
-        <Can permission={Permission.ApiKeysWrite}>
+        <Can route="POST /api/v1/api-keys">
           <Button
             variant="ghost"
             size="icon"
@@ -282,7 +282,7 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
           </Button>
         </Can>
       )}
-      <Can permission={Permission.ApiKeysDelete}>
+      <Can route="DELETE /api/v1/api-keys/{id}">
         <Button
           variant="ghost"
           size="icon"
@@ -349,7 +349,7 @@ export default function APIKeysPage() {
   // Owners and administrators see every key of the organization; anyone else
   // gets only their own keys from the API, and cannot mint or revoke keys.
   const { can, isAdmin } = usePermissions()
-  const canGenerate = can(Permission.ApiKeysWrite)
+  const canGenerate = useCanMutate('POST /api/v1/api-keys')
   const ownKeysOnly = !isAdmin()
   const [genOpen, setGenOpen] = useState(false)
   const [newKey, setNewKey] = useState('')

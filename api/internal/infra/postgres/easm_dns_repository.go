@@ -11,17 +11,26 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/easmdns"
+	"github.com/openctemio/openctem/api/pkg/domain/easmalert"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // EASMDNSRepository backs the EASM DNS-only checks: which names are due, the
 // per-name state, and resolving / reopening the exposures the checks own.
 type EASMDNSRepository struct {
-	db *DB
+	db     *DB
+	alerts *EASMAlerter
 }
 
 // NewEASMDNSRepository creates the repository.
 func NewEASMDNSRepository(db *DB) *EASMDNSRepository { return &EASMDNSRepository{db: db} }
+
+// WithAlerts makes ReopenAuto announce the exposures it reopens through the
+// notification outbox, in the same transaction (research/22 P0-7).
+func (r *EASMDNSRepository) WithAlerts(a *EASMAlerter) *EASMDNSRepository {
+	r.alerts = a
+	return r
+}
 
 var _ easmdns.Store = (*EASMDNSRepository)(nil)
 
@@ -131,6 +140,11 @@ func (r *EASMDNSRepository) transition(ctx context.Context, update, from, to str
 			VALUES ($1, $2, $3, $4, NULL, $5, now())`,
 			shared.NewID().String(), id, from, to, reason); err != nil {
 			return 0, fmt.Errorf("record exposure transition: %w", err)
+		}
+	}
+	if to == "active" && r.alerts != nil {
+		if err := r.alerts.EnqueueInTx(ctx, tx, tenantID, ids, easmalert.ReasonReopened); err != nil {
+			return 0, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
