@@ -253,6 +253,9 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectAdminOnlyPermissions(input.Permissions); err != nil {
+		return nil, err
+	}
 	if err := creator.mayCarry(input.Permissions, input.HasFullDataAccess); err != nil {
 		return nil, err
 	}
@@ -447,6 +450,11 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 	editor, err := s.loadGrantActor(ctx, *r.TenantID(), actx.ActorID)
 	if err != nil {
 		return nil, err
+	}
+	if input.Permissions != nil {
+		if err := rejectAdminOnlyPermissions(input.Permissions); err != nil {
+			return nil, err
+		}
 	}
 	if err := editor.mayCarry(newPerms, hasFullDataAccess); err != nil {
 		return nil, err
@@ -731,6 +739,9 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 	if err := actor.mayGrant(r); err != nil {
 		return err
 	}
+	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, []roledom.ID{rid}); err != nil {
+		return err
+	}
 	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
 		return err
 	}
@@ -884,6 +895,9 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		roleNames = append(roleNames, r.Name())
 	}
 
+	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, roleIDs); err != nil {
+		return err
+	}
 	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, keepsOwner); err != nil {
 		return err
 	}
@@ -999,6 +1013,9 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 				"tenant_id", input.TenantID, "user_id", logger.SanitizeValue(uidStr), "error", err)
 			skipped++
 			continue
+		}
+		if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, []roledom.ID{rid}); err != nil {
+			return nil, err
 		}
 		if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
 			return nil, err
