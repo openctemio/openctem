@@ -79,7 +79,10 @@ export function describeEvidence(e: AttributionEvidence): string {
         : 'Under a domain you listed but have not verified'
       break
     case 'tenant_scanned':
-      what = 'Scanned or added by your organization'
+      what = 'A target your organization scanned'
+      break
+    case 'tenant_scan_discovered':
+      what = 'Found by a scan your organization ran (not one of its targets)'
       break
     default:
       what = e.rule.replace(/_/g, ' ')
