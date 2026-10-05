@@ -1482,6 +1482,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.CertMonitor.SetPromotion(s.Ingest, repos.Asset, repos.Attribution)
 		s.CertMonitor.SetTombstones(repos.Attribution)
 	}
+	// Open ports a port scan no longer sees are closed (research/22 P0-6).
+	s.Ingest.SetPortReconciler(postgres.NewEASMPortRepository(&postgres.DB{DB: deps.DB}))
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
@@ -1680,6 +1682,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	pipelineSecurityValidatorAdapter := app.NewPipelineSecurityValidatorAdapter(securityValidator)
 
 	// Initialize pipeline service with security validator, audit service, transaction support, and tool repo
+	// Stage chaining storage (research/27 P0-3): what each step produced and
+	// how the next stages were planned from it.
+	scanHops := postgres.NewScanHopRepository(&postgres.DB{DB: deps.DB})
 	s.Pipeline = pipeline.NewService(
 		repos.PipelineTemplate,
 		repos.PipelineStep,
@@ -1702,11 +1707,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A run's asset_id (copied into every step command) must be a live
 		// asset of the tenant in the caller's scope (research doc 21b, C4).
 		pipeline.WithAssetRefChecker(s.DataScope),
+		// Chained steps take what their predecessors produced, through the
+		// per-hop gate (hop_router.go).
+		pipeline.WithHopStore(scanHops),
 	)
 
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the pipeline service, like every later step.
 	s.Scan.SetStepQueuer(s.Pipeline)
+	// Ingest records what each step's reports wrote and tells the pipeline
+	// service when a v2 report of a command finished, so a chained step
+	// waiting for it is planned.
+	s.Ingest.SetStepOutputRecorder(scanHops)
+	s.Ingest.SetCommandIngestedHook(s.Pipeline.OnCommandIngested)
 
 	// Wire up pipeline deactivator to tool service for cascade deactivation
 	// When a tool is deactivated/deleted, all active pipelines using it will be deactivated
@@ -1866,7 +1879,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// service_detected / certificate_* / ssl_issue event types that had no
 	// producer. Post-asset-insert, best-effort; reuses the same exposure repo +
 	// state history + dedupe/reactivate as the secret/misconfig bridge.
-	s.Ingest.SetAssetExposureProjector(exposurebridge.NewAssetBridge(repos.Exposure, repos.ExposureStateHistory, log))
+	// Recon exposures (port_open, service_detected, certificate, TLS) are
+	// announced through the notification outbox like the other EASM ones
+	// (research/22 P0-6 with P0-7).
+	reconDB := &postgres.DB{DB: deps.DB}
+	s.Ingest.SetAssetExposureProjector(exposurebridge.NewAssetBridge(
+		postgres.NewAnnouncingExposureRepository(reconDB, postgres.NewEASMAlerter(reconDB)), repos.ExposureStateHistory, log))
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
 	s.RemediationGroup.SetDataScope(s.DataScope)
 

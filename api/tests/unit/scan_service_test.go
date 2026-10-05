@@ -252,8 +252,11 @@ func (m *mockTemplateRepo) Delete(_ context.Context, _ shared.ID) error         
 func (m *mockTemplateRepo) DeleteInTx(_ context.Context, _ *sql.Tx, _ shared.ID) error {
 	return nil
 }
-func (m *mockTemplateRepo) GetWithSteps(_ context.Context, _ shared.ID) (*pipeline.Template, error) {
-	return nil, nil
+func (m *mockTemplateRepo) GetWithSteps(_ context.Context, id shared.ID) (*pipeline.Template, error) {
+	if t, ok := m.templates[id.String()]; ok {
+		return t, nil
+	}
+	return nil, shared.ErrNotFound
 }
 func (m *mockTemplateRepo) GetSystemTemplateByID(_ context.Context, _ shared.ID) (*pipeline.Template, error) {
 	return nil, nil

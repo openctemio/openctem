@@ -2535,13 +2535,13 @@ func (r *AccessControlRepository) ListGroupsWithActiveScopeRules(ctx context.Con
 
 // ListGroupsWithAssetGroupMatchRule returns distinct access control group IDs that have
 // active scope rules referencing the given asset group ID in match_asset_group_ids.
-func (r *AccessControlRepository) ListGroupsWithAssetGroupMatchRule(ctx context.Context, assetGroupID shared.ID) ([]shared.ID, error) {
+func (r *AccessControlRepository) ListGroupsWithAssetGroupMatchRule(ctx context.Context, tenantID, assetGroupID shared.ID) ([]shared.ID, error) {
 	query := `
 		SELECT DISTINCT group_id
 		FROM group_asset_scope_rules
-		WHERE $1::uuid = ANY(match_asset_group_ids) AND is_active = true
+		WHERE tenant_id = $2 AND $1::uuid = ANY(match_asset_group_ids) AND is_active = true
 	`
-	rows, err := r.db.QueryContext(ctx, query, assetGroupID.String())
+	rows, err := r.db.QueryContext(ctx, query, assetGroupID.String(), tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list groups with asset group match rule: %w", err)
 	}
