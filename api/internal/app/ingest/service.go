@@ -175,6 +175,12 @@ func (s *Service) SetRelationshipRepository(repo asset.RelationshipRepository) {
 	s.assetProcessor.SetRelationshipRepository(repo)
 }
 
+// SetPortReconciler wires port-closed detection for port-scan reports
+// (research/22 P0-6). Optional: unwired, ports are only ever added.
+func (s *Service) SetPortReconciler(r PortReconciler) {
+	s.assetProcessor.SetPortReconciler(r)
+}
+
 // SetAssetStateHistoryRepository wires the asset state-history store so the
 // discovery pipeline records appeared/recovered events. Optional.
 func (s *Service) SetAssetStateHistoryRepository(repo asset.StateHistoryRepository) {
