@@ -23,8 +23,14 @@ import (
 	"fmt"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
+
+// ErrInactivePrincipal is returned when the user a job acts for is not an
+// active member (disabled or offboarded) or not an active account. Callers
+// refuse (fail closed); nothing runs on behalf of a person who left.
+var ErrInactivePrincipal = fmt.Errorf("%w: the acting member is not active", shared.ErrForbidden)
 
 // Caller is the identity a request acts as.
 type Caller struct {
@@ -420,4 +426,28 @@ func dedupe(ids []shared.ID) []shared.ID {
 		out = append(out, id)
 	}
 	return out
+}
+
+// MembershipReader reads a user's membership in a tenant (tenant.Repository).
+type MembershipReader interface {
+	GetMembership(ctx context.Context, userID, tenantID shared.ID) (*tenantdom.Membership, error)
+}
+
+// MembershipAdminLookup is the AdminLookup production wires: the team role
+// (GetMembership reads v_user_effective_role) is owner or admin, the way the
+// access token decides it. A membership that is not ACTIVE (disabled or
+// offboarded) acts as nobody: ErrInactivePrincipal makes ForUser, and every
+// background job acting on the member's behalf (a scheduled scan, a report),
+// refuse instead of running with a bypass the person no longer holds.
+func MembershipAdminLookup(members MembershipReader) AdminLookup {
+	return func(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+		m, err := members.GetMembership(ctx, userID, tenantID)
+		if err != nil {
+			return false, err
+		}
+		if !m.IsActive() {
+			return false, ErrInactivePrincipal
+		}
+		return m.IsOwner() || m.IsAdmin(), nil
+	}
 }

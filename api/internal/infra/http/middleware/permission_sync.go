@@ -117,7 +117,7 @@ func (m *PermissionSyncMiddleware) currentTeamRole(ctx context.Context, tenantID
 	if err != nil {
 		return "", err
 	}
-	if membership.IsSuspended() {
+	if !membership.IsActive() {
 		return "", errMembershipSuspended
 	}
 	return membership.Role().String(), nil

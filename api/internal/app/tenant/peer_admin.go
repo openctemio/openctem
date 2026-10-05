@@ -44,7 +44,7 @@ func (s *TenantService) authorizeMemberChange(ctx context.Context, target *tenan
 		return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
 	}
 	actor, err := s.repo.GetMembership(ctx, actorID, target.TenantID())
-	if err != nil || actor == nil || !actor.IsOwner() || actor.IsSuspended() {
+	if err != nil || actor == nil || !actor.IsOwner() || !actor.IsActive() {
 		return ErrOwnerRequiredForAdminChange
 	}
 	return nil

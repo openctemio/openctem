@@ -169,7 +169,7 @@ func (r *AccessControlRepository) SyncOwnerRefOwner(ctx context.Context, tenantI
 			SELECT a.id, $3::uuid, $4, NOW(), $5
 			FROM assets a
 			WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
-			  AND EXISTS (SELECT 1 FROM tenant_members tm WHERE tm.user_id = $3::uuid AND tm.tenant_id = $2)
+			  AND EXISTS (SELECT 1 FROM tenant_members tm WHERE tm.user_id = $3::uuid AND tm.tenant_id = $2 AND tm.status = 'active')
 			ON CONFLICT DO NOTHING`,
 			assetID.String(), tenantID.String(), userID.String(),
 			string(accesscontrol.OwnershipPrimary), accesscontrol.AssignmentSourceOwnerRef); err != nil {

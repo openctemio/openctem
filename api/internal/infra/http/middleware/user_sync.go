@@ -100,6 +100,15 @@ func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handle
 					return
 				}
 
+				// A disabled or erased account (users.status other than
+				// active) is refused on every request, not only at login: a
+				// token minted before the change must not outlive it.
+				if !localUser.IsActive() {
+					log.Warn("inactive user attempted access", "user_id", localUser.ID().String())
+					apierror.Unauthorized("Authentication required").WriteJSON(w)
+					return
+				}
+
 				// Add local user to context and continue
 				ctx = context.WithValue(ctx, LocalUserKey, localUser)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -139,6 +148,12 @@ func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handle
 					}
 				}
 
+				if localUser == nil || !localUser.IsActive() {
+					log.Warn("inactive user attempted access", "keycloak_id", keycloakID)
+					apierror.Unauthorized("Authentication required").WriteJSON(w)
+					return
+				}
+
 				// Add local user to context and continue
 				ctx = context.WithValue(ctx, LocalUserKey, localUser)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -164,16 +179,14 @@ func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handle
 				"email", localUser.Email(),
 			)
 
-			// Check the platform-level user status. The OSS product has
-			// no UI to set this; only direct DB intervention can. We log
-			// the access attempt but do not block here — the auth flow
-			// already rejects suspended users at login. This is a warn
-			// for forensic visibility.
-			if localUser.Status() == user.StatusSuspended {
-				log.Warn("suspended user attempted access",
+			// A disabled or erased account is refused here too (fail closed).
+			if !localUser.IsActive() {
+				log.Warn("inactive user attempted access",
 					"user_id", localUser.ID().String(),
 					"keycloak_id", keycloakID,
 				)
+				apierror.Unauthorized("Authentication required").WriteJSON(w)
+				return
 			}
 
 			// Add local user to context

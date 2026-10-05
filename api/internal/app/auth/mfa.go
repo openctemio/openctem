@@ -241,7 +241,7 @@ func (s *AuthService) openChallenge(ctx context.Context, token string, purpose m
 	if u.IsLocked() {
 		return nil, nil, ErrAccountLocked
 	}
-	if u.Status() == userdom.StatusSuspended {
+	if !u.IsActive() {
 		return nil, nil, ErrAccountSuspended
 	}
 	attempts, err := s.mfaRepo.RecordChallengeAttempt(ctx, c.ID)

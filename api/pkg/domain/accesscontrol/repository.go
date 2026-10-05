@@ -72,7 +72,8 @@ type Repository interface {
 	// (asset_owners has no tenant_id column, so the principal is otherwise
 	// unscoped). Mirrors the `groups WHERE tenant_id` screen used on reads.
 	IsGroupInTenant(ctx context.Context, tenantID, groupID shared.ID) (bool, error)
-	// IsUserInTenant reports whether the user is a member of the tenant.
+	// IsUserInTenant reports whether the user is an ACTIVE member of the
+	// tenant (active membership and account).
 	// Mirrors the `tenant_members WHERE tenant_id` screen used on reads.
 	IsUserInTenant(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 
