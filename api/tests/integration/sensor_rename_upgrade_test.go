@@ -339,7 +339,7 @@ var laterRemovedPermissions = []string{
 	"compliance:frameworks:write", "compliance:reports:read",
 	"findings:policies:read", "findings:policies:write", "findings:policies:delete",
 	"settings:billing:read", "settings:billing:write",
-	// 001016: outbound webhooks never delivered (owner decision B9).
+	// 001032: outbound webhooks never delivered (owner decision B9).
 	"integrations:webhooks:read", "integrations:webhooks:write", "integrations:webhooks:delete",
 }
 

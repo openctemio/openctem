@@ -25,11 +25,11 @@ CREATE TABLE IF NOT EXISTS access_control_removed_archive (
 );
 
 INSERT INTO access_control_removed_archive (source_table, row_data)
-SELECT 'permissions:001016', to_jsonb(t) FROM permissions t
+SELECT 'permissions:001032', to_jsonb(t) FROM permissions t
 WHERE t.id IN (SELECT id FROM outbound_webhook_permission_ids);
 
 INSERT INTO access_control_removed_archive (source_table, row_data)
-SELECT 'role_permissions:001016', to_jsonb(t) FROM role_permissions t
+SELECT 'role_permissions:001032', to_jsonb(t) FROM role_permissions t
 WHERE t.permission_id IN (SELECT id FROM outbound_webhook_permission_ids);
 
 -- role_permissions rows go with the catalog rows (ON DELETE CASCADE).

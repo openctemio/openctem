@@ -24,7 +24,7 @@ The list lives in `internal/app/rekey/rekey.go`. It was enumerated from every
 | `integrations.credentials_encrypted` | integration credentials (Jira, SCM, notification channels, ...) |
 | `integrations.metadata.webhook_secret_encrypted` | Jira webhook secret |
 | `integration_scm_extensions.webhook_secret_encrypted` | SCM webhook secret |
-| `webhooks.secret_encrypted` | retired outbound webhook signing secret (the API is removed, migration 001016; existing rows are still rewrapped until the table is dropped) |
+| `webhooks.secret_encrypted` | retired outbound webhook signing secret (the API is removed, migration 001032; existing rows are still rewrapped until the table is dropped) |
 | `tenant_identity_providers.client_secret_encrypted` | organization SSO client secret |
 | `platform_identity_provider.client_secret_encrypted` | platform admin IdP client secret |
 | `admin_idp_login_states.code_verifier_encrypted` | in-flight admin IdP logins |
