@@ -183,6 +183,33 @@ export function tenantSensors<T extends Pick<Sensor, 'is_platform_sensor'>>(sens
 /** Execution mode facet: long-running daemons vs one-shot CI runs. */
 export type SensorModeFilter = 'daemon' | 'ci'
 
+/**
+ * Local policy facet (api RFC-040 §5.7): what the sensor reports. "unknown"
+ * is a sensor that never reported one (an SDK before RFC-040).
+ */
+export type SensorPolicyFilter = 'enforced' | 'absent' | 'paused' | 'unknown'
+
+export const SENSOR_POLICY_FILTERS: SensorPolicyFilter[] = [
+  'enforced',
+  'absent',
+  'paused',
+  'unknown',
+]
+
+/** The local policy facet value of a sensor. */
+export function sensorPolicyOf(sensor: Pick<Sensor, 'local_policy'>): SensorPolicyFilter {
+  switch (sensor.local_policy?.state) {
+    case 'enforced':
+      return 'enforced'
+    case 'absent':
+      return 'absent'
+    case 'paused':
+      return 'paused'
+    default:
+      return 'unknown'
+  }
+}
+
 export interface FleetFilters {
   q: string
   roles: SensorRole[]
@@ -190,6 +217,8 @@ export interface FleetFilters {
   versions: SensorVersionStatus[]
   modes: SensorModeFilter[]
   protocols: SensorProtocolFilter[]
+  /** Local policy states; "absent" + "unknown" is "no local policy". */
+  policies: SensorPolicyFilter[]
   /** Exact SDK versions ("v0.9.0") or "unknown", as GET /sensors?sdk_version= takes them. */
   sdkVersions: string[]
   /** The "Needs attention" metric. */
@@ -203,6 +232,7 @@ export const EMPTY_FLEET_FILTERS: FleetFilters = {
   versions: [],
   modes: [],
   protocols: [],
+  policies: [],
   sdkVersions: [],
   attention: false,
 }
@@ -215,6 +245,7 @@ export function activeFilterCount(f: FleetFilters): number {
     f.versions.length +
     f.modes.length +
     f.protocols.length +
+    f.policies.length +
     f.sdkVersions.length +
     (f.attention ? 1 : 0)
   )
@@ -261,6 +292,7 @@ export function filterSensors(
       if (!f.modes.includes(mode)) return false
     }
     if (f.protocols.length && !f.protocols.includes(sensorProtocolOf(s))) return false
+    if (f.policies.length && !f.policies.includes(sensorPolicyOf(s))) return false
     if (f.sdkVersions.length && !f.sdkVersions.includes(sensorSdkVersionKey(s))) return false
     if (f.attention && !needsAttention(s, now, thresholds, channel)) return false
     return true

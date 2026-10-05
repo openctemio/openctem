@@ -32,11 +32,14 @@ func NewEASMSummaryRepository(db *DB) *EASMSummaryRepository {
 // surface (asset category external_surface).
 var EASMSurfaceTypes = []string{"domain", "subdomain", "ip_address", "certificate"}
 
-// EASMExposureTypes are the exposure event types EASM produces or owns.
+// EASMExposureTypes are the exposure event types EASM produces: only types
+// something writes today, so the summary never counts a category no check
+// can fill (research/22 P0-13, 22b I7). api_exposed, bucket_public,
+// header_missing, dns_change, port_closed, service_changed and
+// subdomain_removed come back when they have a producer.
 var EASMExposureTypes = []string{
 	"subdomain_discovered", "certificate_expiring", "certificate_expired",
-	"port_open", "service_detected", "api_exposed", "bucket_public",
-	"ssl_issue", "header_missing", "dns_change",
+	"port_open", "service_detected", "ssl_issue",
 	"dangling_cname", "dangling_ns", "email_security_weak", "subdomain_takeover",
 }
 
