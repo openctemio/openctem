@@ -2640,6 +2640,51 @@ definitions:
       position:
         type: integer
     type: object
+  github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput:
+    properties:
+      base_branch:
+        type: string
+      base_branch_known:
+        type: boolean
+      new:
+        items:
+          type: string
+        type: array
+      pre_existing:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_internal_app_cirun.Verdict:
+    properties:
+      baseline:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView'
+      links:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.VerdictLinks'
+      override:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.GateOverrideView'
+      policy:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.GatePolicyView'
+      reasons:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.GateReason'
+        type: array
+      run_id:
+        type: string
+      summary:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.GateSummary'
+      verdict:
+        type: string
+      would_fail:
+        type: boolean
+    type: object
+  github_com_openctemio_openctem_api_internal_app_cirun.VerdictLinks:
+    properties:
+      findings:
+        type: string
+      run:
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock:
     properties:
       candidate:
@@ -3657,6 +3702,129 @@ definitions:
       before:
         additionalProperties: {}
         type: object
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView:
+    properties:
+      branch:
+        type: string
+      known:
+        type: boolean
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.GateOverrideView:
+    properties:
+      created_by:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      reason:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.GatePolicyView:
+    properties:
+      epss_threshold:
+        type: number
+      fail_on_kev:
+        type: boolean
+      fail_on_severity:
+        type: string
+      mode:
+        type: string
+      new_findings_only:
+        type: boolean
+      source:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.GateReason:
+    properties:
+      code:
+        type: string
+      file:
+        type: string
+      finding_id:
+        type: string
+      fingerprint:
+        type: string
+      line:
+        type: integer
+      message:
+        type: string
+      rule_id:
+        type: string
+      severity:
+        type: string
+      title:
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.GateSummary:
+    properties:
+      accepted:
+        type: integer
+      blocking:
+        type: integer
+      evaluated:
+        type: integer
+      new:
+        type: integer
+      pre_existing:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.Rules:
+    properties:
+      allow_fork_pull_requests:
+        description: |-
+          AllowForkPullRequests admits events that run code from a fork with the
+          base repository's identity (pull_request_target, workflow_run,
+          external_pull_request_event). Off by default.
+        type: boolean
+      environments:
+        description: |-
+          Environments, when set, require the job to run in one of these
+          deployment environments (the token's environment claim).
+        items:
+          type: string
+        type: array
+      events:
+        description: |-
+          Events, when set, are the only trigger events admitted (GitHub
+          event_name, GitLab pipeline_source).
+        items:
+          type: string
+        type: array
+      owners:
+        description: |-
+          Owners are GitHub organizations or users (repository_owner) or GitLab
+          top-level groups (the first segment of project_path). Exact match,
+          case-insensitive.
+        items:
+          type: string
+        type: array
+      refs:
+        description: |-
+          Refs are the branches or tags a pipeline may run on: "main",
+          "release/*", or a full ref ("refs/tags/v*"). Shell-style patterns per
+          path segment. Empty admits every ref. For a pull request the branch is
+          the pull request's source branch.
+        items:
+          type: string
+        type: array
+      repositories:
+        description: |-
+          Repositories are "owner/name" (GitLab: the full project path). A
+          trailing "/*" admits every repository directly under that path and
+          "/**" every repository below it.
+        items:
+          type: string
+        type: array
+      require_protected_ref:
+        description: |-
+          RequireProtectedRef admits only pipelines on a protected branch or tag
+          (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
+          configuration with this set admits nothing).
+        type: boolean
     type: object
   github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats:
     properties:
@@ -6682,6 +6850,216 @@ definitions:
     - finding_ids
     - status
     type: object
+  internal_infra_http_handler.CIBaselineDiffRequest:
+    properties:
+      fingerprints:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.CIEvaluateRequest:
+    properties:
+      scan_failures:
+        description: |-
+          ScanFailures counts scanners that failed to run or whose output could
+          not be parsed. Any failure fails the gate.
+        type: integer
+    type: object
+  internal_infra_http_handler.CIExchangeRequest:
+    properties:
+      id_token:
+        description: IDToken is the CI provider's OIDC token for the job.
+        type: string
+      run_id:
+        description: |-
+          RunID, optional, asks for a fresh token for a run this pipeline run
+          already holds (same repository, commit and pipeline run; not yet
+          evaluated).
+        type: string
+      tenant_id:
+        description: TenantID is the organization whose trust configurations decide.
+        type: string
+    type: object
+  internal_infra_http_handler.CIExchangeResponse:
+    properties:
+      branch:
+        type: string
+      commit_sha:
+        type: string
+      default_branch:
+        type: string
+      expires_at:
+        type: string
+      expires_in:
+        type: integer
+      is_default_branch:
+        type: boolean
+      pull_request:
+        type: string
+      repository:
+        type: string
+      repository_asset_id:
+        type: string
+      run_id:
+        type: string
+      token:
+        type: string
+      token_type:
+        type: string
+    type: object
+  internal_infra_http_handler.CIGateOverrideListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIGateOverrideResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.CIGateOverrideRequest:
+    properties:
+      commit_sha:
+        type: string
+      expires_in_hours:
+        description: ExpiresInHours defaults to 24, at most 168.
+        type: integer
+      reason:
+        description: Reason is required (10 to 2000 characters) and audited.
+        type: string
+      repository_asset_id:
+        type: string
+    type: object
+  internal_infra_http_handler.CIGateOverrideResponse:
+    properties:
+      active:
+        type: boolean
+      commit_sha:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      reason:
+        type: string
+      repository_asset_id:
+        type: string
+      revoked_at:
+        type: string
+    type: object
+  internal_infra_http_handler.CIGatePolicyListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyResponse'
+        type: array
+      default:
+        $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyResponse'
+    type: object
+  internal_infra_http_handler.CIGatePolicyRequest:
+    properties:
+      enabled:
+        type: boolean
+      epss_threshold:
+        type: number
+      fail_on_kev:
+        type: boolean
+      fail_on_severity:
+        type: string
+      mode:
+        type: string
+      new_findings_only:
+        type: boolean
+      scope_id:
+        type: string
+      scope_type:
+        type: string
+    type: object
+  internal_infra_http_handler.CIGatePolicyResponse:
+    properties:
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      epss_threshold:
+        type: number
+      fail_on_kev:
+        type: boolean
+      fail_on_severity:
+        type: string
+      id:
+        type: string
+      mode:
+        type: string
+      new_findings_only:
+        type: boolean
+      scope_id:
+        type: string
+      scope_type:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_infra_http_handler.CIRunResponse:
+    properties:
+      actor:
+        type: string
+      branch:
+        type: string
+      commit_sha:
+        type: string
+      created_at:
+        type: string
+      default_branch:
+        type: string
+      environment:
+        type: string
+      evaluated_at:
+        type: string
+      event:
+        type: string
+      external_run_id:
+        type: string
+      findings_count:
+        type: integer
+      fork:
+        type: boolean
+      id:
+        type: string
+      is_default_branch:
+        type: boolean
+      pipeline_url:
+        type: string
+      provider:
+        type: string
+      pull_request:
+        type: string
+      ref:
+        type: string
+      reports_count:
+        type: integer
+      repository:
+        type: string
+      repository_asset_id:
+        type: string
+      run_attempt:
+        type: string
+      status:
+        type: string
+      trust_config_id:
+        type: string
+      verdict:
+        type: string
+      verdict_detail:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Verdict'
+        description: |-
+          VerdictDetail is the last verdict with its reasons and links (detail
+          view only).
+      workflow:
+        type: string
+    type: object
   internal_infra_http_handler.CISAKEVResponse:
     properties:
       date_added:
@@ -6693,6 +7071,59 @@ definitions:
       notes:
         type: string
       ransomware_use:
+        type: string
+    type: object
+  internal_infra_http_handler.CITrustConfigListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CITrustConfigResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.CITrustConfigRequest:
+    properties:
+      audience:
+        description: Audience defaults to openctem:tenant:<tenant id>.
+        type: string
+      default_branch:
+        type: string
+      enabled:
+        type: boolean
+      issuer:
+        description: |-
+          Issuer defaults to the provider's public issuer; a self-managed
+          GitLab is its external URL.
+        type: string
+      name:
+        type: string
+      provider:
+        type: string
+      rules:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.Rules'
+    type: object
+  internal_infra_http_handler.CITrustConfigResponse:
+    properties:
+      audience:
+        type: string
+      created_at:
+        type: string
+      default_branch:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      issuer:
+        type: string
+      last_used_at:
+        type: string
+      name:
+        type: string
+      provider:
+        type: string
+      rules:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.Rules'
+      updated_at:
         type: string
     type: object
   internal_infra_http_handler.CTEMCycleProfilesResponse:
@@ -9847,7 +10278,7 @@ definitions:
         description: |-
           Disk/network throughput in MB/s. Optional — sensors that omit them leave
           the corresponding load-balancing terms at zero. Accepted here so the
-          AGENT_LB_DISK_IO_WEIGHT / AGENT_LB_NETWORK_WEIGHT knobs have real inputs.
+          SENSOR_LB_DISK_IO_WEIGHT / SENSOR_LB_NETWORK_WEIGHT knobs have real inputs.
         type: number
       disk_write_mbps:
         type: number
@@ -10362,6 +10793,23 @@ definitions:
       data:
         items:
           $ref: '#/definitions/internal_infra_http_handler.AssetGroupResponse'
+        type: array
+      links:
+        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_infra_http_handler.ListResponse-internal_infra_http_handler_CIRunResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIRunResponse'
         type: array
       links:
         $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
@@ -20244,6 +20692,551 @@ paths:
       summary: Verify email
       tags:
       - Authentication
+  /ci/gate-overrides:
+    get:
+      parameters:
+      - description: Repository asset
+        in: query
+        name: repository_asset_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIGateOverrideListResponse'
+      security:
+      - BearerAuth: []
+      summary: List CI gate break-glass overrides
+      tags:
+      - CI
+    post:
+      consumes:
+      - application/json
+      description: For one commit of one repository, until it expires (default 24
+        hours, at most 7 days). Requires a reason. Audited at high severity, and again
+        each time it lets a failing run pass. 404 when the repository is outside the
+        caller's data scope.
+      parameters:
+      - description: Override
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIGateOverrideRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIGateOverrideResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: 'Break-glass: let one commit pass the CI gate'
+      tags:
+      - CI
+  /ci/gate-overrides/{id}/revoke:
+    post:
+      parameters:
+      - description: Override ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Revoke a CI gate break-glass override
+      tags:
+      - CI
+  /ci/gate-policies:
+    get:
+      description: The organization's, business units' and repositories' gate policies,
+        and the built-in default used when none applies.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyListResponse'
+      security:
+      - BearerAuth: []
+      summary: List CI gate policies
+      tags:
+      - CI
+    post:
+      consumes:
+      - application/json
+      description: One policy per scope (tenant, business_unit or repository). Secrets
+        always fail and accepted risk is always honored. Audited.
+      parameters:
+      - description: Policy
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create a CI gate policy
+      tags:
+      - CI
+  /ci/gate-policies/{id}:
+    delete:
+      parameters:
+      - description: Policy ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete a CI gate policy
+      tags:
+      - CI
+    patch:
+      consumes:
+      - application/json
+      description: The scope cannot change. epss_threshold is replaced (omit it to
+        clear it). Audited.
+      parameters:
+      - description: Policy ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Changes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change a CI gate policy
+      tags:
+      - CI
+  /ci/oidc/exchange:
+    post:
+      consumes:
+      - application/json
+      description: A GitHub Actions or GitLab CI job presents its OIDC token. When
+        one of the organization's CI trust configurations admits it (issuer, audience,
+        repository, ref, environment and event rules; fork pull requests refused by
+        default), the platform creates a CI run on the repository asset and returns
+        a run upload token that expires within 15 minutes. Each OIDC token can be
+        exchanged once. Every refusal answers the same 401.
+      parameters:
+      - description: Tenant and OIDC token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIExchangeRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIExchangeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Exchange a CI OIDC token for a run upload token
+      tags:
+      - CI
+  /ci/runs:
+    get:
+      description: CI pipeline runs (not sensors), newest first, on the repositories
+        the caller may see.
+      parameters:
+      - description: Repository asset
+        in: query
+        name: repository_asset_id
+        type: string
+      - description: pass, fail or none
+        in: query
+        name: verdict
+        type: string
+      - description: github or gitlab
+        in: query
+        name: provider
+        type: string
+      - description: Page (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Per page (default 25, max 100)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_CIRunResponse'
+      security:
+      - BearerAuth: []
+      summary: List CI runs
+      tags:
+      - CI
+  /ci/runs/{id}:
+    get:
+      description: The run with its last verdict (reasons and links). 404 when the
+        repository is outside the caller's data scope.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIRunResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a CI run
+      tags:
+      - CI
+  /ci/runs/{id}/baseline-diff:
+    post:
+      consumes:
+      - application/json
+      description: Splits fingerprints into new and already open on the repository's
+        default branch, for inline comments on new findings. The repository and branch
+        are the run's.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fingerprints
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIBaselineDiffRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - CIRunToken: []
+      summary: Compare a CI run's fingerprints with the default branch
+      tags:
+      - CI
+  /ci/runs/{id}/evaluate:
+    post:
+      consumes:
+      - application/json
+      description: 'Judges the run''s findings against the gate policy (repository,
+        else business unit, else organization, else the built-in default): severity
+        threshold, KEV, EPSS, new findings only compared with the default branch by
+        default. Accepted risk, false positives and suppressions are honored; a committed
+        secret always fails; a scan failure fails. An active break-glass for the commit
+        lets a failing run pass (audited). Returns pass or fail with reasons and links.'
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Runner status
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIEvaluateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Verdict'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - CIRunToken: []
+      summary: Gate verdict for a CI run
+      tags:
+      - CI
+  /ci/runs/{id}/results:
+    post:
+      consumes:
+      - application/json
+      description: A CTIS report from the run. It may name only the run's repository;
+        the branch, commit and pull request come from the verified OIDC token, not
+        from the report. Findings are recorded for the run's gate verdict.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: CTIS report
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CTISIngestRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.IngestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - CIRunToken: []
+      summary: Upload a CI run's results
+      tags:
+      - CI
+  /ci/trust-configs:
+    get:
+      description: Which CI pipelines (GitHub Actions, GitLab CI) may exchange their
+        OIDC token for a run upload token.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CITrustConfigListResponse'
+      security:
+      - BearerAuth: []
+      summary: List CI trust configurations
+      tags:
+      - CI
+    post:
+      consumes:
+      - application/json
+      description: Rules must name at least one owner or repository. Fork pull requests
+        are refused unless allow_fork_pull_requests is set. Audited.
+      parameters:
+      - description: Trust configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CITrustConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CITrustConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create a CI trust configuration
+      tags:
+      - CI
+  /ci/trust-configs/{id}:
+    delete:
+      description: Pipelines it admitted can no longer exchange tokens; tokens already
+        issued expire within 15 minutes. Audited.
+      parameters:
+      - description: Trust configuration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete a CI trust configuration
+      tags:
+      - CI
+    get:
+      parameters:
+      - description: Trust configuration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CITrustConfigResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a CI trust configuration
+      tags:
+      - CI
+    put:
+      consumes:
+      - application/json
+      description: Replaces the configuration (the provider cannot change). Audited
+        with before and after.
+      parameters:
+      - description: Trust configuration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Trust configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CITrustConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CITrustConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change a CI trust configuration
+      tags:
+      - CI
   /commands:
     get:
       consumes:
@@ -37261,6 +38254,12 @@ securityDefinitions:
     description: 'JWT access token, or a tenant oct_ API key (read-only: GET/HEAD
       on tenant routes, within the key''s scopes). Format: "Bearer {token}". An oct_
       key may instead be sent as X-API-Key.'
+    in: header
+    name: Authorization
+    type: apiKey
+  CIRunToken:
+    description: 'CI run upload token from POST /ci/oidc/exchange (RFC-051): "Bearer
+      octci_...", 15 minutes, one run on one repository.'
     in: header
     name: Authorization
     type: apiKey
