@@ -98,6 +98,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/ci/gate-policies":                {classConfig, "CI gate policies: tenant configuration (RFC-051)"},
 	"/api/v1/ci/gate-overrides":               {classScoped, "break-glass overrides: listed and created only on repositories in the caller's data scope, 404 otherwise (RFC-051)"},
 	"/api/v1/ci/runs":                         {classScoped, "CI runs: SQL data-scope condition on the repository asset; by id out of scope is 404 (RFC-051)"},
+	"/api/v1/ci/coverage":                     {classScoped, "CI coverage: repositories listed and marked only within the caller's data scope, 404 otherwise (RFC-051)"},
 	"/api/v1/ci/pipelines":                    {classScoped, "CI pipelines: SQL data-scope condition on the repository asset; by id out of scope is 404 (RFC-051)"},
 	"/api/v1/fleet":                           {classScoped, "fleet: daemon rows are tenant sensors (configuration), runner rows are CI pipelines under the repository data scope; each mode needs its own permission (RFC-051)"},
 	"/api/v1/ci/oidc/exchange":                {classSystem, "CI token exchange: the CI provider's OIDC token is the credential (RFC-051)"},

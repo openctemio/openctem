@@ -31,6 +31,8 @@ business_services
 business_unit_assets
 business_units
 capabilities
+ci_alert_state
+ci_coverage_expectations
 ci_gate_overrides
 ci_gate_policies
 ci_pipelines
