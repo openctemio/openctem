@@ -37,12 +37,16 @@ import type { EASMSeed } from '@/lib/api/generated'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { createSeed, deleteSeed, updateSeed, useEASMSeeds } from '../hooks/use-easm-seeds'
+import { domainFor, useEASMVerifiedDomains } from '../hooks/use-easm-verified-domains'
+import { VerifyDomainDialog } from './easm-verify-domain-dialog'
 
 export function EASMSeedsPanel() {
   const { can } = usePermissions()
   const canWrite = can(Permission.ScopeWrite)
   const canDelete = can(Permission.ScopeDelete)
   const { seeds, error, isLoading, mutate, enabled } = useEASMSeeds()
+  const { domains, mutate: mutateDomains } = useEASMVerifiedDomains()
+  const [verifying, setVerifying] = useState<string | null>(null)
 
   const [addOpen, setAddOpen] = useState(false)
   const [value, setValue] = useState('')
@@ -134,7 +138,19 @@ export function EASMSeedsPanel() {
               Verified{row.original.verified_domain ? ` (${row.original.verified_domain})` : ''}
             </Badge>
           ) : (
-            <span className="text-sm text-muted-foreground">Asserted, not verified</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Asserted, not verified</span>
+              {canWrite && row.original.value && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  onClick={() => setVerifying(row.original.value ?? null)}
+                >
+                  {domainFor(row.original.value, domains) ? 'Check' : 'Verify'}
+                </Button>
+              )}
+            </div>
           ),
       },
       {
@@ -171,7 +187,7 @@ export function EASMSeedsPanel() {
           ) : null,
       },
     ],
-    [canWrite, canDelete, busyId, toggle]
+    [canWrite, canDelete, busyId, toggle, domains]
   )
 
   if (!enabled && !isLoading) {
@@ -266,6 +282,17 @@ export function EASMSeedsPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <VerifyDomainDialog
+        key={verifying ?? 'closed'}
+        domain={verifying}
+        existing={domainFor(verifying ?? undefined, domains)}
+        onOpenChange={(open) => !open && setVerifying(null)}
+        onChanged={() => {
+          void mutateDomains()
+          void mutate()
+        }}
+      />
 
       <ConfirmDialog
         open={!!removing}
