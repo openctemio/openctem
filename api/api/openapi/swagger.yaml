@@ -3810,9 +3810,10 @@ definitions:
         type: array
       require_protected_ref:
         description: |-
-          RequireProtectedRef admits only pipelines on a protected branch or tag
-          (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
-          configuration with this set admits nothing).
+          RequireProtectedRef admits only pipelines on a protected branch or tag.
+          GitLab: the token's ref_protected claim. GitHub tokens carry no such
+          claim: the job must run in one of Environments (required with this
+          switch), whose deployment branch rules admit only protected refs.
         type: boolean
     type: object
   github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats:

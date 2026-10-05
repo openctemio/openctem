@@ -35507,9 +35507,10 @@ export interface components {
        */
       repositories?: string[]
       /**
-       * @description RequireProtectedRef admits only pipelines on a protected branch or tag
-       *     (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
-       *     configuration with this set admits nothing).
+       * @description RequireProtectedRef admits only pipelines on a protected branch or tag.
+       *     GitLab: the token's ref_protected claim. GitHub tokens carry no such
+       *     claim: the job must run in one of Environments (required with this
+       *     switch), whose deployment branch rules admit only protected refs.
        */
       require_protected_ref?: boolean
     }
