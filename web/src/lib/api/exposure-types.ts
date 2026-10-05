@@ -26,6 +26,16 @@ export type ExposureEventType =
   | 'credential_leaked'
   | 'sensitive_data_exposed'
   | 'misconfiguration'
+  | 'dns_change'
+  | 'ssl_issue'
+  | 'header_missing'
+  | 'dangling_cname'
+  | 'dangling_ns'
+  | 'email_security_weak'
+  | 'subdomain_takeover'
+  | 'identity_mfa_gap'
+  | 'identity_stale_principal'
+  | 'identity_overprivileged'
   | 'custom'
 
 // Exposure severity levels
@@ -284,6 +294,56 @@ export const EVENT_TYPE_CONFIG: Record<
     label: 'Misconfiguration',
     description: 'Security misconfiguration detected',
     category: 'config',
+  },
+  dns_change: {
+    label: 'DNS Change',
+    description: 'A DNS record of the host changed',
+    category: 'domain',
+  },
+  ssl_issue: {
+    label: 'TLS Issue',
+    description: 'Weak or broken TLS configuration',
+    category: 'certificate',
+  },
+  header_missing: {
+    label: 'Security Header Missing',
+    description: 'An HTTP security header is missing',
+    category: 'config',
+  },
+  dangling_cname: {
+    label: 'Dangling CNAME',
+    description: 'A CNAME points to a name that no longer exists (takeover risk)',
+    category: 'domain',
+  },
+  dangling_ns: {
+    label: 'Dangling Delegation',
+    description: 'A delegation points to name servers that do not exist',
+    category: 'domain',
+  },
+  email_security_weak: {
+    label: 'Weak Email Security',
+    description: 'SPF, DMARC, MTA-STS or TLS-RPT is missing or weak',
+    category: 'domain',
+  },
+  subdomain_takeover: {
+    label: 'Subdomain Takeover',
+    description: 'A takeover check confirmed the name can be claimed',
+    category: 'domain',
+  },
+  identity_mfa_gap: {
+    label: 'MFA Gap',
+    description: 'An identity without multi-factor authentication',
+    category: 'identity',
+  },
+  identity_stale_principal: {
+    label: 'Stale Identity',
+    description: 'An identity unused for a long time',
+    category: 'identity',
+  },
+  identity_overprivileged: {
+    label: 'Over-privileged Identity',
+    description: 'An identity with more rights than it uses',
+    category: 'identity',
   },
   custom: {
     label: 'Custom',

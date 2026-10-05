@@ -139,8 +139,13 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Copy public assets
 COPY --from=builder /app/public ./public
 
-# Create .next directory with correct permissions
-RUN mkdir .next && chown nextjs:nodejs .next
+# .next and .next/cache owned by the runtime user. The standalone server only
+# writes under .next/cache (image and fetch caches) and /tmp, so the image runs
+# with a read-only root filesystem when those two are writable mounts:
+#   read_only: true
+#   tmpfs: [/tmp, "/app/.next/cache:uid=1001,gid=1001"]
+# (web/docker-compose.prod.yml and api/deploy/docker-compose.yml do this).
+RUN mkdir -p .next/cache && chown -R nextjs:nodejs .next
 
 # Copy standalone build output
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

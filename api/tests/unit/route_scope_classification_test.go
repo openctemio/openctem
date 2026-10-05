@@ -91,7 +91,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/audit-logs":             {classConfig, "audit log (admin)"},
 	"/api/v1/integrations":           {classConfig, "integrations; delivery history is channel-manager only (L-03)"},
 	"/api/v1/notification-outbox":    {classConfig, "delivery queue, channel-manager only (L-03)"},
-	"/api/v1/webhooks":               {classConfig, "outbound webhook configuration"},
+	"/api/v1/webhooks":               {classConfig, "inbound Jira/GitHub webhooks (HMAC); the outbound webhook API is removed"},
 	"/api/v1/scope":                  {classConfig, "scope targets, exclusions (two-person, L-07) and schedules"},
 	"/api/v1/easm/seeds":             {classConfig, "EASM seeds: tenant boundary configuration, scope permissions (RFC-036 §6.3)"},
 	"/api/v1/sensors":                {classConfig, "sensor management"},

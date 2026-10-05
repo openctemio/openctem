@@ -187,8 +187,15 @@ func decodeScanConfigExport(data []byte) (ScanConfigExport, error) {
 
 // ImportConfig creates a new scan from imported JSON configuration.
 // The imported config is validated and a new scan entity is created.
-func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []byte) (*scan.Scan, error) {
+// ImportConfig creates a scan from an exported configuration. The importer
+// becomes its owner (created_by), and the create path checks their act scope
+// on the direct targets; a scan without an owner would run its schedule as
+// the system (research 21b H3, RFC-050 W2).
+func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []byte, actorID string) (*scan.Scan, error) {
 	s.logger.Info("importing scan config", "tenant_id", tenantID.String())
+	if actor, err := shared.IDFromString(actorID); err != nil || actor.IsZero() {
+		return nil, ErrScanActorRequired
+	}
 
 	export, err := decodeScanConfigExport(data)
 	if err != nil {
@@ -237,6 +244,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		TimeoutSeconds:      export.TimeoutSeconds,
 		MaxRetries:          export.MaxRetries,
 		RetryBackoffSeconds: export.RetryBackoffSeconds,
+		CreatedBy:           actorID,
 	}
 
 	// Set primary asset group ID for backward compatibility
