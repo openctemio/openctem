@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -18,18 +18,18 @@ import (
 // VerifiedDomainHandler handles tenant-scoped domain-ownership verification.
 type VerifiedDomainHandler struct {
 	service *domainverify.Service
-	audit   *app.AuditService
+	audit   *auditsvc.AuditService
 	logger  *logger.Logger
 }
 
 // SetAuditService records verified-domain changes in the organization's audit
 // log.
-func (h *VerifiedDomainHandler) SetAuditService(svc *app.AuditService) {
+func (h *VerifiedDomainHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 
-func domainAuditEvent(action audit.Action, vd *verifieddomain.VerifiedDomain, message string) app.AuditEvent {
-	return app.NewSuccessEvent(action, audit.ResourceTypeVerifiedDomain, vd.ID().String()).
+func domainAuditEvent(action audit.Action, vd *verifieddomain.VerifiedDomain, message string) auditsvc.AuditEvent {
+	return auditsvc.NewSuccessEvent(action, audit.ResourceTypeVerifiedDomain, vd.ID().String()).
 		WithResourceName(vd.Domain()).
 		WithMessage(message).
 		WithMetadata("domain", vd.Domain()).
@@ -206,9 +206,8 @@ func (h *VerifiedDomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, domainAuditEvent(audit.ActionSSOVerifiedDomainDeleted, removed,
 			"Domain '"+removed.Domain()+"' removed"))
 	} else {
-		logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
-			app.NewSuccessEvent(audit.ActionSSOVerifiedDomainDeleted, audit.ResourceTypeVerifiedDomain, id.String()).
-				WithMessage("Verified domain removed"))
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionSSOVerifiedDomainDeleted, audit.ResourceTypeVerifiedDomain, id.String()).
+			WithMessage("Verified domain removed"))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

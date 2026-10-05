@@ -34,11 +34,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	_ "github.com/lib/pq"
-
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/app/sensor"
+	"github.com/openctemio/openctem/api/internal/app/scan"
+	sensorsvc "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -84,7 +83,7 @@ func newV1Harness(t *testing.T) *v1Harness {
 	log := logger.NewNop()
 
 	sensorRepo := postgres.NewSensorRepository(db)
-	sensorSvc := sensor.NewSensorService(sensorRepo, nil, log)
+	sensorSvc := sensorsvc.NewSensorService(sensorRepo, nil, log)
 	sensorSvc.SetAPIKeyRepository(postgres.NewSensorAPIKeyRepository(db))
 	cmdSvc := command.NewService(postgres.NewCommandRepository(db), log)
 	ingestSvc := ingest.NewService(
@@ -92,7 +91,7 @@ func newV1Harness(t *testing.T) *v1Harness {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
-	sessionSvc := app.NewScanSessionService(postgres.NewScanSessionRepository(db), sensorRepo, log)
+	sessionSvc := scan.NewScanSessionService(postgres.NewScanSessionRepository(db), sensorRepo, log)
 
 	v := validator.New()
 	ih := NewIngestHandler(ingestSvc, sensorSvc, log)
@@ -105,10 +104,10 @@ func newV1Harness(t *testing.T) *v1Harness {
 	// and failed the golden for reasons unrelated to the wire. Raise the
 	// threshold so the golden pins the wire, not the runner's latency; the
 	// back-off itself is covered by the doorbell unit tests.
-	golden := sensor.DefaultDoorbellConfig()
+	golden := sensorsvc.DefaultDoorbellConfig()
 	golden.SlowQuery = 30 * time.Second
 	golden.QueryTimeout = time.Minute
-	ih.SetDoorbell(sensor.NewDoorbell(postgres.NewCommandRepository(db),
+	ih.SetDoorbell(sensorsvc.NewDoorbell(postgres.NewCommandRepository(db),
 		golden.Normalized(5*time.Minute), log))
 	// So is the protocol v2 advertisement (RFC-026): flow.golden proves a v1
 	// sensor that does not ask for it sees nothing new.
@@ -147,7 +146,7 @@ func newV1Harness(t *testing.T) *v1Harness {
 		_, _ = sqldb.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantID.String())
 	})
 
-	out, err := sensorSvc.CreateSensor(ctx, sensor.CreateSensorInput{
+	out, err := sensorSvc.CreateSensor(ctx, sensorsvc.CreateSensorInput{
 		TenantID: tenantID.String(), Name: "golden-sensor", Type: "worker",
 		Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "daemon",
 	})
@@ -387,7 +386,7 @@ func (failingPendingWork) PendingWorkForSensor(context.Context, shared.ID, share
 // A failing doorbell query must not fail the heartbeat: 200, no hints.
 func TestProtocolV1_DoorbellQueryFailureKeepsHeartbeat(t *testing.T) {
 	h := newV1Harness(t)
-	h.ingest.SetDoorbell(sensor.NewDoorbell(failingPendingWork{}, sensor.DefaultDoorbellConfig(), logger.NewNop()))
+	h.ingest.SetDoorbell(sensorsvc.NewDoorbell(failingPendingWork{}, sensorsvc.DefaultDoorbellConfig(), logger.NewNop()))
 	h.seedCommand("cmd")
 	h.header = http.Header{legacyv1.HeaderSensorFeatures: {"other, Doorbell"}}
 	tr, _ := h.do(http.MethodPost, "/api/v1/agent/heartbeat", nil, true)

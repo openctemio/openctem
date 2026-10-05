@@ -10,8 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -30,7 +29,7 @@ type SAMLHandler struct {
 	cookieCfg   CookieConfig
 	frontendURL string // origin the browser is redirected to after login
 	publicURL   string // configured public origin (APP_URL); see samlBaseURL
-	audit       *app.AuditService
+	audit       *auditsvc.AuditService
 	changes     *auth.SSOChangeService
 	logger      *logger.Logger
 }
@@ -42,7 +41,7 @@ func (h *SAMLHandler) SetChangeApproval(svc *auth.SSOChangeService) {
 }
 
 // SetAuditService records SAML config changes in the organization's audit log.
-func (h *SAMLHandler) SetAuditService(svc *app.AuditService) {
+func (h *SAMLHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 
@@ -326,17 +325,16 @@ func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 		h.writeSetError(w, err)
 		return
 	}
-	logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
-		app.NewSuccessEvent(audit.ActionSSOSAMLConfigUpdated, audit.ResourceTypeSAMLConfig, p.ID().String()).
-			WithResourceName(p.IDPEntityID()).
-			WithMessage("SAML single sign-on configuration saved").
-			WithMetadata("idp_entity_id", p.IDPEntityID()).
-			WithMetadata("idp_sso_url", p.IDPSSOURL()).
-			WithMetadata("idp_certificate_sha256", certificateFingerprint(p.IDPCertificate())).
-			WithMetadata("allowed_domains", p.AllowedDomains()).
-			WithMetadata("default_role", p.DefaultRole()).
-			WithMetadata("auto_provision", p.AutoProvision()).
-			WithMetadata("enabled", p.Enabled()))
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionSSOSAMLConfigUpdated, audit.ResourceTypeSAMLConfig, p.ID().String()).
+		WithResourceName(p.IDPEntityID()).
+		WithMessage("SAML single sign-on configuration saved").
+		WithMetadata("idp_entity_id", p.IDPEntityID()).
+		WithMetadata("idp_sso_url", p.IDPSSOURL()).
+		WithMetadata("idp_certificate_sha256", certificateFingerprint(p.IDPCertificate())).
+		WithMetadata("allowed_domains", p.AllowedDomains()).
+		WithMetadata("default_role", p.DefaultRole()).
+		WithMetadata("auto_provision", p.AutoProvision()).
+		WithMetadata("enabled", p.Enabled()))
 	writeJSON(w, http.StatusOK, toSAMLConfigView(p))
 }
 
@@ -368,8 +366,7 @@ func (h *SAMLHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to delete SAML configuration").WriteJSON(w)
 		return
 	}
-	logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
-		app.NewSuccessEvent(audit.ActionSSOSAMLConfigDeleted, audit.ResourceTypeSAMLConfig, tenantID.String()).
-			WithMessage("SAML single sign-on configuration deleted"))
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionSSOSAMLConfigDeleted, audit.ResourceTypeSAMLConfig, tenantID.String()).
+		WithMessage("SAML single sign-on configuration deleted"))
 	w.WriteHeader(http.StatusNoContent)
 }

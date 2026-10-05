@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/scim"
-	"github.com/openctemio/openctem/api/internal/app/tenant"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -18,24 +18,24 @@ import (
 
 // scimMemberMgr adapts the real TenantService to scim.MembershipManager,
 // mirroring cmd/server's scimMembershipAdapter (zero inviter = system).
-type scimMemberMgr struct{ svc *tenant.TenantService }
+type scimMemberMgr struct{ svc *tenantsvc.TenantService }
 
 func (a scimMemberMgr) AddMember(ctx context.Context, tenantID, userID shared.ID, role string) error {
-	_, err := a.svc.AddMember(ctx, tenantID.String(), tenant.AddMemberInput{UserID: userID, Role: role}, shared.ID{},
-		app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
+	_, err := a.svc.AddMember(ctx, tenantID.String(),
+		tenantsvc.AddMemberInput{UserID: userID, Role: role}, shared.ID{}, audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
 	return err
 }
 
 func (a scimMemberMgr) SuspendMember(ctx context.Context, tenantID, membershipID shared.ID) error {
-	return a.svc.SuspendMember(ctx, membershipID.String(), app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
+	return a.svc.SuspendMember(ctx, membershipID.String(), audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
 }
 
 func (a scimMemberMgr) ReactivateMember(ctx context.Context, tenantID, membershipID shared.ID) error {
-	return a.svc.ReactivateMember(ctx, membershipID.String(), app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
+	return a.svc.ReactivateMember(ctx, membershipID.String(), audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
 }
 
 func (a scimMemberMgr) OffboardMember(ctx context.Context, tenantID, membershipID shared.ID) error {
-	return a.svc.DeprovisionMember(ctx, membershipID.String(), app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
+	return a.svc.DeprovisionMember(ctx, membershipID.String(), audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
 }
 
 // TestSCIMProvisioning_RoundTrip_RealDB exercises the SCIM provisioning path
@@ -59,7 +59,7 @@ func TestSCIMProvisioning_RoundTrip_RealDB(t *testing.T) {
 	userRepo := postgres.NewUserRepository(db)
 	tenantRepo := postgres.NewTenantRepository(db)
 	tokenRepo := postgres.NewScimTokenRepository(db)
-	tenantSvc := tenant.NewTenantService(tenantRepo, log)
+	tenantSvc := tenantsvc.NewTenantService(tenantRepo, log)
 	prov := scim.NewProvisioningService(userRepo, tenantRepo, scimMemberMgr{svc: tenantSvc}, log)
 	tokenSvc := scim.NewTokenService(tokenRepo, "test-pepper", log)
 
@@ -162,7 +162,7 @@ func TestSCIMProvisioning_CrossTenantIsolation_RealDB(t *testing.T) {
 
 	userRepo := postgres.NewUserRepository(db)
 	tenantRepo := postgres.NewTenantRepository(db)
-	tenantSvc := tenant.NewTenantService(tenantRepo, log)
+	tenantSvc := tenantsvc.NewTenantService(tenantRepo, log)
 	prov := scim.NewProvisioningService(userRepo, tenantRepo, scimMemberMgr{svc: tenantSvc}, log)
 
 	// Provision the user into tenant B only.

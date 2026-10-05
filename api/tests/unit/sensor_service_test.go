@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	sensorsvc "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -2318,7 +2318,7 @@ func TestSensorService_NilAuditService_DoesNotPanic(t *testing.T) {
 		TenantID: tenantID.String(),
 		Name:     "no-panic-sensor",
 		Type:     "runner",
-		AuditContext: &app.AuditContext{
+		AuditContext: &audit.AuditContext{
 			TenantID: tenantID.String(),
 			ActorID:  shared.NewID().String(),
 		},
@@ -2334,14 +2334,14 @@ func TestSensorService_NilAuditService_DoesNotPanic(t *testing.T) {
 		TenantID:     tenantID.String(),
 		SensorID:     sensorID,
 		Name:         "updated",
-		AuditContext: &app.AuditContext{TenantID: tenantID.String()},
+		AuditContext: &audit.AuditContext{TenantID: tenantID.String()},
 	})
 	if err != nil {
 		t.Fatalf("UpdateSensor should not panic with nil audit service: %v", err)
 	}
 
 	// DeleteSensor with audit context
-	auditCtx := &app.AuditContext{TenantID: tenantID.String()}
+	auditCtx := &audit.AuditContext{TenantID: tenantID.String()}
 	err = svc.DeleteSensor(context.Background(), tenantID.String(), sensorID, auditCtx)
 	if err != nil {
 		t.Fatalf("DeleteSensor should not panic with nil audit service: %v", err)

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -18,14 +18,14 @@ import (
 
 // FindingActivityHandler handles finding activity HTTP requests.
 type FindingActivityHandler struct {
-	activityService      *app.FindingActivityService
+	activityService      *activity.FindingActivityService
 	vulnerabilityService *finding.VulnerabilityService
 	logger               *logger.Logger
 }
 
 // NewFindingActivityHandler creates a new finding activity handler.
 func NewFindingActivityHandler(
-	actSvc *app.FindingActivityService,
+	actSvc *activity.FindingActivityService,
 	vulnSvc *finding.VulnerabilityService,
 	log *logger.Logger,
 ) *FindingActivityHandler {
@@ -119,7 +119,7 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 		activityTypes = append(activityTypes, types)
 	}
 
-	input := app.ListActivitiesInput{
+	input := activity.ListActivitiesInput{
 		TenantID:      tenantID, // Security: Required for tenant isolation
 		FindingID:     findingID,
 		ActivityTypes: activityTypes,

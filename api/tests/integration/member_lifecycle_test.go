@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
-	"github.com/openctemio/openctem/api/internal/app/tenant"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -24,7 +24,7 @@ import (
 
 type lifecycleFixture struct {
 	db        *sql.DB
-	svc       *tenant.TenantService
+	svc       *tenantsvc.TenantService
 	repo      *postgres.TenantRepository
 	scope     *postgres.DataScopeRepository
 	tenantID  shared.ID
@@ -54,7 +54,7 @@ func newLifecycleFixture(t *testing.T) *lifecycleFixture {
 	f := &lifecycleFixture{db: db}
 	f.repo = postgres.NewTenantRepository(pdb)
 	f.scope = postgres.NewDataScopeRepository(pdb)
-	f.svc = tenant.NewTenantService(f.repo, logger.NewNop())
+	f.svc = tenantsvc.NewTenantService(f.repo, logger.NewNop())
 	f.svc.SetLifecycleRepository(postgres.NewMemberLifecycleRepository(pdb))
 
 	f.tenantID = createTestTenant(t, db, "lifecycle")
@@ -139,8 +139,8 @@ func newLifecycleFixture(t *testing.T) *lifecycleFixture {
 	return f
 }
 
-func (f *lifecycleFixture) ownerCtx() app.AuditContext {
-	return app.AuditContext{TenantID: f.tenantID.String(), ActorID: f.ownerID.String(), ActorEmail: "owner@example.com"}
+func (f *lifecycleFixture) ownerCtx() audit.AuditContext {
+	return audit.AuditContext{TenantID: f.tenantID.String(), ActorID: f.ownerID.String(), ActorEmail: "owner@example.com"}
 }
 
 func (f *lifecycleFixture) count(t *testing.T, query string, args ...any) int {
@@ -277,7 +277,7 @@ func TestMemberLifecycle_OffboardReassignsStripsAndTombstones(t *testing.T) {
 	ctx := context.Background()
 	tid, uid := f.tenantID.String(), f.memberID.String()
 
-	_, err := f.svc.OffboardMember(ctx, f.mshipID.String(), tenant.OffboardMemberInput{}, f.ownerCtx())
+	_, err := f.svc.OffboardMember(ctx, f.mshipID.String(), tenantsvc.OffboardMemberInput{}, f.ownerCtx())
 	re, ok := tenantdom.AsReassignmentError(err)
 	if !ok {
 		t.Fatalf("offboard without a plan: want a reassignment error, got %v", err)
@@ -294,7 +294,7 @@ func TestMemberLifecycle_OffboardReassignsStripsAndTombstones(t *testing.T) {
 	}
 
 	for name, target := range map[string]shared.ID{"other tenant": f.foreignID, "self": f.memberID, "unknown": shared.NewID()} {
-		_, err := f.svc.OffboardMember(ctx, f.mshipID.String(), tenant.OffboardMemberInput{
+		_, err := f.svc.OffboardMember(ctx, f.mshipID.String(), tenantsvc.OffboardMemberInput{
 			SchedulesTo: target.String(), FindingsTo: target.String(), AssetsTo: target.String(),
 		}, f.ownerCtx())
 		if !errors.Is(err, tenantdom.ErrInvalidReassignTarget) {
@@ -303,7 +303,7 @@ func TestMemberLifecycle_OffboardReassignsStripsAndTombstones(t *testing.T) {
 	}
 
 	peer := f.peerID.String()
-	res, err := f.svc.OffboardMember(ctx, f.mshipID.String(), tenant.OffboardMemberInput{
+	res, err := f.svc.OffboardMember(ctx, f.mshipID.String(), tenantsvc.OffboardMemberInput{
 		SchedulesTo: peer, FindingsTo: peer, AssetsTo: peer,
 	}, f.ownerCtx())
 	if err != nil {
@@ -383,7 +383,7 @@ func TestMemberLifecycle_OffboardReassignsStripsAndTombstones(t *testing.T) {
 	}
 
 	// Re-invite: the person re-joins from zero.
-	if _, err := f.svc.AddMember(ctx, tid, tenant.AddMemberInput{UserID: f.memberID, Role: "member"}, f.ownerID, f.ownerCtx()); err != nil {
+	if _, err := f.svc.AddMember(ctx, tid, tenantsvc.AddMemberInput{UserID: f.memberID, Role: "member"}, f.ownerID, f.ownerCtx()); err != nil {
 		t.Fatalf("re-add after offboarding: %v", err)
 	}
 	m, err := f.repo.GetMembership(ctx, f.memberID, f.tenantID)
@@ -407,7 +407,7 @@ func TestMemberLifecycle_OffboardReassignsStripsAndTombstones(t *testing.T) {
 		}
 	}
 	// Adding the same person again is a conflict, not a duplicate.
-	if _, err := f.svc.AddMember(ctx, tid, tenant.AddMemberInput{UserID: f.memberID, Role: "member"}, f.ownerID, f.ownerCtx()); err == nil {
+	if _, err := f.svc.AddMember(ctx, tid, tenantsvc.AddMemberInput{UserID: f.memberID, Role: "member"}, f.ownerID, f.ownerCtx()); err == nil {
 		t.Error("adding an active member twice must fail")
 	}
 }
@@ -423,7 +423,7 @@ func TestMemberLifecycle_EraseAnonymisesAndKeepsReferences(t *testing.T) {
 		t.Fatalf("erase before offboarding: want ErrEraseNotAllowed, got %v", err)
 	}
 	peer := f.peerID.String()
-	if _, err := f.svc.OffboardMember(ctx, f.mshipID.String(), tenant.OffboardMemberInput{
+	if _, err := f.svc.OffboardMember(ctx, f.mshipID.String(), tenantsvc.OffboardMemberInput{
 		SchedulesTo: peer, UnassignFindings: true, AssetsTo: peer,
 	}, f.ownerCtx()); err != nil {
 		t.Fatalf("offboard: %v", err)
@@ -432,8 +432,8 @@ func TestMemberLifecycle_EraseAnonymisesAndKeepsReferences(t *testing.T) {
 		t.Errorf("unassign_findings left the finding assigned to %q", got)
 	}
 
-	peerCtx := app.AuditContext{TenantID: tid, ActorID: peer}
-	if err := f.svc.EraseMemberPersonalData(ctx, f.mshipID.String(), peerCtx); !errors.Is(err, tenant.ErrOwnerRequiredForErase) {
+	peerCtx := audit.AuditContext{TenantID: tid, ActorID: peer}
+	if err := f.svc.EraseMemberPersonalData(ctx, f.mshipID.String(), peerCtx); !errors.Is(err, tenantsvc.ErrOwnerRequiredForErase) {
 		t.Fatalf("erase by a non-owner: want ErrOwnerRequiredForErase, got %v", err)
 	}
 

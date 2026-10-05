@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -17,7 +17,7 @@ import (
 // SSOHandler handles per-tenant SSO authentication requests.
 type SSOHandler struct {
 	ssoService *auth.SSOService
-	audit      *app.AuditService
+	audit      *auditsvc.AuditService
 	changes    *auth.SSOChangeService
 	logger     *logger.Logger
 }
@@ -30,14 +30,14 @@ func (h *SSOHandler) SetChangeApproval(svc *auth.SSOChangeService) {
 
 // SetAuditService records identity-provider changes in the organization's
 // audit log.
-func (h *SSOHandler) SetAuditService(svc *app.AuditService) {
+func (h *SSOHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 
 // providerAuditEvent describes an identity provider for the audit log. The
 // client secret is never included.
-func providerAuditEvent(action audit.Action, ip *identityprovider.IdentityProvider, message string) app.AuditEvent {
-	return app.NewSuccessEvent(action, audit.ResourceTypeIdentityProvider, ip.ID()).
+func providerAuditEvent(action audit.Action, ip *identityprovider.IdentityProvider, message string) auditsvc.AuditEvent {
+	return auditsvc.NewSuccessEvent(action, audit.ResourceTypeIdentityProvider, ip.ID()).
 		WithResourceName(ip.DisplayName()).
 		WithMessage(message).
 		WithMetadata("provider", string(ip.Provider())).
@@ -513,9 +513,8 @@ func (h *SSOHandler) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, providerAuditEvent(audit.ActionSSOIdentityProviderDeleted, existing,
 			"Identity provider '"+existing.DisplayName()+"' deleted"))
 	} else {
-		logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
-			app.NewSuccessEvent(audit.ActionSSOIdentityProviderDeleted, audit.ResourceTypeIdentityProvider, id).
-				WithMessage("Identity provider deleted"))
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionSSOIdentityProviderDeleted, audit.ResourceTypeIdentityProvider, id).
+			WithMessage("Identity provider deleted"))
 	}
 
 	w.WriteHeader(http.StatusNoContent)

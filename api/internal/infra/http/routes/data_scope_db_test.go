@@ -26,14 +26,14 @@ import (
 	"testing"
 
 	_ "github.com/lib/pq"
-
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/module"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -157,10 +157,10 @@ func newDSHarness(t *testing.T) *dsHarness {
 	surfaceSvc.SetFindingRiskCounter(findingRepo)
 	surfaceSvc.SetDataScope(enforcer)
 
-	expSvc := app.NewExposureService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), log)
+	expSvc := exposure.NewExposureService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), log)
 	expSvc.SetDataScope(enforcer)
 
-	dashSvc := app.NewDashboardService(postgres.NewDashboardRepository(sqldb), log)
+	dashSvc := module.NewDashboardService(postgres.NewDashboardRepository(sqldb), log)
 	dashSvc.SetDataScope(enforcer)
 	dashSvc.SetAggregateCheck(func(ctx context.Context) bool {
 		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
