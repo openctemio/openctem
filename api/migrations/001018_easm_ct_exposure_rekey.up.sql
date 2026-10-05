@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS easm_ct_rekey_001018 (
 
 -- expand-contract-ok: drops only this migration's own session temp table (pg_temp), never a shared one
 DROP TABLE IF EXISTS pg_temp.ct_rekey;
-CREATE TEMP TABLE ct_rekey ON COMMIT DROP AS
+CREATE TEMP TABLE ct_rekey AS
 SELECT id, tenant_id, fingerprint, state, resolved_at, resolution_notes, rn, new_fp
 FROM (
     SELECT e.id, e.tenant_id, e.fingerprint, e.state, e.resolved_at, e.resolution_notes,
@@ -66,3 +66,6 @@ FROM ct_rekey r WHERE e.id = r.id AND r.rn > 1;
 
 UPDATE exposure_events e SET fingerprint = r.new_fp, updated_at = now()
 FROM ct_rekey r WHERE e.id = r.id AND r.rn = 1 AND e.fingerprint <> r.new_fp;
+
+-- expand-contract-ok: drops only this migration's own session temp table (pg_temp), never a shared one
+DROP TABLE IF EXISTS pg_temp.ct_rekey;
