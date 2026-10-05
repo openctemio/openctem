@@ -157,7 +157,7 @@ product decision tracked separately; see `scan-coverage.md`.
 | 6 | Reporting export (PDF/Excel) + weekly digest | Partial (HTML summary exists) |
 | 7 | DX: GitHub Action / GitLab CI recipes | **Already present** — `agent/ci/{github,gitlab}/` |
 
-**`POST /api/v1/agent/ingest/baseline-diff`** (agent API-key auth) — body
+**`POST /api/v2/sensor/fingerprints/baseline-diff`** (sensor key auth; the v1 `/api/v1/agent/ingest/baseline-diff` was retired 2026-10-05) — body
 `{repository, base_branch, fingerprints[]}` → `{new_fingerprints, pre_existing_fingerprints, base_branch_scanned}`.
 A finding already **open on the base branch** is pre-existing tech debt, so the
 agent gates / comments only on `new_fingerprints` (`gate.FilterNewFindings` +

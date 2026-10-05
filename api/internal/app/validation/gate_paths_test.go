@@ -25,7 +25,7 @@ var commandProducers = map[string]string{
 }
 
 // newCommandCall matches a call of the command domain constructor under any
-// import alias (legacyv1.NewCommand only encodes a response).
+// import alias.
 var newCommandCall = regexp.MustCompile(`\b(\w+)\.NewCommand\(`)
 
 func createsCommands(src []byte) bool {

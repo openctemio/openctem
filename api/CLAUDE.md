@@ -582,18 +582,15 @@ POST /api/v1/invitations/accept-with-refresh   {"token": "..."}
 | `type` | Legacy v1 value (`worker`, `scanner`, `sensor`, `collector`, `runner`), kept as input and storage. |
 | Platform sensor | `is_platform_sensor = true`: shared infrastructure, no tenant. |
 | AI agent | AI-triage mode `agent` (`AIModeAgent`, module `ai_triage.agent`) — an LLM agent, not a sensor. |
-| Protocol v1 | What deployed sensors speak: `/api/v1/agent/*`, `agent_id` in responses. Frozen; lives only in `pkg/sensorproto/legacyv1`. |
+| Protocol v1 | `/api/v1/agent/*`: retired 2026-10-05. Sensors speak protocol v2 (`/api/v2/sensor/*`) only; a sensor older than v0.9.0 must be upgraded. |
 
 The rename is complete (RFC-023 §9.5, migration 000230): packages, types,
-tables/columns, permissions `sensors:*`, management API `/api/v1/sensors`
-(`/api/v1/agents` → 308), audit ids `sensor.*`, log field `sensor_id`, env
-`SENSOR_*` (old `AGENT_*` still read with a warning).
+tables/columns, permissions `sensors:*`, management API `/api/v1/sensors`,
+audit ids `sensor.*`, log field `sensor_id`, env `SENSOR_*` (old `AGENT_*` still read with a warning).
 
 **Rules**
 - Never add an identifier containing "agent" for a sensor concept —
-  `tools/lint/sensorvocab` fails CI. Wire vocabulary that deployed sensors need
-  goes in `pkg/sensorproto/legacyv1`; the v1 wire is pinned by
-  `internal/infra/http/handler/protocol_v1_golden_db_test.go`.
+  `tools/lint/sensorvocab` fails CI.
 - A branch written before the rename catches up with `scripts/rename/sensor-rename.sh`.
 - Historical audit rows (`agent.*`) and asset state history (`source='agent'`)
   are never rewritten; reads use `audit.WithHistoricalActions` /
@@ -605,15 +602,15 @@ tables/columns, permissions `sensors:*`, management API `/api/v1/sensors`
 
 ```
 pkg/domain/sensor/                 # entity, API keys, errors, repository interfaces
-pkg/sensorproto/legacyv1/          # protocol v1 + /api/v1/agents redirect + renamed env vars
+pkg/sensorproto/legacyv1/          # renamed env vars (AGENT_* -> SENSOR_*) only
 pkg/sensorproto/v2/                # protocol v2 results wire (RFC-026): media type, problems, status, hello
 internal/infra/http/routes/sensor_v2.go  # /api/v2/sensor (own sensor-key authenticator + edge chain)
 internal/app/ingest/v2*.go         # v2 accept (receiver), segment semantics, commit + blinding guard, jobs
 internal/app/sensor/               # service, selector, config templates
 internal/infra/postgres/           # sensor_repository, sensor_apikey_repository, sensor_upgrade_check
 internal/infra/controller/         # sensor_health
-internal/infra/http/handler/       # sensor_handler (management), ingest/command/scansession (v1)
-internal/infra/http/routes/        # scanning.go: /api/v1/sensors + v1 mounts
+internal/infra/http/handler/       # sensor_handler (management), sensor_control_v2_handler, sensor_results_v2_handler
+internal/infra/http/routes/        # scanning.go: /api/v1/sensors
 pkg/domain/sensor/event.go, activity.go, build.go  # activity timeline (heartbeat diff), build/SDK info
 internal/infra/postgres/sensor_event_repository.go  # sensor_events + merged timeline (events, commands, audit)
 pkg/domain/scanzone/               # scan zones: range validation, router (RFC-023 Phase 1)
