@@ -274,6 +274,13 @@ export default function PriorityRulesPage() {
       return
     }
 
+    // The API refuses a rule without conditions: it would re-class every
+    // finding in the organization.
+    if (form.conditions.length === 0) {
+      toast.error('Add at least one condition')
+      return
+    }
+
     // Normalize conditions
     const normalizedConditions: Condition[] = []
     for (const c of form.conditions) {
@@ -376,7 +383,9 @@ export default function PriorityRulesPage() {
           return (
             <div className="flex flex-wrap gap-1">
               {conditions.length === 0 ? (
-                <span className="text-xs text-muted-foreground">No conditions</span>
+                <span className="text-xs text-destructive">
+                  No conditions: add one before enabling
+                </span>
               ) : (
                 conditions.map((c, i) => (
                   <Badge
@@ -672,7 +681,8 @@ export default function PriorityRulesPage() {
               </div>
               {form.conditions.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  No conditions. Rule will match all findings.
+                  Add at least one condition. A rule applies only to findings that match all of its
+                  conditions.
                 </p>
               ) : (
                 <div className="flex flex-col gap-2">
@@ -778,7 +788,7 @@ export default function PriorityRulesPage() {
               <FlaskConical className="me-1 h-4 w-4" />
               Dry run
             </Button>
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button onClick={handleSave} disabled={isSaving || form.conditions.length === 0}>
               {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editingRule ? 'Update' : 'Create'}
             </Button>

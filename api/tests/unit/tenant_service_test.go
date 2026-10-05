@@ -709,7 +709,7 @@ func TestTenantSvc_UpdateTenant_Success(t *testing.T) {
 		Description: &newDesc,
 	}
 
-	result, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input)
+	result, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input, app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -733,7 +733,7 @@ func TestTenantSvc_UpdateTenant_UpdateSlug(t *testing.T) {
 		Slug: &newSlug,
 	}
 
-	result, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input)
+	result, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input, app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -752,7 +752,7 @@ func TestTenantSvc_UpdateTenant_DuplicateSlug(t *testing.T) {
 		Slug: &newSlug,
 	}
 
-	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input)
+	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for duplicate slug")
 	}
@@ -771,7 +771,7 @@ func TestTenantSvc_UpdateTenant_SameSlugNoChange(t *testing.T) {
 	}
 
 	// Should succeed because it's the same slug (no uniqueness check needed)
-	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input)
+	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input, app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error when slug unchanged, got %v", err)
 	}
@@ -783,7 +783,7 @@ func TestTenantSvc_UpdateTenant_InvalidID(t *testing.T) {
 	newName := "Name"
 	input := app.UpdateTenantInput{Name: &newName}
 
-	_, err := svc.UpdateTenant(context.Background(), "bad-id", input)
+	_, err := svc.UpdateTenant(context.Background(), "bad-id", input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -798,7 +798,7 @@ func TestTenantSvc_UpdateTenant_NotFound(t *testing.T) {
 	newName := "Name"
 	input := app.UpdateTenantInput{Name: &newName}
 
-	_, err := svc.UpdateTenant(context.Background(), shared.NewID().String(), input)
+	_, err := svc.UpdateTenant(context.Background(), shared.NewID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
@@ -812,7 +812,7 @@ func TestTenantSvc_UpdateTenant_RepoError(t *testing.T) {
 	newName := "Updated"
 	input := app.UpdateTenantInput{Name: &newName}
 
-	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input)
+	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -825,7 +825,7 @@ func TestTenantSvc_UpdateTenant_UpdateLogoURL(t *testing.T) {
 	logoURL := "https://example.com/logo.png"
 	input := app.UpdateTenantInput{LogoURL: &logoURL}
 
-	result, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input)
+	result, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input, app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1943,7 +1943,7 @@ func TestTenantSvc_DeleteInvitation_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	inv := seedPendingInvitation(repo, tenantID, "user@test.com", tenant.RoleMember, shared.NewID())
 
-	err := svc.DeleteInvitation(context.Background(), tenantID.String(), inv.ID().String())
+	err := svc.DeleteInvitation(context.Background(), tenantID.String(), inv.ID().String(), app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1956,7 +1956,7 @@ func TestTenantSvc_DeleteInvitation_CrossTenantForbidden(t *testing.T) {
 
 	// A different tenant must not be able to delete another tenant's invitation.
 	attackerTenant := shared.NewID()
-	err := svc.DeleteInvitation(context.Background(), attackerTenant.String(), inv.ID().String())
+	err := svc.DeleteInvitation(context.Background(), attackerTenant.String(), inv.ID().String(), app.AuditContext{})
 	if !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound for cross-tenant delete, got %v", err)
 	}
@@ -1965,7 +1965,7 @@ func TestTenantSvc_DeleteInvitation_CrossTenantForbidden(t *testing.T) {
 func TestTenantSvc_DeleteInvitation_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	err := svc.DeleteInvitation(context.Background(), shared.NewID().String(), "bad-uuid")
+	err := svc.DeleteInvitation(context.Background(), shared.NewID().String(), "bad-uuid", app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -1980,7 +1980,7 @@ func TestTenantSvc_DeleteInvitation_RepoError(t *testing.T) {
 	inv := seedPendingInvitation(repo, tenantID, "user@test.com", tenant.RoleMember, shared.NewID())
 	repo.deleteInvitationErr = errors.New("db error")
 
-	err := svc.DeleteInvitation(context.Background(), tenantID.String(), inv.ID().String())
+	err := svc.DeleteInvitation(context.Background(), tenantID.String(), inv.ID().String(), app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -2688,7 +2688,7 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 		{"GetTenant", func() error { _, err := svc.GetTenant(context.Background(), invalidID); return err }},
 		{"UpdateTenant", func() error {
 			n := "x"
-			_, err := svc.UpdateTenant(context.Background(), invalidID, app.UpdateTenantInput{Name: &n})
+			_, err := svc.UpdateTenant(context.Background(), invalidID, app.UpdateTenantInput{Name: &n}, app.AuditContext{})
 			return err
 		}},
 		{"DeleteTenant", func() error { return svc.DeleteTenant(context.Background(), app.AuditContext{}, invalidID) }},
@@ -2714,7 +2714,9 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 			return err
 		}},
 		{"ListPendingInvitations", func() error { _, err := svc.ListPendingInvitations(context.Background(), invalidID); return err }},
-		{"DeleteInvitation", func() error { return svc.DeleteInvitation(context.Background(), invalidID, invalidID) }},
+		{"DeleteInvitation", func() error {
+			return svc.DeleteInvitation(context.Background(), invalidID, invalidID, app.AuditContext{})
+		}},
 		{"GetTenantSettings", func() error { _, err := svc.GetTenantSettings(context.Background(), invalidID); return err }},
 		{"UpdateAssetIdentitySettings", func() error {
 			_, err := svc.UpdateAssetIdentitySettings(context.Background(), invalidID, tenant.AssetIdentitySettings{}, app.AuditContext{})
