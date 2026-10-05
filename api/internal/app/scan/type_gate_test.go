@@ -254,7 +254,7 @@ func TestStepCommandPayload_StepTargets(t *testing.T) {
 		"targets":                []string{"a", "b"},
 		RunContextKeyTargetTypes: map[string]string{"a": "host", "b": "repository"},
 	}}
-	p, err := StepCommandPayload(run, &pipeline.Step{ID: shared.NewID(), StepKey: "s", Tool: "nmap"}, "nmap", "sr", "", &StepTargets{Targets: []string{"a"}, Refused: 1})
+	p, err := StepCommandPayload(run, &pipeline.Step{ID: shared.NewID(), StepKey: "s", Tool: "nmap"}, "nmap", "sr", &StepTargets{Targets: []string{"a"}, Refused: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

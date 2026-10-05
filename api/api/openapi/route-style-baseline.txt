@@ -98,10 +98,6 @@ R3 POST /api/v1/admin/tenants/{tenantId}/sso/identity-providers
 R3 POST /api/v1/admin/tenants/{tenantId}/sso/verified-domains
 R3 POST /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}/verify
 R3 POST /api/v1/admin/tenants/{tenantId}/users
-R3 POST /api/v1/agent/commands/{id}/acknowledge
-R3 POST /api/v1/agent/commands/{id}/complete
-R3 POST /api/v1/agent/commands/{id}/fail
-R3 POST /api/v1/agent/commands/{id}/start
 R3 POST /api/v1/commands/{id}/cancel
 R3 POST /api/v1/compliance/findings/{findingId}/controls
 R3 POST /api/v1/compliance/findings/{findingId}/controls/auto-map
@@ -181,12 +177,6 @@ R5 PATCH /api/v1/reports/schedules/{id}/toggle
 R5 PATCH /api/v1/threat-intel/sync/{source}
 R5 POST /api/v1/admin/auth/logout
 R5 POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline
-R5 POST /api/v1/agent/commands/{id}/acknowledge
-R5 POST /api/v1/agent/ingest/check
-R5 POST /api/v1/agent/renew
-R5 POST /api/v1/agents/{id}/activate
-R5 POST /api/v1/agents/{id}/deactivate
-R5 POST /api/v1/agents/{id}/regenerate-key
 R5 POST /api/v1/assets/{id}/activate
 R5 POST /api/v1/assets/{id}/archive
 R5 POST /api/v1/assets/{id}/deactivate
@@ -340,7 +330,6 @@ R9 PATCH /api/v1/tenants/{tenant}/settings/modules
 R9 PATCH /api/v1/tenants/{tenant}/settings/pentest
 R9 PATCH /api/v1/tenants/{tenant}/settings/risk-scoring
 R9 PATCH /api/v1/tenants/{tenant}/settings/security
-R9 POST /api/v1/agent/credentials/ingest
 R9 POST /api/v1/tenants/{tenant}/invitations
 R9 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend
 R9 POST /api/v1/tenants/{tenant}/members

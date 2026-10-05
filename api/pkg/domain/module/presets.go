@@ -81,7 +81,7 @@ const DefaultPresetID = "ctem_full"
 // not just the module name):
 //
 //   - sensors → DATA INGESTION GATEWAY. Every collector / scanner /
-//     SBOM tool POSTs data through /api/v1/agent/ingest, authenticated
+//     SBOM tool sends results through /api/v2/sensor/results, authenticated
 //     by a sensor API key. Without `sensors` enabled, the tenant cannot
 //     register collectors, cannot receive scanner output, cannot
 //     ingest cloud asset data via push collectors. Architecturally

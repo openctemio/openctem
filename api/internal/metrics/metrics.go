@@ -253,26 +253,14 @@ var (
 		[]string{"state", "auto_resolve"},
 	)
 
-	// SensorProtocolRequestsTotal counts sensor requests by protocol ("1",
-	// "2") and route name, both from closed sets: the fleet view of who
-	// still speaks the deprecated protocol v1 (RFC-029 §5.3).
+	// SensorProtocolRequestsTotal counts sensor requests by protocol version
+	// and route name, both from closed sets (RFC-029 §5.3).
 	SensorProtocolRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "sensor_protocol_requests_total",
 			Help: "Sensor protocol requests, by protocol version and route",
 		},
 		[]string{"protocol", "route"},
-	)
-
-	// IngestV1RequestsTotal counts protocol v1 ingest requests per route, to
-	// measure who still uses which v1 route before any is retired
-	// (RFC-026 §8.3).
-	IngestV1RequestsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "ingest_v1_requests_total",
-			Help: "Sensor protocol v1 ingest requests, by route",
-		},
-		[]string{"route"},
 	)
 
 	// IngestQueueDepth is the number of not-yet-terminal (pending+processing)
