@@ -1410,7 +1410,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Multi-key store for rotation overlap (RFC-014 Phase 3). Additive: auth
 	// still accepts the inline key; renewal under a TTL issues overlapping keys.
 	s.Sensor.SetAPIKeyRepository(repos.SensorAPIKey)
-	// Operator-tunable load-balancing weights (AGENT_LB_*). Applied to the
+	// Operator-tunable load-balancing weights (SENSOR_LB_*). Applied to the
 	// load_score recomputed on every heartbeat.
 	s.Sensor.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
 	// Activity timeline: heartbeat diffs and online/offline transitions are
@@ -1576,7 +1576,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize sensor selector for load balancing
 	s.SensorSelector = app.NewSensorSelector(repos.Sensor, repos.Command, deps.SensorStateStore, log)
-	// Same AGENT_LB_* weights drive job placement, so tuning them changes
+	// Same SENSOR_LB_* weights drive job placement, so tuning them changes
 	// scheduling and not just the reported score.
 	s.SensorSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
 
