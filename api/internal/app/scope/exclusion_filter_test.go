@@ -36,7 +36,7 @@ func newExclusion(t *testing.T, tenantID shared.ID, pattern string) *scopedom.Ex
 }
 
 func newFilterService(repo scopedom.ExclusionRepository) *Service {
-	return NewService(nil, repo, nil, nil, logger.NewNop())
+	return NewService(nil, repo, nil, logger.NewNop())
 }
 
 // TestFilterExcludedTargets_RemovesMatches proves an asset matching an active
