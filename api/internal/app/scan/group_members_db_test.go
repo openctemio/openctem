@@ -83,7 +83,7 @@ func TestResolveScanTargets_GroupMembersByAsset_DB(t *testing.T) {
 
 	svc := scanapp.NewGroupResolverForTest(
 		postgres.NewAssetGroupRepository(db),
-		scope.NewService(nil, postgres.NewScopeExclusionRepository(db), nil, nil, logger.NewNop()))
+		scope.NewService(nil, postgres.NewScopeExclusionRepository(db), nil, logger.NewNop()))
 	sc := &scan.Scan{ID: shared.NewID(), TenantID: tenant, Name: "web", ScannerName: "nuclei"}
 	sc.SetAssetGroupIDs([]shared.ID{groupID})
 

@@ -39,7 +39,7 @@ func approvedExclusion(tenant shared.ID, typ scopedom.ExclusionType, pattern str
 }
 
 func exclusionsFor(rows []*scopedom.Exclusion, err error) *scopeapp.Service {
-	return scopeapp.NewService(nil, &fakeExclusionRepo{rows: rows, err: err}, nil, nil, testLogger())
+	return scopeapp.NewService(nil, &fakeExclusionRepo{rows: rows, err: err}, nil, testLogger())
 }
 
 func ctPayload(now time.Time) string {
