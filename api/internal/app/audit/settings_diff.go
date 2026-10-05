@@ -59,8 +59,8 @@ func DiffChanges(before, after any) *auditdom.Changes {
 	b := flattenForDiff(before)
 	a := flattenForDiff(after)
 
-	keys := make([]string, 0, len(b)+len(a))
-	seen := make(map[string]struct{}, len(b)+len(a))
+	keys := make([]string, 0, len(b))
+	seen := make(map[string]struct{})
 	for k := range b {
 		keys = append(keys, k)
 		seen[k] = struct{}{}
@@ -112,7 +112,7 @@ func ChangedFields(c *auditdom.Changes) []string {
 	if c == nil {
 		return nil
 	}
-	set := make(map[string]struct{}, len(c.Before)+len(c.After))
+	set := make(map[string]struct{})
 	for k := range c.Before {
 		set[k] = struct{}{}
 	}
