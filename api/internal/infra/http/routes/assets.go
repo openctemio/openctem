@@ -405,6 +405,23 @@ func registerEASMSeedRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerEASMSettingsRoutes registers the tenant's attack-surface monitoring
+// settings and run-now (research/22 P0-11), behind the attack_surface module.
+func registerEASMSettingsRoutes(
+	router Router,
+	h *handler.EASMSettingsHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm", func(r Router) {
+		r.GET("/settings", h.Get, middleware.Require(permission.SettingsRead))
+		r.PUT("/settings", h.Update, middleware.Require(permission.SettingsWrite))
+		r.POST("/sweeps", h.RunNow, middleware.Require(permission.ScopeWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerBranchRoutes registers branch management endpoints.
 // Branches are repository-scoped, tenant from JWT token.
 func registerBranchRoutes(

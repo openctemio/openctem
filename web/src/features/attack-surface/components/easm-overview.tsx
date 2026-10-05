@@ -10,6 +10,7 @@
 import Link from 'next/link'
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EASMMonitoringCard } from './easm-monitoring-card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   EmptyState,
@@ -212,6 +213,7 @@ export function EASMOverview() {
           )}
         </CardContent>
       </Card>
+      <EASMMonitoringCard />
     </div>
   )
 }
