@@ -2885,9 +2885,11 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 }
 
 // findingStatsSelect is the one aggregate behind every findings stats read:
-// totals by severity, status and source, and the open risk posture. Callers
-// append the WHERE clause.
-const findingStatsSelect = `
+// totals by severity, status and source, the state lens counts and the open
+// risk posture. Callers append the WHERE clause. A var because the lens
+// predicates come from vulnerability.FindingLensSQL, the same ones the
+// "state" filter compiles to.
+var findingStatsSelect = `
 		SELECT
 			COUNT(*) as total,
 			COALESCE(SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END), 0) as critical,
@@ -2920,7 +2922,10 @@ const findingStatsSelect = `
 			-- Risk posture, open findings only (status not in a closed category).
 			COALESCE(SUM(CASE WHEN is_in_kev AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as kev_open,
 			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
-			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached
+			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached,
+			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensOpen) + `) as state_open,
+			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensFixed) + `) as state_fixed,
+			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensDispositioned) + `) as state_dispositioned
 		FROM findings
 `
 
@@ -2938,6 +2943,7 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 		sourceIac, sourceContainer, sourceManual, sourcePentest      int64
 		sourceExternal                                               int64
 		kevOpen, epssHighOpen, slaBreached                           int64
+		stateOpen, stateFixed, stateDispositioned                    int64
 	)
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
@@ -2951,6 +2957,7 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 		&sourceIac, &sourceContainer, &sourceManual, &sourcePentest,
 		&sourceExternal,
 		&kevOpen, &epssHighOpen, &slaBreached,
+		&stateOpen, &stateFixed, &stateDispositioned,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get finding stats: %w", err)
@@ -2999,6 +3006,11 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.KevOpen = kevOpen
 	stats.EpssHighOpen = epssHighOpen
 	stats.SLABreached = slaBreached
+
+	stats.ByState[vulnerability.FindingLensOpen] = stateOpen
+	stats.ByState[vulnerability.FindingLensFixed] = stateFixed
+	stats.ByState[vulnerability.FindingLensDispositioned] = stateDispositioned
+	stats.ByState[vulnerability.FindingLensAll] = total
 
 	return stats, nil
 }
