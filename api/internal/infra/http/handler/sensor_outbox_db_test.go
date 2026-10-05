@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -22,9 +22,7 @@ import (
 // response is the plain v1 one either way.
 func TestHeartbeatOutbox_StoredAndShown(t *testing.T) {
 	h := newV1Harness(t)
-	sh := NewSensorHandler(
-		app.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop()),
-		validator.New(), logger.NewNop())
+	sh := NewSensorHandler(sensor.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop()), validator.New(), logger.NewNop())
 
 	getSensor := func() SensorResponse {
 		t.Helper()

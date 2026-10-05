@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -23,13 +24,13 @@ import (
 // SSOChangeHandler serves the pending-change list to the admin console and
 // the list/approve/reject endpoints to the organization's owners.
 type SSOChangeHandler struct {
-	svc    *app.SSOChangeService
+	svc    *auth.SSOChangeService
 	audit  *app.AuditService
 	logger *logger.Logger
 }
 
 // NewSSOChangeHandler creates the handler.
-func NewSSOChangeHandler(svc *app.SSOChangeService, auditSvc *app.AuditService, log *logger.Logger) *SSOChangeHandler {
+func NewSSOChangeHandler(svc *auth.SSOChangeService, auditSvc *app.AuditService, log *logger.Logger) *SSOChangeHandler {
 	return &SSOChangeHandler{svc: svc, audit: auditSvc, logger: log.With("handler", "sso_change")}
 }
 
@@ -66,7 +67,7 @@ func toSSOChangeResponse(c *ssochange.Change) SSOChangeResponse {
 		Kind:        string(c.Kind),
 		TargetID:    c.TargetID,
 		Status:      string(c.EffectiveStatus(time.Now())),
-		Summary:     app.DescribeSSOChange(c),
+		Summary:     auth.DescribeSSOChange(c),
 		Payload:     c.Payload,
 		RequestedBy: c.RequestedByEmail,
 		CreatedAt:   c.CreatedAt.UTC().Format(time.RFC3339),
@@ -80,7 +81,7 @@ func toSSOChangeResponse(c *ssochange.Change) SSOChangeResponse {
 			Cert string `json:"idp_certificate"`
 		}
 		if json.Unmarshal(c.Payload, &p) == nil {
-			resp.CertificateSHA256 = app.CertificateFingerprint(p.Cert)
+			resp.CertificateSHA256 = auth.CertificateFingerprint(p.Cert)
 		}
 	}
 	if c.DecidedAt != nil {
@@ -212,7 +213,7 @@ func (h *SSOChangeHandler) decide(w http.ResponseWriter, r *http.Request, approv
 		action, message = audit.ActionSSOChangeApproved, "SSO change approved and applied: "
 	}
 	event := app.NewSuccessEvent(action, audit.ResourceTypeSSOChange, c.ID.String()).
-		WithMessage(message+app.DescribeSSOChange(c)).
+		WithMessage(message+auth.DescribeSSOChange(c)).
 		WithMetadata("kind", string(c.Kind)).
 		WithMetadata("requested_by", c.RequestedByEmail)
 	if c.TargetID != "" {
@@ -262,19 +263,19 @@ func (h *SSOChangeHandler) writeDecideError(w http.ResponseWriter, err error) {
 
 // ssoChangeRequester is the platform administrator behind an admin-console
 // request, or nil for any other caller.
-func ssoChangeRequester(r *http.Request) *app.SSOChangeRequester {
+func ssoChangeRequester(r *http.Request) *auth.SSOChangeRequester {
 	a := middleware.GetAdminUser(r.Context())
 	if a == nil {
 		return nil
 	}
-	return &app.SSOChangeRequester{AdminID: a.ID(), Email: a.Email()}
+	return &auth.SSOChangeRequester{AdminID: a.ID(), Email: a.Email()}
 }
 
 // writeSSOChangePending answers a submission stored for an owner's approval
 // (202) and records it in the organization's audit log.
 func writeSSOChangePending(w http.ResponseWriter, r *http.Request, auditSvc *app.AuditService, log *logger.Logger, c *ssochange.Change) {
 	event := app.NewSuccessEvent(audit.ActionSSOChangeRequested, audit.ResourceTypeSSOChange, c.ID.String()).
-		WithMessage("SSO change proposed, waiting for an owner's approval: "+app.DescribeSSOChange(c)).
+		WithMessage("SSO change proposed, waiting for an owner's approval: "+auth.DescribeSSOChange(c)).
 		WithMetadata("kind", string(c.Kind)).
 		WithMetadata("expires_at", c.ExpiresAt.UTC().Format(time.RFC3339))
 	if c.TargetID != "" {

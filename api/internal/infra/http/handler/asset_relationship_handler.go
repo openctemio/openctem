@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetsvc "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -19,13 +19,13 @@ import (
 
 // AssetRelationshipHandler handles asset relationship HTTP requests.
 type AssetRelationshipHandler struct {
-	service   *app.AssetRelationshipService
+	service   *assetsvc.AssetRelationshipService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewAssetRelationshipHandler creates a new AssetRelationshipHandler.
-func NewAssetRelationshipHandler(svc *app.AssetRelationshipService, v *validator.Validator, log *logger.Logger) *AssetRelationshipHandler {
+func NewAssetRelationshipHandler(svc *assetsvc.AssetRelationshipService, v *validator.Validator, log *logger.Logger) *AssetRelationshipHandler {
 	return &AssetRelationshipHandler{
 		service:   svc,
 		validator: v,
@@ -209,7 +209,7 @@ func (h *AssetRelationshipHandler) Create(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	input := app.CreateRelationshipInput{
+	input := assetsvc.CreateRelationshipInput{
 		TenantID:        tenantID,
 		SourceAssetID:   req.SourceAssetID,
 		TargetAssetID:   req.TargetAssetID,
@@ -265,7 +265,7 @@ func (h *AssetRelationshipHandler) Update(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	input := app.UpdateRelationshipInput{
+	input := assetsvc.UpdateRelationshipInput{
 		Description:    req.Description,
 		Confidence:     req.Confidence,
 		ImpactWeight:   req.ImpactWeight,
@@ -326,9 +326,9 @@ func (h *AssetRelationshipHandler) BatchCreate(w http.ResponseWriter, r *http.Re
 	}
 
 	// Translate the wire DTOs to service inputs.
-	items := make([]app.BatchCreateRelationshipInput, 0, len(req.Items))
+	items := make([]assetsvc.BatchCreateRelationshipInput, 0, len(req.Items))
 	for _, w := range req.Items {
-		items = append(items, app.BatchCreateRelationshipInput{
+		items = append(items, assetsvc.BatchCreateRelationshipInput{
 			TargetAssetID:   w.TargetAssetID,
 			Type:            w.Type,
 			Description:     w.Description,

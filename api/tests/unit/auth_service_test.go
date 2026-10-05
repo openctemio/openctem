@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -788,11 +789,11 @@ type authTestDeps struct {
 	cfg         config.AuthConfig
 }
 
-func newTestAuthService() (*app.AuthService, *authTestDeps) {
+func newTestAuthService() (*auth.AuthService, *authTestDeps) {
 	return newTestAuthServiceWithConfig(defaultAuthTestConfig())
 }
 
-func newTestAuthServiceWithConfig(cfg config.AuthConfig) (*app.AuthService, *authTestDeps) {
+func newTestAuthServiceWithConfig(cfg config.AuthConfig) (*auth.AuthService, *authTestDeps) {
 	userRepo := newMockAuthUserRepo()
 	sessionRepo := newMockAuthSessionRepo()
 	rtRepo := newMockAuthRefreshTokenRepo()
@@ -802,7 +803,7 @@ func newTestAuthServiceWithConfig(cfg config.AuthConfig) (*app.AuthService, *aut
 
 	auditService := app.NewAuditService(auditRepo, log)
 
-	svc := app.NewAuthService(
+	svc := auth.NewAuthService(
 		userRepo,
 		sessionRepo,
 		rtRepo,
@@ -1106,7 +1107,7 @@ func TestAuthService_Register(t *testing.T) {
 	t.Run("success without email verification", func(t *testing.T) {
 		svc, deps := newTestAuthService()
 
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "new@example.com",
 			Password: "Password123!",
 			Name:     "New User",
@@ -1137,7 +1138,7 @@ func TestAuthService_Register(t *testing.T) {
 		cfg.RequireEmailVerification = true
 		svc, _ := newTestAuthServiceWithConfig(cfg)
 
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "verify@example.com",
 			Password: "Password123!",
 			Name:     "Verify User",
@@ -1162,13 +1163,13 @@ func TestAuthService_Register(t *testing.T) {
 		cfg.AllowRegistration = false
 		svc, _ := newTestAuthServiceWithConfig(cfg)
 
-		_, err := svc.Register(context.Background(), app.RegisterInput{
+		_, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "user@example.com",
 			Password: "Password123!",
 			Name:     "User",
 		})
 
-		if !errors.Is(err, app.ErrRegistrationDisabled) {
+		if !errors.Is(err, auth.ErrRegistrationDisabled) {
 			t.Errorf("expected ErrRegistrationDisabled, got %v", err)
 		}
 	})
@@ -1177,7 +1178,7 @@ func TestAuthService_Register(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthLocalUser(deps.userRepo, "existing@example.com", "hash")
 
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "existing@example.com",
 			Password: "Password123!",
 			Name:     "Duplicate User",
@@ -1200,7 +1201,7 @@ func TestAuthService_Register(t *testing.T) {
 	t.Run("email normalization", func(t *testing.T) {
 		svc, deps := newTestAuthService()
 
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "  User@Example.COM  ",
 			Password: "Password123!",
 			Name:     "Normalized User",
@@ -1233,7 +1234,7 @@ func TestAuthService_Register(t *testing.T) {
 		)
 		deps.tenantRepo.tenants[soleTenant.ID().String()] = soleTenant
 
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "alice@example.com",
 			Password: "Password123!",
 			Name:     "Alice",
@@ -1259,7 +1260,7 @@ func TestAuthService_Register(t *testing.T) {
 		)
 		deps.tenantRepo.tenants[soleTenant.ID().String()] = soleTenant
 
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "bob@example.com",
 			Password: "Password123!",
 			Name:     "Bob",
@@ -1288,7 +1289,7 @@ func TestAuthService_Register(t *testing.T) {
 		deps.tenantRepo.tenants[t1.ID().String()] = t1
 		deps.tenantRepo.tenants[t2.ID().String()] = t2
 
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "carol@example.com",
 			Password: "Password123!",
 			Name:     "Carol",
@@ -1332,7 +1333,7 @@ func TestAuthService_Register(t *testing.T) {
 		}
 		deps.tenantRepo.invitations = []*tenant.Invitation{inv}
 
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:           "dave@example.com",
 			Password:        "Password123!",
 			Name:            "Dave",
@@ -1350,7 +1351,7 @@ func TestAuthService_Register(t *testing.T) {
 		svc, deps := newTestAuthService()
 		deps.userRepo.getByEmailErr = errors.New("db error")
 
-		_, err := svc.Register(context.Background(), app.RegisterInput{
+		_, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "user@example.com",
 			Password: "Password123!",
 			Name:     "User",
@@ -1365,7 +1366,7 @@ func TestAuthService_Register(t *testing.T) {
 		svc, deps := newTestAuthService()
 		deps.userRepo.createErr = errors.New("db error")
 
-		_, err := svc.Register(context.Background(), app.RegisterInput{
+		_, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "user@example.com",
 			Password: "Password123!",
 			Name:     "User",
@@ -1381,7 +1382,7 @@ func TestAuthService_Register(t *testing.T) {
 		cfg.PasswordMinLength = 12
 		svc, _ := newTestAuthServiceWithConfig(cfg)
 
-		_, err := svc.Register(context.Background(), app.RegisterInput{
+		_, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "user@example.com",
 			Password: "short",
 			Name:     "User",
@@ -1395,7 +1396,7 @@ func TestAuthService_Register(t *testing.T) {
 	t.Run("name trimmed", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "user@example.com",
 			Password: "Password123!",
 			Name:     "  Trimmed Name  ",
@@ -1435,7 +1436,7 @@ func TestAuthService_Login(t *testing.T) {
 			{TenantID: shared.NewID().String(), TenantSlug: "my-team", TenantName: "My Team", Role: "owner"},
 		}
 
-		result, err := svc.Login(context.Background(), app.LoginInput{
+		result, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:     "login@example.com",
 			Password:  "ValidPassword123",
 			IPAddress: "10.0.0.1",
@@ -1468,12 +1469,12 @@ func TestAuthService_Login(t *testing.T) {
 	t.Run("user not found", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		_, err := svc.Login(context.Background(), app.LoginInput{
+		_, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "nouser@example.com",
 			Password: "Password123!",
 		})
 
-		if !errors.Is(err, app.ErrInvalidCredentials) {
+		if !errors.Is(err, auth.ErrInvalidCredentials) {
 			t.Errorf("expected ErrInvalidCredentials, got %v", err)
 		}
 	})
@@ -1482,12 +1483,12 @@ func TestAuthService_Login(t *testing.T) {
 		svc, deps := newTestAuthService()
 		_, _ = setupLoginUser(t, deps)
 
-		_, err := svc.Login(context.Background(), app.LoginInput{
+		_, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "login@example.com",
 			Password: "WrongPassword!",
 		})
 
-		if !errors.Is(err, app.ErrInvalidCredentials) {
+		if !errors.Is(err, auth.ErrInvalidCredentials) {
 			t.Errorf("expected ErrInvalidCredentials, got %v", err)
 		}
 		// Should record failed login attempt
@@ -1509,12 +1510,12 @@ func TestAuthService_Login(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthLockedUser(deps.userRepo, "locked@example.com", stateHash(t))
 
-		_, err := svc.Login(context.Background(), app.LoginInput{
+		_, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "locked@example.com",
 			Password: "Password123!",
 		})
 
-		if !errors.Is(err, app.ErrAccountLocked) {
+		if !errors.Is(err, auth.ErrAccountLocked) {
 			t.Errorf("expected ErrAccountLocked, got %v", err)
 		}
 	})
@@ -1523,12 +1524,12 @@ func TestAuthService_Login(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthSuspendedUser(deps.userRepo, "suspended@example.com", stateHash(t))
 
-		_, err := svc.Login(context.Background(), app.LoginInput{
+		_, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "suspended@example.com",
 			Password: "Password123!",
 		})
 
-		if !errors.Is(err, app.ErrAccountSuspended) {
+		if !errors.Is(err, auth.ErrAccountSuspended) {
 			t.Errorf("expected ErrAccountSuspended, got %v", err)
 		}
 	})
@@ -1543,11 +1544,11 @@ func TestAuthService_Login(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				svc, deps := newTestAuthService()
 				seed(deps.userRepo, "state@example.com", stateHash(t))
-				_, err := svc.Login(context.Background(), app.LoginInput{
+				_, err := svc.Login(context.Background(), auth.LoginInput{
 					Email:    "state@example.com",
 					Password: "WrongPassword!",
 				})
-				if !errors.Is(err, app.ErrInvalidCredentials) {
+				if !errors.Is(err, auth.ErrInvalidCredentials) {
 					t.Errorf("expected ErrInvalidCredentials, got %v", err)
 				}
 			})
@@ -1559,7 +1560,7 @@ func TestAuthService_Login(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthLockedUser(deps.userRepo, "locked2@example.com", stateHash(t))
 		before := deps.userRepo.updateCalls
-		_, _ = svc.Login(context.Background(), app.LoginInput{
+		_, _ = svc.Login(context.Background(), auth.LoginInput{
 			Email:    "locked2@example.com",
 			Password: "WrongPassword!",
 		})
@@ -1572,12 +1573,12 @@ func TestAuthService_Login(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthOIDCUser(deps.userRepo, "oidc@example.com")
 
-		_, err := svc.Login(context.Background(), app.LoginInput{
+		_, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "oidc@example.com",
 			Password: "Password123!",
 		})
 
-		if !errors.Is(err, app.ErrInvalidCredentials) {
+		if !errors.Is(err, auth.ErrInvalidCredentials) {
 			t.Errorf("expected ErrInvalidCredentials for OIDC user, got %v", err)
 		}
 	})
@@ -1590,12 +1591,12 @@ func TestAuthService_Login(t *testing.T) {
 		hash, _ := hasher.Hash("ValidPassword123")
 		seedAuthUnverifiedUser(deps.userRepo, "unverified@example.com", hash, "verify-token")
 
-		_, err := svc.Login(context.Background(), app.LoginInput{
+		_, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "unverified@example.com",
 			Password: "ValidPassword123",
 		})
 
-		if !errors.Is(err, app.ErrEmailNotVerified) {
+		if !errors.Is(err, auth.ErrEmailNotVerified) {
 			t.Errorf("expected ErrEmailNotVerified, got %v", err)
 		}
 	})
@@ -1605,7 +1606,7 @@ func TestAuthService_Login(t *testing.T) {
 		_, _ = setupLoginUser(t, deps)
 		deps.tenantRepo.userMemberships = []tenant.UserMembership{}
 
-		result, err := svc.Login(context.Background(), app.LoginInput{
+		result, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "  LOGIN@EXAMPLE.COM  ",
 			Password: "ValidPassword123",
 		})
@@ -1622,7 +1623,7 @@ func TestAuthService_Login(t *testing.T) {
 		svc, deps := newTestAuthService()
 		deps.userRepo.getByEmailForAuthErr = errors.New("db error")
 
-		_, err := svc.Login(context.Background(), app.LoginInput{
+		_, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "user@example.com",
 			Password: "Password123!",
 		})
@@ -1630,7 +1631,7 @@ func TestAuthService_Login(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error")
 		}
-		if errors.Is(err, app.ErrInvalidCredentials) {
+		if errors.Is(err, auth.ErrInvalidCredentials) {
 			t.Error("should not be ErrInvalidCredentials for db error")
 		}
 	})
@@ -1640,7 +1641,7 @@ func TestAuthService_Login(t *testing.T) {
 		_, _ = setupLoginUser(t, deps)
 		deps.sessionRepo.createErr = errors.New("db error")
 
-		_, err := svc.Login(context.Background(), app.LoginInput{
+		_, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "login@example.com",
 			Password: "ValidPassword123",
 		})
@@ -1655,7 +1656,7 @@ func TestAuthService_Login(t *testing.T) {
 		_, _ = setupLoginUser(t, deps)
 		deps.rtRepo.createErr = errors.New("db error")
 
-		_, err := svc.Login(context.Background(), app.LoginInput{
+		_, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "login@example.com",
 			Password: "ValidPassword123",
 		})
@@ -1670,7 +1671,7 @@ func TestAuthService_Login(t *testing.T) {
 		_, _ = setupLoginUser(t, deps)
 		deps.sessionRepo.countActiveErr = errors.New("db error")
 
-		_, err := svc.Login(context.Background(), app.LoginInput{
+		_, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "login@example.com",
 			Password: "ValidPassword123",
 		})
@@ -1690,7 +1691,7 @@ func TestAuthService_Login(t *testing.T) {
 		deps.sessionRepo.sessions[oldestSess.ID().String()] = oldestSess
 		deps.tenantRepo.userMemberships = []tenant.UserMembership{}
 
-		result, err := svc.Login(context.Background(), app.LoginInput{
+		result, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "login@example.com",
 			Password: "ValidPassword123",
 		})
@@ -1713,7 +1714,7 @@ func TestAuthService_Login(t *testing.T) {
 		_, _ = setupLoginUser(t, deps)
 		deps.tenantRepo.userMemberships = nil
 
-		result, err := svc.Login(context.Background(), app.LoginInput{
+		result, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "login@example.com",
 			Password: "ValidPassword123",
 		})
@@ -1832,7 +1833,7 @@ func TestAuthService_VerifyEmail(t *testing.T) {
 		svc, _ := newTestAuthService()
 
 		err := svc.VerifyEmail(context.Background(), "nonexistent-token")
-		if !errors.Is(err, app.ErrInvalidVerificationToken) {
+		if !errors.Is(err, auth.ErrInvalidVerificationToken) {
 			t.Errorf("expected ErrInvalidVerificationToken, got %v", err)
 		}
 	})
@@ -1842,7 +1843,7 @@ func TestAuthService_VerifyEmail(t *testing.T) {
 		seedAuthUserWithExpiredVerification(deps.userRepo, "expired@example.com", "hash", "expired-token")
 
 		err := svc.VerifyEmail(context.Background(), "expired-token")
-		if !errors.Is(err, app.ErrInvalidVerificationToken) {
+		if !errors.Is(err, auth.ErrInvalidVerificationToken) {
 			t.Errorf("expected ErrInvalidVerificationToken for expired token, got %v", err)
 		}
 	})
@@ -1878,7 +1879,7 @@ func TestAuthService_ForgotPassword(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthLocalUser(deps.userRepo, "user@example.com", "hash")
 
-		result, err := svc.ForgotPassword(context.Background(), app.ForgotPasswordInput{
+		result, err := svc.ForgotPassword(context.Background(), auth.ForgotPasswordInput{
 			Email: "user@example.com",
 		})
 
@@ -1899,7 +1900,7 @@ func TestAuthService_ForgotPassword(t *testing.T) {
 	t.Run("email not found returns empty result for anti-enumeration", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		result, err := svc.ForgotPassword(context.Background(), app.ForgotPasswordInput{
+		result, err := svc.ForgotPassword(context.Background(), auth.ForgotPasswordInput{
 			Email: "nonexistent@example.com",
 		})
 
@@ -1918,7 +1919,7 @@ func TestAuthService_ForgotPassword(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthOIDCUser(deps.userRepo, "oidc@example.com")
 
-		result, err := svc.ForgotPassword(context.Background(), app.ForgotPasswordInput{
+		result, err := svc.ForgotPassword(context.Background(), auth.ForgotPasswordInput{
 			Email: "oidc@example.com",
 		})
 
@@ -1934,7 +1935,7 @@ func TestAuthService_ForgotPassword(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthLocalUser(deps.userRepo, "user@example.com", "hash")
 
-		result, err := svc.ForgotPassword(context.Background(), app.ForgotPasswordInput{
+		result, err := svc.ForgotPassword(context.Background(), auth.ForgotPasswordInput{
 			Email: "  USER@EXAMPLE.COM  ",
 		})
 
@@ -1950,7 +1951,7 @@ func TestAuthService_ForgotPassword(t *testing.T) {
 		svc, deps := newTestAuthService()
 		deps.userRepo.getByEmailErr = errors.New("db error")
 
-		_, err := svc.ForgotPassword(context.Background(), app.ForgotPasswordInput{
+		_, err := svc.ForgotPassword(context.Background(), auth.ForgotPasswordInput{
 			Email: "user@example.com",
 		})
 
@@ -1964,7 +1965,7 @@ func TestAuthService_ForgotPassword(t *testing.T) {
 		seedAuthLocalUser(deps.userRepo, "user@example.com", "hash")
 		deps.userRepo.updateErr = errors.New("db error")
 
-		_, err := svc.ForgotPassword(context.Background(), app.ForgotPasswordInput{
+		_, err := svc.ForgotPassword(context.Background(), auth.ForgotPasswordInput{
 			Email: "user@example.com",
 		})
 
@@ -1983,7 +1984,7 @@ func TestAuthService_ResetPassword(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthUserWithResetToken(deps.userRepo, "user@example.com", "$2a$04$dummy", "reset-token-123")
 
-		err := svc.ResetPassword(context.Background(), app.ResetPasswordInput{
+		err := svc.ResetPassword(context.Background(), auth.ResetPasswordInput{
 			Token:       "reset-token-123",
 			NewPassword: "NewStrongPassword123!",
 		})
@@ -2006,12 +2007,12 @@ func TestAuthService_ResetPassword(t *testing.T) {
 	t.Run("invalid token", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		err := svc.ResetPassword(context.Background(), app.ResetPasswordInput{
+		err := svc.ResetPassword(context.Background(), auth.ResetPasswordInput{
 			Token:       "nonexistent-token",
 			NewPassword: "NewPassword123!",
 		})
 
-		if !errors.Is(err, app.ErrInvalidResetToken) {
+		if !errors.Is(err, auth.ErrInvalidResetToken) {
 			t.Errorf("expected ErrInvalidResetToken, got %v", err)
 		}
 	})
@@ -2020,12 +2021,12 @@ func TestAuthService_ResetPassword(t *testing.T) {
 		svc, deps := newTestAuthService()
 		seedAuthUserWithExpiredResetToken(deps.userRepo, "user@example.com", "hash", "expired-token")
 
-		err := svc.ResetPassword(context.Background(), app.ResetPasswordInput{
+		err := svc.ResetPassword(context.Background(), auth.ResetPasswordInput{
 			Token:       "expired-token",
 			NewPassword: "NewPassword123!",
 		})
 
-		if !errors.Is(err, app.ErrInvalidResetToken) {
+		if !errors.Is(err, auth.ErrInvalidResetToken) {
 			t.Errorf("expected ErrInvalidResetToken for expired token, got %v", err)
 		}
 	})
@@ -2036,7 +2037,7 @@ func TestAuthService_ResetPassword(t *testing.T) {
 		svc, deps := newTestAuthServiceWithConfig(cfg)
 		seedAuthUserWithResetToken(deps.userRepo, "user@example.com", "hash", "reset-token")
 
-		err := svc.ResetPassword(context.Background(), app.ResetPasswordInput{
+		err := svc.ResetPassword(context.Background(), auth.ResetPasswordInput{
 			Token:       "reset-token",
 			NewPassword: "short",
 		})
@@ -2050,14 +2051,14 @@ func TestAuthService_ResetPassword(t *testing.T) {
 		svc, deps := newTestAuthService()
 		deps.userRepo.getByPasswordResetTokenErr = errors.New("db error")
 
-		_, err := svc.ForgotPassword(context.Background(), app.ForgotPasswordInput{
+		_, err := svc.ForgotPassword(context.Background(), auth.ForgotPasswordInput{
 			Email: "user@example.com",
 		})
 
 		// This is testing ForgotPassword path, but let's test ResetPassword's GetByPasswordResetToken error
 		_ = err
 
-		err = svc.ResetPassword(context.Background(), app.ResetPasswordInput{
+		err = svc.ResetPassword(context.Background(), auth.ResetPasswordInput{
 			Token:       "any-token",
 			NewPassword: "NewPassword123!",
 		})
@@ -2071,7 +2072,7 @@ func TestAuthService_ResetPassword(t *testing.T) {
 		seedAuthUserWithResetToken(deps.userRepo, "user@example.com", "$2a$04$dummy", "reset-token")
 		deps.userRepo.updateErr = errors.New("db error")
 
-		err := svc.ResetPassword(context.Background(), app.ResetPasswordInput{
+		err := svc.ResetPassword(context.Background(), auth.ResetPasswordInput{
 			Token:       "reset-token",
 			NewPassword: "NewStrongPassword123!",
 		})
@@ -2093,7 +2094,7 @@ func TestAuthService_ChangePassword(t *testing.T) {
 		hash, _ := hasher.Hash("CurrentPassword123")
 		u := seedAuthLocalUser(deps.userRepo, "user@example.com", hash)
 
-		err := svc.ChangePassword(context.Background(), u.ID().String(), app.ChangePasswordInput{
+		err := svc.ChangePassword(context.Background(), u.ID().String(), auth.ChangePasswordInput{
 			CurrentPassword: "CurrentPassword123",
 			NewPassword:     "NewPassword456!",
 		})
@@ -2112,12 +2113,12 @@ func TestAuthService_ChangePassword(t *testing.T) {
 		hash, _ := hasher.Hash("CurrentPassword123")
 		u := seedAuthLocalUser(deps.userRepo, "user@example.com", hash)
 
-		err := svc.ChangePassword(context.Background(), u.ID().String(), app.ChangePasswordInput{
+		err := svc.ChangePassword(context.Background(), u.ID().String(), auth.ChangePasswordInput{
 			CurrentPassword: "WrongPassword!",
 			NewPassword:     "NewPassword456!",
 		})
 
-		if !errors.Is(err, app.ErrPasswordMismatch) {
+		if !errors.Is(err, auth.ErrPasswordMismatch) {
 			t.Errorf("expected ErrPasswordMismatch, got %v", err)
 		}
 	})
@@ -2126,7 +2127,7 @@ func TestAuthService_ChangePassword(t *testing.T) {
 		svc, deps := newTestAuthService()
 		u := seedAuthOIDCUser(deps.userRepo, "oidc@example.com")
 
-		err := svc.ChangePassword(context.Background(), u.ID().String(), app.ChangePasswordInput{
+		err := svc.ChangePassword(context.Background(), u.ID().String(), auth.ChangePasswordInput{
 			CurrentPassword: "whatever",
 			NewPassword:     "NewPassword456!",
 		})
@@ -2139,7 +2140,7 @@ func TestAuthService_ChangePassword(t *testing.T) {
 	t.Run("invalid user ID", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		err := svc.ChangePassword(context.Background(), "bad-uuid", app.ChangePasswordInput{
+		err := svc.ChangePassword(context.Background(), "bad-uuid", auth.ChangePasswordInput{
 			CurrentPassword: "current",
 			NewPassword:     "newpass",
 		})
@@ -2152,7 +2153,7 @@ func TestAuthService_ChangePassword(t *testing.T) {
 	t.Run("user not found", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		err := svc.ChangePassword(context.Background(), shared.NewID().String(), app.ChangePasswordInput{
+		err := svc.ChangePassword(context.Background(), shared.NewID().String(), auth.ChangePasswordInput{
 			CurrentPassword: "current",
 			NewPassword:     "newpass",
 		})
@@ -2170,7 +2171,7 @@ func TestAuthService_ChangePassword(t *testing.T) {
 		hash, _ := hasher.Hash("CurrentPassword123")
 		u := seedAuthLocalUser(deps.userRepo, "user@example.com", hash)
 
-		err := svc.ChangePassword(context.Background(), u.ID().String(), app.ChangePasswordInput{
+		err := svc.ChangePassword(context.Background(), u.ID().String(), auth.ChangePasswordInput{
 			CurrentPassword: "CurrentPassword123",
 			NewPassword:     "short",
 		})
@@ -2187,7 +2188,7 @@ func TestAuthService_ChangePassword(t *testing.T) {
 		u := seedAuthLocalUser(deps.userRepo, "user@example.com", hash)
 		deps.userRepo.updateErr = errors.New("db error")
 
-		err := svc.ChangePassword(context.Background(), u.ID().String(), app.ChangePasswordInput{
+		err := svc.ChangePassword(context.Background(), u.ID().String(), auth.ChangePasswordInput{
 			CurrentPassword: "CurrentPassword123",
 			NewPassword:     "NewPassword456!",
 		})
@@ -2258,12 +2259,12 @@ func TestAuthService_ExchangeToken(t *testing.T) {
 	t.Run("empty tenant ID", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		_, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
+		_, err := svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{
 			RefreshToken: "some-token",
 			TenantID:     "",
 		})
 
-		if !errors.Is(err, app.ErrTenantRequired) {
+		if !errors.Is(err, auth.ErrTenantRequired) {
 			t.Errorf("expected ErrTenantRequired, got %v", err)
 		}
 	})
@@ -2271,7 +2272,7 @@ func TestAuthService_ExchangeToken(t *testing.T) {
 	t.Run("invalid refresh token JWT", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		_, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
+		_, err := svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{
 			RefreshToken: "invalid-jwt",
 			TenantID:     shared.NewID().String(),
 		})
@@ -2290,12 +2291,12 @@ func TestAuthService_RefreshToken(t *testing.T) {
 	t.Run("empty tenant ID", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		_, err := svc.RefreshToken(context.Background(), app.RefreshTokenInput{
+		_, err := svc.RefreshToken(context.Background(), auth.RefreshTokenInput{
 			RefreshToken: "some-token",
 			TenantID:     "",
 		})
 
-		if !errors.Is(err, app.ErrTenantRequired) {
+		if !errors.Is(err, auth.ErrTenantRequired) {
 			t.Errorf("expected ErrTenantRequired, got %v", err)
 		}
 	})
@@ -2303,7 +2304,7 @@ func TestAuthService_RefreshToken(t *testing.T) {
 	t.Run("invalid refresh token JWT", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		_, err := svc.RefreshToken(context.Background(), app.RefreshTokenInput{
+		_, err := svc.RefreshToken(context.Background(), auth.RefreshTokenInput{
 			RefreshToken: "invalid-jwt",
 			TenantID:     shared.NewID().String(),
 		})
@@ -2338,12 +2339,12 @@ func mustNewEnforcedTenant(t *testing.T, repo *mockAuthTenantRepo, slug string, 
 // loginPassword performs a real password login and returns the raw global
 // refresh token + session id. Exercises the full session-creation path so the
 // stored session is stamped by the production code (default = password).
-func loginPassword(t *testing.T, svc *app.AuthService, deps *authTestDeps, email string) (refreshToken, sessionID string) {
+func loginPassword(t *testing.T, svc *auth.AuthService, deps *authTestDeps, email string) (refreshToken, sessionID string) {
 	t.Helper()
 	hasher := password.New(password.WithCost(4))
 	hash, _ := hasher.Hash("ValidPassword123")
 	seedAuthLocalUser(deps.userRepo, email, hash)
-	res, err := svc.Login(context.Background(), app.LoginInput{Email: email, Password: "ValidPassword123"})
+	res, err := svc.Login(context.Background(), auth.LoginInput{Email: email, Password: "ValidPassword123"})
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
@@ -2364,10 +2365,10 @@ func TestAuthService_ExchangeToken_SSOEnforcement(t *testing.T) {
 			t.Fatalf("login session auth method = %q, want password", got)
 		}
 
-		_, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
+		_, err := svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{
 			RefreshToken: rt, TenantID: tn.ID().String(),
 		})
-		if !errors.Is(err, app.ErrSSORequired) {
+		if !errors.Is(err, auth.ErrSSORequired) {
 			t.Fatalf("expected ErrSSORequired, got %v", err)
 		}
 	})
@@ -2380,7 +2381,7 @@ func TestAuthService_ExchangeToken_SSOEnforcement(t *testing.T) {
 		}
 		rt, _ := loginPassword(t, svc, deps, "owner@acme.com")
 
-		if _, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
+		if _, err := svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{
 			RefreshToken: rt, TenantID: tn.ID().String(),
 		}); err != nil {
 			t.Fatalf("owner break-glass must be allowed, got %v", err)
@@ -2399,7 +2400,7 @@ func TestAuthService_ExchangeToken_SSOEnforcement(t *testing.T) {
 		deps.sessionRepo.sessions[sessID].SetAuthMethod(session.AuthMethodSSO)
 		deps.sessionRepo.sessions[sessID].SetIDPTenant(tn.ID())
 
-		if _, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
+		if _, err := svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{
 			RefreshToken: rt, TenantID: tn.ID().String(),
 		}); err != nil {
 			t.Fatalf("SSO session must be allowed, got %v", err)
@@ -2414,7 +2415,7 @@ func TestAuthService_ExchangeToken_SSOEnforcement(t *testing.T) {
 		}
 		rt, _ := loginPassword(t, svc, deps, "member@open.com")
 
-		if _, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
+		if _, err := svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{
 			RefreshToken: rt, TenantID: tn.ID().String(),
 		}); err != nil {
 			t.Fatalf("non-enforced tenant must be unaffected, got %v", err)
@@ -2431,10 +2432,10 @@ func TestAuthService_RefreshToken_SSOEnforcement(t *testing.T) {
 		}
 		rt, _ := loginPassword(t, svc, deps, "member@refresh.com")
 
-		_, err := svc.RefreshToken(context.Background(), app.RefreshTokenInput{
+		_, err := svc.RefreshToken(context.Background(), auth.RefreshTokenInput{
 			RefreshToken: rt, TenantID: tn.ID().String(),
 		})
-		if !errors.Is(err, app.ErrSSORequired) {
+		if !errors.Is(err, auth.ErrSSORequired) {
 			t.Fatalf("expected ErrSSORequired on refresh, got %v", err)
 		}
 	})
@@ -2447,7 +2448,7 @@ func TestAuthService_RefreshToken_SSOEnforcement(t *testing.T) {
 		}
 		rt, _ := loginPassword(t, svc, deps, "owner@refresh.com")
 
-		if _, err := svc.RefreshToken(context.Background(), app.RefreshTokenInput{
+		if _, err := svc.RefreshToken(context.Background(), auth.RefreshTokenInput{
 			RefreshToken: rt, TenantID: tn.ID().String(),
 		}); err != nil {
 			t.Fatalf("owner refresh break-glass must be allowed, got %v", err)
@@ -2463,7 +2464,7 @@ func TestAuthService_CreateFirstTeam(t *testing.T) {
 	t.Run("invalid refresh token", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		_, err := svc.CreateFirstTeam(context.Background(), app.CreateFirstTeamInput{
+		_, err := svc.CreateFirstTeam(context.Background(), auth.CreateFirstTeamInput{
 			RefreshToken: "invalid-jwt",
 			TeamName:     "My Team",
 			TeamSlug:     "my-team",
@@ -2483,7 +2484,7 @@ func TestAuthService_AcceptInvitationWithRefreshToken(t *testing.T) {
 	t.Run("invalid refresh token", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		_, err := svc.AcceptInvitationWithRefreshToken(context.Background(), app.AcceptInvitationWithRefreshTokenInput{
+		_, err := svc.AcceptInvitationWithRefreshToken(context.Background(), auth.AcceptInvitationWithRefreshTokenInput{
 			RefreshToken:    "invalid-jwt",
 			InvitationToken: "invite-token",
 		})
@@ -2513,7 +2514,7 @@ func TestAuthService_CrossTenantIsolation(t *testing.T) {
 			{TenantID: tenant2ID, TenantSlug: "team-2", TenantName: "Team 2", Role: "member"},
 		}
 
-		result, err := svc.Login(context.Background(), app.LoginInput{
+		result, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "user@example.com",
 			Password: "ValidPassword123",
 		})
@@ -2545,7 +2546,7 @@ func TestAuthService_CrossTenantIsolation(t *testing.T) {
 		seedAuthLocalUser(deps.userRepo, "user@example.com", hash)
 		deps.tenantRepo.getUserMembershipsErr = errors.New("db error")
 
-		result, err := svc.Login(context.Background(), app.LoginInput{
+		result, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "user@example.com",
 			Password: "ValidPassword123",
 		})
@@ -2567,7 +2568,7 @@ func TestAuthService_ErrorPropagation(t *testing.T) {
 	testCases := []struct {
 		name        string
 		setup       func(deps *authTestDeps)
-		action      func(svc *app.AuthService) error
+		action      func(svc *auth.AuthService) error
 		expectError bool
 	}{
 		{
@@ -2575,8 +2576,8 @@ func TestAuthService_ErrorPropagation(t *testing.T) {
 			setup: func(deps *authTestDeps) {
 				deps.userRepo.createErr = errors.New("db write error")
 			},
-			action: func(svc *app.AuthService) error {
-				_, err := svc.Register(context.Background(), app.RegisterInput{
+			action: func(svc *auth.AuthService) error {
+				_, err := svc.Register(context.Background(), auth.RegisterInput{
 					Email: "user@example.com", Password: "Password123!", Name: "User",
 				})
 				return err
@@ -2589,7 +2590,7 @@ func TestAuthService_ErrorPropagation(t *testing.T) {
 				seedAuthUnverifiedUser(deps.userRepo, "u@example.com", "hash", "verify-token")
 				deps.userRepo.updateErr = errors.New("db update error")
 			},
-			action: func(svc *app.AuthService) error {
+			action: func(svc *auth.AuthService) error {
 				return svc.VerifyEmail(context.Background(), "verify-token")
 			},
 			expectError: true,
@@ -2600,8 +2601,8 @@ func TestAuthService_ErrorPropagation(t *testing.T) {
 				seedAuthLocalUser(deps.userRepo, "u@example.com", "hash")
 				deps.userRepo.updateErr = errors.New("db update error")
 			},
-			action: func(svc *app.AuthService) error {
-				_, err := svc.ForgotPassword(context.Background(), app.ForgotPasswordInput{Email: "u@example.com"})
+			action: func(svc *auth.AuthService) error {
+				_, err := svc.ForgotPassword(context.Background(), auth.ForgotPasswordInput{Email: "u@example.com"})
 				return err
 			},
 			expectError: true,
@@ -2611,8 +2612,8 @@ func TestAuthService_ErrorPropagation(t *testing.T) {
 			setup: func(_ *authTestDeps) {
 				// No user seeded, so GetByID will return ErrNotFound
 			},
-			action: func(svc *app.AuthService) error {
-				return svc.ChangePassword(context.Background(), shared.NewID().String(), app.ChangePasswordInput{
+			action: func(svc *auth.AuthService) error {
+				return svc.ChangePassword(context.Background(), shared.NewID().String(), auth.ChangePasswordInput{
 					CurrentPassword: "old",
 					NewPassword:     "newpassword123",
 				})
@@ -2643,7 +2644,7 @@ func TestAuthService_EdgeCases(t *testing.T) {
 
 		// Test with a very long but valid email
 		longEmail := "a@b.com"
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    longEmail,
 			Password: "Password123!",
 			Name:     "User",
@@ -2660,7 +2661,7 @@ func TestAuthService_EdgeCases(t *testing.T) {
 	t.Run("register with whitespace-only name still creates user", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		result, err := svc.Register(context.Background(), app.RegisterInput{
+		result, err := svc.Register(context.Background(), auth.RegisterInput{
 			Email:    "user@example.com",
 			Password: "Password123!",
 			Name:     "   ",
@@ -2704,7 +2705,7 @@ func TestAuthService_EdgeCases(t *testing.T) {
 		)
 		deps.userRepo.users[u.ID().String()] = u
 
-		err := svc.ChangePassword(context.Background(), u.ID().String(), app.ChangePasswordInput{
+		err := svc.ChangePassword(context.Background(), u.ID().String(), auth.ChangePasswordInput{
 			CurrentPassword: "anything",
 			NewPassword:     "NewPassword123!",
 		})
@@ -2724,7 +2725,7 @@ func TestAuthService_EdgeCases(t *testing.T) {
 		deps.tenantRepo.userMemberships = []tenant.UserMembership{}
 
 		// Should still succeed even if no oldest session is found
-		result, err := svc.Login(context.Background(), app.LoginInput{
+		result, err := svc.Login(context.Background(), auth.LoginInput{
 			Email:    "user@example.com",
 			Password: "ValidPassword123",
 		})
@@ -2740,7 +2741,7 @@ func TestAuthService_EdgeCases(t *testing.T) {
 	t.Run("forgot password with empty email after trim", func(t *testing.T) {
 		svc, _ := newTestAuthService()
 
-		result, err := svc.ForgotPassword(context.Background(), app.ForgotPasswordInput{
+		result, err := svc.ForgotPassword(context.Background(), auth.ForgotPasswordInput{
 			Email: "   ",
 		})
 
@@ -2810,7 +2811,7 @@ func TestAuthService_PasswordValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			svc, _ := newTestAuthServiceWithConfig(tc.cfg)
 
-			_, err := svc.Register(context.Background(), app.RegisterInput{
+			_, err := svc.Register(context.Background(), auth.RegisterInput{
 				Email:    "user@example.com",
 				Password: tc.password,
 				Name:     "User",
@@ -2843,7 +2844,7 @@ func (m *mockAuthAuditRepo) ApplyChainRebaseline(_ context.Context, _ audit.Chai
 // Register with self-registration OFF: only a matching invitation
 // =============================================================================
 
-func registrationOffWithInvitation(t *testing.T, invitedEmail string, allowedDomains ...string) (*app.AuthService, *authTestDeps, *tenant.Invitation) {
+func registrationOffWithInvitation(t *testing.T, invitedEmail string, allowedDomains ...string) (*auth.AuthService, *authTestDeps, *tenant.Invitation) {
 	t.Helper()
 	cfg := defaultAuthTestConfig()
 	cfg.AllowRegistration = false
@@ -2871,7 +2872,7 @@ func registrationOffWithInvitation(t *testing.T, invitedEmail string, allowedDom
 func TestAuthService_Register_RegistrationOff_InvitedEmailMayRegister(t *testing.T) {
 	svc, deps, inv := registrationOffWithInvitation(t, "invitee@corp.com")
 
-	result, err := svc.Register(context.Background(), app.RegisterInput{
+	result, err := svc.Register(context.Background(), auth.RegisterInput{
 		Email: "Invitee@Corp.com", Password: "Password123!", Name: "Invitee", InvitationToken: inv.Token(),
 	})
 	if err != nil {
@@ -2887,15 +2888,15 @@ func TestAuthService_Register_RegistrationOff_InvitedEmailMayRegister(t *testing
 }
 
 func TestAuthService_Register_RegistrationOff_Refusals(t *testing.T) {
-	cases := map[string]func(inv *tenant.Invitation) app.RegisterInput{
-		"no token": func(*tenant.Invitation) app.RegisterInput {
-			return app.RegisterInput{Email: "invitee@corp.com", Password: "Password123!", Name: "X"}
+	cases := map[string]func(inv *tenant.Invitation) auth.RegisterInput{
+		"no token": func(*tenant.Invitation) auth.RegisterInput {
+			return auth.RegisterInput{Email: "invitee@corp.com", Password: "Password123!", Name: "X"}
 		},
-		"unknown token": func(*tenant.Invitation) app.RegisterInput {
-			return app.RegisterInput{Email: "invitee@corp.com", Password: "Password123!", Name: "X", InvitationToken: "nope"}
+		"unknown token": func(*tenant.Invitation) auth.RegisterInput {
+			return auth.RegisterInput{Email: "invitee@corp.com", Password: "Password123!", Name: "X", InvitationToken: "nope"}
 		},
-		"token for another email": func(inv *tenant.Invitation) app.RegisterInput {
-			return app.RegisterInput{Email: "attacker@corp.com", Password: "Password123!", Name: "X", InvitationToken: inv.Token()}
+		"token for another email": func(inv *tenant.Invitation) auth.RegisterInput {
+			return auth.RegisterInput{Email: "attacker@corp.com", Password: "Password123!", Name: "X", InvitationToken: inv.Token()}
 		},
 	}
 	for name, build := range cases {
@@ -2905,7 +2906,7 @@ func TestAuthService_Register_RegistrationOff_Refusals(t *testing.T) {
 				deps.tenantRepo.invitations = nil
 			}
 			_, err := svc.Register(context.Background(), build(inv))
-			if !errors.Is(err, app.ErrRegistrationDisabled) {
+			if !errors.Is(err, auth.ErrRegistrationDisabled) {
 				t.Fatalf("expected the generic ErrRegistrationDisabled, got %v", err)
 			}
 			if deps.userRepo.createCalls != 0 {
@@ -2921,10 +2922,10 @@ func TestAuthService_Register_RegistrationOff_ExpiredInvitationRefused(t *testin
 		inv.Token(), inv.InvitedBy(), time.Now().Add(-time.Hour), nil, time.Now().Add(-8*24*time.Hour))
 	deps.tenantRepo.invitations = []*tenant.Invitation{expired}
 
-	_, err := svc.Register(context.Background(), app.RegisterInput{
+	_, err := svc.Register(context.Background(), auth.RegisterInput{
 		Email: "invitee@corp.com", Password: "Password123!", Name: "X", InvitationToken: inv.Token(),
 	})
-	if !errors.Is(err, app.ErrRegistrationDisabled) {
+	if !errors.Is(err, auth.ErrRegistrationDisabled) {
 		t.Fatalf("an expired invitation must not open registration, got %v", err)
 	}
 }
@@ -2932,10 +2933,10 @@ func TestAuthService_Register_RegistrationOff_ExpiredInvitationRefused(t *testin
 func TestAuthService_Register_RegistrationOff_AllowedDomainsEnforced(t *testing.T) {
 	svc, deps, inv := registrationOffWithInvitation(t, "invitee@other.com", "corp.com")
 
-	_, err := svc.Register(context.Background(), app.RegisterInput{
+	_, err := svc.Register(context.Background(), auth.RegisterInput{
 		Email: "invitee@other.com", Password: "Password123!", Name: "X", InvitationToken: inv.Token(),
 	})
-	if !errors.Is(err, app.ErrRegistrationDisabled) {
+	if !errors.Is(err, auth.ErrRegistrationDisabled) {
 		t.Fatalf("an invitation outside the organization's allowed domains must not open registration, got %v", err)
 	}
 	if deps.userRepo.createCalls != 0 {
@@ -2950,8 +2951,8 @@ func TestAuthService_Register_RegistrationOff_AllowedDomainsEnforced(t *testing.
 func TestAuthService_ResetPassword_RepoInvalidTokenErrorIsInvalidResetToken(t *testing.T) {
 	svc, deps := newTestAuthService()
 	deps.userRepo.getByPasswordResetTokenErr = user.ErrInvalidPasswordResetToken
-	err := svc.ResetPassword(context.Background(), app.ResetPasswordInput{Token: "used", NewPassword: "Password123!"})
-	if !errors.Is(err, app.ErrInvalidResetToken) {
+	err := svc.ResetPassword(context.Background(), auth.ResetPasswordInput{Token: "used", NewPassword: "Password123!"})
+	if !errors.Is(err, auth.ErrInvalidResetToken) {
 		t.Fatalf("expected ErrInvalidResetToken, got %v", err)
 	}
 }

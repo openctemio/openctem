@@ -23,8 +23,8 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -49,7 +49,7 @@ type v2Harness struct {
 	jobs     *postgres.IngestJobRepository
 	proc     *ingest.V2JobProcessor
 	ingest   *ingest.Service
-	sensors  *app.SensorService
+	sensors  *sensor.SensorService
 	jwtToken string
 }
 
@@ -78,7 +78,7 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 	log := logger.NewNop()
 
 	sensorRepo := postgres.NewSensorRepository(db)
-	sensorSvc := app.NewSensorService(sensorRepo, nil, log)
+	sensorSvc := sensor.NewSensorService(sensorRepo, nil, log)
 	sensorSvc.SetAPIKeyRepository(postgres.NewSensorAPIKeyRepository(db))
 	ingestSvc := ingest.NewService(
 		postgres.NewAssetRepository(db), postgres.NewFindingRepository(db),
@@ -124,7 +124,7 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 		_, _ = sqldb.ExecContext(context.Background(), `DELETE FROM ingest_reports WHERE tenant_id = $1`, tenantID.String())
 		_, _ = sqldb.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantID.String())
 	})
-	out, err := sensorSvc.CreateSensor(ctx, app.CreateSensorInput{TenantID: tenantID.String(), Name: "v2-sensor",
+	out, err := sensorSvc.CreateSensor(ctx, sensor.CreateSensorInput{TenantID: tenantID.String(), Name: "v2-sensor",
 		Type: "worker", Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "daemon"})
 	if err != nil {
 		t.Fatalf("create sensor: %v", err)

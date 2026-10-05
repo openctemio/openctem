@@ -17,9 +17,10 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	findingsvc "github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -87,14 +88,14 @@ func TestFindingAssign_AssigneeMustBeActiveMember_DB(t *testing.T) {
 	exec(`UPDATE findings SET assigned_to = $1 WHERE id = $2`, outsider, legacy)
 
 	db := &postgres.DB{DB: raw}
-	svc := app.NewVulnerabilityService(nil, postgres.NewFindingRepository(db), logger.NewNop())
+	svc := findingsvc.NewVulnerabilityService(nil, postgres.NewFindingRepository(db), logger.NewNop())
 	svc.SetDataScope(datascope.New(postgres.NewDataScopeRepository(db), nil, logger.NewNop()))
 	userRepo := postgres.NewUserRepository(db)
 	svc.SetUserRepository(userRepo)
 	svc.SetActivityService(activity.NewFindingActivityService(postgres.NewFindingActivityRepository(db), postgres.NewFindingRepository(db), logger.NewNop()))
 	svc.SetAssigneeChecker(postgres.NewAccessControlRepository(db))
 	h := NewVulnerabilityHandler(svc, validator.New(), logger.NewNop())
-	h.SetUserService(app.NewUserService(userRepo, logger.NewNop()))
+	h.SetUserService(tenant.NewUserService(userRepo, logger.NewNop()))
 
 	req := func(method, id, body string) *http.Request {
 		r := httptest.NewRequest(method, "/", strings.NewReader(body))

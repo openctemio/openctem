@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -195,18 +194,17 @@ type sensorRepoWithoutLiveness struct{ sensor.Repository }
 func TestUpdateHeartbeat_StoresFollowedInterval(t *testing.T) {
 	cases := []struct {
 		name string
-		data app.SensorHeartbeatData
+		data sensorapp.SensorHeartbeatData
 		want time.Duration
 	}{
-		{"ignores hints", app.SensorHeartbeatData{AdvisedSeconds: 30}, 60 * time.Second},
-		{"follows the advice", app.SensorHeartbeatData{AdvisedSeconds: 30, DoorbellAware: true}, 30 * time.Second},
-		{"reports its interval", app.SensorHeartbeatData{Control: &sensor.ControlReport{IntervalSeconds: 20}}, 20 * time.Second},
-		{"fresh longer advice wins over the report",
-			app.SensorHeartbeatData{Control: &sensor.ControlReport{IntervalSeconds: 5}, AdvisedSeconds: 45, DoorbellAware: true}, 45 * time.Second},
+		{"ignores hints", sensorapp.SensorHeartbeatData{AdvisedSeconds: 30}, 60 * time.Second},
+		{"follows the advice", sensorapp.SensorHeartbeatData{AdvisedSeconds: 30, DoorbellAware: true}, 30 * time.Second},
+		{"reports its interval", sensorapp.SensorHeartbeatData{Control: &sensor.ControlReport{IntervalSeconds: 20}}, 20 * time.Second},
+		{"fresh longer advice wins over the report", sensorapp.SensorHeartbeatData{Control: &sensor.ControlReport{IntervalSeconds: 5}, AdvisedSeconds: 45, DoorbellAware: true}, 45 * time.Second},
 	}
 	for _, c := range cases {
 		repo := newSensorSvcMockRepo()
-		svc := app.NewSensorService(repo, nil, logger.NewNop())
+		svc := sensorapp.NewSensorService(repo, nil, logger.NewNop())
 		a := repo.seedSensor(shared.NewID(), "s", sensor.SensorTypeWorker)
 		if err := svc.UpdateHeartbeat(context.Background(), a.ID, c.data); err != nil {
 			t.Fatalf("%s: %v", c.name, err)
@@ -226,10 +224,10 @@ func TestUpdateHeartbeat_LateIsNotAReconnect(t *testing.T) {
 	for _, h := range []sensor.SensorHealth{sensor.SensorHealthLate, sensor.SensorHealthStale, sensor.SensorHealthOffline} {
 		auditSvc, auditRepo := newTestAuditService()
 		repo := newSensorSvcMockRepo()
-		svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
+		svc := sensorapp.NewSensorService(repo, auditSvc, logger.NewNop())
 		a := repo.seedSensor(shared.NewID(), "s", sensor.SensorTypeWorker)
 		a.Health = h
-		if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{}); err != nil {
+		if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorapp.SensorHeartbeatData{}); err != nil {
 			t.Fatal(err)
 		}
 		want := 0

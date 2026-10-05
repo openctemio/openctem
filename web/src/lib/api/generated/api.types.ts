@@ -9553,7 +9553,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialListResult']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialListResult']
           }
         }
         /** @description Unauthorized */
@@ -9604,7 +9604,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem']
           }
         }
         /** @description Unauthorized */
@@ -9671,7 +9671,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem']
           }
         }
         /** @description Bad Request */
@@ -9736,7 +9736,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem']
           }
         }
         /** @description Bad Request */
@@ -9796,7 +9796,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem']
           }
         }
         /** @description Bad Request */
@@ -9854,7 +9854,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem'][]
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'][]
           }
         }
         /** @description Unauthorized */
@@ -9921,7 +9921,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialItem']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem']
           }
         }
         /** @description Bad Request */
@@ -10113,7 +10113,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.IdentityListResult']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.IdentityListResult']
           }
         }
         /** @description Unauthorized */
@@ -10169,7 +10169,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.CredentialListResult']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialListResult']
           }
         }
         /** @description Unauthorized */
@@ -17568,7 +17568,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.GetNotificationEventsResult']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.GetNotificationEventsResult']
           }
         }
         /** @description Bad request */
@@ -31844,7 +31844,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.MFAStatus']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.MFAStatus']
           }
         }
         /** @description Unauthorized */
@@ -34636,56 +34636,6 @@ export interface components {
       /** @description Vulnerable code pattern */
       vulnerable_pattern?: string
     }
-    'github_com_openctemio_openctem_api_internal_app.CredentialItem': {
-      credential_type?: string
-      details?: {
-        [key: string]: unknown
-      }
-      first_seen_at?: string
-      has_secret?: boolean
-      id?: string
-      identifier?: string
-      is_revoked?: boolean
-      is_verified?: boolean
-      last_seen_at?: string
-      secret_fingerprint?: string
-      secret_masked?: string
-      severity?: string
-      source?: string
-      state?: string
-    }
-    'github_com_openctemio_openctem_api_internal_app.CredentialListResult': {
-      items?: components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'][]
-      page?: number
-      page_size?: number
-      total?: number
-      total_pages?: number
-    }
-    'github_com_openctemio_openctem_api_internal_app.GetNotificationEventsResult': {
-      data?: components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.NotificationEventEntry'][]
-      limit?: number
-      offset?: number
-      total?: number
-    }
-    'github_com_openctemio_openctem_api_internal_app.IdentityListResult': {
-      items?: components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure'][]
-      page?: number
-      page_size?: number
-      total?: number
-      total_pages?: number
-    }
-    'github_com_openctemio_openctem_api_internal_app.MFAStatus': {
-      enabled?: boolean
-      enabled_at?: string
-      recovery_codes_remaining?: number
-      /**
-       * @description RequiredByOrganization is true when any organization the user belongs
-       *     to requires 2FA.
-       */
-      required_by_organization?: boolean
-      /** @description Supported is false for federated accounts (2FA is the IdP's job). */
-      supported?: boolean
-    }
     'github_com_openctemio_openctem_api_internal_app.ProgramMetrics': {
       /**
        * @description MTTDInternetFacing — mean time to detect new internet-facing assets.
@@ -34733,19 +34683,6 @@ export interface components {
       owner_acceptance?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.OwnerAcceptanceMetric']
       period_days?: number
     }
-    'github_com_openctemio_openctem_api_internal_app.ProviderInfo': {
-      enabled?: boolean
-      id?: string
-      name?: string
-    }
-    'github_com_openctemio_openctem_api_internal_app.SessionInfo': {
-      created_at?: string
-      id?: string
-      ip_address?: string
-      is_current?: boolean
-      last_activity_at?: string
-      user_agent?: string
-    }
     'github_com_openctemio_openctem_api_internal_app.TemplateSigningKey': {
       algorithm?: string
       key_id?: string
@@ -34777,6 +34714,31 @@ export interface components {
       logged_at?: string
       offset_ns?: number
       position?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_auth.MFAStatus': {
+      enabled?: boolean
+      enabled_at?: string
+      recovery_codes_remaining?: number
+      /**
+       * @description RequiredByOrganization is true when any organization the user belongs
+       *     to requires 2FA.
+       */
+      required_by_organization?: boolean
+      /** @description Supported is false for federated accounts (2FA is the IdP's job). */
+      supported?: boolean
+    }
+    'github_com_openctemio_openctem_api_internal_app_auth.ProviderInfo': {
+      enabled?: boolean
+      id?: string
+      name?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_auth.SessionInfo': {
+      created_at?: string
+      id?: string
+      ip_address?: string
+      is_current?: boolean
+      last_activity_at?: string
+      user_agent?: string
     }
     'github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock': {
       candidate?: number
@@ -34917,6 +34879,19 @@ export interface components {
       source?: string
       state?: string
     }
+    'github_com_openctemio_openctem_api_internal_app_integration.CredentialListResult': {
+      items?: components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'][]
+      page?: number
+      page_size?: number
+      total?: number
+      total_pages?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_integration.GetNotificationEventsResult': {
+      data?: components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.NotificationEventEntry'][]
+      limit?: number
+      offset?: number
+      total?: number
+    }
     'github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure': {
       credential_types?: string[]
       exposure_count?: number
@@ -34932,6 +34907,13 @@ export interface components {
       states?: {
         [key: string]: number
       }
+    }
+    'github_com_openctemio_openctem_api_internal_app_integration.IdentityListResult': {
+      items?: components['schemas']['github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure'][]
+      page?: number
+      page_size?: number
+      total?: number
+      total_pages?: number
     }
     'github_com_openctemio_openctem_api_internal_app_integration.NotificationEventEntry': {
       aggregate_id?: string
@@ -39141,7 +39123,7 @@ export interface components {
       updated_at?: string
     }
     'internal_infra_http_handler.ProvidersResponse': {
-      providers?: components['schemas']['github_com_openctemio_openctem_api_internal_app.ProviderInfo'][]
+      providers?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.ProviderInfo'][]
     }
     'internal_infra_http_handler.ProvisionedUserInfo': {
       email?: string
@@ -40637,7 +40619,7 @@ export interface components {
       rules?: components['schemas']['internal_infra_http_handler.SensorSuppressionRule'][]
     }
     'internal_infra_http_handler.SessionsResponse': {
-      sessions?: components['schemas']['github_com_openctemio_openctem_api_internal_app.SessionInfo'][]
+      sessions?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.SessionInfo'][]
     }
     'internal_infra_http_handler.SetSyncEnabledRequest': {
       enabled?: boolean

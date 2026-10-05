@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	app "github.com/openctemio/openctem/api/internal/app"
+	assetsvc "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -35,7 +35,7 @@ func TestCreateAsset_ResolvesSubTypeInputs(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.typ+"/"+c.sub+c.propSub, func(t *testing.T) {
 			svc, _ := newTestService()
-			in := app.CreateAssetInput{
+			in := assetsvc.CreateAssetInput{
 				TenantID: serviceTenantID.String(), Name: "asset-" + c.typ + c.sub + c.propSub,
 				Type: c.typ, SubType: c.sub, Criticality: "medium",
 			}
@@ -76,7 +76,7 @@ func TestCreateAsset_RejectsUnknownTypesAndSubTypes(t *testing.T) {
 	}
 	for _, c := range cases {
 		svc, repo := newTestService()
-		in := app.CreateAssetInput{TenantID: serviceTenantID.String(), Name: "bad-" + c.typ + c.sub, Type: c.typ, SubType: c.sub, Criticality: "low"}
+		in := assetsvc.CreateAssetInput{TenantID: serviceTenantID.String(), Name: "bad-" + c.typ + c.sub, Type: c.typ, SubType: c.sub, Criticality: "low"}
 		if c.propType != "" {
 			in.Properties = map[string]any{"type": c.propType}
 			a, err := svc.CreateAsset(context.Background(), in)
@@ -100,14 +100,14 @@ func TestCreateAsset_RejectsUnknownTypesAndSubTypes(t *testing.T) {
 // request field would be refused for.
 func TestCreateAsset_PropertiesTypeAliasIsValidatedLikeTheField(t *testing.T) {
 	svc, repo := newTestService()
-	_, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, err := svc.CreateAsset(context.Background(), assetsvc.CreateAssetInput{
 		TenantID: serviceTenantID.String(), Name: "fw-x", Type: "host", Criticality: "low",
 		Properties: map[string]any{"type": "firewall", "sub_type": "router"},
 	})
 	if !errors.Is(err, shared.ErrValidation) || len(repo.assets) != 0 {
 		t.Fatalf("contradicting alias + sub_type accepted: %v", err)
 	}
-	a, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	a, err := svc.CreateAsset(context.Background(), assetsvc.CreateAssetInput{
 		TenantID: serviceTenantID.String(), Name: "fw-y", Type: "host", Criticality: "low",
 		Properties: map[string]any{"type": "firewall"},
 	})
@@ -119,33 +119,33 @@ func TestCreateAsset_PropertiesTypeAliasIsValidatedLikeTheField(t *testing.T) {
 func TestUpdateAsset_SubType(t *testing.T) {
 	svc, _ := newTestService()
 	tenant := serviceTenantID.String()
-	a, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{TenantID: tenant, Name: "orders-db", Type: "database", Criticality: "high"})
+	a, err := svc.CreateAsset(context.Background(), assetsvc.CreateAssetInput{TenantID: tenant, Name: "orders-db", Type: "database", Criticality: "high"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ptr := func(s string) *string { return &s }
 
 	// a legacy value of the same type is mapped
-	got, err := svc.UpdateAsset(context.Background(), a.ID().String(), tenant, app.UpdateAssetInput{SubType: ptr("MySQL")})
+	got, err := svc.UpdateAsset(context.Background(), a.ID().String(), tenant, assetsvc.UpdateAssetInput{SubType: ptr("MySQL")})
 	if err != nil || got.SubType() != "relational" || got.Properties()["engine"] != "mysql" {
 		t.Fatalf("legacy sub-type: %v, %+v", err, got)
 	}
 	// a value outside the closed list is refused and changes nothing
-	if _, err := svc.UpdateAsset(context.Background(), a.ID().String(), tenant, app.UpdateAssetInput{SubType: ptr("lan")}); !errors.Is(err, shared.ErrValidation) {
+	if _, err := svc.UpdateAsset(context.Background(), a.ID().String(), tenant, assetsvc.UpdateAssetInput{SubType: ptr("lan")}); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("unknown sub-type: %v", err)
 	}
 	// a legacy value that maps to another type cannot change the type
 	// (host/kubernetes_cluster is stored as kubernetes/cluster)
-	h, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{TenantID: tenant, Name: "node-1", Type: "host", Criticality: "low"})
+	h, err := svc.CreateAsset(context.Background(), assetsvc.CreateAssetInput{TenantID: tenant, Name: "node-1", Type: "host", Criticality: "low"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = svc.UpdateAsset(context.Background(), h.ID().String(), tenant, app.UpdateAssetInput{SubType: ptr("kubernetes_cluster")})
+	_, err = svc.UpdateAsset(context.Background(), h.ID().String(), tenant, assetsvc.UpdateAssetInput{SubType: ptr("kubernetes_cluster")})
 	if !errors.Is(err, shared.ErrValidation) || !strings.Contains(err.Error(), "cannot be changed") || h.Type() != asset.AssetTypeHost {
 		t.Fatalf("cross-type sub-type: %v", err)
 	}
 	// "" clears
-	got, err = svc.UpdateAsset(context.Background(), a.ID().String(), tenant, app.UpdateAssetInput{SubType: ptr("")})
+	got, err = svc.UpdateAsset(context.Background(), a.ID().String(), tenant, assetsvc.UpdateAssetInput{SubType: ptr("")})
 	if err != nil || got.SubType() != "" {
 		t.Fatalf("clear: %v, %q", err, got.SubType())
 	}
@@ -155,12 +155,12 @@ func TestUpdateAsset_SubType(t *testing.T) {
 // is not found, whatever the sub-type.
 func TestUpdateAsset_SubType_OtherTenantNotFound(t *testing.T) {
 	svc, _ := newTestService()
-	a, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{TenantID: serviceTenantID.String(), Name: "net-a", Type: "network", Criticality: "low"})
+	a, err := svc.CreateAsset(context.Background(), assetsvc.CreateAssetInput{TenantID: serviceTenantID.String(), Name: "net-a", Type: "network", Criticality: "low"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	sub := "firewall"
-	_, err = svc.UpdateAsset(context.Background(), a.ID().String(), shared.NewID().String(), app.UpdateAssetInput{SubType: &sub})
+	_, err = svc.UpdateAsset(context.Background(), a.ID().String(), shared.NewID().String(), assetsvc.UpdateAssetInput{SubType: &sub})
 	if err == nil {
 		t.Fatal("updated another tenant's asset")
 	}
@@ -171,7 +171,7 @@ func TestUpdateAsset_SubType_OtherTenantNotFound(t *testing.T) {
 
 func TestImportCSV_ResolvesAliasesAndRejectsUnknownSubTypes(t *testing.T) {
 	repo := NewMockAssetRepository()
-	svc := app.NewAssetImportService(repo, logger.NewNop())
+	svc := assetsvc.NewAssetImportService(repo, logger.NewNop())
 	csv := "name,type,sub_type\n" +
 		"https://shop.example.com,website,\n" +
 		"orders-db,database,postgresql\n" +
@@ -203,10 +203,10 @@ func TestImportCSV_ResolvesAliasesAndRejectsUnknownSubTypes(t *testing.T) {
 
 func TestImportKubernetes_StoresKubernetesTypes(t *testing.T) {
 	repo := NewMockAssetRepository()
-	svc := app.NewAssetImportService(repo, logger.NewNop())
-	_, err := svc.ImportKubernetes(context.Background(), serviceTenantID.String(), app.K8sDiscoveryInput{
+	svc := assetsvc.NewAssetImportService(repo, logger.NewNop())
+	_, err := svc.ImportKubernetes(context.Background(), serviceTenantID.String(), assetsvc.K8sDiscoveryInput{
 		ClusterName: "prod",
-		Namespaces:  []app.K8sNamespace{{Name: "shop", Workloads: []app.K8sWorkload{{Kind: "Deployment", Name: "web"}}}},
+		Namespaces:  []assetsvc.K8sNamespace{{Name: "shop", Workloads: []assetsvc.K8sWorkload{{Kind: "Deployment", Name: "web"}}}},
 	})
 	if err != nil {
 		t.Fatal(err)

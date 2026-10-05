@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorsvc "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -22,13 +22,13 @@ import (
 func TestUpdateHeartbeat_LogsConnectOnOfflineToOnlineTransition(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
-	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
+	svc := sensorsvc.NewSensorService(repo, auditSvc, logger.NewNop())
 
 	tenantID := shared.NewID()
 	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOffline // previously offline
 
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{Version: "1.0.0"}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorsvc.SensorHeartbeatData{Version: "1.0.0"}); err != nil {
 		t.Fatalf("UpdateHeartbeat: %v", err)
 	}
 
@@ -53,13 +53,13 @@ func TestUpdateHeartbeat_LogsConnectOnOfflineToOnlineTransition(t *testing.T) {
 func TestUpdateHeartbeat_NoConnectLogOnSteadyStateHeartbeat(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
-	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
+	svc := sensorsvc.NewSensorService(repo, auditSvc, logger.NewNop())
 
 	tenantID := shared.NewID()
 	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOnline // already online — a normal recurring heartbeat
 
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{Version: "1.0.0"}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorsvc.SensorHeartbeatData{Version: "1.0.0"}); err != nil {
 		t.Fatalf("UpdateHeartbeat: %v", err)
 	}
 
@@ -71,21 +71,21 @@ func TestUpdateHeartbeat_NoConnectLogOnSteadyStateHeartbeat(t *testing.T) {
 func TestUpdateHeartbeat_ConnectLogsOnceThenGoesQuiet(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
-	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
+	svc := sensorsvc.NewSensorService(repo, auditSvc, logger.NewNop())
 
 	tenantID := shared.NewID()
 	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOffline
 
 	// First heartbeat is the transition -> one connect event.
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorsvc.SensorHeartbeatData{}); err != nil {
 		t.Fatalf("UpdateHeartbeat #1: %v", err)
 	}
 	// Second and third heartbeats are steady-state -> no further events.
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorsvc.SensorHeartbeatData{}); err != nil {
 		t.Fatalf("UpdateHeartbeat #2: %v", err)
 	}
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorsvc.SensorHeartbeatData{}); err != nil {
 		t.Fatalf("UpdateHeartbeat #3: %v", err)
 	}
 
@@ -97,13 +97,13 @@ func TestUpdateHeartbeat_ConnectLogsOnceThenGoesQuiet(t *testing.T) {
 func TestUpdateHeartbeat_NoConnectLogForPlatformSensor(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
-	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
+	svc := sensorsvc.NewSensorService(repo, auditSvc, logger.NewNop())
 
 	a := repo.seedSensor(shared.NewID(), "platform-sensor", sensor.SensorTypeWorker)
 	a.TenantID = nil // platform sensor — shared infra, no owning tenant
 	a.Health = sensor.SensorHealthOffline
 
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorsvc.SensorHeartbeatData{}); err != nil {
 		t.Fatalf("UpdateHeartbeat: %v", err)
 	}
 

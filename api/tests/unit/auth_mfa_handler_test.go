@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -21,7 +21,7 @@ import (
 )
 
 func newMFAHandler(h *mfaHarness) *handler.LocalAuthHandler {
-	sess := app.NewSessionService(h.sessions, newMockAuthRefreshTokenRepo(), logger.NewNop())
+	sess := auth.NewSessionService(h.sessions, newMockAuthRefreshTokenRepo(), logger.NewNop())
 	return handler.NewLocalAuthHandler(h.svc, sess, nil, nil, defaultAuthTestConfig(), logger.NewNop())
 }
 

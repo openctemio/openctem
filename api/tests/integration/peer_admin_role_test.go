@@ -12,6 +12,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -177,7 +178,7 @@ func TestAdminPromotion_OwnerOnly(t *testing.T) {
 	})
 
 	pg := &postgres.DB{DB: db}
-	svc := app.NewTenantService(postgres.NewTenantRepository(pg), logger.NewNop())
+	svc := tenant.NewTenantService(postgres.NewTenantRepository(pg), logger.NewNop())
 	asAdmin := app.AuditContext{TenantID: tenantID, ActorID: admin}
 	asOwner := app.AuditContext{TenantID: tenantID, ActorID: owner}
 	forbidden := func(what string, err error) {
@@ -194,7 +195,7 @@ func TestAdminPromotion_OwnerOnly(t *testing.T) {
 		return r
 	}
 
-	_, err = svc.UpdateMemberRole(ctx, viewerMembership, app.UpdateMemberRoleInput{Role: "admin"}, asAdmin)
+	_, err = svc.UpdateMemberRole(ctx, viewerMembership, tenant.UpdateMemberRoleInput{Role: "admin"}, asAdmin)
 	forbidden("admin promotes a viewer to admin", err)
 	if got := roleOf(viewerMembership); got != "viewer" {
 		t.Fatalf("viewer's role changed to %s", got)
@@ -202,20 +203,20 @@ func TestAdminPromotion_OwnerOnly(t *testing.T) {
 
 	outsiderID, _ := shared.IDFromString(outsider)
 	adminID, _ := shared.IDFromString(admin)
-	_, err = svc.AddMember(ctx, tenantID, app.AddMemberInput{UserID: outsiderID, Role: "admin"}, adminID, asAdmin)
+	_, err = svc.AddMember(ctx, tenantID, tenant.AddMemberInput{UserID: outsiderID, Role: "admin"}, adminID, asAdmin)
 	forbidden("admin adds someone as admin", err)
 
-	_, err = svc.CreateInvitation(ctx, tenantID, app.CreateInvitationInput{
+	_, err = svc.CreateInvitation(ctx, tenantID, tenant.CreateInvitationInput{
 		Email: "ap-invite-" + tenantID[:8] + "@it.test", RoleIDs: []string{"00000000-0000-0000-0000-000000000002"},
 	}, adminID, asAdmin)
 	forbidden("admin invites someone as admin", err)
 
 	// Administrators still manage members and viewers.
-	if _, err := svc.UpdateMemberRole(ctx, viewerMembership, app.UpdateMemberRoleInput{Role: "member"}, asAdmin); err != nil {
+	if _, err := svc.UpdateMemberRole(ctx, viewerMembership, tenant.UpdateMemberRoleInput{Role: "member"}, asAdmin); err != nil {
 		t.Fatalf("admin re-roles a viewer to member: %v", err)
 	}
 	// The owner promotes.
-	if _, err := svc.UpdateMemberRole(ctx, viewerMembership, app.UpdateMemberRoleInput{Role: "admin"}, asOwner); err != nil {
+	if _, err := svc.UpdateMemberRole(ctx, viewerMembership, tenant.UpdateMemberRoleInput{Role: "admin"}, asOwner); err != nil {
 		t.Fatalf("owner promotes to admin: %v", err)
 	}
 	if got := roleOf(viewerMembership); got != "admin" {

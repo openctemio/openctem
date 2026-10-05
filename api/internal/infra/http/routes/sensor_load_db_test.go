@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -253,14 +253,14 @@ func TestSensorLoad_SelectionUsesReportedFreeSlots(t *testing.T) {
 		t.Fatalf("picked %v (err %v), want the fast sensor with free slots", picked, err)
 	}
 
-	sel, err := h.selector().SelectSensor(ctx, app.SelectSensorRequest{TenantID: tid, Capabilities: nil, Tool: "semgrep", AllowQueue: true})
+	sel, err := h.selector().SelectSensor(ctx, sensor.SelectSensorRequest{TenantID: tid, Capabilities: nil, Tool: "semgrep", AllowQueue: true})
 	if err != nil || sel.Sensor == nil || sel.Sensor.ID.String() == full.id {
 		t.Fatalf("selector picked %+v (err %v); a sensor without a free slot must be skipped", sel, err)
 	}
 
 	report(slow, 0, 1)
 	report(fast, 0, 30)
-	sel, err = h.selector().SelectSensor(ctx, app.SelectSensorRequest{TenantID: tid, Capabilities: nil, Tool: "semgrep", AllowQueue: true})
+	sel, err = h.selector().SelectSensor(ctx, sensor.SelectSensorRequest{TenantID: tid, Capabilities: nil, Tool: "semgrep", AllowQueue: true})
 	if err != nil || sel.Sensor != nil || !sel.Queued || !sel.TenantBusy {
 		t.Fatalf("every sensor busy: got %+v (err %v), want queued for the busy tenant", sel, err)
 	}

@@ -17,7 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -30,7 +30,7 @@ import (
 type sensorSuppressionsEnv struct {
 	t       *testing.T
 	db      *sql.DB
-	sensors *app.SensorService
+	sensors *sensor.SensorService
 	enabled map[string]bool // tenant -> suppressions module enabled (default true)
 	srv     *httptest.Server
 }
@@ -53,7 +53,7 @@ func newSensorSuppressionsEnv(t *testing.T) *sensorSuppressionsEnv {
 	log := logger.NewNop()
 
 	sensorRepo := postgres.NewSensorRepository(db)
-	sensorSvc := app.NewSensorService(sensorRepo, nil, log)
+	sensorSvc := sensor.NewSensorService(sensorRepo, nil, log)
 	sensorSvc.SetAPIKeyRepository(postgres.NewSensorAPIKeyRepository(db))
 	ih := NewIngestHandler(nil, sensorSvc, log)
 	sh := NewSuppressionHandler(suppression.NewService(postgres.NewSuppressionRepository(db), log), log)
@@ -99,7 +99,7 @@ func (e *sensorSuppressionsEnv) tenant(label string) (string, string, string) {
 		exec(`INSERT INTO suppression_rules (tenant_id, rule_id, tool_name, name, status, requested_by, expires_at)
 		      VALUES ($1, $2, 'semgrep', $2, $3, $4, `+rule.expiry+`)`, tenantID, rule.ruleID, rule.status, userID)
 	}
-	out, err := e.sensors.CreateSensor(ctx, app.CreateSensorInput{
+	out, err := e.sensors.CreateSensor(ctx, sensor.CreateSensorInput{
 		TenantID: tenantID, Name: label + "-sensor", Type: "worker",
 		Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "daemon",
 	})

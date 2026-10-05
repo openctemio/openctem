@@ -28,9 +28,12 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -134,12 +137,12 @@ func newDSHarness(t *testing.T) *dsHarness {
 	findingRepo := postgres.NewFindingRepository(db)
 	accessRepo := postgres.NewAccessControlRepository(db)
 
-	assetSvc := app.NewAssetService(assetRepo, log)
+	assetSvc := asset.NewAssetService(assetRepo, log)
 	assetSvc.SetAccessControlRepository(accessRepo)
 	assetSvc.SetDataScope(enforcer)
 	assetSvc.SetRepositoryExtensionRepository(postgres.NewRepositoryExtensionRepository(db))
 
-	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
+	vulnSvc := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
 	vulnSvc.SetAccessControlRepository(accessRepo)
 	vulnSvc.SetAssigneeChecker(accessRepo)
@@ -147,7 +150,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	vulnSvc.SetAssetRepository(assetRepo)
 	vulnSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 
-	groupSvc := app.NewAssetGroupService(postgres.NewAssetGroupRepository(db), log)
+	groupSvc := asset.NewAssetGroupService(postgres.NewAssetGroupRepository(db), log)
 	groupSvc.SetDataScope(enforcer)
 
 	surfaceSvc := attack.NewSurfaceService(assetRepo, postgres.NewAssetRelationshipRepository(db), log)
@@ -163,7 +166,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
 	})
 
-	notifSvc := app.NewNotificationService(postgres.NewNotificationRepository(db), nil, log)
+	notifSvc := integration.NewNotificationService(postgres.NewNotificationRepository(db), nil, log)
 	notifSvc.SetDataScope(enforcer)
 
 	// The guard is installed on the token-tenant chain exactly as Register does.
@@ -176,7 +179,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	assetHandler := handler.NewAssetHandler(assetSvc, v, log)
 	assetHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	registerAssetRoutes(router, assetHandler, auth, nil)
-	importHandler := handler.NewAssetImportHandler(app.NewAssetImportService(assetRepo, log), nil, log)
+	importHandler := handler.NewAssetImportHandler(asset.NewAssetImportService(assetRepo, log), nil, log)
 	importHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	registerAssetImportRoutes(router, importHandler, auth, nil)
 	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, v, log), nil, nil, nil, auth, nil)
@@ -191,9 +194,9 @@ func newDSHarness(t *testing.T) *dsHarness {
 	relRepo := postgres.NewAssetRelationshipRepository(db)
 	svcHandler := handler.NewAssetServiceHandler(postgres.NewAssetServiceRepository(db), assetRepo, v, log).SetDataScope(enforcer)
 	historyHandler := handler.NewAssetStateHistoryHandler(postgres.NewAssetStateHistoryRepository(db), assetRepo, v, log).SetDataScope(enforcer)
-	relSvc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+	relSvc := asset.NewAssetRelationshipService(relRepo, assetRepo, log)
 	relSvc.SetDataScope(enforcer)
-	suggSvc := app.NewRelationshipSuggestionService(postgres.NewRelationshipSuggestionRepository(db), assetRepo, relRepo, log)
+	suggSvc := asset.NewRelationshipSuggestionService(postgres.NewRelationshipSuggestionRepository(db), assetRepo, relRepo, log)
 	suggSvc.SetDataScope(enforcer)
 	dedupHandler := handler.NewAdminDedupHandler(postgres.NewAssetDedupRepository(db), log).SetDataScope(enforcer)
 	registerAssetServiceRoutes(router, svcHandler, auth, nil)

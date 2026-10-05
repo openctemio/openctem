@@ -22,7 +22,9 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -103,12 +105,12 @@ func TestAdminOrgSSOChangesReachOrganizationAuditLog(t *testing.T) {
 	log := logger.NewNop()
 	auditSvc := app.NewAuditService(postgres.NewAuditRepository(pg), log)
 	tenantRepo := postgres.NewTenantRepository(pg)
-	sso := app.NewSSOService(postgres.NewIdentityProviderRepository(pg), tenantRepo, postgres.NewUserRepository(pg),
+	sso := auth.NewSSOService(postgres.NewIdentityProviderRepository(pg), tenantRepo, postgres.NewUserRepository(pg),
 		postgres.NewSessionRepository(db), postgres.NewRefreshTokenRepository(db), crypto.NewNoOpEncryptor(),
 		config.AuthConfig{JWTSecret: strings.Repeat("s", 64), JWTIssuer: "it"}, log)
 	resolver := &txtResolver{}
 	domains := domainverify.NewService(postgres.NewVerifiedDomainRepository(pg), resolver, log)
-	saml := app.NewSAMLService(postgres.NewSAMLProviderRepository(pg), tenantRepo, sso, log)
+	saml := auth.NewSAMLService(postgres.NewSAMLProviderRepository(pg), tenantRepo, sso, log)
 
 	ssoH := handler.NewSSOHandler(sso, log)
 	ssoH.SetAuditService(auditSvc)
@@ -118,7 +120,7 @@ func TestAdminOrgSSOChangesReachOrganizationAuditLog(t *testing.T) {
 	samlH.SetAuditService(auditSvc)
 	// Admin-console SSO changes go through the owner-approval service (RFC-022
 	// revision 8). The test organization has no owner, so they apply directly.
-	ssoChanges := app.NewSSOChangeService(postgres.NewSSOChangeRepository(pg), saml, sso, tenantRepo, tenantRepo, log)
+	ssoChanges := auth.NewSSOChangeService(postgres.NewSSOChangeRepository(pg), saml, sso, tenantRepo, tenantRepo, log)
 	samlH.SetChangeApproval(ssoChanges)
 	ssoH.SetChangeApproval(ssoChanges)
 
@@ -270,7 +272,7 @@ func TestCreatedOrgUserReportsEffectiveRole(t *testing.T) {
 	tenantRepo := postgres.NewTenantRepository(pg)
 	roles := app.NewRoleService(postgres.NewRoleRepository(pg), postgres.NewPermissionRepository(pg), log,
 		app.WithRoleMembershipReader(tenantRepo))
-	svc := app.NewUserProvisioningService(tenantRepo, postgres.NewUserRepository(pg), roles, nil, nil, log)
+	svc := tenant.NewUserProvisioningService(tenantRepo, postgres.NewUserRepository(pg), roles, nil, nil, log)
 
 	for _, tc := range []struct{ roleID, want string }{
 		{"00000000-0000-0000-0000-000000000002", "admin"},
@@ -278,7 +280,7 @@ func TestCreatedOrgUserReportsEffectiveRole(t *testing.T) {
 		{"00000000-0000-0000-0000-000000000004", "viewer"},
 	} {
 		email := "role-" + tc.want + "-" + uuid.NewString()[:8] + "@created.example.test"
-		res, err := svc.CreateUser(ctx, app.CreateUserInput{
+		res, err := svc.CreateUser(ctx, tenant.CreateUserInput{
 			TenantID: tenantID, Email: email, Name: "Created", RoleIDs: []string{tc.roleID},
 		}, app.AuditContext{ActorEmail: "platform-admin:ops@platform.example.test"})
 		if err != nil {

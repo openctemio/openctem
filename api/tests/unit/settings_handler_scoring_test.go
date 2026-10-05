@@ -9,7 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetsvc "github.com/openctemio/openctem/api/internal/app/asset"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -37,7 +38,7 @@ func withTeamContext(req *http.Request, tenantID shared.ID) *http.Request {
 func newTenantHandlerForScoring(repo *mockTenantRepo) *handler.TenantHandler {
 	log := logger.NewNop()
 	v := validator.New()
-	svc := app.NewTenantService(repo, log)
+	svc := tenantsvc.NewTenantService(repo, log)
 	return handler.NewTenantHandler(svc, v, log)
 }
 
@@ -288,7 +289,7 @@ func TestRiskScoringHandler_Preview_InvalidConfig_Returns400(t *testing.T) {
 	assetRepo := &scoringHandlerMockAssetRepo{
 		MockAssetRepository: MockAssetRepository{assets: make(map[string]*asset.Asset)},
 	}
-	assetSvc := app.NewAssetService(assetRepo, logger.NewNop())
+	assetSvc := assetsvc.NewAssetService(assetRepo, logger.NewNop())
 	h.SetAssetService(assetSvc)
 
 	invalid := invalidWeightsSettings()
@@ -587,7 +588,7 @@ func TestRiskScoringHandler_TeamIDKey_IsLoggerContextKey(t *testing.T) {
 
 func newHandlerWithAssetService(tenantRepo *mockTenantRepo, assetRepo *scoringHandlerMockAssetRepo) *handler.TenantHandler {
 	h := newTenantHandlerForScoring(tenantRepo)
-	assetSvc := app.NewAssetService(assetRepo, logger.NewNop())
+	assetSvc := assetsvc.NewAssetService(assetRepo, logger.NewNop())
 	// Wire a scoring config provider so preview can compute new scores
 	legacyCfg := asset.LegacyRiskScoringConfig()
 	assetSvc.SetScoringConfigProvider(&mockScoringConfigProvider{config: &legacyCfg})
@@ -630,9 +631,9 @@ func TestRiskScoringHandler_Preview_ReturnsDeltas(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var resp struct {
-		Assets      []app.RiskScorePreviewItem `json:"assets"`
-		SampleCount int                        `json:"sample_count"`
-		TotalAssets int                        `json:"total_assets"`
+		Assets      []assetsvc.RiskScorePreviewItem `json:"assets"`
+		SampleCount int                             `json:"sample_count"`
+		TotalAssets int                             `json:"total_assets"`
 	}
 	err := json.Unmarshal(rr.Body.Bytes(), &resp)
 	require.NoError(t, err)

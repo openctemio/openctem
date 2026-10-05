@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorsvc "github.com/openctemio/openctem/api/internal/app/sensor"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -21,7 +21,7 @@ import (
 // legacyFixtureKey is a fake rda_ key in the legacy format (rda_ + 64 hex).
 var legacyFixtureKey = "rda_" + strings.Repeat("0f", 32)
 
-func seedLegacySensor(repo *sensorSvcMockRepo, svc *app.SensorService) *sensor.Sensor {
+func seedLegacySensor(repo *sensorSvcMockRepo, svc *sensorsvc.SensorService) *sensor.Sensor {
 	a := repo.seedSensor(shared.NewID(), "legacy-sensor", sensor.SensorTypeWorker)
 	a.SetAPIKey(hashForTest(svc, legacyFixtureKey), legacyFixtureKey[:12])
 	return a
@@ -47,7 +47,7 @@ func TestSensorKey_LegacyRDAKeyStillAuthenticates(t *testing.T) {
 func TestSensorKey_NewOCTSKeyAuthenticates(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	svc := newSensorSvcTestService(repo)
-	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+	out, err := svc.CreateSensor(context.Background(), sensorsvc.CreateSensorInput{
 		TenantID: shared.NewID().String(), Name: "octs-sensor", Type: "worker",
 	})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestSensorKey_NewOCTSKeyAuthenticates(t *testing.T) {
 func TestSensorKey_MalformedOCTSRejectedBeforeLookup(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	svc := newSensorSvcTestService(repo)
-	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+	out, err := svc.CreateSensor(context.Background(), sensorsvc.CreateSensorInput{
 		TenantID: shared.NewID().String(), Name: "octs-sensor", Type: "worker",
 	})
 	if err != nil {
@@ -100,7 +100,7 @@ func TestSensorKey_MalformedOCTSRejectedBeforeLookup(t *testing.T) {
 func TestSensorKey_RenewalFromLegacyIsAudited(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
-	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
+	svc := sensorsvc.NewSensorService(repo, auditSvc, logger.NewNop())
 	seedLegacySensor(repo, svc)
 
 	id, err := svc.AuthenticateIdentity(context.Background(), legacyFixtureKey)

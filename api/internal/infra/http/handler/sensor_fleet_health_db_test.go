@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -29,9 +29,7 @@ type fleetHarness struct {
 func newFleetHarness(t *testing.T, policy sensordom.HealthPolicy) *fleetHarness {
 	t.Helper()
 	h := newV1Harness(t)
-	sh := NewSensorHandler(
-		app.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop()),
-		validator.New(), logger.NewNop())
+	sh := NewSensorHandler(sensor.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop()), validator.New(), logger.NewNop())
 	sh.SetHealthPolicy(policy)
 	return &fleetHarness{v1Harness: h, sh: sh}
 }

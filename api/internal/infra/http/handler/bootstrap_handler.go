@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -24,7 +25,7 @@ type BootstrapHandler struct {
 	permCacheSvc   *app.PermissionCacheService
 	permVersionSvc *app.PermissionVersionService
 	moduleSvc      *app.ModuleService
-	tenantSvc      *app.TenantService
+	tenantSvc      *tenantsvc.TenantService
 	logger         *logger.Logger
 }
 
@@ -33,7 +34,7 @@ func NewBootstrapHandler(
 	permCacheSvc *app.PermissionCacheService,
 	permVersionSvc *app.PermissionVersionService,
 	moduleSvc *app.ModuleService,
-	tenantSvc *app.TenantService,
+	tenantSvc *tenantsvc.TenantService,
 	log *logger.Logger,
 ) *BootstrapHandler {
 	return &BootstrapHandler{

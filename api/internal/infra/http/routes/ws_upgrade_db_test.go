@@ -21,7 +21,7 @@ import (
 	gws "github.com/gorilla/websocket"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -105,7 +105,7 @@ func newWSUpgradeHarness(t *testing.T) *wsUpgradeHarness {
 		// Registered so the test can show /auth/ws-token is gone.
 		LocalAuth: handler.NewLocalAuthHandler(nil, nil, nil, nil, cfg.Auth, log),
 		WebSocket: websocket.NewHandler(hub, log, []string{wsUIOrigin}, config.EnvProduction),
-	}, cfg, log, authCfg, tenantRepo, app.NewUserService(userRepo, log), nil, nil, nil)
+	}, cfg, log, authCfg, tenantRepo, tenantsvc.NewUserService(userRepo, log), nil, nil, nil)
 
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)

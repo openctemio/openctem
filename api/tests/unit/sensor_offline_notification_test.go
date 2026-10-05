@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	sensorsvc "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -124,12 +124,12 @@ func TestSensorOfflineIsInTheEventTypeCatalog(t *testing.T) {
 func TestUpdateHeartbeat_StoresClientIPAndUsesItInConnectAudit(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
-	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
+	svc := sensorsvc.NewSensorService(repo, auditSvc, logger.NewNop())
 
 	a := repo.seedSensor(shared.NewID(), "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOffline
 
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{IPAddress: "203.0.113.7"}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorsvc.SensorHeartbeatData{IPAddress: "203.0.113.7"}); err != nil {
 		t.Fatalf("UpdateHeartbeat: %v", err)
 	}
 	if !a.IPAddress.Equal(net.ParseIP("203.0.113.7")) {
@@ -148,13 +148,13 @@ func TestUpdateHeartbeat_StoresClientIPAndUsesItInConnectAudit(t *testing.T) {
 func TestUpdateHeartbeat_InvalidIPKeepsStoredAddress(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
-	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
+	svc := sensorsvc.NewSensorService(repo, auditSvc, logger.NewNop())
 
 	a := repo.seedSensor(shared.NewID(), "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOffline
 	a.IPAddress = net.ParseIP("198.51.100.4")
 
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{IPAddress: "not-an-ip"}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorsvc.SensorHeartbeatData{IPAddress: "not-an-ip"}); err != nil {
 		t.Fatalf("UpdateHeartbeat: %v", err)
 	}
 	if !a.IPAddress.Equal(net.ParseIP("198.51.100.4")) {

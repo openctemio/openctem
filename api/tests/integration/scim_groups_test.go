@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/scim"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/scimgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -26,7 +27,7 @@ func (a scimMemberMgr) UpdateMemberRole(ctx context.Context, tenantID, membershi
 	if actorID != nil {
 		actx = app.AuditContext{TenantID: tenantID.String(), ActorID: actorID.String()}
 	}
-	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, actx)
+	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), tenant.UpdateMemberRoleInput{Role: role}, actx)
 	return err
 }
 
@@ -66,7 +67,7 @@ func TestSCIMGroups_RoleMapping_RealDB(t *testing.T) {
 
 	userRepo := postgres.NewUserRepository(db)
 	tenantRepo := postgres.NewTenantRepository(db)
-	tenantSvc := app.NewTenantService(tenantRepo, log)
+	tenantSvc := tenant.NewTenantService(tenantRepo, log)
 	mgr := scimMemberMgr{svc: tenantSvc}
 	prov := scim.NewProvisioningService(userRepo, tenantRepo, mgr, log)
 	groupSvc := scim.NewGroupService(postgres.NewScimGroupRepository(db), tenantRepo, mgr, log)
@@ -156,7 +157,7 @@ func TestSCIMGroups_ConfigurableMapping_RealDB(t *testing.T) {
 
 	userRepo := postgres.NewUserRepository(db)
 	tenantRepo := postgres.NewTenantRepository(db)
-	tenantSvc := app.NewTenantService(tenantRepo, log)
+	tenantSvc := tenant.NewTenantService(tenantRepo, log)
 	mgr := scimMemberMgr{svc: tenantSvc}
 	prov := scim.NewProvisioningService(userRepo, tenantRepo, mgr, log)
 	groupSvc := scim.NewGroupService(postgres.NewScimGroupRepository(db), tenantRepo, mgr, log)
@@ -279,7 +280,7 @@ func TestSCIMGroups_AdminMappingOwnerOnly_RealDB(t *testing.T) {
 
 	tenantRepo := postgres.NewTenantRepository(db)
 	auditSvc := app.NewAuditService(postgres.NewAuditRepository(db), log)
-	tenantSvc := app.NewTenantService(tenantRepo, log, app.WithTenantAuditService(auditSvc))
+	tenantSvc := tenant.NewTenantService(tenantRepo, log, tenant.WithTenantAuditService(auditSvc))
 	groupSvc := scim.NewGroupService(postgres.NewScimGroupRepository(db), tenantRepo, scimMemberMgr{svc: tenantSvc}, log)
 	groupSvc.SetAuditService(auditSvc)
 

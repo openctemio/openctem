@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	integrationsvc "github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
@@ -31,7 +31,7 @@ func (h *IntegrationHandler) SetTenableSCConnector(svc *tenablesc.Service) { h.c
 
 // IntegrationHandler handles integration-related HTTP requests.
 type IntegrationHandler struct {
-	service              *app.IntegrationService
+	service              *integrationsvc.IntegrationService
 	connector            *tenablesc.Service
 	validator            *validator.Validator
 	logger               *logger.Logger
@@ -143,7 +143,7 @@ func (rl *testNotificationRateLimiter) cleanup() {
 }
 
 // NewIntegrationHandler creates a new integration handler.
-func NewIntegrationHandler(svc *app.IntegrationService, v *validator.Validator, log *logger.Logger) *IntegrationHandler {
+func NewIntegrationHandler(svc *integrationsvc.IntegrationService, v *validator.Validator, log *logger.Logger) *IntegrationHandler {
 	return &IntegrationHandler{
 		service:              svc,
 		validator:            v,
@@ -580,7 +580,7 @@ func (h *IntegrationHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	query := r.URL.Query()
-	input := app.ListIntegrationsInput{
+	input := integrationsvc.ListIntegrationsInput{
 		TenantID:  tenantID,
 		Category:  query.Get("category"),
 		Provider:  query.Get("provider"),
@@ -698,7 +698,7 @@ func (h *IntegrationHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateIntegrationInput{
+	input := integrationsvc.CreateIntegrationInput{
 		TenantID:        tenantID,
 		Name:            req.Name,
 		Description:     req.Description,
@@ -827,7 +827,7 @@ func (h *IntegrationHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateIntegrationInput{
+	input := integrationsvc.UpdateIntegrationInput{
 		Name:            req.Name,
 		Description:     req.Description,
 		Credentials:     req.Credentials,
@@ -966,7 +966,7 @@ func (h *IntegrationHandler) TestCredentials(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	result, err := h.service.TestIntegrationCredentials(r.Context(), app.TestIntegrationCredentialsInput{
+	result, err := h.service.TestIntegrationCredentials(r.Context(), integrationsvc.TestIntegrationCredentialsInput{
 		Category:        req.Category,
 		Provider:        req.Provider,
 		BaseURL:         req.BaseURL,
@@ -1181,7 +1181,7 @@ func (h *IntegrationHandler) ListRepositories(w http.ResponseWriter, r *http.Req
 	}
 
 	query := r.URL.Query()
-	input := app.IntegrationListReposInput{
+	input := integrationsvc.IntegrationListReposInput{
 		IntegrationID: id,
 		TenantID:      tenantID,
 		Search:        query.Get("search"),
@@ -1389,7 +1389,7 @@ func (h *IntegrationHandler) CreateNotification(w http.ResponseWriter, r *http.R
 		minInterval = *req.MinIntervalMinutes
 	}
 
-	input := app.CreateNotificationIntegrationInput{
+	input := integrationsvc.CreateNotificationIntegrationInput{
 		TenantID:           tenantID,
 		Name:               req.Name,
 		Description:        req.Description,
@@ -1477,7 +1477,7 @@ func (h *IntegrationHandler) UpdateNotification(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	input := app.UpdateNotificationIntegrationInput{
+	input := integrationsvc.UpdateNotificationIntegrationInput{
 		Name:               req.Name,
 		Description:        req.Description,
 		Credentials:        req.Credentials,
@@ -1616,7 +1616,7 @@ func (h *IntegrationHandler) SendNotification(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	result, err := h.service.SendNotification(r.Context(), app.SendNotificationInput{
+	result, err := h.service.SendNotification(r.Context(), integrationsvc.SendNotificationInput{
 		IntegrationID: id,
 		TenantID:      tenantID,
 		Title:         req.Title,
@@ -1648,7 +1648,7 @@ func (h *IntegrationHandler) SendNotification(w http.ResponseWriter, r *http.Req
 // @Param        id      path      string  true   "Integration ID"  format(uuid)
 // @Param        limit   query     int     false  "Maximum number of entries to return"  default(50) minimum(1) maximum(100)
 // @Param        offset  query     int     false  "Number of entries to skip"  default(0) minimum(0)
-// @Success      200     {object}  app.GetNotificationEventsResult  "Notification events with pagination"
+// @Success      200     {object}  integrationsvc.GetNotificationEventsResult  "Notification events with pagination"
 // @Failure      400     {object}  map[string]string  "Bad request"
 // @Failure      401     {object}  map[string]string  "Unauthorized"
 // @Failure      403     {object}  map[string]string  "Forbidden"
@@ -1669,7 +1669,7 @@ func (h *IntegrationHandler) GetNotificationEvents(w http.ResponseWriter, r *htt
 	limit := parseQueryInt(query.Get("limit"), 50)
 	offset := parseQueryInt(query.Get("offset"), 0)
 
-	result, err := h.service.GetNotificationEvents(r.Context(), app.GetNotificationEventsInput{
+	result, err := h.service.GetNotificationEvents(r.Context(), integrationsvc.GetNotificationEventsInput{
 		IntegrationID: id,
 		TenantID:      tenantID,
 		Limit:         limit,
@@ -1816,7 +1816,7 @@ func (h *IntegrationHandler) ImportRepositories(w http.ResponseWriter, r *http.R
 	tenantID := middleware.MustGetTenantID(r.Context())
 	integrationID := r.PathValue("id")
 
-	result, err := h.service.ImportSCMRepositories(r.Context(), app.ImportReposInput{
+	result, err := h.service.ImportSCMRepositories(r.Context(), integrationsvc.ImportReposInput{
 		IntegrationID:   integrationID,
 		TenantID:        tenantID,
 		IncludeArchived: r.URL.Query().Get("include_archived") == queryParamTrue,

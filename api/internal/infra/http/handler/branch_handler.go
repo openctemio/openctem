@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
@@ -17,14 +17,14 @@ import (
 
 // BranchHandler handles branch-related HTTP requests.
 type BranchHandler struct {
-	service      *app.BranchService
-	assetService *app.AssetService // for tenant ownership validation (S-2)
+	service      *asset.BranchService
+	assetService *asset.AssetService // for tenant ownership validation (S-2)
 	validator    *validator.Validator
 	logger       *logger.Logger
 }
 
 // NewBranchHandler creates a new branch handler.
-func NewBranchHandler(svc *app.BranchService, v *validator.Validator, log *logger.Logger) *BranchHandler {
+func NewBranchHandler(svc *asset.BranchService, v *validator.Validator, log *logger.Logger) *BranchHandler {
 	return &BranchHandler{
 		service:   svc,
 		validator: v,
@@ -34,7 +34,7 @@ func NewBranchHandler(svc *app.BranchService, v *validator.Validator, log *logge
 
 // SetAssetService wires the asset service used for repository ownership checks
 // (S-2: branch handler must verify the URL repo belongs to caller's tenant).
-func (h *BranchHandler) SetAssetService(svc *app.AssetService) {
+func (h *BranchHandler) SetAssetService(svc *asset.AssetService) {
 	h.assetService = svc
 }
 
@@ -218,7 +218,7 @@ func (h *BranchHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
-	input := app.ListBranchesInput{
+	input := asset.ListBranchesInput{
 		RepositoryID: repositoryID,
 		Name:         query.Get("name"),
 		BranchTypes:  parseQueryArray(query.Get("types")),
@@ -294,7 +294,7 @@ func (h *BranchHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateBranchInput{
+	input := asset.CreateBranchInput{
 		RepositoryID:  repositoryID,
 		Name:          req.Name,
 		BranchType:    req.BranchType,
@@ -390,7 +390,7 @@ func (h *BranchHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateBranchInput{
+	input := asset.UpdateBranchInput{
 		IsProtected:            req.IsProtected,
 		LastCommitSHA:          req.LastCommitSHA,
 		LastCommitMessage:      req.LastCommitMessage,

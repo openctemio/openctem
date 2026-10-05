@@ -7,7 +7,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -18,10 +18,10 @@ import (
 func TestAssetCreateConflict_IngestStillMerges(t *testing.T) {
 	f := newRenameFixture(t, "create-vs-ingest")
 	ctx := context.Background()
-	svc := app.NewAssetService(postgres.NewAssetRepository(&postgres.DB{DB: f.db}), logger.NewNop())
+	svc := asset.NewAssetService(postgres.NewAssetRepository(&postgres.DB{DB: f.db}), logger.NewNop())
 
 	const name = "dup-ingest.example.internal"
-	created, err := svc.CreateAsset(ctx, app.CreateAssetInput{
+	created, err := svc.CreateAsset(ctx, asset.CreateAssetInput{
 		TenantID: f.tenant.String(), Name: name, Type: "host", Criticality: "high",
 	})
 	if err != nil {
@@ -29,10 +29,10 @@ func TestAssetCreateConflict_IngestStillMerges(t *testing.T) {
 	}
 
 	// A second create is a conflict naming the asset (no data scope wired).
-	_, err = svc.CreateAsset(ctx, app.CreateAssetInput{
+	_, err = svc.CreateAsset(ctx, asset.CreateAssetInput{
 		TenantID: f.tenant.String(), Name: name, Type: "host", Criticality: "low",
 	})
-	var dup *app.DuplicateAssetError
+	var dup *asset.DuplicateAssetError
 	if !errors.As(err, &dup) || dup.ExistingID != created.ID() {
 		t.Fatalf("second create error = %v, want a conflict naming %s", err, created.ID())
 	}

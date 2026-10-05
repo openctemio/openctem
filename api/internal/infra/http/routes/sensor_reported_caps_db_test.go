@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
+	sensorsvc "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -26,7 +26,7 @@ import (
 
 func (h *ctlHarness) newLimitedSensor(tenantID, name string, tools, caps []string, maxJobs int) ctlSensor {
 	h.t.Helper()
-	out, err := h.sensors.CreateSensor(context.Background(), app.CreateSensorInput{TenantID: tenantID, Name: name,
+	out, err := h.sensors.CreateSensor(context.Background(), sensorsvc.CreateSensorInput{TenantID: tenantID, Name: name,
 		Type: "worker", Capabilities: caps, Tools: tools, ExecutionMode: "daemon", MaxConcurrentJobs: maxJobs})
 	if err != nil {
 		h.t.Fatalf("create sensor: %v", err)
@@ -68,8 +68,8 @@ func (h *ctlHarness) load(s ctlSensor) *sensor.Sensor {
 	return got
 }
 
-func (h *ctlHarness) selector() *app.SensorSelector {
-	return app.NewSensorSelector(h.repo, nil, nil, logger.NewNop())
+func (h *ctlHarness) selector() *sensorsvc.SensorSelector {
+	return sensorsvc.NewSensorSelector(h.repo, nil, nil, logger.NewNop())
 }
 
 func ids(ss []*sensor.Sensor) []string {
@@ -113,7 +113,7 @@ func TestReportedCaps_DispatchByReportedTool(t *testing.T) {
 	if want := []string{a.id}; !slices.Equal(ids(nuclei), want) {
 		t.Fatalf("nuclei candidates %v, want only A %v (B lacks the tool)", ids(nuclei), want)
 	}
-	res, err := h.selector().SelectSensor(ctx, app.SelectSensorRequest{TenantID: tid, Capabilities: []string{"nuclei"}, Tool: "nuclei"})
+	res, err := h.selector().SelectSensor(ctx, sensorsvc.SelectSensorRequest{TenantID: tid, Capabilities: []string{"nuclei"}, Tool: "nuclei"})
 	if err != nil || res.Sensor == nil || res.Sensor.ID.String() != a.id {
 		t.Fatalf("selector picked %+v, %v; want A", res, err)
 	}

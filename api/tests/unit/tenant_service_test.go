@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	tenantsvc "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -403,10 +404,10 @@ func (m *mockTenantRepo) AcceptInvitationTx(_ context.Context, inv *tenant.Invit
 type mockEmailEnqueuer struct {
 	enqueueErr   error
 	enqueueCalls int
-	lastPayload  app.TeamInvitationJobPayload
+	lastPayload  tenantsvc.TeamInvitationJobPayload
 }
 
-func (m *mockEmailEnqueuer) EnqueueTeamInvitation(_ context.Context, payload app.TeamInvitationJobPayload) error {
+func (m *mockEmailEnqueuer) EnqueueTeamInvitation(_ context.Context, payload tenantsvc.TeamInvitationJobPayload) error {
 	m.enqueueCalls++
 	m.lastPayload = payload
 	return m.enqueueErr
@@ -442,17 +443,17 @@ func (m *mockUserInfoProvider) GetUserNameByID(_ context.Context, id shared.ID) 
 // Helper: create a TenantService for testing
 // =============================================================================
 
-func newTestTenantService() (*app.TenantService, *mockTenantRepo) {
+func newTestTenantService() (*tenantsvc.TenantService, *mockTenantRepo) {
 	repo := newMockTenantRepo()
 	log := logger.NewNop()
-	svc := app.NewTenantService(repo, log)
+	svc := tenantsvc.NewTenantService(repo, log)
 	return svc, repo
 }
 
-func newTestTenantServiceWithOptions(opts ...app.TenantServiceOption) (*app.TenantService, *mockTenantRepo) {
+func newTestTenantServiceWithOptions(opts ...tenantsvc.TenantServiceOption) (*tenantsvc.TenantService, *mockTenantRepo) {
 	repo := newMockTenantRepo()
 	log := logger.NewNop()
-	svc := app.NewTenantService(repo, log, opts...)
+	svc := tenantsvc.NewTenantService(repo, log, opts...)
 	return svc, repo
 }
 
@@ -497,7 +498,7 @@ func TestTenantSvc_CreateTenant_Success(t *testing.T) {
 	svc, repo := newTestTenantService()
 	creatorID := shared.NewID()
 
-	input := app.CreateTenantInput{
+	input := tenantsvc.CreateTenantInput{
 		Name:        "My Team",
 		Slug:        "my-team",
 		Description: "A test team",
@@ -531,7 +532,7 @@ func TestTenantSvc_CreateTenant_DuplicateSlug(t *testing.T) {
 	svc, repo := newTestTenantService()
 	repo.slugExists["taken-slug"] = true
 
-	input := app.CreateTenantInput{
+	input := tenantsvc.CreateTenantInput{
 		Name: "Duplicate",
 		Slug: "taken-slug",
 	}
@@ -549,7 +550,7 @@ func TestTenantSvc_CreateTenant_SlugCheckError(t *testing.T) {
 	svc, repo := newTestTenantService()
 	repo.existsBySlugErr = errors.New("db error")
 
-	input := app.CreateTenantInput{
+	input := tenantsvc.CreateTenantInput{
 		Name: "Team",
 		Slug: "team",
 	}
@@ -564,7 +565,7 @@ func TestTenantSvc_CreateTenant_RepoCreateError(t *testing.T) {
 	svc, repo := newTestTenantService()
 	repo.createErr = errors.New("db connection error")
 
-	input := app.CreateTenantInput{
+	input := tenantsvc.CreateTenantInput{
 		Name: "Team",
 		Slug: "team",
 	}
@@ -579,7 +580,7 @@ func TestTenantSvc_CreateTenant_MembershipCreateError_NoOrphanTenant(t *testing.
 	svc, repo := newTestTenantService()
 	repo.createMembershipErr = errors.New("membership db error")
 
-	input := app.CreateTenantInput{
+	input := tenantsvc.CreateTenantInput{
 		Name: "Team",
 		Slug: "team",
 	}
@@ -602,7 +603,7 @@ func TestTenantSvc_CreateTenant_MembershipCreateError_NoOrphanTenant(t *testing.
 func TestTenantSvc_CreateTenant_EmptyName(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.CreateTenantInput{
+	input := tenantsvc.CreateTenantInput{
 		Name: "",
 		Slug: "team",
 	}
@@ -616,7 +617,7 @@ func TestTenantSvc_CreateTenant_EmptyName(t *testing.T) {
 func TestTenantSvc_CreateTenant_InvalidSlug(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.CreateTenantInput{
+	input := tenantsvc.CreateTenantInput{
 		Name: "Team",
 		Slug: "AB", // too short and uppercase
 	}
@@ -704,7 +705,7 @@ func TestTenantSvc_UpdateTenant_Success(t *testing.T) {
 
 	newName := "New Name"
 	newDesc := "New description"
-	input := app.UpdateTenantInput{
+	input := tenantsvc.UpdateTenantInput{
 		Name:        &newName,
 		Description: &newDesc,
 	}
@@ -729,7 +730,7 @@ func TestTenantSvc_UpdateTenant_UpdateSlug(t *testing.T) {
 	existing := seedTenant(repo, "Team", "old-slug")
 
 	newSlug := "new-slug"
-	input := app.UpdateTenantInput{
+	input := tenantsvc.UpdateTenantInput{
 		Slug: &newSlug, CallerIsOwner: true,
 	}
 
@@ -748,7 +749,7 @@ func TestTenantSvc_UpdateTenant_DuplicateSlug(t *testing.T) {
 	repo.slugExists["taken-slug"] = true
 
 	newSlug := "taken-slug"
-	input := app.UpdateTenantInput{
+	input := tenantsvc.UpdateTenantInput{
 		Slug: &newSlug, CallerIsOwner: true,
 	}
 
@@ -766,7 +767,7 @@ func TestTenantSvc_UpdateTenant_SameSlugNoChange(t *testing.T) {
 	existing := seedTenant(repo, "Team", "same-slug")
 
 	sameSlug := "same-slug"
-	input := app.UpdateTenantInput{
+	input := tenantsvc.UpdateTenantInput{
 		Slug: &sameSlug,
 	}
 
@@ -781,7 +782,7 @@ func TestTenantSvc_UpdateTenant_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
 	newName := "Name"
-	input := app.UpdateTenantInput{Name: &newName}
+	input := tenantsvc.UpdateTenantInput{Name: &newName}
 
 	_, err := svc.UpdateTenant(context.Background(), "bad-id", input, app.AuditContext{})
 	if err == nil {
@@ -796,7 +797,7 @@ func TestTenantSvc_UpdateTenant_NotFound(t *testing.T) {
 	svc, _ := newTestTenantService()
 
 	newName := "Name"
-	input := app.UpdateTenantInput{Name: &newName}
+	input := tenantsvc.UpdateTenantInput{Name: &newName}
 
 	_, err := svc.UpdateTenant(context.Background(), shared.NewID().String(), input, app.AuditContext{})
 	if err == nil {
@@ -810,7 +811,7 @@ func TestTenantSvc_UpdateTenant_RepoError(t *testing.T) {
 	repo.updateErr = errors.New("db error")
 
 	newName := "Updated"
-	input := app.UpdateTenantInput{Name: &newName}
+	input := tenantsvc.UpdateTenantInput{Name: &newName}
 
 	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input, app.AuditContext{})
 	if err == nil {
@@ -823,7 +824,7 @@ func TestTenantSvc_UpdateTenant_UpdateLogoURL(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 
 	logoURL := "https://example.com/logo.png"
-	input := app.UpdateTenantInput{LogoURL: &logoURL}
+	input := tenantsvc.UpdateTenantInput{LogoURL: &logoURL}
 
 	result, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input, app.AuditContext{})
 	if err != nil {
@@ -913,7 +914,7 @@ func TestTenantSvc_AddMember_Success(t *testing.T) {
 	inviterID := shared.NewID()
 	newUserID := shared.NewID()
 
-	input := app.AddMemberInput{
+	input := tenantsvc.AddMemberInput{
 		UserID: newUserID,
 		Role:   "member",
 	}
@@ -939,7 +940,7 @@ func TestTenantSvc_AddMember_Success(t *testing.T) {
 func TestTenantSvc_AddMember_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.AddMemberInput{
+	input := tenantsvc.AddMemberInput{
 		UserID: shared.NewID(),
 		Role:   "member",
 	}
@@ -957,7 +958,7 @@ func TestTenantSvc_AddMember_InvalidRole(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	input := app.AddMemberInput{
+	input := tenantsvc.AddMemberInput{
 		UserID: shared.NewID(),
 		Role:   "superadmin",
 	}
@@ -977,7 +978,7 @@ func TestTenantSvc_AddMember_AlreadyMember(t *testing.T) {
 	userID := shared.NewID()
 	seedMembershipInRepo(repo, userID, existing.ID(), tenant.RoleMember)
 
-	input := app.AddMemberInput{
+	input := tenantsvc.AddMemberInput{
 		UserID: userID,
 		Role:   "member",
 	}
@@ -996,7 +997,7 @@ func TestTenantSvc_AddMember_RepoError(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 	repo.createMembershipErr = errors.New("db error")
 
-	input := app.AddMemberInput{
+	input := tenantsvc.AddMemberInput{
 		UserID: shared.NewID(),
 		Role:   "member",
 	}
@@ -1022,7 +1023,7 @@ func TestTenantSvc_AddMember_AllValidRoles(t *testing.T) {
 			svc, repo := newTestTenantService()
 			existing := seedTenant(repo, "Team", "team-slug")
 
-			input := app.AddMemberInput{
+			input := tenantsvc.AddMemberInput{
 				UserID: shared.NewID(),
 				Role:   tc.role,
 			}
@@ -1047,7 +1048,7 @@ func TestTenantSvc_UpdateMemberRole_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	ms := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleMember)
 
-	input := app.UpdateMemberRoleInput{Role: "admin"}
+	input := tenantsvc.UpdateMemberRoleInput{Role: "admin"}
 
 	result, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
@@ -1061,7 +1062,7 @@ func TestTenantSvc_UpdateMemberRole_Success(t *testing.T) {
 func TestTenantSvc_UpdateMemberRole_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateMemberRoleInput{Role: "admin"}
+	input := tenantsvc.UpdateMemberRoleInput{Role: "admin"}
 
 	_, err := svc.UpdateMemberRole(context.Background(), "bad-uuid", input, app.AuditContext{})
 	if err == nil {
@@ -1075,7 +1076,7 @@ func TestTenantSvc_UpdateMemberRole_InvalidID(t *testing.T) {
 func TestTenantSvc_UpdateMemberRole_NotFound(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateMemberRoleInput{Role: "admin"}
+	input := tenantsvc.UpdateMemberRoleInput{Role: "admin"}
 
 	_, err := svc.UpdateMemberRole(context.Background(), shared.NewID().String(), input, app.AuditContext{})
 	if err == nil {
@@ -1088,7 +1089,7 @@ func TestTenantSvc_UpdateMemberRole_CannotChangeOwnerRole(t *testing.T) {
 	tenantID := shared.NewID()
 	ownerMs := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleOwner)
 
-	input := app.UpdateMemberRoleInput{Role: "admin"}
+	input := tenantsvc.UpdateMemberRoleInput{Role: "admin"}
 
 	_, err := svc.UpdateMemberRole(context.Background(), ownerMs.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
@@ -1104,7 +1105,7 @@ func TestTenantSvc_UpdateMemberRole_CannotPromoteToOwner(t *testing.T) {
 	tenantID := shared.NewID()
 	ms := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleMember)
 
-	input := app.UpdateMemberRoleInput{Role: "owner"}
+	input := tenantsvc.UpdateMemberRoleInput{Role: "owner"}
 
 	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
@@ -1120,7 +1121,7 @@ func TestTenantSvc_UpdateMemberRole_InvalidRole(t *testing.T) {
 	tenantID := shared.NewID()
 	ms := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleMember)
 
-	input := app.UpdateMemberRoleInput{Role: "superadmin"}
+	input := tenantsvc.UpdateMemberRoleInput{Role: "superadmin"}
 
 	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
@@ -1137,7 +1138,7 @@ func TestTenantSvc_UpdateMemberRole_RepoError(t *testing.T) {
 	ms := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleMember)
 	repo.updateMembershipErr = errors.New("db error")
 
-	input := app.UpdateMemberRoleInput{Role: "admin"}
+	input := tenantsvc.UpdateMemberRoleInput{Role: "admin"}
 
 	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
@@ -1519,7 +1520,7 @@ func TestTenantSvc_CreateInvitation_Success(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 	inviterID := shared.NewID()
 
-	input := app.CreateInvitationInput{
+	input := tenantsvc.CreateInvitationInput{
 		Email:   "newuser@example.com",
 		Role:    "member",
 		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
@@ -1543,7 +1544,7 @@ func TestTenantSvc_CreateInvitation_Success(t *testing.T) {
 func TestTenantSvc_CreateInvitation_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.CreateInvitationInput{
+	input := tenantsvc.CreateInvitationInput{
 		Email:   "user@test.com",
 		Role:    "member",
 		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
@@ -1563,7 +1564,7 @@ func TestTenantSvc_CreateInvitation_InvalidRole(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	input := app.CreateInvitationInput{
+	input := tenantsvc.CreateInvitationInput{
 		Email:   "user@test.com",
 		RoleIDs: []string{"00000000-0000-0000-0000-000000000001"},
 	}
@@ -1624,7 +1625,7 @@ func TestTenantSvc_CreateInvitation_DuplicatePendingInvitation(t *testing.T) {
 
 	repo2.getPendingInvByEmailErr = errors.New("unexpected db error")
 
-	input := app.CreateInvitationInput{
+	input := tenantsvc.CreateInvitationInput{
 		Email:   "existing@test.com",
 		Role:    "member",
 		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
@@ -1646,7 +1647,7 @@ func TestTenantSvc_CreateInvitation_UserAlreadyMember(t *testing.T) {
 		Email: "member@test.com",
 	}
 
-	input := app.CreateInvitationInput{
+	input := tenantsvc.CreateInvitationInput{
 		Email:   "member@test.com",
 		Role:    "member",
 		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
@@ -1666,7 +1667,7 @@ func TestTenantSvc_CreateInvitation_RepoCreateError(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 	repo.createInvitationErr = errors.New("db error")
 
-	input := app.CreateInvitationInput{
+	input := tenantsvc.CreateInvitationInput{
 		Email:   "user@test.com",
 		Role:    "member",
 		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
@@ -1684,13 +1685,10 @@ func TestTenantSvc_CreateInvitation_WithEmailEnqueuer(t *testing.T) {
 	inviterID := shared.NewID()
 	userInfo.names[inviterID.String()] = "John Doe"
 
-	svc, repo := newTestTenantServiceWithOptions(
-		app.WithEmailEnqueuer(enqueuer),
-		app.WithUserInfoProvider(userInfo),
-	)
+	svc, repo := newTestTenantServiceWithOptions(tenantsvc.WithEmailEnqueuer(enqueuer), tenantsvc.WithUserInfoProvider(userInfo))
 	existing := seedTenant(repo, "My Team", "my-team")
 
-	input := app.CreateInvitationInput{
+	input := tenantsvc.CreateInvitationInput{
 		Email:   "newuser@test.com",
 		Role:    "member",
 		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
@@ -1716,10 +1714,10 @@ func TestTenantSvc_CreateInvitation_WithEmailEnqueuer(t *testing.T) {
 
 func TestTenantSvc_CreateInvitation_EmailEnqueueError_DoesNotFail(t *testing.T) {
 	enqueuer := &mockEmailEnqueuer{enqueueErr: errors.New("email service down")}
-	svc, repo := newTestTenantServiceWithOptions(app.WithEmailEnqueuer(enqueuer))
+	svc, repo := newTestTenantServiceWithOptions(tenantsvc.WithEmailEnqueuer(enqueuer))
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	input := app.CreateInvitationInput{
+	input := tenantsvc.CreateInvitationInput{
 		Email:   "user@test.com",
 		Role:    "member",
 		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
@@ -2035,7 +2033,7 @@ func TestTenantSvc_GetUserDisplayName_Success(t *testing.T) {
 	userID := shared.NewID()
 	userInfo.names[userID.String()] = "Jane Smith"
 
-	svc, _ := newTestTenantServiceWithOptions(app.WithUserInfoProvider(userInfo))
+	svc, _ := newTestTenantServiceWithOptions(tenantsvc.WithUserInfoProvider(userInfo))
 
 	name := svc.GetUserDisplayName(context.Background(), userID)
 	if name != "Jane Smith" {
@@ -2054,7 +2052,7 @@ func TestTenantSvc_GetUserDisplayName_NoProvider(t *testing.T) {
 
 func TestTenantSvc_GetUserDisplayName_UserNotFound(t *testing.T) {
 	userInfo := newMockUserInfoProvider()
-	svc, _ := newTestTenantServiceWithOptions(app.WithUserInfoProvider(userInfo))
+	svc, _ := newTestTenantServiceWithOptions(tenantsvc.WithUserInfoProvider(userInfo))
 
 	name := svc.GetUserDisplayName(context.Background(), shared.NewID())
 	if name != "" {
@@ -2065,7 +2063,7 @@ func TestTenantSvc_GetUserDisplayName_UserNotFound(t *testing.T) {
 func TestTenantSvc_GetUserDisplayName_ProviderError(t *testing.T) {
 	userInfo := newMockUserInfoProvider()
 	userInfo.err = errors.New("provider error")
-	svc, _ := newTestTenantServiceWithOptions(app.WithUserInfoProvider(userInfo))
+	svc, _ := newTestTenantServiceWithOptions(tenantsvc.WithUserInfoProvider(userInfo))
 
 	name := svc.GetUserDisplayName(context.Background(), shared.NewID())
 	if name != "" {
@@ -2166,7 +2164,7 @@ func TestTenantSvc_UpdateGeneralSettings_Success(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	input := app.UpdateGeneralSettingsInput{
+	input := tenantsvc.UpdateGeneralSettingsInput{
 		Timezone: strPtr("UTC"),
 		Language: strPtr("en"),
 		Industry: strPtr("technology"),
@@ -2193,7 +2191,7 @@ func TestTenantSvc_UpdateGeneralSettings_PartialPatchPreservesOmitted(t *testing
 	id := existing.ID().String()
 
 	// Seed two fields.
-	_, err := svc.UpdateGeneralSettings(context.Background(), id, app.UpdateGeneralSettingsInput{
+	_, err := svc.UpdateGeneralSettings(context.Background(), id, tenantsvc.UpdateGeneralSettingsInput{
 		Industry: strPtr("finance"),
 		Website:  strPtr("https://example.com"),
 	}, app.AuditContext{})
@@ -2202,7 +2200,7 @@ func TestTenantSvc_UpdateGeneralSettings_PartialPatchPreservesOmitted(t *testing
 	}
 
 	// Partial PATCH: only timezone.
-	result, err := svc.UpdateGeneralSettings(context.Background(), id, app.UpdateGeneralSettingsInput{
+	result, err := svc.UpdateGeneralSettings(context.Background(), id, tenantsvc.UpdateGeneralSettingsInput{
 		Timezone: strPtr("Asia/Ho_Chi_Minh"),
 	}, app.AuditContext{})
 	if err != nil {
@@ -2229,14 +2227,14 @@ func TestTenantSvc_UpdateGeneralSettings_ClearWebsiteWithEmptyString(t *testing.
 	existing := seedTenant(repo, "Team", "team-slug")
 	id := existing.ID().String()
 
-	if _, err := svc.UpdateGeneralSettings(context.Background(), id, app.UpdateGeneralSettingsInput{
+	if _, err := svc.UpdateGeneralSettings(context.Background(), id, tenantsvc.UpdateGeneralSettingsInput{
 		Website: strPtr("https://example.com"),
 	}, app.AuditContext{}); err != nil {
 		t.Fatalf("seed website failed: %v", err)
 	}
 
 	// Explicit empty string must clear, not 422.
-	res, err := svc.UpdateGeneralSettings(context.Background(), id, app.UpdateGeneralSettingsInput{
+	res, err := svc.UpdateGeneralSettings(context.Background(), id, tenantsvc.UpdateGeneralSettingsInput{
 		Website: strPtr(""),
 	}, app.AuditContext{})
 	if err != nil {
@@ -2247,7 +2245,7 @@ func TestTenantSvc_UpdateGeneralSettings_ClearWebsiteWithEmptyString(t *testing.
 	}
 
 	// A malformed non-empty URL must still be rejected by domain validation.
-	if _, err := svc.UpdateGeneralSettings(context.Background(), id, app.UpdateGeneralSettingsInput{
+	if _, err := svc.UpdateGeneralSettings(context.Background(), id, tenantsvc.UpdateGeneralSettingsInput{
 		Website: strPtr("not-a-url"),
 	}, app.AuditContext{}); err == nil {
 		t.Error("expected validation error for malformed website URL")
@@ -2257,7 +2255,7 @@ func TestTenantSvc_UpdateGeneralSettings_ClearWebsiteWithEmptyString(t *testing.
 func TestTenantSvc_UpdateGeneralSettings_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateGeneralSettingsInput{Timezone: strPtr("UTC")}
+	input := tenantsvc.UpdateGeneralSettingsInput{Timezone: strPtr("UTC")}
 	_, err := svc.UpdateGeneralSettings(context.Background(), "bad-uuid", input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
@@ -2267,7 +2265,7 @@ func TestTenantSvc_UpdateGeneralSettings_InvalidID(t *testing.T) {
 func TestTenantSvc_UpdateGeneralSettings_NotFound(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateGeneralSettingsInput{Timezone: strPtr("UTC")}
+	input := tenantsvc.UpdateGeneralSettingsInput{Timezone: strPtr("UTC")}
 	_, err := svc.UpdateGeneralSettings(context.Background(), shared.NewID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for not found")
@@ -2282,7 +2280,7 @@ func TestTenantSvc_UpdateSecuritySettings_Success(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	input := app.UpdateSecuritySettingsInput{
+	input := tenantsvc.UpdateSecuritySettingsInput{
 		MFARequired:       boolPtr(true),
 		SessionTimeoutMin: intPtr(60),
 	}
@@ -2318,8 +2316,7 @@ func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
 		svc.SetSSOPathChecker(checker)
 		existing := seedTenant(repo, "Team", "team-slug")
 
-		_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
-			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
+		_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), tenantsvc.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
 		if err == nil {
 			t.Fatal("expected refusal when no usable SSO path")
 		}
@@ -2333,8 +2330,7 @@ func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
 		svc.SetSSOPathChecker(&mockSSOPathChecker{usable: true})
 		existing := seedTenant(repo, "Team", "team-slug")
 
-		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
-			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
+		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), tenantsvc.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
 		if err != nil {
 			t.Fatalf("expected success, got %v", err)
 		}
@@ -2347,8 +2343,7 @@ func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
 		svc, repo := newTestTenantService() // no SetSSOPathChecker
 		existing := seedTenant(repo, "Team", "team-slug")
 
-		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
-			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
+		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), tenantsvc.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
 		if err != nil {
 			t.Fatalf("expected success (fail-open), got %v", err)
 		}
@@ -2363,8 +2358,7 @@ func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
 		svc.SetSSOPathChecker(checker)
 		existing := seedTenant(repo, "Team", "team-slug")
 
-		_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
-			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(false)}, app.AuditContext{})
+		_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), tenantsvc.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(false)}, app.AuditContext{})
 		if err != nil {
 			t.Fatalf("disabling must never be blocked, got %v", err)
 		}
@@ -2377,7 +2371,7 @@ func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
 func TestTenantSvc_UpdateSecuritySettings_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateSecuritySettingsInput{SessionTimeoutMin: intPtr(60)}
+	input := tenantsvc.UpdateSecuritySettingsInput{SessionTimeoutMin: intPtr(60)}
 	_, err := svc.UpdateSecuritySettings(context.Background(), "bad-uuid", input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
@@ -2393,7 +2387,7 @@ func TestTenantSvc_UpdateSecuritySettings_PartialPatchPreservesOmitted(t *testin
 	id := existing.ID().String()
 
 	// Seed a full-ish security config.
-	_, err := svc.UpdateSecuritySettings(context.Background(), id, app.UpdateSecuritySettingsInput{
+	_, err := svc.UpdateSecuritySettings(context.Background(), id, tenantsvc.UpdateSecuritySettingsInput{
 		SessionTimeoutMin: intPtr(120),
 		IPWhitelist:       []string{"10.0.0.0/8"},
 		AllowedDomains:    []string{"example.com"},
@@ -2403,7 +2397,7 @@ func TestTenantSvc_UpdateSecuritySettings_PartialPatchPreservesOmitted(t *testin
 	}
 
 	// Partial PATCH: only flip MFA on.
-	result, err := svc.UpdateSecuritySettings(context.Background(), id, app.UpdateSecuritySettingsInput{
+	result, err := svc.UpdateSecuritySettings(context.Background(), id, tenantsvc.UpdateSecuritySettingsInput{
 		MFARequired: boolPtr(true),
 	}, app.AuditContext{})
 	if err != nil {
@@ -2432,7 +2426,7 @@ func TestTenantSvc_UpdateBrandingSettings_Success(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	input := app.UpdateBrandingSettingsInput{
+	input := tenantsvc.UpdateBrandingSettingsInput{
 		PrimaryColor: strPtr("#FF5733"),
 	}
 
@@ -2453,7 +2447,7 @@ func TestTenantSvc_UpdateBrandingSettings_PartialPatchPreservesOmitted(t *testin
 	id := existing.ID().String()
 
 	logo := "data:image/png;base64,iVBORw0KGgo="
-	_, err := svc.UpdateBrandingSettings(context.Background(), id, app.UpdateBrandingSettingsInput{
+	_, err := svc.UpdateBrandingSettings(context.Background(), id, tenantsvc.UpdateBrandingSettingsInput{
 		LogoData: strPtr(logo),
 	}, app.AuditContext{})
 	if err != nil {
@@ -2461,7 +2455,7 @@ func TestTenantSvc_UpdateBrandingSettings_PartialPatchPreservesOmitted(t *testin
 	}
 
 	// Partial PATCH: only the color.
-	result, err := svc.UpdateBrandingSettings(context.Background(), id, app.UpdateBrandingSettingsInput{
+	result, err := svc.UpdateBrandingSettings(context.Background(), id, tenantsvc.UpdateBrandingSettingsInput{
 		PrimaryColor: strPtr("#123456"),
 	}, app.AuditContext{})
 	if err != nil {
@@ -2479,7 +2473,7 @@ func TestTenantSvc_UpdateBrandingSettings_PartialPatchPreservesOmitted(t *testin
 func TestTenantSvc_UpdateBrandingSettings_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateBrandingSettingsInput{}
+	input := tenantsvc.UpdateBrandingSettingsInput{}
 	_, err := svc.UpdateBrandingSettings(context.Background(), "bad-uuid", input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
@@ -2494,8 +2488,8 @@ func TestTenantSvc_UpdateBranchSettings_Success(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	input := app.UpdateBranchSettingsInput{
-		TypeRules: []app.BranchTypeRuleInput{
+	input := tenantsvc.UpdateBranchSettingsInput{
+		TypeRules: []tenantsvc.BranchTypeRuleInput{
 			{Pattern: "main", MatchType: "exact", BranchType: "main"},
 			{Pattern: "feature/", MatchType: "prefix", BranchType: "feature"},
 		},
@@ -2513,7 +2507,7 @@ func TestTenantSvc_UpdateBranchSettings_Success(t *testing.T) {
 func TestTenantSvc_UpdateBranchSettings_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateBranchSettingsInput{}
+	input := tenantsvc.UpdateBranchSettingsInput{}
 	_, err := svc.UpdateBranchSettings(context.Background(), "bad-uuid", input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
@@ -2523,7 +2517,7 @@ func TestTenantSvc_UpdateBranchSettings_InvalidID(t *testing.T) {
 func TestTenantSvc_UpdateBranchSettings_NotFound(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateBranchSettingsInput{}
+	input := tenantsvc.UpdateBranchSettingsInput{}
 	_, err := svc.UpdateBranchSettings(context.Background(), shared.NewID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for not found")
@@ -2535,7 +2529,7 @@ func TestTenantSvc_UpdateBranchSettings_RepoError(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 	repo.updateErr = errors.New("db error")
 
-	input := app.UpdateBranchSettingsInput{}
+	input := tenantsvc.UpdateBranchSettingsInput{}
 	_, err := svc.UpdateBranchSettings(context.Background(), existing.ID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error from repo")
@@ -2565,14 +2559,14 @@ func TestTenantSvc_AddMember_CrossTenantIsolation(t *testing.T) {
 	userID := shared.NewID()
 
 	// Add user to tenant A
-	inputA := app.AddMemberInput{UserID: userID, Role: "member"}
+	inputA := tenantsvc.AddMemberInput{UserID: userID, Role: "member"}
 	_, err := svc.AddMember(context.Background(), tenantA.ID().String(), inputA, shared.NewID(), app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error adding to tenant A, got %v", err)
 	}
 
 	// Same user should be addable to tenant B
-	inputB := app.AddMemberInput{UserID: userID, Role: "admin"}
+	inputB := tenantsvc.AddMemberInput{UserID: userID, Role: "admin"}
 	_, err = svc.AddMember(context.Background(), tenantB.ID().String(), inputB, shared.NewID(), app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error adding same user to tenant B, got %v", err)
@@ -2616,7 +2610,7 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 		{"GetTenant", func() error { _, err := svc.GetTenant(context.Background(), invalidID); return err }},
 		{"UpdateTenant", func() error {
 			n := "x"
-			_, err := svc.UpdateTenant(context.Background(), invalidID, app.UpdateTenantInput{Name: &n}, app.AuditContext{})
+			_, err := svc.UpdateTenant(context.Background(), invalidID, tenantsvc.UpdateTenantInput{Name: &n}, app.AuditContext{})
 			return err
 		}},
 		{"DeleteTenant", func() error { return svc.DeleteTenant(context.Background(), app.AuditContext{}, invalidID) }},
@@ -2629,16 +2623,16 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 		{"GetMemberStats", func() error { _, err := svc.GetMemberStats(context.Background(), invalidID); return err }},
 		{"GetMembership", func() error { _, err := svc.GetMembership(context.Background(), shared.NewID(), invalidID); return err }},
 		{"AddMember", func() error {
-			_, err := svc.AddMember(context.Background(), invalidID, app.AddMemberInput{UserID: shared.NewID(), Role: "member"}, shared.NewID(), app.AuditContext{})
+			_, err := svc.AddMember(context.Background(), invalidID, tenantsvc.AddMemberInput{UserID: shared.NewID(), Role: "member"}, shared.NewID(), app.AuditContext{})
 			return err
 		}},
 		{"UpdateMemberRole", func() error {
-			_, err := svc.UpdateMemberRole(context.Background(), invalidID, app.UpdateMemberRoleInput{Role: "admin"}, app.AuditContext{})
+			_, err := svc.UpdateMemberRole(context.Background(), invalidID, tenantsvc.UpdateMemberRoleInput{Role: "admin"}, app.AuditContext{})
 			return err
 		}},
 		{"RemoveMember", func() error { return svc.RemoveMember(context.Background(), invalidID, app.AuditContext{}) }},
 		{"CreateInvitation", func() error {
-			_, err := svc.CreateInvitation(context.Background(), invalidID, app.CreateInvitationInput{Email: "a@b.com", Role: "member", RoleIDs: []string{"r1"}}, shared.NewID(), app.AuditContext{})
+			_, err := svc.CreateInvitation(context.Background(), invalidID, tenantsvc.CreateInvitationInput{Email: "a@b.com", Role: "member", RoleIDs: []string{"r1"}}, shared.NewID(), app.AuditContext{})
 			return err
 		}},
 		{"ListPendingInvitations", func() error { _, err := svc.ListPendingInvitations(context.Background(), invalidID); return err }},
@@ -2651,19 +2645,19 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 			return err
 		}},
 		{"UpdateGeneralSettings", func() error {
-			_, err := svc.UpdateGeneralSettings(context.Background(), invalidID, app.UpdateGeneralSettingsInput{}, app.AuditContext{})
+			_, err := svc.UpdateGeneralSettings(context.Background(), invalidID, tenantsvc.UpdateGeneralSettingsInput{}, app.AuditContext{})
 			return err
 		}},
 		{"UpdateSecuritySettings", func() error {
-			_, err := svc.UpdateSecuritySettings(context.Background(), invalidID, app.UpdateSecuritySettingsInput{SessionTimeoutMin: intPtr(60)}, app.AuditContext{})
+			_, err := svc.UpdateSecuritySettings(context.Background(), invalidID, tenantsvc.UpdateSecuritySettingsInput{SessionTimeoutMin: intPtr(60)}, app.AuditContext{})
 			return err
 		}},
 		{"UpdateBrandingSettings", func() error {
-			_, err := svc.UpdateBrandingSettings(context.Background(), invalidID, app.UpdateBrandingSettingsInput{}, app.AuditContext{})
+			_, err := svc.UpdateBrandingSettings(context.Background(), invalidID, tenantsvc.UpdateBrandingSettingsInput{}, app.AuditContext{})
 			return err
 		}},
 		{"UpdateBranchSettings", func() error {
-			_, err := svc.UpdateBranchSettings(context.Background(), invalidID, app.UpdateBranchSettingsInput{}, app.AuditContext{})
+			_, err := svc.UpdateBranchSettings(context.Background(), invalidID, tenantsvc.UpdateBranchSettingsInput{}, app.AuditContext{})
 			return err
 		}},
 	}
@@ -2695,8 +2689,7 @@ func TestTenantSvc_AddMember_ZeroInviter_NullInvitedBy(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	if _, err := svc.AddMember(context.Background(), tenantID.String(),
-		app.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{}, app.AuditContext{}); err != nil {
+	if _, err := svc.AddMember(context.Background(), tenantID.String(), tenantsvc.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{}, app.AuditContext{}); err != nil {
 		t.Fatalf("AddMember: %v", err)
 	}
 
@@ -2723,8 +2716,7 @@ func TestTenantSvc_SuspendMember_SystemActor_NullSuspendedBy(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	m, err := svc.AddMember(context.Background(), tenantID.String(),
-		app.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{},
+	m, err := svc.AddMember(context.Background(), tenantID.String(), tenantsvc.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{},
 		app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("AddMember: %v", err)
@@ -2758,8 +2750,7 @@ func TestTenantSvc_SuspendMember_RevokesSessions(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	m, err := svc.AddMember(context.Background(), tenantID.String(),
-		app.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{},
+	m, err := svc.AddMember(context.Background(), tenantID.String(), tenantsvc.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{},
 		app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("AddMember: %v", err)
@@ -2808,7 +2799,7 @@ func TestTenantSvc_CreateInvitation_ViewerRoleIsViewerMembership(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	inv, err := svc.CreateInvitation(context.Background(), existing.ID().String(), app.CreateInvitationInput{
+	inv, err := svc.CreateInvitation(context.Background(), existing.ID().String(), tenantsvc.CreateInvitationInput{
 		Email: "viewer@example.com", Role: "member", RoleIDs: []string{testViewerRoleID},
 	}, shared.NewID(), app.AuditContext{})
 	if err != nil {
@@ -2824,13 +2815,13 @@ func TestTenantSvc_CreateInvitation_AllowedDomainsEnforced(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 	restrictDomains(t, existing, "corp.com")
 
-	_, err := svc.CreateInvitation(context.Background(), existing.ID().String(), app.CreateInvitationInput{
+	_, err := svc.CreateInvitation(context.Background(), existing.ID().String(), tenantsvc.CreateInvitationInput{
 		Email: "x@evil.com", RoleIDs: []string{testViewerRoleID},
 	}, shared.NewID(), app.AuditContext{})
-	if !errors.Is(err, app.ErrEmailDomainNotAllowed) {
+	if !errors.Is(err, tenantsvc.ErrEmailDomainNotAllowed) {
 		t.Fatalf("expected ErrEmailDomainNotAllowed, got %v", err)
 	}
-	if _, err := svc.CreateInvitation(context.Background(), existing.ID().String(), app.CreateInvitationInput{
+	if _, err := svc.CreateInvitation(context.Background(), existing.ID().String(), tenantsvc.CreateInvitationInput{
 		Email: "x@corp.com", RoleIDs: []string{testViewerRoleID},
 	}, shared.NewID(), app.AuditContext{}); err != nil {
 		t.Fatalf("an allowed domain must be invitable: %v", err)
@@ -2877,7 +2868,7 @@ func TestTenantSvc_AcceptInvitation_AllowedDomainsEnforced(t *testing.T) {
 	restrictDomains(t, repo.tenants[tenantID.String()], "corp.com")
 
 	_, err := svc.AcceptInvitation(context.Background(), inv.Token(), shared.NewID(), "late@other.com", app.AuditContext{})
-	if !errors.Is(err, app.ErrEmailDomainNotAllowed) {
+	if !errors.Is(err, tenantsvc.ErrEmailDomainNotAllowed) {
 		t.Fatalf("expected ErrEmailDomainNotAllowed, got %v", err)
 	}
 	if repo.acceptInvTxCalls != 0 {
@@ -2893,11 +2884,11 @@ func TestTenantSvc_UpdateSecuritySettings_IPAllowlistLockoutGuard(t *testing.T) 
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), app.UpdateSecuritySettingsInput{
+	_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), tenantsvc.UpdateSecuritySettingsInput{
 		IPWhitelist: []string{"10.0.0.0/8"},
 		RequesterIP: "203.0.113.9",
 	}, app.AuditContext{})
-	if !errors.Is(err, app.ErrIPAllowlistExcludesRequester) || !errors.Is(err, shared.ErrValidation) {
+	if !errors.Is(err, tenantsvc.ErrIPAllowlistExcludesRequester) || !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("a list excluding the caller's IP must be refused, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "203.0.113.9") {
@@ -2907,7 +2898,7 @@ func TestTenantSvc_UpdateSecuritySettings_IPAllowlistLockoutGuard(t *testing.T) 
 		t.Fatalf("nothing may be saved, got %v", got)
 	}
 
-	if _, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), app.UpdateSecuritySettingsInput{
+	if _, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), tenantsvc.UpdateSecuritySettingsInput{
 		IPWhitelist: []string{"10.0.0.0/8", "203.0.113.0/24"},
 		RequesterIP: "203.0.113.9",
 	}, app.AuditContext{}); err != nil {
@@ -2915,7 +2906,7 @@ func TestTenantSvc_UpdateSecuritySettings_IPAllowlistLockoutGuard(t *testing.T) 
 	}
 
 	// Clearing the list is always allowed.
-	if _, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), app.UpdateSecuritySettingsInput{
+	if _, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), tenantsvc.UpdateSecuritySettingsInput{
 		IPWhitelist: []string{},
 		RequesterIP: "198.51.100.1",
 	}, app.AuditContext{}); err != nil {
@@ -2927,7 +2918,7 @@ func TestTenantSvc_UpdateSecuritySettings_IPAllowlistLockoutGuard(t *testing.T) 
 func TestTenantSvc_UpdateSecuritySettings_NoRequesterIPSkipsGuard(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
-	if _, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), app.UpdateSecuritySettingsInput{
+	if _, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), tenantsvc.UpdateSecuritySettingsInput{
 		IPWhitelist: []string{"10.0.0.0/8"},
 	}, app.AuditContext{}); err != nil {
 		t.Fatalf("no requester IP must skip the guard: %v", err)
@@ -2945,22 +2936,19 @@ func TestTenantSvc_UpdateTenant_SlugRules(t *testing.T) {
 	existing := seedTenant(repo, "Team", "old-slug")
 	newSlug := "new-slug"
 
-	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(),
-		app.UpdateTenantInput{Slug: &newSlug}, app.AuditContext{})
+	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(), tenantsvc.UpdateTenantInput{Slug: &newSlug}, app.AuditContext{})
 	if !errors.Is(err, shared.ErrForbidden) {
 		t.Fatalf("admin renaming the slug: err = %v, want ErrForbidden", err)
 	}
 
 	// An admin saving the profile with the unchanged slug is fine.
 	same, name := "old-slug", "Renamed"
-	if _, err := svc.UpdateTenant(context.Background(), existing.ID().String(),
-		app.UpdateTenantInput{Slug: &same, Name: &name}, app.AuditContext{}); err != nil {
+	if _, err := svc.UpdateTenant(context.Background(), existing.ID().String(), tenantsvc.UpdateTenantInput{Slug: &same, Name: &name}, app.AuditContext{}); err != nil {
 		t.Fatalf("unchanged slug by an admin: %v", err)
 	}
 
 	svc.SetSSOPathChecker(fixedSSOPath(true))
-	_, err = svc.UpdateTenant(context.Background(), existing.ID().String(),
-		app.UpdateTenantInput{Slug: &newSlug, CallerIsOwner: true}, app.AuditContext{})
+	_, err = svc.UpdateTenant(context.Background(), existing.ID().String(), tenantsvc.UpdateTenantInput{Slug: &newSlug, CallerIsOwner: true}, app.AuditContext{})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("owner renaming with SSO configured: err = %v, want ErrValidation", err)
 	}

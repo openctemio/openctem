@@ -23,6 +23,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -80,9 +82,9 @@ func newL10Harness(t *testing.T) *l10Harness {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, log)
 
-	credSvc := app.NewCredentialImportService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), log)
+	credSvc := integration.NewCredentialImportService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), log)
 	credSvc.SetDataScope(enforcer)
-	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), postgres.NewFindingRepository(db), log)
+	vulnSvc := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), postgres.NewFindingRepository(db), log)
 	vulnSvc.SetDataScope(enforcer)
 	groupSvc := app.NewGroupService(postgres.NewGroupRepository(db), log,
 		app.WithAccessControlRepository(postgres.NewAccessControlRepository(db)),

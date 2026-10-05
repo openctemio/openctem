@@ -10,8 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetsvc "github.com/openctemio/openctem/api/internal/app/asset"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	integrationsvc "github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -25,8 +26,8 @@ import (
 
 // AssetHandler handles asset-related HTTP requests.
 type AssetHandler struct {
-	service            *app.AssetService
-	integrationService *app.IntegrationService
+	service            *assetsvc.AssetService
+	integrationService *integrationsvc.IntegrationService
 	accessControlRepo  accesscontrol.Repository
 	auditService       *auditapp.AuditService
 	snoozeRateLimiter  *snoozeRateLimiter
@@ -35,7 +36,7 @@ type AssetHandler struct {
 }
 
 // NewAssetHandler creates a new asset handler.
-func NewAssetHandler(svc *app.AssetService, v *validator.Validator, log *logger.Logger) *AssetHandler {
+func NewAssetHandler(svc *assetsvc.AssetService, v *validator.Validator, log *logger.Logger) *AssetHandler {
 	return &AssetHandler{
 		service:           svc,
 		validator:         v,
@@ -50,7 +51,7 @@ func (h *AssetHandler) SetAccessControlRepo(repo accesscontrol.Repository) {
 }
 
 // SetIntegrationService sets the integration service for sync operations.
-func (h *AssetHandler) SetIntegrationService(svc *app.IntegrationService) {
+func (h *AssetHandler) SetIntegrationService(svc *integrationsvc.IntegrationService) {
 	h.integrationService = svc
 }
 
@@ -178,7 +179,7 @@ type DuplicateAssetDetails struct {
 // asset. The body names the existing asset only when the service set its id
 // (the asset is in the caller's data scope); otherwise it is the same generic
 // conflict for every match, so it reveals nothing about the asset.
-func writeDuplicateAsset(w http.ResponseWriter, dup *app.DuplicateAssetError) {
+func writeDuplicateAsset(w http.ResponseWriter, dup *assetsvc.DuplicateAssetError) {
 	e := apierror.Conflict("Asset already exists")
 	if !dup.ExistingID.IsZero() {
 		e = e.WithDetails(DuplicateAssetDetails{ExistingAssetID: dup.ExistingID.String()})
@@ -600,7 +601,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 
-	input := app.ListAssetsInput{
+	input := assetsvc.ListAssetsInput{
 		TenantID:         tenantID,
 		Name:             query.Get("name"),
 		Types:            parseQueryArray(query.Get("types")),
@@ -742,7 +743,7 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateAssetInput{
+	input := assetsvc.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        req.Name,
 		Type:        req.Type,
@@ -758,7 +759,7 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	a, err := h.service.CreateAsset(r.Context(), input)
 	if err != nil {
-		var dup *app.DuplicateAssetError
+		var dup *assetsvc.DuplicateAssetError
 		if errors.As(err, &dup) {
 			writeDuplicateAsset(w, dup)
 			return
@@ -855,7 +856,7 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateAssetInput{
+	input := assetsvc.UpdateAssetInput{
 		Name:                  req.Name,
 		Criticality:           req.Criticality,
 		Scope:                 req.Scope,
@@ -1118,7 +1119,7 @@ func (h *AssetHandler) CreateRepository(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.CreateRepositoryAssetInput{
+	input := assetsvc.CreateRepositoryAssetInput{
 		TenantID:        tenantID,
 		Name:            req.Name,
 		Description:     req.Description,
@@ -1303,7 +1304,7 @@ func (h *AssetHandler) UpdateRepository(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.UpdateRepositoryExtensionInput{
+	input := assetsvc.UpdateRepositoryExtensionInput{
 		RepoID:               req.RepoID,
 		FullName:             req.FullName,
 		SCMOrganization:      req.SCMOrganization,
@@ -1505,7 +1506,7 @@ func (h *AssetHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.BulkUpdateAssetStatusInput{
+	input := assetsvc.BulkUpdateAssetStatusInput{
 		AssetIDs: req.AssetIDs,
 		Status:   req.Status,
 	}
@@ -1700,7 +1701,7 @@ func (h *AssetHandler) findMatchingSCMConnection(
 	ctx context.Context,
 	tenantID, provider, scmOrg string,
 ) (*scmConnectionMatch, error) {
-	integration, err := h.integrationService.FindSCMIntegration(ctx, app.FindSCMIntegrationInput{
+	integration, err := h.integrationService.FindSCMIntegration(ctx, integrationsvc.FindSCMIntegrationInput{
 		TenantID: tenantID,
 		Provider: provider,
 		SCMOrg:   scmOrg,
@@ -1721,9 +1722,9 @@ func (h *AssetHandler) findMatchingSCMConnection(
 }
 
 // buildSyncUpdateInput compares SCM data with current extension and builds update input
-func buildSyncUpdateInput(scmRepo *scm.Repository, repoExt *asset.RepositoryExtension) (app.UpdateRepositoryExtensionInput, []string) {
+func buildSyncUpdateInput(scmRepo *scm.Repository, repoExt *asset.RepositoryExtension) (assetsvc.UpdateRepositoryExtensionInput, []string) {
 	var updatedFields []string
-	updateInput := app.UpdateRepositoryExtensionInput{}
+	updateInput := assetsvc.UpdateRepositoryExtensionInput{}
 
 	if scmRepo.DefaultBranch != "" && scmRepo.DefaultBranch != repoExt.DefaultBranch() {
 		branch := scmRepo.DefaultBranch
@@ -1805,7 +1806,7 @@ func (h *AssetHandler) performSync(
 	repoExt *asset.RepositoryExtension,
 	a *asset.Asset,
 ) ([]string, error) {
-	scmRepo, err := h.integrationService.GetSCMRepository(ctx, app.GetSCMRepositoryInput{
+	scmRepo, err := h.integrationService.GetSCMRepository(ctx, integrationsvc.GetSCMRepositoryInput{
 		IntegrationID: integrationID,
 		TenantID:      tenantID,
 		FullName:      repoExt.FullName(),
@@ -1827,7 +1828,7 @@ func (h *AssetHandler) performSync(
 
 	if a.Description() == "" && scmRepo.Description != "" {
 		desc := scmRepo.Description
-		_, err = h.service.UpdateAsset(ctx, assetID, tenantID, app.UpdateAssetInput{Description: &desc})
+		_, err = h.service.UpdateAsset(ctx, assetID, tenantID, assetsvc.UpdateAssetInput{Description: &desc})
 		if err != nil {
 			h.logger.Warn("failed to update asset description", "error", err)
 		} else {

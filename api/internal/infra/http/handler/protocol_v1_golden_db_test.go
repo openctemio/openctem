@@ -38,6 +38,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -83,7 +84,7 @@ func newV1Harness(t *testing.T) *v1Harness {
 	log := logger.NewNop()
 
 	sensorRepo := postgres.NewSensorRepository(db)
-	sensorSvc := app.NewSensorService(sensorRepo, nil, log)
+	sensorSvc := sensor.NewSensorService(sensorRepo, nil, log)
 	sensorSvc.SetAPIKeyRepository(postgres.NewSensorAPIKeyRepository(db))
 	cmdSvc := command.NewService(postgres.NewCommandRepository(db), log)
 	ingestSvc := ingest.NewService(
@@ -104,10 +105,10 @@ func newV1Harness(t *testing.T) *v1Harness {
 	// and failed the golden for reasons unrelated to the wire. Raise the
 	// threshold so the golden pins the wire, not the runner's latency; the
 	// back-off itself is covered by the doorbell unit tests.
-	golden := app.DefaultDoorbellConfig()
+	golden := sensor.DefaultDoorbellConfig()
 	golden.SlowQuery = 30 * time.Second
 	golden.QueryTimeout = time.Minute
-	ih.SetDoorbell(app.NewDoorbell(postgres.NewCommandRepository(db),
+	ih.SetDoorbell(sensor.NewDoorbell(postgres.NewCommandRepository(db),
 		golden.Normalized(5*time.Minute), log))
 	// So is the protocol v2 advertisement (RFC-026): flow.golden proves a v1
 	// sensor that does not ask for it sees nothing new.
@@ -146,7 +147,7 @@ func newV1Harness(t *testing.T) *v1Harness {
 		_, _ = sqldb.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantID.String())
 	})
 
-	out, err := sensorSvc.CreateSensor(ctx, app.CreateSensorInput{
+	out, err := sensorSvc.CreateSensor(ctx, sensor.CreateSensorInput{
 		TenantID: tenantID.String(), Name: "golden-sensor", Type: "worker",
 		Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "daemon",
 	})
@@ -386,7 +387,7 @@ func (failingPendingWork) PendingWorkForSensor(context.Context, shared.ID, share
 // A failing doorbell query must not fail the heartbeat: 200, no hints.
 func TestProtocolV1_DoorbellQueryFailureKeepsHeartbeat(t *testing.T) {
 	h := newV1Harness(t)
-	h.ingest.SetDoorbell(app.NewDoorbell(failingPendingWork{}, app.DefaultDoorbellConfig(), logger.NewNop()))
+	h.ingest.SetDoorbell(sensor.NewDoorbell(failingPendingWork{}, sensor.DefaultDoorbellConfig(), logger.NewNop()))
 	h.seedCommand("cmd")
 	h.header = http.Header{legacyv1.HeaderSensorFeatures: {"other, Doorbell"}}
 	tr, _ := h.do(http.MethodPost, "/api/v1/agent/heartbeat", nil, true)

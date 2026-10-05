@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -15,15 +16,15 @@ import (
 
 // SSOHandler handles per-tenant SSO authentication requests.
 type SSOHandler struct {
-	ssoService *app.SSOService
+	ssoService *auth.SSOService
 	audit      *app.AuditService
-	changes    *app.SSOChangeService
+	changes    *auth.SSOChangeService
 	logger     *logger.Logger
 }
 
 // SetChangeApproval routes identity-provider creates and updates made from
 // the platform admin console through an owner's approval (RFC-022).
-func (h *SSOHandler) SetChangeApproval(svc *app.SSOChangeService) {
+func (h *SSOHandler) SetChangeApproval(svc *auth.SSOChangeService) {
 	h.changes = svc
 }
 
@@ -50,7 +51,7 @@ func providerAuditEvent(action audit.Action, ip *identityprovider.IdentityProvid
 }
 
 // NewSSOHandler creates a new SSOHandler.
-func NewSSOHandler(ssoService *app.SSOService, log *logger.Logger) *SSOHandler {
+func NewSSOHandler(ssoService *auth.SSOService, log *logger.Logger) *SSOHandler {
 	return &SSOHandler{
 		ssoService: ssoService,
 		logger:     log.With("handler", "sso"),
@@ -101,7 +102,7 @@ func (h *SSOHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.ssoService.GenerateAuthorizeURL(r.Context(), app.SSOAuthorizeInput{
+	result, err := h.ssoService.GenerateAuthorizeURL(r.Context(), auth.SSOAuthorizeInput{
 		OrgSlug:     orgSlug,
 		Provider:    provider,
 		RedirectURI: redirectURI,
@@ -143,7 +144,7 @@ func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.ssoService.HandleCallback(r.Context(), app.SSOCallbackInput{
+	result, err := h.ssoService.HandleCallback(r.Context(), auth.SSOCallbackInput{
 		Provider:    provider,
 		Code:        req.Code,
 		State:       req.State,
@@ -207,29 +208,29 @@ func (h *SSOHandler) BackChannelLogout(w http.ResponseWriter, r *http.Request) {
 // handlePublicError handles errors for public SSO endpoints with generic messages.
 func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, app.ErrSSOTenantNotFound):
+	case errors.Is(err, auth.ErrSSOTenantNotFound):
 		apierror.NotFound("Organization not found").WriteJSON(w)
-	case errors.Is(err, app.ErrSSONoActiveProviders):
+	case errors.Is(err, auth.ErrSSONoActiveProviders):
 		apierror.NotFound("No SSO providers configured").WriteJSON(w)
-	case errors.Is(err, app.ErrSSOProviderNotFound):
+	case errors.Is(err, auth.ErrSSOProviderNotFound):
 		apierror.NotFound("SSO provider not configured").WriteJSON(w)
-	case errors.Is(err, app.ErrSSOProviderInactive):
+	case errors.Is(err, auth.ErrSSOProviderInactive):
 		apierror.BadRequest("SSO provider is not active").WriteJSON(w)
-	case errors.Is(err, app.ErrSSOInvalidState):
+	case errors.Is(err, auth.ErrSSOInvalidState):
 		apierror.BadRequest("Invalid or expired state token").WriteJSON(w)
-	case errors.Is(err, app.ErrSSOInvalidRedirectURI):
+	case errors.Is(err, auth.ErrSSOInvalidRedirectURI):
 		apierror.BadRequest("Invalid redirect URI").WriteJSON(w)
-	case errors.Is(err, app.ErrSSOExchangeFailed):
+	case errors.Is(err, auth.ErrSSOExchangeFailed):
 		apierror.BadRequest("Failed to complete SSO authentication").WriteJSON(w)
-	case errors.Is(err, app.ErrSSOUserInfoFailed):
+	case errors.Is(err, auth.ErrSSOUserInfoFailed):
 		apierror.BadRequest("Failed to retrieve user information").WriteJSON(w)
-	case errors.Is(err, app.ErrSSODomainNotAllowed):
+	case errors.Is(err, auth.ErrSSODomainNotAllowed):
 		apierror.Forbidden("Your email domain is not allowed for this organization").WriteJSON(w)
-	case errors.Is(err, app.ErrSSONotAMember):
+	case errors.Is(err, auth.ErrSSONotAMember):
 		// Not admitted by the organization's SSO (not a member and not eligible
 		// for just-in-time provisioning). Generic: says nothing about why.
 		apierror.Forbidden("You do not have access to this organization. Contact your administrator.").WriteJSON(w)
-	case errors.Is(err, app.ErrAccountLinkRequiresVerification):
+	case errors.Is(err, auth.ErrAccountLinkRequiresVerification):
 		// Proof-before-link: an account with this email already exists and was not
 		// proven to belong to this federated login. Tell the user to sign in with
 		// their existing credentials first, then link the identity provider.
@@ -281,7 +282,7 @@ func (h *SSOHandler) CreateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	in := app.CreateProviderInput{
+	in := auth.CreateProviderInput{
 		TenantID:         tenantID,
 		Provider:         req.Provider,
 		DisplayName:      req.DisplayName,
@@ -436,7 +437,7 @@ func (h *SSOHandler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	in := app.UpdateProviderInput{
+	in := auth.UpdateProviderInput{
 		ID:               id,
 		TenantID:         tenantID,
 		DisplayName:      req.DisplayName,
@@ -580,7 +581,7 @@ func (h *SSOHandler) handleAdminError(w http.ResponseWriter, err error) {
 	case errors.Is(err, identityprovider.ErrInvalidConfig):
 		h.logger.Warn("invalid provider configuration", "error", err)
 		apierror.BadRequest("Invalid identity provider configuration. Please verify all required fields.").WriteJSON(w)
-	case errors.Is(err, app.ErrSSOInvalidDefaultRole):
+	case errors.Is(err, auth.ErrSSOInvalidDefaultRole):
 		apierror.BadRequest("Invalid default role. Must be admin, member, or viewer").WriteJSON(w)
 	default:
 		h.logger.Error("identity provider error", "error", err)

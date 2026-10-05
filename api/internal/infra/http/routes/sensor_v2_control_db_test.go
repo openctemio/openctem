@@ -21,9 +21,9 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -42,7 +42,7 @@ type ctlHarness struct {
 	t        *testing.T
 	db       *sql.DB
 	srv      *httptest.Server
-	sensors  *app.SensorService
+	sensors  *sensor.SensorService
 	repo     *postgres.SensorRepository
 	cmds     *command.Service
 	tenantID string
@@ -71,7 +71,7 @@ func newCtlHarness(t *testing.T) *ctlHarness {
 	log := logger.NewNop()
 
 	sensorRepo := postgres.NewSensorRepository(db)
-	sensorSvc := app.NewSensorService(sensorRepo, nil, log)
+	sensorSvc := sensor.NewSensorService(sensorRepo, nil, log)
 	sensorSvc.SetAPIKeyRepository(postgres.NewSensorAPIKeyRepository(db))
 	ingestSvc := ingest.NewService(
 		postgres.NewAssetRepository(db), postgres.NewFindingRepository(db),
@@ -83,7 +83,7 @@ func newCtlHarness(t *testing.T) *ctlHarness {
 	sensorSvc.SetCancelFinder(cmdRepo)
 
 	ih := handler.NewIngestHandler(ingestSvc, sensorSvc, log)
-	ih.SetDoorbell(app.NewDoorbell(cmdRepo, app.DefaultDoorbellConfig().Normalized(5*time.Minute), log))
+	ih.SetDoorbell(sensor.NewDoorbell(cmdRepo, sensor.DefaultDoorbellConfig().Normalized(5*time.Minute), log))
 	ch := handler.NewCommandHandler(cmdSvc, validator.New(), log)
 	sh := handler.NewSuppressionHandler(suppression.NewService(postgres.NewSuppressionRepository(db), log), log)
 	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, nil, log)
@@ -128,7 +128,7 @@ func (h *ctlHarness) newTenant() string {
 
 func (h *ctlHarness) newSensor(tenantID, name string) ctlSensor {
 	h.t.Helper()
-	out, err := h.sensors.CreateSensor(context.Background(), app.CreateSensorInput{TenantID: tenantID, Name: name,
+	out, err := h.sensors.CreateSensor(context.Background(), sensor.CreateSensorInput{TenantID: tenantID, Name: name,
 		Type: "worker", Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "daemon"})
 	if err != nil {
 		h.t.Fatalf("create sensor: %v", err)
