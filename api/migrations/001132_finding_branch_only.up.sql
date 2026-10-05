@@ -50,11 +50,11 @@ CREATE TRIGGER trg_findings_mark_branch_only
     FOR EACH ROW EXECUTE FUNCTION findings_mark_branch_only();
 
 -- promote_branch_only_findings clears the mark on the tenant's findings among
--- p_finding_ids that have an occurrence on a counting branch. The exposure
--- starts now: first_detected_at moves to now (the SLA clock and its warning
--- threshold are measured from it) and the deadline keeps its length from
--- there. Each branch's own first sighting stays in finding_branch_occurrences.
--- Returns the promoted finding ids.
+-- p_finding_ids that have an occurrence on a counting branch. The SLA clock
+-- starts now: the deadline keeps its length, measured from now instead of
+-- from first detection. first_detected_at keeps the first sighting on any
+-- branch (the CI gate decides "new" from it); each branch's own first
+-- sighting is in finding_branch_occurrences. Returns the promoted finding ids.
 CREATE OR REPLACE FUNCTION promote_branch_only_findings(p_tenant_id UUID, p_finding_ids UUID[])
 RETURNS SETOF UUID
 LANGUAGE sql VOLATILE AS $$
@@ -62,7 +62,6 @@ LANGUAGE sql VOLATILE AS $$
     SET branch_only = FALSE,
         sla_deadline = f.sla_deadline + (NOW() - COALESCE(f.first_detected_at, f.created_at)),
         sla_status = CASE WHEN f.sla_deadline IS NULL THEN f.sla_status ELSE 'on_track' END,
-        first_detected_at = NOW(),
         updated_at = NOW()
     WHERE f.tenant_id = p_tenant_id
       AND f.id = ANY(p_finding_ids)
