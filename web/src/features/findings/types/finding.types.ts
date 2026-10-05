@@ -859,6 +859,7 @@ export interface Finding {
 
   // Data Flow (Attack Path / Taint Tracking)
   hasDataFlow?: boolean // Lightweight flag for list views
+  branchOnly?: boolean // Seen only on a feature branch; not counted as exposure
   dataFlow?: DataFlow // Full data when fetching single finding
 
   // Type-specific details (based on findingType)
