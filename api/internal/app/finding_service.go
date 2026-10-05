@@ -51,7 +51,6 @@ type (
 	CreateVulnerabilityInput      = finding.CreateVulnerabilityInput
 	EPSSData                      = finding.EPSSData
 	EPSSRepository                = finding.EPSSRepository
-	FindingNotifier               = finding.FindingNotifier
 	GetFindingStatsInput          = finding.GetFindingStatsInput
 	ImportResult                  = finding.ImportResult
 	KEVData                       = finding.KEVData

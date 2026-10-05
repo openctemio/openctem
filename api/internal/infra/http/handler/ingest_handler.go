@@ -639,18 +639,6 @@ func sensorTenantString(agt *sensor.Sensor) string {
 	return agt.TenantID.String()
 }
 
-// WorkerFromContext is an alias for SensorFromContext for backward compatibility.
-// Deprecated: Use SensorFromContext instead.
-func WorkerFromContext(ctx context.Context) *sensor.Sensor {
-	return SensorFromContext(ctx)
-}
-
-// SourceFromContext is an alias for SensorFromContext for backward compatibility.
-// Deprecated: Use SensorFromContext instead.
-func SourceFromContext(ctx context.Context) *sensor.Sensor {
-	return SensorFromContext(ctx)
-}
-
 // =============================================================================
 // CTIS Ingestion Endpoint
 // =============================================================================
