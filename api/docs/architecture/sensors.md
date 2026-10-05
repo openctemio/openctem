@@ -914,6 +914,32 @@ It is registered once and again on change. Heartbeats keep carrying the load.
 6. The diff goes to the activity timeline with the existing event types,
    each with `manifest_digest` and `previous_manifest_digest` in its details.
 
+### Tool contracts
+
+A tool ported to the tool contract (sdk-go `docs/rfcs/sensor-sdk-v2.md`)
+appears in the manifest with `contract: {api_version, digest, version, class,
+tier, network, consumes, produces}`: its `tool.yaml` manifest by digest, with
+the fields the platform plans and binds output with.
+
+- **Validated whole** (`sensor.SanitizeToolContract`): `api_version` must be
+  `openctem.io/tool/v1`; the digest `sha256:<64 hex>`; class, tier and
+  network from their closed sets (T2 only for `target-scan`); at most 64
+  consumes and 64 produces entries, each matching its grammar. One bad member
+  drops the contract (the tool stays) and the manifest's `ignored` list says
+  why (`invalid-contract`). The 256 KiB manifest cap bounds the rest.
+- **Stored inside the manifest version** (`sensor_manifests.manifest`), so it
+  is content-addressed by the manifest digest, kept per sensor and read only
+  under the sensor's tenant. There is no table shared across tenants: a
+  digest one tenant's sensor reports is never visible to, or reused for,
+  another tenant. A changed contract digest is a manifest change
+  (`contracts` in the diff, "tool contract of N changed" on the timeline).
+- **Used by ingest** to narrow what a command-bound report of that tool may
+  carry ([scan-stages.md §4](scan-stages.md#4-report-output-type-binding-owner-decision-g12)).
+  A contract only narrows: it comes from the sensor.
+- **Shown** on the sensor drawer's Manifest tab (class, tier, network,
+  consumes, produces, digest) and returned by
+  `GET /api/v1/sensors/{id}/manifest[s]`.
+
 **Derived manifests.** For a heartbeat without `manifest_digest` that carries
 tools (protocol v1, older SDKs), the platform builds the manifest from the
 sanitized report. Its sensor-wide capabilities are the flat ones no installed
