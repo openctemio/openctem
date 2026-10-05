@@ -212,7 +212,7 @@ func (s *Service) PreviewZoneRouting(ctx context.Context, in ZoneRoutingPreviewI
 	switch {
 	case len(zones) == 0:
 		out.NotRoutedReason = "the tenant has no scan zones: targets are dispatched to any tenant sensor"
-	case scanType == scan.ScanTypeSingle && !s.toolReachesNetwork(ctx, sc.ScannerName):
+	case scanType == scan.ScanTypeSingle && !s.toolReachesNetwork(ctx, sc.TenantID, sc.ScannerName):
 		out.NotRoutedReason = fmt.Sprintf("scanner %q does not scan network targets, so scan zones do not apply", sc.ScannerName)
 	default:
 		out.Routed = true

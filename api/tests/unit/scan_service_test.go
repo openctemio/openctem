@@ -709,7 +709,7 @@ func (m *mockToolRepo) Create(_ context.Context, _ *tool.Tool) error { return ni
 func (m *mockToolRepo) GetByID(_ context.Context, _ shared.ID) (*tool.Tool, error) {
 	return nil, nil
 }
-func (m *mockToolRepo) GetByName(_ context.Context, name string) (*tool.Tool, error) {
+func (m *mockToolRepo) GetByName(_ context.Context, _ shared.ID, name string) (*tool.Tool, error) {
 	t, ok := m.tools[name]
 	if !ok {
 		return nil, shared.ErrNotFound

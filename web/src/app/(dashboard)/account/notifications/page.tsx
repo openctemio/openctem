@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Bell, Mail, AlertTriangle, Save, Loader2, Monitor } from 'lucide-react'
+import { Bell, AlertTriangle, Save, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ErrorState } from '@/features/shared'
 import {
@@ -24,17 +24,15 @@ import {
   type NotificationPreferences,
 } from '@/features/notifications/api/use-notification-api'
 import { NOTIFICATION_TYPES } from '@/features/notifications/lib/notification-types'
-import { getLocalPreferences, mergeLocalPreferences } from '@/features/account'
 
 /**
- * The user's own notification settings: the one place for them.
+ * The user's own notification settings: the one place for them, saved on the
+ * server (PUT /api/v1/notifications/preferences, user-scoped, no permission).
  *
- * Everything here except "This browser" is saved on the server
- * (PUT /api/v1/notifications/preferences, user-scoped, no permission). The
- * desktop toggle has no server field, so it is kept in this browser and
- * labelled as such. The five e-mail toggles that used to sit on Preferences
- * (browser-only, read by nothing) are gone: their server-side equivalents are
- * the e-mail digest and the notification types below.
+ * Only controls that do something are shown: the e-mail digest and desktop
+ * notifications have no sender yet and are hidden until they do (settings
+ * decisions: no control without a consumer). The stored digest value is left
+ * as it is.
  *
  * Organization-wide channels (Slack, Teams, webhooks) are configured under
  * Settings > Integrations > Notification channels.
@@ -45,26 +43,18 @@ export default function NotificationsSettingsPage() {
 
   // Local editing state, initialised from the API.
   const [inAppEnabled, setInAppEnabled] = useState(true)
-  const [emailDigest, setEmailDigest] = useState('daily')
   const [mutedTypes, setMutedTypes] = useState<string[]>([])
   const [minSeverity, setMinSeverity] = useState('info')
-  const [desktop, setDesktop] = useState(false)
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
     if (preferences) {
       setInAppEnabled(preferences.in_app_enabled)
-      setEmailDigest(preferences.email_digest)
       setMutedTypes(preferences.muted_types ?? [])
       setMinSeverity(preferences.min_severity)
       setDirty(false)
     }
   }, [preferences])
-
-  // Browser-only: read after mount (localStorage does not exist on the server).
-  useEffect(() => {
-    setDesktop(getLocalPreferences()?.desktop_notifications ?? false)
-  }, [])
 
   const edit =
     <T,>(set: (v: T) => void) =>
@@ -85,12 +75,10 @@ export default function NotificationsSettingsPage() {
     try {
       const update: Partial<NotificationPreferences> = {
         in_app_enabled: inAppEnabled,
-        email_digest: emailDigest,
         muted_types: mutedTypes,
         min_severity: minSeverity,
       }
       await updateNotificationPreferences(update)
-      mergeLocalPreferences({ desktop_notifications: desktop })
       await invalidatePreferencesCache()
       setDirty(false)
       toast.success('Notification settings saved')
@@ -144,37 +132,6 @@ export default function NotificationsSettingsPage() {
               checked={inAppEnabled}
               onCheckedChange={edit(setInAppEnabled)}
             />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Mail className="h-5 w-5" />
-            Email digest
-          </CardTitle>
-          <CardDescription>
-            A summary of security events by e-mail. Digests are not sent yet; your choice is saved
-            for when they are.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <Label htmlFor="email-digest">Digest frequency</Label>
-              <p className="text-sm text-muted-foreground">How often to receive a summary</p>
-            </div>
-            <Select value={emailDigest} onValueChange={edit(setEmailDigest)}>
-              <SelectTrigger id="email-digest" className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Never</SelectItem>
-                <SelectItem value="daily">Daily</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </CardContent>
       </Card>
@@ -239,35 +196,6 @@ export default function NotificationsSettingsPage() {
                 </div>
               )
             })}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Monitor className="h-5 w-5" />
-            This browser
-          </CardTitle>
-          <CardDescription>
-            Saved in this browser only, not on your account. Other browsers and devices keep their
-            own setting.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <Label htmlFor="desktop-notifications">Desktop notifications</Label>
-              <p className="text-sm text-muted-foreground">
-                Pop-up notifications from this browser. Not sent yet; your choice is kept for when
-                they are.
-              </p>
-            </div>
-            <Switch
-              id="desktop-notifications"
-              checked={desktop}
-              onCheckedChange={edit(setDesktop)}
-            />
           </div>
         </CardContent>
       </Card>

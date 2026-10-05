@@ -14,12 +14,6 @@
       "reason": "The AI-triage mode 'agent' (self-hosted LLM agent, module ai_triage.agent) is an LLM agent, not a sensor."
     },
     {
-      "id": "third-party-agent-products",
-      "files": ".*",
-      "pattern": "(Elastic|Datadog) Agent",
-      "reason": "Product names of other vendors' agents (Elastic Agent + Fleet, Datadog Agent), cited as prior art."
-    },
-    {
       "id": "endpoint-agent-role",
       "files": ".*",
       "pattern": "endpoint[- ]agents?",
