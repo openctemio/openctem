@@ -222,7 +222,7 @@ custom roles).
 | R5 | Signed runner image, GitHub Action and GitLab component, SARIF upload | Open |
 | F1 | CI pipelines: identity, JIT creation, caps, revocation, status, fleet read model (section 10, migration 001084) | Implemented |
 | F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Implemented |
-| F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6, migration 001086) | Implemented (API, Coverage view, pipeline retirement) |
+| F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6, migration 001100) | Implemented (API, Coverage view, pipeline retirement) |
 | F4, F5 | Sensor pools; policy timeouts for daemons (section 10.7) | Design only |
 
 Open points: GitHub Enterprise Server issuers (a GitHub configuration accepts
