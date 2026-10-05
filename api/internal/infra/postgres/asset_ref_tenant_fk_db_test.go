@@ -1,6 +1,6 @@
 package postgres
 
-// Composite tenant foreign keys on asset references (migrations 000810-000812,
+// Composite tenant foreign keys on asset references (migrations 000920-000922,
 // research doc 21b P1-1): the database refuses a row of one tenant that points
 // at another tenant's asset, whatever code writes it, and keeps each table's
 // ON DELETE action.
@@ -147,7 +147,7 @@ func TestAssetRefTenantFKs_RefuseCrossTenantAndKeepOnDelete(t *testing.T) {
 	})
 }
 
-// Replays 000811 down → up → 000812 in a rolled-back transaction over
+// Replays 000921 down → up → 000922 in a rolled-back transaction over
 // populated tables, and proves the pre-flight refuses existing cross-tenant
 // rows without changing anything.
 func TestAssetRefTenantFKs_MigrationReplay(t *testing.T) {
@@ -159,8 +159,8 @@ func TestAssetRefTenantFKs_MigrationReplay(t *testing.T) {
 		}
 		return string(b)
 	}
-	up811, down811, up812 := read("000811_asset_ref_tenant_fks.up.sql"), read("000811_asset_ref_tenant_fks.down.sql"),
-		read("000812_asset_ref_tenant_fks_validate.up.sql")
+	up921, down921, up922 := read("000921_asset_ref_tenant_fks.up.sql"), read("000921_asset_ref_tenant_fks.down.sql"),
+		read("000922_asset_ref_tenant_fks_validate.up.sql")
 
 	db := openGroupsDB(t)
 	tenantA, tenantB := seedTestTenant(ctx, t, db), seedTestTenant(ctx, t, db)
@@ -192,24 +192,24 @@ func TestAssetRefTenantFKs_MigrationReplay(t *testing.T) {
 	}
 
 	run("down then up on populated data", func(tx *sql.Tx) {
-		exec(tx, "down", down811)
-		exec(tx, "up", up811)
-		exec(tx, "validate", up812)
-		exec(tx, "down again", down811)
-		exec(tx, "up again", up811)
-		exec(tx, "validate again", up812)
+		exec(tx, "down", down921)
+		exec(tx, "up", up921)
+		exec(tx, "validate", up922)
+		exec(tx, "down again", down921)
+		exec(tx, "up again", up921)
+		exec(tx, "validate again", up922)
 	})
 
 	run("pre-flight refuses existing cross-tenant rows", func(tx *sql.Tx) {
-		exec(tx, "down", down811)
+		exec(tx, "down", down921)
 		exec(tx, "seed cross-tenant finding", `INSERT INTO findings (tenant_id, asset_id, source, tool_name, severity, message, fingerprint)
 			VALUES ($1, $2, 'manual', 'fk', 'high', 'm', $3)`, tenantA.String(), foreign.String(), "fk-"+shared.NewID().String())
 		exec(tx, "seed cross-tenant scope row", `INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type)
 			SELECT id, $1, $2, 'secondary' FROM users LIMIT 1`, tenantA.String(), foreign.String())
 		exec(tx, "savepoint", `SAVEPOINT before_up`)
-		_, err := tx.ExecContext(ctx, up811)
+		_, err := tx.ExecContext(ctx, up921)
 		if err == nil {
-			t.Fatal("000811 applied over cross-tenant rows")
+			t.Fatal("000921 applied over cross-tenant rows")
 		}
 		if !strings.Contains(err.Error(), "cross-tenant asset references found") || !strings.Contains(err.Error(), "findings.asset_id: 1") {
 			t.Errorf("pre-flight error = %v, want the per-column count", err)

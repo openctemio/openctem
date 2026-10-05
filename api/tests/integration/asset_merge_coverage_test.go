@@ -25,7 +25,7 @@ func assetReferenceColumns(t *testing.T, db *sql.DB) map[string]string {
 		FROM pg_constraint c
 		-- The referencing column paired with assets.id: the only column of a
 		-- single-column key, the asset column of a composite (tenant_id, asset)
-		-- key (migration 000811).
+		-- key (migration 000921).
 		JOIN pg_attribute a ON a.attrelid = c.conrelid
 		 AND a.attnum = c.conkey[array_position(c.confkey, (SELECT attnum FROM pg_attribute WHERE attrelid = 'assets'::regclass AND attname = 'id'))]
 		WHERE c.contype = 'f' AND c.confrelid = 'assets'::regclass

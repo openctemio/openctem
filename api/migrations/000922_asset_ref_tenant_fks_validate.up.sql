@@ -1,9 +1,9 @@
 -- Composite tenant foreign keys on asset references (research doc 21b, P1-1:
 -- the database backstop for C1/C3/C4).
 --
--- Step 3 of 3: validate the existing rows against the constraints 000811
+-- Step 3 of 3: validate the existing rows against the constraints 000921
 -- added NOT VALID. VALIDATE CONSTRAINT takes SHARE UPDATE EXCLUSIVE on each
--- table (reads and writes continue) and scans it once. 000811's pre-flight
+-- table (reads and writes continue) and scans it once. 000921's pre-flight
 -- already proved no row violates them, and every row written since is
 -- checked, so this cannot fail on data that passed the pre-flight.
 ALTER TABLE assets VALIDATE CONSTRAINT fk_assets_tenant_parent;
