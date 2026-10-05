@@ -191,6 +191,8 @@ type Service struct {
 
 	// tombstones lets promotion skip rejected names (nil: no check).
 	tombstones TombstoneChecker
+	// tenantSettings carries the per-tenant switch and interval.
+	tenantSettings TenantSettingsReader
 	// relinker moves stored CT exposures onto their host's asset.
 	relinker ExposureRelinker
 
@@ -314,6 +316,11 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		defer release()
 	}
 
+	run, recheck := s.tenantRecheck(ctx, tenantID)
+	if !run {
+		return 0, nil
+	}
+
 	// Retention (O7): rejected-name tombstones expire after 12 months.
 	if s.tombstones != nil {
 		if _, err := s.tombstones.PurgeExpiredTombstones(ctx, tenantID); err != nil {
@@ -349,7 +356,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		}
 	}
 	now := s.now()
-	due, deferred := selectDue(roots, states, now, s.recheckAfter, s.maxDomains)
+	due, deferred := selectDue(roots, states, now, recheck, s.maxDomains)
 	if deferred > 0 {
 		s.logger.Info("ct sweep: more domains due than the per-run cap; the rest rotate in on later runs",
 			"tenant_id", tenantID.String(), "cap", s.maxDomains, "deferred", deferred)
