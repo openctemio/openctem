@@ -102,6 +102,16 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			logoutHandler := ChainFunc(h.LocalAuth.Logout, authMiddleware)
 			r.POST("/logout", logoutHandler.ServeHTTP)
 
+			// Step-up re-authentication (docs/architecture/step-up-reauth.md):
+			// the signed-in user proves their identity again (TOTP when
+			// enrolled, else the password) to open a 10-minute window on this
+			// session for sensitive routes (requireStepUp). Its own rate-limit
+			// bucket per IP; wrong proofs also count towards the account
+			// lockout. CSRF is enforced by authMiddleware for cookie sessions.
+			stepUpRL := newAuthRateLimiter("step-up").LoginMiddleware()
+			r.GET("/step-up", ChainFunc(h.LocalAuth.GetStepUp, authMiddleware).ServeHTTP)
+			r.POST("/step-up", ChainFunc(h.LocalAuth.StepUp, stepUpRL, authMiddleware).ServeHTTP)
+
 		}
 
 		// OIDC token endpoint (deprecated - returns Keycloak redirect info)
