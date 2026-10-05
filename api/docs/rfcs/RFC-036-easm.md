@@ -827,7 +827,13 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
 
 - **P0-11 EASM settings and run-now:** open.
 
-- **P0-12 review queue reachable, honest counts (E1):** open.
+- **P0-12 review queue reachable, honest counts (E1):** shipped (this PR,
+  no migration). Attack surface has Overview | Review tabs and a sidebar
+  badge with the queue's own total (needs_review + candidate); `?tab=rejected`
+  opens "Not ours"; the overview, the exposed list and `/attack-surface/external`
+  count approved assets only; "internet-facing" means `exposure = public`
+  everywhere; `?attribution=all` is accepted. The E1 308 of
+  `/attack-surface/external` waits for the inventory's external columns.
 
 - **P0-13 honest EASM numbers:** open.
 

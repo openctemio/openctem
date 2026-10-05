@@ -6,6 +6,8 @@
  */
 import {
   AlertTriangle,
+  ClipboardCheck,
+  Globe,
   Bug,
   Building,
   Building2,
@@ -127,6 +129,28 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     href: '/assets/suggestions',
     icon: Link2,
     module: 'relationships',
+    permission: Permission.AssetsRead,
+  },
+]
+
+/**
+ * Attack surface: the EASM overview and the ownership review queue
+ * (research/22 P0-12: the queue is one click from the sidebar, with the
+ * number of names waiting).
+ */
+export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
+  {
+    label: 'Overview',
+    href: '/attack-surface',
+    icon: Globe,
+    module: 'attack_surface',
+    permission: Permission.AssetsRead,
+  },
+  {
+    label: 'Review',
+    href: '/attack-surface/review',
+    icon: ClipboardCheck,
+    module: 'attack_surface',
     permission: Permission.AssetsRead,
   },
 ]
