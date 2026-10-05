@@ -149,7 +149,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/business-units":    {classPartial, "asset links scoped (L-10); the unit list and counts are tenant-wide"},
 	"/api/v1/ctem-cycles":       {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},
 	"/api/v1/approvals":         {classPartial, "approvals by id and the page scoped; total tenant-wide (L-18)"},
-	"/api/v1/remediation":       {classPartial, "resolve scoped; campaign progress counts tenant-wide (L-18)"},
+	"/api/v1/remediation":       {classScoped, "resolve scoped; campaign progress counts follow the reader (L-18, research 24)"},
 	"/api/v1/dashboard":         {classPartial, "activity and top risks scoped; counts and trends tenant-wide until P1-4 (D6)"},
 
 	// --- separate ------------------------------------------------------------------

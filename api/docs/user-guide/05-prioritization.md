@@ -51,7 +51,10 @@ Two settings pages control the ranking itself:
 - **Priority Rules** (**Settings → Priority Rules**, `/settings/priority-rules`)
   — create override rules that bump or set the priority class of findings that
   match conditions you define. Click **Create Rule**, choose the target, set the
-  evaluation order, add conditions, and save.
+  evaluation order, add conditions, and save. A rule needs at least one
+  condition (a rule without conditions would re-class every finding), and each
+  condition must use a known field, an operator that field supports and a value
+  of the right type; the API refuses anything else with `422`.
 - **Risk Scoring** (**Settings → Risk Scoring**, `/settings/scoring`) — edit the
   weighted components that produce each finding's risk score, using presets or
   custom weights. **Preview** the effect, **Save Changes**, optionally enable the

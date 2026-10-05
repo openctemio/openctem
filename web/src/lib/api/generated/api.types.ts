@@ -31962,7 +31962,7 @@ export interface paths {
     put?: never
     /**
      * Enable 2FA
-     * @description Confirms the authenticator with a code and turns 2FA on. Signs out every other session. Returns recovery codes, shown once.
+     * @description Confirms the authenticator with a code and turns 2FA on. Needs the current password. Signs out every other session. Returns recovery codes, shown once.
      */
     post: {
       parameters: {
@@ -31971,7 +31971,12 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.MFACodeRequest']
+      /** @description Current password and authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.MFAEnableRequest']
+        }
+      }
       responses: {
         /** @description OK */
         200: {
@@ -32032,7 +32037,12 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.MFACodeRequest']
+      /** @description Authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.MFACodeRequest']
+        }
+      }
       responses: {
         /** @description OK */
         200: {
@@ -37256,9 +37266,6 @@ export interface components {
       asset_id?: string
       critical_days: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days: number
       info_days: number
@@ -37266,6 +37273,11 @@ export interface components {
       low_days: number
       medium_days: number
       name: string
+      /** @description P0Days..P3Days are optional; an omitted class keeps its default window. */
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       warning_threshold_pct?: number
     }
     'internal_infra_http_handler.CreateScanProfileRequest': {
@@ -38853,6 +38865,10 @@ export interface components {
       code: string
       password: string
     }
+    'internal_infra_http_handler.MFAEnableRequest': {
+      code: string
+      password: string
+    }
     'internal_infra_http_handler.MFAEnrollmentConfirmRequest': {
       code: string
       mfa_token: string
@@ -39500,9 +39516,6 @@ export interface components {
       created_at?: string
       critical_days?: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days?: number
       id?: string
@@ -39512,6 +39525,15 @@ export interface components {
       low_days?: number
       medium_days?: number
       name?: string
+      /**
+       * @description P0Days..P3Days are the remediation windows per CTEM priority class.
+       *     They take precedence over the severity windows for every finding that
+       *     has a priority class.
+       */
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       tenant_id?: string
       updated_at?: string
       warning_threshold_pct?: number
@@ -40957,9 +40979,6 @@ export interface components {
     'internal_infra_http_handler.UpdateSLAPolicyRequest': {
       critical_days?: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days?: number
       info_days?: number
@@ -40968,6 +40987,10 @@ export interface components {
       low_days?: number
       medium_days?: number
       name?: string
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       warning_threshold_pct?: number
     }
     'internal_infra_http_handler.UpdateScanProfileRequest': {
@@ -41260,12 +41283,6 @@ export interface components {
     'internal_infra_http_handler.BulkToolIDsRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.BulkToolIDsRequest']
-      }
-    }
-    /** @description Authenticator code */
-    'internal_infra_http_handler.MFACodeRequest': {
-      content: {
-        'application/json': components['schemas']['internal_infra_http_handler.MFACodeRequest']
       }
     }
   }

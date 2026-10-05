@@ -4,10 +4,9 @@
  * SWR hooks for the shipped /api/v1/sla-policies backend
  * (api: internal/infra/http/routes/misc.go + handler/sla_handler.go).
  *
- * The HTTP surface exposes per-severity remediation windows only. The domain
- * entity also carries per-CTEM-priority (P0..P3) days, but those are NOT part
- * of the create/update request nor the response JSON, so they are intentionally
- * absent here — see SLAPolicyResponse in sla_handler.go.
+ * A policy carries two sets of remediation windows: per CTEM priority class
+ * (P0..P3, used for every finding that has a class) and per severity (used
+ * only for findings without a class yet).
  *
  * Tenant is derived from the JWT on the server; no tenant param is sent.
  */
@@ -40,9 +39,12 @@ export interface SlaPolicy {
   medium_days: number
   low_days: number
   info_days: number
+  p0_days: number
+  p1_days: number
+  p2_days: number
+  p3_days: number
   warning_threshold_pct: number
   escalation_enabled: boolean
-  escalation_config?: Record<string, unknown>
   is_active: boolean
   created_at: string
   updated_at: string
@@ -63,6 +65,11 @@ export interface CreateSlaPolicyInput {
   medium_days: number
   low_days: number
   info_days: number
+  /** Priority-class windows; an omitted class keeps the platform default. */
+  p0_days?: number
+  p1_days?: number
+  p2_days?: number
+  p3_days?: number
   warning_threshold_pct: number
   escalation_enabled?: boolean
   /** Optional per-asset override; omit for a tenant-level policy. */
@@ -109,6 +116,21 @@ export function useDefaultSlaPolicyApi(config?: SWRConfiguration) {
   return useSWR<SlaPolicy>(key, (url: string) => get<SlaPolicy>(url), {
     ...defaultConfig,
     // A missing default is an expected state, not an error to toast.
+    onError: () => {},
+    shouldRetryOnError: false,
+    ...config,
+  })
+}
+
+/**
+ * The policy that governs an asset: its own override, else the tenant default.
+ * Returns 404 when neither exists (the platform defaults then apply).
+ */
+export function useAssetSlaPolicyApi(assetId: string | null, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && assetId ? `/api/v1/assets/${assetId}/sla-policy/` : null
+  return useSWR<SlaPolicy>(key, (url: string) => get<SlaPolicy>(url), {
+    ...defaultConfig,
     onError: () => {},
     shouldRetryOnError: false,
     ...config,

@@ -86,6 +86,7 @@ pipeline_runs
 pipeline_templates
 priority_class_audit_log
 priority_override_rules
+priority_rule_safety_report
 relationship_suggestions
 remediation_campaign_tickets
 remediation_campaigns

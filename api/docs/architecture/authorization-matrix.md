@@ -831,7 +831,7 @@ group's assignment, which is why adding or removing one needs
 | Route | Gate |
 |---|---|
 | `GET /api/v1/assets/{id}/access-grants` | `team:groups:read` + data scope on the asset |
-| `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 409 when the grant exists; audited `asset.access_granted` |
+| `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 403 when the user is the caller (no self-grant, so access held through a group cannot be turned into a personal grant before leaving it); 409 when the grant exists; audited `asset.access_granted` |
 | `DELETE /api/v1/assets/{id}/access-grants/{grant_id}` | `team:groups:write`; the grant must be on that asset of the caller's organization (404); audited `asset.access_revoked`. The user keeps the asset only if a group still holds it |
 | `POST /api/v1/assets/{id}/owners` with `group_id` · `DELETE /api/v1/assets/{id}/owners/{id}` of a group owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise) |
 | `POST /api/v1/groups/{g}/assets` · `/assets/bulk` · scope rules | `team:groups:write`; the group must be in the caller's organization, and each asset must be a live asset of the **group's** organization. A single assign answers 404 for a foreign, deleted or unknown asset id alike; a bulk assign counts them as failed |
@@ -1025,9 +1025,18 @@ computed with the same SQL condition as every scoped list:
 | Restricted member with **`dashboard:aggregate`** (new permission, migration `000774`; owner and admin by default, custom roles when granted) | the organization totals; breakdown buckets under 5 are left out (k-floor), so a total does not single out an asset they cannot see |
 
 Recent activity and top risks are row data and stay limited to the viewer's
-scope whatever the permission. The other dashboard metrics (MTTR, velocity,
-data quality, risk trend, program, process and executive metrics) move the
-same way in a follow-up; until then they stay in the table below.
+scope whatever the permission. MTTR (`GET /dashboard/mttr` and
+`/dashboard/mttr-analytics`) follows the viewer the same way (research 24
+§5.1): a restricted member averages their own in-scope findings, with
+`dashboard:aggregate` the organization. The other dashboard metrics
+(velocity, data quality, risk trend, program, process and executive metrics)
+move the same way in a follow-up; until then they stay in the table below.
+
+Remediation campaign progress follows the reader too (research 15 L-18,
+research 24): a restricted member reading a campaign (`GET`, list, and the
+responses of update, status and refresh) sees the finding and resolved counts
+of their own in-scope findings. The stored counts stay organization-wide,
+because auto-complete reads them; a restricted read never persists its view.
 ### Scheduled report recipients
 
 A scheduled report mails organization posture out, so its recipients are
@@ -1063,7 +1072,7 @@ query; none exposes a row, name, title or id of an out-of-scope object.
 
 | Endpoint | Why tenant-wide |
 |---|---|
-| `GET /dashboard/{mttr,velocity,data-quality,risk-trend,mttr-analytics,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
+| `GET /dashboard/{velocity,data-quality,risk-trend,process-metrics,program-metrics}`, executive-summary metrics | program-level KPIs, counts and averages |
 | `GET /attack-surface/stats` average risk score and per-type breakdown | aggregate; the counts and row lists on that endpoint are scoped |
 | `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
