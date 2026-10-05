@@ -37,6 +37,10 @@
 >   (#916). The sensor side (sdk-go#140, sensor#119) is merged but not
 >   released: sensor v0.8.0 and older ignore the policy file and the kill
 >   switch.
+> - **A7 (stale ceiling)** dispatch pre-check from the reported local policy
+>   (research/25 P0): poll, claim and the scan-trigger preflight share one
+>   `sensor.Accepts` check, so the platform stops dispatching jobs a sensor
+>   would refuse ([sensors.md](sensors.md#sensor-local-policy-rfc-040-57)).
 
 The owner's goal is **mutual distrust**: compromising one side must not be
 enough to exploit the other.

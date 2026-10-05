@@ -55,6 +55,33 @@ export function toDisplayText(value: unknown, max: number = MAX_DISPLAY_CHARS): 
   return cut ? `${s}…` : s
 }
 
+/** The most characters of one multi-line block ever rendered (64 KiB of output). */
+export const MAX_DISPLAY_BLOCK_CHARS = 70_000
+
+/**
+ * A multi-line value (scanner output, a banner) as it is safe to show in a
+ * `<pre>`: line breaks and tabs are kept (that is the point of a block), CR LF
+ * becomes LF, a lone CR (which can overwrite a line on a terminal) becomes a
+ * visible escape, bidi and other control characters (ANSI ESC included)
+ * become visible `\u{XXXX}` escapes, and anything past `max` is cut with a
+ * note. Never decodes, links, or interprets markup: render it as React text.
+ */
+export function toDisplayBlock(value: unknown, max: number = MAX_DISPLAY_BLOCK_CHARS): string {
+  if (value === null || value === undefined) return ''
+  let s = String(value)
+  let cut = false
+  if (s.length > max) {
+    s = s.slice(0, max).replace(/[\uD800-\uDBFF]$/, '')
+    cut = true
+  }
+  s = s
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, escapeChar)
+    .replace(BIDI_CONTROLS, escapeChar)
+    .replace(OTHER_CONTROLS, escapeChar)
+  return cut ? `${s}\n… (cut for display; Copy copies the whole text)` : s
+}
+
 /** Whether the value carries a character that `toDisplayText` neutralises. */
 export function hasHiddenCharacters(value: string): boolean {
   return (

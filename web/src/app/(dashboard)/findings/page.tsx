@@ -7,7 +7,14 @@ import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } fro
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
+  DEFAULT_FINDING_LENS,
+  FINDING_LENSES,
+  parseFindingLens,
+  type FindingLens,
+} from '@/features/findings/lib/state-lens'
+import {
   useUrlParams,
+  useUrlParam,
   useUrlFilter,
   useUrlFilterList,
   pushUrlSearch,
@@ -25,6 +32,7 @@ import {
   groupFindingSourcesByCategory,
 } from '@/features/config/api/finding-source-api'
 import { useDebounce } from '@/hooks/use-debounce'
+import { toDisplayText } from '@/lib/untrusted-text'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -42,6 +50,8 @@ import {
   BulkActionBar,
   FilterPanelToggle,
   FilterSheet,
+  TruncatedText,
+  SegmentedLens,
   DrillDownBreadcrumb,
 } from '@/features/shared'
 import { Input } from '@/components/ui/input'
@@ -454,6 +464,12 @@ function FindingsContent() {
   const [reachableFilter, setReachableFilter] = useUrlFilter('is_reachable', 'false')
   const [slaFilter, setSlaFilter] = useUrlFilterList('sla_status')
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
+  // The state lens (Open, the default · Fixed · Dispositioned · All). A saved
+  // view carries its own status scope, so the default lens is not laid on top
+  // of one; a lens picked explicitly still is.
+  const rawLens = useUrlParam('state')
+  const [, setLensParam] = useUrlFilter('state', DEFAULT_FINDING_LENS)
+  const lens = parseFindingLens(rawLens)
   // "Assigned to me" / My Work: findings the current user is the assignee of,
   // owns the asset of, or is a member of an assigned group. Independent, stackable
   // with the CTEM signals; the backend resolves the user from the token.
@@ -671,6 +687,7 @@ function FindingsContent() {
     if (ownerUnassigned) filters.asset_owner_unassigned = true
     if (severities.length > 0) filters.severities = severities
     if (savedId) filters.view = savedId
+    if (!savedId || rawLens) filters.state = lens
     if (statuses.length > 0) {
       filters.statuses = statuses as NonNullable<FindingApiFilters['statuses']>
     } else if (!savedId) {
@@ -717,6 +734,8 @@ function FindingsContent() {
     pagination,
     sortParam,
     savedId,
+    lens,
+    rawLens,
   ])
 
   // The metric strip counts what the table shows (RFC-048: stats take the
@@ -751,6 +770,7 @@ function FindingsContent() {
     ownerNullParam,
     groupParam,
     viewParam,
+    lens,
     severities.join(),
     statuses.join(),
     sourceFilter.join(),
@@ -780,6 +800,12 @@ function FindingsContent() {
     isLoading: statsLoading,
     mutate: mutateStats,
   } = useFindingStatsApi(statsFilters)
+  // The lens counts: the same filter under every lens at once (by_state).
+  const lensStatsFilters = useMemo(
+    () => ({ ...statsFilters, state: 'all' as const }),
+    [statsFilters]
+  )
+  const { data: lensStats } = useFindingStatsApi(lensStatsFilters)
 
   // Fetch findings from API (filtered by severity tab)
   const {
@@ -1122,7 +1148,7 @@ function FindingsContent() {
               // The title leads the name, so a screen reader announces which
               // finding the button opens (it used to read "View finding
               // details" on every row).
-              aria-label={`${row.getValue('title')}, view details`}
+              aria-label={`${toDisplayText(row.getValue('title'), 300)}, view details`}
               onClick={() => handleRowClick(row.original)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -1132,7 +1158,10 @@ function FindingsContent() {
               }}
             >
               <div className="flex items-center gap-1.5">
-                <p className="font-medium truncate">{row.getValue('title')}</p>
+                {/* Scanner-supplied text: escaped, isolated, never markup. */}
+                <p dir="auto" className="font-medium truncate [unicode-bidi:isolate]">
+                  {toDisplayText(row.getValue('title'), 500)}
+                </p>
                 {/* KEV — actively exploited; the single most urgent triage signal */}
                 {row.original.isInKev && (
                   <Tooltip>
@@ -1245,12 +1274,11 @@ function FindingsContent() {
             )
           }
           return (
-            <span
-              className="text-muted-foreground block max-w-[200px] truncate font-mono text-sm"
-              title={name}
-            >
-              {name}
-            </span>
+            <TruncatedText
+              value={name}
+              label="Location"
+              className="max-w-[200px] font-mono text-sm text-muted-foreground"
+            />
           )
         },
       },
@@ -1722,8 +1750,19 @@ function FindingsContent() {
     </>
   )
 
+  const lensControl = (
+    <SegmentedLens<FindingLens>
+      label="Finding state"
+      countNoun="findings"
+      value={lens}
+      onChange={(next) => setLensParam(next)}
+      options={FINDING_LENSES.map((l) => ({ ...l, count: lensStats?.by_state?.[l.value] }))}
+    />
+  )
+
   const toolbarEnd = (
     <>
+      {lensControl}
       <SavedViewsMenu
         page="findings"
         activeId={savedId}
@@ -1755,7 +1794,9 @@ function FindingsContent() {
     >
       <SeverityBadge severity={f.severity} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
-        <p className="line-clamp-2 text-sm font-medium">{f.title}</p>
+        <p dir="auto" className="line-clamp-2 text-sm font-medium [unicode-bidi:isolate]">
+          {toDisplayText(f.title, 500)}
+        </p>
         {(f.cve || f.scanner) && (
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {f.cve && <span className="font-mono">{f.cve}</span>}
@@ -1948,6 +1989,7 @@ function FindingsContent() {
                     sources: sourceFilter.join(',') || undefined,
                     assignedToMe: mineActive,
                     view: savedId,
+                    state: !savedId || rawLens ? lens : undefined,
                   }}
                   renderGroupActions={groupActions}
                   onViewGroup={viewableGroup ? viewGroup : undefined}
@@ -1963,6 +2005,7 @@ function FindingsContent() {
                   }
                   toolbarEnd={
                     <>
+                      {lensControl}
                       {groupBy === 'owner_id' && hasUnassignedGroup && (
                         <Button
                           variant="outline"
