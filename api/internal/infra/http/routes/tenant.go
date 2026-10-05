@@ -161,9 +161,8 @@ func registerTenantRoutes(
 		r.GET("/settings/modules/bundles", h.GetModuleBundles, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
 		r.POST("/settings/modules/bundles", h.SubscribeModuleBundles, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 
-		// Security & API settings (owner only - sensitive)
+		// Security settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite))
-		r.PATCH("/settings/api", h.UpdateAPISettings, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite))
 
 		// SSO changes a platform administrator proposed for this organization
 		// (RFC-022). Owner only: approving one installs who can sign in.

@@ -881,7 +881,8 @@ git commit -m "fix(security): add input validation
 This file describes conventions, not history, so it keeps no change log and
 no counts that go stale:
 
-- **What changed:** `git log` on `develop`, `CHANGELOG.md`, and the RFC index
+- **What changed:** `git log` on `develop`, `changelog.d/` (unreleased entries,
+  one file per change; never edit `CHANGELOG.md` directly), `CHANGELOG.md`, and the RFC index
   (`docs/rfcs/README.md`), which maps each design to its implementation PRs.
 - **Migrations:** the numbers are not contiguous (renumbering leaves gaps), so
   do not count them. The newest is
