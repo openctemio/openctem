@@ -35306,6 +35306,7 @@ export interface components {
       | 'contains'
       | 'exposes'
       | 'resolves_to'
+      | 'serves_certificate'
       | 'cname_of'
       | 'depends_on'
       | 'peer_of'
