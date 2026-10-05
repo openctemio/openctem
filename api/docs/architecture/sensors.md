@@ -1220,7 +1220,7 @@ and narrows dispatch:
   window) and, once per folded burst, the audit action
   `sensor.job_refused_local_policy` (severity high).
 - **Structured refusal and re-queue** (research/25 §3.6, D8; migration
-  001019). Hello feature `refusal`: v2 `POST /commands/{id}/fail` accepts
+  001035). Hello feature `refusal`: v2 `POST /commands/{id}/fail` accepts
   `refusal: {layer, rule, detail}` (layer from a closed set: `builtin`,
   `local`, `managed`, `scope`, `platform_tool_gate`; sanitized like the
   report). Without it a reason starting `refused by local policy: ` still
