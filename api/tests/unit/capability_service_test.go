@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	capabilitysvc "github.com/openctemio/openctem/api/internal/app/capability"
 	"github.com/openctemio/openctem/api/pkg/domain/capability"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -236,10 +236,10 @@ func (m *MockCapabilityRepository) AddCapability(c *capability.Capability) {
 // Test Helpers
 // ============================================================================
 
-func newCapabilityTestService() (*app.CapabilityService, *MockCapabilityRepository) {
+func newCapabilityTestService() (*capabilitysvc.CapabilityService, *MockCapabilityRepository) {
 	repo := NewMockCapabilityRepository()
 	log := logger.NewDevelopment()
-	svc := app.NewCapabilityService(repo, nil, log)
+	svc := capabilitysvc.NewCapabilityService(repo, nil, log)
 	return svc, repo
 }
 
@@ -596,7 +596,7 @@ func TestCapabilityService_CreateCapability_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	input := app.CreateCapabilityInput{
+	input := capabilitysvc.CreateCapabilityInput{
 		TenantID:    tenantID.String(),
 		CreatedBy:   userID.String(),
 		Name:        "custom-scan",
@@ -632,7 +632,7 @@ func TestCapabilityService_CreateCapability_DuplicateName(t *testing.T) {
 	existing := createTenantCapability(tenantID, "existing-cap", "Existing")
 	repo.AddCapability(existing)
 
-	input := app.CreateCapabilityInput{
+	input := capabilitysvc.CreateCapabilityInput{
 		TenantID:    tenantID.String(),
 		CreatedBy:   userID.String(),
 		Name:        "existing-cap", // Duplicate name
@@ -655,7 +655,7 @@ func TestCapabilityService_CreateCapability_PlatformNameConflict(t *testing.T) {
 	repo.AddCapability(platformCap)
 
 	// Try to create tenant capability with same name as platform
-	input := app.CreateCapabilityInput{
+	input := capabilitysvc.CreateCapabilityInput{
 		TenantID:    tenantID.String(),
 		CreatedBy:   userID.String(),
 		Name:        "sast", // Conflicts with platform capability
@@ -687,7 +687,7 @@ func TestCapabilityService_CreateCapability_InvalidName(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			input := app.CreateCapabilityInput{
+			input := capabilitysvc.CreateCapabilityInput{
 				TenantID:    tenantID.String(),
 				CreatedBy:   userID.String(),
 				Name:        tc.invalidName,
@@ -711,7 +711,7 @@ func TestCapabilityService_CreateCapability_ReservedName(t *testing.T) {
 
 	for _, name := range reservedNames {
 		t.Run(name, func(t *testing.T) {
-			input := app.CreateCapabilityInput{
+			input := capabilitysvc.CreateCapabilityInput{
 				TenantID:    tenantID.String(),
 				CreatedBy:   userID.String(),
 				Name:        name,
@@ -738,7 +738,7 @@ func TestCapabilityService_UpdateCapability_Success(t *testing.T) {
 	cap := createTenantCapability(tenantID, "my-scan", "My Scan")
 	repo.AddCapability(cap)
 
-	input := app.UpdateCapabilityInput{
+	input := capabilitysvc.UpdateCapabilityInput{
 		TenantID:    tenantID.String(),
 		ID:          cap.ID.String(),
 		DisplayName: "Updated Name",
@@ -773,7 +773,7 @@ func TestCapabilityService_UpdateCapability_TenantIsolation(t *testing.T) {
 	repo.AddCapability(cap)
 
 	// Tenant2 tries to update tenant1's capability
-	input := app.UpdateCapabilityInput{
+	input := capabilitysvc.UpdateCapabilityInput{
 		TenantID:    tenant2.String(),
 		ID:          cap.ID.String(),
 		DisplayName: "Hacked Name",
@@ -794,7 +794,7 @@ func TestCapabilityService_UpdateCapability_CannotUpdatePlatform(t *testing.T) {
 	cap := createPlatformCapability("sast", "SAST", "security")
 	repo.AddCapability(cap)
 
-	input := app.UpdateCapabilityInput{
+	input := capabilitysvc.UpdateCapabilityInput{
 		TenantID:    tenantID.String(),
 		ID:          cap.ID.String(),
 		DisplayName: "My Custom SAST",
@@ -818,7 +818,7 @@ func TestCapabilityService_DeleteCapability_Success(t *testing.T) {
 	cap := createTenantCapability(tenantID, "my-scan", "My Scan")
 	repo.AddCapability(cap)
 
-	input := app.DeleteCapabilityInput{
+	input := capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenantID.String(),
 		CapabilityID: cap.ID.String(),
 	}
@@ -847,7 +847,7 @@ func TestCapabilityService_DeleteCapability_InUse(t *testing.T) {
 		SensorCount: 1,
 	})
 
-	input := app.DeleteCapabilityInput{
+	input := capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenantID.String(),
 		CapabilityID: cap.ID.String(),
 		Force:        false,
@@ -871,7 +871,7 @@ func TestCapabilityService_DeleteCapability_ForceDelete(t *testing.T) {
 		SensorCount: 1,
 	})
 
-	input := app.DeleteCapabilityInput{
+	input := capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenantID.String(),
 		CapabilityID: cap.ID.String(),
 		Force:        true, // Force delete
@@ -895,7 +895,7 @@ func TestCapabilityService_DeleteCapability_TenantIsolation(t *testing.T) {
 	repo.AddCapability(cap)
 
 	// Tenant2 tries to delete tenant1's capability
-	input := app.DeleteCapabilityInput{
+	input := capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenant2.String(),
 		CapabilityID: cap.ID.String(),
 	}
@@ -915,7 +915,7 @@ func TestCapabilityService_DeleteCapability_CannotDeletePlatform(t *testing.T) {
 	cap := createPlatformCapability("sast", "SAST", "security")
 	repo.AddCapability(cap)
 
-	input := app.DeleteCapabilityInput{
+	input := capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenantID.String(),
 		CapabilityID: cap.ID.String(),
 	}
