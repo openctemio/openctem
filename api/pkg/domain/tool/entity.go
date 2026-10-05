@@ -64,6 +64,11 @@ type Tool struct {
 	// Supported input/output
 	SupportedTargets []string // 'url', 'domain', 'ip', 'file', 'repository', 'container'
 	OutputFormats    []string // 'json', 'sarif', 'csv', 'txt'
+	// OutputTypes are the asset types a report of the tool may create
+	// (tools.output_types, from the scan stage catalog in
+	// pkg/domain/stage). Read-only: no API writes it, so a tenant cannot
+	// widen what its reports may create.
+	OutputTypes []string
 
 	// Documentation
 	DocsURL   string
