@@ -755,11 +755,15 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 
 // jitMembershipRole is the membership role of a user admitted by SSO
 // just-in-time provisioning: the organization's configured default when it is
-// admin, member or viewer, otherwise viewer (least privilege). Owner is never
+// member or viewer, otherwise viewer (least privilege). Owner is never
 // granted by SSO.
+//
+// Admin is never granted this way (owner decision B18), including for
+// providers stored before the rule or SSO_ENTRA_DEFAULT_ROLE=admin: such a
+// configuration provisions viewers.
 func jitMembershipRole(configured string) tenantdom.Role {
 	switch r := tenantdom.Role(strings.ToLower(strings.TrimSpace(configured))); r {
-	case tenantdom.RoleAdmin, tenantdom.RoleMember, tenantdom.RoleViewer:
+	case tenantdom.RoleMember, tenantdom.RoleViewer:
 		return r
 	default:
 		return tenantdom.RoleViewer
@@ -1664,9 +1668,9 @@ type CreateProviderInput struct {
 }
 
 // validSSODefaultRoles are the roles allowed for auto-provisioned SSO users.
-// Owner is excluded — owners must be explicitly promoted.
+// Owner and admin are excluded (owner decision B18): an IdP misconfiguration
+// must not provision administrators; admins are promoted explicitly.
 var validSSODefaultRoles = map[string]bool{
-	"admin":  true,
 	"member": true,
 	"viewer": true,
 }
@@ -1677,7 +1681,7 @@ func validateDefaultRole(role string) error {
 		return nil // Will use entity default ("member")
 	}
 	if !validSSODefaultRoles[role] {
-		return fmt.Errorf("%w: must be admin, member, or viewer", ErrSSOInvalidDefaultRole)
+		return fmt.Errorf("%w: must be member or viewer", ErrSSOInvalidDefaultRole)
 	}
 	return nil
 }

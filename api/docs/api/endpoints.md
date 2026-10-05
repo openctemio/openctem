@@ -139,10 +139,9 @@ The `/invitations/:token/...` paths are deprecated aliases (RFC-041; `Deprecatio
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|------------|
-| GET | `/tenants/:tenant/settings` | Get all settings | Team member |
+| GET | `/tenants/:tenant/settings` | Get settings (security and risk scoring for owners/admins only) | Team member |
 | PATCH | `/tenants/:tenant/settings/general` | Update general settings | Team admin+ |
 | PATCH | `/tenants/:tenant/settings/security` | Update security settings | Team admin+ |
-| PATCH | `/tenants/:tenant/settings/api` | Update API settings | Team admin+ |
 | PATCH | `/tenants/:tenant/settings/branding` | Update branding settings | Team admin+ |
 
 Each section is saved on its own. Responses carry `etags` (one per section); send a section tag as `If-Match` to get `409 SETTINGS_CONFLICT` instead of overwriting a newer save. See [Organization Settings](../architecture/organization-settings.md).
