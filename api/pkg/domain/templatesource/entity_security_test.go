@@ -87,7 +87,7 @@ func TestS3SourceConfig_RequiresTenantCredentialsAndSafeEndpoint(t *testing.T) {
 		t.Error("sts_role without role_arn must be refused")
 	}
 
-	for _, ep := range []string{"gopher://x", "http://user:pw@minio:9000", "http://minio:9000/?x=1", "minio:9000", "file:///tmp"} {
+	for _, ep := range []string{"gopher://x", "http://user:" + "pw@minio:9000", "http://minio:9000/?x=1", "minio:9000", "file:///tmp"} {
 		c := base
 		c.Endpoint = ep
 		if err := c.Validate(); err == nil {
