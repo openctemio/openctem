@@ -60,7 +60,7 @@ type CIPipelineResponse struct {
 	// confirms its repository id.
 	Legacy bool `json:"legacy"`
 
-	Status        string   `json:"status" enums:"revoked,failing,degraded,stale,running,fresh,never,archived"`
+	Status        string   `json:"status" enums:"retired,revoked,failing,degraded,stale,running,fresh,never,archived"`
 	Freshness     string   `json:"freshness" enums:"running,fresh,stale,archived,never"`
 	Gate          string   `json:"gate" enums:"passing,failing,none"`
 	PRGate        string   `json:"pr_gate" enums:"passing,failing,none"`
@@ -87,6 +87,8 @@ type CIPipelineResponse struct {
 	MedianIntervalSecs  int64         `json:"median_interval_seconds,omitempty"`
 	ScheduleIntervalSec int64         `json:"schedule_interval_seconds,omitempty"`
 	RevokedAt           *time.Time    `json:"revoked_at,omitempty"`
+	RetiredAt           *time.Time    `json:"retired_at,omitempty"`
+	RetireReason        string        `json:"retire_reason,omitempty"`
 	CreatedAt           time.Time     `json:"created_at"`
 }
 
@@ -135,7 +137,7 @@ func toCIPipelineResponse(v *cirunapp.PipelineView) CIPipelineResponse {
 		RunsCount: p.RunsCount, FirstRunAt: p.FirstRunAt, LastRunAt: p.LastRunAt, LastForkRunAt: p.LastForkRunAt,
 		LastDefaultRunAt: p.LastDefaultRunAt, LastDefaultVerdict: p.LastDefaultVerdict, LastPRVerdict: p.LastPRVerdict,
 		MedianIntervalSecs: int64(p.MedianInterval / time.Second), ScheduleIntervalSec: int64(p.ScheduleInterval / time.Second),
-		RevokedAt: p.RevokedAt, CreatedAt: p.CreatedAt}
+		RevokedAt: p.RevokedAt, RetiredAt: p.RetiredAt, RetireReason: p.RetireReason, CreatedAt: p.CreatedAt}
 	if p.TrustConfigID != nil {
 		out.TrustConfigID = p.TrustConfigID.String()
 	}

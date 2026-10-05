@@ -44,6 +44,7 @@ type CIAdminService interface {
 type CIAdminHandler struct {
 	svc       CIAdminService
 	pipelines CIPipelineService
+	coverage  CICoverageService
 	dataScope DataScopeEnforcer
 	logger    *logger.Logger
 }

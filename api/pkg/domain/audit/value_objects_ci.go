@@ -31,6 +31,15 @@ const (
 	// ActionCIPipelinesRevoked records the pipelines of a trust
 	// configuration revoked because it was disabled, deleted or re-pointed.
 	ActionCIPipelinesRevoked Action = "ci_pipeline.revoked"
+	// ActionCIPipelineRetired records an administrator retiring a pipeline
+	// and the findings only it reported closing as source retired.
+	ActionCIPipelineRetired Action = "ci_pipeline.retired"
+	// ActionCIStaleSourceFindings records findings only a stale pipeline
+	// reported moving to not observed (source stale).
+	ActionCIStaleSourceFindings Action = "ci_pipeline.stale_source_findings"
+	// A repository marked, or no longer marked, as expected to be covered.
+	ActionCICoverageExpected   Action = "ci_coverage.expected"
+	ActionCICoverageUnexpected Action = "ci_coverage.unexpected"
 )
 
 // Resource types of the CI actions.
@@ -57,6 +66,10 @@ var _ = registerActions("ci", map[Action]Severity{
 	ActionCIGateOverrideUsed:    SeverityHigh,
 	ActionCIPipelineCreated:     SeverityLow,
 	ActionCIPipelinesRevoked:    SeverityMedium,
+	ActionCIPipelineRetired:     SeverityHigh,
+	ActionCIStaleSourceFindings: SeverityLow,
+	ActionCICoverageExpected:    SeverityLow,
+	ActionCICoverageUnexpected:  SeverityLow,
 })
 
 func init() {
