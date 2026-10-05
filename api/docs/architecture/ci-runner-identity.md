@@ -43,7 +43,7 @@ graph TD
 | Console | `web/src/features/ci-runners` (`/ci-runners`, `/settings/scanning/ci`) |
 | Pipelines: identity, status, fleet rows | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
 | Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
-| Migration | `001077_ci_runner_identity`, `001081_ci_pipelines` |
+| Migration | `001077_ci_runner_identity`, `001085_ci_pipelines` |
 
 ## Request chains
 
