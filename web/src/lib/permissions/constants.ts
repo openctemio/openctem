@@ -216,6 +216,13 @@ export const Permission = {
   ScanZonesWrite: 'sensors:zones:write',
   ScanZonesDelete: 'sensors:zones:delete',
 
+  // Pairing and per-sensor grants (RFC-052)
+  SensorsPair: 'sensors:pair',
+  SensorsApprove: 'sensors:approve',
+  SensorsGrantNarrow: 'sensors:grant:narrow',
+  SensorsGrantWiden: 'sensors:grant:widen',
+  SensorsRevoke: 'sensors:revoke',
+
   // ===========================================
   // TEAM MODULE (Access Control)
   // ===========================================
@@ -380,6 +387,11 @@ export const ADMIN_ONLY_PERMISSIONS: readonly string[] = [
   Permission.CommandsDelete,
   Permission.ScanZonesWrite,
   Permission.ScanZonesDelete,
+  Permission.SensorsPair,
+  Permission.SensorsApprove,
+  Permission.SensorsGrantNarrow,
+  Permission.SensorsGrantWiden,
+  Permission.SensorsRevoke,
   Permission.CIWrite,
   Permission.CIOverride,
 ]
@@ -662,6 +674,11 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ScanZonesRead]: 'View Scan Zones',
   [Permission.ScanZonesWrite]: 'Manage Scan Zones',
   [Permission.ScanZonesDelete]: 'Delete Scan Zones',
+  [Permission.SensorsPair]: 'Pair Sensors',
+  [Permission.SensorsApprove]: 'Approve Sensors',
+  [Permission.SensorsGrantNarrow]: 'Narrow Sensor Grants',
+  [Permission.SensorsGrantWiden]: 'Widen Sensor Grants',
+  [Permission.SensorsRevoke]: 'Revoke Sensors',
 
   // Team
   [Permission.TeamRead]: 'View Team Settings',
@@ -855,6 +872,11 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScanZonesRead,
     Permission.ScanZonesWrite,
     Permission.ScanZonesDelete,
+    Permission.SensorsPair,
+    Permission.SensorsApprove,
+    Permission.SensorsGrantNarrow,
+    Permission.SensorsGrantWiden,
+    Permission.SensorsRevoke,
     // Team
     Permission.TeamRead,
     Permission.TeamUpdate,
@@ -1012,6 +1034,11 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScanZonesRead,
     Permission.ScanZonesWrite,
     Permission.ScanZonesDelete,
+    Permission.SensorsPair,
+    Permission.SensorsApprove,
+    Permission.SensorsGrantNarrow,
+    Permission.SensorsGrantWiden,
+    Permission.SensorsRevoke,
     // Team (no team:delete)
     Permission.TeamRead,
     Permission.TeamUpdate,

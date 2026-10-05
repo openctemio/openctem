@@ -52,6 +52,10 @@ const (
 	// local policy forbids it (RFC-040 detection A11); details carry the
 	// command id, rule and reason.
 	EventJobRefusedByLocalPolicy EventType = "job_refused_local_policy"
+	// EventPairingCompleted: the sensor confirmed the identity a pairing
+	// gave it and its key became active (RFC-052); details carry the key
+	// fingerprint, the SAS and the source address of the request.
+	EventPairingCompleted EventType = "pairing_completed"
 )
 
 // ActivityCategory groups timeline items for the filter chips.
@@ -78,7 +82,8 @@ func (c ActivityCategory) IsValid() bool {
 // Category is the timeline category of a server-written event.
 func (t EventType) Category() ActivityCategory {
 	switch t {
-	case EventOnline, EventOffline, EventRestarted, EventKeyIPChanged, EventIdentityCloned, EventHeartbeatRecovered:
+	case EventOnline, EventOffline, EventRestarted, EventKeyIPChanged, EventIdentityCloned, EventHeartbeatRecovered,
+		EventPairingCompleted:
 		return CategoryStatus
 	case EventJobRefusedByLocalPolicy:
 		return CategoryJobs
@@ -92,7 +97,7 @@ func EventTypesIn(cats []ActivityCategory) []EventType {
 	all := []EventType{EventOnline, EventOffline, EventRestarted, EventVersionChanged, EventSDKVersionChanged,
 		EventProtocolChanged, EventToolsChanged, EventCapacityChanged, EventContentUpdated, EventContentRefreshFailed,
 		EventKeyIPChanged, EventIdentityCloned, EventManifestChanged, EventHeartbeatRecovered,
-		EventLocalPolicyChanged, EventJobRefusedByLocalPolicy}
+		EventLocalPolicyChanged, EventJobRefusedByLocalPolicy, EventPairingCompleted}
 	var out []EventType
 	for _, t := range all {
 		if slices.Contains(cats, t.Category()) {
