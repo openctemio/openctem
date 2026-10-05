@@ -162,3 +162,22 @@ now carries the diff too.
 - `internal/infra/http/handler/config_audit_db_test.go` (Postgres): priority
   rule create/update/delete rows (High, actor, diff); SLA and integration
   severity/view rules.
+
+## Hidden until wired
+
+A settings control is shown only when something reads its value (owner
+decisions B5, B6). These are hidden in the web console, and
+`web/src/config/__tests__/inert-settings-controls.test.ts` keeps them hidden:
+
+- organization session timeout (until per-organization session policy is
+  enforced; the stored value is no longer sent on save);
+- organization industry, timezone and default language;
+- the second language picker on Preferences (the user menu picks the language);
+- the e-mail digest and desktop notifications (no sender yet);
+- the asset-lifecycle "manual reactivation grace".
+
+The `/settings/integrations/saml` and `/verified-domains` explainer pages
+redirect (308) to Authentication, which carries the same "SSO is configured by
+your platform administrator" card. Modules "Remove my changes" says what the
+server does: it deletes your per-module overrides, so modules follow your
+bundles again (a module outside them turns off).
