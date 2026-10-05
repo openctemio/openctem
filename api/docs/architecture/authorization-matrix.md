@@ -336,11 +336,14 @@ create's target validator, exclusions, zone routing) in one call.
 
 | Endpoint | Gate |
 |----------|------|
-| `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`) |
+| `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`); a `PUT` that adds, changes or removes a mapping **to admin** is owner only (service check, 403) |
 | `POST /api/v1/scim-tokens` · `DELETE /{id}` | **owner only** (`RequireOwner`) |
 
 > A SCIM token can create, suspend and re-role every member, so minting and
-> revoking one is the owner's decision (owner decision 2026-10-02).
+> revoking one is the owner's decision (owner decision 2026-10-02). Which IdP
+> group makes someone an administrator is the owner's decision too: only an
+> owner-configured mapping grants or removes admin through SCIM (23b S-H1; see
+> `scim-provisioning.md`).
 
 #### Billing
 
@@ -482,7 +485,9 @@ These routes require the tenant ID in the URL path and use database-based member
 > paths (`/api/v1/users/{id}/roles`, assign/remove/bulk): only an owner may
 > change another administrator's role set (`grant_guard.go`). Administrators
 > still manage members and viewers, and may change their own membership. SCIM
-> (no human actor) is not a peer and keeps its own rules.
+> (no human actor) is not a peer and keeps its own rules: it grants or removes
+> admin only through a mapping the owner configured, and the role changes a
+> mapping save causes run as the person who saved it.
 >
 > **Granting roles** (invitations and created users) is anti-escalation checked:
 > a caller who is not an organization admin may grant only roles whose
@@ -826,7 +831,7 @@ group's assignment, which is why adding or removing one needs
 | Route | Gate |
 |---|---|
 | `GET /api/v1/assets/{id}/access-grants` | `team:groups:read` + data scope on the asset |
-| `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 409 when the grant exists; audited `asset.access_granted` |
+| `POST /api/v1/assets/{id}/access-grants` (`{"user_id"}`) | `team:groups:write`; the asset and the user must belong to the caller's organization (404 otherwise, the same answer for both); 403 when the user is the caller (no self-grant, so access held through a group cannot be turned into a personal grant before leaving it); 409 when the grant exists; audited `asset.access_granted` |
 | `DELETE /api/v1/assets/{id}/access-grants/{grant_id}` | `team:groups:write`; the grant must be on that asset of the caller's organization (404); audited `asset.access_revoked`. The user keeps the asset only if a group still holds it |
 | `POST /api/v1/assets/{id}/owners` with `group_id` · `DELETE /api/v1/assets/{id}/owners/{id}` of a group owner | `assets:write` / `assets:delete` **and** `team:groups:write` (403 otherwise) |
 | `POST /api/v1/groups/{g}/assets` · `/assets/bulk` · scope rules | `team:groups:write`; the group must be in the caller's organization, and each asset must be a live asset of the **group's** organization. A single assign answers 404 for a foreign, deleted or unknown asset id alike; a bulk assign counts them as failed |
@@ -1076,13 +1081,28 @@ the full graph on purpose (`GetExposureChains` stays unscoped).
 **Asset references a caller writes** go through `datascope.Enforcer.AssertAssetRef`:
 the asset must be a live asset of the tenant (checked for unrestricted callers
 too) **and** in the caller's scope; a foreign, unknown, deleted or out-of-scope
-id all answer 404. It fails closed when not wired. The referencing columns
-point at `assets(id)` without the tenant, so this check is what keeps a
-foreign id out (research doc 15, L-02; research doc 21b, C1). Used by:
+id all answer 404. It fails closed when not wired (research doc 15, L-02;
+research doc 21b, C1/C3/C4). Used by:
 
 - `POST /pentest/campaigns/{id}/findings` (`asset_id`);
 - `POST /findings` (`asset_id`; a `branch_id` must also be a branch of that
-  asset, which pins it to the tenant).
+  asset, which pins it to the tenant);
+- `POST /exposures` and `POST /exposures/ingest` (`asset_id`; the bulk ingest
+  uses the batch form `FilterAssetRefs` and drops refused items with the one
+  reason `asset not found`);
+- `POST /pipelines/{id}/runs` (`asset_id`, which is copied into every step
+  command; a workflow trigger with no user gets the tenant check).
+
+**Database backstop** (migrations 000920-000922): every column that references
+`assets(id)` from a table with a `tenant_id` also has a composite foreign key
+`(tenant_id, <asset column>) → assets(tenant_id, id)`, so a cross-tenant
+reference is refused by the database whatever code writes it, including
+internal writers (ingest, EASM, CT monitor). A new table that references
+assets must add one; `TestAssetRefTenantFKs_Schema` fails otherwise. Tables
+without a `tenant_id` (`asset_owners`, which has its own same-tenant trigger,
+`asset_repositories`, `asset_group_members`, `asset_sources`,
+`attack_path_nodes`, `compensating_control_assets`) are not covered; their
+writers join the asset in the caller's tenant.
 
 Pre-delete counts are tenant-scoped: `DELETE /assets/{id}` counts only the
 tenant's own findings, so a row another tenant pointed at the asset neither
