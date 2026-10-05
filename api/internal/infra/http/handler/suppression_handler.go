@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -17,8 +20,15 @@ import (
 
 // SuppressionHandler handles suppression rule HTTP requests.
 type SuppressionHandler struct {
-	service *suppression.Service
-	logger  *logger.Logger
+	service      *suppression.Service
+	logger       *logger.Logger
+	auditService *auditapp.AuditService
+}
+
+// SetAuditService wires the tenant audit log (approvals are recorded there; a
+// self-approval at Critical severity). Nil-safe.
+func (h *SuppressionHandler) SetAuditService(s *auditapp.AuditService) {
+	h.auditService = s
 }
 
 // NewSuppressionHandler creates a new suppression handler.
@@ -69,7 +79,9 @@ func toSuppressionRuleResponse(r *suppression.Rule) SuppressionRuleResponse {
 		RequestedAt:     r.RequestedAt().Format(time.RFC3339),
 		RejectionReason: r.RejectionReason(),
 		CreatedAt:       r.CreatedAt().Format(time.RFC3339),
-		UpdatedAt:       r.UpdatedAt().Format(time.RFC3339),
+		// Full precision: an approval sends this back as the version it
+		// reviewed, and two edits in the same second must not look equal.
+		UpdatedAt: r.UpdatedAt().Format(time.RFC3339Nano),
 	}
 
 	if r.AssetID() != nil {
@@ -320,7 +332,11 @@ func (h *SuppressionHandler) GetRule(w http.ResponseWriter, r *http.Request) {
 }
 
 // ApproveRuleRequest represents a request to approve a rule.
-type ApproveRuleRequest struct{}
+type ApproveRuleRequest struct {
+	// ReviewedUpdatedAt is the rule's updated_at exactly as the approver last
+	// loaded it. The approval is refused (409) if the rule changed since.
+	ReviewedUpdatedAt string `json:"reviewed_updated_at"`
+}
 
 // ApproveRule handles POST /api/v1/suppressions/{id}/approve
 func (h *SuppressionHandler) ApproveRule(w http.ResponseWriter, r *http.Request) {
@@ -351,17 +367,32 @@ func (h *SuppressionHandler) ApproveRule(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	var req ApproveRuleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
 	input := suppression.ApproveRuleInput{
 		TenantID:   tenantUUID,
 		RuleID:     ruleUUID,
 		ApprovedBy: userUUID,
 	}
+	if req.ReviewedUpdatedAt != "" {
+		reviewed, err := time.Parse(time.RFC3339Nano, req.ReviewedUpdatedAt)
+		if err != nil {
+			apierror.BadRequest("reviewed_updated_at must be the rule's updated_at (RFC 3339)").WriteJSON(w)
+			return
+		}
+		input.ReviewedUpdatedAt = &reviewed
+	}
 
-	rule, err := h.service.ApproveRule(r.Context(), input)
+	result, err := h.service.ApproveRule(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	rule := result.Rule
+	h.auditApproval(r, rule, result.SelfApproved)
 
 	h.logger.Info("suppression rule approved",
 		"rule_id", ruleID,
@@ -371,6 +402,36 @@ func (h *SuppressionHandler) ApproveRule(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toSuppressionRuleResponse(rule))
+}
+
+// auditApproval records the approval in the tenant audit log. A self-approval
+// (B16) is Critical.
+func (h *SuppressionHandler) auditApproval(r *http.Request, rule *suppression.Rule, selfApproved bool) {
+	if h.auditService == nil {
+		return
+	}
+	action, msg := auditdom.ActionSuppressionRuleApproved, "Suppression rule approved"
+	if selfApproved {
+		action = auditdom.ActionSuppressionRuleSelfApproved
+		msg = "Suppression rule approved by its own requester (the owner, the only eligible approver)"
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	event := auditapp.NewSuccessEvent(action, auditdom.ResourceTypeSuppressionRule, rule.ID().String()).
+		WithResourceName(rule.Name()).
+		WithMessage(msg).
+		WithMetadata("suppression_type", string(rule.SuppressionType())).
+		WithMetadata("requested_by", rule.RequestedBy().StringOrEmpty()).
+		WithSeverity(auditdom.SeverityForAction(action))
+	if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
+		h.logger.Warn("failed to audit suppression approval", "error", err)
+	}
 }
 
 // RejectRuleRequest represents a request to reject a rule.
@@ -595,6 +656,8 @@ func (h *SuppressionHandler) handleServiceError(w http.ResponseWriter, err error
 		apierror.BadRequest("Invalid suppression criteria").WriteJSON(w)
 	case shared.IsValidation(err):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Suppression rule not found").WriteJSON(w)
 	case errors.Is(err, shared.ErrConflict):
