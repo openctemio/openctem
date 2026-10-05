@@ -43,6 +43,11 @@ const (
 
 	// maxPathLength is the maximum allowed path length in archives.
 	maxPathLength = 256
+
+	// maxHTTPResponseSize caps a template-source download read into memory
+	// (the source's own MaxTotalSize applies when it is smaller). Before, the
+	// whole body was read with no bound.
+	maxHTTPResponseSize = 50 * 1024 * 1024 // 50MB
 )
 
 // sanitizeArchivePath validates and sanitizes a file path from an archive.
@@ -217,15 +222,17 @@ func (f *HTTPFetcher) Fetch(ctx context.Context, opts FetchOptions) (*FetchResul
 	f.lastETag = etag
 	f.mu.Unlock()
 
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
+	// Read response body, never more than the cap (+1 byte to detect overflow).
+	limit := int64(maxHTTPResponseSize)
+	if opts.MaxTotalSize > 0 && opts.MaxTotalSize < limit {
+		limit = opts.MaxTotalSize
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-
-	// Check total size
-	if opts.MaxTotalSize > 0 && int64(len(body)) > opts.MaxTotalSize {
-		return nil, fmt.Errorf("response exceeds size limit")
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("response exceeds size limit (%d bytes)", limit)
 	}
 
 	// Determine content type

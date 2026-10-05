@@ -385,7 +385,7 @@ func (h *ToolHandler) toolVisibleToTenant(r *http.Request, t *tooldom.Tool) bool
 func (h *ToolHandler) GetByName(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
-	t, err := h.service.GetToolByName(r.Context(), name)
+	t, err := h.service.GetToolByName(r.Context(), middleware.GetTenantID(r.Context()), name)
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
