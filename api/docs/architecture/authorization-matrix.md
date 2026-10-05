@@ -28,7 +28,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Core (dashboard, audit, settings) | 4 | `dashboard:read`, `audit:read`, `settings:read/write` |
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
-| Scans | 22 | `scans:read/write/delete/execute`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
+| Scans | 23 | `scans:read/write/delete/execute`, `scans:freeze:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
 | Sensors | 14 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
 | Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
@@ -289,6 +289,22 @@ create's target validator, exclusions, zone routing) in one call.
 > `(tenant_id, zone_id)` and `(tenant_id, sensor_id)`, so a zone or sensor of
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
+
+#### Scan freeze windows (`/api/v1/scan-freeze-windows`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/scan-freeze-windows` · `/{id}` | `scans:read` |
+| `POST /api/v1/scan-freeze-windows` · `PATCH /{id}` | `sensors:zones:write` |
+| `DELETE /api/v1/scan-freeze-windows/{id}` | `sensors:zones:delete` |
+| `POST /api/v1/scans/{id}/trigger` with `override_freeze: true` | `scans:execute` **and** `scans:freeze:override` (checked in the handler; 403 otherwise) |
+
+> `scans:freeze:override` is seeded by migration `001115` for owner and admin
+> and may be put on custom roles. Object level: every query carries
+> `tenant_id`; a zone window's zone is the same tenant's by the composite
+> foreign key `(tenant_id, scan_zone_id)`. Enforcement is the claim
+> predicate, so no command path bypasses a window. See
+> [scan-zones.md](scan-zones.md#freeze-windows).
 
 #### Sensors (`/api/v1/sensors`)
 

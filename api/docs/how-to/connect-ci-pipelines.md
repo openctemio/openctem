@@ -56,7 +56,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: OpenCTEM security scan
-        uses: docker://ghcr.io/openctemio/sensor:latest-ci
+        # A release pinned by digest, never a moving tag (verify it with cosign;
+        # see the GitLab guide's Security notes).
+        uses: docker://ghcr.io/openctemio/sensor:v0.9.1-ci@sha256:97f5512165d2c79240bb01f4cdbc710b85b1517cca95d4015aa39d35c60017e1
         with:
           args: -tools semgrep,betterleaks,trivy -target . -auto-ci -push
         env:
@@ -75,7 +77,7 @@ Step-by-step GitLab guide (variables, templates, enforcing the gate, self-manage
 
 ```yaml
 openctem-security:
-  image: ghcr.io/openctemio/sensor:latest-ci
+  image: ghcr.io/openctemio/sensor:v0.9.1-ci@sha256:97f5512165d2c79240bb01f4cdbc710b85b1517cca95d4015aa39d35c60017e1
   id_tokens:
     OPENCTEM_ID_TOKEN:
       aud: openctem:tenant:<your organization id>
