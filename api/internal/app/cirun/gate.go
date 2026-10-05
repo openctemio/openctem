@@ -99,9 +99,13 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	if err != nil {
 		return nil, err
 	}
+	if err := s.repo.RecordRunOutcome(ctx, run.TenantID, run.ID, in.ScanFailures); err != nil {
+		return nil, fmt.Errorf("save run outcome: %w", err)
+	}
 	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now); err != nil {
 		return nil, fmt.Errorf("save verdict: %w", err)
 	}
+	s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	s.auditVerdict(ctx, run, in, v)
 	return v, nil
 }
