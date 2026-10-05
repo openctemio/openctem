@@ -417,9 +417,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		"asset_map_size", len(assetMap),
 	)
 
-	// Step 1a: "the tenant scanned it" attribution evidence (RFC-036 O8),
-	// for command-bound reports only. Best-effort.
-	if binding.Kind == BindingCommand {
+	// Step 1a: attribution of what a sensor report wrote (RFC-036 §6.4,
+	// research/22 E7): command-bound and unsolicited sensor reports.
+	// Best-effort.
+	if binding.Kind == BindingCommand || binding.Kind == BindingUnsolicited {
 		toolName := ""
 		if report.Tool != nil {
 			toolName = report.Tool.Name

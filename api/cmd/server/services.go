@@ -222,13 +222,13 @@ type campaignKeyResolver struct {
 	group *remediation.GroupService
 }
 
-func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID, key string) (int64, int64, error) {
+func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, int64, error) {
 	closed := vulnerability.ClosedFindingStatuses()
 	closedStrs := make([]string, len(closed))
 	for i, s := range closed {
 		closedStrs[i] = string(s)
 	}
-	return a.keys.CountByKey(ctx, tenantID, key, closedStrs)
+	return a.keys.CountByKeyInScope(ctx, tenantID, key, closedStrs, scope)
 }
 
 func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (int, error) {
@@ -513,14 +513,16 @@ type Services struct {
 	FindingSourceCache *app.FindingSourceCacheService
 
 	// Vulnerabilities & Exposures
-	Vulnerability    *app.VulnerabilityService
-	FindingActivity  *app.FindingActivityService
-	FindingActions   *app.FindingActionsService
-	SourceAnalytics  *app.SourceAnalyticsService
-	Exposure         *app.ExposureService
-	ThreatIntel      *threat.IntelService
-	CTEMID           *ctemidapp.Service
-	CertMonitor      *certmonitorapp.Service
+	Vulnerability   *app.VulnerabilityService
+	FindingActivity *app.FindingActivityService
+	FindingActions  *app.FindingActionsService
+	SourceAnalytics *app.SourceAnalyticsService
+	Exposure        *app.ExposureService
+	ThreatIntel     *threat.IntelService
+	CTEMID          *ctemidapp.Service
+	CertMonitor     *certmonitorapp.Service
+	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
+	ActiveGate       *easmapp.ActiveGate
 	EASMDNS          *easmdnsapp.Service
 	CredentialImport *app.CredentialImportService
 
@@ -740,8 +742,17 @@ func (a scimMembershipAdapter) ReactivateMember(ctx context.Context, tenantID, m
 }
 
 // UpdateMemberRole satisfies scim.RoleManager for SCIM group → role mapping.
-func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, membershipID shared.ID, role string) error {
-	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, scimAuditContext(tenantID))
+// With an actor (a mapping saved in the console) the change runs as that
+// person, so the owner-only rule for changing an administrator applies and
+// the audit entry names them. Without one (an identity-provider push) it runs
+// as SCIM provisioning and the audit entry carries the SCIM token from the
+// request context.
+func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, membershipID shared.ID, role string, actorID *shared.ID) error {
+	actx := scimAuditContext(tenantID)
+	if actorID != nil {
+		actx = app.AuditContext{TenantID: tenantID.String(), ActorID: actorID.String()}
+	}
+	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, actx)
 	return err
 }
 
@@ -870,6 +881,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
+	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
 	s.Vulnerability.SetAssetRefChecker(s.DataScope) // POST /findings asset_id: tenant + caller scope
 	s.Vulnerability.SetBranchLookup(repos.Branch)   // a finding branch must belong to its asset
@@ -1198,8 +1210,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
 	// progress) is computed from live finding data instead of staying at zero.
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
+	// A restricted reader sees progress over their own findings (L-18).
+	s.RemediationCampaign.SetDataScope(s.DataScope)
 	// Creates, edits, status changes and deletes go to audit_logs.
 	s.RemediationCampaign.SetAuditLogger(s.Audit)
+	s.RemediationCampaign.SetAssigneeChecker(repos.AccessControl) // a campaign owner must be an active member (21b C2)
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
@@ -1286,6 +1301,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.SCIMGroups = scim.NewGroupService(
 		repos.ScimGroup, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
+	s.SCIMGroups.SetAuditService(s.Audit)
 	// Outbound Jira ticketing resolves a client per tenant from that tenant's
 	// connected ticketing integration (base URL + decrypted credentials). The
 	// static client stays nil; the resolver is the production path (mirrors the
@@ -1443,7 +1459,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Assets reported for a tenant's own scan commands get tenant_scanned
 	// attribution evidence (RFC-036 O8).
 	if repos.Attribution != nil {
-		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution))
+		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution, repos.EASMSeed))
 	}
 	// A nuclei takeover-template match from a tenant scan confirms an open
 	// dangling_cname as subdomain_takeover (RFC-036 P1).
@@ -1560,6 +1576,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
+	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.EASMSeed)
+
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(
 		repos.Scan,
@@ -1580,7 +1598,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithProfileRepo(repos.ScanProfile),
 		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
 		scan.WithScopeExclusionFilter(s.Scope),
-		scan.WithAttributionGate(repos.Attribution),
+		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
+		// or unrecorded inside a scope target / under a seed; never rejected.
+		scan.WithAttributionGate(s.ActiveGate),
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to from the platform.
 		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
@@ -1591,6 +1611,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
 		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
 		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),
+		// A batch goes only to a sensor whose reported local policy accepts
+		// it; a trigger no sensor would accept is refused (research/25 §3.6).
+		scan.WithDispatchPolicy(repos.Sensor, s.Tenant),
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
@@ -1759,6 +1782,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize suppression service (platform-controlled false positive management)
 	s.Suppression = suppression.NewService(repos.Suppression, log)
+	// Four-eyes on approvals (owner decision B16) reads who may approve.
+	s.Suppression.SetApproverDirectory(repos.Suppression)
 
 	// Enforce approved suppression rules during ingest: a new finding matching an
 	// active (approved, non-expired) rule lands resolved+suppressed (out of the

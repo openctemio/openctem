@@ -270,6 +270,7 @@ func newWfActionVulnService() (*app.VulnerabilityService, *wfActionMockFindingRe
 	findingRepo := newWfActionMockFindingRepo()
 	log := logger.NewNop()
 	svc := app.NewVulnerabilityService(vulnRepo, findingRepo, log)
+	svc.SetAssigneeChecker(anyMember{})
 	return svc, findingRepo
 }
 

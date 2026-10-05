@@ -46,9 +46,10 @@ type DispatchTargetsInput struct {
 	// scan zone the sensor is not assigned to is refused.
 	SensorID *shared.ID
 	// Assets maps a target to the inventory asset it probes. Such a target is
-	// refused while any of its assets' attribution is not confirmed (RFC-036 O4),
-	// like an asset-group member of a scan. A target the tenant typed itself
-	// has no entry (O8). Keys match targets case-insensitively.
+	// refused while the ownership gate refuses any of its assets (RFC-036
+	// §6.3), like an asset-group member of a scan. A target with no entry is
+	// checked by name (it may name an asset, or sit under a rejected name).
+	// Keys match targets case-insensitively.
 	Assets map[string]DispatchAsset
 	// ActScope limits the targets to what the actor may scan (research/15
 	// L-06, D9): the request caller, else FallbackUser. Set it on every path
@@ -134,9 +135,10 @@ func NewTargetGate(exclusions ScopeExclusionFilter, attr AttributionGate, zones 
 //     create (private addresses only inside a scan zone of the tenant);
 //   - active scope exclusions, matched as on a scan run (URL and host:port
 //     forms included); a failed lookup returns an error (fail closed);
-//   - the attribution of the inventory asset behind a target (in.Assets):
-//     an asset whose ownership is not confirmed is refused; a failed or
-//     unwired lookup returns an error (fail closed);
+//   - ownership (AttributionGate): the inventory asset behind a target
+//     (in.Assets, or the asset a typed target names) must be authorized for
+//     active checks, and no target may be or sit under a rejected name; a
+//     failed or unwired lookup returns an error (fail closed);
 //   - scan-zone routing: uncovered targets, zones without sensors and a
 //     pinned sensor outside the target's zone are refused.
 //
@@ -218,14 +220,21 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 	return out, nil
 }
 
-// refuseUnconfirmed moves every kept target whose inventory asset is not
-// confirmed (an attribution state other than confirmed) to Refused. An asset
-// with no attribution row counts as confirmed, as on a scan run.
+// refuseUnconfirmed moves every kept target the ownership gate refuses to
+// Refused: a target whose inventory asset (in.Assets) is not authorized for
+// active checks, and a typed target that names such an asset or sits under
+// a name the tenant rejected. The caller sees a generic reason; the state
+// is logged. No gate, or a failed lookup, refuses everything (fail closed).
 func (s *Service) refuseUnconfirmed(ctx context.Context, in DispatchTargetsInput, kept []string, out *DispatchTargets) ([]string, error) {
+	if len(kept) == 0 {
+		return kept, nil
+	}
 	ids := make([]string, 0, len(kept))
+	var typed []string
 	for _, t := range kept {
 		a, ok := assetOf(in.Assets, t)
 		if !ok {
+			typed = append(typed, t)
 			continue
 		}
 		if len(a.IDs) == 0 {
@@ -238,21 +247,32 @@ func (s *Service) refuseUnconfirmed(ctx context.Context, in DispatchTargetsInput
 			ids = append(ids, id)
 		}
 	}
-	if len(ids) == 0 {
-		return kept, nil
-	}
 	if s.attributionGate == nil {
 		return nil, ErrAttributionGateUnavailable
 	}
-	blocked, err := s.attributionGate.ActiveCheckBlocked(ctx, in.TenantID, ids)
-	if err != nil {
-		return nil, fmt.Errorf("attribution check failed, nothing dispatched: %w", err)
+	blocked := map[string]attribution.State{}
+	if len(ids) > 0 {
+		var err error
+		if blocked, err = s.attributionGate.ActiveCheckBlocked(ctx, in.TenantID, ids); err != nil {
+			return nil, fmt.Errorf("attribution check failed, nothing dispatched: %w", err)
+		}
+	}
+	blockedTyped := map[string]attribution.State{}
+	if len(typed) > 0 {
+		var err error
+		if blockedTyped, err = s.attributionGate.BlockedTargets(ctx, in.TenantID, typed); err != nil {
+			return nil, fmt.Errorf("attribution check failed, nothing dispatched: %w", err)
+		}
 	}
 	allowed := make([]string, 0, len(kept))
 	for _, t := range kept {
-		if state, no := unconfirmedState(in.Assets, t, blocked); no {
-			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: fmt.Sprintf(
-				"the asset's ownership is not confirmed (attribution: %s); review its attribution before it is probed", state)})
+		state, no := unconfirmedState(in.Assets, t, blocked)
+		if !no {
+			state, no = blockedTyped[t]
+		}
+		if no {
+			s.logRefusedTarget(ctx, in.TenantID, "dispatch_gate", t, state)
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: ReasonOwnershipNotConfirmed})
 			continue
 		}
 		allowed = append(allowed, t)
