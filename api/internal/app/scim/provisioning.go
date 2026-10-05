@@ -34,6 +34,10 @@ type MembershipManager interface {
 	AddMember(ctx context.Context, tenantID, userID shared.ID, role string) error
 	SuspendMember(ctx context.Context, tenantID, membershipID shared.ID) error
 	ReactivateMember(ctx context.Context, tenantID, membershipID shared.ID) error
+	// OffboardMember is SCIM delete: offboard when the member owns nothing
+	// that needs a new owner, otherwise disable and ask an administrator to
+	// finish the offboarding (SCIM cannot pick the new owners).
+	OffboardMember(ctx context.Context, tenantID, membershipID shared.ID) error
 }
 
 // DomainVerifier reports whether an organization has DNS-proven an email domain
@@ -128,6 +132,11 @@ func (s *ProvisioningService) CreateOrActivate(ctx context.Context, tenantID sha
 
 	created := false
 	m, merr := s.members.GetMembership(ctx, u.ID(), tenantID)
+	// An offboarded tombstone is not a membership: provisioning re-adds the
+	// person from zero, under the same rules as a newcomer.
+	if merr == nil && m != nil && m.IsOffboarded() {
+		merr = shared.ErrNotFound
+	}
 	switch {
 	case merr == nil && m != nil:
 		if err := s.reconcileExisting(ctx, tenantID, m, in.Active); err != nil {
@@ -225,13 +234,27 @@ func (s *ProvisioningService) Get(ctx context.Context, tenantID, userID shared.I
 // active=false — suspends the membership, which revokes sessions immediately).
 func (s *ProvisioningService) SetActive(ctx context.Context, tenantID, userID shared.ID, active bool) (ScimUser, error) {
 	m, err := s.members.GetMembership(ctx, userID, tenantID)
-	if err != nil || m == nil {
+	if err != nil || m == nil || m.IsOffboarded() {
 		return ScimUser{}, ErrUserNotInTenant
 	}
 	if err := s.reconcileExisting(ctx, tenantID, m, active); err != nil {
 		return ScimUser{}, err
 	}
 	return s.buildResource(ctx, userID, tenantID)
+}
+
+// Deprovision is SCIM DELETE: the member is offboarded (or, when they own
+// work that needs a new owner, disabled pending an administrator's
+// offboarding). Access is cut either way.
+func (s *ProvisioningService) Deprovision(ctx context.Context, tenantID, userID shared.ID) error {
+	m, err := s.members.GetMembership(ctx, userID, tenantID)
+	if err != nil || m == nil || m.IsOffboarded() {
+		return ErrUserNotInTenant
+	}
+	if err := s.manager.OffboardMember(ctx, tenantID, m.ID()); err != nil {
+		return fmt.Errorf("offboard member: %w", err)
+	}
+	return nil
 }
 
 // List returns provisioned users. A non-empty filterEmail returns the matching
@@ -288,7 +311,7 @@ func (s *ProvisioningService) List(ctx context.Context, tenantID shared.ID, filt
 
 func (s *ProvisioningService) buildResource(ctx context.Context, userID, tenantID shared.ID) (ScimUser, error) {
 	m, err := s.members.GetMembership(ctx, userID, tenantID)
-	if err != nil || m == nil {
+	if err != nil || m == nil || m.IsOffboarded() {
 		return ScimUser{}, ErrUserNotInTenant
 	}
 	u, uerr := s.users.GetByID(ctx, userID)
@@ -304,7 +327,7 @@ func resourceFrom(u *userdom.User, m *tenantdom.Membership) ScimUser {
 		UserName:    u.Email(),
 		DisplayName: u.Name(),
 		Email:       u.Email(),
-		Active:      !m.IsSuspended(),
+		Active:      m.IsActive(),
 		CreatedAt:   u.CreatedAt(),
 		UpdatedAt:   u.UpdatedAt(),
 	}

@@ -1,6 +1,7 @@
 package pipeline_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -153,4 +154,38 @@ func TestStep_NewStep_Defaults(t *testing.T) {
 	assert.Equal(t, 0, step.MaxRetries)
 	assert.Equal(t, 60, step.RetryDelaySeconds)
 	assert.Empty(t, step.DependsOn)
+}
+
+// research/27 F2: a condition the scheduler cannot evaluate never passes.
+// An expression condition used to be true whatever it said, so a step meant
+// to run only sometimes always ran. Rows stored before SetCondition refused
+// expressions still exist; they are skipped with a reason that says why.
+func TestConditionMet_UnevaluableConditionsNeverPass(t *testing.T) {
+	run := &pipeline.Run{Context: map[string]any{"asset_type": "domain"}}
+	for _, c := range []pipeline.Condition{
+		{Type: pipeline.ConditionTypeExpression, Value: "true"},
+		{Type: pipeline.ConditionTypeExpression, Value: ""},
+		{Type: "cel", Value: "1 == 1"},
+	} {
+		s := &pipeline.Step{StepKey: "x", Condition: c}
+		if s.ConditionMet(run) {
+			t.Errorf("%s condition passed", c.Type)
+		}
+		if !s.ConditionUnsupported() || !strings.Contains(s.ConditionSkipReason(), "cannot be evaluated") {
+			t.Errorf("%s: reason %q", c.Type, s.ConditionSkipReason())
+		}
+	}
+	for _, c := range []pipeline.Condition{pipeline.AlwaysCondition(), {}, pipeline.AssetTypeCondition("domain")} {
+		s := &pipeline.Step{StepKey: "y", Condition: c}
+		if !s.ConditionMet(run) || s.ConditionUnsupported() {
+			t.Errorf("%q condition did not pass", c.Type)
+		}
+	}
+	never := &pipeline.Step{Condition: pipeline.NeverCondition()}
+	if never.ConditionMet(run) || never.ConditionSkipReason() != "Condition not met" {
+		t.Error("never condition")
+	}
+	if err := (&pipeline.Step{}).SetCondition(pipeline.ExpressionCondition("x")); err == nil {
+		t.Error("an expression condition was accepted")
+	}
 }
