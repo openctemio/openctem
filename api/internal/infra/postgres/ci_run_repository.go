@@ -16,7 +16,7 @@ import (
 )
 
 // CIRunRepository stores CI trust configurations, runs, gate policies and
-// overrides (RFC-051, migration 001058). Every query is tenant-scoped except
+// overrides (RFC-051, migration 001063). Every query is tenant-scoped except
 // the upload-token lookup (the token is the credential) and the OIDC replay
 // table (global by design).
 type CIRunRepository struct {

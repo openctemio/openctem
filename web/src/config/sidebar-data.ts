@@ -214,8 +214,7 @@ export const sidebarData: SidebarData = {
         },
         // Sensors are a fleet operators open daily (offline sensors, keys,
         // zones), not a preference, so they sit next to Scans rather than in
-        // Settings, as in Tenable VM (left nav > Sensors) and Rapid7 (Data
-        // Collection Management).
+        // Settings.
         {
           title: 'Sensors',
           url: '/sensors',
