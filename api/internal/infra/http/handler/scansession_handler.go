@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scansession"
@@ -22,13 +22,13 @@ import (
 
 // ScanSessionHandler handles scan session HTTP requests.
 type ScanSessionHandler struct {
-	service   *app.ScanSessionService
+	service   *scan.ScanSessionService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewScanSessionHandler creates a new ScanSessionHandler.
-func NewScanSessionHandler(svc *app.ScanSessionService, v *validator.Validator, log *logger.Logger) *ScanSessionHandler {
+func NewScanSessionHandler(svc *scan.ScanSessionService, v *validator.Validator, log *logger.Logger) *ScanSessionHandler {
 	return &ScanSessionHandler{
 		service:   svc,
 		validator: v,
@@ -162,7 +162,7 @@ func (h *ScanSessionHandler) RegisterScan(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	output, err := h.service.RegisterScan(r.Context(), agt, app.RegisterScanInput{
+	output, err := h.service.RegisterScan(r.Context(), agt, scan.RegisterScanInput{
 		ScannerName:    req.ScannerName,
 		ScannerVersion: req.ScannerVersion,
 		ScannerType:    req.ScannerType,
@@ -235,7 +235,7 @@ func (h *ScanSessionHandler) UpdateScan(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err := h.service.UpdateScanSession(r.Context(), agt, scanID, app.UpdateScanSessionInput{
+	err := h.service.UpdateScanSession(r.Context(), agt, scanID, scan.UpdateScanSessionInput{
 		Status:             req.Status,
 		ErrorMessage:       req.ErrorMessage,
 		FindingsTotal:      req.FindingsTotal,
@@ -327,7 +327,7 @@ func (h *ScanSessionHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
-	input := app.ListScanSessionsInput{
+	input := scan.ListScanSessionsInput{
 		ScannerName: query.Get("scanner_name"),
 		AssetType:   query.Get("asset_type"),
 		AssetValue:  query.Get("asset_value"),

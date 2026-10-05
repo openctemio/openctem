@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
@@ -1207,12 +1208,12 @@ func (h *SensorHandler) handleServiceError(w http.ResponseWriter, err error) {
 }
 
 // buildAuditContext extracts audit context information from the HTTP request.
-func (h *SensorHandler) buildAuditContext(r *http.Request) *app.AuditContext {
+func (h *SensorHandler) buildAuditContext(r *http.Request) *audit.AuditContext {
 	// Forwarding headers count only from a trusted proxy (S-4); a client
 	// must not be able to write any IP it likes into the audit log.
 	clientIP := getClientIP(r)
 
-	return &app.AuditContext{
+	return &audit.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
 		ActorID:    middleware.GetUserID(r.Context()),
 		ActorEmail: auditActorEmail(r.Context()),

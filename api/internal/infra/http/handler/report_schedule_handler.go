@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -19,7 +19,7 @@ import (
 
 // ReportScheduleHandler handles report schedule HTTP requests.
 type ReportScheduleHandler struct {
-	service      *app.ReportScheduleService
+	service      *module.ReportScheduleService
 	auditService *auditapp.AuditService
 	logger       *logger.Logger
 }
@@ -53,7 +53,7 @@ func (h *ReportScheduleHandler) audit(r *http.Request, action auditdom.Action, s
 }
 
 // NewReportScheduleHandler creates a new ReportScheduleHandler.
-func NewReportScheduleHandler(svc *app.ReportScheduleService, log *logger.Logger) *ReportScheduleHandler {
+func NewReportScheduleHandler(svc *module.ReportScheduleService, log *logger.Logger) *ReportScheduleHandler {
 	return &ReportScheduleHandler{service: svc, logger: log}
 }
 
@@ -141,7 +141,7 @@ func (h *ReportScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	schedule, err := h.service.CreateSchedule(r.Context(), app.CreateReportScheduleInput{
+	schedule, err := h.service.CreateSchedule(r.Context(), module.CreateReportScheduleInput{
 		TenantID: tenantID, Name: req.Name,
 		ReportType: req.ReportType, Format: req.Format,
 		CronExpression: req.CronExpression, Timezone: req.Timezone,

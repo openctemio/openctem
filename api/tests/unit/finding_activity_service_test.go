@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	activitysvc "github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -149,9 +149,9 @@ func (b *findingActBroadcaster) BroadcastActivity(channel string, data any, tena
 // Helper
 // =============================================================================
 
-func newFindingActService(activityRepo *findingActActivityRepo) *app.FindingActivityService {
+func newFindingActService(activityRepo *findingActActivityRepo) *activitysvc.FindingActivityService {
 	log := logger.NewNop()
-	return app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+	return activitysvc.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 }
 
 func validUUID() string {
@@ -174,7 +174,7 @@ func TestFindingActivityService_RecordActivity_Success(t *testing.T) {
 	findingID := validUUID()
 	actorID := validUUID()
 
-	result, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	result, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     tenantID,
 		FindingID:    findingID,
 		ActivityType: string(vulnerability.ActivityStatusChanged),
@@ -207,7 +207,7 @@ func TestFindingActivityService_RecordActivity_NilActorID(t *testing.T) {
 	repo := &findingActActivityRepo{}
 	svc := newFindingActService(repo)
 
-	result, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	result, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -229,7 +229,7 @@ func TestFindingActivityService_RecordActivity_EmptyActorID(t *testing.T) {
 	svc := newFindingActService(repo)
 
 	emptyStr := ""
-	result, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	result, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -250,7 +250,7 @@ func TestFindingActivityService_RecordActivity_InvalidTenantID(t *testing.T) {
 	repo := &findingActActivityRepo{}
 	svc := newFindingActService(repo)
 
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     "not-a-uuid",
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -269,7 +269,7 @@ func TestFindingActivityService_RecordActivity_InvalidFindingID(t *testing.T) {
 	repo := &findingActActivityRepo{}
 	svc := newFindingActService(repo)
 
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    "bad-id",
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -289,7 +289,7 @@ func TestFindingActivityService_RecordActivity_InvalidActorID(t *testing.T) {
 	svc := newFindingActService(repo)
 
 	badActor := "not-uuid"
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -315,7 +315,7 @@ func TestFindingActivityService_RecordActivity_ChangesExceedMaxSize(t *testing.T
 		"content": largeContent,
 	}
 
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCommentAdded),
@@ -335,12 +335,12 @@ func TestFindingActivityService_RecordActivity_ChangesAtMaxSize(t *testing.T) {
 	svc := newFindingActService(repo)
 
 	// Create changes just under 15KB - the JSON overhead of {"k":"..."} adds ~7 bytes
-	content := strings.Repeat("a", app.MaxChangesSize-10)
+	content := strings.Repeat("a", activitysvc.MaxChangesSize-10)
 	changes := map[string]interface{}{
 		"k": content,
 	}
 
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCommentAdded),
@@ -359,7 +359,7 @@ func TestFindingActivityService_RecordActivity_NilChanges(t *testing.T) {
 	svc := newFindingActService(repo)
 
 	// nil changes should skip the size check and be handled by domain
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -380,7 +380,7 @@ func TestFindingActivityService_RecordActivity_CreateError(t *testing.T) {
 	}
 	svc := newFindingActService(repo)
 
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -404,7 +404,7 @@ func TestFindingActivityService_RecordActivity_WithSourceMetadata(t *testing.T) 
 		"commit":   "abc123",
 	}
 
-	result, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	result, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:       validUUID(),
 		FindingID:      validUUID(),
 		ActivityType:   string(vulnerability.ActivityScanDetected),
@@ -436,7 +436,7 @@ func TestFindingActivityService_RecordActivity_BroadcastsWhenSet(t *testing.T) {
 	svc.SetBroadcaster(bc)
 
 	findingID := validUUID()
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    findingID,
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -460,7 +460,7 @@ func TestFindingActivityService_RecordActivity_NoBroadcastWithoutBroadcaster(t *
 	svc := newFindingActService(repo)
 	// Do not set broadcaster
 
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -983,7 +983,7 @@ func TestFindingActivityService_ListActivities_Success(t *testing.T) {
 	}
 	svc := newFindingActService(repo)
 
-	result, err := svc.ListActivities(context.Background(), app.ListActivitiesInput{
+	result, err := svc.ListActivities(context.Background(), activitysvc.ListActivitiesInput{
 		TenantID:  validUUID(),
 		FindingID: validUUID(),
 		Page:      0,
@@ -1007,7 +1007,7 @@ func TestFindingActivityService_ListActivities_WithActivityTypeFilter(t *testing
 	}
 	svc := newFindingActService(repo)
 
-	_, err := svc.ListActivities(context.Background(), app.ListActivitiesInput{
+	_, err := svc.ListActivities(context.Background(), activitysvc.ListActivitiesInput{
 		TenantID:      validUUID(),
 		FindingID:     validUUID(),
 		ActivityTypes: []string{"status_changed", "comment_added"},
@@ -1038,7 +1038,7 @@ func TestFindingActivityService_ListActivities_NoFilterTypes(t *testing.T) {
 	}
 	svc := newFindingActService(repo)
 
-	_, err := svc.ListActivities(context.Background(), app.ListActivitiesInput{
+	_, err := svc.ListActivities(context.Background(), activitysvc.ListActivitiesInput{
 		TenantID:  validUUID(),
 		FindingID: validUUID(),
 		Page:      0,
@@ -1056,7 +1056,7 @@ func TestFindingActivityService_ListActivities_InvalidTenantID(t *testing.T) {
 	repo := &findingActActivityRepo{}
 	svc := newFindingActService(repo)
 
-	_, err := svc.ListActivities(context.Background(), app.ListActivitiesInput{
+	_, err := svc.ListActivities(context.Background(), activitysvc.ListActivitiesInput{
 		TenantID:  "bad",
 		FindingID: validUUID(),
 		Page:      0,
@@ -1074,7 +1074,7 @@ func TestFindingActivityService_ListActivities_InvalidFindingID(t *testing.T) {
 	repo := &findingActActivityRepo{}
 	svc := newFindingActService(repo)
 
-	_, err := svc.ListActivities(context.Background(), app.ListActivitiesInput{
+	_, err := svc.ListActivities(context.Background(), activitysvc.ListActivitiesInput{
 		TenantID:  validUUID(),
 		FindingID: "bad",
 		Page:      0,
@@ -1097,7 +1097,7 @@ func TestFindingActivityService_ListActivities_RepoError(t *testing.T) {
 	}
 	svc := newFindingActService(repo)
 
-	_, err := svc.ListActivities(context.Background(), app.ListActivitiesInput{
+	_, err := svc.ListActivities(context.Background(), activitysvc.ListActivitiesInput{
 		TenantID:  validUUID(),
 		FindingID: validUUID(),
 		Page:      0,
@@ -1196,7 +1196,7 @@ func TestFindingActivityService_SetBroadcaster(t *testing.T) {
 	svc.SetBroadcaster(bc)
 
 	// Verify broadcast is called after recording
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -1245,7 +1245,7 @@ func TestFindingActivityService_BroadcastResolvesActorInfo(t *testing.T) {
 	}
 	svc.SetUserRepo(userRepo)
 
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityStatusChanged),
@@ -1284,7 +1284,7 @@ func TestFindingActivityService_BroadcastWithNilActorID(t *testing.T) {
 	bc := &findingActBroadcaster{}
 	svc.SetBroadcaster(bc)
 
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -1314,7 +1314,7 @@ func TestFindingActivityService_BroadcastTenantIDMatches(t *testing.T) {
 	svc.SetBroadcaster(bc)
 
 	tenantID := validUUID()
-	_, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	_, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     tenantID,
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),
@@ -1336,12 +1336,12 @@ func TestFindingActivityService_BroadcastTenantIDMatches(t *testing.T) {
 func TestFindingActivityService_ConvenienceMethodsSetUserActorType(t *testing.T) {
 	tests := []struct {
 		name     string
-		callFunc func(svc *app.FindingActivityService) (*vulnerability.FindingActivity, error)
+		callFunc func(svc *activitysvc.FindingActivityService) (*vulnerability.FindingActivity, error)
 		wantType vulnerability.ActivityType
 	}{
 		{
 			name: "RecordStatusChange",
-			callFunc: func(svc *app.FindingActivityService) (*vulnerability.FindingActivity, error) {
+			callFunc: func(svc *activitysvc.FindingActivityService) (*vulnerability.FindingActivity, error) {
 				return svc.RecordStatusChange(context.Background(),
 					validUUID(), validUUID(), findingActStrPtr(validUUID()),
 					"open", "resolved", "", "",
@@ -1351,7 +1351,7 @@ func TestFindingActivityService_ConvenienceMethodsSetUserActorType(t *testing.T)
 		},
 		{
 			name: "RecordSeverityChange",
-			callFunc: func(svc *app.FindingActivityService) (*vulnerability.FindingActivity, error) {
+			callFunc: func(svc *activitysvc.FindingActivityService) (*vulnerability.FindingActivity, error) {
 				return svc.RecordSeverityChange(context.Background(),
 					validUUID(), validUUID(), findingActStrPtr(validUUID()),
 					"low", "high", "",
@@ -1361,7 +1361,7 @@ func TestFindingActivityService_ConvenienceMethodsSetUserActorType(t *testing.T)
 		},
 		{
 			name: "RecordAssignment",
-			callFunc: func(svc *app.FindingActivityService) (*vulnerability.FindingActivity, error) {
+			callFunc: func(svc *activitysvc.FindingActivityService) (*vulnerability.FindingActivity, error) {
 				return svc.RecordAssignment(context.Background(),
 					validUUID(), validUUID(), findingActStrPtr(validUUID()),
 					validUUID(), "Name", "email@test.com", "",
@@ -1371,7 +1371,7 @@ func TestFindingActivityService_ConvenienceMethodsSetUserActorType(t *testing.T)
 		},
 		{
 			name: "RecordUnassignment",
-			callFunc: func(svc *app.FindingActivityService) (*vulnerability.FindingActivity, error) {
+			callFunc: func(svc *activitysvc.FindingActivityService) (*vulnerability.FindingActivity, error) {
 				return svc.RecordUnassignment(context.Background(),
 					validUUID(), validUUID(), findingActStrPtr(validUUID()),
 					"Previous", "",
@@ -1381,7 +1381,7 @@ func TestFindingActivityService_ConvenienceMethodsSetUserActorType(t *testing.T)
 		},
 		{
 			name: "RecordCommentAdded",
-			callFunc: func(svc *app.FindingActivityService) (*vulnerability.FindingActivity, error) {
+			callFunc: func(svc *activitysvc.FindingActivityService) (*vulnerability.FindingActivity, error) {
 				return svc.RecordCommentAdded(context.Background(),
 					validUUID(), validUUID(), findingActStrPtr(validUUID()),
 					validUUID(), "text", "",
@@ -1391,7 +1391,7 @@ func TestFindingActivityService_ConvenienceMethodsSetUserActorType(t *testing.T)
 		},
 		{
 			name: "RecordCommentUpdated",
-			callFunc: func(svc *app.FindingActivityService) (*vulnerability.FindingActivity, error) {
+			callFunc: func(svc *activitysvc.FindingActivityService) (*vulnerability.FindingActivity, error) {
 				return svc.RecordCommentUpdated(context.Background(),
 					validUUID(), validUUID(), findingActStrPtr(validUUID()),
 					validUUID(), "",
@@ -1401,7 +1401,7 @@ func TestFindingActivityService_ConvenienceMethodsSetUserActorType(t *testing.T)
 		},
 		{
 			name: "RecordCommentDeleted",
-			callFunc: func(svc *app.FindingActivityService) (*vulnerability.FindingActivity, error) {
+			callFunc: func(svc *activitysvc.FindingActivityService) (*vulnerability.FindingActivity, error) {
 				return svc.RecordCommentDeleted(context.Background(),
 					validUUID(), validUUID(), findingActStrPtr(validUUID()),
 					validUUID(), "",
@@ -1478,8 +1478,8 @@ func TestFindingActivityService_RecordCreated_UsesActorTypeSystem(t *testing.T) 
 
 func TestMaxChangesSize_Is15KB(t *testing.T) {
 	expected := 15 * 1024
-	if app.MaxChangesSize != expected {
-		t.Errorf("MaxChangesSize = %d, want %d", app.MaxChangesSize, expected)
+	if activitysvc.MaxChangesSize != expected {
+		t.Errorf("MaxChangesSize = %d, want %d", activitysvc.MaxChangesSize, expected)
 	}
 }
 
@@ -1493,7 +1493,7 @@ func TestFindingActivityService_RecordActivity_UniqueIDs(t *testing.T) {
 
 	ids := make(map[string]bool)
 	for i := 0; i < 10; i++ {
-		result, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+		result, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 			TenantID:     validUUID(),
 			FindingID:    validUUID(),
 			ActivityType: string(vulnerability.ActivityCreated),
@@ -1519,7 +1519,7 @@ func TestFindingActivityService_RecordActivity_TimestampIsSet(t *testing.T) {
 	repo := &findingActActivityRepo{}
 	svc := newFindingActService(repo)
 
-	result, err := svc.RecordActivity(context.Background(), app.RecordActivityInput{
+	result, err := svc.RecordActivity(context.Background(), activitysvc.RecordActivityInput{
 		TenantID:     validUUID(),
 		FindingID:    validUUID(),
 		ActivityType: string(vulnerability.ActivityCreated),

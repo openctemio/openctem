@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -163,8 +164,8 @@ func toAdminOrganizationResponse(o *admin.Organization) AdminOrganizationRespons
 // adminAuditContext attributes a tenant-audit event to the platform admin. The
 // admin is not a users row, so actor_id stays empty (it references users) and
 // the email is prefixed so the organization's own audit log shows who did it.
-func adminAuditContext(r *http.Request, tenantID string) app.AuditContext {
-	actx := app.AuditContext{
+func adminAuditContext(r *http.Request, tenantID string) audit.AuditContext {
+	actx := audit.AuditContext{
 		TenantID: tenantID,
 		// The resolved client IP (forwarding headers only from a trusted
 		// proxy), not the proxy's socket address.

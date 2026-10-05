@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/group"
@@ -239,8 +240,8 @@ func toGroupWithRoleResponse(g *group.GroupWithRole) GroupWithRoleResponse {
 // =============================================================================
 
 // buildAuditContext builds an AuditContext from the HTTP request.
-func (h *GroupHandler) buildAuditContext(r *http.Request) app.AuditContext {
-	actx := app.AuditContext{
+func (h *GroupHandler) buildAuditContext(r *http.Request) audit.AuditContext {
+	actx := audit.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),

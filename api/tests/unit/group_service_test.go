@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/group"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -237,7 +238,7 @@ func createTestGroup(t *testing.T, svc *app.GroupService, tenantID shared.ID, na
 		Slug:      slug,
 		GroupType: "team",
 	}
-	g, err := svc.CreateGroup(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
+	g, err := svc.CreateGroup(context.Background(), input, shared.NewID(), audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("failed to create test group: %v", err)
 	}
@@ -262,7 +263,7 @@ func TestCreateGroup_Success(t *testing.T) {
 		GroupType:   "security_team",
 	}
 
-	g, err := svc.CreateGroup(context.Background(), input, creatorID, app.AuditContext{})
+	g, err := svc.CreateGroup(context.Background(), input, creatorID, audit.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateGroup failed: %v", err)
 	}
@@ -301,7 +302,7 @@ func TestCreateGroup_ValidationError_EmptyName(t *testing.T) {
 		GroupType: "team",
 	}
 
-	_, err := svc.CreateGroup(context.Background(), input, shared.NewID(), app.AuditContext{})
+	_, err := svc.CreateGroup(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for empty name")
 	}
@@ -322,7 +323,7 @@ func TestCreateGroup_ValidationError_InvalidGroupType(t *testing.T) {
 		GroupType: "invalid_type",
 	}
 
-	_, err := svc.CreateGroup(context.Background(), input, shared.NewID(), app.AuditContext{})
+	_, err := svc.CreateGroup(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for invalid group type")
 	}
@@ -343,7 +344,7 @@ func TestCreateGroup_ValidationError_InvalidSlug(t *testing.T) {
 		GroupType: "team",
 	}
 
-	_, err := svc.CreateGroup(context.Background(), input, shared.NewID(), app.AuditContext{})
+	_, err := svc.CreateGroup(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for invalid slug")
 	}
@@ -368,7 +369,7 @@ func TestCreateGroup_DuplicateSlug(t *testing.T) {
 		GroupType: "team",
 	}
 
-	_, err := svc.CreateGroup(context.Background(), input, shared.NewID(), app.AuditContext{})
+	_, err := svc.CreateGroup(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for duplicate slug")
 	}
@@ -388,7 +389,7 @@ func TestCreateGroup_InvalidTenantID(t *testing.T) {
 		GroupType: "team",
 	}
 
-	_, err := svc.CreateGroup(context.Background(), input, shared.NewID(), app.AuditContext{})
+	_, err := svc.CreateGroup(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for invalid tenant ID")
 	}
@@ -462,7 +463,7 @@ func TestUpdateGroup_Success(t *testing.T) {
 		Description: &newDesc,
 	}
 
-	result, err := svc.UpdateGroup(context.Background(), g.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
+	result, err := svc.UpdateGroup(context.Background(), g.ID().String(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("UpdateGroup failed: %v", err)
 	}
@@ -484,7 +485,7 @@ func TestUpdateGroup_NotFound(t *testing.T) {
 		Name: &newName,
 	}
 
-	_, err := svc.UpdateGroup(context.Background(), shared.NewID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateGroup(context.Background(), shared.NewID().String(), input, audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for non-existent group")
 	}
@@ -503,7 +504,7 @@ func TestUpdateGroup_ActivateDeactivate(t *testing.T) {
 	// Deactivate
 	inactive := false
 	input := app.UpdateGroupInput{IsActive: &inactive}
-	result, err := svc.UpdateGroup(context.Background(), g.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
+	result, err := svc.UpdateGroup(context.Background(), g.ID().String(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("Deactivate failed: %v", err)
 	}
@@ -514,7 +515,7 @@ func TestUpdateGroup_ActivateDeactivate(t *testing.T) {
 	// Activate
 	active := true
 	input = app.UpdateGroupInput{IsActive: &active}
-	result, err = svc.UpdateGroup(context.Background(), g.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
+	result, err = svc.UpdateGroup(context.Background(), g.ID().String(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("Activate failed: %v", err)
 	}
@@ -534,7 +535,7 @@ func TestDeleteGroup_Success(t *testing.T) {
 
 	g := createTestGroup(t, svc, tenantID, "To Delete", "to-delete")
 
-	err := svc.DeleteGroup(context.Background(), g.ID().String(), app.AuditContext{TenantID: tenantID.String()})
+	err := svc.DeleteGroup(context.Background(), g.ID().String(), audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("DeleteGroup failed: %v", err)
 	}
@@ -550,7 +551,7 @@ func TestDeleteGroup_NotFound(t *testing.T) {
 	repo := newMockGroupRepo()
 	svc := newTestGroupService(repo)
 
-	err := svc.DeleteGroup(context.Background(), shared.NewID().String(), app.AuditContext{})
+	err := svc.DeleteGroup(context.Background(), shared.NewID().String(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for non-existent group")
 	}
@@ -563,7 +564,7 @@ func TestDeleteGroup_InvalidID(t *testing.T) {
 	repo := newMockGroupRepo()
 	svc := newTestGroupService(repo)
 
-	err := svc.DeleteGroup(context.Background(), "not-a-uuid", app.AuditContext{})
+	err := svc.DeleteGroup(context.Background(), "not-a-uuid", audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for invalid ID")
 	}
@@ -676,7 +677,7 @@ func TestAddMember_Success(t *testing.T) {
 		Role:    "member",
 	}
 
-	member, err := svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
+	member, err := svc.AddMember(context.Background(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("AddMember failed: %v", err)
 	}
@@ -707,13 +708,13 @@ func TestAddMember_AlreadyAMember(t *testing.T) {
 		Role:    "member",
 	}
 
-	_, err := svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
+	_, err := svc.AddMember(context.Background(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("First AddMember failed: %v", err)
 	}
 
 	// Try adding same member again
-	_, err = svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
+	_, err = svc.AddMember(context.Background(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("Expected error for duplicate member")
 	}
@@ -735,7 +736,7 @@ func TestAddMember_InvalidRole(t *testing.T) {
 		Role:    "invalid_role",
 	}
 
-	_, err := svc.AddMember(context.Background(), input, app.AuditContext{})
+	_, err := svc.AddMember(context.Background(), input, audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for invalid role")
 	}
@@ -754,7 +755,7 @@ func TestAddMember_InvalidGroupID(t *testing.T) {
 		Role:    "member",
 	}
 
-	_, err := svc.AddMember(context.Background(), input, app.AuditContext{})
+	_, err := svc.AddMember(context.Background(), input, audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for invalid group ID")
 	}
@@ -782,7 +783,7 @@ func TestRemoveMember_Success(t *testing.T) {
 		UserID:  ownerID,
 		Role:    "owner",
 	}
-	_, err := svc.AddMember(context.Background(), ownerInput, app.AuditContext{TenantID: tenantID.String()})
+	_, err := svc.AddMember(context.Background(), ownerInput, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("Failed to add owner: %v", err)
 	}
@@ -793,13 +794,13 @@ func TestRemoveMember_Success(t *testing.T) {
 		UserID:  memberID,
 		Role:    "member",
 	}
-	_, err = svc.AddMember(context.Background(), memberInput, app.AuditContext{TenantID: tenantID.String()})
+	_, err = svc.AddMember(context.Background(), memberInput, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("Failed to add member: %v", err)
 	}
 
 	// Remove the regular member
-	err = svc.RemoveMember(context.Background(), g.ID().String(), memberID, app.AuditContext{TenantID: tenantID.String()})
+	err = svc.RemoveMember(context.Background(), g.ID().String(), memberID, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("RemoveMember failed: %v", err)
 	}
@@ -819,7 +820,7 @@ func TestRemoveMember_NotAMember(t *testing.T) {
 	g := createTestGroup(t, svc, tenantID, "Team Epsilon", "team-epsilon")
 
 	// Try to remove non-existent member
-	err := svc.RemoveMember(context.Background(), g.ID().String(), shared.NewID(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), g.ID().String(), shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for non-existent member")
 	}
@@ -837,13 +838,13 @@ func TestRemoveMember_LastOwner(t *testing.T) {
 		Slug:      "team-zeta",
 		GroupType: "team",
 	}
-	g, err := svc.CreateGroup(context.Background(), input, creatorID, app.AuditContext{TenantID: tenantID.String()})
+	g, err := svc.CreateGroup(context.Background(), input, creatorID, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("CreateGroup failed: %v", err)
 	}
 
 	// Try to remove the sole owner
-	err = svc.RemoveMember(context.Background(), g.ID().String(), creatorID, app.AuditContext{TenantID: tenantID.String()})
+	err = svc.RemoveMember(context.Background(), g.ID().String(), creatorID, audit.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("Expected error when removing last owner")
 	}
@@ -870,7 +871,7 @@ func TestListGroupMembers_Success(t *testing.T) {
 			UserID:  shared.NewID(),
 			Role:    "member",
 		}
-		_, err := svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
+		_, err := svc.AddMember(context.Background(), input, audit.AuditContext{TenantID: tenantID.String()})
 		if err != nil {
 			t.Fatalf("AddMember failed: %v", err)
 		}
@@ -932,7 +933,7 @@ func TestAssignAsset_NoAccessControlRepo(t *testing.T) {
 		OwnershipType: "primary",
 	}
 
-	err := svc.AssignAsset(context.Background(), input, shared.NewID(), app.AuditContext{})
+	err := svc.AssignAsset(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error when access control repo is not configured")
 	}
@@ -950,7 +951,7 @@ func TestUnassignAsset_NoAccessControlRepo(t *testing.T) {
 		AssetID: shared.NewID().String(),
 	}
 
-	err := svc.UnassignAsset(context.Background(), input, app.AuditContext{})
+	err := svc.UnassignAsset(context.Background(), input, audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error when access control repo is not configured")
 	}
@@ -968,7 +969,7 @@ func TestAssignAsset_InvalidGroupID(t *testing.T) {
 		OwnershipType: "primary",
 	}
 
-	err := svc.AssignAsset(context.Background(), input, shared.NewID(), app.AuditContext{})
+	err := svc.AssignAsset(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for invalid group ID")
 	}
@@ -992,7 +993,7 @@ func TestAssignAsset_InvalidOwnershipType(t *testing.T) {
 		OwnershipType: "invalid_type",
 	}
 
-	err := svc.AssignAsset(context.Background(), input, shared.NewID(), app.AuditContext{})
+	err := svc.AssignAsset(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("Expected error for invalid ownership type")
 	}
