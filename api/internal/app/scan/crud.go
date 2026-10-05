@@ -88,6 +88,10 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), validatedTargets); err != nil {
 		return nil, err
 	}
+	// Nothing the tenant has not authorized for active scanning (RFC-036).
+	if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets); err != nil {
+		return nil, err
+	}
 
 	// Parse and validate asset groups
 	assetGroupID, assetGroupIDs, err := s.validateScanAssetGroups(ctx, tenantID, input)
@@ -947,6 +951,12 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName strin
 
 	sc, err := s.GetScan(ctx, tenantID, scanID)
 	if err != nil {
+		return nil, err
+	}
+
+	// A clone is a new scan of the same targets: the same ownership check
+	// as a create (RFC-036).
+	if err := s.refuseUnownedTargets(ctx, sc.TenantID, "scan_clone", sc.Targets); err != nil {
 		return nil, err
 	}
 
