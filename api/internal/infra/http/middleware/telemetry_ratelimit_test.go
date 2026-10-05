@@ -19,7 +19,7 @@ func countAllowed(mw func(http.Handler) http.Handler, ctxValue func(*http.Reques
 	}))
 	for i := 0; i < n; i++ {
 		rec := httptest.NewRecorder()
-		r := httptest.NewRequest(http.MethodPost, "/api/v1/agent/ingest", nil)
+		r := httptest.NewRequest(http.MethodPost, "/api/v2/sensor/results/r1", nil)
 		r = ctxValue(r)
 		h.ServeHTTP(rec, r)
 		if rec.Code != http.StatusTooManyRequests {

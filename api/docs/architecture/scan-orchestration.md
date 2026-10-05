@@ -419,35 +419,21 @@ GET    /api/v1/pipeline-runs/{id}       # Get run details
 GET    /api/v1/pipeline-runs/{id}/steps # Get step runs
 ```
 
-### Agent API
+### Sensor API (protocol v2)
 
 ```
-POST   /api/v1/agent/heartbeat          # Agent heartbeat
-GET    /api/v1/agent/commands           # Poll for commands
-POST   /api/v1/agent/commands/{id}/ack  # Acknowledge command
-POST   /api/v1/agent/commands/{id}/start     # Start execution
-POST   /api/v1/agent/commands/{id}/complete  # Complete with results
-POST   /api/v1/agent/commands/{id}/fail      # Report failure
+POST   /api/v2/sensor/heartbeat                  # Heartbeat and doorbell
+GET    /api/v2/sensor/commands                   # Poll for commands
+POST   /api/v2/sensor/commands/{id}/claim        # Claim a command
+POST   /api/v2/sensor/commands/{id}/start        # Start execution
+POST   /api/v2/sensor/commands/{id}/complete     # Complete with results
+POST   /api/v2/sensor/commands/{id}/fail         # Report failure
 ```
 
-#### Module Gating for Agent Routes
-
-Agent ingest routes are gated by the tenant's enabled modules:
-
-| Endpoint | Module Required | Notes |
-|----------|-----------------|-------|
-| `POST /heartbeat` | None | Always allowed for agent health monitoring |
-| `POST /ingest` | `scans` | Finding/asset ingestion |
-| `POST /ingest/check` | `scans` | Fingerprint deduplication |
-| `POST /ingest/sarif` | `scans` | SARIF format ingestion |
-| `GET /commands` | `scans` | Command polling |
-| `POST /commands/{id}/*` | `scans` | Command status updates |
-| `POST /scans` | `scans` | Scan session registration |
-| `PATCH /scans/{id}` | `scans` | Scan session update |
-| `GET /scans/{id}` | `scans` | Get scan session |
-| `POST /credentials/ingest` | `credentials` | Credential leak ingestion |
-
-> **Note:** The heartbeat endpoint is exempt from module gating to allow agents to report health status even if the tenant's subscription lapses. This ensures visibility into agent fleet status regardless of licensing state.
+Protocol v1 (`/api/v1/agent/*`) was retired on 2026-10-05; see
+[sensors.md](sensors.md#protocol-v2-control-plane). Tenant and module checks
+come from the sensor key; the heartbeat is never module-gated, so the fleet
+stays visible whatever the tenant's modules.
 
 ## Testing
 
@@ -476,14 +462,14 @@ POST /api/v1/scans
 # 2. Wait for scheduler to trigger (or trigger manually)
 POST /api/v1/scans/{id}/trigger
 
-# 3. Agent polls for command
-GET /api/v1/agent/commands
+# 3. Sensor polls for command
+GET /api/v2/sensor/commands
 # Returns command with step_key, preferred_tool, payload
 
-# 4. Agent executes and reports
-POST /api/v1/agent/commands/{id}/ack
-POST /api/v1/agent/commands/{id}/start
-POST /api/v1/agent/commands/{id}/complete
+# 4. Sensor executes and reports
+POST /api/v2/sensor/commands/{id}/claim
+POST /api/v2/sensor/commands/{id}/start
+POST /api/v2/sensor/commands/{id}/complete
 {
   "findings_count": 15,
   "output": { "results": [...] }

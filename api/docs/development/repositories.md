@@ -69,8 +69,8 @@ Detailed docs (architecture, RFCs, deployment, this guide) live in
   (`api/api/openapi/swagger.yaml` → `web/src/lib/api/generated/api.types.ts`),
   and CI fails if they drift, so a contract change and its consumer land in one PR.
 - **sensor → `api/`**: the sensor authenticates with its own key and talks to
-  the sensor API (protocol v2 under `/api/v2/sensor/*`, v1 under `/api/v1/agent/*`
-  until its sunset), then submits results.
+  the sensor API (protocol v2 under `/api/v2/sensor/*`; protocol v1 was retired
+  on 2026-10-05), then submits results.
 - **sensor uses `sdk-go`**: the SDK is the client library (auth, polling,
   submission, safe HTTP). Build your own collector on the same SDK.
 - **Everyone speaks `ctis`**: ingested data must conform to the CTIS schema, so
@@ -121,8 +121,7 @@ a key you create in the console
   ingesting) must agree field-for-field. If the parity check goes red, reconcile
   the schema; don't paper over it in `api/`.
 - **`api` and `sdk-go` are decoupled deliberately** (RFC-002): `api/` does not
-  import `sdk-go`. Keep that boundary. (The protocol-v1 compat harness in
-  `api/tests/compat/v1` is a separate module that pins a released sdk-go on purpose.)
+  import `sdk-go`. Keep that boundary.
 - **Run Go from `api/` with `GOWORK=off`**, which is what CI does. The monorepo
   has no `go.work`, but a parent directory's might be picked up.
 - **Docs for a feature** (architecture doc, RFC, and if user-facing the

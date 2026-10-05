@@ -134,11 +134,8 @@ func TestSensorLoad_PollOffersAtMostFreeSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, path := range []string{"/api/v2/sensor/commands?limit=10", "/api/v1/agent/commands?limit=10"} {
-		got := h.pollIDs(s, path)
-		if len(got) != 3 { // 2 scans (2 free slots) + the collect
-			t.Fatalf("%s offered %d commands, want 2 scans + 1 collect", path, len(got))
-		}
+	if got := h.pollIDs(s, "/api/v2/sensor/commands?limit=10"); len(got) != 3 { // 2 scans (2 free slots) + the collect
+		t.Fatalf("poll offered %d commands, want 2 scans + 1 collect", len(got))
 	}
 
 	// Claim one: one slot left, so one scan is offered.

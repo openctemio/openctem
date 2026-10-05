@@ -145,8 +145,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
 	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
-	// Ingest handler — opt into async mode (RFC-005) when configured. Default
-	// (sync) leaves the handler processing reports in-request as before.
+	// Sensor authentication and the services the protocol v2 control handler
+	// shares.
 	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Sensor, log)
 	// Heartbeat doorbell (RFC-023 §9.2a): the heartbeat tells a sensor that
 	// work is waiting and when to ring again. One cheap query per heartbeat.
@@ -154,12 +154,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
 	ingestHandler.SetHeartbeatObserver(svc.SensorPlatformHealth)
-	// Protocol v2 results discovery on the v1 heartbeat (RFC-026 WP-A7).
-	ingestHandler.SetV2Advertised(cfg.Ingest.V2Results)
-	if cfg.Ingest.AsyncEnabled() && repos.IngestJob != nil {
-		ingestHandler.SetAsyncIngest(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
-		log.Info("async ingest enabled", "max_pending_per_tenant", cfg.Ingest.MaxPendingPerTenant)
-	}
 
 	// Tenant handler with role service and asset service wired.
 	// Exposed as a package-level var so main.go can back-wire the
@@ -323,16 +317,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		DefectDojo: handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Sensors & Commands
-		Command:          commandHandler,
-		Sensor:           sensorHandler,
-		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
-		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
-		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
-		Ingest:           ingestHandler,
-		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, log),
-		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
-		IOC:              newIOCHandlerWithFindingCheck(deps, log),
-		Validation:       validationHandler,
+		Command:         commandHandler,
+		Sensor:          sensorHandler,
+		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
+		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
+		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		Ingest:          ingestHandler,
+		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, log),
+		IOC:             newIOCHandlerWithFindingCheck(deps, log),
+		Validation:      validationHandler,
 		SCIM: func() *handler.SCIMHandler {
 			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
 			h.SetGroupService(svc.SCIMGroups)
@@ -673,18 +666,6 @@ func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pente
 	h.SetAccessChecker(pentestSvc)
 	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
 	h.SetAuditService(auditSvc)
-	return h
-}
-
-// newRuntimeTelemetryHandlerWithCorrelator wires the IOC correlator
-// into the runtime-telemetry ingest path. The handler is nil-safe
-// without a correlator, but leaving it nil kills invariant B6 —
-// telemetry is stored but never matched.
-func newRuntimeTelemetryHandlerWithCorrelator(deps *HandlerDeps, svc *Services, log *logger.Logger) *handler.RuntimeTelemetryHandler {
-	h := handler.NewRuntimeTelemetryHandler(deps.DB.DB, log)
-	if svc.IOCCorrelator != nil {
-		h.SetCorrelator(svc.IOCCorrelator)
-	}
 	return h
 }
 
