@@ -39,6 +39,7 @@ ci_pipelines
 ci_run_findings
 ci_runs
 ci_trust_configs
+command_logs
 commands
 comment_reactions
 compensating_controls
