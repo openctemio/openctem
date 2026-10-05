@@ -171,6 +171,18 @@ types:
       - sources: [domain, subdomain]
         targets: [ip_address, load_balancer]
 
+  - id: serves_certificate
+    category: attack_surface_mapping
+    direct: Serves Certificate
+    inverse: Served By
+    description: >-
+      TLS — this service presented this certificate in its handshake (an
+      HTTP probe grabbed the leaf). One certificate can be served by many
+      services; the certificate is identified by its SHA-256 fingerprint.
+    constraints:
+      - sources: [service, http_service]
+        targets: [certificate]
+
   - id: cname_of
     category: attack_surface_mapping
     direct: CNAME Of

@@ -812,6 +812,7 @@ func TestAssetRelationshipService_AllRelationshipTypes(t *testing.T) {
 		{"exposes", "exposes"},
 		{"resolves_to", "resolves_to"},
 		{"cname_of", "cname_of"},
+		{"serves_certificate", "serves_certificate"},
 		// Attack Path Analysis
 		{"depends_on", "depends_on"},
 		{"peer_of", "peer_of"},
