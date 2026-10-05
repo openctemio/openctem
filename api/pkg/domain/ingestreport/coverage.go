@@ -42,4 +42,10 @@ type CoverageQuery struct {
 	// SeenScanIDs are this run's report ids: a finding whose scan_id is one of
 	// them was reported by this run and stays open.
 	SeenScanIDs []string
+	// TemplatesDigest is the template release digest every report of the
+	// run scanned with (tool.properties.content, nuclei-templates); "" when
+	// none was reported or the reports disagree. A candidate whose last
+	// sighting recorded another release is not proven fixed (research/18
+	// O6): it becomes not_observed instead.
+	TemplatesDigest string
 }
