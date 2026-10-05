@@ -12870,6 +12870,209 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/easm/verified-domains': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List the organization's verified domains
+     * @description Domains the organization proved it controls with a DNS TXT record. Names under a verified domain are attributed with the strong rule fqdn_under_verified_root. Rows a platform administrator set up for SSO are listed read-only (managed=true).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomainList']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Add a domain to verify for EASM
+     * @description Returns the DNS TXT record to publish. The domain is verified for EASM only: it never admits SSO users (SSO domains are set up by a platform administrator). Public suffixes and shared consumer domains are refused. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Domain */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomainCreateRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomain']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/verified-domains/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Remove a domain the organization verified for EASM
+     * @description Names under it stop auto-confirming. SSO domains cannot be removed here. Audited.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Verified domain ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/verified-domains/{id}/verify': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Check a domain's TXT record now
+     * @description Looks up the TXT record and marks the domain verified when the exact token is present. At most 10 checks per organization per hour (429 with Retry-After). Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Verified domain ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomain']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/exposures': {
     parameters: {
       query?: never
@@ -36244,6 +36447,11 @@ export interface components {
       password?: string
       totp?: string
     }
+    'github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord': {
+      host?: string
+      type?: string
+      value?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput': {
       base_branch?: string
       base_branch_known?: boolean
@@ -39529,6 +39737,36 @@ export interface components {
       ct_interval_hours?: number
       dns_checks_enabled?: boolean
       dns_interval_hours?: number
+    }
+    'internal_infra_http_handler.EASMVerifiedDomain': {
+      created_at?: string
+      domain?: string
+      id?: string
+      /** @description Instructions is the TXT record to publish (easm rows only). */
+      instructions?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord']
+      last_checked_at?: string
+      /**
+       * @description Managed is true for an sso row: the organization cannot re-check or
+       *     delete it here.
+       */
+      managed?: boolean
+      /**
+       * @description Purpose: easm (added by the organization, attribution only) or sso
+       *     (set up by a platform administrator; admits SSO users, read-only here).
+       */
+      purpose?: string
+      /**
+       * @description Status: pending (TXT not seen yet), verified, or failed (it was
+       *     verified and the record is gone; names under it stop auto-confirming).
+       */
+      status?: string
+      verified_at?: string
+    }
+    'internal_infra_http_handler.EASMVerifiedDomainCreateRequest': {
+      domain?: string
+    }
+    'internal_infra_http_handler.EASMVerifiedDomainList': {
+      data?: components['schemas']['internal_infra_http_handler.EASMVerifiedDomain'][]
     }
     'internal_infra_http_handler.EmbeddedCategoryResponse': {
       color?: string
