@@ -101,6 +101,9 @@ type FindingImportResponse struct {
 
 // ImportFileResponse is the outcome of one file.
 type ImportFileResponse struct {
+	// ImportID is the record of a committed file: the producer of the
+	// findings (scan_id) and assets (import_id) it wrote. Empty in a preview.
+	ImportID string               `json:"import_id,omitempty"`
 	Name     string               `json:"name"`
 	Format   string               `json:"format,omitempty"`
 	Error    *ImportFileError     `json:"error,omitempty"`
@@ -206,6 +209,9 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 		SessionID:  shared.NewID().String(),
 	}
 	req.Actor = actor
+	if uid, err := shared.IDFromString(middleware.GetUserID(r.Context())); err == nil {
+		req.ActorUserID = &uid
+	}
 	if f := strings.TrimSpace(q.Get("format")); f != "" {
 		if !importer.Format(f).IsValid() {
 			apierror.BadRequest("unknown format; supported: " + strings.Join(supportedFormats(), ", ")).WriteJSON(w)
@@ -546,6 +552,7 @@ func safeFileName(s string) string {
 
 func toImportFileResponse(fr *findingimport.FileResult) ImportFileResponse {
 	out := ImportFileResponse{
+		ImportID: fr.ImportID,
 		Name:     fr.Name,
 		Format:   string(fr.Format),
 		Unmapped: fr.Unmapped,
@@ -595,6 +602,7 @@ func (h *FindingImportHandler) auditImport(r *http.Request, req findingimport.Re
 		UserAgent:  r.UserAgent(),
 		RequestID:  r.Header.Get("X-Request-ID"),
 	}
+	importIDs := make([]string, 0, len(results))
 	names := make([]string, 0, len(results))
 	formats := make([]string, 0, len(results))
 	var assetsC, assetsU, skipped, findC, findU, failed, vexStored, vexClosed, vexWould int
@@ -602,6 +610,9 @@ func (h *FindingImportHandler) auditImport(r *http.Request, req findingimport.Re
 	for i := range results {
 		fr := &results[i]
 		names = append(names, fr.Name)
+		if fr.ImportID != "" {
+			importIDs = append(importIDs, fr.ImportID)
+		}
 		formats = append(formats, string(fr.Format))
 		if fr.Error != nil {
 			failed++
@@ -634,6 +645,7 @@ func (h *FindingImportHandler) auditImport(r *http.Request, req findingimport.Re
 		WithMetadata("source", "finding_import").
 		WithMetadata("dry_run", req.DryRun).
 		WithMetadata("restricted_uploader", req.Actor != nil).
+		WithMetadata("import_ids", importIDs).
 		WithMetadata("files", names).
 		WithMetadata("formats", formats).
 		WithMetadata("files_failed", failed).
@@ -656,6 +668,7 @@ func (h *FindingImportHandler) auditImport(r *http.Request, req findingimport.Re
 			WithMessage("VEX not_affected from an imported document").
 			WithSeverity(auditdom.SeverityForAction(action)).
 			WithMetadata("source", "finding_import").
+			WithMetadata("import_ids", importIDs).
 			WithMetadata("mode", string(h.svc.VEXMode())).
 			WithMetadata("closed", vexClosed).
 			WithMetadata("would_close", vexWould).

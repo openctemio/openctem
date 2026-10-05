@@ -40207,6 +40207,11 @@ export interface components {
     'internal_infra_http_handler.ImportFileResponse': {
       error?: components['schemas']['internal_infra_http_handler.ImportFileError']
       format?: string
+      /**
+       * @description ImportID is the record of a committed file: the producer of the
+       *     findings (scan_id) and assets (import_id) it wrote. Empty in a preview.
+       */
+      import_id?: string
       ingest?: components['schemas']['internal_infra_http_handler.ImportIngestSummary']
       issues?: components['schemas']['internal_infra_http_handler.ImportIssue'][]
       name?: string

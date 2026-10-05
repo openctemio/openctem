@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -257,5 +258,85 @@ func TestFindingImport_QualysPairInArchive_DB(t *testing.T) {
 	}
 	if n := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1 AND tool_name = $2`, ih.tenantID, "qualys"); n == 0 {
 		t.Fatal("no Qualys finding stored")
+	}
+}
+
+// A committed import records its producer: the record names the tenant and
+// the uploader, its findings carry the import id as scan_id and its assets
+// as import_id; another tenant cannot read the record; a preview records
+// nothing.
+func TestFindingImport_RecordsTheProducer_DB(t *testing.T) {
+	ih := newImportHarness(t, ingest.SourceResolveDryRun)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = ih.db.ExecContext(context.Background(), `DELETE FROM finding_imports WHERE tenant_id = $1`, ih.tenantID)
+	})
+	var doc []byte
+	for _, p := range ctisImporterFixtures(t) {
+		if strings.HasSuffix(p, filepath.Join("nessus", "scan.nessus")) {
+			doc, _ = os.ReadFile(p)
+		}
+	}
+	if doc == nil {
+		t.Skip("no Nessus fixture")
+	}
+	user := shared.NewID()
+	if _, err := ih.db.ExecContext(ctx, `INSERT INTO users (id, email, name) VALUES ($1, $2, $3)`, user, user.String()+"@example.com", "Importer"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = ih.db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, user) })
+
+	uploadAs := func(query string) handler.FindingImportResponse {
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		w, _ := mw.CreateFormFile("file", "weekly.nessus")
+		_, _ = w.Write(doc)
+		_ = mw.Close()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/import"+query, &buf)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		c := context.WithValue(req.Context(), middleware.TenantIDKey, ih.tenantID)
+		c = context.WithValue(c, middleware.UserIDKey, user.String())
+		c = context.WithValue(c, middleware.IsAdminKey, true)
+		rec := httptest.NewRecorder()
+		ih.h.Import(rec, req.WithContext(c))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%d: %s", rec.Code, rec.Body.String())
+		}
+		var resp handler.FindingImportResponse
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		return resp
+	}
+
+	if resp := uploadAs("?dry_run=true"); resp.Files[0].ImportID != "" {
+		t.Fatal("a preview returned an import id")
+	}
+	if n := ih.count(t, `SELECT count(*) FROM finding_imports WHERE tenant_id = $1`, ih.tenantID); n != 0 {
+		t.Fatalf("a preview wrote %d import records", n)
+	}
+
+	resp := uploadAs("")
+	importID := resp.Files[0].ImportID
+	if importID == "" {
+		t.Fatal("no import id")
+	}
+	repo := postgres.NewFindingRepository(&postgres.DB{DB: ih.db})
+	rec, err := repo.GetFindingImport(ctx, shared.MustIDFromString(ih.tenantID), shared.MustIDFromString(importID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.ActorUserID == nil || *rec.ActorUserID != user || rec.Format != "nessus" || rec.FindingsCreated == 0 || rec.AssetsCreated == 0 {
+		t.Fatalf("record = %+v", rec)
+	}
+	if strings.Contains(rec.FilenameSHA256, "weekly") || len(rec.FilenameSHA256) != 64 {
+		t.Fatalf("file name stored: %q", rec.FilenameSHA256)
+	}
+	if n := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1 AND scan_id = $2`, ih.tenantID, importID); n != rec.FindingsCreated {
+		t.Fatalf("%d findings carry the import id, want %d", n, rec.FindingsCreated)
+	}
+	if n := ih.count(t, `SELECT count(*) FROM assets WHERE tenant_id = $1 AND import_id = $2`, ih.tenantID, importID); n != rec.AssetsCreated {
+		t.Fatalf("%d assets carry the import id, want %d", n, rec.AssetsCreated)
+	}
+	if _, err := repo.GetFindingImport(ctx, shared.NewID(), shared.MustIDFromString(importID)); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("another tenant read the import record: %v", err)
 	}
 }

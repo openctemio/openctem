@@ -33,7 +33,11 @@ func (f *fakeIngester) Ingest(_ context.Context, agt *sensor.Sensor, in ingest.I
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &ingest.Output{FindingsCreated: len(in.Report.Findings)}, nil
+	m := map[string]shared.ID{}
+	for _, a := range in.Report.Assets {
+		m[a.ID] = shared.NewID()
+	}
+	return &ingest.Output{FindingsCreated: len(in.Report.Findings), AssetsCreated: len(in.Report.Assets), AssetMap: m}, nil
 }
 
 type applyCall struct {
@@ -43,11 +47,29 @@ type applyCall struct {
 }
 
 type fakeRepo struct {
-	cands []vulnerability.VEXCandidate
+	created  []vulnerability.FindingImport
+	finished []vulnerability.FindingImport
+	stamped  []shared.ID
+	cands    []vulnerability.VEXCandidate
 	// assetName names the candidates' assets, for AssetNames queries.
 	assetName map[shared.ID]string
 	queries   []vulnerability.VEXDocumentQuery
 	applies   []applyCall
+}
+
+func (f *fakeRepo) CreateFindingImport(_ context.Context, rec *vulnerability.FindingImport) error {
+	f.created = append(f.created, *rec)
+	return nil
+}
+
+func (f *fakeRepo) FinishFindingImport(_ context.Context, rec *vulnerability.FindingImport) error {
+	f.finished = append(f.finished, *rec)
+	return nil
+}
+
+func (f *fakeRepo) StampAssetsImport(_ context.Context, _, _ shared.ID, ids []shared.ID) (int64, error) {
+	f.stamped = append(f.stamped, ids...)
+	return int64(len(ids)), nil
 }
 
 func (f *fakeRepo) MatchVEXDocument(_ context.Context, _ shared.ID, q vulnerability.VEXDocumentQuery, _ int) ([]vulnerability.VEXCandidate, error) {
@@ -156,7 +178,7 @@ func TestImportFile_CommitIsPartialWithTheUploadersScope(t *testing.T) {
 	if *ing.sensors[0].TenantID != tid {
 		t.Fatal("ingest ran for another tenant")
 	}
-	if in.Report.Metadata.ID != "sess-3" {
+	if in.Report.Metadata.ID != fr.ImportID || fr.ImportID == "" {
 		t.Fatalf("report id = %q", in.Report.Metadata.ID)
 	}
 	if len(in.Report.Findings) != 1 || fr.Stats.Skipped != 1 {
@@ -374,5 +396,43 @@ func TestProductAssetNames(t *testing.T) {
 	want := "shop,shop:1.2,pkg:oci/shop@sha256%3aabc?repository_url=r,pkg:oci/shop,pkg:oci/shop@sha256%3aabc,r"
 	if strings.Join(got, ",") != want {
 		t.Fatalf("names = %v", got)
+	}
+}
+
+// A committed file gets an import record before anything is written: the
+// uploader, the format, a hash of the name (never the name), the counts;
+// the report id (the findings' scan_id) is the import id and the written
+// assets are stamped. A preview records nothing.
+func TestImportFile_RecordsTheProducer(t *testing.T) {
+	svc, ing, repo := newSvc(ingest.SourceResolveDryRun)
+	uid := shared.NewID()
+	tid := shared.NewID()
+	fr := svc.ImportFile(context.Background(), Request{TenantID: tid, ActorUserID: &uid, DryRun: true, SessionID: "s"}, 0, "secret-name.nessus", strings.NewReader(nessusDoc), nil)
+	if fr.ImportID != "" || len(repo.created) != 0 || len(repo.stamped) != 0 {
+		t.Fatal("a preview recorded an import")
+	}
+	fr = svc.ImportFile(context.Background(), Request{TenantID: tid, ActorUserID: &uid, SessionID: "s"}, 0, "secret-name.nessus", strings.NewReader(nessusDoc), nil)
+	if fr.Error != nil || fr.ImportID == "" || len(repo.created) != 1 {
+		t.Fatalf("import = %+v, records %d", fr.Error, len(repo.created))
+	}
+	rec := repo.created[0]
+	if rec.ID.String() != fr.ImportID || rec.TenantID != tid || rec.ActorUserID == nil || *rec.ActorUserID != uid || rec.Format != "nessus" {
+		t.Fatalf("record = %+v", rec)
+	}
+	if len(rec.FilenameSHA256) != 64 || strings.Contains(rec.FilenameSHA256, "secret") {
+		t.Fatalf("file name not hashed: %q", rec.FilenameSHA256)
+	}
+	if ing.calls[0].Report.Metadata.ID != fr.ImportID {
+		t.Fatalf("report id %q is not the import id", ing.calls[0].Report.Metadata.ID)
+	}
+	if len(repo.stamped) != 1 || len(repo.finished) != 1 || repo.finished[0].FindingsCreated != 2 || repo.finished[0].AssetsCreated != 1 {
+		t.Fatalf("stamped %v finished %+v", repo.stamped, repo.finished)
+	}
+
+	// A restricted uploader stamps only the assets in their scope.
+	svc, _, repo = newSvc(ingest.SourceResolveDryRun)
+	_ = svc.ImportFile(context.Background(), Request{TenantID: tid, Actor: onlyAssets{}, SessionID: "s"}, 0, "a", strings.NewReader(nessusDoc), nil)
+	if len(repo.stamped) != 0 {
+		t.Fatalf("stamped out-of-scope assets: %v", repo.stamped)
 	}
 }

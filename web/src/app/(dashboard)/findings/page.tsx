@@ -142,7 +142,6 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { csrfFetch } from '@/lib/api/client'
 import { usePermissions } from '@/context/permission-provider'
-import { useCanMutate } from '@/lib/permissions/can-mutate'
 import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
@@ -451,7 +450,6 @@ function FindingsContent() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
-  const canImport = useCanMutate('POST /api/v1/findings/import')
   const [statusParam, setStatusParam] = useUrlFilterList('status')
   // Multiple sources at once: "everything from code scanning" is one question,
   // and it spans sast and secret. Comma-separated, matching what the API takes.
@@ -630,6 +628,11 @@ function FindingsContent() {
     priority?: string
   } | null>(null)
   const { hasPermission } = usePermissions()
+  // The gate of POST /findings/import (the API stays authoritative).
+  const canImport =
+    hasPermission('findings:write') &&
+    hasPermission('assets:write') &&
+    hasPermission('assets:import')
   // Both are Phase-3 gated modules embedded in this (findings) page: the "Create
   // Jira Ticket" action hits the integrations module, and "Add to remediation"
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on
