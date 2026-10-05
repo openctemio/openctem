@@ -6,6 +6,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/lib/pq"
@@ -66,7 +67,7 @@ func (r *ExposureRepository) ResolveRejectedNames(ctx context.Context, tenantID 
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	rows, err := tx.QueryContext(ctx, `
+	resolved, err := queryIDs(ctx, tx, `
 		WITH rejected AS (
 			SELECT a.id, lower(trim(trailing '.' from a.name)) AS name
 			FROM assets a WHERE a.tenant_id = $1 AND a.id = ANY($2::uuid[])
@@ -84,21 +85,6 @@ func (r *ExposureRepository) ResolveRejectedNames(ctx context.Context, tenantID 
 	if err != nil {
 		return 0, fmt.Errorf("resolve exposures of rejected names: %w", err)
 	}
-	var resolved []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
-			return 0, err
-		}
-		resolved = append(resolved, id)
-	}
-	if err := rows.Close(); err != nil {
-		return 0, err
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
-	}
 	for _, id := range resolved {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO exposure_state_history (id, exposure_event_id, previous_state, new_state, changed_by, reason, created_at)
@@ -111,4 +97,22 @@ func (r *ExposureRepository) ResolveRejectedNames(ctx context.Context, tenantID 
 		return 0, err
 	}
 	return len(resolved), nil
+}
+
+// queryIDs runs a statement returning one id column and collects the ids.
+func queryIDs(ctx context.Context, tx *sql.Tx, q string, args ...any) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

@@ -359,7 +359,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 	}
 
 	client := &sweepClient{s: s}
-	var found []rootFinds
+	found := make([]rootFinds, 0, len(due))
 	var promotions []promotion
 	failed, queried, excludedHosts := 0, 0, 0
 	started := s.now()
