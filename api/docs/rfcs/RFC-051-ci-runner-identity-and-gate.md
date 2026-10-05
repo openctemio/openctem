@@ -94,8 +94,10 @@ job wins.
 5. The repository asset (`github.com/<owner>/<repo>`, or
    `<gitlab host>/<project path>`) is found or created in the tenant. The run
    records repository, commit, branch, pull request, pipeline URL (built from
-   the claims, never from the request), actor, event, environment and whether
-   the run is on the default branch (the repository's known default branch,
+   the claims, never from the request), actor login (never an email), event,
+   environment, the provider's pipeline run id, attempt and job id (GitHub
+   `run_id`, `run_attempt`, `check_run_id`; GitLab `pipeline_id`, `job_id`)
+   and whether the run is on the default branch (the repository's known default branch,
    else the configuration's).
 6. A random token `octci_` + 32 bytes is returned once; only its SHA-256 is
    stored. It expires after 15 minutes. `ci_run.token_issued` is audited
@@ -104,9 +106,10 @@ job wins.
 Every refusal answers the same `401 The CI token was not accepted`.
 
 `run_id` asks for a fresh token for a run the pipeline already holds (a long
-job). It is honored only for the same tenant, repository, commit and CI run id,
-before the run was evaluated and within six hours of its start; the old token
-stops working. Anything else is refused and audited (`run_mismatch`).
+job). It is honored only for the same tenant, repository, commit, CI run id,
+run attempt and job (when the run recorded one), before the run was evaluated
+and within six hours of its start; the old token stops working. Another job of
+the same pipeline, or a re-run, gets its own run. Anything else is refused and audited (`run_mismatch`).
 
 ## 5. Uploads
 
@@ -120,7 +123,9 @@ repository asset and reopen findings on it, never another asset; it never
 resolves findings on a source's say-so and never writes the global
 vulnerability catalog; findings carry no sensor id. The stored fingerprints the
 report sighted are recorded for the run (`ci_run_findings`, at most 100,000 per
-run). Uploads use the ingest per-tenant rate limit and concurrency cap.
+run). Uploads use the ingest per-tenant rate limit and concurrency cap. Each
+upload is audited (`ci_run.results_uploaded`: finding count, tool label, job;
+never finding content).
 
 `POST /api/v1/ci/runs/{id}/baseline-diff` splits fingerprints into new and
 already open on the default branch, for inline comments on new findings only.

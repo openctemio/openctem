@@ -58,17 +58,20 @@ type Run struct {
 	Actor           string
 	ExternalRunID   string
 	RunAttempt      string
-	Workflow        string
-	PipelineURL     string
-	Fork            bool
-	TokenHash       []byte
-	TokenExpiresAt  *time.Time
-	Status          string
-	Verdict         string
-	VerdictDetail   json.RawMessage
-	EvaluatedAt     *time.Time
-	ReportsCount    int
-	FindingsCount   int
+	// ExternalJobID is the CI job that exchanged the token (GitHub
+	// check_run_id, GitLab job_id), from the verified claims.
+	ExternalJobID  string
+	Workflow       string
+	PipelineURL    string
+	Fork           bool
+	TokenHash      []byte
+	TokenExpiresAt *time.Time
+	Status         string
+	Verdict        string
+	VerdictDetail  json.RawMessage
+	EvaluatedAt    *time.Time
+	ReportsCount   int
+	FindingsCount  int
 	// PipelineID is the pipeline the run belongs to (nil only for runs that
 	// predate pipelines and were not backfilled).
 	PipelineID *shared.ID

@@ -115,6 +115,7 @@ type CIRunResponse struct {
 	Actor             string `json:"actor,omitempty"`
 	ExternalRunID     string `json:"external_run_id,omitempty"`
 	RunAttempt        string `json:"run_attempt,omitempty"`
+	ExternalJobID     string `json:"external_job_id,omitempty"`
 	Workflow          string `json:"workflow,omitempty"`
 	PipelineURL       string `json:"pipeline_url,omitempty"`
 	Fork              bool   `json:"fork"`
@@ -140,7 +141,8 @@ func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
 	out := CIRunResponse{ID: r.ID.String(), RepositoryAssetID: r.RepositoryAssetID.String(), Provider: string(r.Provider),
 		Repository: r.Repository, Ref: r.Ref, Branch: r.Branch, CommitSHA: r.CommitSHA, PullRequest: r.PullRequest,
 		DefaultBranch: r.DefaultBranch, IsDefaultBranch: r.IsDefaultBranch, Event: r.Event, Environment: r.Environment,
-		Actor: r.Actor, ExternalRunID: r.ExternalRunID, RunAttempt: r.RunAttempt, Workflow: r.Workflow,
+		Actor: r.Actor, ExternalRunID: r.ExternalRunID, RunAttempt: r.RunAttempt,
+		ExternalJobID: r.ExternalJobID, Workflow: r.Workflow,
 		PipelineURL: r.PipelineURL, Fork: r.Fork, Status: r.Status, Verdict: r.Verdict, EvaluatedAt: r.EvaluatedAt,
 		ReportsCount: r.ReportsCount, FindingsCount: r.FindingsCount, CreatedAt: r.CreatedAt}
 	if r.TrustConfigID != nil {

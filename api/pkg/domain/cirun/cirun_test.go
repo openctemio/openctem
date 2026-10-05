@@ -335,3 +335,14 @@ func TestOverrideValidate(t *testing.T) {
 		}
 	}
 }
+
+// The job id comes from the verified token: GitHub check_run_id, GitLab job_id.
+func TestClaimsJobID(t *testing.T) {
+	if c := githubClaims(map[string]any{"check_run_id": "777"}); c.JobID != "777" {
+		t.Fatalf("github job id = %q", c.JobID)
+	}
+	gl := ParseGitLabClaims(map[string]any{"project_path": "grp/proj", "ref": "main", "job_id": 4242.0})
+	if gl.JobID != "4242" {
+		t.Fatalf("gitlab job id = %q", gl.JobID)
+	}
+}
