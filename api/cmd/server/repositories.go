@@ -20,7 +20,6 @@ type Repositories struct {
 	AssetTypeCat           *postgres.AssetTypeCategoryRepository
 	ScopeTarget            *postgres.ScopeTargetRepository
 	ScopeExcl              *postgres.ScopeExclusionRepository
-	ScopeSchedule          *postgres.ScopeScheduleRepository
 	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
@@ -266,7 +265,6 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetTypeCat:           postgres.NewAssetTypeCategoryRepository(db),
 		ScopeTarget:            postgres.NewScopeTargetRepository(db),
 		ScopeExcl:              postgres.NewScopeExclusionRepository(db),
-		ScopeSchedule:          postgres.NewScopeScheduleRepository(db),
 		AssetService:           postgres.NewAssetServiceRepository(db),           // CTEM: Network services
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
