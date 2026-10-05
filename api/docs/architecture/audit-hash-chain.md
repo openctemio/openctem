@@ -17,7 +17,7 @@ fact breaks the chain from that point on, and the break is detectable.
 | Classify breaks offline, every tenant | `cmd/chainaudit` |
 | Classify and rebaseline one organization from the admin console | `GET`/`POST /api/v1/admin/tenants/{tenantId}/audit-chain[/rebaseline]` (`AuditService.ClassifyChain`, `RebaselineChainIfExplained`) |
 | Rebaseline: `POST /api/v1/audit-logs/rebaseline` (owner only) | `AuditService.RebaselineChain` |
-| Retention: archive and prune the oldest prefix past `AUDIT_RETENTION_DAYS` | `AuditService.PruneExpiredChains`, `internal/infra/controller/data_expiration.go`, migration 000914 |
+| Retention: archive and prune the oldest prefix past `AUDIT_RETENTION_DAYS` | `AuditService.PruneExpiredChains`, `internal/infra/controller/data_expiration.go`, migration 000943 |
 
 `payload` is `action|resource_type|resource_id|result`. The timestamp is
 rounded to microseconds, as PostgreSQL stores it.
