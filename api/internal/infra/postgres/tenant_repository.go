@@ -407,10 +407,21 @@ func (r *TenantRepository) GetMembershipByID(ctx context.Context, tenantID, id s
 // UpdateMembership updates a membership's role.
 // Role is updated in user_roles table (tenant_members no longer has role column).
 func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membership) error {
-	// Verify membership exists
+	// One transaction: the membership label and the user's system role in
+	// user_roles change together or not at all. As three separate statements a
+	// failure after the DELETE left the user with no system role (settings
+	// audit I-M3), and two concurrent role changes could interleave. The
+	// membership row is locked first so concurrent changes run one after the
+	// other.
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin membership update: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	var userID, tenantID string
-	err := r.db.QueryRowContext(ctx,
-		"SELECT user_id, tenant_id FROM tenant_members WHERE id = $1 AND tenant_id = $2",
+	err = tx.QueryRowContext(ctx,
+		"SELECT user_id, tenant_id FROM tenant_members WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
 		m.ID().String(), m.TenantID().String(),
 	).Scan(&userID, &tenantID)
 	if err != nil {
@@ -422,7 +433,7 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 
 	// Get current role from user_roles via view
 	var oldRole string
-	err = r.db.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		"SELECT COALESCE(role, 'member') FROM v_user_effective_role WHERE user_id = $1 AND tenant_id = $2",
 		userID, tenantID,
 	).Scan(&oldRole)
@@ -430,41 +441,48 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 		return fmt.Errorf("failed to get current role: %w", err)
 	}
 
-	// If role is changing, update both tenant_members and user_roles
-	if oldRole != m.Role().String() {
-		// Update role in tenant_members
-		_, err = r.db.ExecContext(ctx,
-			"UPDATE tenant_members SET role = $1 WHERE id = $2 AND tenant_id = $3",
-			m.Role().String(), m.ID().String(), tenantID,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to update membership role: %w", err)
-		}
-
-		// Remove old system role (only system roles, keep custom roles)
-		_, err = r.db.ExecContext(ctx, `
-			DELETE FROM user_roles
-			WHERE user_id = $1 AND tenant_id = $2 AND role_id IN (
-				SELECT id FROM roles WHERE is_system = TRUE AND tenant_id IS NULL
-			)
-		`, userID, tenantID)
-		if err != nil {
-			return fmt.Errorf("failed to remove old role: %w", err)
-		}
-
-		// Add new role
-		_, err = r.db.ExecContext(ctx, `
-			INSERT INTO user_roles (user_id, tenant_id, role_id, assigned_at)
-			SELECT $1, $2, r.id, NOW()
-			FROM roles r
-			WHERE r.slug = $3 AND r.is_system = TRUE AND r.tenant_id IS NULL
-			ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING
-		`, userID, tenantID, m.Role().String())
-		if err != nil {
-			return fmt.Errorf("failed to add new role: %w", err)
-		}
+	if oldRole == m.Role().String() {
+		return nil
 	}
 
+	// Update role in tenant_members
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE tenant_members SET role = $1 WHERE id = $2 AND tenant_id = $3",
+		m.Role().String(), m.ID().String(), tenantID,
+	); err != nil {
+		return fmt.Errorf("failed to update membership role: %w", err)
+	}
+
+	// Remove old system role (only system roles, keep custom roles)
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM user_roles
+		WHERE user_id = $1 AND tenant_id = $2 AND role_id IN (
+			SELECT id FROM roles WHERE is_system = TRUE AND tenant_id IS NULL
+		)
+	`, userID, tenantID); err != nil {
+		return fmt.Errorf("failed to remove old role: %w", err)
+	}
+
+	// Add new role
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO user_roles (user_id, tenant_id, role_id, assigned_at)
+		SELECT $1, $2, r.id, NOW()
+		FROM roles r
+		WHERE r.slug = $3 AND r.is_system = TRUE AND r.tenant_id IS NULL
+		ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING
+	`, userID, tenantID, m.Role().String())
+	if err != nil {
+		return fmt.Errorf("failed to add new role: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		// The DELETE above removed every system role, so the insert must
+		// have added one; nothing added means no such system role exists.
+		return fmt.Errorf("%w: no system role %q", shared.ErrValidation, m.Role().String())
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit membership update: %w", err)
+	}
 	return nil
 }
 

@@ -583,7 +583,7 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 		LogoURL:     req.LogoURL,
 	}
 
-	t, err := h.service.UpdateTenant(r.Context(), tenantID.String(), input)
+	t, err := h.service.UpdateTenant(r.Context(), tenantID.String(), input, h.buildAuditContext(r))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1312,7 +1312,7 @@ func (h *TenantHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.DeleteInvitation(r.Context(), tenantID.String(), invitationID); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), tenantID.String(), invitationID, h.buildAuditContext(r)); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1621,7 +1621,9 @@ func (h *TenantHandler) declineInvitation(w http.ResponseWriter, r *http.Request
 
 	// Delete the invitation (public decline: the token authorizes it; pass the
 	// invitation's own tenant so the scoping check is satisfied).
-	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String()); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String(), app.AuditContext{
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+	}); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
