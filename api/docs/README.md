@@ -66,6 +66,7 @@
 - [Configure Jira ticketing](how-to/configure-jira-ticketing.md) - Connect Jira Cloud, severity/status mapping, bidirectional sync, the inbound-HMAC gotcha
 - [Configure SCIM provisioning](how-to/configure-scim-provisioning.md) - IdP user provisioning/deprovisioning, tokens, group→role mapping (API-only)
 - [Configure SIEM (outbound & inbound)](how-to/configure-siem.md) - Splunk HEC forwarding + SIEM-detection ingest → IOC correlation / auto-reopen
+- [Fix a sensor's setup checklist](how-to/fix-sensor-setup-checklist.md) - Read the sensor's Setup & health checks, apply the fix snippet for your install type (env, Compose, Helm), confirm the check passes
 - [Enable Restricted Data Scope (fail-closed)](how-to/restrict-data-scope.md) - Scope non-admins to only their assigned assets/findings (Tenable "No Access" default); rollout order + how to enable
 - [Configure Microsoft Entra ID (Azure AD) SSO](how-to/configure-entraid.md) - Both Microsoft login paths, Azure app registration, env vars/admin UI, `xms_edov` claim, verified domains, redirect allow-list, troubleshooting (incl. the login-button 404)
 
