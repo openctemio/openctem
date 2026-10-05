@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 
-import { MAX_DISPLAY_CHARS, hasHiddenCharacters, toDisplayText } from '../untrusted-text'
+import {
+  MAX_DISPLAY_CHARS,
+  hasHiddenCharacters,
+  toDisplayText,
+  toDisplayBlock,
+} from '../untrusted-text'
 
 // Built from code points so this file itself carries no invisible characters.
 const c = (cp: number) => String.fromCodePoint(cp)
@@ -53,5 +58,25 @@ describe('toDisplayText', () => {
     expect(toDisplayText(undefined)).toBe('')
     expect(toDisplayText(null)).toBe('')
     expect(hasHiddenCharacters('plain')).toBe(false)
+  })
+})
+
+describe('toDisplayBlock', () => {
+  it('keeps line breaks and tabs, escapes bidi, ANSI and lone CR', () => {
+    const out = toDisplayBlock(
+      `a\r\nb\tc\rd${String.fromCodePoint(0x202e)}e${String.fromCodePoint(0x1b)}[2J`
+    )
+    expect(out).toBe('a\nb\tc\\u{000D}d\\u{202E}e\\u{001B}[2J')
+  })
+
+  it('never interprets markup', () => {
+    expect(toDisplayBlock('<b>x</b>')).toBe('<b>x</b>')
+  })
+
+  it('caps very long output with a note', () => {
+    const out = toDisplayBlock('A'.repeat(100), 10)
+    expect(out.startsWith('A'.repeat(10))).toBe(true)
+    expect(out).toContain('cut for display')
+    expect(toDisplayBlock(null)).toBe('')
   })
 })
