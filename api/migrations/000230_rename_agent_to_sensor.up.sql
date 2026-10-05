@@ -445,4 +445,9 @@ COMMENT ON COLUMN scans.tags IS 'Tags for routing jobs to specific sensors';
 COMMENT ON COLUMN scans.run_on_tenant_runner IS 'When true, jobs only run on sensors owned by this tenant';
 COMMENT ON COLUMN scans.sensor_preference IS 'Sensor selection mode: auto = best match, tenant = tenant-owned only, platform = shared platform sensors';
 COMMENT ON TABLE runtime_telemetry_events IS 'EDR/XDR-style runtime events emitted by endpoint sensors (agent role). Append-only, tenant-scoped, feeds IOC correlator.';
-COMMENT ON TABLE rule_bundles IS 'Pre-compiled rule packages for sensor download';
+-- rule_bundles was dropped by 001060; guarded so a re-run on a newer schema works.
+DO $$ BEGIN
+    IF to_regclass('public.rule_bundles') IS NOT NULL THEN
+        COMMENT ON TABLE rule_bundles IS 'Pre-compiled rule packages for sensor download';
+    END IF;
+END $$;

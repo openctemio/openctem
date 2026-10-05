@@ -2,7 +2,10 @@
 
 > **Version**: 1.0
 > **Last Updated**: 2024-01-16
-> **Status**: Implemented (Migration 000008)
+> **Status**: Not wired. The `data_sources` and `asset_sources` tables exist,
+> but no code path writes them (the repositories have no caller).
+> `finding_data_sources` was dropped by migration 001060; finding provenance
+> lives on the finding (`source`, `ingest_channel`) and in `finding_sources`.
 
 ## Overview
 
@@ -362,7 +365,8 @@ report := ctis.NewReportBuilder().
 
 ## Finding Provenance Tracking
 
-Similar to assets, findings also support multi-source tracking via `finding_data_sources` table.
+Removed: migration 001060 dropped `finding_data_sources`, which nothing wrote.
+The design below is kept for reference only.
 
 ### Database Schema
 ```sql
