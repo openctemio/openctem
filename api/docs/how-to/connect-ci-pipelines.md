@@ -56,7 +56,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: OpenCTEM security scan
-        uses: docker://ghcr.io/openctemio/sensor:latest-ci
+        # A release pinned by digest, never a moving tag (verify it with cosign;
+        # see the GitLab guide's Security notes).
+        uses: docker://ghcr.io/openctemio/sensor:v0.9.1-ci@sha256:97f5512165d2c79240bb01f4cdbc710b85b1517cca95d4015aa39d35c60017e1
         with:
           args: -tools semgrep,betterleaks,trivy -target . -auto-ci -push
         env:
@@ -75,7 +77,7 @@ Step-by-step GitLab guide (variables, templates, enforcing the gate, self-manage
 
 ```yaml
 openctem-security:
-  image: ghcr.io/openctemio/sensor:latest-ci
+  image: ghcr.io/openctemio/sensor:v0.9.1-ci@sha256:97f5512165d2c79240bb01f4cdbc710b85b1517cca95d4015aa39d35c60017e1
   id_tokens:
     OPENCTEM_ID_TOKEN:
       aud: openctem:tenant:<your organization id>
@@ -109,7 +111,10 @@ honored; a scanner that fails to run fails the job. **Warn** mode reports what
 would fail and passes.
 
 When a release cannot wait, **Break-glass** lets one commit pass for a limited
-time with a reason; it is audited, and so is each run it lets through.
+time with a reason; it is audited, and so is each run it lets through. Every
+owner and administrator is notified in-app when it is created and each time
+it is used, and so are channels subscribed to **CI Break-glass**. A burst of
+refused token exchanges raises **CI Token Refusals**.
 
 When the platform cannot be reached, `-fail-on <severity>` makes the sensor
 judge locally instead.
