@@ -138,7 +138,6 @@ The `000001_init_schema.up.sql` contains:
 - `calculate_project_risk_score()` - Risk calculation
 - `update_project_stats()` - Trigger function for project stats
 - `update_component_vuln_count()` - Trigger function for component vuln count
-- `cleanup_old_audit_logs()` - Audit log retention
 
 ### Tables (14 total)
 | Table | Description | Tenant-scoped |
