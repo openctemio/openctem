@@ -17,6 +17,7 @@ import (
 	"reflect"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -53,6 +54,8 @@ type TransitionInput struct {
 	CommandID    string
 	Result       json.RawMessage // complete
 	ErrorMessage string          // fail
+	// Refusal is the structured policy refusal of a fail (v2), or nil.
+	Refusal *sensordom.DispatchRefusal
 	// LeaseEpoch is the lease epoch the sensor holds the command under, when
 	// it says (complete, fail): a command claimed again since is refused.
 	LeaseEpoch *int
@@ -117,7 +120,7 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	case TransitionComplete:
 		out, err = s.Complete(ctx, CompleteInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, Result: in.Result, LeaseEpoch: in.LeaseEpoch})
 	case TransitionFail:
-		out, err = s.Fail(ctx, FailInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, ErrorMessage: in.ErrorMessage, LeaseEpoch: in.LeaseEpoch})
+		out, err = s.Fail(ctx, FailInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, ErrorMessage: in.ErrorMessage, LeaseEpoch: in.LeaseEpoch, Refusal: in.Refusal})
 	}
 	if err != nil {
 		return nil, s.transitionError(ctx, t, in, err)
