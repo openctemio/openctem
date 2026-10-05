@@ -46,20 +46,28 @@ describe('requiredReassignments', () => {
 
   it('asks for every category the member owns something in', () => {
     expect(requiredReassignments(owns)).toEqual(['schedules', 'findings', 'assets'])
-    expect(requiredReassignments(report({ owned_report_schedules: [{ id: 'r', name: 'R' }] }))).toEqual([
-      'schedules',
-    ])
+    expect(
+      requiredReassignments(report({ owned_report_schedules: [{ id: 'r', name: 'R' }] }))
+    ).toEqual(['schedules'])
   })
 })
 
 describe('missingReassignments and buildOffboardInput', () => {
   it('reports the uncovered categories', () => {
     expect(missingReassignments(owns, {})).toEqual(['schedules', 'findings', 'assets'])
-    expect(missingReassignments(owns, { schedulesTo: 'u2', findingsTo: FINDINGS_TO_QUEUE, assetsTo: 'u2' })).toEqual([])
+    expect(
+      missingReassignments(owns, {
+        schedulesTo: 'u2',
+        findingsTo: FINDINGS_TO_QUEUE,
+        assetsTo: 'u2',
+      })
+    ).toEqual([])
   })
 
   it('maps "back to the queue" to unassign_findings', () => {
-    expect(buildOffboardInput(owns, { schedulesTo: 'u2', findingsTo: FINDINGS_TO_QUEUE, assetsTo: 'u3' })).toEqual({
+    expect(
+      buildOffboardInput(owns, { schedulesTo: 'u2', findingsTo: FINDINGS_TO_QUEUE, assetsTo: 'u3' })
+    ).toEqual({
       schedules_to: 'u2',
       unassign_findings: true,
       assets_to: 'u3',
@@ -67,7 +75,9 @@ describe('missingReassignments and buildOffboardInput', () => {
   })
 
   it('sends only the categories the member owns something in', () => {
-    expect(buildOffboardInput(report(), { schedulesTo: 'u2', findingsTo: 'u2', assetsTo: 'u2' })).toEqual({})
+    expect(
+      buildOffboardInput(report(), { schedulesTo: 'u2', findingsTo: 'u2', assetsTo: 'u2' })
+    ).toEqual({})
   })
 })
 
@@ -102,7 +112,11 @@ describe('reassignmentConflict', () => {
 
   it('ignores every other error', () => {
     expect(reassignmentConflict(new ApiClientError('x', 'CONFLICT', 409))).toBeNull()
-    expect(reassignmentConflict(new ApiClientError('x', 'BAD', 400, { code: 'reassignment_required', missing: [] }))).toBeNull()
+    expect(
+      reassignmentConflict(
+        new ApiClientError('x', 'BAD', 400, { code: 'reassignment_required', missing: [] })
+      )
+    ).toBeNull()
     expect(reassignmentConflict(new Error('x'))).toBeNull()
   })
 })

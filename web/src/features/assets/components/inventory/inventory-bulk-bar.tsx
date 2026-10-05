@@ -152,7 +152,11 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const membersUrl = (() => {
     if (!ownerDialogOpen || !tenantSlug) return null
     // Owner picker: active members only (never a disabled or offboarded person).
-    const params = new URLSearchParams({ include: 'user', limit: '50', status: PICKER_MEMBER_STATUS })
+    const params = new URLSearchParams({
+      include: 'user',
+      limit: '50',
+      status: PICKER_MEMBER_STATUS,
+    })
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim())
     return `/api/v1/tenants/${tenantSlug}/members?${params.toString()}`
   })()
