@@ -184,7 +184,7 @@ func TestCIPipelines(t *testing.T) {
 	rep := ciReport(mx["repository"].(string))
 	rep["report"] = func() ctis.Report {
 		rp := rep["report"].(ctis.Report)
-		rp.Tool = &ctis.Tool{Name: "Sem<grep>‮", Version: "1.2.3\x00evil"}
+		rp.Tool = &ctis.Tool{Name: "Sem<grep>\u202e", Version: "1.2.3\x00evil"}
 		return rp
 	}()
 	if resp, out := r.post("/api/v1/ci/runs/"+mrun+"/results", mtok, rep); resp.StatusCode != http.StatusCreated {
