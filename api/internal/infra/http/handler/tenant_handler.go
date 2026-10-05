@@ -624,7 +624,9 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // Member emails and last sign-in are owner/admin only (owner decision
 // 2026-10-02): other members get ids, names, avatars and roles, which is what
 // the assignee and owner pickers need.
-//   - limit: max results (default 10, max 100)
+//   - status: active | suspended (membership status); empty = any
+//   - role: owner | admin | member | viewer (effective system role); empty = any
+//   - limit: max results (default 100, max 100)
 //   - offset: pagination offset
 func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())
@@ -685,6 +687,8 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 			SearchNameOnly: !showDirectory,
 			Limit:          limit,
 			Offset:         offset,
+			Status:         r.URL.Query().Get("status"),
+			Role:           r.URL.Query().Get("role"),
 		}
 		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
 		if err != nil {
