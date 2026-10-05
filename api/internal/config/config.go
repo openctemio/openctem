@@ -38,7 +38,7 @@ type Config struct {
 	CORS         CORSConfig
 	RateLimit    RateLimitConfig
 	SMTP         SMTPConfig
-	Worker       WorkerConfig
+	Worker       SensorConfig
 	Encryption   EncryptionConfig
 	AITriage     AITriageConfig
 	SensorConfig SensorConfigConfig
@@ -706,10 +706,6 @@ type RateLimitConfig struct {
 	ReadRequestsPerMin int
 }
 
-// WorkerConfig holds worker/sensor management configuration.
-// Deprecated: Use SensorConfig instead. This alias is kept for backward compatibility.
-type WorkerConfig = SensorConfig
-
 // SensorConfig holds sensor management configuration.
 type SensorConfig struct {
 	// HeartbeatTimeout is the duration after which a sensor is marked as inactive
@@ -1172,7 +1168,7 @@ func Load() (*Config, error) {
 				Scopes:       getEnvSlice("OAUTH_MICROSOFT_SCOPES", []string{"openid", "email", "profile", "User.Read"}),
 			},
 		},
-		Worker: WorkerConfig{
+		Worker: SensorConfig{
 			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
 			HeartbeatTimeout:            getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
