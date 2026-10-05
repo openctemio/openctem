@@ -259,6 +259,30 @@ behind a "Show all" link, and the filter panel has an Attribution facet.
 Code: `web/src/features/attack-surface/components/easm-review-queue.tsx`,
 `web/src/features/assets/lib/inventory-url.ts` (`attributionQuery`).
 
+## 4d. Verified domains (built, P0-10)
+
+A tenant member with `scope:write` verifies a domain with the DNS TXT flow
+(`/api/v1/easm/verified-domains`; how-to:
+[verify-a-domain-for-easm.md](../how-to/verify-a-domain-for-easm.md)). Each
+`verified_domains` row has a `purpose` (migration `001019`, owner decision
+E6):
+
+| Purpose | Set up by | EASM (verified root, gate, CT) | SSO JIT and SCIM admission |
+|---|---|---|---|
+| `easm` | the organization (tenant route) | yes | **no** |
+| `sso` | a platform administrator (admin console); every row from before 001019 | yes | yes |
+
+`domainverify.Service.IsVerifiedDomain` (the SSO and SCIM gate) answers true
+only for a verified `sso` row. An administrator adding a domain the
+organization already verified for EASM turns that row into `sso`, keeping
+its token and verification. The tenant routes can list every row but
+re-check or delete only `easm` rows (others answer 404). Checks are limited to
+10 per organization per hour (Redis across replicas, in-process window on a
+Redis error), and every change is audited high. Rows are per tenant, so two
+organizations may verify the same domain and neither learns of the other.
+The 12-hour re-check marks a lost record `failed`, and names under it stop
+auto-confirming.
+
 ## 5. Data model (planned)
 
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and

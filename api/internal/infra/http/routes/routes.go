@@ -50,25 +50,28 @@ type Handlers struct {
 	APIKeyAuth      *middleware.APIKeyAuthMiddleware
 	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
-	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
-	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
-	UserDashboard    *handler.UserDashboardHandler    // nil if not initialized - per-user customizable dashboards (RFC-021)
-	SavedView        *handler.SavedViewHandler        // nil if not initialized - saved list views (D15, RFC-048)
-	Audit            *handler.AuditHandler            // nil if not initialized (no database)
-	Branch           *handler.BranchHandler           // nil if not initialized (no database)
-	SLA              *handler.SLAHandler              // nil if not initialized (no database)
-	Integration      *handler.IntegrationHandler      // nil if not initialized (no database)
-	DefectDojo       *handler.DefectDojoHandler       // nil if not initialized / no DefectDojo sync
-	AssetGroup       *handler.AssetGroupHandler       // nil if not initialized (no database)
-	Scope            *handler.ScopeHandler            // nil if not initialized (no database)
-	AssetType        *handler.AssetTypeHandler        // nil if not initialized (no database)
-	AttackSurface    *handler.AttackSurfaceHandler    // nil if not initialized (no database)
-	EASM             *handler.EASMHandler             // RFC-036 overview; nil if not initialized
-	EASMSeed         *handler.EASMSeedHandler         // RFC-036 seeds; nil if not initialized
-	Docs             *handler.DocsHandler             // API documentation handler
-	Command          *handler.CommandHandler          // nil if not initialized (no database)
-	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
-	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint sensors
+	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
+	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
+	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
+	SavedView     *handler.SavedViewHandler     // nil if not initialized - saved list views (D15, RFC-048)
+	Audit         *handler.AuditHandler         // nil if not initialized (no database)
+	Branch        *handler.BranchHandler        // nil if not initialized (no database)
+	SLA           *handler.SLAHandler           // nil if not initialized (no database)
+	Integration   *handler.IntegrationHandler   // nil if not initialized (no database)
+	DefectDojo    *handler.DefectDojoHandler    // nil if not initialized / no DefectDojo sync
+	AssetGroup    *handler.AssetGroupHandler    // nil if not initialized (no database)
+	Scope         *handler.ScopeHandler         // nil if not initialized (no database)
+	AssetType     *handler.AssetTypeHandler     // nil if not initialized (no database)
+	AttackSurface *handler.AttackSurfaceHandler // nil if not initialized (no database)
+	EASM          *handler.EASMHandler          // RFC-036 overview; nil if not initialized
+	EASMSeed      *handler.EASMSeedHandler      // RFC-036 seeds; nil if not initialized
+	// EASMVerifiedDomain is tenant self-service domain verification
+	// (research/22 P0-10); nil if not initialized.
+	EASMVerifiedDomain *handler.EASMVerifiedDomainHandler
+	Docs               *handler.DocsHandler             // API documentation handler
+	Command            *handler.CommandHandler          // nil if not initialized (no database)
+	Ingest             *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
+	RuntimeTelemetry   *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint sensors
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
@@ -664,6 +667,9 @@ func Register(
 	}
 	if h.EASM != nil {
 		registerEASMRoutes(router, h.EASM, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMVerifiedDomain != nil {
+		registerEASMVerifiedDomainRoutes(router, h.EASMVerifiedDomain, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 	if h.EASMSeed != nil {
 		registerEASMSeedRoutes(router, h.EASMSeed, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
