@@ -248,7 +248,7 @@ with `UNIQUE (tenant_id, kind, value) WHERE strong` (`000243:30-31`).
 `ON DELETE CASCADE`: `finding_activities`, `finding_comments`,
 `finding_status_approvals`, `validation_evidence`, `pentest_retests`,
 `finding_suppressions`, `finding_group_assignments`, `finding_remediation_keys`,
-`finding_branch_occurrences`, `finding_data_flows`, `finding_data_sources`,
+`finding_branch_occurrences`, `finding_data_flows`,
 `finding_verification_checklists`, `compliance_finding_mappings`,
 `compensating_control_findings`, `ai_triage_results`.
 `ON DELETE SET NULL`: `findings.duplicate_of`, `ioc_matches.finding_id`,

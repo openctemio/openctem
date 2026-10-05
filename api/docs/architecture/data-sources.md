@@ -5,7 +5,7 @@
 OpenCTEM records provenance on the asset and on the finding themselves. There
 is no separate registry of data sources: the `data_sources`, `asset_sources`
 and `finding_data_sources` tables (migration 000014) were never written by any
-code path and were dropped (001066, 001070, 001071) together with the
+code path and were dropped in the 2026-10 legacy cleanup together with the
 asset-source priority design that keyed on them (RFC-003, withdrawn; see
 [asset-source-priority.md](./asset-source-priority.md)).
 

@@ -49,7 +49,7 @@ with its own reporter, first-seen, last-seen and confidence.
 ## The right model already exists, and is a trap in its current state
 
 > **Update 2026-10-05:** the three tables and `pkg/domain/datasource` were removed
-> (migrations 001066, 001070, 001071). A sighting table, when built, starts fresh
+> (legacy cleanup migrations, 2026-10). A sighting table, when built, starts fresh
 > with a tenant column and a NULLS-NOT-DISTINCT key.
 
 `pkg/domain/datasource/` models exactly this: `FindingDataSource` with

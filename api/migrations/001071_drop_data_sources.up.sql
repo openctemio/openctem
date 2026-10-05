@@ -21,7 +21,7 @@
 -- with it. The settings rewrite removes one empty key and touches no other
 -- part of tenants.settings.
 
--- finding_data_sources is dropped by 001066; drop its foreign key here too so
+-- finding_data_sources is dropped by drop_rule_management_tables; drop its foreign key here too so
 -- this migration does not depend on the order the two land in.
 ALTER TABLE IF EXISTS finding_data_sources DROP CONSTRAINT IF EXISTS finding_data_sources_source_id_fkey;
 ALTER TABLE IF EXISTS asset_sources DROP CONSTRAINT IF EXISTS asset_sources_source_id_fkey;

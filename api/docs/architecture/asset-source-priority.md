@@ -1,6 +1,6 @@
 # Asset Source Priority & Field Attribution
 
-> **Status**: **Withdrawn** (2026-10-05): never wired. No ingest path called the priority gate and nothing wrote `data_sources`, so the settings it added configured a no-op; the API, code and tables were removed (migrations 001070, 001071). Kept as a record of the design. | **Origin**: RFC-003 (2026-04-23)
+> **Status**: **Withdrawn** (2026-10-05): never wired. No ingest path called the priority gate and nothing wrote `data_sources`, so the settings it added configured a no-op; the API, code and tables were removed (migrations `drop_asset_sources`, `drop_data_sources`). Kept as a record of the design. | **Origin**: RFC-003 (2026-04-23)
 >
 > **Target release**: v0.3.0 (Phase 1)
 >
