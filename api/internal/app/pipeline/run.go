@@ -387,7 +387,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 	chained := s.hops != nil && resolved.HasStage && len(feedingPredecessors(run, resolved.Stage, preds)) > 0
 	var stepTargets *scanapp.StepTargets
 	if f, ok := s.targetGate.(StepTargetFilter); ok {
-		st, ferr := f.FilterStepTargets(ctx, step.Tool, run.Context)
+		st, ferr := f.FilterStepTargets(ctx, run.TenantID, step.Tool, run.Context)
 		if ferr != nil {
 			var de *shared.DomainError
 			if !chained || !errors.As(ferr, &de) || de.Code != "INCOMPATIBLE_TARGETS" {

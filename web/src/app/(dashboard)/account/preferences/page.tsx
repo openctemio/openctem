@@ -27,16 +27,6 @@ import {
 } from '@/features/account'
 import type { UpdatePreferencesInput } from '@/features/account'
 
-// The backend only persists user-preference `language` when it is one of
-// these (`oneof=en vi` in the API validator). Offering ja/ko/zh here made
-// the whole Save fail with a 422. Restrict the dropdown to what round-trips.
-// (The org-level general/tenant settings validate a wider set — that is a
-// separate endpoint and unaffected.)
-const PREF_LANGUAGES = [
-  { value: 'en', label: 'English' },
-  { value: 'vi', label: 'Tiếng Việt' },
-] as const
-
 export default function PreferencesPage() {
   const { theme, setTheme } = useTheme()
   const { preferences, isLoading, mutate } = usePreferences()
@@ -191,30 +181,12 @@ export default function PreferencesPage() {
             <Globe className="h-5 w-5" />
             Localization
           </CardTitle>
-          <CardDescription>Language, timezone, and format preferences</CardDescription>
+          <CardDescription>Timezone and date format preferences</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
-            {/* Language */}
-            <div className="space-y-2">
-              <Label htmlFor="language">Language</Label>
-              <Select
-                value={formData.language}
-                onValueChange={(value) => handleChange('language', value)}
-              >
-                <SelectTrigger id="language">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PREF_LANGUAGES.map((lang) => (
-                    <SelectItem key={lang.value} value={lang.value}>
-                      {lang.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
+            {/* Language is chosen from the user menu (the one picker that drives the
+                interface); a second picker here changed nothing visible. */}
             {/* Timezone */}
             <div className="space-y-2">
               <Label htmlFor="timezone" className="flex items-center gap-2">
