@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -377,6 +378,18 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		writeToggleErrorJSON(w, toggleErr)
 		return
 	}
+	var conflict *tenant.SettingsConflictError
+	if errors.As(err, &conflict) {
+		writeSettingsConflict(w, conflict)
+		return
+	}
+	if errors.Is(err, tenant.ErrSettingsSectionCorrupt) {
+		// The service already logged the tenant and section; the error text can
+		// carry stored values, so it is not logged here.
+		h.logger.Error("settings section unreadable")
+		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Tenant").WriteJSON(w)
@@ -570,7 +583,7 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 		LogoURL:     req.LogoURL,
 	}
 
-	t, err := h.service.UpdateTenant(r.Context(), tenantID.String(), input)
+	t, err := h.service.UpdateTenant(r.Context(), tenantID.String(), input, h.buildAuditContext(r))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -611,7 +624,9 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // Member emails and last sign-in are owner/admin only (owner decision
 // 2026-10-02): other members get ids, names, avatars and roles, which is what
 // the assignee and owner pickers need.
-//   - limit: max results (default 10, max 100)
+//   - status: active | suspended (membership status); empty = any
+//   - role: owner | admin | member | viewer (effective system role); empty = any
+//   - limit: max results (default 100, max 100)
 //   - offset: pagination offset
 func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())
@@ -672,6 +687,8 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 			SearchNameOnly: !showDirectory,
 			Limit:          limit,
 			Offset:         offset,
+			Status:         r.URL.Query().Get("status"),
+			Role:           r.URL.Query().Get("role"),
 		}
 		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
 		if err != nil {
@@ -1295,7 +1312,7 @@ func (h *TenantHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.DeleteInvitation(r.Context(), tenantID.String(), invitationID); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), tenantID.String(), invitationID, h.buildAuditContext(r)); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1604,7 +1621,9 @@ func (h *TenantHandler) declineInvitation(w http.ResponseWriter, r *http.Request
 
 	// Delete the invitation (public decline: the token authorizes it; pass the
 	// invitation's own tenant so the scoping check is satisfied).
-	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String()); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String(), app.AuditContext{
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+	}); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1624,6 +1643,56 @@ type SettingsResponse struct {
 	Branding    BrandingSettingsResponse   `json:"branding"`
 	RiskScoring tenant.RiskScoringSettings `json:"risk_scoring"`
 	Pentest     tenant.PentestSettings     `json:"pentest"`
+	// ETags holds the entity tag of each settings section as stored (keys:
+	// general, security, branding, risk_scoring, pentest, ...). Send the
+	// section's tag as If-Match on its PATCH to get 409 SETTINGS_CONFLICT
+	// instead of overwriting a change saved since you read it.
+	ETags map[string]string `json:"etags,omitempty"`
+}
+
+// withSettingsETags returns resp with its per-section ETags set.
+func withSettingsETags(resp SettingsResponse, etags map[string]string) SettingsResponse {
+	resp.ETags = etags
+	return resp
+}
+
+// settingsWriteCtx carries the request's If-Match header (a settings-section
+// ETag) to the service, which refuses the write with 409 when it is stale.
+func settingsWriteCtx(r *http.Request) context.Context {
+	return tenantapp.WithSettingsIfMatch(r.Context(), r.Header.Get("If-Match"))
+}
+
+// settingsETags returns the stored ETag of every settings section, or nil
+// (logged) when it cannot be read; ETags are advisory for clients.
+func (h *TenantHandler) settingsETags(ctx context.Context, tenantID shared.ID) map[string]string {
+	etags, err := h.service.SectionETags(ctx, tenantID.String())
+	if err != nil {
+		h.logger.Warn("failed to compute settings ETags", "tenant_id", tenantID.String(), "error", err)
+		return nil
+	}
+	return etags
+}
+
+// writeSectionETag sets the ETag response header to the stored tag of one
+// settings section and returns every section's tag.
+func (h *TenantHandler) writeSectionETag(w http.ResponseWriter, r *http.Request, tenantID shared.ID, section string) map[string]string {
+	etags := h.settingsETags(r.Context(), tenantID)
+	if tag := etags[section]; tag != "" {
+		w.Header().Set("ETag", tag)
+	}
+	return etags
+}
+
+// writeSettingsConflict writes 409 SETTINGS_CONFLICT with the current
+// (redacted) section and its ETag, so the client can show what changed.
+func writeSettingsConflict(w http.ResponseWriter, e *tenant.SettingsConflictError) {
+	current := tenant.RedactSettings(map[string]any{e.Section: e.Current})[e.Section]
+	w.Header().Set("ETag", e.ETag)
+	apierror.New(http.StatusConflict, "SETTINGS_CONFLICT", e.Error()).WithDetails(map[string]any{
+		"section": e.Section,
+		"etag":    e.ETag,
+		"current": current,
+	}).WriteJSON(w)
 }
 
 // GeneralSettingsResponse represents general settings.
@@ -1732,7 +1801,7 @@ func (h *TenantHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := toSettingsResponse(settings)
+	resp := withSettingsETags(toSettingsResponse(settings), h.settingsETags(r.Context(), tenantID))
 	resp.Security.CurrentIP = getClientIP(r)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1780,15 +1849,16 @@ func (h *TenantHandler) UpdateGeneralSettings(w http.ResponseWriter, r *http.Req
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateGeneralSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateGeneralSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionGeneral)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // UpdateSecuritySettingsRequest represents the request to update security settings.
@@ -1844,16 +1914,17 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateSecuritySettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateSecuritySettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionSecurity)
 	if h.invalidateSecurityPolicy != nil {
 		h.invalidateSecurityPolicy(tenantID.String())
 	}
 
-	resp := toSettingsResponse(settings)
+	resp := withSettingsETags(toSettingsResponse(settings), etags)
 	resp.Security.CurrentIP = clientIP
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1899,15 +1970,16 @@ func (h *TenantHandler) UpdateAPISettings(w http.ResponseWriter, r *http.Request
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateAPISettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateAPISettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionAPI)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // UpdateBrandingSettingsRequest represents the request to update branding settings.
@@ -1947,15 +2019,16 @@ func (h *TenantHandler) UpdateBrandingSettings(w http.ResponseWriter, r *http.Re
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateBrandingSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateBrandingSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionBranding)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // UpdateBranchSettingsRequest represents the request to update branch naming convention settings.
@@ -1987,15 +2060,16 @@ func (h *TenantHandler) UpdateBranchSettings(w http.ResponseWriter, r *http.Requ
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateBranchSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateBranchSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionBranch)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // =============================================================================
@@ -2021,6 +2095,7 @@ func (h *TenantHandler) GetPentestSettings(w http.ResponseWriter, r *http.Reques
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionPentest)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(ps)
@@ -2051,15 +2126,16 @@ func (h *TenantHandler) UpdatePentestSettings(w http.ResponseWriter, r *http.Req
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdatePentestSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdatePentestSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionPentest)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // =============================================================================
@@ -2079,6 +2155,7 @@ func (h *TenantHandler) GetRiskScoringSettings(w http.ResponseWriter, r *http.Re
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRiskScoring)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rs)
@@ -2104,11 +2181,12 @@ func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateRiskScoringSettings(r.Context(), tenantID.String(), req, actx)
+	settings, err := h.service.UpdateRiskScoringSettings(settingsWriteCtx(r), tenantID.String(), req, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRiskScoring)
 
 	// Invalidate scoring config cache so new formula takes effect immediately
 	if h.assetService != nil {
@@ -2153,6 +2231,7 @@ func (h *TenantHandler) GetAssetSourceSettings(w http.ResponseWriter, r *http.Re
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetSource)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(as)
@@ -2191,11 +2270,12 @@ func (h *TenantHandler) UpdateAssetSourceSettings(w http.ResponseWriter, r *http
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateAssetSourceSettings(r.Context(), tenantID.String(), req, actx)
+	settings, err := h.service.UpdateAssetSourceSettings(settingsWriteCtx(r), tenantID.String(), req, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetSource)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(settings.AssetSource)
@@ -2222,6 +2302,7 @@ func (h *TenantHandler) GetRetestSettings(w http.ResponseWriter, r *http.Request
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRetest)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rs)
 }
@@ -2255,11 +2336,12 @@ func (h *TenantHandler) UpdateRetestSettings(w http.ResponseWriter, r *http.Requ
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
-	rs, err := h.service.UpdateRetestSettings(r.Context(), tenantID.String(), req, h.buildAuditContext(r))
+	rs, err := h.service.UpdateRetestSettings(settingsWriteCtx(r), tenantID.String(), req, h.buildAuditContext(r))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRetest)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rs)
 }
@@ -2281,6 +2363,7 @@ func (h *TenantHandler) GetAssetLifecycleSettings(w http.ResponseWriter, r *http
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetLifecycle)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(al)
@@ -2312,11 +2395,12 @@ func (h *TenantHandler) UpdateAssetLifecycleSettings(w http.ResponseWriter, r *h
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateAssetLifecycleSettings(r.Context(), tenantID.String(), req, actx)
+	settings, err := h.service.UpdateAssetLifecycleSettings(settingsWriteCtx(r), tenantID.String(), req, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetLifecycle)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(settings.AssetLifecycle)
@@ -2891,6 +2975,7 @@ func (h *TenantHandler) GetAssetIdentitySettings(w http.ResponseWriter, r *http.
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetIdentity)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(settings.AssetIdentity)
@@ -2923,21 +3008,16 @@ func (h *TenantHandler) UpdateAssetIdentitySettings(w http.ResponseWriter, r *ht
 		return
 	}
 
-	settings, err := h.service.GetTenantSettings(r.Context(), tenantID.String())
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	settings.AssetIdentity.StaleAssetDays = req.StaleAssetDays
-	settings.AssetIdentity.MaxIPsPerAsset = req.MaxIPsPerAsset
-
 	actx := h.buildAuditContext(r)
-	updated, err := h.service.UpdateTenantSettings(r.Context(), tenantID.String(), *settings, actx)
+	updated, err := h.service.UpdateAssetIdentitySettings(settingsWriteCtx(r), tenantID.String(), tenant.AssetIdentitySettings{
+		StaleAssetDays: req.StaleAssetDays,
+		MaxIPsPerAsset: req.MaxIPsPerAsset,
+	}, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetIdentity)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(updated.AssetIdentity)

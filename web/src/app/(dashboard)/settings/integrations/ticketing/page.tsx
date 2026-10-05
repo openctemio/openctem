@@ -49,6 +49,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { RoutingRulesDialog } from '@/features/integrations/components/routing-rules-dialog'
+import { mergeShownMapping } from '@/features/integrations/lib/ticketing-mapping'
 import { Switch } from '@/components/ui/switch'
 import {
   useIntegrationsApi,
@@ -190,10 +191,6 @@ function ConfigureTicketingDialog({
 
   const { trigger: update, isMutating } = useUpdateIntegrationApi(integration.id)
 
-  // Drop empty values so we don't overwrite defaults with blanks.
-  const pruned = (obj: Record<string, string>): Record<string, string> =>
-    Object.fromEntries(Object.entries(obj).filter(([, v]) => v.trim() !== ''))
-
   // Fetch the projects visible to this Jira integration for the picker. Only
   // meaningful while the dialog is open and the integration is connected;
   // failure (e.g. non-Cloud, bad creds) degrades to manual key entry.
@@ -207,8 +204,6 @@ function ConfigureTicketingDialog({
       // only the ticketing keys we own changed (preserve maps, routing, etc.).
       const existingConfig = (integration.config as Record<string, unknown>) ?? {}
       const existingTicketing = (existingConfig.ticketing as Record<string, unknown>) ?? {}
-      const sevMap = pruned(sevPriority)
-      const outMap = pruned(statusOutbound)
       // The inbound editor shows every existing key, so it is authoritative —
       // build the full map from the rows (drop blanks).
       const inMap = Object.fromEntries(
@@ -225,16 +220,17 @@ function ConfigureTicketingDialog({
             project_key: projectKey.trim(),
             issue_type: issueType.trim(),
             default_priority: defaultPriority.trim(),
-            // Merge over existing maps so unshown keys (e.g. extra outbound
-            // statuses set elsewhere) are preserved.
-            severity_to_priority: {
-              ...((existingTicketing.severity_to_priority as Record<string, string>) ?? {}),
-              ...sevMap,
-            },
-            status_outbound: {
-              ...((existingTicketing.status_outbound as Record<string, string>) ?? {}),
-              ...outMap,
-            },
+            // Unshown keys (e.g. extra outbound statuses set elsewhere) are
+            // kept; a shown field left blank removes its key, so clearing a
+            // mapping is saved instead of silently dropped.
+            severity_to_priority: mergeShownMapping(
+              existingTicketing.severity_to_priority as Record<string, string> | undefined,
+              sevPriority
+            ),
+            status_outbound: mergeShownMapping(
+              existingTicketing.status_outbound as Record<string, string> | undefined,
+              statusOutbound
+            ),
             status_inbound: inMap,
           },
         },
@@ -246,8 +242,8 @@ function ConfigureTicketingDialog({
         { revalidate: true }
       )
       onOpenChange(false)
-    } catch {
-      toast.error('Failed to save settings')
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to save settings'))
     }
   }
 

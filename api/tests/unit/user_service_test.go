@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
@@ -1169,3 +1170,14 @@ func TestUpdatePreferences_GetByIDError(t *testing.T) {
 		t.Fatal("Expected error from GetByID")
 	}
 }
+
+// The services mutate the user they hold before calling these targeted
+// updates, and this mock stores that same pointer, so there is nothing more to
+// write here.
+func (m *mockUserRepo) RecordFailedLogin(_ context.Context, _ shared.ID, _ int, _ time.Duration) (*time.Time, error) {
+	return nil, nil
+}
+
+func (m *mockUserRepo) RecordSuccessfulLogin(_ context.Context, _ shared.ID) error { return nil }
+
+func (m *mockUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ string) error { return nil }

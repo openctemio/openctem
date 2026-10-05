@@ -18,21 +18,57 @@ For each target, in order:
    inventory asset, the asset's inventory name is matched too, so excluding
    `legacy.example.com` also refuses `https://www.legacy.example.com/login`
    probed as that asset.
-3. **Attribution** (RFC-036 O4): when the target is an inventory asset
-   (`DispatchTargetsInput.Assets`), the asset must not have an attribution
-   state other than `confirmed` (`needs_review`, `candidate`, `dependency`,
-   `monitor_only`, `rejected` are refused). An asset with no attribution row
-   counts as confirmed, as on a scan. Targets the tenant typed itself carry no
-   asset and are not attribution-checked (O8).
+3. **Ownership** (RFC-036 §6.3 `active_allowed`, `internal/app/easm/active_gate.go`).
+   A target is refused when:
+   - the inventory asset behind it (`DispatchTargetsInput.Assets`, or a typed
+     target that names an asset as typed, lower-cased, or by the host of a
+     URL or `host:port`) has an attribution record other than `confirmed`
+     (`needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`);
+   - the name, or any parent domain of it, is one the tenant rejected (a
+     rejected asset or a live rejection tombstone), unless a person
+     confirmed this very asset. This covers a rejected name that was deleted
+     and came back, and free text under a rejected name;
+   - an internet-facing asset (domain, subdomain, IP, service, web
+     endpoint, host, …) has **no record** and is neither inside an active
+     scope target nor at or under a root-domain seed or verified domain
+     (`unattributed`). Private addresses and internal names are left to scan
+     zones; repositories and cloud resources keep the record-only rule.
+
+   Free text that names no asset is checked here only for rejected names;
+   whether it matches a scope target is the act-scope check below. The
+   caller sees one generic reason; the state that refused the target is
+   logged (`active scan target refused`) with the path. A request refused as
+   a whole (scan create, clone, import, quick scan, `POST /commands`) is also
+   **audited** as `scan.target_refused` (medium, result `failure`) in the
+   caller's tenant, with the actor, the path, the exact count and up to 50
+   refused targets with the state that refused each.
 4. **Scan-zone routing** (RFC-023): a target no zone covers, a zone without
    sensors, or a pinned sensor outside the target's zone is refused. An
    allowed zoned target returns its zone, and the command is stamped with it
    (`commands.scan_zone_id`), so only that zone's sensors can claim it.
 
 **Fail closed.** A missing exclusion filter (`ErrDispatchGateUnavailable`), a
-missing attribution check when assets are named
-(`ErrAttributionGateUnavailable`), or any lookup error returns an error, and
-the caller dispatches nothing.
+missing ownership check (`ErrAttributionGateUnavailable`, for any target), or
+any lookup error returns an error, and the caller dispatches nothing.
+
+### Ownership on every entry point
+
+| Entry point | Behavior on a refused target |
+|---|---|
+| Scan create, clone, import (`CreateScan`), quick scan, `POST /commands` | the request is refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, the targets named with the generic reason) and audited (`scan.target_refused`) |
+| Scan run: manual trigger, schedule, retry controller, workflow trigger | the target (direct or group member) is skipped with a run warning; a run left with nothing is refused (`ALL_TARGETS_UNCONFIRMED`) |
+| `POST /pipelines/runs`, `trigger_pipeline`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
+
+`GET /api/v1/assets/{id}/attribution` answers `active_checks_allowed` with the
+same gate and names the reason in `active_checks_blocked_by`.
+
+**Existing assets (rollout).** No data migration: the rule is evaluated at
+dispatch, so an asset inside a scope target or under a seed stays scannable
+with no record, and adding a scope target or confirming the asset takes
+effect on the next dispatch. An internet-facing asset that has no record and
+is outside every scope target and seed is no longer probed until a person
+confirms it on its Ownership tab (`assets:write`, audited) or a scope target
+covers it. Runs that skip such targets say so in their warnings.
 
 ## Who calls it
 
