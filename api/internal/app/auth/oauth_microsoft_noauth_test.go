@@ -9,16 +9,17 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 func boolPtr(b bool) *bool { return &b }
 
-func msClaims(email string, edov *bool) *oidcClaims {
-	return &oidcClaims{
+func msClaims(email string, edov *bool) *oidc.Claims {
+	return &oidc.Claims{
 		Email:   email,
 		Name:    "User",
 		TID:     "tenant-1",
-		XMSEdov: edov,
+		XMSEdov: oidc.FlexBool(edov != nil && *edov),
 		RegisteredClaims: jwtv5.RegisteredClaims{
 			Issuer:  "https://login.microsoftonline.com/tenant-1/v2.0",
 			Subject: "sub-1",
