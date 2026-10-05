@@ -31,7 +31,7 @@ func configReportBody(observedAt string) map[string]any {
 			map[string]any{"id": "identity.state_persistent", "status": "warn", "severity": "warning", "code": "not_persistent",
 				"params":  map[string]any{"path": map[string]any{"path": "/var/lib/openctem/state"}},
 				"keys":    []string{"SENSOR_STATE_DIR"},
-				"summary": "<script>alert(1)</script>‮state is not on a volume"},
+				"summary": "<script>alert(1)</script>\u202estate is not on a volume"},
 			map[string]any{"id": "tool.nuclei.binary", "status": "pass", "code": "ok",
 				"params": map[string]any{"tool": map[string]any{"name": "nuclei"}}},
 			map[string]any{"id": "content.templates_signed", "status": "warn", "code": "newer", "summary": "from a newer sensor"},
@@ -99,7 +99,7 @@ func TestSensorConfigReport_StoreDedupAndHeartbeat_DB(t *testing.T) {
 	if strings.Contains(report, configCanary) || strings.Contains(report, `"value"`) {
 		t.Fatalf("stored report keeps a setting value: %s", report)
 	}
-	if strings.Contains(report, "‮") || !strings.Contains(report, "alert(1)") {
+	if strings.Contains(report, "\u202e") || !strings.Contains(report, "alert(1)") {
 		t.Fatalf("stored summary not reduced to plain text: %s", report)
 	}
 	// The platform's rollup (attention), not the sensor's claim (ok).
@@ -259,7 +259,7 @@ func TestSensorConfigReport_ManagementReadAndIsolation_DB(t *testing.T) {
 	if len(state.Observed) != 1 || state.Observed[0].Label != "path" || state.Observed[0].Value != "/var/lib/openctem/state" {
 		t.Fatalf("observed %+v", state.Observed)
 	}
-	if !strings.HasPrefix(state.Summary, "<script>") || strings.Contains(state.Summary, "‮") {
+	if !strings.HasPrefix(state.Summary, "<script>") || strings.Contains(state.Summary, "\u202e") {
 		t.Fatalf("summary %q", state.Summary)
 	}
 

@@ -104,7 +104,7 @@ func TestSanitizeConfigReport_RefusesWholeDocument(t *testing.T) {
 func TestSanitizeConfigReport_CapsChecks(t *testing.T) {
 	checks := make([]any, 500)
 	for i := range checks {
-		checks[i] = map[string]any{"id": fmt.Sprintf("config.env_unknown"), "status": "warn", "code": "unknown",
+		checks[i] = map[string]any{"id": "config.env_unknown", "status": "warn", "code": "unknown",
 			"params": map[string]any{"name": map[string]any{"name": fmt.Sprintf("SENSOR_X%d", i)}}}
 	}
 	rep, ign, err := SanitizeConfigReport(reportJSON(t, baseReport(checks...)))
@@ -124,11 +124,11 @@ func TestSanitizeConfigReport_CapsChecks(t *testing.T) {
 
 func TestSanitizeConfigReport_FreeTextIsBoundedPlainText(t *testing.T) {
 	long := strings.Repeat("x", 10000)
-	hostile := "<script>alert(1)</script>‮evil\u0007\x1b[31m⁦done"
+	hostile := "<script>alert(1)</script>\u202eevil\u0007\x1b[31m\u2066done"
 	c := stateCheck()
 	c["summary"] = hostile
 	c2 := map[string]any{"id": "tool.semgrep.binary", "status": "fail", "code": "broken", "summary": long,
-		"excerpt": "line1\nline2\t‮" + strings.Repeat("é", 600)}
+		"excerpt": "line1\nline2\t\u202e" + strings.Repeat("é", 600)}
 	rep, _, err := SanitizeConfigReport(reportJSON(t, baseReport(c, c2)))
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestSanitizeConfigReport_FreeTextIsBoundedPlainText(t *testing.T) {
 	if !strings.HasPrefix(got, "<script>alert(1)</script>") {
 		t.Fatalf("markup must be kept as inert text: %q", got)
 	}
-	for _, bad := range []string{"‮", "\u0007", "\x1b", "⁦"} {
+	for _, bad := range []string{"\u202e", "\u0007", "\x1b", "\u2066"} {
 		if strings.Contains(got, bad) {
 			t.Fatalf("summary keeps %q: %q", bad, got)
 		}
@@ -146,7 +146,7 @@ func TestSanitizeConfigReport_FreeTextIsBoundedPlainText(t *testing.T) {
 		t.Fatalf("summary of %d runes, want %d", n, MaxConfigSummaryRunes)
 	}
 	ex := rep.Checks[1].Excerpt
-	if len(ex) > MaxConfigExcerptBytes || !utf8.ValidString(ex) || !strings.HasPrefix(ex, "line1\nline2\t") || strings.Contains(ex, "‮") {
+	if len(ex) > MaxConfigExcerptBytes || !utf8.ValidString(ex) || !strings.HasPrefix(ex, "line1\nline2\t") || strings.Contains(ex, "\u202e") {
 		t.Fatalf("excerpt %d bytes %q", len(ex), ex)
 	}
 }
@@ -169,7 +169,7 @@ func TestSanitizeConfigReport_TypedParamsOnly(t *testing.T) {
 			"unknown":   map[string]any{"url": "https://x"},
 			"relative":  map[string]any{"path": "etc/passwd"},
 			"dotdot":    map[string]any{"path": "/etc/../shadow"},
-			"ctrl":      map[string]any{"path": "/etc/‮x"},
+			"ctrl":      map[string]any{"path": "/etc/\u202ex"},
 			"hostport":  map[string]any{"host": "proxy:3128"},
 			"userinfo":  map[string]any{"host": "u:p@proxy"},
 			"bigint":    map[string]any{"int": 1e13},
