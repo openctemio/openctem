@@ -59,14 +59,18 @@ type Repository interface {
 	// CountByTenant returns the number of custom capabilities for a tenant.
 	CountByTenant(ctx context.Context, tenantID shared.ID) (int64, error)
 
-	// GetCategories returns all unique categories.
-	GetCategories(ctx context.Context) ([]string, error)
+	// GetCategories returns the unique categories of the capabilities tenantID
+	// may see: platform capabilities and the tenant's own custom ones.
+	GetCategories(ctx context.Context, tenantID shared.ID) ([]string, error)
 
-	// GetUsageStats returns usage statistics for a capability (tool count, sensor count).
-	GetUsageStats(ctx context.Context, capabilityID shared.ID) (*CapabilityUsageStats, error)
+	// GetUsageStats returns usage statistics for a capability (tool count, sensor count)
+	// as seen by tenantID: the tenant's own tools and sensors plus platform tools
+	// (tenant_id IS NULL). Another tenant's tools and sensors are never counted or named.
+	GetUsageStats(ctx context.Context, tenantID, capabilityID shared.ID) (*CapabilityUsageStats, error)
 
-	// GetUsageStatsBatch returns usage statistics for multiple capabilities.
-	GetUsageStatsBatch(ctx context.Context, capabilityIDs []shared.ID) (map[shared.ID]*CapabilityUsageStats, error)
+	// GetUsageStatsBatch returns usage statistics for multiple capabilities, scoped
+	// to tenantID exactly like GetUsageStats.
+	GetUsageStatsBatch(ctx context.Context, tenantID shared.ID, capabilityIDs []shared.ID) (map[shared.ID]*CapabilityUsageStats, error)
 }
 
 // CapabilityUsageStats contains usage statistics for a capability.

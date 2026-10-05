@@ -67,7 +67,7 @@ func TestTenableSCCoverage_RollingBatchesStayInsideTheLicense(t *testing.T) {
 	connector := tenablesc.NewService(intRepo, postgres.NewSensorRepository(pg), cmdRepo, postgres.NewFindingRepository(pg), nil, logger.NewNop())
 	sched := controller.NewCoverageScheduler(intRepo, postgres.NewScanCoverageRepository(pg), coverageDispatcher{connector},
 		&controller.CoverageSchedulerConfig{Gate: newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
-			scansvc.WithAttributionGate(postgres.NewAttributionRepository(pg))), Connector: connector})
+			scansvc.WithAttributionGate(ownershipGate(db))), Connector: connector})
 
 	batchTargets := func() (shared.ID, []string) {
 		t.Helper()

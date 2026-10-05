@@ -2889,11 +2889,12 @@ func TestToolService_RecordToolExecution_InvalidStepRunID(t *testing.T) {
 // ============================================================================
 
 func TestToolService_GetEffectiveToolConfig_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, repo, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
-	toolID := shared.NewID()
+	platform := createPlatformTool("effective-config-tool", tooldom.InstallDocker)
+	repo.AddTool(platform)
 
-	config, err := svc.GetEffectiveToolConfig(context.Background(), tenantID.String(), toolID.String())
+	config, err := svc.GetEffectiveToolConfig(context.Background(), tenantID.String(), platform.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -2992,4 +2993,44 @@ func TestToolService_ListTenantToolConfigs_WithToolFilter(t *testing.T) {
 
 func (m *toolSvcMockSensorRepo) KnownCapabilityNames(_ context.Context, _ *shared.ID, _, _ []string) (map[string]bool, map[string]bool, error) {
 	return map[string]bool{}, map[string]bool{}, nil
+}
+
+// Security test: the tenant-tools endpoints load a tool by id. Another
+// tenant's custom tool must answer not-found (its definition and default
+// config never cross the tenant boundary, and no tenant may attach a config
+// to it); platform tools and the caller's own custom tools still work.
+func TestToolService_TenantToolEndpoints_HideOtherTenantsCustomTool(t *testing.T) {
+	svc, repo, _, _ := newToolSvcTestService()
+	ctx := context.Background()
+	owner, other := shared.NewID(), shared.NewID()
+
+	custom := createTenantTool(owner, "owner-secret-scanner", tooldom.InstallDocker)
+	repo.AddTool(custom)
+	platform := createPlatformTool("platform-scanner", tooldom.InstallDocker)
+	repo.AddTool(platform)
+
+	notFound := func(name string, err error) {
+		t.Helper()
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("%s on another tenant's custom tool: err = %v, want not found", name, err)
+		}
+	}
+	_, err := svc.GetToolWithConfig(ctx, other.String(), custom.ID.String())
+	notFound("GetToolWithConfig", err)
+	_, err = svc.GetEffectiveToolConfig(ctx, other.String(), custom.ID.String())
+	notFound("GetEffectiveToolConfig", err)
+	_, err = svc.CreateTenantToolConfig(ctx, tool.CreateTenantToolConfigInput{TenantID: other.String(), ToolID: custom.ID.String(), IsEnabled: true})
+	notFound("CreateTenantToolConfig", err)
+	_, err = svc.UpdateTenantToolConfig(ctx, tool.UpdateTenantToolConfigInput{TenantID: other.String(), ToolID: custom.ID.String(), IsEnabled: true})
+	notFound("UpdateTenantToolConfig", err)
+
+	if _, err := svc.GetToolWithConfig(ctx, owner.String(), custom.ID.String()); err != nil {
+		t.Errorf("owner reads its own custom tool: %v", err)
+	}
+	if _, err := svc.GetToolWithConfig(ctx, other.String(), platform.ID.String()); err != nil {
+		t.Errorf("any tenant reads a platform tool: %v", err)
+	}
+	if _, err := svc.GetEffectiveToolConfig(ctx, other.String(), platform.ID.String()); err != nil {
+		t.Errorf("any tenant reads a platform tool's effective config: %v", err)
+	}
 }

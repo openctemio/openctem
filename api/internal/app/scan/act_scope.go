@@ -104,10 +104,11 @@ func (s *Service) runActScopeSkips(ctx context.Context, sc *scan.Scan, candidate
 		if excluded[c.ID] {
 			continue
 		}
+		if _, no := blocked[c.ID.String()]; no {
+			continue
+		}
 		if memberIDs[c.ID] {
-			if _, no := blocked[c.ID.String()]; !no {
-				in.AssetIDs = append(in.AssetIDs, c.ID)
-			}
+			in.AssetIDs = append(in.AssetIDs, c.ID)
 			continue
 		}
 		in.Targets = append(in.Targets, names[c.ID])
