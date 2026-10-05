@@ -13,6 +13,7 @@
  */
 
 import { useMemo, useState } from 'react'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import Link from 'next/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Ban, Check, Eye, Loader2, Network, Search as SearchIcon } from 'lucide-react'
@@ -61,7 +62,10 @@ function stateOf(item: EASMReviewItem): AttributionState {
 export function EASMReviewQueue() {
   const { can } = usePermissions()
   const canDecide = can(Permission.AssetsWrite)
-  const [view, setView] = useState(REVIEW_VIEWS[0].id)
+  // The tab is in the URL (?tab=rejected) so a view can be linked to.
+  const [tabParam, setTabParam] = useUrlFilter('tab', REVIEW_VIEWS[0].id)
+  const view = REVIEW_VIEWS.some((v) => v.id === tabParam) ? tabParam : REVIEW_VIEWS[0].id
+  const setView = setTabParam
   const [searchInput, setSearchInput] = useState('')
   const search = useDebounce(searchInput, 300)
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: PAGE_SIZE })

@@ -62,3 +62,20 @@ export function useDecideReviewBatch() {
   }
   return { decide, saving }
 }
+
+/** The review queue's states: what waits for a person. */
+export const REVIEW_QUEUE_STATES: AttributionState[] = ['needs_review', 'candidate']
+
+/**
+ * How many names wait in the review queue (research/22 P0-12): the same
+ * query and data scope as the queue's "Awaiting review" tab, so the sidebar
+ * badge, the tab count and the queue always agree. Cached for a minute.
+ */
+export function useEASMReviewCount(enabled = true) {
+  const key = enabled ? reviewQueueURL({ states: REVIEW_QUEUE_STATES, page: 1, perPage: 1 }) : null
+  const { data } = useSWR<EASMReviewPage>(key, get, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000,
+  })
+  return data?.total
+}
