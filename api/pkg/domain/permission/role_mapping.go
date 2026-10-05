@@ -39,6 +39,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
+		CIRead, CIWrite, CIOverride,
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
@@ -114,6 +115,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
+		CIRead, CIWrite, CIOverride,
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
@@ -195,6 +197,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead,
 		SecretStoreRead, SecretStoreWrite,
+		CIRead, // CI trust and the gate are managed by owners and admins (RFC-051)
 		// Sensors: read only. Creating sensors and minting, rotating or
 		// revoking their keys is owner/admin only.
 		SensorsRead,
@@ -265,6 +268,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead,
 		ScannerTemplatesRead,
 		SecretStoreRead,
+		CIRead,
 		// Sensors (read only)
 		SensorsRead,
 		CommandsRead,

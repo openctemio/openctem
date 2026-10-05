@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 001075: interactive sensor pairing (RFC-052 SP1)
+-- Migration 001078: interactive sensor pairing (RFC-052 SP1)
 -- =============================================================================
 -- 1. sensor_pairings: one row per pairing request. A default-mode request is
 --    created by an unauthenticated (but key-signed) sensor and has NO tenant
@@ -11,7 +11,7 @@
 --    new organizations require key-bound identity (default false, D-4).
 -- 3. Five permissions, granted to owner and admin and admin-only:
 --    sensors:pair, sensors:approve, sensors:grant:narrow, sensors:grant:widen,
---    sensors:revoke. The admin-only trigger of 000945 is extended to them.
+--    sensors:revoke. The admin-only trigger (000945, last replaced by 001077) is extended to them.
 --
 -- Live-database safety: ADD COLUMN with a constant default is catalog-only;
 -- the default is then changed for future rows (no rewrite). The new table is
@@ -107,6 +107,7 @@ AS $$
 BEGIN
     IF NEW.permission_id IN ('sensors:write', 'sensors:delete', 'sensors:commands:delete',
                              'sensors:zones:write', 'sensors:zones:delete',
+                             'scans:ci:write', 'scans:ci:override',
                              'sensors:pair', 'sensors:approve', 'sensors:grant:narrow',
                              'sensors:grant:widen', 'sensors:revoke')
        AND EXISTS (SELECT 1 FROM roles WHERE id = NEW.role_id AND tenant_id IS NOT NULL) THEN

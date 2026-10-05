@@ -193,6 +193,11 @@ export const Permission = {
   SecretStoreRead: 'scans:secret_store:read',
   SecretStoreWrite: 'scans:secret_store:write',
   SecretStoreDelete: 'scans:secret_store:delete',
+  // CI runs, trust configurations and the gate (RFC-051); write and
+  // override are admin-only.
+  CIRead: 'scans:ci:read',
+  CIWrite: 'scans:ci:write',
+  CIOverride: 'scans:ci:override',
 
   // ===========================================
   // SENSORS MODULE
@@ -387,6 +392,8 @@ export const ADMIN_ONLY_PERMISSIONS: readonly string[] = [
   Permission.SensorsGrantNarrow,
   Permission.SensorsGrantWiden,
   Permission.SensorsRevoke,
+  Permission.CIWrite,
+  Permission.CIOverride,
 ]
 
 /**
@@ -428,6 +435,7 @@ export const PermissionGroups = {
     Permission.ScannerTemplatesRead,
     Permission.TemplateSourcesRead,
     Permission.SecretStoreRead,
+    Permission.CIRead,
     Permission.SensorsRead,
     Permission.CommandsRead,
     Permission.ScanZonesRead,
@@ -477,6 +485,8 @@ export const PermissionGroups = {
     Permission.ScannerTemplatesWrite,
     Permission.TemplateSourcesWrite,
     Permission.SecretStoreWrite,
+    Permission.CIWrite,
+    Permission.CIOverride,
     Permission.SensorsWrite,
     Permission.CommandsWrite,
     Permission.ScanZonesWrite,
@@ -650,6 +660,9 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.SecretStoreRead]: 'View Secret Store',
   [Permission.SecretStoreWrite]: 'Manage Secret Store',
   [Permission.SecretStoreDelete]: 'Delete Secrets',
+  [Permission.CIRead]: 'View CI Runs',
+  [Permission.CIWrite]: 'Manage CI Trust and Gate',
+  [Permission.CIOverride]: 'Override the CI Gate',
 
   // Sensors
   [Permission.SensorsRead]: 'View Sensors',
@@ -846,6 +859,9 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     Permission.SecretStoreDelete,
+    Permission.CIRead,
+    Permission.CIWrite,
+    Permission.CIOverride,
     // Sensors
     Permission.SensorsRead,
     Permission.SensorsWrite,
@@ -1005,6 +1021,9 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     Permission.SecretStoreDelete,
+    Permission.CIRead,
+    Permission.CIWrite,
+    Permission.CIOverride,
     // Sensors
     Permission.SensorsRead,
     Permission.SensorsWrite,
@@ -1134,6 +1153,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScannerTemplatesRead,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
+    Permission.CIRead,
     // Sensors: read only (creating sensors and their keys is owner/admin only)
     Permission.SensorsRead,
     Permission.CommandsRead,
@@ -1210,6 +1230,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.TenantToolsRead,
     Permission.ScannerTemplatesRead,
     Permission.SecretStoreRead,
+    Permission.CIRead,
     // Sensors (read only)
     Permission.SensorsRead,
     Permission.CommandsRead,

@@ -112,6 +112,8 @@ Handler
 | `POST /api/v1/auth/login` | User login |
 | `POST /api/v1/auth/token` | Token exchange |
 | `POST /api/v1/auth/refresh` | Token refresh |
+| `POST /api/v1/ci/oidc/exchange` | CI job's OIDC token for a 15-minute run token (RFC-051); the signed token is the credential, every refusal is the same 401, per-IP rate limit |
+| `POST /api/v1/ci/runs/{id}/results` · `/baseline-diff` · `/evaluate` | CI run token (`octci_…`) only: one run on one repository asset; another run's id is 404 |
 
 ### JWT-Tenant Routes (Tenant from Token)
 
@@ -400,6 +402,23 @@ the billing page in the UI.
 > cannot be written. At rest the secret is AES-256-GCM encrypted with
 > `APP_ENCRYPTION_KEY` (`details.secret_value_enc`); the server seals legacy
 > plaintext rows on start, and `cmd/encrypt-credentials` does the same offline.
+
+#### CI runs, trust and the gate (`/api/v1/ci`, RFC-051)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/ci/runs` · `/runs/{id}` · `/trust-configs` · `/trust-configs/{id}` · `/gate-policies` · `/gate-overrides` | `scans:ci:read` |
+| `POST /api/v1/ci/trust-configs` · `PUT /{id}` · `DELETE /{id}` · `POST /api/v1/ci/gate-policies` · `PATCH /{id}` · `DELETE /{id}` | `scans:ci:write` |
+| `POST /api/v1/ci/gate-overrides` · `POST /{id}/revoke` | `scans:ci:override` |
+
+> `scans:ci:write` (trust configurations issue upload credentials) and
+> `scans:ci:override` (break-glass) are admin-only, like the sensor key
+> permissions: owner and admin carry them, no custom role may (the migration
+> `001077` extends the `000945` trigger). Members and viewers have
+> `scans:ci:read`. Runs and overrides follow the data scope of the repository
+> asset (list: SQL condition; by id, and break-glass on a repository: 404 out of
+> scope). Every change, every token exchange (issued or refused after
+> verification) and every verdict is audited; no token is ever written.
 
 #### Template sources and the secret store (`/api/v1/template-sources`, `/api/v1/secret-store`)
 
