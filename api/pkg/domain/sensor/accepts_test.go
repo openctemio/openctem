@@ -163,8 +163,8 @@ func TestRefusalOf(t *testing.T) {
 	}
 	// A structured refusal is sanitized: unknown layer and malformed rule
 	// are not stored as sent, control characters are removed.
-	got = RefusalOf(&DispatchRefusal{Layer: "Root\n", Rule: "rm -rf /", Detail: "x‮y\nz"}, "")
-	if got.Layer != "unknown" || got.Rule != "unknown" || strings.ContainsAny(got.Detail, "\n‮") {
+	got = RefusalOf(&DispatchRefusal{Layer: "Root\n", Rule: "rm -rf /", Detail: "x\u202ey\nz"}, "")
+	if got.Layer != "unknown" || got.Rule != "unknown" || strings.ContainsAny(got.Detail, "\n\u202e") {
 		t.Fatalf("sanitized: %+v", got)
 	}
 	got = RefusalOf(&DispatchRefusal{Layer: "managed", Rule: "allow_interactsh"}, "anything")
