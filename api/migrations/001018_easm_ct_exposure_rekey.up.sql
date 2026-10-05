@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS easm_ct_rekey_001018 (
     old_resolution_notes TEXT
 );
 
+-- expand-contract-ok: drops only this migration's own session temp table (pg_temp), never a shared one
 DROP TABLE IF EXISTS pg_temp.ct_rekey;
 CREATE TEMP TABLE ct_rekey ON COMMIT DROP AS
 SELECT id, tenant_id, fingerprint, state, resolved_at, resolution_notes, rn, new_fp
