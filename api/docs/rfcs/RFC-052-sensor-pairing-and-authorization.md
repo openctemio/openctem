@@ -40,17 +40,17 @@ keeps today's behaviour and is flagged in the console until someone narrows it.
  sensor host                       platform (unauthenticated, capped)          admin (console)
  ───────────                       ─────────────────────────────────           ───────────────
  key = Ed25519 (0600)
- POST /pairing  pub, H(nS), host ──▶ store (no tenant), code, nP, sig(P) ──┐
+ POST /pairings  pub, H(nS), host ─▶ store (no tenant), code, nP, sig(P) ──┐
        ◀── pairing_id, code, P_pub, nP, sig, expiry                         │
  verify sig, pin                                                            │
- POST /pairing/{id}/reveal  nS ────▶ check H(nS); SAS = H(pub‖P‖nS‖nP)       │
+ PUT /pairings/{id}/nonce  nS ─────▶ check H(nS); SAS = H(pub‖P‖nS‖nP)       │
  print  Code K7QM-4ZTD                                                       │
         Fingerprint 821 · melon · basil · bagel                             ▼
                                                      lookup code ◀── sensors:pair: shows SAS, host facts, IP
                                                      approve     ◀── sensors:approve + step-up +
                                                                      "fingerprint matches" + zone/role/profile
- GET /pairing/{id} (signed) ◀────── approved: sensor id, tenant, key id
- POST /pairing/{id}/confirm (signed identity statement) ──▶ key active, audit, timeline, admins notified
+ GET /pairings/{id} (signed) ◀───── approved: sensor id, tenant, key id
+ POST /pairings/{id}/complete (signed identity statement) ──▶ key active, audit, timeline, admins notified
  every later request: RFC 9421 signature, keyid = thumbprint
 ```
 
@@ -106,16 +106,16 @@ Secure defaults (owner, 2026-10-05):
 ### 4.1 Endpoints
 
 Sensor plane, unauthenticated by bearer key but every request **signed with
-the key being paired** (§4.3). They live under `/api/v2/sensor/pairing` (the
+the key being paired** (§4.3). They live under `/api/v2/sensor/pairings` (the
 sensor plane of RFC-041; the edge already routes `/api/v2/sensor/*` to the
 API), outside the authenticated group:
 
 | Method and path | Purpose |
 |---|---|
-| `POST /api/v2/sensor/pairing` | Start: public key, commitment to the sensor nonce, host facts, optional reverse-mode code, optional `sensor_id` (re-pair). Answers `201` with the pairing id, the user code (default mode), the platform key and nonce, the platform signature and the expiry. |
-| `POST /api/v2/sensor/pairing/{id}/reveal` | The sensor nonce; the platform checks it against the commitment and computes the SAS. |
-| `GET /api/v2/sensor/pairing/{id}` | Poll: `pending`, `approved` (with the identity), `denied`, `expired`, `completed`. |
-| `POST /api/v2/sensor/pairing/{id}/confirm` | The sensor's signed statement accepting the identity; the key becomes active. |
+| `POST /api/v2/sensor/pairings` | Start: public key, commitment to the sensor nonce, host facts, optional reverse-mode code, optional `sensor_id` (re-pair). Answers `201` with the pairing id, the user code (default mode), the platform key and nonce, the platform signature and the expiry. |
+| `PUT /api/v2/sensor/pairings/{id}/nonce` | The sensor nonce; the platform checks it against the commitment and computes the SAS. |
+| `GET /api/v2/sensor/pairings/{id}` | Poll: `pending`, `approved` (with the identity), `denied`, `expired`, `completed`. |
+| `POST /api/v2/sensor/pairings/{id}/complete` | The sensor's signed statement accepting the identity; the key becomes active. |
 
 User plane (tenant from the session, as every user route):
 
@@ -125,7 +125,7 @@ User plane (tenant from the session, as every user route):
 | `POST /api/v1/sensor-pairings/expectations` | `sensors:pair` | Reverse mode ("expect a sensor"): returns a code for `openctemio-sensor pair <CODE>`. |
 | `GET /api/v1/sensor-pairings/expectations/{id}` | `sensors:pair` | Poll an expectation: once the sensor connected, the SAS and host facts to compare. |
 | `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up | Bind the key to a new sensor (or to the registration being re-paired) with the chosen name, type, zones, grant profile. Requires `fingerprint_confirmed: true`. |
-| `POST /api/v1/sensor-pairings/{id}/deny` | `sensors:pair` | Refuse a pairing (audited). |
+| `POST /api/v1/sensor-pairings/{id}/reject` | `sensors:pair` | Refuse a pairing (audited). |
 | `GET/PUT /api/v1/sensors/identity-policy` | read: `sensors:read`; write: `sensors:grant:narrow` to require key-bound identity, `sensors:grant:widen` to allow bearer keys again | D-4 switch. |
 
 ### 4.2 Exchange and the SAS
@@ -244,7 +244,7 @@ Uniformity:
   to every administrator of the organization ("Sensor X was paired by Y from
   address Z; fingerprint F").
 
-`confirm` activates the key (`sensor.pairing_completed`). An approval not
+`complete` activates the key (`sensor.pairing_completed`). An approval not
 confirmed within 10 minutes expires and its key is revoked.
 
 ### 4.6 Re-pair
@@ -370,11 +370,11 @@ Each line is a test in the implementation PRs.
 
 ## 7. Data and migrations
 
-- `sensor_keys (id, tenant_id, sensor_id, thumbprint UNIQUE, public_key, alg,
+- `sensor_keys` (migration 001074): `(id, tenant_id, sensor_id, thumbprint UNIQUE, public_key, alg,
   status pending|active|revoked, created_at, activated_at, revoked_at,
   revoked_reason, last_used_at, last_used_ip)`, composite FK
   `(tenant_id, sensor_id)`.
-- `sensor_pairings (id, mode forward|reverse, tenant_id NULL until claimed,
+- `sensor_pairings` (migration 001075): `(id, mode forward|reverse, tenant_id NULL until claimed,
   code_hash, public_key, thumbprint, commitment, sensor_nonce,
   platform_nonce, sas, host_facts, source_ip, sensor_id (re-pair target or
   created sensor), status, expires_at, approved_by, approved_at, …)`,
