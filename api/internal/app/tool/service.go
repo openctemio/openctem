@@ -166,12 +166,15 @@ func (s *Service) GetTool(ctx context.Context, toolID string) (*tooldom.Tool, er
 }
 
 // GetToolByName retrieves a tool by name.
-func (s *Service) GetToolByName(ctx context.Context, name string) (*tooldom.Tool, error) {
+func (s *Service) GetToolByName(ctx context.Context, tenantID, name string) (*tooldom.Tool, error) {
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
 	}
-
-	return s.toolRepo.GetByName(ctx, name)
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	return s.toolRepo.GetByName(ctx, tid, name)
 }
 
 // ListInput represents the input for listing tools.
@@ -519,6 +522,12 @@ func (s *Service) CreateCustomTool(ctx context.Context, input CreateCustomToolIn
 	t, err := tooldom.NewTenantCustomTool(tenantID, createdBy, input.Name, input.DisplayName, categoryID, installMethod)
 	if err != nil {
 		return nil, err
+	}
+
+	// Platform tool names are reserved: a name resolves to the platform tool
+	// first, so a custom tool with the same name would never run.
+	if existing, gerr := s.toolRepo.GetByName(ctx, shared.ID{}, t.Name); gerr == nil && existing != nil && existing.TenantID == nil {
+		return nil, fmt.Errorf("%w: %q is the name of a platform tool; choose another name", shared.ErrConflict, t.Name)
 	}
 
 	// Set optional fields

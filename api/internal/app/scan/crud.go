@@ -387,7 +387,7 @@ func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tena
 	}
 	for _, step := range steps {
 		if step.Tool != "" {
-			stepTool, err := s.toolRepo.GetByName(ctx, step.Tool)
+			stepTool, err := s.toolRepo.GetByName(ctx, tenantID, step.Tool)
 			if err != nil || stepTool == nil {
 				return fmt.Errorf("%w: pipeline step '%s' uses tool '%s' which is not found",
 					shared.ErrValidation, step.StepKey, step.Tool)
@@ -416,7 +416,7 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 		return fmt.Errorf("%w: scanner_name is required for single type", shared.ErrValidation)
 	}
 
-	scannerTool, err := s.toolRepo.GetByName(ctx, scannerName)
+	scannerTool, err := s.toolRepo.GetByName(ctx, sc.TenantID, scannerName)
 	if err != nil || scannerTool == nil {
 		return fmt.Errorf("%w: scanner '%s' not found in tool registry", shared.ErrValidation, scannerName)
 	}
@@ -486,6 +486,7 @@ func (s *Service) checkScanSensorAvailability(ctx context.Context, tenantID shar
 // Returns nil if no warning needed (100% compatible or no asset groups).
 func (s *Service) PreviewScanCompatibility(
 	ctx context.Context,
+	tenantID shared.ID,
 	scannerName string,
 	assetGroupIDs []shared.ID,
 ) (*AssetCompatibilityPreview, error) {
@@ -500,7 +501,7 @@ func (s *Service) PreviewScanCompatibility(
 	}
 
 	// Get tool's supported targets
-	scannerTool, err := s.toolRepo.GetByName(ctx, scannerName)
+	scannerTool, err := s.toolRepo.GetByName(ctx, tenantID, scannerName)
 	if err != nil || scannerTool == nil {
 		return nil, nil //nolint:nilerr // Tool not found is expected; skip compatibility check.
 	}
@@ -719,7 +720,7 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		// A config saved back as it was shown masked keeps the stored
 		// secrets instead of storing the mask (scan.RedactConfigSecrets).
 		cfg := scan.RestoreRedactedConfigSecrets(input.ScannerConfig, sc.ScannerConfig)
-		if _, connector := s.isConnectorScanner(ctx, input.ScannerName); connector {
+		if _, connector := s.isConnectorScanner(ctx, sc.TenantID, input.ScannerName); connector {
 			if err := s.validateConnectorScanner(ctx, sc.TenantID, cfg); err != nil {
 				return nil, err
 			}
