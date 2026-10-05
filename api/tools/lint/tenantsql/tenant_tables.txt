@@ -65,6 +65,7 @@ finding_comments
 finding_definitions
 finding_fingerprints
 finding_group_assignments
+finding_imports
 finding_rekey_runs
 finding_remediation_keys
 finding_retest_cursors
