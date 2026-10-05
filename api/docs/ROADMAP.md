@@ -3,10 +3,6 @@
 > Living strategic doc: where the platform stands, where it's strong, and the
 > prioritized work to make it best-in-class. Updated 2026-07-03.
 
-> **See also:** [OASM vs OpenCTEM](competitive/oasm-comparison.md) — a
-> source-level competitive comparison with its own phased plan and tracking
-> table. Items there are tracked in that document, not here.
-
 ## 1. What OpenCTEM is
 
 A multi-tenant **CTEM** (Continuous Threat Exposure Management) platform that
@@ -17,15 +13,13 @@ prioritize → validate → mobilize*, not just "list findings".
 
 ## 2. Honest assessment — strengths (verified)
 
-Three rounds of cross-repo deep-dive + a competitive study (califio code-secure)
-back these up:
+Three rounds of cross-repo deep-dive back these up:
 
 - **Multi-tenant isolation** is correct end-to-end (`WHERE tenant_id` everywhere;
   cache keys tenant-scoped; ingest tenant from the authenticated agent).
 - **Risk prioritization** beyond severity: EPSS + CISA-KEV + VPR + reachability +
   asset criticality. Most scanners stop at severity.
-- **Shift-left agent** is peer/ahead of code-secure: multi-scanner, risk-aware
-  gate, idempotent PR/MR comments + sticky summary, **new-vs-base** PR scoping.
+- **Shift-left agent**: multi-scanner, risk-aware gate, idempotent PR/MR comments + sticky summary, **new-vs-base** PR scoping.
 - **Mobilization**: bidirectional Jira sync (create + inbound + outbound status,
   opt-in, echo-safe), per-tenant configurable status maps.
 - **Validation** is now real (RFC-011): `POST /findings/{id}/validate` dispatches
@@ -92,7 +86,8 @@ infrastructure, no product unknowns).
 4. **GitHub Issues as a 2nd ticket provider** — cheap (the `TicketProvider`
    interface exists), large audience, validates the abstraction.
 5. **Agent auto-fix PRs** — for SCA findings with a fixed version, the agent opens
-   a dependency-bump PR. A strong shift-left differentiator beyond code-secure.
+   a dependency-bump PR, closing the loop from finding to fix in the developer's
+   workflow.
 6. **Finish RFC-007** — `.sc` active-IP accounting + live-appliance Nessus REST
    verification (needs real hardware).
 
@@ -105,6 +100,44 @@ infrastructure, no product unknowns).
    string catalog (notably for the vi market).
 9. **Compliance packs** — map findings → ISO 27001 / PCI / SOC2 controls
    (compliance finding-type already exists) → audit-ready evidence.
+
+### Attack-surface UI and run-observability backlog
+
+Carried over from a 2026-07 source-level review of the scan and inventory
+surfaces. Status was not re-verified when this list moved here; check the code
+before scheduling an item.
+
+- **Surface what we already store:** tags and scanned-by columns on findings;
+  worker count and an explicit "unrunnable" state on the tools grid; supported
+  tools on the worker card; "View full page" from the asset sheet; a
+  `/settings/ai` page for the AI fields already mapped; geo/ASN columns and a
+  country rollup; a decomposed CVSS panel (the metric dictionary already exists
+  in `cvss-calculator.tsx`).
+- **Certificate expiry:** a partial btree on
+  `((properties->'certificate'->>'not_after'))` where `asset_type='certificate'`
+  (all writers emit RFC3339 UTC, so lexical order is chronological and no
+  non-IMMUTABLE cast is needed), then `?expiring_within=30d`, sort by expiry,
+  dashboard tiles and a days-left badge on rows.
+- **Run observability:** a run-detail route (pipeline strip, per-step rows,
+  error panel); `step_runs.output` in the DTO; keep failure detail
+  (`DurationMs`/`ExitCode`/`Metadata`) instead of only `error_message`; write
+  `tool_executions` at dispatch and on result, one row per (step × asset).
+- **Change feed:** `exposure_events` producers from an ingest-time property diff
+  and a scheduled pass over `not_after`; recon deltas recorded in
+  `asset_state_history` rather than a separate probe-history table.
+- **Pipelines:** feed step N's output into step N+1 by resolving targets from the
+  asset graph, filtered by the step tool's `supported_targets`, with server-side
+  scope/SSRF validation of the injected targets and a per-job cap; register or
+  trim the preset tools that have no `tools` row; collapse the scan dispatch
+  paths into one.
+- **New surfaces (scoped separately):** global data search (needs an API
+  route); asset screenshots; one filter bar shared across asset pivots that
+  keeps filters when switching tab; a technology catalogue; JSON-Schema-driven
+  integration connect forms.
+- **Non-goals:** tenancy reached through joins instead of a `tenant_id` column;
+  fingerprints without a tenant column; live geo lookup per page load; full HTTP
+  response bodies stored per probe; linear-only chains; shell-command tool
+  templates.
 
 ## 5. Recommendation
 

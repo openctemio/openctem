@@ -128,9 +128,17 @@ func (r *ToolRepository) GetByID(ctx context.Context, id shared.ID) (*tool.Tool,
 }
 
 // GetByName retrieves a tool by its name.
-func (r *ToolRepository) GetByName(ctx context.Context, name string) (*tool.Tool, error) {
-	query := r.selectQuery() + " WHERE name = $1"
-	row := r.db.QueryRowContext(ctx, query, name)
+func (r *ToolRepository) GetByName(ctx context.Context, tenantID shared.ID, name string) (*tool.Tool, error) {
+	// Platform tool first, then the caller's own custom tool. Without the
+	// tenant predicate a name shared by two tenants' custom tools resolved to
+	// either one (settings audit SC-M5).
+	query := r.selectQuery() + ` WHERE name = $1 AND (tenant_id IS NULL OR tenant_id = $2)
+		ORDER BY (tenant_id IS NULL) DESC LIMIT 1`
+	var tid any
+	if !tenantID.IsZero() {
+		tid = tenantID.String()
+	}
+	row := r.db.QueryRowContext(ctx, query, name, tid)
 	return r.scanTool(row)
 }
 

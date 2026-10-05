@@ -9,7 +9,7 @@ are in [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md).
   unless a section says so. P0 ships as the seven slices in RFC-042 §9.1.
 - Update each section from "planned" to "shipped" in the PR that lands
   it.
-- The UI design is in `web/docs/ui/pd-inspired-inventory-integrations-2026-10.md`.
+- The UI design is in `web/docs/ui/inventory-integrations-2026-10.md`.
 
 ## The model in five lines
 
@@ -124,7 +124,7 @@ queries. Core facets are real columns. Extension tables are used only for one-to
 row or card, and its default facets and group-by. The lenses are:
 
 - All assets (core columns + a type-aware cell);
-- External surface (the PD-style service cards);
+- External surface (rich service rows);
 - Applications;
 - Cloud & infrastructure;
 - Containers & Kubernetes;

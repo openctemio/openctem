@@ -373,6 +373,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// behavior until the tenant switches.
 	unsolicitedMayResolve := binding.Kind != BindingUnsolicited ||
 		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
+	// Output-type binding (research/27 G12): a command-bound report may
+	// carry only the asset types its tool produces or takes.
+	report = s.bindOutputTypes(ctx, agt, tenantID, binding, report, opts)
 	scope := newAlterScope(binding).withActor(ctx, opts.Actor)
 
 	// report.Metadata.ID and SourceType come from the CTIS payload

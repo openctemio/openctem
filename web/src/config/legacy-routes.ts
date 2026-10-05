@@ -25,6 +25,19 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   // "CI/CD" was a ComingSoonPage (owner decision D-31). Deleted until a real
   // page exists for the API's CI snippet and quality-gate endpoints.
   { source: '/settings/integrations/cicd', destination: '/settings/integrations', permanent: true },
+  // The SAML and verified-domains explainer stubs: SSO is configured per
+  // organization in the platform admin console (RFC-022), and Authentication
+  // carries the same explanation as a card.
+  {
+    source: '/settings/integrations/saml',
+    destination: '/settings/authentication',
+    permanent: true,
+  },
+  {
+    source: '/settings/integrations/verified-domains',
+    destination: '/settings/authentication',
+    permanent: true,
+  },
   // Personal notification settings moved to the user's own area.
   { source: '/settings/notifications', destination: '/account/notifications', permanent: true },
   // Access group: identity and machine access, out of Integrations.
