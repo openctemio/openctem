@@ -34474,8 +34474,10 @@ export interface components {
     }
     'ctis.IdentityHints': {
       /**
-       * @description Id of the scanner's agent installed on the host (a Nessus or Qualys
-       *     agent UUID). Unique per scanner, not across scanners.
+       * @description Id of the scanner's own agent installed on the host (a Nessus or
+       *     Qualys agent UUID). Unique per scanner, not across scanners. The Go
+       *     name says whose agent it is, so it is not read as a receiver's own
+       *     endpoint software.
        */
       agent_id?: string
       /** @description Cloud resource id the scanner reported (instance id, ARN). */

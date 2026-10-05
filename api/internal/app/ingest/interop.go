@@ -294,7 +294,7 @@ func identityHintProperties(h *ctis.IdentityHints) map[string]any {
 	out := map[string]any{}
 	for _, kv := range [][2]string{
 		{"fqdn", h.FQDN}, {"netbios_name", h.NetBIOSName}, {"os_cpe", h.OSCPE},
-		{"cloud_resource_id", h.CloudResourceID}, {"agent_id", h.AgentID},
+		{"cloud_resource_id", h.CloudResourceID}, {"agent_id", h.ScannerAgentID},
 	} {
 		if c := hintText(kv[1]); c != "" {
 			out[kv[0]] = c

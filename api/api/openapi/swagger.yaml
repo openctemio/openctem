@@ -1314,8 +1314,10 @@ definitions:
     properties:
       agent_id:
         description: |-
-          Id of the scanner's agent installed on the host (a Nessus or Qualys
-          agent UUID). Unique per scanner, not across scanners.
+          Id of the scanner's own agent installed on the host (a Nessus or
+          Qualys agent UUID). Unique per scanner, not across scanners. The Go
+          name says whose agent it is, so it is not read as a receiver's own
+          endpoint software.
         type: string
       cloud_resource_id:
         description: Cloud resource id the scanner reported (instance id, ARN).
