@@ -5,6 +5,11 @@
 > - Phase 0 (defect fixes) is live: api#714, sdk-go#106, openctemio/ui#589, sensor v0.6.3.
 > - Phase 1 is merged: api#718 (migration 000258, live) and sdk-go#108.
 > - Phase 2 is designed in §6.12 and in implementation.
+> - Config report (§11, research/26 "sensor config doctor" P0, owner
+>   decisions F1–F14 adopted as recommended 2026-10-05): API implemented
+>   (migration 001043, `PUT /api/v2/sensor/config-report`, heartbeat
+>   `config_report` + `send_config_report`, `GET /api/v1/sensors/{id}/config-report`);
+>   sdk-go, sensor and web companions built in parallel.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
 > Builds on [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md) (protocol
 > v2, hello, §4.3.1 sensor-reported capabilities), [RFC-030](RFC-030-scan-work-distribution.md)
@@ -132,7 +137,7 @@ mismatch". The design combines Nomad's hash over stable attributes,
 Kubernetes' change-or-slow-resync status, Consul's resync safety net and
 xDS's accepted/rejected answer. CrowdStrike Falcon's sensor reporting is not
 publicly documented (only sensor update policies are), so it is not used.
-Sources are in §11.
+Sources are in §12.
 
 ## 5. Trust
 
@@ -603,7 +608,114 @@ The questions as they were put, with the recommendation:
 | O3 | **Slim heartbeats** (Phase 2): drop the inventory from heartbeats once the manifest is acknowledged? It saves the inventory's bytes (measured later: about 20 % of a heartbeat). | **Yes**, gated per sensor on an answer that says so (a platform from before Phase 2 never does), with a server kill switch. |
 | O4 | Should the manifest's `resources` (cores, memory) be **shown to tenant users** with `sensors:read`, or only to administrators? It is host sizing information, comparable to the hostname and IP already shown. | Show to `sensors:read`, as hostname and IP are today. |
 
-## 11. Sources
+## 11. Config report (research/26 P0)
+
+The manifest says what a sensor *is*. The config report says whether it is
+*set up correctly*: the results of preflight checks the sensor runs on itself
+(state volume, key renewal, tools, TLS trust, proxy inheritance, local policy,
+settings it does not know) that used to reach only its stderr. It is a
+separate document from the manifest because check results change more often
+than the manifest (owner decision F2).
+
+**Wire.**
+- Hello feature `config_report` (`protov2.FeatureConfigReport`). A sensor sends
+  nothing new to a platform that does not list it.
+- `PUT /api/v2/sensor/config-report` (`protov2.ConfigReportPath`), sensor-key
+  authenticated like `PUT /manifest`, on the per-sensor control-write budget.
+  JSON, at most 65536 bytes (`protov2.MaxConfigReportBytes`; 413
+  `content-too-large` with the limit). Not JSON or nested deeper than 6: 400
+  `invalid-request`. Schema other than 1 or no `checks` array: 422
+  `config-report-invalid`. Inactive sensor: 403 `scope-denied`. The answer is
+  `{config_report_digest, changed, ignored[]}`.
+- Heartbeat member `config_report: {digest, health, fail, warn, observed_at}`
+  (v2 and v1 bodies). The heartbeat UPDATE stores the echoed digest in
+  `sensors.config_heartbeat_digest` (NULL when absent). The v2 answer carries
+  the action `send_config_report` when the digest is non-empty and differs
+  from the stored one.
+- Document (schema 1): `observed_at`, `trigger` (start, change, requested),
+  `runtime.kind`, the sensor's `config_health`, `checks[]` (id, status,
+  severity, code, typed `params`, `keys`, `summary`, `excerpt`, `blocks`),
+  `settings[]` (name, set, source, secret, valid) and `truncated`.
+
+**Limits and sanitizing** (`pkg/domain/sensor/config_report.go`,
+`SanitizeConfigReport`). Every rule is enforced by the platform, whatever the
+SDK did:
+- closed sets for status, severity, trigger, runtime kind, setting source and
+  blocks; id and code by pattern; an invalid status or id drops the check;
+- `params` typed and re-validated: exactly one of int (|n| ≤ 1e12), bool,
+  enum, path (absolute, ≤ 256 bytes, no control or bidi characters, no `..`
+  segment), host (name or IP; no scheme, user info or port), version, name,
+  names (≤ 8); anything else is dropped and its value never echoed;
+- `summary` ≤ 300 runes and `excerpt` ≤ 512 bytes, control and bidi
+  characters replaced; stored as data;
+- at most 200 checks (unique by id and canonical params), 300 settings, 16
+  params, 8 keys, 8 blocks; the rest is listed in `ignored` as one `limit`
+  item;
+- a settings entry keeps only name, set, source, secret and valid. Any other
+  member, `value` above all, is dropped unread and never stored or echoed;
+- unknown members anywhere are dropped and listed (`unknown-member`), never
+  an error.
+
+The platform computes its own digest ("sha256:" + hex over the canonical JSON
+of the sanitized report with `observed_at` emptied, so re-running the same
+checks does not change it) and its own health; it never trusts the sensor's
+`config_health`.
+
+**Storage** (migration 001043). `sensor_config_reports` keeps the latest
+report per sensor (primary key `sensor_id`, `tenant_id NOT NULL`, digest,
+health, fail/warn counts, `report jsonb`, `observed_at`, `received_at`).
+`sensors.config_report_digest` and `config_health` point at it. The same
+digest only moves `received_at`. Every read and write is tenant-scoped.
+
+**Health.** The rollup over the sanitized checks: `blocked` when a `fail`
+blocks `role:*`, `impaired` on any other fail or error, `attention` on a warn
+of severity warning or critical, `ok` otherwise. `AssessHealth` gains
+`config_check_failed` (critical), `config_check_warning` (warning) and
+`config_report_stale` (warning: the latest heartbeat echoed another digest or
+none, while the sensor is online). A stale report never raises the failed or
+warning reasons. The fleet `degraded` state works unchanged, and the sensor
+list and detail carry `config_health`.
+
+**Explanations come from the platform.** Titles, the "why" text and fix
+snippets (env, compose, helm) come only from the catalog in
+`internal/app/sensor/config_check_catalog.go`, keyed by check id and code
+(owner decision F12). Parameters go into the why as plain text and into the
+snippets escaped per format: shell-quoted for env (a value with a control
+character drops the env snippet), YAML-quoted for compose and helm. A drift
+test fails when a contract id or code has no entry. A check id the catalog
+does not know (a newer sensor) is shown with `known: false`, its id as the
+title, and no why or fix.
+
+**Management read.** `GET /api/v1/sensors/{id}/config-report`
+(`sensors:read`, tenant-scoped, 404 for another tenant's sensor) returns
+`state` (reported, derived, none), `stale`, `health`, times, `runtime_kind`,
+counts, the explained checks (sorted fail, error, warn, skip, pass, then
+group, then id) and the declared settings. A sensor that sends no report gets
+a checklist derived from its heartbeat: each reported tool's install state
+(`tool.<name>.binary`), `tools.available` and `policy.local`, with a
+`derived_note` asking for an upgrade.
+
+**What a report cannot do.** It only informs: P0 changes no dispatch (that
+is P1, owner decision F7), adds no route on the sensor, and carries no
+secret values.
+
+**Threat model** (research/26 §4.9):
+
+| # | Threat | Control |
+|---|---|---|
+| T1 | A compromised sensor phishes the administrator with "fix" text | Fixes and wording come only from the platform catalog; sensor text is data, rendered as text; params are typed and escaped per format |
+| T2 | A compromised sensor stores junk or script through the report | 64 KiB cap, depth 6, closed sets, typed params, bounded stripped text, per-sensor write budget, one row per sensor, digest dedup |
+| T4 | A sensor makes the platform persist a secret | Settings entries are reduced to name/set/source/secret/valid; a `value` is dropped unread and never echoed (canary tests on the stored row and the read) |
+| T8 | Another tenant reads a sensor's report | `tenant_id NOT NULL`, every query tenant-scoped, 404 cross-tenant (BOLA tests) |
+| T9 | A network attacker forges a report | The same authenticated channel as the heartbeat |
+
+Tests: `config_report_test.go` (sanitizing, digest, rollup, stale rule,
+derived checklist), `config_check_catalog_test.go` (contract drift, escaping),
+`sensor_config_report_db_test.go` in `internal/infra/postgres` (tenant
+scoping, migration up/down/up) and `internal/infra/http/routes` (wire,
+dedup, heartbeat action, management read, isolation).
+
+## 12. Sources
 
 - Kubernetes, Node status (capacity, allocatable, node info, heartbeats and
   Lease): https://kubernetes.io/docs/reference/node/node-status/
