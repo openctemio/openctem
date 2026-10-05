@@ -5,10 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
-
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -18,7 +17,7 @@ import (
 // A role id from another tenant used to be stored as-is: the admin path skips
 // canGrantRoles, and nothing else looked at the role's tenant until accept.
 
-func newInvitationRoleFixture(t *testing.T) (*app.TenantService, *mockTenantRepo, *mockRoleRepo, string) {
+func newInvitationRoleFixture(t *testing.T) (*tenant.TenantService, *mockTenantRepo, *mockRoleRepo, string) {
 	t.Helper()
 	svc, repo := newTestTenantService()
 	tn := seedTenant(repo, "Team", "team-slug")
@@ -31,7 +30,7 @@ func TestCreateInvitation_RejectsRoleOfAnotherTenant(t *testing.T) {
 	svc, repo, roleRepo, tenantID := newInvitationRoleFixture(t)
 	foreign := seedCustomRole(roleRepo, role.NewID(), "foreign", "Foreign", []string{"assets:read"})
 
-	_, err := svc.CreateInvitation(context.Background(), tenantID, app.CreateInvitationInput{
+	_, err := svc.CreateInvitation(context.Background(), tenantID, tenant.CreateInvitationInput{
 		Email:   "new@example.com",
 		RoleIDs: []string{foreign.ID().String()},
 	}, shared.NewID(), audit.AuditContext{})
@@ -45,7 +44,7 @@ func TestCreateInvitation_RejectsRoleOfAnotherTenant(t *testing.T) {
 
 func TestCreateInvitation_RejectsUnknownRole(t *testing.T) {
 	svc, _, _, tenantID := newInvitationRoleFixture(t)
-	_, err := svc.CreateInvitation(context.Background(), tenantID, app.CreateInvitationInput{
+	_, err := svc.CreateInvitation(context.Background(), tenantID, tenant.CreateInvitationInput{
 		Email:   "new@example.com",
 		RoleIDs: []string{role.NewID().String()},
 	}, shared.NewID(), audit.AuditContext{})
@@ -60,7 +59,7 @@ func TestCreateInvitation_AcceptsSystemAndOwnTenantRoles(t *testing.T) {
 	tid, _ := role.ParseID(tenantID)
 	own := seedCustomRole(roleRepo, tid, "analyst", "Analyst", []string{"assets:read"})
 
-	inv, err := svc.CreateInvitation(context.Background(), tenantID, app.CreateInvitationInput{
+	inv, err := svc.CreateInvitation(context.Background(), tenantID, tenant.CreateInvitationInput{
 		Email:   "new@example.com",
 		RoleIDs: []string{viewer.ID().String(), own.ID().String()},
 	}, shared.NewID(), audit.AuditContext{})

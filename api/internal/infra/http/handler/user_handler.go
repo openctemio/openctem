@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -16,15 +16,15 @@ import (
 
 // UserHandler handles user-related HTTP requests.
 type UserHandler struct {
-	service       *app.UserService
-	tenantService *app.TenantService
+	service       *tenant.UserService
+	tenantService *tenant.TenantService
 	platformAdmin PlatformAdminChecker
 	validator     *validator.Validator
 	logger        *logger.Logger
 }
 
 // NewUserHandler creates a new user handler.
-func NewUserHandler(svc *app.UserService, tenantSvc *app.TenantService, platformAdmin PlatformAdminChecker, v *validator.Validator, log *logger.Logger) *UserHandler {
+func NewUserHandler(svc *tenant.UserService, tenantSvc *tenant.TenantService, platformAdmin PlatformAdminChecker, v *validator.Validator, log *logger.Logger) *UserHandler {
 	return &UserHandler{
 		service:       svc,
 		tenantService: tenantSvc,
@@ -158,7 +158,7 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update profile
-	input := app.UpdateProfileInput{
+	input := tenant.UpdateProfileInput{
 		Name:      req.Name,
 		Phone:     req.Phone,
 		AvatarURL: req.AvatarURL,

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/scim"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -18,11 +18,11 @@ import (
 
 // scimMemberMgr adapts the real TenantService to scim.MembershipManager,
 // mirroring cmd/server's scimMembershipAdapter (zero inviter = system).
-type scimMemberMgr struct{ svc *app.TenantService }
+type scimMemberMgr struct{ svc *tenant.TenantService }
 
 func (a scimMemberMgr) AddMember(ctx context.Context, tenantID, userID shared.ID, role string) error {
 	_, err := a.svc.AddMember(ctx, tenantID.String(),
-		app.AddMemberInput{UserID: userID, Role: role}, shared.ID{}, audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
+		tenant.AddMemberInput{UserID: userID, Role: role}, shared.ID{}, audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
 	return err
 }
 
@@ -59,7 +59,7 @@ func TestSCIMProvisioning_RoundTrip_RealDB(t *testing.T) {
 	userRepo := postgres.NewUserRepository(db)
 	tenantRepo := postgres.NewTenantRepository(db)
 	tokenRepo := postgres.NewScimTokenRepository(db)
-	tenantSvc := app.NewTenantService(tenantRepo, log)
+	tenantSvc := tenant.NewTenantService(tenantRepo, log)
 	prov := scim.NewProvisioningService(userRepo, tenantRepo, scimMemberMgr{svc: tenantSvc}, log)
 	tokenSvc := scim.NewTokenService(tokenRepo, "test-pepper", log)
 
@@ -162,7 +162,7 @@ func TestSCIMProvisioning_CrossTenantIsolation_RealDB(t *testing.T) {
 
 	userRepo := postgres.NewUserRepository(db)
 	tenantRepo := postgres.NewTenantRepository(db)
-	tenantSvc := app.NewTenantService(tenantRepo, log)
+	tenantSvc := tenant.NewTenantService(tenantRepo, log)
 	prov := scim.NewProvisioningService(userRepo, tenantRepo, scimMemberMgr{svc: tenantSvc}, log)
 
 	// Provision the user into tenant B only.

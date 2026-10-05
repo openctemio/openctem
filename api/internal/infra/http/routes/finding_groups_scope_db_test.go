@@ -22,9 +22,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -53,7 +53,7 @@ type gsHarness struct {
 	findingB2, findingP          shared.ID // FB2: B1 sharing A's component; FP: pentest on A1
 	cveA, cveB, cveB2, cveP      string
 	componentA, componentB, camp shared.ID
-	vuln                         *app.VulnerabilityService
+	vuln                         *finding.VulnerabilityService
 	views                        *savedviewapp.Service
 }
 
@@ -85,14 +85,14 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	assetRepo := postgres.NewAssetRepository(db)
 	accessRepo := postgres.NewAccessControlRepository(db)
 
-	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
+	vulnSvc := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetAccessControlRepository(accessRepo)
 	vulnSvc.SetDataScope(enforcer)
 	vulnSvc.SetAssetRepository(assetRepo)
 	vulnSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	h.vuln = vulnSvc
 
-	actionsSvc := app.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)
+	actionsSvc := finding.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)
 	actionsSvc.SetDataScope(enforcer)
 
 	remediationSvc := appremediation.NewGroupService(postgres.NewFindingRemediationKeyRepository(db), vulnSvc, nil, log)

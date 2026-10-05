@@ -23,9 +23,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -180,7 +180,7 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 	// interval just advised (RFC-035 §5.6); a v2 sensor always follows it.
 	var hints sensor.HeartbeatHints
 	if h.ingest.doorbell != nil {
-		hints = h.ingest.doorbell.Ring(r.Context(), app.DoorbellRequest{Identity: id, Aware: true})
+		hints = h.ingest.doorbell.Ring(r.Context(), sensorapp.DoorbellRequest{Identity: id, Aware: true})
 	}
 	if !id.Paused {
 		data := heartbeatData(r, &req, 2)
@@ -265,10 +265,10 @@ func (h *SensorControlV2Handler) PutConfigReport(w http.ResponseWriter, r *http.
 	case errors.Is(err, sensor.ErrConfigReportInvalid):
 		protov2.NewProblem(protov2.ProblemConfigReportInvalid).Write(w)
 		return
-	case errors.Is(err, app.ErrConfigReportSensorInactive):
+	case errors.Is(err, sensorapp.ErrConfigReportSensorInactive):
 		protov2.NewProblem(protov2.ProblemScopeDenied).Write(w)
 		return
-	case errors.Is(err, app.ErrConfigReportUnavailable):
+	case errors.Is(err, sensorapp.ErrConfigReportUnavailable):
 		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)
 		return
 	default:
@@ -324,10 +324,10 @@ func (h *SensorControlV2Handler) PutManifest(w http.ResponseWriter, r *http.Requ
 	case errors.Is(err, sensor.ErrManifestInvalid):
 		protov2.NewProblem(protov2.ProblemManifestInvalid).Write(w)
 		return
-	case errors.Is(err, app.ErrManifestSensorInactive):
+	case errors.Is(err, sensorapp.ErrManifestSensorInactive):
 		protov2.NewProblem(protov2.ProblemScopeDenied).Write(w)
 		return
-	case errors.Is(err, app.ErrManifestUnavailable):
+	case errors.Is(err, sensorapp.ErrManifestUnavailable):
 		h.logger.Warn("sensor manifest not stored", "sensor_id", s.ID, "error", err)
 		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)
 		return
@@ -401,8 +401,8 @@ func freeSlotsNow(s *sensor.Sensor) *int {
 // heartbeatData maps a heartbeat body (v1 and v2 share it) to the service
 // input, with the protocol the heartbeat arrived on and the client's
 // User-Agent for the fleet's protocol telemetry (RFC-029 §5.3).
-func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.SensorHeartbeatData {
-	return app.SensorHeartbeatData{
+func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) sensorapp.SensorHeartbeatData {
+	return sensorapp.SensorHeartbeatData{
 		Version:    req.Version,
 		Hostname:   req.Hostname,
 		InstanceID: req.InstanceID,

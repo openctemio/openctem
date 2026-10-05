@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -22,7 +22,7 @@ func TestUpdateHeartbeat_CapabilityReportIsSanitized(t *testing.T) {
 	svc := newSensorSvcTestService(repo)
 	a := repo.seedSensor(shared.NewID(), "s1", sensor.SensorTypeWorker)
 
-	err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{
+	err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorapp.SensorHeartbeatData{
 		Report: &sensor.CapabilityReportInput{
 			Tools: []sensor.ReportedTool{
 				{Name: "nuclei", Version: "3.3.0", Installed: true},
@@ -59,13 +59,13 @@ func TestUpdateHeartbeat_NoReportLeavesStoredReport(t *testing.T) {
 	svc := newSensorSvcTestService(repo)
 	a := repo.seedSensor(shared.NewID(), "s1", sensor.SensorTypeWorker)
 
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{Version: "1.0"}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorapp.SensorHeartbeatData{Version: "1.0"}); err != nil {
 		t.Fatal(err)
 	}
 	if repo.lastHeartbeat.Report != nil {
 		t.Fatalf("an old SDK's heartbeat must not write a report: %+v", repo.lastHeartbeat.Report)
 	}
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{Report: &sensor.CapabilityReportInput{}}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorapp.SensorHeartbeatData{Report: &sensor.CapabilityReportInput{}}); err != nil {
 		t.Fatal(err)
 	}
 	if repo.lastHeartbeat.Report != nil {
@@ -81,7 +81,7 @@ func TestUpdateHeartbeat_CatalogErrorSkipsReport(t *testing.T) {
 	svc := newSensorSvcTestService(repo)
 	a := repo.seedSensor(shared.NewID(), "s1", sensor.SensorTypeWorker)
 
-	err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{
+	err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorapp.SensorHeartbeatData{
 		Report: &sensor.CapabilityReportInput{Tools: []sensor.ReportedTool{{Name: "nuclei", Installed: true}}},
 	})
 	if err != nil {
@@ -103,7 +103,7 @@ func TestUpdateHeartbeat_ReportWithoutLists(t *testing.T) {
 	svc := newSensorSvcTestService(repo)
 	a := repo.seedSensor(shared.NewID(), "s1", sensor.SensorTypeWorker)
 
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorapp.SensorHeartbeatData{
 		Report: &sensor.CapabilityReportInput{MaxConcurrentJobs: 3, OS: "linux"},
 	}); err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestUpdateSensor_ToolLimits(t *testing.T) {
 
 	upd := func(tools, caps []string) *sensor.Sensor {
 		t.Helper()
-		out, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		out, err := svc.UpdateSensor(context.Background(), sensorapp.UpdateSensorInput{
 			TenantID: tenantID.String(), SensorID: a.ID.String(), Tools: tools, Capabilities: caps,
 		})
 		if err != nil {
@@ -148,7 +148,7 @@ func TestUpdateSensor_ToolLimits(t *testing.T) {
 func TestCreateSensor_ToolLimitsAreCanonical(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	svc := newSensorSvcTestService(repo)
-	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+	out, err := svc.CreateSensor(context.Background(), sensorapp.CreateSensorInput{
 		TenantID: shared.NewID().String(), Name: "s", Type: "worker",
 		Tools: []string{" Nuclei ", "gitleaks", "nuclei"},
 	})

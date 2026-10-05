@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -114,11 +114,11 @@ func (m *mockAttStorage) Delete(_ context.Context, _, key string) error {
 // Helper
 // =============================================================================
 
-func newAttSvc() (*app.AttachmentService, *mockAttRepo, *mockAttStorage) {
+func newAttSvc() (*integration.AttachmentService, *mockAttRepo, *mockAttStorage) {
 	repo := newMockAttRepo()
 	st := newMockAttStorage()
 	log := logger.New(logger.Config{Level: "error", Format: "text"})
-	return app.NewAttachmentService(repo, st, log), repo, st
+	return integration.NewAttachmentService(repo, st, log), repo, st
 }
 
 var (
@@ -127,8 +127,8 @@ var (
 	attCID = shared.NewID().String()
 )
 
-func mkUpload() app.UploadInput {
-	return app.UploadInput{
+func mkUpload() integration.UploadInput {
+	return integration.UploadInput{
 		TenantID: attTID, Filename: "shot.png", ContentType: "image/png",
 		Size: 1024, Reader: strings.NewReader("fakepng"), UploadedBy: attUID,
 		ContextType: "finding", ContextID: attCID,

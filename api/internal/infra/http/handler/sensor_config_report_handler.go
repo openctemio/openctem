@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -69,7 +68,7 @@ type SensorConfigObservedItem struct {
 	Value string `json:"value"`
 }
 
-func toSensorConfigReportResponse(v *app.SensorConfigReportView) SensorConfigReportResponse {
+func toSensorConfigReportResponse(v *sensorapp.ConfigReportView) SensorConfigReportResponse {
 	out := SensorConfigReportResponse{
 		State: v.State, Stale: v.Stale, Health: v.Health,
 		ObservedAt: rfc3339Ptr(v.ObservedAt), ReceivedAt: rfc3339Ptr(v.ReceivedAt),

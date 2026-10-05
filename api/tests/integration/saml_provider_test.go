@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/samlprovider"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -109,7 +109,7 @@ func TestSAMLService_Metadata(t *testing.T) {
 	}
 	t.Cleanup(func() { cleanupTestData(sqlDB, tenantID) })
 
-	svc := app.NewSAMLService(postgres.NewSAMLProviderRepository(db), postgres.NewTenantRepository(db), nil, logger.NewNop())
+	svc := auth.NewSAMLService(postgres.NewSAMLProviderRepository(db), postgres.NewTenantRepository(db), nil, logger.NewNop())
 
 	xmlStr, err := svc.Metadata(ctx, slug, "https://app.openctem.io")
 	if err != nil {

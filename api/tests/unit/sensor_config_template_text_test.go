@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -12,11 +12,11 @@ import (
 
 // renderShippedTemplates renders the templates the API ships in
 // configs/sensor-templates (and, with a missing dir, the built-in fallbacks).
-func renderShippedTemplates(t *testing.T, dir string) *app.RenderedTemplates {
+func renderShippedTemplates(t *testing.T, dir string) *sensorapp.RenderedTemplates {
 	t.Helper()
-	svc := app.NewSensorConfigTemplateService(dir, logger.NewNop())
+	svc := sensorapp.NewSensorConfigTemplateService(dir, logger.NewNop())
 	tenantID := shared.NewID()
-	out, err := svc.Render(app.SensorTemplateData{
+	out, err := svc.Render(sensorapp.SensorTemplateData{
 		Sensor: &sensor.Sensor{
 			ID: shared.NewID(), TenantID: &tenantID, Name: "edge-1", Tools: []string{"nuclei"},
 			Type: sensor.SensorTypeWorker, ExecutionMode: sensor.ExecutionModeDaemon,

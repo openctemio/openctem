@@ -10,7 +10,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -32,7 +32,7 @@ func TestVulnerabilityService_AssigneeMustBeActiveMember(t *testing.T) {
 	tenant := shared.NewID()
 	member, outsider := shared.NewID(), shared.NewID()
 
-	newSvc := func(checker app.AssigneeChecker) (*app.VulnerabilityService, string) {
+	newSvc := func(checker finding.AssigneeChecker) (*finding.VulnerabilityService, string) {
 		svc, _, _ := newVulnTestService()
 		svc.SetAssigneeChecker(checker)
 		f := createTestFindingViaService(t, svc, tenant.String())
@@ -50,7 +50,7 @@ func TestVulnerabilityService_AssigneeMustBeActiveMember(t *testing.T) {
 		t.Run("single: "+name+" refused", func(t *testing.T) {
 			svc, id := newSvc(only)
 			f, err := svc.AssignFinding(context.Background(), id, tenant.String(), user.String(), "")
-			if !errors.Is(err, app.ErrInvalidAssignee) {
+			if !errors.Is(err, finding.ErrInvalidAssignee) {
 				t.Fatalf("err = %v, want ErrInvalidAssignee", err)
 			}
 			if f != nil {
@@ -64,16 +64,16 @@ func TestVulnerabilityService_AssigneeMustBeActiveMember(t *testing.T) {
 	}
 	t.Run("no checker: refused (fail closed)", func(t *testing.T) {
 		svc, id := newSvc(nil)
-		if _, err := svc.AssignFinding(context.Background(), id, tenant.String(), member.String(), ""); !errors.Is(err, app.ErrInvalidAssignee) {
+		if _, err := svc.AssignFinding(context.Background(), id, tenant.String(), member.String(), ""); !errors.Is(err, finding.ErrInvalidAssignee) {
 			t.Fatalf("err = %v, want ErrInvalidAssignee", err)
 		}
 	})
 	t.Run("bulk: outsider refused before any write", func(t *testing.T) {
 		svc, id := newSvc(only)
-		res, err := svc.BulkAssignFindings(context.Background(), tenant.String(), app.BulkAssignInput{
+		res, err := svc.BulkAssignFindings(context.Background(), tenant.String(), finding.BulkAssignInput{
 			FindingIDs: []string{id}, UserID: outsider.String(),
 		})
-		if !errors.Is(err, app.ErrInvalidAssignee) {
+		if !errors.Is(err, finding.ErrInvalidAssignee) {
 			t.Fatalf("err = %v, want ErrInvalidAssignee", err)
 		}
 		if res != nil {

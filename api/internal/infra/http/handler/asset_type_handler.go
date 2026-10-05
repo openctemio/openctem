@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assettype"
@@ -22,13 +22,13 @@ import (
 // AssetTypeHandler handles asset type-related HTTP requests.
 // Asset types are read-only system configuration.
 type AssetTypeHandler struct {
-	service   *app.AssetTypeService
+	service   *assetapp.AssetTypeService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewAssetTypeHandler creates a new asset type handler.
-func NewAssetTypeHandler(svc *app.AssetTypeService, v *validator.Validator, log *logger.Logger) *AssetTypeHandler {
+func NewAssetTypeHandler(svc *assetapp.AssetTypeService, v *validator.Validator, log *logger.Logger) *AssetTypeHandler {
 	return &AssetTypeHandler{
 		service:   svc,
 		validator: v,

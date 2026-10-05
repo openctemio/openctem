@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/findingsource"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -226,11 +226,11 @@ func (m *findingSrcMockCategoryRepository) ListActive(_ context.Context) ([]*fin
 // Helper Functions
 // ============================================================================
 
-func newTestFindingSourceService() (*app.FindingSourceService, *findingSrcMockRepository, *findingSrcMockCategoryRepository) {
+func newTestFindingSourceService() (*finding.FindingSourceService, *findingSrcMockRepository, *findingSrcMockCategoryRepository) {
 	repo := newFindingSrcMockRepository()
 	catRepo := newFindingSrcMockCategoryRepository()
 	log := logger.NewNop()
-	svc := app.NewFindingSourceService(repo, catRepo, log)
+	svc := finding.NewFindingSourceService(repo, catRepo, log)
 	return svc, repo, catRepo
 }
 

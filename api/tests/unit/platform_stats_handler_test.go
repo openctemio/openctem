@@ -14,7 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 
 	"github.com/stretchr/testify/assert"
@@ -135,7 +135,7 @@ func (m *mockSensorRepository) GetTenantSensorStats(_ context.Context, _ shared.
 
 func newPlatformStatsHandler(repo *mockSensorRepository) *handler.PlatformStatsHandler {
 	log := logger.NewNop()
-	svc := app.NewSensorService(repo, nil, log)
+	svc := sensorapp.NewSensorService(repo, nil, log)
 	return handler.NewPlatformStatsHandler(svc, log)
 }
 
