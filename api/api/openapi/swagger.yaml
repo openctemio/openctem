@@ -23078,6 +23078,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -24528,6 +24539,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -25231,6 +25253,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -25901,6 +25934,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
@@ -26624,6 +26668,17 @@ paths:
           type: string
         name: asset_criticality_not
         type: array
+      - collectionFormat: csv
+        description: 'asset owner id: any of (comma list)'
+        in: query
+        items:
+          type: string
+        name: asset_owner_id
+        type: array
+      - description: asset owner id is unset (true) or set (false)
+        in: query
+        name: asset_owner_id_null
+        type: boolean
       - description: exploit available equals
         in: query
         name: exploit_available
