@@ -433,8 +433,13 @@ func (i *Integration) SetStatusMessage(message string) {
 	i.updatedAt = time.Now()
 }
 
+// SetConnected records a successful connection. A disabled integration stays
+// disabled: only EnableIntegration (which resets the status to pending first)
+// brings it back, never a read, a test or a sync.
 func (i *Integration) SetConnected() {
-	i.status = StatusConnected
+	if i.status != StatusDisabled {
+		i.status = StatusConnected
+	}
 	i.statusMessage = ""
 	i.syncError = ""
 	now := time.Now()
@@ -442,8 +447,12 @@ func (i *Integration) SetConnected() {
 	i.updatedAt = now
 }
 
+// SetError records a failed connection. A disabled integration stays
+// disabled; the reason is still recorded.
 func (i *Integration) SetError(err string) {
-	i.status = StatusError
+	if i.status != StatusDisabled {
+		i.status = StatusError
+	}
 	i.syncError = err
 	i.statusMessage = err
 	now := time.Now()

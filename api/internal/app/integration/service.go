@@ -510,6 +510,12 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 		return nil, err
 	}
 
+	// The stored token was issued for the current host: a new host needs new
+	// credentials, so a manager cannot redirect the token to a server they run.
+	if err := requireCredentialsForHostChange(intg, input.BaseURL, input.Credentials); err != nil {
+		return nil, err
+	}
+
 	// Apply updates to integration
 	if input.Name != nil {
 		intg.SetName(*input.Name)
@@ -908,6 +914,11 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 	// Verify this is an SCM integration
 	if !intg.IsSCM() {
 		return nil, fmt.Errorf("%w: not an SCM integration", shared.ErrValidation)
+	}
+	// A disabled integration is not used: no call to the provider with its
+	// stored token, and no status change from a read.
+	if intg.Status() == integrationdom.StatusDisabled {
+		return nil, ErrIntegrationDisabled
 	}
 
 	// Get SCM extension for organization
@@ -1669,6 +1680,11 @@ func (s *IntegrationService) GetSCMRepository(ctx context.Context, input GetSCMR
 	if !intg.IsSCM() {
 		return nil, fmt.Errorf("%w: not an SCM integration", shared.ErrValidation)
 	}
+	// A disabled integration is not used: no call to the provider with its
+	// stored token, and no status change from a read.
+	if intg.Status() == integrationdom.StatusDisabled {
+		return nil, ErrIntegrationDisabled
+	}
 
 	// Get SCM extension for organization
 	scmExt, _ := s.scmExtRepo.GetByIntegrationID(ctx, intgID)
@@ -1931,11 +1947,15 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 	// hec_url/index/sourcetype) without clobbering keys a provider already set
 	// above (Slack channel_name, Telegram chat_id).
 	if len(input.Metadata) > 0 {
+		callerMeta, err := sanitizeCallerMetadata(input.Metadata)
+		if err != nil {
+			return nil, err
+		}
 		merged := intg.Metadata()
 		if merged == nil {
-			merged = make(map[string]any, len(input.Metadata))
+			merged = make(map[string]any, len(callerMeta))
 		}
-		for k, v := range input.Metadata {
+		for k, v := range callerMeta {
 			merged[k] = v
 		}
 		intg.SetMetadata(merged)
@@ -2133,11 +2153,15 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 	// Merge caller-supplied non-sensitive metadata (e.g. Splunk HEC
 	// hec_url/index/sourcetype) onto whatever the provider branch set above.
 	if input.Metadata != nil {
+		callerMeta, err := sanitizeCallerMetadata(input.Metadata)
+		if err != nil {
+			return nil, err
+		}
 		merged := intg.Metadata()
 		if merged == nil {
-			merged = make(map[string]any, len(input.Metadata))
+			merged = make(map[string]any, len(callerMeta))
 		}
-		for k, v := range input.Metadata {
+		for k, v := range callerMeta {
 			merged[k] = v
 		}
 		intg.SetMetadata(merged)

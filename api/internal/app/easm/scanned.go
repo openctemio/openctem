@@ -1,17 +1,29 @@
 package easm
 
-// tenant_scanned attribution evidence (RFC-036 §6.4, owner decision O8):
-// assets a tenant's own scan reported get evidence naming the sensor, the
-// command, the scan run, the tool and the report, and their attribution is
-// re-evaluated (automation only raises it and never overrides a person).
+// Attribution of what a sensor report wrote (RFC-036 §6.4; owner decision O8
+// as narrowed by research/22 E7):
 //
-// Which assets qualify is decided by ingest (command-bound reports, assets
-// the report may change); this side only records. Every write is
-// tenant-scoped in the store: an asset id of another tenant writes nothing.
+//   - a target the tenant typed gets tenant_scanned evidence (strong); an
+//     automatic record is re-evaluated unless it is needs_review or
+//     rejected, so a scan cannot launder a name past the review queue;
+//   - a name the scan found while scanning something else gets
+//     tenant_scan_discovered evidence (medium, never confirms on its own).
+//     A new internet-facing name gets a needs_review record, or a confirmed
+//     one when it is at or under a verified domain;
+//   - an unsolicited report records nothing but a candidate record for a new
+//     internet-facing asset;
+//   - an existing asset without a record keeps having none (the active-scan
+//     gate decides by scope target and seed), and a person's decision is
+//     never touched.
+//
+// Which assets qualify is decided by ingest; this side records. Every write
+// is tenant-scoped in the store: an asset id of another tenant writes nothing.
 
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -32,34 +44,162 @@ type ScanEvidenceStore interface {
 	ScanRunOf(ctx context.Context, tenantID, stepRunID shared.ID) (runID, scanID string, err error)
 }
 
+// VerifiedRoots lists the tenant's verified domains (*postgres.EASMSeedRepository).
+type VerifiedRoots interface {
+	VerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
+}
+
 // ScanStamper implements ingest.ScanAttributionStamper.
 type ScanStamper struct {
 	store ScanEvidenceStore
+	roots VerifiedRoots
 }
 
 var _ ingest.ScanAttributionStamper = (*ScanStamper)(nil)
 
-// NewScanStamper creates the stamper.
-func NewScanStamper(store ScanEvidenceStore) *ScanStamper {
-	return &ScanStamper{store: store}
+// NewScanStamper creates the stamper. roots may be nil: then no discovered
+// name is confirmed through a verified domain (all go to review).
+func NewScanStamper(store ScanEvidenceStore, roots VerifiedRoots) *ScanStamper {
+	return &ScanStamper{store: store, roots: roots}
 }
 
 // TechniqueSensorScan is the technique of a tenant-scan sighting whose tool
 // is unknown.
 const TechniqueSensorScan = "sensor_scan"
 
-// StampScanned records the evidence and raises the attribution of assets
-// that already have an automatic record. An asset with no record is a
-// legacy or scan-created asset and is confirmed by construction: it gets the
-// evidence only.
-func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, prov ingest.ScanProvenance) error {
-	if len(assetIDs) == 0 || prov.SensorID.IsZero() {
+// TechniqueVerifiedDomain is the technique of the verified-root evidence a
+// scan-discovered name gets when it sits under a verified domain.
+const TechniqueVerifiedDomain = "verified_domain"
+
+// StampScanned records evidence and attribution for the assets a sensor
+// report wrote.
+func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, assets []ingest.ScannedAsset, prov ingest.ScanProvenance) error {
+	if len(assets) == 0 || prov.SensorID.IsZero() {
 		return nil
 	}
-	ids := make([]string, 0, len(assetIDs))
-	for _, id := range assetIDs {
-		ids = append(ids, id.String())
+	if prov.Unsolicited {
+		return s.holdUnsolicited(ctx, tenantID, assets)
 	}
+	observed, err := s.observed(ctx, tenantID, prov)
+	if err != nil {
+		return err
+	}
+	technique := TechniqueSensorScan
+	if prov.Tool != "" {
+		technique = truncate(prov.Tool, 100)
+	}
+	// One row per (asset, rule, sensor): a re-scan refreshes the datum and
+	// last_observed_at instead of piling up rows.
+	source := "sensor:" + prov.SensorID.String()
+
+	all := make([]string, 0, len(assets))
+	var typed, found []string
+	byID := make(map[string]ingest.ScannedAsset, len(assets))
+	for _, a := range assets {
+		id := a.ID.String()
+		byID[id] = a
+		all = append(all, id)
+		if a.Typed {
+			typed = append(typed, id)
+		} else {
+			found = append(found, id)
+		}
+	}
+	if err := s.evidence(ctx, tenantID, typed, attribution.RuleTenantScanned, technique, source, observed); err != nil {
+		return err
+	}
+	if err := s.evidence(ctx, tenantID, found, attribution.RuleScanDiscovered, technique, source, observed); err != nil {
+		return err
+	}
+
+	records, err := s.store.Records(ctx, tenantID, all)
+	if err != nil {
+		return err
+	}
+	// New internet-facing names the scan found get a record; one under a
+	// verified domain gets the verified-root evidence first.
+	var fresh []string
+	for _, id := range found {
+		a := byID[id]
+		if _, has := records[id]; !has && a.Created && internetFacing(a.Type.Type, a.Type.SubType) {
+			fresh = append(fresh, id)
+		}
+	}
+	if err := s.verifiedEvidence(ctx, tenantID, fresh, byID); err != nil {
+		return err
+	}
+
+	evaluate := toEvaluate(all, records, byID, fresh)
+	if len(evaluate) == 0 {
+		return nil
+	}
+	fired, err := s.store.FiredRules(ctx, tenantID, evaluate)
+	if err != nil {
+		return err
+	}
+	for _, id := range evaluate {
+		dec, err := attribution.Evaluate(fired[id])
+		if err != nil {
+			return err
+		}
+		var current *attribution.Record
+		if rec, has := records[id]; has {
+			current = &rec
+		}
+		if err := s.store.SaveAutomatic(ctx, tenantID, id, attribution.Merge(current, dec)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// toEvaluate picks the assets whose automatic record is (re)computed.
+func toEvaluate(all []string, records map[string]attribution.Record, byID map[string]ingest.ScannedAsset, fresh []string) []string {
+	out := make([]string, 0, len(all))
+	for _, id := range all {
+		rec, has := records[id]
+		switch {
+		case has && rec.HumanDecided:
+			continue // a person decided; automation never overrides it
+		case byID[id].Typed && has && (rec.State == attribution.StateNeedsReview || rec.State == attribution.StateRejected):
+			continue // a scan of it does not take it past review (E7)
+		case !has && !slices.Contains(fresh, id):
+			continue // no record: the active-scan gate decides by scope and seed
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+// holdUnsolicited gives a new internet-facing asset from an unsolicited
+// report a candidate record: hidden from the inventory and never probed
+// until a person decides.
+func (s *ScanStamper) holdUnsolicited(ctx context.Context, tenantID shared.ID, assets []ingest.ScannedAsset) error {
+	var ids []string
+	for _, a := range assets {
+		if a.Created && internetFacing(a.Type.Type, a.Type.SubType) {
+			ids = append(ids, a.ID.String())
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	records, err := s.store.Records(ctx, tenantID, ids)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, has := records[id]; has {
+			continue
+		}
+		if err := s.store.SaveAutomatic(ctx, tenantID, id, attribution.Decision{State: attribution.StateCandidate}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *ScanStamper) observed(ctx context.Context, tenantID shared.ID, prov ingest.ScanProvenance) (map[string]any, error) {
 	observed := map[string]any{
 		"sensor_id":   prov.SensorID.String(),
 		"observed_at": prov.ObservedAt.UTC().Format(time.RFC3339),
@@ -68,7 +208,7 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 		observed["command_id"] = prov.CommandID.String()
 	}
 	if prov.Tool != "" {
-		observed["tool"] = prov.Tool
+		observed["tool"] = truncate(prov.Tool, 100)
 	}
 	if prov.ReportID != "" {
 		observed["report_id"] = truncate(prov.ReportID, 200)
@@ -77,7 +217,7 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 		observed["step_run_id"] = prov.StepRunID.String()
 		runID, scanID, err := s.store.ScanRunOf(ctx, tenantID, *prov.StepRunID)
 		if err != nil {
-			return fmt.Errorf("resolve scan run: %w", err)
+			return nil, fmt.Errorf("resolve scan run: %w", err)
 		}
 		if runID != "" {
 			observed["pipeline_run_id"] = runID
@@ -86,56 +226,71 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 			observed["scan_id"] = scanID
 		}
 	}
-	technique := TechniqueSensorScan
-	if prov.Tool != "" {
-		technique = truncate(prov.Tool, 100)
-	}
-	w, _, err := attribution.Weight(attribution.RuleTenantScanned)
-	if err != nil {
-		return err
-	}
-	ev := attribution.Evidence{
-		Rule:      attribution.RuleTenantScanned,
-		Technique: technique,
-		// One row per (asset, sensor): a re-scan refreshes the datum and
-		// last_observed_at instead of piling up rows.
-		Source:   "sensor:" + prov.SensorID.String(),
-		Weight:   w,
-		Observed: observed,
-	}
-	if err := s.store.UpsertEvidenceBulk(ctx, tenantID, ids, ev); err != nil {
-		return err
-	}
+	return observed, nil
+}
 
-	records, err := s.store.Records(ctx, tenantID, ids)
-	if err != nil {
-		return err
-	}
-	if len(records) == 0 {
+func (s *ScanStamper) evidence(ctx context.Context, tenantID shared.ID, ids []string, rule attribution.Rule, technique, source string, observed map[string]any) error {
+	if len(ids) == 0 {
 		return nil
 	}
-	recorded := make([]string, 0, len(records))
-	for id := range records {
-		recorded = append(recorded, id)
-	}
-	fired, err := s.store.FiredRules(ctx, tenantID, recorded)
+	w, _, err := attribution.Weight(rule)
 	if err != nil {
 		return err
 	}
-	for _, id := range recorded {
-		rec := records[id]
-		if rec.HumanDecided {
+	return s.store.UpsertEvidenceBulk(ctx, tenantID, ids, attribution.Evidence{
+		Rule: rule, Technique: technique, Source: source, Weight: w, Observed: observed,
+	})
+}
+
+// verifiedEvidence records fqdn_under_verified_root on the fresh names at or
+// under one of the tenant's verified domains (one row per root).
+func (s *ScanStamper) verifiedEvidence(ctx context.Context, tenantID shared.ID, fresh []string, byID map[string]ingest.ScannedAsset) error {
+	if len(fresh) == 0 || s.roots == nil {
+		return nil
+	}
+	roots, err := s.roots.VerifiedDomainNames(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("list verified domains: %w", err)
+	}
+	byRoot := map[string][]string{}
+	for _, id := range fresh {
+		host := hostOf(byID[id].Name)
+		if host == "" {
 			continue
 		}
-		dec, err := attribution.Evaluate(fired[id])
-		if err != nil {
-			return err
+		for _, r := range roots {
+			r = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(r), "."))
+			if r != "" && (host == r || strings.HasSuffix(host, "."+r)) {
+				byRoot[r] = append(byRoot[r], id)
+				break
+			}
 		}
-		if err := s.store.SaveAutomatic(ctx, tenantID, id, attribution.Merge(&rec, dec)); err != nil {
+	}
+	w, _, err := attribution.Weight(attribution.RuleVerifiedRoot)
+	if err != nil {
+		return err
+	}
+	for root, ids := range byRoot {
+		if err := s.store.UpsertEvidenceBulk(ctx, tenantID, ids, attribution.Evidence{
+			Rule: attribution.RuleVerifiedRoot, Technique: TechniqueVerifiedDomain, Source: "verified_domain:" + root,
+			Weight: w, Observed: map[string]any{"root": root},
+		}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// hostOf is the lower-case host an asset name names ("" for none).
+func hostOf(name string) string {
+	h := strings.ToLower(strings.TrimSpace(name))
+	if i := strings.Index(h, "://"); i >= 0 {
+		h = h[i+3:]
+	}
+	if i := strings.IndexAny(h, "/?#:"); i >= 0 {
+		h = h[:i]
+	}
+	return strings.TrimSuffix(h, ".")
 }
 
 func truncate(s string, n int) string {
