@@ -1044,8 +1044,12 @@ func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Trigger pipeline failure if this command is part of a pipeline
-	h.triggerPipelineFailed(r.Context(), cmd, req.ErrorMessage)
+	// Trigger pipeline failure if this command is part of a pipeline. A
+	// refused job re-queued to another sensor (research/25 D8) has not
+	// failed.
+	if cmd.Status == commanddom.CommandStatusFailed {
+		h.triggerPipelineFailed(r.Context(), cmd, cmd.ErrorMessage)
+	}
 
 	// A failed retest check settles its retest as unknown (RFC-039).
 	h.triggerRetestSettle(cmd)
