@@ -13206,6 +13206,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -14842,6 +14846,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -15219,6 +15227,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -15528,6 +15540,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -15983,6 +15999,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
