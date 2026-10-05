@@ -447,16 +447,15 @@ func movePaths(root string) error {
 	return nil
 }
 
-// skipFile excludes the rename tooling, the vocabulary guard and the legacy
-// protocol v1 package: all three name the old vocabulary on purpose.
+// skipFile excludes the rename tooling and the vocabulary guard: both name
+// the old vocabulary on purpose.
 func skipFile(root, file string) bool {
 	rel, err := filepath.Rel(root, file)
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return true // outside the module, e.g. a generated test main in the build cache
 	}
 	rel = filepath.ToSlash(rel)
-	return strings.HasPrefix(rel, "scripts/rename/") || strings.HasPrefix(rel, "tools/lint/sensorvocab/") ||
-		strings.HasPrefix(rel, "pkg/sensorproto/legacyv1/")
+	return strings.HasPrefix(rel, "scripts/rename/") || strings.HasPrefix(rel, "tools/lint/sensorvocab/")
 }
 
 // shouldMove limits path renames to code and config the API owns. Migrations
