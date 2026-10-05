@@ -996,6 +996,11 @@ results an out-of-scope id is reported exactly like an unknown id.
   clone and import set `created_by` to the actor (act scope checked on the
   direct targets); a scheduled run refuses a scan with no owner and pauses a
   scan whose owner is no longer an active member (`scan.refuseOwnerlessSchedule`).
+
+- **Asset-less exposures are full-data only for writes too** (D11, research
+  21b H1): exposure create, ingest and bulk ingest refuse an exposure with no
+  `asset_id` from a restricted caller (400), so the fingerprint upsert cannot
+  overwrite an asset-less exposure a restricted member cannot see.
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
