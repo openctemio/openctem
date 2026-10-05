@@ -97,7 +97,7 @@ func WithGrants(g GrantReader, o GrantRefusalObserver) Option {
 const RefusalLayerGrant = "grant"
 
 // ErrOutOfGrant: the command lies outside the claiming sensor's grant. It
-// reads as "claimed" (v2 command-claimed, v1 409), so a deployed sensor
+// reads as "claimed" (command-claimed), so a deployed sensor
 // drops the command instead of treating the answer as a lost key, and the
 // command stays pending for a sensor whose grant covers it. The refusal is
 // audited (sensor.claim_refused_grant) with the dimension.

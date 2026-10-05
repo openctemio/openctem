@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
@@ -29,7 +29,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -57,7 +56,7 @@ type scanCommandGate interface {
 type CommandHandler struct {
 	service          *command.Service
 	scanGate         scanCommandGate
-	audit            *app.AuditService
+	audit            *auditsvc.AuditService
 	pipelineService  *pipelinesvc.Service
 	validationIngest validationEvidenceIngester
 	retestEvidence   retestEvidenceRecorder
@@ -81,7 +80,7 @@ func NewCommandHandler(svc *command.Service, v *validator.Validator, log *logger
 // the API in the tenant's audit log. A command makes a sensor run something on
 // the tenant's network; the sensor's own poll/ack/complete calls are not
 // audited here.
-func (h *CommandHandler) SetAuditService(svc *app.AuditService) {
+func (h *CommandHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 
@@ -306,7 +305,7 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event := app.NewSuccessEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, cmd.ID.String()).
+	event := auditsvc.NewSuccessEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, cmd.ID.String()).
 		WithResourceName(string(cmd.Type)).
 		WithMessage("Command " + string(cmd.Type) + " created")
 	if cmd.SensorID != nil {
@@ -340,7 +339,7 @@ func auditTargetList(targets []string) []string {
 // a scan command. A refusal is answered and audited here; ok is false then.
 func (h *CommandHandler) gateScanCommand(w http.ResponseWriter, r *http.Request, tenantID string, input *command.CreateInput) (*scanapp.GatedCommand, bool) {
 	deny := func(reason string) {
-		event := app.NewDeniedEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, "", reason).
+		event := auditsvc.NewDeniedEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, "", reason).
 			WithResourceName(input.Type).
 			WithMessage("Scan command refused: " + reason)
 		if input.SensorID != "" {
@@ -540,183 +539,6 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
-}
-
-// Poll handles GET /api/v1/agent/commands - sensor polling endpoint
-// @Summary      Poll commands
-// @Description  Sensor polls for pending commands to execute
-// @Tags         Sensor
-// @Accept       json
-// @Produce      json
-// @Param        limit  query     int  false  "Max commands to return" default(10)
-// @Success      200  {array}   legacyv1.Command
-// @Failure      401  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     ApiKeyAuth
-// @Router       /agent/commands [get]
-func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
-	agt := SensorFromContext(r.Context())
-	if agt == nil {
-		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
-		return
-	}
-	if !requireSensorTenant(w, agt) {
-		return
-	}
-
-	limit := parseQueryInt(r.URL.Query().Get("limit"), 10)
-
-	commands, err := h.service.Poll(r.Context(), command.PollInput{
-		TenantID: agt.TenantID.String(),
-		SensorID: agt.ID.String(),
-		// Pass the sensor's advertised capabilities so the poll only returns
-		// capability-scoped commands (e.g. a validate:nuclei job) to a sensor
-		// that can actually execute them.
-		Capabilities: agt.EffectiveCapabilities(),
-		Limit:        limit,
-		// Never more scans than the sensor has free slots (RFC-030 D5).
-		MaxScanCommands: freeSlotsNow(agt),
-	})
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	resp := legacyv1.NewCommands(commands)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-// Acknowledge handles POST /api/v1/agent/commands/{id}/acknowledge
-// @Summary      Acknowledge command
-// @Description  Sensor acknowledges receipt of a command
-// @Tags         Sensor
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Command ID"
-// @Success      200  {object}  legacyv1.Command
-// @Failure      400  {object}  apierror.Error
-// @Failure      401  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Security     ApiKeyAuth
-// @Router       /agent/commands/{id}/acknowledge [post]
-func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
-	agt := SensorFromContext(r.Context())
-	if agt == nil {
-		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
-		return
-	}
-	if !requireSensorTenant(w, agt) {
-		return
-	}
-
-	commandID := chi.URLParam(r, "id")
-
-	cmd, err := h.service.Acknowledge(r.Context(), agt.TenantID.String(), agt.ID.String(), commandID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
-}
-
-// Start handles POST /api/v1/agent/commands/{id}/start
-// @Summary      Start command
-// @Description  Sensor reports that command execution has started
-// @Tags         Sensor
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Command ID"
-// @Success      200  {object}  legacyv1.Command
-// @Failure      400  {object}  apierror.Error
-// @Failure      401  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Security     ApiKeyAuth
-// @Router       /agent/commands/{id}/start [post]
-func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
-	agt := SensorFromContext(r.Context())
-	if agt == nil {
-		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
-		return
-	}
-	if !requireSensorTenant(w, agt) {
-		return
-	}
-
-	commandID := chi.URLParam(r, "id")
-
-	cmd, err := h.service.Start(r.Context(), agt.TenantID.String(), agt.ID.String(), commandID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	h.triggerPipelineStarted(r.Context(), cmd)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
-}
-
-// Complete handles POST /api/v1/agent/commands/{id}/complete
-// @Summary      Complete command
-// @Description  Sensor reports successful command completion with optional result
-// @Tags         Sensor
-// @Accept       json
-// @Produce      json
-// @Param        id    path      string                      true  "Command ID"
-// @Param        body  body      UpdateCommandStatusRequest  false "Completion result"
-// @Success      200   {object}  legacyv1.Command
-// @Failure      400   {object}  apierror.Error
-// @Failure      401   {object}  apierror.Error
-// @Failure      404   {object}  apierror.Error
-// @Security     ApiKeyAuth
-// @Router       /agent/commands/{id}/complete [post]
-func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
-	agt := SensorFromContext(r.Context())
-	if agt == nil {
-		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
-		return
-	}
-	if !requireSensorTenant(w, agt) {
-		return
-	}
-
-	commandID := chi.URLParam(r, "id")
-
-	var req UpdateCommandStatusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// Empty body is ok for completion
-		req = UpdateCommandStatusRequest{}
-	}
-
-	cmd, err := h.service.Complete(r.Context(), command.CompleteInput{
-		TenantID:  agt.TenantID.String(),
-		SensorID:  agt.ID.String(),
-		CommandID: commandID,
-		Result:    req.Result,
-	})
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	// Trigger pipeline progression if this command is part of a pipeline
-	h.triggerPipelineProgression(r.Context(), cmd)
-
-	// Map a completed validation job's result into finding evidence.
-	h.triggerValidationEvidence(cmd)
-
-	// Finalize a running attack-simulation from a completed safe-check (RFC-012).
-	h.triggerSimulationFinalize(cmd)
-
-	// Coverage-scoped auto-resolve of the scan's non-repository findings.
-	h.triggerCoverageAutoResolve(cmd)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
 
 // triggerSimulationFinalize finalizes a running attack-simulation run when the
@@ -1002,62 +824,6 @@ func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *co
 	}()
 }
 
-// Fail handles POST /api/v1/agent/commands/{id}/fail
-// @Summary      Fail command
-// @Description  Sensor reports command execution failure with error message
-// @Tags         Sensor
-// @Accept       json
-// @Produce      json
-// @Param        id    path      string                      true  "Command ID"
-// @Param        body  body      UpdateCommandStatusRequest  false "Error details"
-// @Success      200   {object}  legacyv1.Command
-// @Failure      400   {object}  apierror.Error
-// @Failure      401   {object}  apierror.Error
-// @Failure      404   {object}  apierror.Error
-// @Security     ApiKeyAuth
-// @Router       /agent/commands/{id}/fail [post]
-func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
-	agt := SensorFromContext(r.Context())
-	if agt == nil {
-		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
-		return
-	}
-	if !requireSensorTenant(w, agt) {
-		return
-	}
-
-	commandID := chi.URLParam(r, "id")
-
-	var req UpdateCommandStatusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		req = UpdateCommandStatusRequest{ErrorMessage: "Unknown error"}
-	}
-
-	cmd, err := h.service.Fail(r.Context(), command.FailInput{
-		TenantID:     agt.TenantID.String(),
-		SensorID:     agt.ID.String(),
-		CommandID:    commandID,
-		ErrorMessage: req.ErrorMessage,
-	})
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	// Trigger pipeline failure if this command is part of a pipeline. A
-	// refused job re-queued to another sensor (research/25 D8) has not
-	// failed.
-	if cmd.Status == commanddom.CommandStatusFailed {
-		h.triggerPipelineFailed(r.Context(), cmd, cmd.ErrorMessage)
-	}
-
-	// A failed retest check settles its retest as unknown (RFC-039).
-	h.triggerRetestSettle(cmd)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
-}
-
 // triggerPipelineFailed triggers pipeline failure when a command fails.
 func (h *CommandHandler) triggerPipelineFailed(ctx context.Context, cmd *commanddom.Command, errorMessage string) {
 	if h.pipelineService == nil {
@@ -1117,10 +883,9 @@ func (h *CommandHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
-	logRequestChange(h.audit, h.logger, r,
-		app.NewSuccessEvent(audit.ActionCommandCanceled, audit.ResourceTypeCommand, cmd.ID.String()).
-			WithResourceName(string(cmd.Type)).
-			WithMessage("Command "+string(cmd.Type)+" canceled"))
+	logRequestChange(h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionCommandCanceled, audit.ResourceTypeCommand, cmd.ID.String()).
+		WithResourceName(string(cmd.Type)).
+		WithMessage("Command "+string(cmd.Type)+" canceled"))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
@@ -1147,9 +912,8 @@ func (h *CommandHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
-	logRequestChange(h.audit, h.logger, r,
-		app.NewSuccessEvent(audit.ActionCommandDeleted, audit.ResourceTypeCommand, commandID).
-			WithMessage("Command deleted"))
+	logRequestChange(h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionCommandDeleted, audit.ResourceTypeCommand, commandID).
+		WithMessage("Command deleted"))
 
 	w.WriteHeader(http.StatusNoContent)
 }

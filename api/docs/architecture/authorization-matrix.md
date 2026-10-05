@@ -407,7 +407,7 @@ the billing page in the UI.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/ci/runs` · `/runs/{id}` · `/trust-configs` · `/trust-configs/{id}` · `/gate-policies` · `/gate-overrides` | `scans:ci:read` |
+| `GET /api/v1/ci/runs` · `/runs/{id}` · `/pipelines` · `/pipelines/{id}` · `/trust-configs` · `/trust-configs/{id}` · `/gate-policies` · `/gate-overrides` | `scans:ci:read` |
 | `POST /api/v1/ci/trust-configs` · `PUT /{id}` · `DELETE /{id}` · `POST /api/v1/ci/gate-policies` · `PATCH /{id}` · `DELETE /{id}` | `scans:ci:write` |
 | `POST /api/v1/ci/gate-overrides` · `POST /{id}/revoke` | `scans:ci:override` |
 
@@ -419,6 +419,12 @@ the billing page in the UI.
 > asset (list: SQL condition; by id, and break-glass on a repository: 404 out of
 > scope). Every change, every token exchange (issued or refused after
 > verification) and every verdict is audited; no token is ever written.
+> Pipelines follow the repository data scope like runs.
+>
+> `GET /api/v1/fleet` (the Sensors page) admits `sensors:read` **or**
+> `scans:ci:read`; the handler lists daemon rows only with `sensors:read` and
+> runner rows (CI pipelines) only with `scans:ci:read` and the `scans` module,
+> under the data scope. Asking for a mode without its permission is 403.
 
 #### Template sources and the secret store (`/api/v1/template-sources`, `/api/v1/secret-store`)
 

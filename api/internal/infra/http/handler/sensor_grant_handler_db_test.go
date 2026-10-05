@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -25,7 +27,7 @@ import (
 // holder of sensors:grant:narrow alone gets 403 for a promotion and 200 for a
 // narrowing; another tenant gets 404.
 func TestSensorGrantHandler_Permissions(t *testing.T) {
-	h := newV1Harness(t)
+	h := newGrantHarness(t)
 	pg := &postgres.DB{DB: h.db}
 	sh := NewSensorHandler(app.NewSensorService(postgres.NewSensorRepository(pg), nil, logger.NewNop()), validator.New(), logger.NewNop())
 	grants := postgres.NewSensorGrantRepository(pg)
@@ -117,4 +119,41 @@ func TestSensorGrantHandler_Permissions(t *testing.T) {
 	if code, out := call(http.MethodPut, h.tenantID, narrow, demote); code != http.StatusOK || out["trust_level"] != "new" {
 		t.Fatalf("narrow-only demote: %d %v", code, out)
 	}
+}
+
+type grantHarness struct {
+	db                 *sql.DB
+	tenantID, sensorID string
+}
+
+// newGrantHarness creates a tenant and one sensor (the insert trigger gives
+// it the default grant) and removes both at the end.
+func newGrantHarness(t *testing.T) grantHarness {
+	t.Helper()
+	url := testdb.URL()
+	if url == "" {
+		t.Skip("DATABASE_URL not set")
+	}
+	db, err := sql.Open("postgres", url)
+	if err != nil {
+		t.Skip(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Ping(); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+	h := grantHarness{db: db, tenantID: shared.NewID().String(), sensorID: shared.NewID().String()}
+	if _, err := db.Exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'grant-handler', $2)`, h.tenantID, "grant-h-"+h.tenantID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO sensors (id, tenant_id, name, type, status, api_key_hash, api_key_prefix, execution_mode)
+		VALUES ($1, $2, $3, 'worker', 'active', $4, $5, 'daemon')`,
+		h.sensorID, h.tenantID, "grant-handler-"+h.sensorID, "hash-"+h.sensorID, h.sensorID[:8]); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM sensors WHERE tenant_id = $1`, h.tenantID)
+		_, _ = db.Exec(`DELETE FROM tenants WHERE id = $1`, h.tenantID)
+	})
+	return h
 }

@@ -17,8 +17,8 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -80,7 +80,7 @@ func TestExposureCreateIngest_AssetTenantAndScope_DB(t *testing.T) {
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, logger.NewNop())
-	svc := app.NewExposureService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), logger.NewNop())
+	svc := exposure.NewExposureService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), logger.NewNop())
 	svc.SetDataScope(enforcer)
 	h := NewExposureHandler(svc, nil, validator.New(), logger.NewNop())
 

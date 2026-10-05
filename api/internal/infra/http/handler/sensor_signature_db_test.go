@@ -1,6 +1,6 @@
 package handler
 
-// The v1 and v2 sensor authenticators against a migrated database (RFC-052
+// The two sensor authenticators (protocol v2 and the evidence route) against a migrated database (RFC-052
 // §4.3): a key-bound sensor's signed request passes, its tenant reaches the
 // context, a replay or a bearer key does not, and a disabled key-bound sensor
 // only reaches the heartbeat.
@@ -69,7 +69,7 @@ func TestSignedSensorAuth_DB(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	v2 := NewSensorResultsV2Handler(nil, svc, logger.NewNop()).Authenticate(ok)
-	v1 := NewIngestHandler(nil, svc, logger.NewNop()).AuthenticateSource(ok)
+	evidence := NewIngestHandler(nil, svc, logger.NewNop()).AuthenticateSource(ok)
 
 	do := func(h http.Handler, r *http.Request) int {
 		rec := httptest.NewRecorder()
@@ -93,8 +93,8 @@ func TestSignedSensorAuth_DB(t *testing.T) {
 	if code := do(v2, replay); code != http.StatusUnauthorized {
 		t.Fatalf("v2 replay: %d", code)
 	}
-	if code := do(v1, sign(http.MethodGet, "/api/v1/agent/commands", "")); code != http.StatusNoContent {
-		t.Fatalf("v1 signed: %d", code)
+	if code := do(evidence, sign(http.MethodPost, "/api/v1/validation/evidence", "{}")); code != http.StatusNoContent {
+		t.Fatalf("evidence route signed: %d", code)
 	}
 
 	// The placeholder hash is no bearer key.

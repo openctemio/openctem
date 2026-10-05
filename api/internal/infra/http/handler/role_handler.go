@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
@@ -21,13 +21,13 @@ import (
 
 // RoleHandler handles role-related HTTP requests.
 type RoleHandler struct {
-	service   *app.RoleService
+	service   *accesscontrol.RoleService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewRoleHandler creates a new role handler.
-func NewRoleHandler(svc *app.RoleService, v *validator.Validator, log *logger.Logger) *RoleHandler {
+func NewRoleHandler(svc *accesscontrol.RoleService, v *validator.Validator, log *logger.Logger) *RoleHandler {
 	return &RoleHandler{
 		service:   svc,
 		validator: v,
@@ -221,8 +221,8 @@ func toPermissionResponse(p *role.Permission) PermissionResponse {
 // Helpers
 // =============================================================================
 
-func (h *RoleHandler) buildAuditContext(r *http.Request) app.AuditContext {
-	actx := app.AuditContext{
+func (h *RoleHandler) buildAuditContext(r *http.Request) audit.AuditContext {
+	actx := audit.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
@@ -343,7 +343,7 @@ func (h *RoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateRoleInput{
+	input := accesscontrol.CreateRoleInput{
 		TenantID:          tenantID,
 		Slug:              req.Slug,
 		Name:              req.Name,
@@ -430,7 +430,7 @@ func (h *RoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateRoleInput{
+	input := accesscontrol.UpdateRoleInput{
 		Name:              req.Name,
 		Description:       req.Description,
 		HierarchyLevel:    req.HierarchyLevel,
@@ -523,7 +523,7 @@ func (h *RoleHandler) AssignRole(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	input := app.AssignRoleInput{
+	input := accesscontrol.AssignRoleInput{
 		TenantID: tenantID,
 		UserID:   userID,
 		RoleID:   req.RoleID,
@@ -591,7 +591,7 @@ func (h *RoleHandler) SetUserRoles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	input := app.SetUserRolesInput{
+	input := accesscontrol.SetUserRolesInput{
 		TenantID: tenantID,
 		UserID:   userID,
 		RoleIDs:  req.RoleIDs,
@@ -681,7 +681,7 @@ func (h *RoleHandler) BulkAssignRoleMembers(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	input := app.BulkAssignRoleToUsersInput{
+	input := accesscontrol.BulkAssignRoleToUsersInput{
 		TenantID: tenantID,
 		RoleID:   roleID,
 		UserIDs:  req.UserIDs,

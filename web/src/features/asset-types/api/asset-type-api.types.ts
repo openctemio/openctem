@@ -15,7 +15,6 @@ export type ApiAssetTypeCategory = AssetTypeCategoryResponse
 export type ApiAssetType = AssetTypeResponse
 
 export type ApiAssetTypeListResponse = ApiResponse<'/asset-types', 'get'>
-export type ApiAssetTypeCategoryListResponse = ApiResponse<'/asset-types/categories', 'get'>
 
 /** Query filters — a UI concern, not part of any response body. */
 export interface AssetTypeFilter {

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -195,10 +195,10 @@ func (m *scanProfileMockRepository) CountByTenant(_ context.Context, tenantID sh
 // Helper Functions
 // ============================================================================
 
-func newTestScanProfileService() (*app.ScanProfileService, *scanProfileMockRepository) {
+func newTestScanProfileService() (*scan.ScanProfileService, *scanProfileMockRepository) {
 	repo := newScanProfileMockRepository()
 	log := logger.NewNop()
-	svc := app.NewScanProfileService(repo, log)
+	svc := scan.NewScanProfileService(repo, log)
 	return svc, repo
 }
 
@@ -224,7 +224,7 @@ func TestCreateScanProfile_Success(t *testing.T) {
 	svc, repo := newTestScanProfileService()
 	tenantID := shared.NewID()
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID:    tenantID.String(),
 		Name:        "My Profile",
 		Description: "A test profile",
@@ -254,7 +254,7 @@ func TestCreateScanProfile_DefaultIntensity(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 	tenantID := shared.NewID()
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID: tenantID.String(),
 		Name:     "Default Intensity Profile",
 		// Intensity left empty - should default to medium
@@ -273,7 +273,7 @@ func TestCreateScanProfile_InvalidIntensity_DefaultsToMedium(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 	tenantID := shared.NewID()
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID:  tenantID.String(),
 		Name:      "Bad Intensity",
 		Intensity: "extreme",
@@ -291,7 +291,7 @@ func TestCreateScanProfile_InvalidIntensity_DefaultsToMedium(t *testing.T) {
 func TestCreateScanProfile_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID: "not-a-uuid",
 		Name:     "Bad Tenant",
 	}
@@ -309,7 +309,7 @@ func TestCreateScanProfile_InvalidUserID(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 	tenantID := shared.NewID()
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID: tenantID.String(),
 		UserID:   "bad-uuid",
 		Name:     "Bad User",
@@ -329,7 +329,7 @@ func TestCreateScanProfile_WithUserID(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID: tenantID.String(),
 		UserID:   userID.String(),
 		Name:     "User Profile",
@@ -351,7 +351,7 @@ func TestCreateScanProfile_WithOptionalSettings(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 	tenantID := shared.NewID()
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID:           tenantID.String(),
 		Name:               "Full Profile",
 		MaxConcurrentScans: 10,
@@ -382,7 +382,7 @@ func TestCreateScanProfile_WithQualityGate(t *testing.T) {
 		MaxTotal:       100,
 	}
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID:    tenantID.String(),
 		Name:        "QG Profile",
 		QualityGate: qg,
@@ -411,7 +411,7 @@ func TestCreateScanProfile_IsDefault(t *testing.T) {
 	existing := makeScanProfileInRepo(repo, tenantID, "Old Default")
 	existing.SetAsDefault()
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID:  tenantID.String(),
 		Name:      "New Default",
 		IsDefault: true,
@@ -435,7 +435,7 @@ func TestCreateScanProfile_IsDefault_ClearError(t *testing.T) {
 	tenantID := shared.NewID()
 	repo.clearDefaultErr = errors.New("db error")
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID:  tenantID.String(),
 		Name:      "Default",
 		IsDefault: true,
@@ -452,7 +452,7 @@ func TestCreateScanProfile_RepoCreateError(t *testing.T) {
 	tenantID := shared.NewID()
 	repo.createErr = errors.New("db error")
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID: tenantID.String(),
 		Name:     "Will Fail",
 	}
@@ -472,7 +472,7 @@ func TestCreateScanProfile_WithToolsConfig(t *testing.T) {
 		"nmap":   {Enabled: false},
 	}
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID:    tenantID.String(),
 		Name:        "Tools Profile",
 		ToolsConfig: tools,
@@ -663,7 +663,7 @@ func TestListScanProfiles_Success(t *testing.T) {
 	makeScanProfileInRepo(repo, tenantID, "Profile 1")
 	makeScanProfileInRepo(repo, tenantID, "Profile 2")
 
-	input := app.ListScanProfilesInput{
+	input := scan.ListScanProfilesInput{
 		TenantID: tenantID.String(),
 		Page:     1,
 		PerPage:  10,
@@ -681,7 +681,7 @@ func TestListScanProfiles_Success(t *testing.T) {
 func TestListScanProfiles_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 
-	input := app.ListScanProfilesInput{
+	input := scan.ListScanProfilesInput{
 		TenantID: "bad",
 	}
 
@@ -700,7 +700,7 @@ func TestListScanProfiles_IncludeSystem(t *testing.T) {
 	makeScanProfileInRepo(repo, tenantID, "Tenant Profile")
 	makeSystemScanProfileInRepo(repo, "System Profile")
 
-	input := app.ListScanProfilesInput{
+	input := scan.ListScanProfilesInput{
 		TenantID:      tenantID.String(),
 		IncludeSystem: true,
 		Page:          1,
@@ -722,7 +722,7 @@ func TestListScanProfiles_ExcludeSystem(t *testing.T) {
 	makeScanProfileInRepo(repo, tenantID, "Tenant Profile")
 	makeSystemScanProfileInRepo(repo, "System Profile")
 
-	input := app.ListScanProfilesInput{
+	input := scan.ListScanProfilesInput{
 		TenantID:      tenantID.String(),
 		IncludeSystem: false,
 		Page:          1,
@@ -742,7 +742,7 @@ func TestListScanProfiles_RepoError(t *testing.T) {
 	svc, repo := newTestScanProfileService()
 	repo.listErr = errors.New("db error")
 
-	input := app.ListScanProfilesInput{
+	input := scan.ListScanProfilesInput{
 		TenantID: shared.NewID().String(),
 		Page:     1,
 		PerPage:  10,
@@ -758,7 +758,7 @@ func TestListScanProfiles_IncludeSystem_RepoError(t *testing.T) {
 	svc, repo := newTestScanProfileService()
 	repo.listWithSystemErr = errors.New("db error")
 
-	input := app.ListScanProfilesInput{
+	input := scan.ListScanProfilesInput{
 		TenantID:      shared.NewID().String(),
 		IncludeSystem: true,
 		Page:          1,
@@ -780,7 +780,7 @@ func TestUpdateScanProfile_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	profile := makeScanProfileInRepo(repo, tenantID, "Original")
 
-	input := app.UpdateScanProfileInput{
+	input := scan.UpdateScanProfileInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		Name:      "Updated",
@@ -802,7 +802,7 @@ func TestUpdateScanProfile_Success(t *testing.T) {
 func TestUpdateScanProfile_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 
-	input := app.UpdateScanProfileInput{
+	input := scan.UpdateScanProfileInput{
 		TenantID:  "bad",
 		ProfileID: shared.NewID().String(),
 		Name:      "Updated",
@@ -820,7 +820,7 @@ func TestUpdateScanProfile_InvalidTenantID(t *testing.T) {
 func TestUpdateScanProfile_NotFound(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 
-	input := app.UpdateScanProfileInput{
+	input := scan.UpdateScanProfileInput{
 		TenantID:  shared.NewID().String(),
 		ProfileID: shared.NewID().String(),
 		Name:      "Updated",
@@ -839,7 +839,7 @@ func TestUpdateScanProfile_SystemProfile_Forbidden(t *testing.T) {
 	// Override tenant ID so GetByTenantAndID succeeds
 	sysProfile.TenantID = tenantID
 
-	input := app.UpdateScanProfileInput{
+	input := scan.UpdateScanProfileInput{
 		TenantID:  tenantID.String(),
 		ProfileID: sysProfile.ID.String(),
 		Name:      "Hacked",
@@ -860,7 +860,7 @@ func TestUpdateScanProfile_WrongTenant_Forbidden(t *testing.T) {
 	tenantB := shared.NewID()
 	profile := makeScanProfileInRepo(repo, tenantA, "Tenant A Profile")
 
-	input := app.UpdateScanProfileInput{
+	input := scan.UpdateScanProfileInput{
 		TenantID:  tenantB.String(),
 		ProfileID: profile.ID.String(),
 		Name:      "Stolen",
@@ -884,7 +884,7 @@ func TestUpdateScanProfile_WithQualityGate(t *testing.T) {
 		MaxCritical: 0,
 	}
 
-	input := app.UpdateScanProfileInput{
+	input := scan.UpdateScanProfileInput{
 		TenantID:    tenantID.String(),
 		ProfileID:   profile.ID.String(),
 		QualityGate: qg,
@@ -914,7 +914,7 @@ func TestUpdateScanProfile_RepoUpdateError(t *testing.T) {
 		profileID = id
 	}
 
-	input := app.UpdateScanProfileInput{
+	input := scan.UpdateScanProfileInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profileID,
 		Name:      "Updated",
@@ -1105,7 +1105,7 @@ func TestCloneScanProfile_Success(t *testing.T) {
 		"nuclei": {Enabled: true, Severity: "high"},
 	}
 
-	input := app.CloneScanProfileInput{
+	input := scan.CloneScanProfileInput{
 		TenantID:  tenantID.String(),
 		ProfileID: original.ID.String(),
 		NewName:   "Cloned",
@@ -1143,7 +1143,7 @@ func TestCloneScanProfile_WithUserID(t *testing.T) {
 		profileID = id
 	}
 
-	input := app.CloneScanProfileInput{
+	input := scan.CloneScanProfileInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profileID,
 		NewName:   "User Clone",
@@ -1167,7 +1167,7 @@ func TestCloneScanProfile_InvalidUserID(t *testing.T) {
 	tenantID := shared.NewID()
 	profile := makeScanProfileInRepo(repo, tenantID, "Original")
 
-	input := app.CloneScanProfileInput{
+	input := scan.CloneScanProfileInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		NewName:   "Clone",
@@ -1186,7 +1186,7 @@ func TestCloneScanProfile_InvalidUserID(t *testing.T) {
 func TestCloneScanProfile_SourceNotFound(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 
-	input := app.CloneScanProfileInput{
+	input := scan.CloneScanProfileInput{
 		TenantID:  shared.NewID().String(),
 		ProfileID: shared.NewID().String(),
 		NewName:   "Clone",
@@ -1203,7 +1203,7 @@ func TestCloneScanProfile_EmptyName(t *testing.T) {
 	tenantID := shared.NewID()
 	profile := makeScanProfileInRepo(repo, tenantID, "Original")
 
-	input := app.CloneScanProfileInput{
+	input := scan.CloneScanProfileInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		NewName:   "",
@@ -1221,7 +1221,7 @@ func TestCloneScanProfile_RepoCreateError(t *testing.T) {
 	profile := makeScanProfileInRepo(repo, tenantID, "Original")
 	repo.createErr = errors.New("db error")
 
-	input := app.CloneScanProfileInput{
+	input := scan.CloneScanProfileInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		NewName:   "Clone",
@@ -1242,7 +1242,7 @@ func TestUpdateQualityGate_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	profile := makeScanProfileInRepo(repo, tenantID, "Profile")
 
-	input := app.UpdateQualityGateInput{
+	input := scan.UpdateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		QualityGate: scanprofile.QualityGate{
@@ -1271,7 +1271,7 @@ func TestUpdateQualityGate_Success(t *testing.T) {
 func TestUpdateQualityGate_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 
-	input := app.UpdateQualityGateInput{
+	input := scan.UpdateQualityGateInput{
 		TenantID:  "bad",
 		ProfileID: shared.NewID().String(),
 	}
@@ -1288,7 +1288,7 @@ func TestUpdateQualityGate_InvalidTenantID(t *testing.T) {
 func TestUpdateQualityGate_NotFound(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 
-	input := app.UpdateQualityGateInput{
+	input := scan.UpdateQualityGateInput{
 		TenantID:  shared.NewID().String(),
 		ProfileID: shared.NewID().String(),
 	}
@@ -1305,7 +1305,7 @@ func TestUpdateQualityGate_SystemProfile_Forbidden(t *testing.T) {
 	sysProfile := makeSystemScanProfileInRepo(repo, "System")
 	sysProfile.TenantID = tenantID
 
-	input := app.UpdateQualityGateInput{
+	input := scan.UpdateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: sysProfile.ID.String(),
 		QualityGate: scanprofile.QualityGate{
@@ -1328,7 +1328,7 @@ func TestUpdateQualityGate_WrongTenant_Forbidden(t *testing.T) {
 	tenantB := shared.NewID()
 	profile := makeScanProfileInRepo(repo, tenantA, "Tenant A Profile")
 
-	input := app.UpdateQualityGateInput{
+	input := scan.UpdateQualityGateInput{
 		TenantID:  tenantB.String(),
 		ProfileID: profile.ID.String(),
 	}
@@ -1345,7 +1345,7 @@ func TestUpdateQualityGate_RepoUpdateError(t *testing.T) {
 	profile := makeScanProfileInRepo(repo, tenantID, "Profile")
 	repo.updateErr = errors.New("db error")
 
-	input := app.UpdateQualityGateInput{
+	input := scan.UpdateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		QualityGate: scanprofile.QualityGate{
@@ -1375,7 +1375,7 @@ func TestEvaluateQualityGate_Passes(t *testing.T) {
 		MaxMedium:   -1,
 	}
 
-	input := app.EvaluateQualityGateInput{
+	input := scan.EvaluateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		Counts: scanprofile.FindingCounts{
@@ -1408,7 +1408,7 @@ func TestEvaluateQualityGate_Fails(t *testing.T) {
 		MaxMedium:      -1,
 	}
 
-	input := app.EvaluateQualityGateInput{
+	input := scan.EvaluateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		Counts: scanprofile.FindingCounts{
@@ -1441,7 +1441,7 @@ func TestEvaluateQualityGate_Disabled_AlwaysPasses(t *testing.T) {
 		Enabled: false,
 	}
 
-	input := app.EvaluateQualityGateInput{
+	input := scan.EvaluateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		Counts: scanprofile.FindingCounts{
@@ -1462,7 +1462,7 @@ func TestEvaluateQualityGate_Disabled_AlwaysPasses(t *testing.T) {
 func TestEvaluateQualityGate_ProfileNotFound(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 
-	input := app.EvaluateQualityGateInput{
+	input := scan.EvaluateQualityGateInput{
 		TenantID:  shared.NewID().String(),
 		ProfileID: shared.NewID().String(),
 		Counts:    scanprofile.FindingCounts{},
@@ -1487,7 +1487,7 @@ func TestEvaluateQualityGate_FailOnHigh(t *testing.T) {
 		MaxTotal:    -1,
 	}
 
-	input := app.EvaluateQualityGateInput{
+	input := scan.EvaluateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		Counts: scanprofile.FindingCounts{
@@ -1517,7 +1517,7 @@ func TestEvaluateQualityGate_MaxMediumExceeded(t *testing.T) {
 		MaxTotal:    -1,
 	}
 
-	input := app.EvaluateQualityGateInput{
+	input := scan.EvaluateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		Counts: scanprofile.FindingCounts{
@@ -1624,7 +1624,7 @@ func TestCreateScanProfile_EmptyName(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 	tenantID := shared.NewID()
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID: tenantID.String(),
 		Name:     "",
 	}
@@ -1650,7 +1650,7 @@ func TestCreateScanProfile_AllIntensityLevels(t *testing.T) {
 			svc, _ := newTestScanProfileService()
 			tenantID := shared.NewID()
 
-			input := app.CreateScanProfileInput{
+			input := scan.CreateScanProfileInput{
 				TenantID:  tenantID.String(),
 				Name:      "Profile " + tc.input,
 				Intensity: tc.input,
@@ -1681,7 +1681,7 @@ func TestEvaluateQualityGate_MultipleBreaches(t *testing.T) {
 		MaxTotal:       0,
 	}
 
-	input := app.EvaluateQualityGateInput{
+	input := scan.EvaluateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		Counts: scanprofile.FindingCounts{
@@ -1719,7 +1719,7 @@ func TestEvaluateQualityGate_ZeroCounts_Passes(t *testing.T) {
 		MaxTotal:       0,
 	}
 
-	input := app.EvaluateQualityGateInput{
+	input := scan.EvaluateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		Counts:    scanprofile.FindingCounts{},
@@ -1741,7 +1741,7 @@ func TestCloneScanProfile_SystemProfile(t *testing.T) {
 	// Make GetByTenantAndID work by setting tenant ID
 	sysProfile.TenantID = tenantID
 
-	input := app.CloneScanProfileInput{
+	input := scan.CloneScanProfileInput{
 		TenantID:  tenantID.String(),
 		ProfileID: sysProfile.ID.String(),
 		NewName:   "My Clone of System",
@@ -1769,7 +1769,7 @@ func TestUpdateScanProfile_WithToolsConfig(t *testing.T) {
 		"nuclei": {Enabled: true, Severity: "medium"},
 	}
 
-	input := app.UpdateScanProfileInput{
+	input := scan.UpdateScanProfileInput{
 		TenantID:    tenantID.String(),
 		ProfileID:   profile.ID.String(),
 		ToolsConfig: tools,
@@ -1787,7 +1787,7 @@ func TestUpdateScanProfile_WithToolsConfig(t *testing.T) {
 func TestListScanProfiles_EmptyResult(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 
-	input := app.ListScanProfilesInput{
+	input := scan.ListScanProfilesInput{
 		TenantID: shared.NewID().String(),
 		Page:     1,
 		PerPage:  10,
@@ -1809,7 +1809,7 @@ func TestCreateScanProfile_NoUserID(t *testing.T) {
 	svc, _ := newTestScanProfileService()
 	tenantID := shared.NewID()
 
-	input := app.CreateScanProfileInput{
+	input := scan.CreateScanProfileInput{
 		TenantID: tenantID.String(),
 		Name:     "No User",
 	}
@@ -1838,7 +1838,7 @@ func TestEvaluateQualityGate_CountsReflectedInResult(t *testing.T) {
 		Total:    15,
 	}
 
-	input := app.EvaluateQualityGateInput{
+	input := scan.EvaluateQualityGateInput{
 		TenantID:  tenantID.String(),
 		ProfileID: profile.ID.String(),
 		Counts:    counts,

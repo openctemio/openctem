@@ -15,6 +15,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -76,7 +77,7 @@ func TestTemplateSourceCredentialBinding(t *testing.T) {
 
 	pg := &postgres.DB{DB: db}
 	log := logger.NewNop()
-	auditSvc := app.NewAuditService(postgres.NewAuditRepository(pg), log)
+	auditSvc := audit.NewAuditService(postgres.NewAuditRepository(pg), log)
 	secrets, err := app.NewSecretStoreService(postgres.NewSecretStoreRepository(pg), make([]byte, 32), auditSvc, log)
 	if err != nil {
 		t.Fatal(err)

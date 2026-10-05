@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,7 +23,7 @@ func newInvitationRoleFixture(t *testing.T) (*app.TenantService, *mockTenantRepo
 	svc, repo := newTestTenantService()
 	tn := seedTenant(repo, "Team", "team-slug")
 	roleRepo := newMockRoleRepo()
-	svc.SetRoleService(app.NewRoleService(roleRepo, newMockPermissionRepo(), logger.NewNop()))
+	svc.SetRoleService(accesscontrol.NewRoleService(roleRepo, newMockPermissionRepo(), logger.NewNop()))
 	return svc, repo, roleRepo, tn.ID().String()
 }
 
@@ -31,7 +34,7 @@ func TestCreateInvitation_RejectsRoleOfAnotherTenant(t *testing.T) {
 	_, err := svc.CreateInvitation(context.Background(), tenantID, app.CreateInvitationInput{
 		Email:   "new@example.com",
 		RoleIDs: []string{foreign.ID().String()},
-	}, shared.NewID(), app.AuditContext{})
+	}, shared.NewID(), audit.AuditContext{})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("want a validation error for another tenant's role, got %v", err)
 	}
@@ -45,7 +48,7 @@ func TestCreateInvitation_RejectsUnknownRole(t *testing.T) {
 	_, err := svc.CreateInvitation(context.Background(), tenantID, app.CreateInvitationInput{
 		Email:   "new@example.com",
 		RoleIDs: []string{role.NewID().String()},
-	}, shared.NewID(), app.AuditContext{})
+	}, shared.NewID(), audit.AuditContext{})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("want a validation error for an unknown role, got %v", err)
 	}
@@ -60,7 +63,7 @@ func TestCreateInvitation_AcceptsSystemAndOwnTenantRoles(t *testing.T) {
 	inv, err := svc.CreateInvitation(context.Background(), tenantID, app.CreateInvitationInput{
 		Email:   "new@example.com",
 		RoleIDs: []string{viewer.ID().String(), own.ID().String()},
-	}, shared.NewID(), app.AuditContext{})
+	}, shared.NewID(), audit.AuditContext{})
 	if err != nil {
 		t.Fatalf("system + own-tenant roles must be accepted: %v", err)
 	}

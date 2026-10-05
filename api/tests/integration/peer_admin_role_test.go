@@ -12,6 +12,9 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -64,8 +67,8 @@ func TestPeerAdminRoleChange_OwnerOnly(t *testing.T) {
 	})
 
 	pg := &postgres.DB{DB: db}
-	svc := app.NewRoleService(postgres.NewRoleRepository(pg), postgres.NewPermissionRepository(pg), logger.NewNop(),
-		app.WithRoleMembershipReader(postgres.NewTenantRepository(pg)))
+	svc := accesscontrol.NewRoleService(postgres.NewRoleRepository(pg), postgres.NewPermissionRepository(pg), logger.NewNop(),
+		accesscontrol.WithRoleMembershipReader(postgres.NewTenantRepository(pg)))
 	const (
 		adminRole  = "00000000-0000-0000-0000-000000000002"
 		memberRole = "00000000-0000-0000-0000-000000000003"
@@ -98,23 +101,23 @@ func TestPeerAdminRoleChange_OwnerOnly(t *testing.T) {
 
 	// An administrator cannot change a peer administrator's role set.
 	forbidden("SetUserRoles peer -> [viewer]", svc.SetUserRoles(ctx,
-		app.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{viewerRole}}, admin, app.AuditContext{}))
-	forbidden("RemoveRole admin from peer", svc.RemoveRole(ctx, tenantID, peer, adminRole, app.AuditContext{ActorID: admin}))
+		accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{viewerRole}}, admin, audit.AuditContext{}))
+	forbidden("RemoveRole admin from peer", svc.RemoveRole(ctx, tenantID, peer, adminRole, audit.AuditContext{ActorID: admin}))
 	forbidden("AssignRole member to peer", svc.AssignRole(ctx,
-		app.AssignRoleInput{TenantID: tenantID, UserID: peer, RoleID: memberRole}, admin, app.AuditContext{}))
+		accesscontrol.AssignRoleInput{TenantID: tenantID, UserID: peer, RoleID: memberRole}, admin, audit.AuditContext{}))
 	if got := rolesOf(peer); !slices.Equal(got, []string{"admin"}) {
 		t.Fatalf("peer admin's roles changed: %v", got)
 	}
 
 	// An administrator still manages members and viewers.
-	if err := svc.SetUserRoles(ctx, app.SetUserRolesInput{TenantID: tenantID, UserID: viewer, RoleIDs: []string{memberRole}},
-		admin, app.AuditContext{}); err != nil {
+	if err := svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: viewer, RoleIDs: []string{memberRole}},
+		admin, audit.AuditContext{}); err != nil {
 		t.Fatalf("admin re-roles a viewer: %v", err)
 	}
 
 	// The owner changes an administrator's role set.
-	if err := svc.SetUserRoles(ctx, app.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{memberRole}},
-		owner, app.AuditContext{}); err != nil {
+	if err := svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{memberRole}},
+		owner, audit.AuditContext{}); err != nil {
 		t.Fatalf("owner demotes an admin: %v", err)
 	}
 	if got := rolesOf(peer); !slices.Equal(got, []string{"member"}) {
@@ -178,8 +181,8 @@ func TestAdminPromotion_OwnerOnly(t *testing.T) {
 
 	pg := &postgres.DB{DB: db}
 	svc := app.NewTenantService(postgres.NewTenantRepository(pg), logger.NewNop())
-	asAdmin := app.AuditContext{TenantID: tenantID, ActorID: admin}
-	asOwner := app.AuditContext{TenantID: tenantID, ActorID: owner}
+	asAdmin := audit.AuditContext{TenantID: tenantID, ActorID: admin}
+	asOwner := audit.AuditContext{TenantID: tenantID, ActorID: owner}
 	forbidden := func(what string, err error) {
 		t.Helper()
 		if !errors.Is(err, shared.ErrForbidden) {
