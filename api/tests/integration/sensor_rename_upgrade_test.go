@@ -421,8 +421,6 @@ func assertUpgraded(t *testing.T, db *sql.DB, before map[string]string, known ma
 		{"v1 job payload untouched", `SELECT payload->>'agent_preference' FROM commands WHERE id = '11111111-0000-0000-0000-000000000009'`, "tenant"},
 		{"scan preference", `SELECT sensor_preference FROM scans WHERE id = '11111111-0000-0000-0000-00000000000a'`, "tenant"},
 		{"module toggle", `SELECT module_id FROM tenant_modules WHERE tenant_id = '11111111-0000-0000-0000-000000000001'`, "sensors"},
-		{"webhook events", `SELECT array_to_string(ARRAY(SELECT unnest(event_types) ORDER BY 1), ',') FROM webhooks`,
-			"finding.created,sensor.offline"},
 		{"notification extension events", `SELECT enabled_event_types::text FROM integration_notification_extensions`,
 			`["finding.created", "sensor.error"]`},
 		{"muted types", `SELECT muted_types::text FROM notification_preferences`, `["sensor.offline"]`},

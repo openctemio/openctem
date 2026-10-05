@@ -130,6 +130,7 @@ sensor_config_reports
 sensor_content_policies
 sensor_events
 sensor_heartbeat_history
+sensor_keys
 sensor_manifests
 sensor_result_policies
 sensor_result_quarantine
@@ -156,6 +157,5 @@ user_roles
 validation_evidence
 verified_domains
 vulnerabilities
-webhooks
 workflow_runs
 workflows

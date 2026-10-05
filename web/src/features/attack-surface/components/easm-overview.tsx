@@ -10,6 +10,7 @@
 import Link from 'next/link'
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EASMMonitoringCard } from './easm-monitoring-card'
 import { EVENT_TYPE_CONFIG, type ExposureEventType } from '@/lib/api/exposure-types'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -217,6 +218,7 @@ export function EASMOverview() {
           )}
         </CardContent>
       </Card>
+      <EASMMonitoringCard />
     </div>
   )
 }

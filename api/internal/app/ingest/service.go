@@ -92,6 +92,9 @@ type Service struct {
 	commands     commandReader
 	results      sensorresult.Repository
 	resultLimits sensorresult.Limits
+	// contracts reads the submitting sensor's manifest, where a ported
+	// tool declares what it produces (output_binding.go). Nil-safe.
+	contracts ToolContractSource
 
 	logger *logger.Logger
 
