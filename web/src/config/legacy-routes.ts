@@ -25,17 +25,20 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   // "CI/CD" was a ComingSoonPage (owner decision D-31). Deleted until a real
   // page exists for the API's CI snippet and quality-gate endpoints.
   { source: '/settings/integrations/cicd', destination: '/settings/integrations', permanent: true },
-  // The SAML and verified-domains explainer stubs: SSO is configured per
-  // organization in the platform admin console (RFC-022), and Authentication
-  // carries the same explanation as a card.
+  // The SAML explainer stub: SSO is configured per organization in the
+  // platform admin console (RFC-022), and Authentication carries the same
+  // explanation as a card.
   {
     source: '/settings/integrations/saml',
     destination: '/settings/authentication',
     permanent: true,
   },
+  // Domain verification for attack-surface management lives on each seed in
+  // Scoping > Boundaries > Seeds; domains for SSO sign-in stay with the
+  // platform administrator.
   {
     source: '/settings/integrations/verified-domains',
-    destination: '/settings/authentication',
+    destination: '/scope-config?tab=seeds',
     permanent: true,
   },
   // Personal notification settings moved to the user's own area.

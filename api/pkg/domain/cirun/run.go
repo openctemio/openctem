@@ -69,8 +69,19 @@ type Run struct {
 	EvaluatedAt     *time.Time
 	ReportsCount    int
 	FindingsCount   int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// PipelineID is the pipeline the run belongs to (nil only for runs that
+	// predate pipelines and were not backfilled).
+	PipelineID *shared.ID
+	// SensorVersion is the runner's version (from its User-Agent; display
+	// and health only). ScanFailures is what the runner reported at
+	// evaluation (nil before). Tools are the tools its reports declared and
+	// TemplateRef the reusable workflow it ran. All are labels.
+	SensorVersion string
+	ScanFailures  *int
+	Tools         []ToolLabel
+	TemplateRef   string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // NewToken returns a fresh upload token and its hash. Only the hash is
@@ -98,6 +109,7 @@ func LooksLikeToken(s string) bool {
 // RunFilter narrows a run listing.
 type RunFilter struct {
 	RepositoryAssetID *shared.ID
+	PipelineID        *shared.ID
 	Verdict           string
 	Provider          string
 	// DataScope, when set, limits the listing to runs on assets the user may

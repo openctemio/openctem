@@ -1,5 +1,11 @@
 # How to configure SIEM (outbound & inbound)
 
+> **Retired 2026-10-05.** This route was part of sensor protocol v1
+> (`/api/v1/agent/telemetry-events`), which was removed
+> ([RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md)).
+> Protocol v2 has no telemetry route yet, so SIEM inbound is unavailable
+> until one ships. Stored events and the IOC catalogue are kept.
+
 OpenCTEM integrates with a SIEM in **two independent directions**. You can set up
 either or both:
 

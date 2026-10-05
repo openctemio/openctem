@@ -2,7 +2,6 @@ package routes
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"slices"
 	"testing"
@@ -37,21 +36,7 @@ func TestSensorHeartbeat_CancelCommandIDs(t *testing.T) {
 		t.Fatalf("v2 heartbeat: cancel %v actions %v (%s)", hb.CancelCommandIDs, hb.Actions, raw)
 	}
 
-	resp, raw = h.call(s.key, http.MethodPost, "/api/v1/agent/heartbeat", running)
-	h.want(resp, raw, 200, "")
-	var v1 struct {
-		Actions          []string `json:"actions"`
-		CancelCommandIDs []string `json:"cancel_command_ids"`
-	}
-	if err := json.Unmarshal(raw, &v1); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(v1.CancelCommandIDs, []string{canceled}) || !slices.Contains(v1.Actions, protov2.ActionCancel) {
-		t.Fatalf("v1 heartbeat: %s", raw)
-	}
-
-	// Nothing to stop: the member is present and empty on v2, absent on v1
-	// (an idle v1 answer stays byte-identical).
+	// Nothing to stop: the member is present and empty.
 	only := map[string]any{"status": "running", "queue": map[string]any{"running": 1}, "running": []string{held}}
 	resp, raw = h.call(s.key, http.MethodPost, "/api/v2/sensor/heartbeat", only)
 	h.want(resp, raw, 200, "")
@@ -59,18 +44,4 @@ func TestSensorHeartbeat_CancelCommandIDs(t *testing.T) {
 		slices.Contains(hb.Actions, protov2.ActionCancel) {
 		t.Fatalf("v2 heartbeat with nothing to cancel: %s", raw)
 	}
-	resp, raw = h.call(s.key, http.MethodPost, "/api/v1/agent/heartbeat", only)
-	h.want(resp, raw, 200, "")
-	if json.Valid(raw) && containsKey(raw, "cancel_command_ids") {
-		t.Fatalf("v1 heartbeat with nothing to cancel: %s", raw)
-	}
-}
-
-func containsKey(raw []byte, key string) bool {
-	var m map[string]json.RawMessage
-	if json.Unmarshal(raw, &m) != nil {
-		return false
-	}
-	_, ok := m[key]
-	return ok
 }

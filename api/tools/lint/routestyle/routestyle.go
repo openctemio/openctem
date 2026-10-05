@@ -29,7 +29,6 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/routes/plane"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -204,10 +203,6 @@ func pathArg(e ast.Expr) (string, bool) {
 		s, err := strconv.Unquote(v.Value)
 		return s, err == nil
 	case *ast.SelectorExpr:
-		if pkg, ok := v.X.(*ast.Ident); ok && pkg.Name == "legacyv1" {
-			s, ok := legacyv1.Paths[v.Sel.Name]
-			return s, ok
-		}
 		if pkg, ok := v.X.(*ast.Ident); ok && pkg.Name == "protov2" {
 			s, ok := protov2.Paths[v.Sel.Name]
 			return s, ok
@@ -242,7 +237,7 @@ var (
 	adminAuthMarkers  = []string{"AdminAuthMiddleware"}
 	tenantMarkers     = []string{"buildTokenTenantMiddlewares", "TenantContext("}
 	scimAuthMarkers   = []string{"scimAuth", "SCIMAuth"}
-	deprecatedMarkers = []string{"Deprecated(", "DeprecatedRoute(", "v1Sensor(", "RedirectDeprecatedPath"}
+	deprecatedMarkers = []string{"Deprecated("}
 )
 
 // Vocabulary is the closed set of action verbs (api-conventions.md §4.1).

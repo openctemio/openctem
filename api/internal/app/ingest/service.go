@@ -24,8 +24,30 @@ import (
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
+
+const (
+	// DiscoverySourceSensor is the discovery source of an asset a sensor
+	// reported without naming one.
+	DiscoverySourceSensor = "sensor"
+	// CodeNoTenantContext refuses ingest from a sensor without a tenant
+	// (a platform sensor outside a job).
+	CodeNoTenantContext = "NO_TENANT_CONTEXT"
+
+	// ctisDefaultDiscoverySource is how the ctis recon converter labels a
+	// discovery by default. Sensors embed that converter and still send it
+	// (over protocol v2 too), so it is stored as DiscoverySourceSensor.
+	ctisDefaultDiscoverySource = "agent"
+)
+
+// normalizeDiscoverySource maps the ctis converter's default label onto the
+// stored value; any other value passes through unchanged.
+func normalizeDiscoverySource(s string) string {
+	if s == ctisDefaultDiscoverySource {
+		return DiscoverySourceSensor
+	}
+	return s
+}
 
 // Service handles ingestion of assets and findings from various formats.
 // This is the unified service that uses CTIS as the internal format.
@@ -647,63 +669,6 @@ func (s *Service) projectAssetExposures(ctx context.Context, tenantID shared.ID,
 	}
 }
 
-// IngestSARIF processes a SARIF log and ingests it as findings.
-//
-// The findings are attached to the repository the log was produced from:
-// repo.URL when the request names it, else the log's
-// versionControlProvenance, else a git-hosted repository its artifact URIs
-// agree on. A log with results that identifies no repository is refused with
-// ErrSARIFNoRepository rather than filed under a shared per-tool pseudo-asset,
-// where findings of unrelated repositories would deduplicate into each other.
-func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData []byte, repo SARIFRepository, bind Binding) (*Output, error) {
-	s.logger.Info("ingesting SARIF data",
-		"sensor_id", agt.ID.String(),
-	)
-
-	if err := validateSARIFRepositoryInput(repo); err != nil {
-		return nil, err
-	}
-	resolved, identified, err := resolveSARIFRepository(sarifData, repo)
-	if err != nil {
-		return nil, err
-	}
-	var opts *ctis.ConvertOptions
-	if identified {
-		opts = sarifConvertOptions(resolved)
-	}
-
-	// Convert SARIF to CTIS
-	report, err := ctis.FromSARIF(sarifData, opts)
-	if err != nil {
-		// The sensor sent something that is not SARIF: a client error.
-		return nil, fmt.Errorf("%w: failed to parse SARIF: %v", shared.ErrValidation, err) //nolint:errorlint // the parse error is detail, the class is validation
-	}
-	if !identified && len(report.Findings) > 0 {
-		return nil, ErrSARIFNoRepository
-	}
-
-	// Use the unified ingestion pipeline
-	return s.Ingest(ctx, agt, Input{Report: report, Options: Options{Binding: bind, Route: "sarif"}})
-}
-
-// IngestRecon processes recon data and ingests it.
-func (s *Service) IngestRecon(ctx context.Context, agt *sensor.Sensor, reconInput *ctis.ReconToCTISInput, bind Binding) (*Output, error) {
-	s.logger.Info("ingesting recon data",
-		"sensor_id", agt.ID.String(),
-	)
-
-	// Convert Recon to CTIS using SDK
-	opts := ctis.DefaultReconConverterOptions()
-	opts.DiscoverySource = legacyv1.DiscoverySourceSensor
-	report, err := ctis.ConvertReconToCTIS(reconInput, opts)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to convert recon data: %v", shared.ErrValidation, err) //nolint:errorlint // the conversion error is detail, the class is validation
-	}
-
-	// Use the unified ingestion pipeline
-	return s.Ingest(ctx, agt, Input{Report: report, Options: Options{Binding: bind, Route: "recon"}})
-}
-
 // CheckFingerprints checks which fingerprints already exist in the database.
 func (s *Service) CheckFingerprints(ctx context.Context, agt *sensor.Sensor, input CheckFingerprintsInput) (*CheckFingerprintsOutput, error) {
 	// Platform sensors must have tenant context from job assignment
@@ -808,7 +773,7 @@ func (s *Service) validateSensor(agt *sensor.Sensor) error {
 	}
 
 	if agt.TenantID == nil {
-		return shared.NewDomainError(legacyv1.CodeNoTenantContext, "sensor has no tenant context: platform sensors require job assignment", nil)
+		return shared.NewDomainError(CodeNoTenantContext, "sensor has no tenant context: platform sensors require job assignment", nil)
 	}
 
 	// Check sensor status

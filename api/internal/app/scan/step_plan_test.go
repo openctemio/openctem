@@ -12,7 +12,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // fakeToolLookup is a tool registry: platform tools by name and the
@@ -61,7 +60,7 @@ func TestResolveStepTool_CapabilityOnlyStepGetsAScanner(t *testing.T) {
 		t.Fatalf("resolved = %+v", got)
 	}
 	run := &pipeline.Run{ID: shared.NewID(), Context: map[string]any{"targets": []string{"a.example.com"}}}
-	p, err := StepCommandPayload(run, got.WithTool(step), got.Name, "sr", "", nil)
+	p, err := StepCommandPayload(run, got.WithTool(step), got.Name, "sr", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,24 +164,23 @@ func TestStepCommandPayload_Golden(t *testing.T) {
 	}}
 	step := &pipeline.Step{ID: shared.NewID(), StepKey: "subs", Tool: "subfinder",
 		Capabilities: []string{"recon", "subdomain"}, TimeoutSeconds: 600}
-	p, err := StepCommandPayload(run, step, "subfinder", "sr-1", pipeline.SensorPreferenceAuto, nil)
+	p, err := StepCommandPayload(run, step, "subfinder", "sr-1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]any{
-		"pipeline_run_id":                   run.ID.String(),
-		"step_run_id":                       "sr-1",
-		"step_key":                          "subs",
-		"step_id":                           step.ID.String(),
-		"config":                            map[string]any{},
-		"required_capabilities":             []string{"recon", "subdomain"},
-		"preferred_tool":                    "subfinder",
-		"scanner":                           "subfinder",
-		"timeout_seconds":                   600,
-		"context":                           map[string]any{"targets": []string{"a.example.com"}, "scan_id": "s-1"},
-		legacyv1.PayloadKeySensorPreference: "auto",
-		"targets":                           []string{"a.example.com"},
-		"asset_id":                          asset.String(),
+		"pipeline_run_id":       run.ID.String(),
+		"step_run_id":           "sr-1",
+		"step_key":              "subs",
+		"step_id":               step.ID.String(),
+		"config":                map[string]any{},
+		"required_capabilities": []string{"recon", "subdomain"},
+		"preferred_tool":        "subfinder",
+		"scanner":               "subfinder",
+		"timeout_seconds":       600,
+		"context":               map[string]any{"targets": []string{"a.example.com"}, "scan_id": "s-1"},
+		"targets":               []string{"a.example.com"},
+		"asset_id":              asset.String(),
 	}
 	if len(p) != len(want) {
 		t.Errorf("keys = %d, want %d: %v", len(p), len(want), p)
@@ -196,10 +194,10 @@ func TestStepCommandPayload_Golden(t *testing.T) {
 			t.Errorf("%s = %#v, want %#v", k, p[k], v)
 		}
 	}
-	// No preference (the scan trigger used to send none): no key.
-	p, _ = StepCommandPayload(&pipeline.Run{ID: shared.NewID()}, step, "subfinder", "sr", "", nil)
-	if _, ok := p[legacyv1.PayloadKeySensorPreference]; ok {
-		t.Error("empty preference sent")
+	// The selection mode stays on the platform: no sensor reads it.
+	p, _ = StepCommandPayload(&pipeline.Run{ID: shared.NewID()}, step, "subfinder", "sr", nil)
+	if _, ok := p["agent_preference"]; ok {
+		t.Error("retired agent_preference key sent")
 	}
 	if _, ok := p["targets"]; ok {
 		t.Error("targets appeared from nowhere")
@@ -212,7 +210,7 @@ func TestStepCommandPayload_Golden(t *testing.T) {
 func TestStepCommandPayload_SettingsAndRefusals(t *testing.T) {
 	run := &pipeline.Run{ID: shared.NewID()}
 	step := &pipeline.Step{ID: shared.NewID(), StepKey: "ports", Config: map[string]any{"top_ports": "1000", "rate": float64(500)}}
-	p, err := StepCommandPayload(run, step, "naabu", "sr", "", nil)
+	p, err := StepCommandPayload(run, step, "naabu", "sr", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,14 +219,14 @@ func TestStepCommandPayload_SettingsAndRefusals(t *testing.T) {
 		t.Fatalf("config = %#v", p[pipeline.PayloadKeyConfig])
 	}
 	step.Config = map[string]any{"ports": "80 -nmap-cli id"}
-	if _, err := StepCommandPayload(run, step, "naabu", "sr", "", nil); err == nil {
+	if _, err := StepCommandPayload(run, step, "naabu", "sr", nil); err == nil {
 		t.Fatal("flag injection in ports reached a command payload")
 	}
 	step.Config = map[string]any{"tags": []any{"cve", "-code"}}
-	if _, err := StepCommandPayload(run, step, "nuclei", "sr", "", nil); err == nil {
+	if _, err := StepCommandPayload(run, step, "nuclei", "sr", nil); err == nil {
 		t.Fatal("a flag as a nuclei tag reached a command payload")
 	}
-	if _, err := StepCommandPayload(run, &pipeline.Step{StepKey: "x"}, " ", "sr", "", nil); domainCode(err) != codeNoMatchingTool {
+	if _, err := StepCommandPayload(run, &pipeline.Step{StepKey: "x"}, " ", "sr", nil); domainCode(err) != codeNoMatchingTool {
 		t.Fatalf("tool-less payload: %v", err)
 	}
 }
