@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSWRConfig } from 'swr'
 import { useMembers } from '@/features/organization/api/use-members'
+import { memberDisplayName } from '@/features/organization/lib/member-lifecycle'
 import { useTenant } from '@/context/tenant-provider'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
@@ -177,11 +178,13 @@ export default function CampaignDetailPage() {
   const id = params.id as string
 
   const { currentTenant } = useTenant()
-  const { members } = useMembers(currentTenant?.id)
+  // A name map, not a picker: it must also name people who were disabled or
+  // left (marked "(deactivated)"), so it lists every status.
+  const { members } = useMembers(currentTenant?.id, { status: 'all', limit: 500 })
   const memberNameById = useMemo(() => {
     const m = new Map<string, string>()
     for (const mem of members) {
-      if (mem.user_id) m.set(mem.user_id, mem.name || mem.email || mem.user_id)
+      if (mem.user_id) m.set(mem.user_id, memberDisplayName(mem))
     }
     return m
   }, [members])

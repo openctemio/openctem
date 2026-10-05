@@ -7,6 +7,7 @@
  * with team:groups:write, the permissions that already manage data scope.
  */
 
+import { PICKER_MEMBER_STATUS } from '@/features/organization/api/use-members'
 import { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { KeyRound, Trash2, UserPlus } from 'lucide-react'
@@ -56,6 +57,8 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
           include: 'user',
           limit: '10',
           search: debouncedSearch.trim(),
+          // Grant picker: active members only (the API refuses anyone else).
+          status: PICKER_MEMBER_STATUS,
         }).toString()}`
       : null
   const { data: members } = useSWR<MembersResponse>(membersUrl, (url: string) =>

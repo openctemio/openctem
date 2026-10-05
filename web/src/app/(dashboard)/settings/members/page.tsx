@@ -61,6 +61,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
+import { cn } from '@/lib/utils'
 import {
   UserPlus,
   Shield,
@@ -79,6 +80,8 @@ import {
   RefreshCw,
   KeyRound,
   ShieldOff,
+  UserMinus,
+  Eraser,
 } from 'lucide-react'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useTenant } from '@/context/tenant-provider'
@@ -99,6 +102,11 @@ import {
   PEER_ADMIN_LOCK_REASON,
   canResetMemberMfa,
   RESET_MFA_OWNER_REASON,
+  MemberAccessReportView,
+  OffboardMemberDialog,
+  useMemberAccessReport,
+  eraseMemberPersonalData,
+  isDeactivated,
 } from '@/features/organization'
 import { PendingSetupBadge } from '@/features/shared'
 import { useUserRoles, useRoles, useSetUserRoles, type Role } from '@/features/access-control'
@@ -126,25 +134,33 @@ function PeerAdminLockedItems({ mfaEnabled }: { mfaEnabled: boolean }) {
       {mfaEnabled && (
         <DisabledMenuItem label="Reset 2FA" icon={ShieldOff} reason={RESET_MFA_OWNER_REASON} />
       )}
-      <DisabledMenuItem label="Suspend" icon={Ban} reason={PEER_ADMIN_LOCK_REASON} />
-      <DisabledMenuItem label="Remove member" icon={Trash2} reason={PEER_ADMIN_LOCK_REASON} />
+      <DisabledMenuItem label="Disable" icon={Ban} reason={PEER_ADMIN_LOCK_REASON} />
+      <DisabledMenuItem label="Offboard" icon={UserMinus} reason={PEER_ADMIN_LOCK_REASON} />
     </>
   )
 }
 
-// Tab values for the status filter on the members table. Pending
-// invitations live in their own section (not in the members list), so
-// they are NOT a tab here. The user-level "inactive" status is also
-// excluded — it was always 0 in practice and has no admin UI.
-type StatusFilter = 'all' | 'active' | 'suspended'
+// Tab values for the status filter on the members table (RFC-050 member
+// lifecycle). "current" (the default) is active + disabled; offboarded
+// members are the tombstones of people who left, listed only on request.
+// Pending invitations live in their own section, so they are NOT a tab here.
+type StatusFilter = 'current' | 'active' | 'suspended' | 'offboarded' | 'all'
 type RoleFilter = 'all' | MemberRole
 
 // Static config
 const statusFilters: { value: StatusFilter; label: string }[] = [
-  { value: 'all', label: 'All statuses' },
+  { value: 'current', label: 'Current members' },
   { value: 'active', label: 'Active' },
-  { value: 'suspended', label: 'Suspended' },
+  { value: 'suspended', label: 'Disabled' },
+  { value: 'offboarded', label: 'Offboarded' },
+  { value: 'all', label: 'Everyone' },
 ]
+
+function matchesStatus(status: string, filter: StatusFilter): boolean {
+  if (filter === 'all') return true
+  if (filter === 'current') return status !== 'offboarded'
+  return status === filter
+}
 
 const roleFilters: { value: RoleFilter; label: string }[] = [
   { value: 'all', label: 'All roles' },
@@ -195,7 +211,8 @@ const getRoleColor = (role: Role) =>
 
 const MEMBER_STATUS_LABEL: Record<string, string> = {
   active: 'Active',
-  suspended: 'Suspended',
+  suspended: 'Disabled',
+  offboarded: 'Offboarded',
 }
 
 function MemberStatusBadge({ status, pendingSetup }: { status: string; pendingSetup?: boolean }) {
@@ -209,11 +226,23 @@ function MemberStatusBadge({ status, pendingSetup }: { status: string; pendingSe
   return (
     <Badge
       variant={status === 'active' ? 'secondary' : 'outline'}
-      className={status === 'suspended' ? 'border-destructive/40 text-destructive' : undefined}
+      className={
+        status === 'suspended'
+          ? 'border-destructive/40 text-destructive'
+          : status === 'offboarded'
+            ? 'text-muted-foreground'
+            : undefined
+      }
     >
       {label}
     </Badge>
   )
+}
+
+// What the member holds and owns (owner/admin only; RFC-050).
+function MemberAccessPanel({ memberId }: { memberId: string }) {
+  const { report, isLoading } = useMemberAccessReport(memberId)
+  return <MemberAccessReportView report={report} isLoading={isLoading} />
 }
 
 // Helper to convert MemberRBACRole to Role-like object for styling
@@ -465,7 +494,7 @@ export default function UsersPage() {
     isLoading: membersLoading,
     isError: membersError,
     mutate: mutateMembers,
-  } = useMembers(tenantSlug, { includeRoles: true })
+  } = useMembers(tenantSlug, { includeRoles: true, status: 'all', limit: 500 })
   // Note: Stats are calculated from members/invitations data to avoid extra API call
 
   // Build roles map from members data for O(1) lookup in table cells
@@ -503,11 +532,12 @@ export default function UsersPage() {
   // Reset-2FA confirmation: the member awaiting confirmation.
   const [resetMfaMember, setResetMfaMember] = useState<MemberWithUser | null>(null)
   const [isResettingMfa, setIsResettingMfa] = useState(false)
-  // Remove confirmation: same shape, but for the destructive Remove action.
-  // Remove deletes the membership row entirely (and any pending invitations
-  // tied to the email) so it deserves at least as much friction as Suspend.
-  const [removeConfirmMember, setRemoveConfirmMember] = useState<MemberWithUser | null>(null)
-  const [isRemoving, setIsRemoving] = useState(false)
+  // Offboarding wizard (RFC-050): the member being offboarded. Offboarding
+  // strips every access source and asks for a new owner of their work.
+  const [offboardMember, setOffboardMember] = useState<MemberWithUser | null>(null)
+  // Erase personal data (owner only, offboarded members): confirmation.
+  const [eraseConfirmMember, setEraseConfirmMember] = useState<MemberWithUser | null>(null)
+  const [isErasing, setIsErasing] = useState(false)
 
   // Track if sheet is fully closed (after animation completes)
   const [isSheetAnimating, setIsSheetAnimating] = useState(false)
@@ -532,11 +562,11 @@ export default function UsersPage() {
   }, [pendingRolesEdit, selectedMember])
   // Search and filters live in the URL so a filtered member list can be linked to.
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
-  const [statusParam, setStatusFilter] = useUrlFilter('status', 'all')
+  const [statusParam, setStatusFilter] = useUrlFilter('status', 'current')
   const [roleParam, setRoleFilter] = useUrlFilter('role', 'all')
   const statusFilter: StatusFilter = statusFilters.some((f) => f.value === statusParam)
     ? (statusParam as StatusFilter)
-    : 'all'
+    : 'current'
   const roleFilter: RoleFilter = roleFilters.some((f) => f.value === roleParam)
     ? (roleParam as RoleFilter)
     : 'all'
@@ -555,9 +585,7 @@ export default function UsersPage() {
   const filteredData = useMemo(() => {
     let data = [...members]
 
-    if (statusFilter !== 'all') {
-      data = data.filter((member) => member.status === statusFilter)
-    }
+    data = data.filter((member) => matchesStatus(member.status, statusFilter))
 
     if (roleFilter !== 'all') {
       data = data.filter((member) => member.role === roleFilter)
@@ -581,8 +609,10 @@ export default function UsersPage() {
   const statusCounts: Record<StatusFilter, number> = useMemo(
     () => ({
       all: members.length,
+      current: members.filter((m) => m.status !== 'offboarded').length,
       active: members.filter((m) => m.status === 'active').length,
       suspended: members.filter((m) => m.status === 'suspended').length,
+      offboarded: members.filter((m) => m.status === 'offboarded').length,
     }),
     [members]
   )
@@ -594,12 +624,24 @@ export default function UsersPage() {
       accessorKey: 'name',
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
       cell: ({ row }) => (
-        <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            'flex items-center gap-3',
+            isDeactivated(row.original.status) && 'opacity-60'
+          )}
+        >
           <Avatar className="h-8 w-8">
             <AvatarFallback className="text-xs">{getInitials(row.original.name)}</AvatarFallback>
           </Avatar>
           <div>
-            <p className="font-medium">{row.original.name}</p>
+            <p className="font-medium">
+              {row.original.name}
+              {isDeactivated(row.original.status) && (
+                <span className="text-muted-foreground ms-1 text-xs font-normal">
+                  (deactivated)
+                </span>
+              )}
+            </p>
             <p className="text-muted-foreground text-xs">{row.original.email}</p>
           </div>
         </div>
@@ -655,6 +697,7 @@ export default function UsersPage() {
         const member = row.original
         const isOwnerRow = member.role === 'owner'
         const locked = isPeerAdminLocked(member, caller)
+        const offboarded = member.status === 'offboarded'
 
         return (
           <DropdownMenu>
@@ -687,12 +730,27 @@ export default function UsersPage() {
                   </DropdownMenuItem>
                 </>
               )}
-              {!isOwnerRow && locked && (
+              {!isOwnerRow && !offboarded && locked && (
                 <Can permission={Permission.MembersManage} minRole="admin">
                   <PeerAdminLockedItems mfaEnabled={member.mfa_status === 'enabled'} />
                 </Can>
               )}
-              {!isOwnerRow && !locked && (
+              {offboarded && caller.isOwner && canManageMembers && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={(e) => {
+                      e.preventDefault()
+                      setEraseConfirmMember(member)
+                    }}
+                  >
+                    <Eraser className="me-2 h-4 w-4" />
+                    Erase personal data
+                  </DropdownMenuItem>
+                </>
+              )}
+              {!isOwnerRow && !offboarded && !locked && (
                 <>
                   <Can permission={Permission.RolesAssign}>
                     <DropdownMenuItem
@@ -743,15 +801,15 @@ export default function UsersPage() {
                               tenantEndpoints.reactivateMember(tenantSlug, member.id),
                               { method: 'POST' }
                             )
-                            toast.success(`${member.name || member.email} reactivated`)
+                            toast.success(`${member.name || member.email} re-enabled`)
                             refreshData()
-                          } catch {
-                            toast.error('Failed to reactivate member')
+                          } catch (error) {
+                            toast.error(getErrorMessage(error, 'Failed to re-enable member'))
                           }
                         }}
                       >
                         <CheckCircle className="me-2 h-4 w-4" />
-                        Reactivate
+                        Re-enable
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem
@@ -764,20 +822,20 @@ export default function UsersPage() {
                         }}
                       >
                         <Ban className="me-2 h-4 w-4" />
-                        Suspend
+                        Disable
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem
                       variant="destructive"
                       onSelect={(e) => {
-                        // Open confirmation instead of firing immediately.
-                        // onSelect lets the dropdown close cleanly first.
+                        // Open the offboarding wizard. onSelect lets the
+                        // dropdown close cleanly first.
                         e.preventDefault()
-                        setRemoveConfirmMember(member)
+                        setOffboardMember(member)
                       }}
                     >
-                      <Trash2 className="me-2 h-4 w-4" />
-                      Remove member
+                      <UserMinus className="me-2 h-4 w-4" />
+                      Offboard...
                     </DropdownMenuItem>
                   </Can>
                 </>
@@ -790,24 +848,20 @@ export default function UsersPage() {
   ]
 
   // Actions
-  // Confirm and execute the pending removal. Called from the AlertDialog
-  // action button — keeps removal a deliberate two-click action.
-  const handleConfirmRemove = async () => {
-    if (!tenantSlug || !removeConfirmMember) return
-    setIsRemoving(true)
+  // Erase an offboarded person's name and email (owner only). Rows and
+  // history stay; they then show "Deleted user #...".
+  const handleConfirmErase = async () => {
+    if (!eraseConfirmMember) return
+    setIsErasing(true)
     try {
-      await fetcherWithOptions(tenantEndpoints.removeMember(tenantSlug, removeConfirmMember.id), {
-        method: 'DELETE',
-      })
-      toast.success(
-        `Removed ${removeConfirmMember.name || removeConfirmMember.email} from the team`
-      )
-      setRemoveConfirmMember(null)
+      await eraseMemberPersonalData(eraseConfirmMember.id)
+      toast.success('Personal data erased')
+      setEraseConfirmMember(null)
       refreshData()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to remove member'))
+      toast.error(getErrorMessage(error, 'Failed to erase personal data'))
     } finally {
-      setIsRemoving(false)
+      setIsErasing(false)
     }
   }
 
@@ -820,11 +874,11 @@ export default function UsersPage() {
       await fetcherWithOptions(tenantEndpoints.suspendMember(tenantSlug, suspendConfirmMember.id), {
         method: 'POST',
       })
-      toast.success(`${suspendConfirmMember.name || suspendConfirmMember.email} suspended`)
+      toast.success(`${suspendConfirmMember.name || suspendConfirmMember.email} disabled`)
       setSuspendConfirmMember(null)
       refreshData()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to suspend member'))
+      toast.error(getErrorMessage(error, 'Failed to disable member'))
     } finally {
       setIsSuspending(false)
     }
@@ -973,7 +1027,8 @@ export default function UsersPage() {
     },
   ]
 
-  const toggleStatus = (next: StatusFilter) => setStatusFilter(statusFilter === next ? 'all' : next)
+  const toggleStatus = (next: StatusFilter) =>
+    setStatusFilter(statusFilter === next ? 'current' : next)
 
   const toolbarStart = (
     <>
@@ -1056,11 +1111,11 @@ export default function UsersPage() {
               loading={membersLoading}
               items={[
                 {
-                  key: 'all',
+                  key: 'current',
                   label: 'Members',
-                  value: statusCounts.all,
-                  onClick: () => setStatusFilter('all'),
-                  active: statusFilter === 'all',
+                  value: statusCounts.current,
+                  onClick: () => setStatusFilter('current'),
+                  active: statusFilter === 'current',
                 },
                 {
                   key: 'active',
@@ -1071,10 +1126,17 @@ export default function UsersPage() {
                 },
                 {
                   key: 'suspended',
-                  label: 'Suspended',
+                  label: 'Disabled',
                   value: statusCounts.suspended,
                   onClick: () => toggleStatus('suspended'),
                   active: statusFilter === 'suspended',
+                },
+                {
+                  key: 'offboarded',
+                  label: 'Offboarded',
+                  value: statusCounts.offboarded,
+                  onClick: () => toggleStatus('offboarded'),
+                  active: statusFilter === 'offboarded',
                 },
                 {
                   key: 'invites',
@@ -1100,7 +1162,7 @@ export default function UsersPage() {
                 /*
                   No selection column: the old bulk "Resend / Deactivate /
                   Delete" actions fired toasts without calling any API. Per-row
-                  actions are the supported way to suspend / remove a member.
+                  actions are the supported way to disable / offboard a member.
                 */
                 <DataTable
                   columns={columns}
@@ -1140,7 +1202,8 @@ export default function UsersPage() {
           const member = selectedMember
           const isOwnerRow = member.role === 'owner'
           const locked = !isOwnerRow && isPeerAdminLocked(member, caller)
-          const canRemove = canManageMembers && !isOwnerRow && !locked
+          const canOffboard =
+            canManageMembers && !isOwnerRow && !locked && member.status !== 'offboarded'
           return (
             <DetailSheet
               open
@@ -1162,17 +1225,17 @@ export default function UsersPage() {
                         toast.success('Member ID copied to clipboard')
                       },
                     },
-                    ...(canRemove
+                    ...(canOffboard
                       ? [
                           {
-                            label: 'Remove from team',
-                            icon: Trash2,
+                            label: 'Offboard...',
+                            icon: UserMinus,
                             destructive: true,
                             separatorBefore: true,
-                            // Close the drawer first: the confirmation is an
-                            // AlertDialog with its own overlay.
+                            // Close the drawer first: the wizard is a dialog
+                            // with its own overlay.
                             onSelect: () => {
-                              setRemoveConfirmMember(member)
+                              setOffboardMember(member)
                               setSelectedMember(null)
                             },
                           },
@@ -1207,6 +1270,8 @@ export default function UsersPage() {
                       : undefined
                   }
                 />
+
+                {canManageMembers && <MemberAccessPanel memberId={member.id} />}
 
                 <DetailFieldGrid>
                   <DetailField label="Member ID" full>
@@ -1315,16 +1380,17 @@ export default function UsersPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Suspend member?</AlertDialogTitle>
+            <AlertDialogTitle>Disable member?</AlertDialogTitle>
             <AlertDialogDescription>
               {suspendConfirmMember && (
                 <>
                   <span className="font-medium text-foreground">
                     {suspendConfirmMember.name || suspendConfirmMember.email}
                   </span>{' '}
-                  will immediately lose access to this team. Active sessions will be invalidated and
-                  any pending invitations will be cancelled. You can reactivate them later — the
-                  membership and audit trail are preserved.
+                  immediately loses access: sessions end, API keys are suspended, and the scans,
+                  report schedules and workflows they own are paused. Their access groups, grants
+                  and ownership are kept as they are, so you can re-enable them later. To end access
+                  for good, offboard them instead.
                 </>
               )}
             </AlertDialogDescription>
@@ -1345,12 +1411,12 @@ export default function UsersPage() {
               {isSuspending ? (
                 <>
                   <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  Suspending...
+                  Disabling...
                 </>
               ) : (
                 <>
                   <Ban className="me-2 h-4 w-4" />
-                  Suspend
+                  Disable
                 </>
               )}
             </AlertDialogAction>
@@ -1358,45 +1424,54 @@ export default function UsersPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Remove Member Confirmation Dialog */}
-      <ConfirmDialog
-        open={!!removeConfirmMember}
+      {/* Offboarding wizard (RFC-050) */}
+      <OffboardMemberDialog
+        tenantSlug={tenantSlug}
+        member={offboardMember}
         onOpenChange={(open) => {
-          if (!open && !isRemoving) setRemoveConfirmMember(null)
+          if (!open) setOffboardMember(null)
         }}
-        title="Remove member from team?"
+        onOffboarded={refreshData}
+      />
+
+      {/* Erase personal data confirmation (owner only, offboarded members) */}
+      <ConfirmDialog
+        open={!!eraseConfirmMember}
+        onOpenChange={(open) => {
+          if (!open && !isErasing) setEraseConfirmMember(null)
+        }}
+        title="Erase personal data?"
         desc={
           <>
-            {removeConfirmMember && (
+            {eraseConfirmMember && (
               <>
+                The name and email of{' '}
                 <span className="font-medium text-foreground">
-                  {removeConfirmMember.name || removeConfirmMember.email}
+                  {eraseConfirmMember.name || eraseConfirmMember.email}
                 </span>{' '}
-                will be removed from this team. Their membership row, role assignments, and any
-                pending invitations addressed to their email will be deleted. This is permanent — to
-                undo, you would need to invite them again from scratch. Prefer{' '}
-                <span className="font-medium text-foreground">Suspend</span> if you only want to
-                pause access temporarily.
+                are replaced with an anonymous label everywhere, and their credentials are cleared.
+                Findings, comments and audit history stay, attributed to the anonymous label. This
+                cannot be undone.
               </>
             )}
           </>
         }
         confirmText={
-          isRemoving ? (
+          isErasing ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Removing...
+              Erasing...
             </>
           ) : (
             <>
-              <Trash2 className="me-2 h-4 w-4" />
-              Remove
+              <Eraser className="me-2 h-4 w-4" />
+              Erase
             </>
           )
         }
         destructive
-        isLoading={isRemoving}
-        handleConfirm={() => void handleConfirmRemove()}
+        isLoading={isErasing}
+        handleConfirm={() => void handleConfirmErase()}
       />
     </MemberRolesContext.Provider>
   )

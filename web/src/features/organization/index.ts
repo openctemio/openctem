@@ -19,6 +19,7 @@ export * from './hooks/use-tenant-logo'
 
 // Policy helpers
 export * from './lib/member-policy'
+export * from './lib/member-lifecycle'
 
 // Components
 export * from './components/role-checklist'
@@ -26,3 +27,5 @@ export * from './components/add-user-dialog'
 export * from './components/invite-user-dialog'
 export * from './components/setup-link-dialog'
 export * from './components/access-restrictions-card'
+export * from './components/member-access-report'
+export * from './components/offboard-member-dialog'
