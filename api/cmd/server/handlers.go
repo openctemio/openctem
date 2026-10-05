@@ -268,6 +268,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:          newEASMHandler(repos, svc, log),
 		EASMSeed:      newEASMSeedHandler(repos, svc, log),
+		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -760,13 +761,38 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 	return easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
 }
 
+// newEASMSettingsHandler builds the EASM settings and run-now handler
+// (research/22 P0-11).
+func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps, log *logger.Logger) *handler.EASMSettingsHandler {
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	var sweeper handler.EASMSweeper
+	if svc.EASMSweep != nil {
+		sweeper = svc.EASMSweep
+	}
+	platform := handler.EASMPlatform{
+		CTAvailable:   cfg.Worker.CertMonitorEnabled,
+		DNSAvailable:  svc.EASMDNS != nil,
+		CTDefaultHrs:  int(cfg.Worker.CertMonitorInterval.Hours()),
+		DNSDefaultHrs: int(cfg.Worker.EASMDNSInterval.Hours()),
+	}
+	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log)
+}
+
 // newEASMSeedHandler builds the seeds handler; every change is audited.
 func newEASMSeedHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMSeedHandler {
 	var audit handler.AttributionAuditor
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
-	return handler.NewEASMSeedHandler(easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed), audit, log)
+	h := handler.NewEASMSeedHandler(easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed), audit, log)
+	// A new seed starts a sweep so its first results arrive in minutes (P0-11).
+	if svc.EASMSweep != nil {
+		h.SetSweeper(svc.EASMSweep)
+	}
+	return h
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit
