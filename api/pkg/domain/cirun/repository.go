@@ -31,6 +31,11 @@ type Repository interface {
 	EnabledTrustConfigs(ctx context.Context, tenantID shared.ID, issuer string) ([]TrustConfig, error)
 	TouchTrustConfig(ctx context.Context, tenantID, id shared.ID, at time.Time) error
 
+	// CIRequireOIDC reads whether the tenant refuses CI results sent with a
+	// sensor key; SetCIRequireOIDC writes it.
+	CIRequireOIDC(ctx context.Context, tenantID shared.ID) (bool, error)
+	SetCIRequireOIDC(ctx context.Context, tenantID shared.ID, require bool) error
+
 	// ClaimJTI records an OIDC token id; false means it was exchanged
 	// before (replay). Global, not tenant-scoped: one token, one exchange.
 	ClaimJTI(ctx context.Context, issuer, jti string, expiresAt time.Time) (bool, error)

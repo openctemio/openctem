@@ -7868,6 +7868,82 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ci/settings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * CI settings
+     * @description Whether the organization requires the CI job's OIDC identity for CI results (a CI sensor's key is then refused). On for organizations created since this setting exists.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Settings']
+          }
+        }
+      }
+    }
+    /**
+     * Change the CI settings
+     * @description Turning require_oidc off lets CI sensors authenticate with a sensor key again (audited at high severity).
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description CI settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CISettingsRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Settings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ci/trust-configs': {
     parameters: {
       query?: never
@@ -34883,6 +34959,14 @@ export interface components {
       new?: string[]
       pre_existing?: string[]
     }
+    'github_com_openctemio_openctem_api_internal_app_cirun.Settings': {
+      /**
+       * @description RequireOIDC refuses CI results sent with a sensor key: a CI job must
+       *     prove its identity with its provider's OIDC token. On for every
+       *     organization created after migration 001112; existing ones opt in.
+       */
+      require_oidc?: boolean
+    }
     'github_com_openctemio_openctem_api_internal_app_cirun.Verdict': {
       baseline?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView']
       links?: components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.VerdictLinks']
@@ -37420,6 +37504,13 @@ export interface components {
       is_past_due?: boolean
       notes?: string
       ransomware_use?: string
+    }
+    'internal_infra_http_handler.CISettingsRequest': {
+      /**
+       * @description RequireOIDC refuses CI results sent with a sensor key (a CI job must
+       *     use its provider's OIDC identity).
+       */
+      require_oidc?: boolean
     }
     'internal_infra_http_handler.CITemplateDrift': {
       current?: string

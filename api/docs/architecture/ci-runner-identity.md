@@ -120,5 +120,10 @@ sequenceDiagram
   repository that this pipeline alone reported and nothing saw after its last
   run; findings from people (pentest, manual, bug bounty, red team) are never
   touched. A new sighting reopens a not-observed finding.
+- With "OIDC required for CI" (`tenants.ci_require_oidc`, default on for new
+  organizations), a one-shot sensor's key is refused on every sensor route
+  (`cirun.RunnerKeyPolicy`, wired into both sensor authenticators); the
+  setting is read only for one-shot sensors, and an unreadable setting
+  refuses.
 - Refusals are uniform to the caller and detailed in the audit log only after
   the token verified.

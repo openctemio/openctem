@@ -2,6 +2,10 @@
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/ingest/binding-mismatch","title":"Binding mismatch","status":409,"detail":"All segments and the commit of a report must use the same form and command.","retryable":false}
+## ci-oidc-required
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/ci-oidc-required","title":"OIDC required for CI","status":403,"detail":"This organization accepts CI results only with the CI job's OIDC identity, not a sensor key: set OPENCTEM_TENANT_ID and add a CI trust configuration.","retryable":false}
 ## command-claimed
 Content-Type: application/problem+json
 Openctem-Protocol: 2
