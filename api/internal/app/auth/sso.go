@@ -721,7 +721,9 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 // must have a non-nil tenantMemberRepo.
 func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User, t *tenantdom.Tenant, rp *resolvedProvider, email string) error {
 	// Already a member? Nothing to do (existing members are unaffected).
-	if m, err := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); err == nil && m != nil {
+	// An offboarded tombstone is not a membership: only JIT may re-admit the
+	// person (from zero), under the same rules as a newcomer.
+	if m, err := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); err == nil && m != nil && !m.IsOffboarded() {
 		return nil
 	}
 
@@ -739,7 +741,7 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 	if err := s.tenantMemberRepo.CreateMembership(ctx, membership); err != nil {
 		// A concurrent login may have created the membership between our lookup
 		// and here — re-check before failing (fail-closed on genuine failure).
-		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil {
+		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil && !m.IsOffboarded() {
 			return nil
 		}
 		s.logger.Warn("SSO auto-provision membership failed",
@@ -1563,7 +1565,7 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 		// been invited (membership) first. Fail closed on lookup error.
 		if s.tenantMemberRepo != nil {
 			m, mErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID())
-			if mErr != nil || m == nil {
+			if mErr != nil || m == nil || m.IsOffboarded() {
 				s.logger.Warn("federated login refused: user is not a member of the target tenant",
 					"user_id", u.ID().String(), "tenant_id", t.ID().String())
 				return nil, ErrSSOFederatedNotMember

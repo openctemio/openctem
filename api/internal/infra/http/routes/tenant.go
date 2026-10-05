@@ -256,11 +256,24 @@ func tenantPerm(p permission.Permission) Middleware {
 // route admits owners and administrators; the service re-checks the caller's
 // live membership and adds the peer-administrator, self and
 // other-organization rules.
-func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAuthHandler, authMiddleware, userSyncMiddleware Middleware) {
-	if localAuth == nil {
+//
+// The member lifecycle (RFC-050): GET .../access-report lists what the member
+// holds and owns, POST .../offboard strips access with mandatory reassignment
+// and keeps a tombstone, POST .../erase (owner only) anonymises an offboarded
+// person. The service loads the membership within the caller's tenant (404
+// otherwise) and applies the peer-administrator rule.
+func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAuthHandler, tenantH *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if localAuth == nil && tenantH == nil {
 		return
 	}
-	router.Group("/api/v1/organization/members/{member_id}/mfa", func(r Router) {
-		r.DELETE("/", localAuth.ResetMemberMFA, middleware.RequireAdmin())
+	router.Group("/api/v1/organization/members/{member_id}", func(r Router) {
+		if localAuth != nil {
+			r.DELETE("/mfa", localAuth.ResetMemberMFA, middleware.RequireAdmin())
+		}
+		if tenantH != nil {
+			r.GET("/access-report", tenantH.GetMemberAccessReport, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
+			r.POST("/offboard", tenantH.OffboardMember, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
+			r.POST("/erase", tenantH.EraseMemberPersonalData, middleware.RequireOwner())
+		}
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }

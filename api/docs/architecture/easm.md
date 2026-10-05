@@ -296,6 +296,35 @@ query, so ids of another tenant announce nothing; the throttle counter
 locked for the transaction, which serializes one tenant's alert writes.
 Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_test.go`.
 
+## 4h. Port and service results (built, P0-6)
+
+A port scanner (naabu, nmap, masscan, rustscan) reports an IP address with
+the ports it found open (`technical.ip_address.ports`). Ingest
+(`internal/app/ingest/ports.go`) now:
+
+1. adds an `open_port` asset `<ip>:<port>` (stored as `service` /
+   `open_port`, properties `host`, `port`, `protocol`, `service`, `version`,
+   `discovery_tool`) for every open port before the assets are processed, so
+   it gets the same exclusions, attribution (E7: typed when the address was a
+   command target, otherwise `needs_review`) and scope rules as any reported
+   asset. The port list is hostile input: ports outside 1..65535, non-open
+   states, duplicates and non-address values are dropped; at most 1 000 ports
+   per address and 10 000 per report;
+2. links the address to each port with `exposes`, and a host name the
+   scanner reported to the address with `resolves_to` when the tenant already
+   has that name as a domain or subdomain (a report never creates the name);
+3. lets the exposure bridge project each port to `port_open` (and services
+   to `service_detected`). New recon exposures are announced through the
+   outbox in the same transaction (`AnnouncingExposureRepository`, §4c);
+4. for a port-scan report that may change the address (RFC-040 §5.3), closes
+   the address's active `open_port` assets the scan no longer lists: status
+   `inactive`, a `disappeared` history entry (metadata `port_closed`) and
+   the `port_open`/`service_detected` exposures resolved, in one transaction
+   (`postgres.EASMPortRepository`). A port seen again is set active with a
+   `recovered` entry (metadata `port_opened`) and its exposure reactivated
+   (a reactivation is not announced again). Limits: a scan that finds
+   no open port reports no address, so "all ports closed" is not detected;
+   closed is judged against the previous port scan of any of these tools.
 ## 4g. Honest numbers (built, P0-13)
 
 - `GET /easm/summary` counts only exposure types something writes today
