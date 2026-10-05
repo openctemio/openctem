@@ -5260,6 +5260,14 @@ definitions:
       active_checks_allowed:
         description: 'ActiveChecksAllowed: whether a scan may touch the asset.'
         type: boolean
+      active_checks_blocked_by:
+        description: |-
+          ActiveChecksBlockedBy says why a scan may not touch the asset when
+          active_checks_allowed is false: its state (needs_review, candidate,
+          dependency, monitor_only, rejected; rejected also for a name under a
+          rejected name), or unattributed: no record, and neither inside a scope
+          target nor under a root-domain seed or verified domain.
+        type: string
       confidence:
         type: integer
       decided_at:
@@ -9233,6 +9241,16 @@ definitions:
           format: int64
           type: integer
         type: object
+      by_state:
+        additionalProperties:
+          format: int64
+          type: integer
+        description: |-
+          ByState counts the state lenses of the same filter: open, fixed,
+          dispositioned (false positive, accepted, duplicate; never counted as
+          fixed) and all. Send state=all with the other filters to label a lens
+          switcher.
+        type: object
       by_status:
         additionalProperties:
           format: int64
@@ -10529,6 +10547,18 @@ definitions:
     properties:
       code:
         maxLength: 32
+        type: string
+      password:
+        maxLength: 128
+        type: string
+    required:
+    - code
+    - password
+    type: object
+  internal_infra_http_handler.MFAEnableRequest:
+    properties:
+      code:
+        maxLength: 16
         type: string
       password:
         maxLength: 128
@@ -22559,6 +22589,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -22862,6 +22901,22 @@ paths:
       - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
         type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
@@ -23984,6 +24039,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -24287,6 +24351,22 @@ paths:
       - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
         type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
@@ -24662,6 +24742,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -24965,6 +25054,22 @@ paths:
       - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
         type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
@@ -25307,6 +25412,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -25610,6 +25724,22 @@ paths:
       - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
         type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
@@ -26005,6 +26135,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -26308,6 +26447,22 @@ paths:
       - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
         type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
@@ -35785,15 +35940,16 @@ paths:
     post:
       consumes:
       - application/json
-      description: Confirms the authenticator with a code and turns 2FA on. Signs
-        out every other session. Returns recovery codes, shown once.
+      description: Confirms the authenticator with a code and turns 2FA on. Needs
+        the current password. Signs out every other session. Returns recovery codes,
+        shown once.
       parameters:
-      - description: Authenticator code
+      - description: Current password and authenticator code
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_infra_http_handler.MFACodeRequest'
+          $ref: '#/definitions/internal_infra_http_handler.MFAEnableRequest'
       produces:
       - application/json
       responses:

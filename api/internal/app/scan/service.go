@@ -197,7 +197,7 @@ type Service struct {
 	securityValidator   SecurityValidator
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
-	attributionGate     AttributionGate      // optional; nil = every asset counts as confirmed
+	attributionGate     AttributionGate      // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
 	zones               ZoneDirectory        // optional; nil = zone routing off (RFC-023)
 	zoneResolver        scanzone.Resolver    // resolves hostname targets for zone routing
 	actScope            ActScopeChecker      // optional; nil = act scope not enforced (research/15 L-06)
@@ -214,13 +214,19 @@ type ScopeExclusionFilter interface {
 	ExcludedTargets(ctx context.Context, tenantID string, candidates []scope.ExclusionCandidate) (map[shared.ID]bool, error)
 }
 
-// AttributionGate reports which assets may not be checked actively because
-// their attribution is not confirmed (RFC-036 §6.3 active_allowed, O4): an
-// asset discovered passively under a domain the tenant did not verify waits
-// for review before any sensor touches it. Implemented by
-// *postgres.AttributionRepository. A lookup error stops the dispatch.
+// AttributionGate decides which assets and typed targets may not be checked
+// actively (RFC-036 §6.3 active_allowed, O4): an asset whose attribution is
+// not confirmed, a name under one the tenant rejected, and an
+// internet-facing asset with no record outside every scope target and seed.
+// Implemented by *easm.ActiveGate. A lookup error stops the dispatch.
 type AttributionGate interface {
+	// ActiveCheckBlocked returns the given assets that may not be probed,
+	// with the reason.
 	ActiveCheckBlocked(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.State, error)
+	// BlockedTargets returns the typed targets that may not be probed: a
+	// target naming an inventory asset is decided as that asset; free text
+	// only when it is (or sits under) a name the tenant rejected.
+	BlockedTargets(ctx context.Context, tenantID shared.ID, targets []string) (map[string]attribution.State, error)
 }
 
 // ServiceOption is a functional option for Service.
@@ -256,9 +262,10 @@ func WithScopeExclusionFilter(f ScopeExclusionFilter) ServiceOption {
 	}
 }
 
-// WithAttributionGate makes scan target selection skip asset-group members
-// whose attribution is not confirmed. Direct targets the tenant typed into
-// the scan are its own assertion (O8) and are not gated.
+// WithAttributionGate makes every active-scan path refuse what the tenant
+// has not authorized: asset-group members and typed targets that name an
+// asset whose ownership is not confirmed, names under a rejected name, and
+// unattributed internet-facing assets (see AttributionGate).
 func WithAttributionGate(g AttributionGate) ServiceOption {
 	return func(s *Service) {
 		s.attributionGate = g
