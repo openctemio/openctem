@@ -107,6 +107,12 @@ jobs:
         run: git fetch --no-tags origin "${{ github.base_ref }}"
 
       # PR-only: it reads the PR's labels (allow-destructive-migration).
+      # Changelog entries live one file per change in api/changelog.d/, so
+      # pull requests never conflict on CHANGELOG.md. This also refuses
+      # merge-conflict markers committed anywhere in the repository.
+      - name: Changelog fragments
+        run: python3 scripts/changelog.py check
+
       - name: Migration Safety
         if: github.event_name == 'pull_request'
         env:
