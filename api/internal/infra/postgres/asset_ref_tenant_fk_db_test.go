@@ -54,9 +54,10 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 27 from 000921, 3 from the scan chaining tables (001049), 2 from the CI
-	// run tables (001077, RFC-051), 1 from CI pipelines (001081).
-	if n != 33 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 33 validated", n, allValid.Bool)
+	// run tables (001077, RFC-051), 1 from CI pipelines (001081), 1 from CI
+	// coverage expectations (001082).
+	if n != 34 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 34 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing
