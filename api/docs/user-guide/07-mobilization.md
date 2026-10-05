@@ -58,6 +58,14 @@ to fix right now (accepted risk, false positive, compensating control in place).
 Create an exception/suppression rule, then it moves through an approval flow:
 **approve** or **reject** (with a reason). You can also edit or delete rules.
 
+- Someone other than the requester approves the rule, unless the owner is the
+  only person who can approve (that self-approval is recorded as a Critical
+  audit event).
+- If the rule is edited after you opened it, approving fails; reload and review
+  the current version.
+- When a rule expires or is deleted, the findings it hid return to the open
+  backlog (unless another active rule covers them).
+
 ## Progress
 
 **Mobilization → Progress** (`/progress`) is a read-only rollup of resolution
