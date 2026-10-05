@@ -156,6 +156,16 @@ reference implementations.
   navigation (View), outline for a change (Mark fixed, Approve). Gate each on
   its permission **and** on the API being able to do it for that group type;
   hide it otherwise (no dead buttons). Two at most; more go in a `⋯` menu.
+- **View is a drill-down, pushed onto the history.** It opens the flat list
+  with every other filter kept and the group's filter added, through
+  `pushUrlSearch` (not the `replaceState` filter writers), so Back returns to
+  the grouped view. The URL records the origin (`from=group:<dimension>`) and
+  the page shows a breadcrumb rebuilt from the URL alone
+  (`DrillDownBreadcrumb`: "Findings › By rule › 10114", the value as
+  untrusted text). The drilled filter is an ordinary context chip whose ✕
+  removes only its parameter and ends the drill-down. Every group dimension
+  needs a list filter, so View exists on all of them (Findings:
+  `features/findings/lib/drilldown.ts`).
 - **Selection** (`selectable`, with a `select` column): the header gets a
   checkbox that selects the group's rows on screen (indeterminate when some
   are). It feeds the same `BulkActionBar` as the flat list. Turn it on when
