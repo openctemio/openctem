@@ -7102,7 +7102,7 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description Page number */
+          /** @description Page number (1-based; 0 or missing means 1) */
           page?: number
           /** @description Items per page */
           per_page?: number
@@ -7261,7 +7261,7 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description Page number */
+          /** @description Page number (1-based; 0 or missing means 1) */
           page?: number
           /** @description Items per page */
           per_page?: number
@@ -7371,7 +7371,7 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description Page number */
+          /** @description Page number (1-based; 0 or missing means 1) */
           page?: number
           /** @description Items per page */
           per_page?: number
