@@ -61,7 +61,13 @@ func TestKeyBound_SigningIdentity_DB(t *testing.T) {
 	if !id.KeyBound() || !id.Sensor.KeyBound() {
 		t.Fatal("identity must be key-bound")
 	}
-	for name, thumb := range map[string]string{"pending": pendingThumb, "revoked": revokedThumb, "unknown": "x" + activeThumb[1:]} {
+	// An unknown thumbprint differs from the active one in its first character
+	// (a fixed "x" would equal it when the random thumbprint starts with "x").
+	unknownThumb := "x" + activeThumb[1:]
+	if activeThumb[0] == 'x' {
+		unknownThumb = "y" + activeThumb[1:]
+	}
+	for name, thumb := range map[string]string{"pending": pendingThumb, "revoked": revokedThumb, "unknown": unknownThumb} {
 		if _, _, err := s.svc.SigningIdentity(ctx, thumb, true); err == nil {
 			t.Errorf("%s key authenticated", name)
 		}

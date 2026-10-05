@@ -14,7 +14,6 @@
   "common.noData": "Không có dữ liệu",
   "common.rowsExported": "Đã xuất {count} dòng",
   "common.language": "Ngôn ngữ",
-  "nav.item.ci-runners": "CI runner",
   "nav.item.sensors": "Sensor",
   "nav.item.all-components": "Tất cả thành phần",
   "nav.item.apis": "API",
