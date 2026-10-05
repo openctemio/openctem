@@ -16,7 +16,7 @@ export interface PipelineStatusMeta {
 
 /**
  * Severity order (the API's badge order): failing > degraded > stale >
- * running/fresh; revoked, archived and never-run are inactive. No status is
+ * running/fresh; retired, revoked, archived and never-run are inactive. No status is
  * red except a failing gate: silence is stale (amber), never offline.
  */
 export const PIPELINE_STATUS_META: Record<CIPipelineStatus, PipelineStatusMeta> = {
@@ -49,6 +49,12 @@ export const PIPELINE_STATUS_META: Record<CIPipelineStatus, PipelineStatusMeta> 
     tone: 'muted',
     description: 'Idle for 90 days. Nothing is deleted; the next run brings it back.',
   },
+  retired: {
+    label: 'Retired',
+    tone: 'muted',
+    description:
+      'An administrator retired it and the findings only it reported were closed. The next run brings it back.',
+  },
   revoked: {
     label: 'Revoked',
     tone: 'muted',
@@ -60,7 +66,12 @@ export const PIPELINE_STATUS_META: Record<CIPipelineStatus, PipelineStatusMeta> 
 export const PIPELINE_STATUSES = Object.keys(PIPELINE_STATUS_META) as CIPipelineStatus[]
 
 /** Hidden unless "Show inactive" is on (hidden is never deleted). */
-export const INACTIVE_PIPELINE_STATUSES: CIPipelineStatus[] = ['archived', 'revoked', 'never']
+export const INACTIVE_PIPELINE_STATUSES: CIPipelineStatus[] = [
+  'archived',
+  'retired',
+  'revoked',
+  'never',
+]
 
 export function isPipelineStatus(s: string | undefined): s is CIPipelineStatus {
   return !!s && s in PIPELINE_STATUS_META
