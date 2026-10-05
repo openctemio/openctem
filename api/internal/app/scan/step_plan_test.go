@@ -48,7 +48,7 @@ func domainCode(err error) string {
 	return ""
 }
 
-// F1: a step that names only a capability runs the catalogue default of its
+// F1: a step that names only a capability runs the catalog default of its
 // stage, and the command names that tool in `scanner`.
 func TestResolveStepTool_CapabilityOnlyStepGetsAScanner(t *testing.T) {
 	tools := &fakeToolLookup{platform: map[string]*tool.Tool{"naabu": activeTool("naabu")}}
@@ -74,7 +74,7 @@ func TestResolveStepTool_CapabilityOnlyStepGetsAScanner(t *testing.T) {
 }
 
 // G10: a pinned tool is strict; the planner does not swap it, even when the
-// catalogue default of its stage is another tool.
+// catalog default of its stage is another tool.
 func TestResolveStepTool_PinnedToolIsStrict(t *testing.T) {
 	tools := &fakeToolLookup{}
 	step := &pipeline.Step{StepKey: "secrets", Tool: "trufflehog", Capabilities: []string{"secrets"}}
@@ -135,7 +135,7 @@ func TestResolveStepTool_Refusals(t *testing.T) {
 	}
 }
 
-// Capabilities the catalogue does not know fall back to the tenant's tool
+// Capabilities the catalog does not know fall back to the tenant's tool
 // lookup, scoped by the caller's tenant; a disabled match is refused.
 func TestResolveStepTool_FallbackIsTenantScoped(t *testing.T) {
 	tenant := shared.NewID()
