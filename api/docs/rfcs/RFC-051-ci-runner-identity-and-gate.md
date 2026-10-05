@@ -37,7 +37,7 @@ CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs 
 - **R-2** CI authenticates by OIDC federation; a sensor API key used by a
   `runner`-type sensor still works but every response carries
   `Deprecation` and a `Link` to the exchange endpoint. **OIDC required for
-  CI** (`tenants.ci_require_oidc`, migration `001112`, `GET/PUT
+  CI** (`tenants.ci_require_oidc`, migration `001120`, `GET/PUT
   /api/v1/ci/settings`, `scans:ci:read`/`scans:ci:write`): when on, the key of
   a one-shot sensor (type `runner` or execution mode `standalone`) is refused
   on every sensor route (v2: `403` problem `ci-oidc-required`) and audited
