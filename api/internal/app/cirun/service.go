@@ -38,6 +38,10 @@ var ErrExchangeRefused = errors.New("ci token exchange refused")
 // side.
 var ErrRunnerOutdated = errors.New("ci runner older than the minimum supported version")
 
+// errPipelineRate is a pipeline over MaxPipelineRunsPerHour (refused as
+// ErrExchangeRefused, audited).
+var errPipelineRate = errors.New("pipeline run rate exceeded")
+
 // ErrReportOutOfScope refuses a report that names an asset other than the
 // run's repository.
 var ErrReportOutOfScope = fmt.Errorf("%w: a CI run reports only on its own repository", shared.ErrValidation)
@@ -114,6 +118,7 @@ type Service struct {
 	ingester  ReportIngester
 	units     BusinessUnits
 	audit     Auditor
+	alerts    AdminAlerter
 	cfg       Config
 	log       *logger.Logger
 	now       func() time.Time
@@ -131,6 +136,8 @@ type Deps struct {
 	Ingester ReportIngester
 	Units    BusinessUnits
 	Audit    Auditor
+	// Alerts tells every administrator about break-glass (nil: audit only).
+	Alerts AdminAlerter
 }
 
 // NewService creates the service.
@@ -139,7 +146,7 @@ func NewService(d Deps, cfg Config, log *logger.Logger) *Service {
 		log = logger.NewNop()
 	}
 	return &Service{repo: d.Repo, verifier: d.Verifier, assets: d.Assets, branches: d.Branches, baseline: d.Baseline,
-		ingester: d.Ingester, units: d.Units, audit: d.Audit, cfg: cfg, log: log.With("service", "cirun"), now: time.Now}
+		ingester: d.Ingester, units: d.Units, audit: d.Audit, alerts: d.Alerts, cfg: cfg, log: log.With("service", "cirun"), now: time.Now}
 }
 
 // SetClock replaces the clock (tests).
@@ -161,6 +168,12 @@ func (s *Service) logAudit(ctx context.Context, tenantID shared.ID, a Actor, ev 
 	if err := s.audit.LogEvent(ctx, auditapp.AuditContext{TenantID: tenantID.String(), ActorID: a.UserID,
 		ActorEmail: a.Email, ActorIP: a.IP, UserAgent: a.UserAgent, RequestID: a.RequestID}, ev); err != nil {
 		s.log.Warn("ci audit record not written", "action", ev.Action.String(), "error", logger.SanitizeError(err))
+	}
+}
+
+func (s *Service) alertAdmins(ctx context.Context, tenantID shared.ID, a AdminAlert) {
+	if s.alerts != nil {
+		s.alerts.AlertAdmins(ctx, tenantID, a)
 	}
 }
 
@@ -262,6 +275,11 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		}
 	} else {
 		out, err = s.createRun(ctx, tenantID, cfg, claims, key, in.UserAgent)
+		if errors.Is(err, errPipelineRate) {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "pipeline_rate",
+				Detail: fmt.Sprintf("the pipeline started %d or more runs in the last hour", cirun.MaxPipelineRunsPerHour)}})
+			return nil, ErrExchangeRefused
+		}
 		if errors.Is(err, cirun.ErrPipelineCap) {
 			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "pipeline_cap",
 				Detail: "the organization or the trust configuration has the most CI pipelines it may have"}})
@@ -353,6 +371,13 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 	}, c.IsForkEvent(), cfg)
 	if err != nil {
 		return nil, err
+	}
+	recent, err := s.repo.CountPipelineRunsSince(ctx, tenantID, pipeline.ID, now.Add(-time.Hour))
+	if err != nil {
+		return nil, fmt.Errorf("count pipeline runs: %w", err)
+	}
+	if recent >= cirun.MaxPipelineRunsPerHour {
+		return nil, errPipelineRate
 	}
 	sensorVersion := s.runnerVersion(userAgent)
 	token, hash, err := cirun.NewToken()
@@ -602,6 +627,9 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 	}
 	if run.Status == cirun.StatusEvaluated {
 		return nil, fmt.Errorf("%w: the run was already evaluated", shared.ErrConflict)
+	}
+	if run.ReportsCount >= cirun.MaxRunReports {
+		return nil, cirun.ErrRunReportCap
 	}
 	if err := ScopeReport(report, run); err != nil {
 		return nil, err
