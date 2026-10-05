@@ -517,6 +517,7 @@ type Services struct {
 	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
 	ActiveGate       *easmapp.ActiveGate
 	EASMDNS          *easmdnsapp.Service
+	EASMSweep        *easmapp.SweepService
 	CredentialImport *app.CredentialImportService
 
 	// Components & Branches
@@ -824,7 +825,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetGroup.SetDataScope(s.DataScope)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
-	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
+	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.Asset, log)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
@@ -926,7 +927,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CertMonitor.SetCertSpotterFallback(cfg.Worker.CertMonitorCertSpotterURL)
 	// Re-check a little under the sweep interval: the next scheduled run
 	// re-queries, an API restart in between does not.
-	s.CertMonitor.SetLimits(cfg.Worker.CertMonitorMaxDomainsPerRun, cfg.Worker.CertMonitorInterval*5/6)
+	s.CertMonitor.SetLimits(cfg.Worker.CertMonitorMaxDomainsPerRun, easmRecheck(cfg.Worker.CertMonitorInterval))
+	// A tenant may turn CT off (E8 opt-out) or set its own interval (P0-11).
+	s.CertMonitor.SetTenantSettings(s.Tenant)
 	// DNS-only EASM checks (RFC-036 P1): dangling CNAME/NS, email posture.
 	if cfg.Worker.EASMDNSChecksEnabled {
 		dnsClient, err := dnsprobe.New(dnsprobe.Config{Server: cfg.Worker.EASMDNSResolver, QPS: cfg.Worker.EASMDNSQPS})
@@ -934,9 +937,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			log.Warn("EASM DNS checks disabled: no resolver", "error", err)
 		} else {
 			s.EASMDNS = easmdnsapp.NewService(dnsClient, repos.EASMDNS, easmExposures, log)
-			s.EASMDNS.SetLimits(cfg.Worker.EASMDNSMaxNamesPerRun, cfg.Worker.EASMDNSInterval*5/6)
+			s.EASMDNS.SetLimits(cfg.Worker.EASMDNSMaxNamesPerRun, easmRecheck(cfg.Worker.EASMDNSInterval))
+			s.EASMDNS.SetTenantSettings(s.Tenant)
 		}
 	}
+	// Run-now and seed-triggered sweeps (research/22 P0-11): CT then DNS
+	// checks for one tenant, each honoring the tenant's switches.
+	var sweepCT easmapp.SweepCT
+	if cfg.Worker.CertMonitorEnabled {
+		sweepCT = s.CertMonitor
+	}
+	var sweepDNS easmapp.SweepDNS
+	if s.EASMDNS != nil {
+		sweepDNS = s.EASMDNS
+	}
+	s.EASMSweep = easmapp.NewSweepService(sweepCT, sweepDNS, postgres.NewEASMSweepRepository(&postgres.DB{DB: deps.DB}), log)
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.CredentialImport.SetDataScope(s.DataScope)
 	// Leaked-credential secrets are sealed with the platform credential key
@@ -1821,6 +1836,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Suppression = suppression.NewService(repos.Suppression, log)
 	// Four-eyes on approvals (owner decision B16) reads who may approve.
 	s.Suppression.SetApproverDirectory(repos.Suppression)
+	// An asset-bound rule names an asset of the tenant the requester may see
+	// (RFC-050 W8, 21b M-10).
+	s.Suppression.SetAssetRefChecker(s.DataScope)
 
 	// Enforce approved suppression rules during ingest: a new finding matching an
 	// active (approved, non-expired) rule lands resolved+suppressed (out of the
@@ -2370,4 +2388,14 @@ func connectorScansIfEnabled(c *tenablesc.Service) scan.ConnectorScans {
 		return nil
 	}
 	return c
+}
+
+// easmRecheck is the default re-check window of the EASM sweeps for an
+// interval: half an hour short of it, so the hourly controller tick re-queries
+// a name once per interval (research/22 P0-11).
+func easmRecheck(interval time.Duration) time.Duration {
+	if interval <= time.Hour {
+		return interval * 5 / 6
+	}
+	return interval - 30*time.Minute
 }
