@@ -535,6 +535,13 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 		return nil, shared.NewDomainError("FORBIDDEN", "cannot change the status of a revoked sensor", shared.ErrForbidden)
 	}
 
+	// Revocation has its own route (POST /sensors/{id}/revoke), which records
+	// a reason and a Critical sensor.revoked audit event. The generic update
+	// would log it as a Low sensor.updated, so it may not revoke.
+	if sensordom.SensorStatus(input.Status) == sensordom.SensorStatusRevoked && a.Status != sensordom.SensorStatusRevoked {
+		return nil, shared.NewDomainError("VALIDATION", "revoke a sensor with POST /api/v1/sensors/{id}/revoke", shared.ErrValidation)
+	}
+
 	withdrawn := false
 	if input.Status != "" {
 		oldStatus := a.Status
