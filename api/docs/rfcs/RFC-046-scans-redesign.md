@@ -88,7 +88,7 @@ nobody owning **definition → coverage**:
 | Scan session | `scan_sessions` | Written only by `POST /agent/scans`, which no client calls |
 | Scan profile | `scan_profiles` | Only its quality gate is used |
 | Workflow | `workflows`, `workflow_*` | Event automation, in-memory goroutines |
-| Scope schedule | `scan_schedules` | Inert by decision (§6.6); removed since (API gone, table dropped by migration 001067) |
+| Scope schedule | `scan_schedules` | Inert by decision (§6.6); removed since (API gone, table dropped by migration 001069) |
 
 33 verified bugs followed from that split (research 2026-10-02). The
 **dispatch core is sound**: pull, compare-and-set claim, epoch-fenced leases
@@ -162,7 +162,7 @@ be switched on, and no chaining between stages.
   to the scheduler or the dispatcher. Scheduling lives on the Scan only. The
   "Run now" button that only marks them running is hidden. Since removed
   entirely: the `/api/v1/scope/schedules` API and its code are gone and
-  migration 001067 drops `scan_schedules`.
+  migration 001069 drops `scan_schedules`.
 
 ## 4. Target model
 
