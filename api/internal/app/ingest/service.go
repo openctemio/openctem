@@ -270,7 +270,7 @@ func (s *Service) SetSuppressionChecker(checker SuppressionChecker) {
 	s.findingProcessor.SetSuppressionChecker(checker)
 }
 
-// SetSuppressionModuleGuard makes ingest suppression honour the tenant's
+// SetSuppressionModuleGuard makes ingest suppression honor the tenant's
 // suppressions module toggle (off = findings land as reported).
 func (s *Service) SetSuppressionModuleGuard(guard ModuleGuard) {
 	s.findingProcessor.SetSuppressionModuleGuard(guard)

@@ -35,8 +35,11 @@ func TestEveryCatalogEventTypeHasAProducer(t *testing.T) {
 
 	var corpus strings.Builder
 	for _, dir := range []string{"internal", "pkg", "cmd"} {
-		_ = filepath.WalkDir(filepath.Join(root, dir), func(p string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") || p == catalog {
+		if err := filepath.WalkDir(filepath.Join(root, dir), func(p string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") || p == catalog {
 				return nil
 			}
 			b, _ := os.ReadFile(p)
@@ -55,7 +58,9 @@ func TestEveryCatalogEventTypeHasAProducer(t *testing.T) {
 				corpus.WriteByte('\n')
 			}
 			return nil
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	text := corpus.String()
 

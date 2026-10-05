@@ -53,7 +53,7 @@ type ModuleGuard interface {
 // suppressionsModule is the module id of the suppressions feature.
 const suppressionsModule = "suppressions"
 
-// SetSuppressionModuleGuard makes ingest honour the suppressions module
+// SetSuppressionModuleGuard makes ingest honor the suppressions module
 // toggle: a tenant with the module off gets its findings as reported. Nil
 // (unwired) keeps suppression on, as before.
 func (p *FindingProcessor) SetSuppressionModuleGuard(guard ModuleGuard) {
