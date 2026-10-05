@@ -222,13 +222,13 @@ type campaignKeyResolver struct {
 	group *remediation.GroupService
 }
 
-func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID, key string) (int64, int64, error) {
+func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (int64, int64, error) {
 	closed := vulnerability.ClosedFindingStatuses()
 	closedStrs := make([]string, len(closed))
 	for i, s := range closed {
 		closedStrs[i] = string(s)
 	}
-	return a.keys.CountByKey(ctx, tenantID, key, closedStrs)
+	return a.keys.CountByKeyInScope(ctx, tenantID, key, closedStrs, scope)
 }
 
 func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (int, error) {
@@ -1210,6 +1210,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
 	// progress) is computed from live finding data instead of staying at zero.
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
+	// A restricted reader sees progress over their own findings (L-18).
+	s.RemediationCampaign.SetDataScope(s.DataScope)
 	// Creates, edits, status changes and deletes go to audit_logs.
 	s.RemediationCampaign.SetAuditLogger(s.Audit)
 	s.RemediationCampaign.SetAssigneeChecker(repos.AccessControl) // a campaign owner must be an active member (21b C2)

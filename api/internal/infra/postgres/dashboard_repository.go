@@ -383,10 +383,13 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 // MTTR = average time between first detection and resolution, over the last
 // `days` days. Only genuinely-remediated findings (resolved/verified) count;
 // false_positive/accepted_risk are excluded as they are not remediations.
-func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error) {
+func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (map[string]float64, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
+	// A non-nil scope averages only findings on the viewer's in-scope assets.
+	args := []any{tenantID.String(), days}
+	inScope, args := dataScopeCond("asset_id", scope, args)
 	query := `SELECT
 		severity,
 		COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) as avg_hours
@@ -396,9 +399,10 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 		AND resolved_at IS NOT NULL AND first_detected_at IS NOT NULL
 		AND resolved_at >= first_detected_at
 		AND resolved_at >= NOW() - ($2::int || ' days')::interval
+		AND ` + inScope + `
 		GROUP BY severity`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), days)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get MTTR metrics: %w", err)
 	}
@@ -1214,10 +1218,13 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 }
 
 // GetMTTRAnalytics returns MTTR breakdown by severity, priority class, and overall.
-func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*app.MTTRAnalytics, error) {
+func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*app.MTTRAnalytics, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
+	// A non-nil scope averages only findings on the viewer's in-scope assets.
+	args := []any{tenantID.String(), days}
+	inScope, args := dataScopeCond("asset_id", scope, args)
 
 	query := `
 		SELECT
@@ -1247,6 +1254,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 			AND resolved_at IS NOT NULL
 			AND first_detected_at IS NOT NULL
 			AND resolved_at >= first_detected_at
+			AND ` + inScope + `
 	`
 
 	var (
@@ -1256,7 +1264,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 		sampleSize                                  int
 	)
 
-	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&mttrCritical, &mttrHigh, &mttrMedium, &mttrLow,
 		&mttrP0, &mttrP1, &mttrP2, &mttrP3,
 		&mttrOverall, &sampleSize,
