@@ -196,13 +196,15 @@ type Service struct {
 	sensorSelector      SensorSelector
 	securityValidator   SecurityValidator
 	auditService        AuditService
-	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
-	attributionGate     AttributionGate      // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
-	zones               ZoneDirectory        // optional; nil = zone routing off (RFC-023)
-	zoneResolver        scanzone.Resolver    // resolves hostname targets for zone routing
-	actScope            ActScopeChecker      // optional; nil = act scope not enforced (research/15 L-06)
-	connectorScans      ConnectorScans       // optional; nil = a connector cannot be a scanner (RFC-047)
-	tenantTools         TenantToolConfigs    // optional; nil = per-organization tool switch not enforced
+	scopeExclusions     ScopeExclusionFilter  // optional; nil = no exclusions configured
+	attributionGate     AttributionGate       // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
+	zones               ZoneDirectory         // optional; nil = zone routing off (RFC-023)
+	zoneResolver        scanzone.Resolver     // resolves hostname targets for zone routing
+	actScope            ActScopeChecker       // optional; nil = act scope not enforced (research/15 L-06)
+	connectorScans      ConnectorScans        // optional; nil = a connector cannot be a scanner (RFC-047)
+	policySensors       AvailableSensorLister // optional; nil = no policy preflight outside zones (policy_preflight.go)
+	privatePolicy       PrivateTargetPolicy   // optional; nil = the private-target switch is not read at trigger
+	tenantTools         TenantToolConfigs     // optional; nil = per-organization tool switch not enforced
 	logger              *logger.Logger
 }
 

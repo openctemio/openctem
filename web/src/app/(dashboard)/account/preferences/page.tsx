@@ -107,13 +107,14 @@ export default function PreferencesPage() {
         date_format: formData.date_format,
         time_format: formData.time_format,
       })
-      const result = await updatePreferences({
+      await updatePreferences({
         theme: formData.theme,
         language: formData.language,
       })
-      if (result) {
-        mutate(result)
-      }
+      // Re-read the preferences from the server rather than caching the PUT
+      // response: an older API returned the whole user object there, which
+      // reset this form to its defaults (23a B4).
+      await mutate()
       setHasChanges(false)
       toast.success('Preferences saved successfully')
     } catch (error) {

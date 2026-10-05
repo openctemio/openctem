@@ -38,7 +38,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Checkbox } from '@/components/ui/checkbox'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, useCanMutate } from '@/lib/permissions'
 
 import { CapabilityCard } from './capability-card'
 import { CapabilityTable } from './capability-table'
@@ -198,6 +198,9 @@ export function CapabilitiesSection() {
 
   // Check if we're in custom capabilities mode for conditional rendering
   const isCustomMode = mainTab === 'custom'
+  // Custom capabilities are written with scans:tenant_tools:* (the API's gate).
+  const canEditCapability = useCanMutate('PUT /api/v1/custom-capabilities/{id}')
+  const canDeleteCapability = useCanMutate('DELETE /api/v1/custom-capabilities/{id}')
 
   // Stats
   const platformCount = capabilitiesData?.items?.filter((c) => c.is_builtin).length || 0
@@ -284,7 +287,7 @@ export function CapabilitiesSection() {
       card={false}
       action={
         !hasFilter && isCustomMode ? (
-          <Can permission={Permission.ToolsWrite}>
+          <Can route="POST /api/v1/custom-capabilities">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add capability
@@ -308,8 +311,8 @@ export function CapabilitiesSection() {
         <CapabilityTable
           capabilities={filteredCapabilities}
           usageStats={usageStatsData}
-          onEdit={isCustomMode ? handleEditCapability : undefined}
-          onDelete={isCustomMode ? handleDeleteClick : undefined}
+          onEdit={isCustomMode && canEditCapability ? handleEditCapability : undefined}
+          onDelete={isCustomMode && canDeleteCapability ? handleDeleteClick : undefined}
           onViewDetails={handleViewDetails}
           readOnly={!isCustomMode}
           toolbarStart={toolbarStart}
@@ -331,8 +334,8 @@ export function CapabilitiesSection() {
                 key={capability.id}
                 capability={capability}
                 usageStats={usageStatsData?.[capability.id]}
-                onEdit={isCustomMode ? handleEditCapability : undefined}
-                onDelete={isCustomMode ? handleDeleteClick : undefined}
+                onEdit={isCustomMode && canEditCapability ? handleEditCapability : undefined}
+                onDelete={isCustomMode && canDeleteCapability ? handleDeleteClick : undefined}
                 onViewDetails={handleViewDetails}
                 readOnly={!isCustomMode}
               />
@@ -351,7 +354,7 @@ export function CapabilitiesSection() {
         title="Capabilities"
         description="What tools can do. Platform capabilities are built in; add custom ones to extend the tool registry."
       >
-        <Can permission={Permission.ToolsWrite}>
+        <Can route="POST /api/v1/custom-capabilities">
           <Tooltip>
             <TooltipTrigger asChild>
               <span>

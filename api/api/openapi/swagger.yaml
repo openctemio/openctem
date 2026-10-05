@@ -8798,6 +8798,13 @@ definitions:
         type: array
       cvss_score:
         type: number
+      cvss_v2_vector:
+        description: Detail only (GET /findings/{id}), never in lists or exports (research
+          24 P0-2).
+        type: string
+      cvss_v3_vector:
+        description: CVSS v3.x vector the scanner reported
+        type: string
       cvss_vector:
         type: string
       cvss_version:
@@ -8980,6 +8987,10 @@ definitions:
         type: string
       scan_id:
         type: string
+      scanner_output:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.ScannerOutputResponse'
+        description: The scanner's proof (plugin output); untrusted plain text
       secret_age_in_days:
         type: integer
       secret_commit_count:
@@ -12369,6 +12380,17 @@ definitions:
       tenant_id:
         type: string
       updated_at:
+        type: string
+    type: object
+  internal_infra_http_handler.ScannerOutputResponse:
+    properties:
+      text:
+        type: string
+      truncated:
+        description: Cut at 64 KiB
+        type: boolean
+      updated_at:
+        description: When the latest sighting wrote it
         type: string
     type: object
   internal_infra_http_handler.ScannerTemplateResponse:
@@ -36273,7 +36295,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.UserResponse'
+            $ref: '#/definitions/internal_infra_http_handler.PreferencesDTO'
         "400":
           description: Bad Request
           schema:

@@ -58,7 +58,7 @@ import {
 import { AssignmentRuleDetailSheet } from '@/features/access-control/components/assignment-rule-detail-sheet'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { fetcherWithOptions } from '@/lib/api/client'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 
 type FilterType = 'all' | 'active' | 'inactive'
 
@@ -261,13 +261,13 @@ export function AssignmentRulesSection({ header }: SectionProps) {
               {
                 label: 'Edit',
                 icon: Pencil,
-                permission: Permission.AssignmentRulesWrite,
+                route: 'PUT /api/v1/assignment-rules/{id}',
                 onClick: () => setSelectedRuleId(rule.id),
               },
               {
                 label: 'Test rule',
                 icon: Play,
-                permission: Permission.AssignmentRulesWrite,
+                route: 'POST /api/v1/assignment-rules/{id}/test',
                 onClick: async () => {
                   try {
                     const result = await fetcherWithOptions<{ matching_findings: number }>(
@@ -287,7 +287,8 @@ export function AssignmentRulesSection({ header }: SectionProps) {
                 icon: Trash2,
                 destructive: true,
                 separatorBefore: true,
-                permission: Permission.AssignmentRulesDelete,
+                // Owner only on the API (RequireOwner), so admins do not see it.
+                route: 'DELETE /api/v1/assignment-rules/{id}',
                 onClick: () => {
                   setRuleToDelete(rule)
                   setDeleteDialogOpen(true)
@@ -352,7 +353,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
     <>
       {header(
         <>
-          <Can permission={Permission.AssignmentRulesWrite} mode="disable">
+          <Can route="POST /api/v1/assignment-rules" mode="disable">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
               Create rule
@@ -415,9 +416,9 @@ export function AssignmentRulesSection({ header }: SectionProps) {
               <EmptyState
                 icon={GitBranch}
                 title="No assignment rules yet"
-                description="Rules assign assets to teams automatically, in priority order."
+                description="Rules route new findings to teams automatically, in priority order."
                 action={
-                  <Can permission={Permission.AssignmentRulesWrite}>
+                  <Can route="POST /api/v1/assignment-rules">
                     <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
                       Create rule

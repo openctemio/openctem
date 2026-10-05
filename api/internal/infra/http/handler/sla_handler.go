@@ -6,9 +6,14 @@ import (
 	"net/http"
 	"time"
 
+	"fmt"
+	"strings"
+
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	sladom "github.com/openctemio/openctem/api/pkg/domain/sla"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -17,6 +22,7 @@ import (
 
 // SLAHandler handles SLA policy-related HTTP requests.
 type SLAHandler struct {
+	configAuditor
 	service   *sla.Service
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -246,6 +252,9 @@ func (h *SLAHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	created := toSLAPolicyResponse(p)
+	h.recordChange(r, h.logger, auditdom.ActionSLAPolicyCreated, auditdom.ResourceTypeSLAPolicy, created.ID, created.Name,
+		nil, created, auditdom.SeverityMedium, fmt.Sprintf("SLA policy %q created", created.Name))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -334,11 +343,18 @@ func (h *SLAHandler) Update(w http.ResponseWriter, r *http.Request) {
 		P3Days:              req.P3Days,
 	}
 
+	var before any
+	if prev, gerr := h.service.GetSLAPolicy(r.Context(), tenantID, policyID); gerr == nil {
+		before = toSLAPolicyResponse(prev)
+	}
 	p, err := h.service.UpdateSLAPolicy(r.Context(), policyID, tenantID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	updated := toSLAPolicyResponse(p)
+	h.recordChange(r, h.logger, auditdom.ActionSLAPolicyUpdated, auditdom.ResourceTypeSLAPolicy, updated.ID, updated.Name,
+		before, updated, slaChangeSeverity(before, updated), fmt.Sprintf("SLA policy %q updated", updated.Name))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -363,10 +379,16 @@ func (h *SLAHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var before SLAPolicyResponse
+	if prev, gerr := h.service.GetSLAPolicy(r.Context(), tenantID, policyID); gerr == nil {
+		before = toSLAPolicyResponse(prev)
+	}
 	if err := h.service.DeleteSLAPolicy(r.Context(), policyID, tenantID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordChange(r, h.logger, auditdom.ActionSLAPolicyDeleted, auditdom.ResourceTypeSLAPolicy, policyID, before.Name,
+		before, nil, auditdom.SeverityHigh, fmt.Sprintf("SLA policy %q deleted", before.Name))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -422,4 +444,24 @@ func (h *SLAHandler) GetByAsset(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toSLAPolicyResponse(p))
+}
+
+// slaChangeSeverity is High when any remediation window got longer (findings
+// may stay open longer before they breach), Medium otherwise.
+func slaChangeSeverity(before any, after SLAPolicyResponse) auditdom.Severity {
+	changes := auditapp.DiffChanges(before, after)
+	if changes == nil {
+		return auditdom.SeverityMedium
+	}
+	for k, b := range changes.Before {
+		if !strings.HasSuffix(k, "_days") {
+			continue
+		}
+		bf, bok := b.(float64)
+		af, aok := changes.After[k].(float64)
+		if bok && aok && af > bf {
+			return auditdom.SeverityHigh
+		}
+	}
+	return auditdom.SeverityMedium
 }
