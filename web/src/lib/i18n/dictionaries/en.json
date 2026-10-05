@@ -369,6 +369,7 @@
   "sensors.manifest.toolsAdded": "Added: {list}",
   "sensors.manifest.toolsRemoved": "Removed: {list}",
   "sensors.manifest.toolCapabilities": "{tool} capabilities: {changes}",
+  "sensors.manifest.toolContract": "{tool} tool contract {from} → {to}",
   "sensors.manifest.sensorWide": "Sensor-wide capabilities: {changes}",
   "sensors.manifest.otherChanged": "Changed: {list}",
   "auth.loginError.invalid_provider": "This sign-in provider is not supported.",
