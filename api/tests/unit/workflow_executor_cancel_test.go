@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	app "github.com/openctemio/openctem/api/internal/app"
+	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -58,7 +58,7 @@ type cancelingHandler struct {
 	repo *cancelableRunRepo
 }
 
-func (h *cancelingHandler) Execute(ctx context.Context, input *app.ActionInput) (map[string]any, error) {
+func (h *cancelingHandler) Execute(ctx context.Context, input *workflowsvc.ActionInput) (map[string]any, error) {
 	out, err := h.wfExecMockActionHandler.Execute(ctx, input)
 	h.repo.cancel()
 	return out, err
@@ -71,7 +71,7 @@ func TestWfExec_CanceledRunStartsNoFurtherStep(t *testing.T) {
 	workflowRepo := newWfExecMockWorkflowRepo()
 	runRepo := &cancelableRunRepo{wfExecMockRunRepo: newWfExecMockRunRepo()}
 	nodeRunRepo := newWfExecMockNodeRunRepo()
-	executor := app.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, logger.NewNop())
+	executor := workflowsvc.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, logger.NewNop())
 	handler := &cancelingHandler{repo: runRepo}
 	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
 
