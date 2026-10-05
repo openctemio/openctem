@@ -377,7 +377,15 @@ the billing page in the UI.
 | `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
 | `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
-| Secret store `GET` / `POST`,`PUT` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+
+> **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
+> leaves absent fields unchanged (`description: ""` clears it, `expires_at: null`
+> clears the expiry; `expires_at` is RFC 3339 and must be in the future). The
+> secret is replaced only by `POST /secret-store/{id}/rotate` (same credential
+> type; `key_version` and `last_rotated_at` advance). Update, rotate (High),
+> delete (High) and decrypt (High) are audited with the acting user, or a named
+> system actor for a scheduled template sync. All lookups are by tenant and id.
 
 > **A stored credential goes only where someone entitled to it pointed it.**
 > A sync decrypts the source's `credential_id` and sends it to the source's
