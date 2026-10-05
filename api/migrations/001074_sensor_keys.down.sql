@@ -1,4 +1,4 @@
--- Reverts 001065. Key-bound sensors cannot authenticate after this (they have
+-- Reverts 001074. Key-bound sensors cannot authenticate after this (they have
 -- no bearer key); revoke them first or accept that they must be re-created.
 SET lock_timeout = '5s';
 DROP TABLE IF EXISTS sensor_keys;

@@ -46,7 +46,13 @@ var (
 	ErrManifestUnavailable    = sensor.ErrManifestUnavailable
 	ErrManifestSensorInactive = sensor.ErrManifestSensorInactive
 	ErrManifestNotRegistered  = sensor.ErrManifestNotRegistered
+	// Sensor config report (research/26).
+	ErrConfigReportUnavailable    = sensor.ErrConfigReportUnavailable
+	ErrConfigReportSensorInactive = sensor.ErrConfigReportSensorInactive
 )
+
+// SensorConfigReportView is a sensor setup checklist (research/26).
+type SensorConfigReportView = sensor.ConfigReportView
 
 // Selection-mode constants re-exported for legacy callers.
 const (

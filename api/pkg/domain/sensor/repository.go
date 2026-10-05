@@ -88,6 +88,10 @@ type HeartbeatUpdate struct {
 	// LocalPolicy is the sanitized local policy report (local_policy.go),
 	// merged with the stored one; nil leaves the stored one untouched.
 	LocalPolicy *LocalPolicyReport
+	// ConfigReportDigest is the config report digest the heartbeat echoed
+	// (HeartbeatConfigDigest); "" stores none: the heartbeat carried no
+	// config_report, so a stored report is stale.
+	ConfigReportDigest string
 }
 
 // LivenessCandidate is a sensor the health controller watches: its stored
@@ -390,6 +394,21 @@ type InstanceObserver interface {
 	// ClearIdentityCloned removes the flag and forgets the instances (after the
 	// key was regenerated, copies of the old key can no longer connect).
 	ClearIdentityCloned(ctx context.Context, id shared.ID) error
+}
+
+// ConfigReportStore is implemented by a sensor repository that keeps
+// sensors' config reports (config_report.go). Every read and write is
+// scoped to the sensor's tenant.
+type ConfigReportStore interface {
+	// SaveConfigReport stores r as the latest report of an active sensor of
+	// tenantID, points the sensor at digest with its health rollup and
+	// records digest as the one the sensor now holds. When digest is the
+	// stored one only received_at moves (changed false). saved is false
+	// when no active sensor of the tenant matched.
+	SaveConfigReport(ctx context.Context, tenantID, sensorID shared.ID, r *ConfigReport, digest, health string, at time.Time) (saved, changed bool, err error)
+	// GetConfigReport returns the stored report; ErrNotFound when the
+	// tenant's sensor has none.
+	GetConfigReport(ctx context.Context, tenantID, sensorID shared.ID) (*StoredConfigReport, error)
 }
 
 // ManifestStore is implemented by a sensor repository that keeps manifest

@@ -1136,6 +1136,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Persist simulation runs (previously the run repo was never wired, so every
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
+	// Simulation targets follow the scan act-scope rule (RFC-050 W3, 21b H4).
+	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope), s.DataScope)
 	// Validation (CTEM Stage-4): sensors POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
@@ -1629,6 +1631,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
 		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
 		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),
+		// An organization's "disabled" switch on a tool stops it at trigger time.
+		scan.WithTenantToolConfigs(repos.TenantToolConfig),
 		// A batch goes only to a sensor whose reported local policy accepts
 		// it; a trigger no sensor would accept is refused (research/25 §3.6).
 		scan.WithDispatchPolicy(repos.Sensor, s.Tenant),
@@ -1823,6 +1827,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Suppression = suppression.NewService(repos.Suppression, log)
 	// Four-eyes on approvals (owner decision B16) reads who may approve.
 	s.Suppression.SetApproverDirectory(repos.Suppression)
+	// An asset-bound rule names an asset of the tenant the requester may see
+	// (RFC-050 W8, 21b M-10).
+	s.Suppression.SetAssetRefChecker(s.DataScope)
 
 	// Enforce approved suppression rules during ingest: a new finding matching an
 	// active (approved, non-expired) rule lands resolved+suppressed (out of the
