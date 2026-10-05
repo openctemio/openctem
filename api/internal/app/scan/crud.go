@@ -438,6 +438,10 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 		}
 	}
 
+	if err := s.refuseDisabledOptIns(ctx, sc.TenantID, scannerConfig); err != nil {
+		return err
+	}
+
 	tpj := max(targetsPerJob, 1)
 	return sc.SetSingleScanner(scannerName, scannerConfig, tpj)
 }
@@ -723,6 +727,9 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		// A config saved back as it was shown masked keeps the stored
 		// secrets instead of storing the mask (scan.RedactConfigSecrets).
 		cfg := scan.RestoreRedactedConfigSecrets(input.ScannerConfig, sc.ScannerConfig)
+		if err := s.refuseDisabledOptIns(ctx, sc.TenantID, cfg); err != nil {
+			return nil, err
+		}
 		if _, connector := s.isConnectorScanner(ctx, input.ScannerName); connector {
 			if err := s.validateConnectorScanner(ctx, sc.TenantID, cfg); err != nil {
 				return nil, err

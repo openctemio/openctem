@@ -23,7 +23,9 @@ func securityChangeSeverity(before, after tenantdom.SecuritySettings) audit.Seve
 	switch {
 	case before.MFARequired && !after.MFARequired,
 		before.SSOEnforced && !after.SSOEnforced,
-		len(before.IPWhitelist) > 0 && len(after.IPWhitelist) == 0:
+		len(before.IPWhitelist) > 0 && len(after.IPWhitelist) == 0,
+		!before.AllowSensorInteractsh && after.AllowSensorInteractsh,
+		!before.AllowSensorCustomTemplates && after.AllowSensorCustomTemplates:
 		return audit.SeverityCritical
 	case widensNetworks(before.IPWhitelist, after.IPWhitelist) && len(before.IPWhitelist) > 0,
 		len(before.AllowedDomains) > 0 && (len(after.AllowedDomains) == 0 || addsEntries(before.AllowedDomains, after.AllowedDomains)),
