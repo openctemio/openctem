@@ -257,6 +257,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 
 	// Get runnable steps (no pending dependencies)
 	runnableSteps := template.GetRunnableSteps(completedSteps)
+	settledInline := false
 
 	for _, step := range runnableSteps {
 		// Check if we've reached the max parallel limit
@@ -295,20 +296,67 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 		}
 
 		// Queue the step - create a command that sensors can poll
-		if err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings); err != nil {
+		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step))
+		var noInputs *noInputsError
+		switch {
+		case err == nil:
+			runningSteps++
+		case errors.Is(err, errStageDeferred):
+			// A predecessor's report is still being ingested: the step stays
+			// pending and is planned when the ingest commits (OnCommandIngested).
+			s.logger.Info("chained step waits for its predecessors' ingest",
+				"run_id", run.ID.String(), "step_key", step.StepKey)
+		case errors.Is(err, errStageAlreadyPlanned):
+			// Another planner (a concurrent completion) planned it.
+		case errors.As(err, &noInputs):
+			// Planned, and nothing passed: settled without a command, so its
+			// successors run on what they have.
+			stepRun.Complete(0, map[string]any{"no_inputs": true})
+			stepRun.SkipReason = noInputs.Error()
+			if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
+				s.logger.Error("failed to settle a step with no inputs", "step_key", step.StepKey, "error", uerr)
+			}
+			settledInline = true
+		default:
 			s.logger.Error("failed to queue step", "step_key", step.StepKey, "error", err)
 			s.failQueuedStep(ctx, stepRun, step.StepKey, err)
-		} else {
-			// Successfully queued, increment running count
-			runningSteps++
+			settledInline = true
 		}
 	}
 
+	// A step settled here (no inputs, or a step that could not be queued)
+	// can unblock or end the run: advance again. Each pass settles at
+	// least one step, so this ends.
+	if settledInline {
+		return s.advanceRun(ctx, run, template)
+	}
 	return nil
 }
 
+// predecessorsOf returns the steps of the template that step depends on.
+func predecessorsOf(template *pipeline.Template, step *pipeline.Step) []*pipeline.Step {
+	if template == nil || len(step.DependsOn) == 0 {
+		return nil
+	}
+	out := make([]*pipeline.Step, 0, len(step.DependsOn))
+	for _, dep := range step.DependsOn {
+		for _, t := range template.Steps {
+			if t.StepKey == dep {
+				out = append(out, t)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // queueStepForExecutionWithSettings creates a command with specific settings.
-func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings) error {
+//
+// preds are the steps it depends on: when they produce asset types its
+// stage takes, its targets come from the hop router (hop_router.go) and the
+// sentinel errors errStageDeferred, errStageAlreadyPlanned and
+// *noInputsError tell the scheduler to wait, to leave it, or to settle it.
+func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings, preds []*pipeline.Step) error {
 	// The tool the step runs: its pinned tool, or the implementation of its
 	// capability the planner picks (F1: a capability-only step used to
 	// reach the sensor with no scanner). Every check below and the payload
@@ -336,11 +384,18 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 	// The step's tool is handed only the run's targets it can scan; a step
 	// left with none fails here (INCOMPATIBLE_TARGETS), before any sensor
 	// sees it.
+	chained := s.hops != nil && resolved.HasStage && len(feedingPredecessors(run, resolved.Stage, preds)) > 0
 	var stepTargets *scanapp.StepTargets
 	if f, ok := s.targetGate.(StepTargetFilter); ok {
 		st, ferr := f.FilterStepTargets(ctx, step.Tool, run.Context)
 		if ferr != nil {
-			return fmt.Errorf("step %s: %w", step.StepKey, ferr)
+			var de *shared.DomainError
+			if !chained || !errors.As(ferr, &de) || de.Code != "INCOMPATIBLE_TARGETS" {
+				return fmt.Errorf("step %s: %w", step.StepKey, ferr)
+			}
+			// A chained step may take no seed: its targets come from
+			// what its predecessors found.
+			st = &scanapp.StepTargets{Targets: []string{}}
 		}
 		stepTargets = st
 		if st != nil && st.Refused > 0 {
@@ -348,6 +403,14 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 				"run_id", run.ID.String(), "step_key", step.StepKey, "refused", st.Refused, "reason", st.Reason)
 		}
 	}
+
+	// The hop router: seeds, plus what the predecessors produced that passes
+	// the per-hop gate; recorded once per (run, stage).
+	planned, err := s.planStage(ctx, run, step, resolved, preds, stepTargets)
+	if err != nil {
+		return fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
+	stepTargets = planned
 
 	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), settings.SensorPreference, stepTargets)
 	if err != nil {
@@ -376,6 +439,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 	if err != nil {
 		return err
 	}
+	// The command names its step run, so the reports bound to it are
+	// attributed to the step (scan provenance, chained outputs).
+	cmd.SetStepRunID(stepRun.ID)
 
 	// A run routed to a scan zone (RFC-023) keeps every step inside it: the
 	// command is stamped with the zone and left to the zone's sensors (the
@@ -1435,9 +1501,12 @@ func (s *Service) QueueRunStep(ctx context.Context, run *pipeline.Run, step *pip
 	if run == nil || step == nil {
 		return fmt.Errorf("%w: run and step are required", shared.ErrValidation)
 	}
-	template, err := s.templateRepo.GetByID(ctx, run.PipelineID)
+	template, err := s.templateRepo.GetWithSteps(ctx, run.PipelineID)
 	if err != nil {
 		return fmt.Errorf("load the run's template: %w", err)
+	}
+	if template == nil {
+		return fmt.Errorf("%w: the run's template", shared.ErrNotFound)
 	}
 	stepRun := run.GetStepRun(step.StepKey)
 	if stepRun == nil {
@@ -1445,7 +1514,10 @@ func (s *Service) QueueRunStep(ctx context.Context, run *pipeline.Run, step *pip
 			return fmt.Errorf("load step run %s: %w", step.StepKey, err)
 		}
 	}
-	if qerr := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings); qerr != nil {
+	if qerr := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step)); qerr != nil {
+		if errors.Is(qerr, errStageAlreadyPlanned) {
+			return nil // queued by a concurrent call
+		}
 		s.failQueuedStep(ctx, stepRun, step.StepKey, qerr)
 		return qerr
 	}

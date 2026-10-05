@@ -274,6 +274,13 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
 	runContext["routing_tags"] = sc.Tags
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
+	// Who the run acts for (act scope of chained stages): the person who
+	// triggered it, else the scan's owner. Never sent to a sensor.
+	if actor := userIDPtr(triggeredBy); actor != nil {
+		runContext[RunContextKeyActor] = actor.String()
+	} else if sc.CreatedBy != nil {
+		runContext[RunContextKeyActor] = sc.CreatedBy.String()
+	}
 	// Resolve the targets server-side (direct targets + asset-group members,
 	// minus scope exclusions) and carry them to the step commands; sensors do
 	// not resolve asset groups, so without this a group scan scans nothing.
