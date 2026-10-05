@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "91008b669630f14f"
+const RegistryVersion = "f48870eba503c237"
 
 // Lenses.
 const (
@@ -234,7 +234,9 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "certificate", "attributes", "findings", "relationships", "owners", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{},
-			In:  []RelationshipRule{},
+			In: []RelationshipRule{
+				{Relationship: "serves_certificate", Peers: []TypeRef{{Type: "service"}, {Type: "service", SubType: "http"}}},
+			},
 		},
 		ScannableBy:     []string{"certificate"},
 		ExposureDefault: "public",
@@ -272,6 +274,8 @@ var registryTypes = []TypeDefinition{
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
 				{Relationship: "runs_on", Peers: []TypeRef{{Type: "host"}, {Type: "host", SubType: "workstation"}, {Type: "container"}, {Type: "kubernetes", SubType: "workload"}, {Type: "cloud_account"}}},
+				{Relationship: "serves_certificate", Peers: []TypeRef{{Type: "certificate"}}},
+				{Relationship: "serves_certificate", SubType: "http", Peers: []TypeRef{{Type: "certificate"}}},
 				{Relationship: "depends_on", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}}},
 				{Relationship: "peer_of", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}}},
 				{Relationship: "sends_data_to", Peers: []TypeRef{{Type: "database"}, {Type: "application", SubType: "api"}, {Type: "service"}, {Type: "cloud_account"}}},
