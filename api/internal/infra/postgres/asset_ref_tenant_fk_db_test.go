@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -25,6 +27,10 @@ var assetRefTables = []string{
 	"relationship_suggestions", "runtime_telemetry_events", "scan_coverage_state", "scan_sessions",
 	"sla_policies", "suppression_rules", "user_accessible_assets",
 }
+
+// compositeFromCreation are tables that later migrations created with their
+// composite (tenant_id, asset) keys; 000921's down does not drop them.
+var compositeFromCreation = []string{"scan_step_outputs", "scan_run_targets", "ci_runs", "ci_gate_overrides"}
 
 func seedRefAsset(ctx context.Context, t *testing.T, db interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
@@ -47,9 +53,10 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 		 WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2`).Scan(&n, &allValid); err != nil {
 		t.Fatal(err)
 	}
-	// 27 from 000921, 3 from the scan chaining tables (001049).
-	if n != 30 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 30 validated", n, allValid.Bool)
+	// 27 from 000921, 3 from the scan chaining tables (001049), 2 from the CI
+	// run tables (001077, RFC-051).
+	if n != 32 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 32 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing
@@ -217,10 +224,9 @@ func TestAssetRefTenantFKs_MigrationReplay(t *testing.T) {
 		}
 		exec(tx, "rollback to savepoint", `ROLLBACK TO SAVEPOINT before_up`)
 		var n int
-		// The scan chaining tables (001049) were created with their keys
-		// and are not part of 000921.
+		// Tables created later with their keys are not part of 000921.
 		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pg_constraint WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2
-			AND conrelid::regclass::text NOT IN ('scan_step_outputs', 'scan_run_targets')`).Scan(&n); err != nil {
+			AND NOT (conrelid::regclass::text = ANY($1))`, pq.Array(compositeFromCreation)).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		if n != 0 {
