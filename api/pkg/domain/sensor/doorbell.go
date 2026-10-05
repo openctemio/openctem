@@ -20,7 +20,7 @@ const (
 	// ActionDrain: reserved. Finish running jobs, take no new ones.
 	ActionDrain Action = "drain"
 	// ActionRotateKey: the presented key is inside its renewal window; call
-	// POST /api/v1/agent/renew.
+	// POST /api/v2/sensor/keys.
 	ActionRotateKey Action = "rotate_key"
 	// ActionUpdate: reserved. A newer sensor release is required.
 	ActionUpdate Action = "update"

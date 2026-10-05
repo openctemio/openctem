@@ -13,7 +13,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // A single-scanner scan is the shape essentially every real scan takes, and
@@ -233,12 +232,11 @@ func TestTriggerSingleScan_ProducesAReportableRun(t *testing.T) {
 		t.Errorf("payload run_id = %q, want %q — the sensor SDK still reads this key",
 			routed.RunID, run.ID.String())
 	}
-	// Protocol v1: deployed sensors read the selection mode under its
-	// pre-rename key (pkg/sensorproto/legacyv1).
+	// The selection mode stays on the platform: the retired v1 key is gone.
 	var keys map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &keys)
-	if _, ok := keys[legacyv1.PayloadKeySensorPreference]; !ok {
-		t.Errorf("payload lacks %q — v1 sensors read the selection mode from it", legacyv1.PayloadKeySensorPreference)
+	if _, ok := keys["agent_preference"]; ok {
+		t.Error("payload still carries the retired agent_preference key")
 	}
 	// And the command the step points at must be the one we just read.
 	var payloadCommandID string

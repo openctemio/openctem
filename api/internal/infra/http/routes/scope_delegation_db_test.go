@@ -20,8 +20,7 @@ import (
 	"testing"
 
 	_ "github.com/lib/pq"
-
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -80,8 +79,8 @@ func newSDHarness(t *testing.T) *sdHarness {
 		}, log)
 	acRepo := postgres.NewAccessControlRepository(db)
 	groupRepo := postgres.NewGroupRepository(db)
-	groupSvc := app.NewGroupService(groupRepo, log,
-		app.WithAccessControlRepository(acRepo), app.WithScopeDelegationCap(enforcer))
+	groupSvc := accesscontrol.NewGroupService(groupRepo, log,
+		accesscontrol.WithAccessControlRepository(acRepo), accesscontrol.WithScopeDelegationCap(enforcer))
 	ruleSvc := scopeapp.NewRuleService(acRepo, groupRepo, log)
 	ruleSvc.SetScopeDelegationCap(enforcer)
 

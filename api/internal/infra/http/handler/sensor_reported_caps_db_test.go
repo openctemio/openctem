@@ -16,13 +16,12 @@ import (
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
-// TestSensorReportedCaps_Response: a v1 heartbeat carrying a capability
-// report is answered with the plain v1 body (the new members are optional
-// input only), and GET /sensors/{id} shows the administrator's settings, the
+// TestSensorReportedCaps_Response: a heartbeat carrying a capability report
+// is answered normally, and GET /sensors/{id} shows the administrator's settings, the
 // report, the effective values and the mismatch hints. The harness sensor
 // is declared with tools [semgrep], capabilities [sast].
 func TestSensorReportedCaps_Response(t *testing.T) {
-	h := newV1Harness(t)
+	h := newSensorHarness(t)
 	sh := NewSensorHandler(
 		app.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop()),
 		validator.New(), logger.NewNop())
@@ -53,18 +52,14 @@ func TestSensorReportedCaps_Response(t *testing.T) {
 		t.Fatalf("mismatch without a report: %s", before["capability_mismatch"])
 	}
 
-	const plainV1 = `{"agent_id":"<self>","status":"ok","tenant_id":"<tenant>"}` + "\n"
-	_, raw := h.do(http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{
+	h.heartbeat(map[string]any{
 		"status": "running",
 		"tools": []map[string]any{
 			{"name": "semgrep", "version": "1.90.0", "installed": false},
 			{"name": "nuclei", "version": "3.3.0", "installed": true},
 		},
 		"capabilities": []string{"nuclei", "sast"}, "max_concurrent_jobs": 2, "os": "linux", "arch": "arm64",
-	}, true)
-	if got := h.mask(string(raw)); got != plainV1 {
-		t.Fatalf("v1 heartbeat response changed: %q, want %q", got, plainV1)
-	}
+	})
 
 	after := get()
 	var rep SensorReportedResponse

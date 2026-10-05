@@ -84,7 +84,7 @@ func TestIngest_OversizedFindingTextIsCappedOnEveryPath_DB(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// v1 CTIS (POST /api/v1/agent/ingest/ctis and the async worker run this).
+	// Direct ingest (the async worker and server-side uploads run this).
 	title, desc := hugeText("v1 title ", 100_000), hugeText("v1 description ", 1_000_000)
 	report := &ctis.Report{
 		Version:  "1.0",
@@ -126,27 +126,4 @@ func TestIngest_OversizedFindingTextIsCappedOnEveryPath_DB(t *testing.T) {
 	h.expect(resp, raw, 202, "")
 	h.work(id)
 	requireCapped(t, "v2", h.findingText("caps-v2"), false)
-
-	// SARIF (POST /api/v1/agent/sarif).
-	sarif, _ := json.Marshal(map[string]any{
-		"version": "2.1.0",
-		"runs": []any{map[string]any{
-			"tool": map[string]any{"driver": map[string]any{"name": "gosec", "rules": []any{map[string]any{
-				"id": "caps-sarif", "shortDescription": map[string]any{"text": hugeText("sarif description ", 200_000)},
-			}}}},
-			"results": []any{map[string]any{
-				"ruleId": "caps-sarif", "level": "error",
-				"message":   map[string]any{"text": hugeText("sarif title ", 50_000)},
-				"locations": []any{map[string]any{"physicalLocation": map[string]any{"artifactLocation": map[string]any{"uri": "cmd/main.go"}, "region": map[string]any{"startLine": 5}}}},
-			}},
-		}},
-	})
-	out, err = h.ingest.IngestSARIF(ctx, agt, sarif, ingest.SARIFRepository{URL: "https://github.com/acme/caps-sarif", Branch: "main"}, ingest.Binding{})
-	if err != nil {
-		t.Fatalf("sarif: oversized text failed the report: %v", err)
-	}
-	if out.FindingsCreated != 1 || len(out.FailedFindings) != 0 {
-		t.Fatalf("sarif: %d created, %d failed, want the finding stored", out.FindingsCreated, len(out.FailedFindings))
-	}
-	requireCapped(t, "sarif", h.findingText("caps-sarif"), false)
 }
