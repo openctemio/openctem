@@ -41,7 +41,9 @@ export function externalSurfaceFilters(
   view: ExternalSurfaceView,
   t: RiskLevelThresholds
 ): AssetSearchFilters {
-  const f: AssetSearchFilters = { exposures: ['public'] }
+  // Approved assets only (research/22 P0-12): a name a person rejected, or
+  // one still waiting for review, is not part of the organization's surface.
+  const f: AssetSearchFilters = { exposures: ['public'], attribution: ['approved'] }
   if (view.search) f.search = view.search
   if (view.type && view.type !== 'all') f.types = [view.type as never]
   if (view.risk && view.risk !== 'all') Object.assign(f, riskRange(view.risk, t))
