@@ -1,4 +1,4 @@
--- Reverts 000945: drops the trigger and puts the stripped admin-only
+-- Reverts 001012: drops the trigger and puts the stripped admin-only
 -- permissions back on the custom roles that still exist (from the report
 -- table the up migration kept). Roles deleted since are skipped.
 
