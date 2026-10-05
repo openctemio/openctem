@@ -821,13 +821,25 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
   probe a `dependency` asset with an open `dangling_cname`. The per-tenant
   off switch comes with P0-11.
 
-- **P0-9 rejection hygiene and reclassify on decision (B2, B4):** open.
+- **P0-9 rejection hygiene and reclassify on decision (B2, B4):** shipped
+  (#1145, migration `001018`). Rejected and tombstoned names (and names
+  under them) produce no CT exposure and their open CT and DNS-check
+  exposures are resolved on rejection; CT exposures link to the host's own
+  asset with an asset-independent fingerprint (stored rows re-keyed); every
+  decision queues an asset-scoped reclassify, drained every minute.
+  [easm.md §5a](../architecture/easm.md#5a-after-a-decision-built-p0-9).
 
 - **P0-10 tenant domain verification with a purpose (E6):** open.
 
 - **P0-11 EASM settings and run-now:** open.
 
-- **P0-12 review queue reachable, honest counts (E1):** open.
+- **P0-12 review queue reachable, honest counts (E1):** shipped (this PR,
+  no migration). Attack surface has Overview | Review tabs and a sidebar
+  badge with the queue's own total (needs_review + candidate); `?tab=rejected`
+  opens "Not ours"; the overview, the exposed list and `/attack-surface/external`
+  count approved assets only; "internet-facing" means `exposure = public`
+  everywhere; `?attribution=all` is accepted. The E1 308 of
+  `/attack-surface/external` waits for the inventory's external columns.
 
 - **P0-13 honest EASM numbers:** open.
 

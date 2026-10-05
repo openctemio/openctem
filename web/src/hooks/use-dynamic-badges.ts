@@ -17,6 +17,8 @@ import { useTenant } from '@/context/tenant-provider'
 import { useCredentialStatsApi } from '@/features/credentials/api'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { env } from '@/lib/env'
+import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
+import { useEASMReviewCount } from '@/features/attack-surface/hooks/use-easm-review'
 
 // ============================================
 // TYPES
@@ -102,8 +104,19 @@ export function useDynamicBadges(): DynamicBadges {
       : { isPaused: () => true } // Don't fetch if disabled or no permission
   )
 
+  // The ownership review queue is an action list, not a statistic: its badge
+  // shows whatever the sidebar-badges flag says (research/22 P0-12), one
+  // cached call, only with assets:read and the attack_surface module.
+  const { moduleIds } = useTenantModules()
+  const reviewWaiting = useEASMReviewCount(
+    can(Permission.AssetsRead) && moduleIds.includes('attack_surface')
+  )
+
   const badges = useMemo(() => {
     const result: DynamicBadges = {}
+    if (reviewWaiting && reviewWaiting > 0) {
+      result['/attack-surface'] = String(reviewWaiting)
+    }
 
     // Respect the feature flag on the RESULT, not just the fetch. isPaused only
     // stops this hook from fetching — it still reads any SWR cache another page
@@ -134,7 +147,7 @@ export function useDynamicBadges(): DynamicBadges {
     }
 
     return result
-  }, [badgesEnabled, dashboardStats, credentialStats])
+  }, [badgesEnabled, dashboardStats, credentialStats, reviewWaiting])
 
   return badges
 }
