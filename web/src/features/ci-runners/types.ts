@@ -22,3 +22,15 @@ export type CIGateOverrideRequest = S['internal_infra_http_handler.CIGateOverrid
 
 export type CIProvider = 'github' | 'gitlab'
 export type CIVerdictFilter = '' | 'pass' | 'fail' | 'none'
+
+/** CI pipelines: one workflow file of one repository, listed in the fleet in runner mode. */
+export type CIPipeline = S['internal_infra_http_handler.CIPipelineResponse']
+export type CIPipelineList = S['internal_infra_http_handler.CIPipelineListResponse']
+export type CIPipelineDetail = S['internal_infra_http_handler.CIPipelineDetailResponse']
+export type FleetItem = S['internal_infra_http_handler.FleetItem']
+export type FleetList = S['internal_infra_http_handler.FleetListResponse']
+
+/** The fleet mode: a sensor row (daemon) or a CI pipeline (runner). */
+export type FleetMode = 'daemon' | 'runner'
+export type CIPipelineStatus =
+  'revoked' | 'failing' | 'degraded' | 'stale' | 'running' | 'fresh' | 'never' | 'archived'

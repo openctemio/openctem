@@ -21,7 +21,16 @@ import type {
   CITrustConfig,
   CITrustConfigRequest,
   CIVerdictFilter,
+  CIPipelineDetail,
+  CIPipelineList,
+  FleetList,
 } from '../types'
+import {
+  fleetURL,
+  pipelinesURL,
+  type FleetListFilters,
+  type PipelineListFilters,
+} from '../lib/pipeline'
 
 export const CI_BASE = '/api/v1/ci'
 const TRUST = `${CI_BASE}/trust-configs`
@@ -32,6 +41,7 @@ export interface CIRunFilters {
   verdict?: CIVerdictFilter
   provider?: string
   repositoryAssetId?: string
+  pipelineId?: string
   page?: number
   perPage?: number
 }
@@ -42,6 +52,7 @@ export function ciRunsURL(f: CIRunFilters = {}): string {
   if (f.verdict) q.set('verdict', f.verdict)
   if (f.provider) q.set('provider', f.provider)
   if (f.repositoryAssetId) q.set('repository_asset_id', f.repositoryAssetId)
+  if (f.pipelineId) q.set('pipeline_id', f.pipelineId)
   q.set('page', String(f.page ?? 1))
   q.set('per_page', String(f.perPage ?? 25))
   return `${CI_BASE}/runs?${q.toString()}`
@@ -51,6 +62,45 @@ export function useCIRuns(filters: CIRunFilters, { enabled = true }: { enabled?:
   const { currentTenant } = useTenant()
   return useSWR<CIRunList>(currentTenant && enabled ? ciRunsURL(filters) : null, (url: string) =>
     get<CIRunList>(url)
+  )
+}
+
+/** CI pipelines (sensors in runner mode), most urgent first. */
+export function useCIPipelines(
+  filters: PipelineListFilters,
+  { enabled = true }: { enabled?: boolean } = {}
+) {
+  const { currentTenant } = useTenant()
+  return useSWR<CIPipelineList>(
+    currentTenant && enabled ? pipelinesURL(CI_BASE, filters) : null,
+    (url: string) => get<CIPipelineList>(url),
+    { keepPreviousData: true, refreshInterval: 30_000 }
+  )
+}
+
+/** One pipeline with its branches and default-branch gate trend. */
+export function useCIPipeline(id: string | null) {
+  const { currentTenant } = useTenant()
+  return useSWR<CIPipelineDetail>(
+    currentTenant && id ? `${CI_BASE}/pipelines/${encodeURIComponent(id)}` : null,
+    (url: string) => get<CIPipelineDetail>(url)
+  )
+}
+
+/**
+ * The fleet read model: sensors (daemon mode) and CI pipelines (runner mode)
+ * in one list. The API filters each mode by its own permission and returns
+ * the modes the caller may see with their counts.
+ */
+export function useFleet(
+  filters: FleetListFilters,
+  { enabled = true }: { enabled?: boolean } = {}
+) {
+  const { currentTenant } = useTenant()
+  return useSWR<FleetList>(
+    currentTenant && enabled ? fleetURL(filters) : null,
+    (url: string) => get<FleetList>(url),
+    { keepPreviousData: true, refreshInterval: 30_000 }
   )
 }
 
