@@ -234,16 +234,6 @@ export const FALLBACK_CAPABILITY_COLORS: Record<string, string> = {
   'ai-triage': 'violet',
 }
 
-/**
- * @deprecated Use getCapabilityIcon() instead
- */
-export const CAPABILITY_ICONS = FALLBACK_CAPABILITY_ICONS
-
-/**
- * @deprecated Use getCapabilityColor() instead
- */
-export const CAPABILITY_COLORS = FALLBACK_CAPABILITY_COLORS
-
 // =============================================================================
 // Capability Validation Helpers
 // =============================================================================

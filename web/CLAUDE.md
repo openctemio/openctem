@@ -180,10 +180,9 @@ tabs by role), `src/features/sensors`, `src/lib/api/sensor-*`, API
 - Never name a sensor concept "agent". `src/config/__tests__/sensor-vocabulary.test.ts`
   fails on the word outside `src/config/sensor-vocabulary-allowlist.json`
   (HTTP User-Agent, the AI-triage agent mode, the endpoint-agent role,
-  historical audit rows, the `/agents` redirects, the storage migration).
+  historical audit rows, the `/agents` redirects).
 - The UI never calls protocol v1 (`/api/v1/agent/*`); that is the sensors' wire.
-- Old `/agents` URLs redirect (`src/config/legacy-sensor-routes.ts`); browser
-  state from before the rename is migrated on load (`src/lib/sensor-storage-migration.ts`).
+- Old `/agents` URLs redirect (`src/config/legacy-sensor-routes.ts`).
 - Audit rows written before the rename keep `agent.*`; label through
   `canonicalAuditAction` / `canonicalAuditResourceType` / `canonicalAuditMetadataKey`.
 - A branch written before the rename catches up with `node scripts/rename/sensor-rename.mjs`.
