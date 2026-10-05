@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -282,8 +284,8 @@ func Register(
 	// mounted on every token-tenant chain so revoked permissions / demoted
 	// admins are enforced within the token lifetime (real-time sync). nil
 	// disables it (legacy embedded-JWT-permission behavior).
-	permCache *app.PermissionCacheService,
-	permVersion *app.PermissionVersionService,
+	permCache *accesscontrol.PermissionCacheService,
+	permVersion *accesscontrol.PermissionVersionService,
 ) {
 	// Pick the membership reader: cache when available, repo otherwise.
 	if membershipReader == nil {

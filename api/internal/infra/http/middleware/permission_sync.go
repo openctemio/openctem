@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -62,8 +62,8 @@ const (
 
 // NewPermissionSyncMiddleware creates a new permission sync middleware.
 func NewPermissionSyncMiddleware(
-	permCache *app.PermissionCacheService,
-	permVersion *app.PermissionVersionService,
+	permCache *accesscontrol.PermissionCacheService,
+	permVersion *accesscontrol.PermissionVersionService,
 	log *logger.Logger,
 ) *PermissionSyncMiddleware {
 	return newPermissionSyncMiddleware(permVersion, permCache, nil, log)
