@@ -6,7 +6,10 @@
   unless the request filters on `branch_only`, a branch, a scan or ids
   (`branch_only=true` lists them); SLA escalation skips it; new-finding
   workflows (notifications, ticket rules) and regression follow-ups do not run
-  for it. The CI gate, the run and the branch pages are unchanged.
+  for it. Dashboards, the executive summary, MTTR, program and CTEM cycle
+  metrics, risk snapshots, asset, group and business unit finding counts and
+  the threat model leave it out too. The CI gate, the run and the branch
+  pages are unchanged.
 - When a counting branch sees it, or its branch starts to count, the mark is
   cleared and its exposure starts then: `first_detected_at` moves to that
   time and the SLA deadline keeps its length from there. Its workflows run
