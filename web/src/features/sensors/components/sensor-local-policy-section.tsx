@@ -8,7 +8,12 @@ import type { Sensor } from '@/lib/api/sensor-types'
 import { cn } from '@/lib/utils'
 
 import { exactTime } from '../lib/format'
-import { localPolicySummaryLines, localPolicyView, shortPolicyDigest } from '../lib/local-policy'
+import {
+  hasNoLocalPolicyWarning,
+  localPolicySummaryLines,
+  localPolicyView,
+  noLocalPolicyGuidance,
+} from '../lib/local-policy'
 
 const TONE_CLASS = {
   ok: 'border-success/40 bg-success/10 text-success',
@@ -55,6 +60,13 @@ export function SensorLocalPolicySection({ sensor }: { sensor: Pick<Sensor, 'loc
           Install tab so the network owner decides what it may scan.
         </DetailCallout>
       )}
+      {(p.state === 'absent' || hasNoLocalPolicyWarning(p)) && (
+        <ul className="space-y-0.5 text-sm text-muted-foreground" data-testid="no-policy-guidance">
+          {noLocalPolicyGuidance().map((g) => (
+            <li key={g}>{g}</li>
+          ))}
+        </ul>
+      )}
       <DetailFieldGrid>
         <DetailField label="State">
           <span className="flex items-center gap-1.5">
@@ -63,10 +75,14 @@ export function SensorLocalPolicySection({ sensor }: { sensor: Pick<Sensor, 'loc
           </span>
         </DetailField>
         {p.digest && (
-          <DetailField label="Digest">
-            <span className="font-mono text-xs" title={p.digest}>
-              {shortPolicyDigest(p.digest)}
-            </span>
+          <DetailField label="Digest (sha256)" full>
+            <code
+              className="font-mono text-xs break-all select-all"
+              data-testid="local-policy-digest"
+              title="The digest the sensor reports for its local policy"
+            >
+              {p.digest}
+            </code>
           </DetailField>
         )}
         {p.source && (

@@ -992,6 +992,11 @@ results an out-of-scope id is reported exactly like an unknown id.
   and full-data decision — the findings list/search, the asset list and
   `/findings/stats`; their SQL gives the same answer as a resolved scope (no
   scope row, nothing).
+- **Scheduled scans act as their owner, never as the system** (21b H2/H3):
+  clone and import set `created_by` to the actor (act scope checked on the
+  direct targets); a scheduled run refuses a scan with no owner and pauses a
+  scan whose owner is no longer an active member (`scan.refuseOwnerlessSchedule`).
+
 - **Asset findings list** (`GET /assets/{id}/findings`) goes through the
   same `visibleFilter` as the findings list: scope plus the pentest-membership
   rule, so a pentest finding (PoC in its metadata) reaches campaign members
