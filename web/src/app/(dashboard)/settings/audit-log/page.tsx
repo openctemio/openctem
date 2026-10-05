@@ -36,6 +36,7 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import {
   useAuditLogs,
+  toAuditApiPage,
   useAuditStats,
   type AuditLog,
   type AuditLogFilters,
@@ -154,10 +155,10 @@ export default function AuditLogPage() {
     : undefined
   const hideSystem = hideSystemParam === 'true'
 
-  // Build API filters (page is 0-based on the wire, as before)
+  // Build API filters. The API pages are 1-based; the table is 0-based.
   const activeFilters = useMemo<AuditLogFilters>(
     () => ({
-      page: pagination.pageIndex,
+      page: toAuditApiPage(pagination.pageIndex),
       per_page: pagination.pageSize,
       search: debouncedSearch || undefined,
       result: resultFilter ? [resultFilter] : undefined,

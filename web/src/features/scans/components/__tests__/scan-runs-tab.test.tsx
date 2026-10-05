@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { ScanRunsTab } from '../scan-runs-tab'
@@ -29,6 +29,15 @@ vi.mock('@/lib/api/pipeline-hooks', () => ({
     },
     isLoading: false,
   }),
+}))
+const exportGet = vi.fn()
+vi.mock('@/lib/api/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api/client')>()),
+  get: (...a: unknown[]) => exportGet(...a),
+}))
+const exportToCsvMock = vi.fn(() => true)
+vi.mock('@/hooks/use-csv-export', () => ({
+  exportToCsv: (...a: unknown[]) => exportToCsvMock(...(a as [])),
 }))
 vi.mock('../run-detail-sheet', () => ({
   RunDetailSheet: ({ runId }: { runId: string | null }) =>
@@ -199,6 +208,20 @@ describe('ScanRunsTab', () => {
       within(table).getByRole('link', { name: 'Quick Scan - 20261004-101010' })
     ).toHaveAttribute('href', '/scans/adhoc')
     expect(within(table).getByText('Deleted scan')).toBeInTheDocument()
+  })
+
+  it('exports the list as filtered and sorted, through the same endpoint', async () => {
+    urlState.run_status = 'failed'
+    urlState.run_sort = '-started_at'
+    exportGet.mockResolvedValue({ items: [run({})], total: 1, page: 1, per_page: 100 })
+    render(<ScanRunsTab />)
+    await userEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
+    await waitFor(() => expect(exportToCsvMock).toHaveBeenCalled())
+    const url = String(exportGet.mock.calls.at(-1)?.[0])
+    expect(url).toMatch(/^\/api\/v1\/pipeline-runs\?/)
+    expect(url).toContain('status=failed')
+    expect(url).toContain('sort=-started_at')
+    expect(exportToCsvMock).toHaveBeenCalled()
   })
 
   it('explains the missing permission instead of showing an empty table', () => {

@@ -52,8 +52,11 @@ func TestTenableSCConnectorScan(t *testing.T) {
 
 	connector := tenablesc.NewService(intRepo, postgres.NewSensorRepository(pg), postgres.NewCommandRepository(pg),
 		postgres.NewFindingRepository(pg), nil, logger.NewNop())
+	// The tenant authorizes its domain for active checks (RFC-036 §6.3).
+	seedScopeTarget(t, db, tenant, "domain", "*.example.com")
 	svc := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
-		scansvc.WithActScope(actScopeChecker(db, admin)), scansvc.WithConnectorScans(connector))
+		scansvc.WithActScope(actScopeChecker(db, admin)), scansvc.WithConnectorScans(connector),
+		scansvc.WithAttributionGate(ownershipGate(db)))
 	asAdmin := asCaller(ctx, datascope.Caller{UserID: admin.String(), IsAdmin: true})
 
 	cfg := func(intg *integration.Integration, policy, repo int) map[string]any {

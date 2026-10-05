@@ -87,7 +87,12 @@ function getPermissionType(permissionId: string): string {
 
 export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleSheetProps) {
   const { updateRole, isUpdating } = useUpdateRole(role?.id || null)
-  const { modules: permissionModules, isLoading: isLoadingModules } = useTenantPermissionModules()
+  const { modules: permissionModules, isLoading: isLoadingModules } = useTenantPermissionModules(
+    true,
+    {
+      forCustomRole: true,
+    }
+  )
 
   // Form state
   const [form, setForm] = useState({

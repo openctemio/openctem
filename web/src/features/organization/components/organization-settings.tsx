@@ -291,8 +291,7 @@ function HeaderSaveButton({
  * - /settings/general: organization info, branding, localization and file
  *   storage (tabs), and the owner-only danger zone;
  * - /settings/authentication: two-factor, session, e-mail verification,
- *   access restrictions, plus where SSO is configured. What members without a
- *   team see is set on /settings/teams (NoTeamAccessCard).
+ *   access restrictions, plus where SSO is configured.
  * Was /settings/tenant with four tabs; its API & Webhooks tab is gone: those
  * fields were stored and read back but nothing in the API acted on them.
  * Outbound webhooks live under Integrations > Notification channels.

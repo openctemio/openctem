@@ -357,11 +357,14 @@ function EditUserRolesDialog({
   open,
   onOpenChange,
   onSuccess,
+  canGrantAdmin = false,
 }: {
   member: MemberWithUser | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess?: () => void
+  /** Only the owner may make someone an administrator (settings decision B2). */
+  canGrantAdmin?: boolean
 }) {
   // Only fetch data when dialog is actually open (avoid unnecessary API calls)
   const {
@@ -419,6 +422,7 @@ function EditUserRolesDialog({
 
         <div className="py-4">
           <RoleChecklist
+            canGrantAdmin={canGrantAdmin}
             roles={allRoles}
             selected={selectedRoleIds}
             onChange={setSelectedRoleIds}
@@ -1244,6 +1248,7 @@ export default function UsersPage() {
         open={inviteDialogOpen}
         onOpenChange={setInviteDialogOpen}
         onInvited={refreshData}
+        canGrantAdmin={caller.isOwner}
       />
 
       <AddUserDialog
@@ -1251,6 +1256,7 @@ export default function UsersPage() {
         open={addUserOpen}
         onOpenChange={setAddUserOpen}
         onCreated={refreshData}
+        canGrantAdmin={caller.isOwner}
       />
 
       <SetupLinkDialog
@@ -1274,6 +1280,7 @@ export default function UsersPage() {
             if (!open) setEditRolesMember(null)
           }}
           onSuccess={refreshData}
+          canGrantAdmin={caller.isOwner}
         />
       )}
 

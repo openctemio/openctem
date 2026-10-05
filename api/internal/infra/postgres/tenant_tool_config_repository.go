@@ -289,6 +289,7 @@ func (r *TenantToolConfigRepository) GetEffectiveConfig(ctx context.Context, ten
 		FROM tools t
 		LEFT JOIN tenant_tool_configs tc ON tc.tool_id = t.id AND tc.tenant_id = $1
 		WHERE t.id = $2
+		  AND (t.tenant_id IS NULL OR t.tenant_id = $1)
 	`
 
 	var defaultConfigBytes, tenantConfigBytes []byte

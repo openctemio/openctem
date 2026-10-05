@@ -123,6 +123,25 @@ func (r *AccessControlRepository) IsUserInTenant(ctx context.Context, tenantID, 
 	return exists, nil
 }
 
+// IsActiveTenantMember reports whether the user is an active member of the
+// tenant: an active membership row and an active user account. It is the
+// check for naming someone as an assignee, so a suspended member, a
+// deactivated account, or any user of another organization cannot be named
+// (and their profile is never disclosed through the assignment).
+func (r *AccessControlRepository) IsActiveTenantMember(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	const query = `
+		SELECT EXISTS (
+			SELECT 1 FROM tenant_members m
+			  JOIN users u ON u.id = m.user_id
+			 WHERE m.tenant_id = $1 AND m.user_id = $2
+			   AND m.status = 'active' AND u.status = 'active')`
+	var exists bool
+	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), userID.String()).Scan(&exists); err != nil {
+		return false, fmt.Errorf("failed to check active tenant membership: %w", err)
+	}
+	return exists, nil
+}
+
 // GetAssetOwner retrieves an asset ownership by asset and group ID.
 func (r *AccessControlRepository) GetAssetOwner(ctx context.Context, assetID, groupID shared.ID) (*accesscontrol.AssetOwner, error) {
 	query := `

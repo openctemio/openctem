@@ -8,6 +8,7 @@ import "github.com/openctemio/openctem/api/internal/app/finding"
 
 type (
 	VulnerabilityService            = finding.VulnerabilityService
+	AssigneeChecker                 = finding.AssigneeChecker
 	FindingActionsService           = finding.FindingActionsService
 	SourceAnalyticsService          = finding.SourceAnalyticsService
 	SourceAnalytics                 = finding.SourceAnalytics
@@ -102,5 +103,6 @@ var (
 	ErrBulkNegativeSize        = finding.ErrBulkNegativeSize
 	ErrBulkTooLarge            = finding.ErrBulkTooLarge
 	ErrPriorityFloodSuppressed = finding.ErrPriorityFloodSuppressed
+	ErrInvalidAssignee         = finding.ErrInvalidAssignee
 	ErrFindingAssetNotFound    = finding.ErrFindingAssetNotFound
 )

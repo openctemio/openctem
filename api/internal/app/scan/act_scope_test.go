@@ -122,7 +122,7 @@ func TestResolveDispatchTargets_ActScope(t *testing.T) {
 	tenant := shared.NewID()
 	excl := &stubExclusions{}
 	stub := &stubActScope{targets: map[string]string{"other.example.com": actscope.ReasonOutOfDataScope}}
-	svc := &Service{scopeExclusions: excl, actScope: stub, logger: logger.NewNop()}
+	svc := &Service{scopeExclusions: excl, actScope: stub, attributionGate: &stubGate{}, logger: logger.NewNop()}
 	in := DispatchTargetsInput{TenantID: tenant, Targets: []string{"mine.example.com", "other.example.com"}, ActScope: true}
 
 	got, err := svc.ResolveDispatchTargets(context.Background(), in)
@@ -140,7 +140,7 @@ func TestResolveDispatchTargets_ActScope(t *testing.T) {
 	}
 
 	in.ActScope = true
-	if _, err := (&Service{scopeExclusions: excl, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); !errors.Is(err, ErrActScopeUnavailable) {
+	if _, err := (&Service{scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); !errors.Is(err, ErrActScopeUnavailable) {
 		t.Fatalf("asked and unwired: err = %v, want ErrActScopeUnavailable", err)
 	}
 	svc.actScope = &stubActScope{err: errors.New("db down")}

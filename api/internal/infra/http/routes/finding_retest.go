@@ -35,9 +35,4 @@ func registerRetestSettingsRoutes(router Router, h *handler.TenantHandler, authM
 		r.GET("/", h.GetRetestSettings, middleware.RequireAdmin())
 		r.PUT("/", h.UpdateRetestSettings, middleware.RequireAdmin())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
-	// Pre-flight report for retiring "everything" (owner decision D2):
-	// owner/admin, tenant from the credential.
-	router.Group("/api/v1/organization/settings/data-scope", func(r Router) {
-		r.GET("/impact", h.GetDataScopeImpact, middleware.RequireAdmin())
-	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }

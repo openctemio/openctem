@@ -304,10 +304,9 @@ type SecuritySettings struct {
 	IPWhitelist       []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
 	AllowedDomains    []string `json:"allowed_domains"`     // Allowed email domains for signup
 
-	// The data-scope policy ("members without an access group see: everything |
-	// nothing") is the tenants.members_without_group_see column (migration
-	// 000247), not a settings key. A restricted_data_scope key left in stored
-	// JSON was folded into that column by the migration and is ignored.
+	// A restricted_data_scope key left in stored JSON is ignored: members
+	// without a scope row see nothing in every organization (owner decision
+	// D2), there is no data-scope setting.
 
 	// EmailVerificationMode controls whether new users must verify their email.
 	//   "auto"   = (default) require verification IFF SMTP is configured (smart)
@@ -1058,21 +1057,13 @@ func (s *Settings) ToMap() map[string]any {
 }
 
 // SettingsFromMap converts map[string]any to Settings.
+//
+// Each section is decoded on its own (SettingsFromMapChecked): a section that
+// cannot be decoded falls back to its default without affecting the others.
+// Enforcement points that must fail closed on a corrupt security section use
+// Tenant.SecuritySettingsStrict instead.
 func SettingsFromMap(m map[string]any) Settings {
-	if len(m) == 0 {
-		return DefaultSettings()
-	}
-	data, _ := json.Marshal(m)
-	var settings Settings
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return DefaultSettings()
-	}
-
-	// Ensure risk_scoring has valid defaults if not present in the map
-	if _, ok := m["risk_scoring"]; !ok {
-		settings.RiskScoring = LegacyRiskScoringSettings()
-	}
-
+	settings, _ := SettingsFromMapChecked(m)
 	return settings
 }
 

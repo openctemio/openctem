@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -51,14 +52,6 @@ type TenantHandler struct {
 	// invalidateSecurityPolicy drops the IP-allowlist gate's cached policy for
 	// an organization after its security settings change.
 	invalidateSecurityPolicy func(tenantID string)
-	// invalidateDataScopePolicy drops the cached data-scope policy of an
-	// organization after an administrator changes it.
-	invalidateDataScopePolicy func(tenantID string)
-}
-
-// SetDataScopePolicyInvalidator wires the data-scope policy cache invalidation.
-func (h *TenantHandler) SetDataScopePolicyInvalidator(fn func(tenantID string)) {
-	h.invalidateDataScopePolicy = fn
 }
 
 // SetUserProvisioning wires administrator-created accounts.
@@ -385,6 +378,18 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		writeToggleErrorJSON(w, toggleErr)
 		return
 	}
+	var conflict *tenant.SettingsConflictError
+	if errors.As(err, &conflict) {
+		writeSettingsConflict(w, conflict)
+		return
+	}
+	if errors.Is(err, tenant.ErrSettingsSectionCorrupt) {
+		// The service already logged the tenant and section; the error text can
+		// carry stored values, so it is not logged here.
+		h.logger.Error("settings section unreadable")
+		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Tenant").WriteJSON(w)
@@ -578,7 +583,7 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 		LogoURL:     req.LogoURL,
 	}
 
-	t, err := h.service.UpdateTenant(r.Context(), tenantID.String(), input)
+	t, err := h.service.UpdateTenant(r.Context(), tenantID.String(), input, h.buildAuditContext(r))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1307,7 +1312,7 @@ func (h *TenantHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.DeleteInvitation(r.Context(), tenantID.String(), invitationID); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), tenantID.String(), invitationID, h.buildAuditContext(r)); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1616,7 +1621,9 @@ func (h *TenantHandler) declineInvitation(w http.ResponseWriter, r *http.Request
 
 	// Delete the invitation (public decline: the token authorizes it; pass the
 	// invitation's own tenant so the scoping check is satisfied).
-	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String()); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String(), app.AuditContext{
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+	}); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1636,6 +1643,56 @@ type SettingsResponse struct {
 	Branding    BrandingSettingsResponse   `json:"branding"`
 	RiskScoring tenant.RiskScoringSettings `json:"risk_scoring"`
 	Pentest     tenant.PentestSettings     `json:"pentest"`
+	// ETags holds the entity tag of each settings section as stored (keys:
+	// general, security, branding, risk_scoring, pentest, ...). Send the
+	// section's tag as If-Match on its PATCH to get 409 SETTINGS_CONFLICT
+	// instead of overwriting a change saved since you read it.
+	ETags map[string]string `json:"etags,omitempty"`
+}
+
+// withSettingsETags returns resp with its per-section ETags set.
+func withSettingsETags(resp SettingsResponse, etags map[string]string) SettingsResponse {
+	resp.ETags = etags
+	return resp
+}
+
+// settingsWriteCtx carries the request's If-Match header (a settings-section
+// ETag) to the service, which refuses the write with 409 when it is stale.
+func settingsWriteCtx(r *http.Request) context.Context {
+	return tenantapp.WithSettingsIfMatch(r.Context(), r.Header.Get("If-Match"))
+}
+
+// settingsETags returns the stored ETag of every settings section, or nil
+// (logged) when it cannot be read; ETags are advisory for clients.
+func (h *TenantHandler) settingsETags(ctx context.Context, tenantID shared.ID) map[string]string {
+	etags, err := h.service.SectionETags(ctx, tenantID.String())
+	if err != nil {
+		h.logger.Warn("failed to compute settings ETags", "tenant_id", tenantID.String(), "error", err)
+		return nil
+	}
+	return etags
+}
+
+// writeSectionETag sets the ETag response header to the stored tag of one
+// settings section and returns every section's tag.
+func (h *TenantHandler) writeSectionETag(w http.ResponseWriter, r *http.Request, tenantID shared.ID, section string) map[string]string {
+	etags := h.settingsETags(r.Context(), tenantID)
+	if tag := etags[section]; tag != "" {
+		w.Header().Set("ETag", tag)
+	}
+	return etags
+}
+
+// writeSettingsConflict writes 409 SETTINGS_CONFLICT with the current
+// (redacted) section and its ETag, so the client can show what changed.
+func writeSettingsConflict(w http.ResponseWriter, e *tenant.SettingsConflictError) {
+	current := tenant.RedactSettings(map[string]any{e.Section: e.Current})[e.Section]
+	w.Header().Set("ETag", e.ETag)
+	apierror.New(http.StatusConflict, "SETTINGS_CONFLICT", e.Error()).WithDetails(map[string]any{
+		"section": e.Section,
+		"etag":    e.ETag,
+		"current": current,
+	}).WriteJSON(w)
 }
 
 // GeneralSettingsResponse represents general settings.
@@ -1744,7 +1801,7 @@ func (h *TenantHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := toSettingsResponse(settings)
+	resp := withSettingsETags(toSettingsResponse(settings), h.settingsETags(r.Context(), tenantID))
 	resp.Security.CurrentIP = getClientIP(r)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1792,15 +1849,16 @@ func (h *TenantHandler) UpdateGeneralSettings(w http.ResponseWriter, r *http.Req
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateGeneralSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateGeneralSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionGeneral)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // UpdateSecuritySettingsRequest represents the request to update security settings.
@@ -1856,163 +1914,21 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateSecuritySettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateSecuritySettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionSecurity)
 	if h.invalidateSecurityPolicy != nil {
 		h.invalidateSecurityPolicy(tenantID.String())
 	}
 
-	resp := toSettingsResponse(settings)
+	resp := withSettingsETags(toSettingsResponse(settings), etags)
 	resp.Security.CurrentIP = clientIP
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-// DataScopePolicyResponse is what members without an access group see.
-type DataScopePolicyResponse struct {
-	// MembersWithoutGroupSee is "everything" (fail-open) or "nothing"
-	// (fail-closed). Owners and admins always see everything.
-	MembersWithoutGroupSee string `json:"members_without_group_see" enums:"everything,nothing"`
-	// Deprecated is true while the organization still shows everything: that
-	// mode is being retired and only the owner can switch it off.
-	Deprecated bool `json:"deprecated"`
-}
-
-func dataScopePolicyResponse(policy string) DataScopePolicyResponse {
-	return DataScopePolicyResponse{MembersWithoutGroupSee: policy, Deprecated: policy == tenant.MembersWithoutGroupSeeEverything}
-}
-
-// DataScopeImpactMember is one member who would see nothing after the switch.
-type DataScopeImpactMember struct {
-	UserID string `json:"user_id"`
-	Name   string `json:"name"`
-	Email  string `json:"email"`
-	Role   string `json:"role"`
-}
-
-// DataScopeImpactResponse is the pre-flight report for switching members
-// without a team to "nothing".
-type DataScopeImpactResponse struct {
-	MembersWithoutGroupSee string `json:"members_without_group_see" enums:"everything,nothing"`
-	// TotalCount is the number of members who would see nothing (exact);
-	// Members lists at most 500 of them.
-	TotalCount int                     `json:"total_count"`
-	Members    []DataScopeImpactMember `json:"members"`
-}
-
-// GetDataScopeImpact handles GET /api/v1/organization/settings/data-scope/impact
-// @Summary      Members who would see nothing after switching to "nothing"
-// @Description  Lists the active members who are not owner or admin, hold no role with full data access, and are in no access group and have no grant: they see everything today only because the organization shows everything to members without a team, and would see nothing after the switch. Owners and admins only.
-// @Tags         Tenants
-// @Produce      json
-// @Security     BearerAuth
-// @Success      200     {object}  DataScopeImpactResponse
-// @Failure      401     {object}  apierror.Error
-// @Failure      403     {object}  apierror.Error
-// @Failure      404     {object}  apierror.Error
-// @Router       /organization/settings/data-scope/impact [get]
-func (h *TenantHandler) GetDataScopeImpact(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
-	if err != nil || tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-	impact, err := h.service.GetDataScopeImpact(r.Context(), tenantID.String())
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	resp := DataScopeImpactResponse{
-		MembersWithoutGroupSee: impact.Policy,
-		TotalCount:             impact.TotalCount,
-		Members:                make([]DataScopeImpactMember, 0, len(impact.Members)),
-	}
-	for _, m := range impact.Members {
-		resp.Members = append(resp.Members, DataScopeImpactMember{UserID: m.UserID, Name: m.Name, Email: m.Email, Role: m.Role})
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
-// UpdateDataScopePolicyRequest sets what members without an access group see.
-type UpdateDataScopePolicyRequest struct {
-	MembersWithoutGroupSee string `json:"members_without_group_see" validate:"required,oneof=everything nothing" enums:"everything,nothing"`
-}
-
-// GetDataScopePolicy handles GET /api/v1/tenants/{tenant}/settings/data-scope
-// @Summary      Get the data scope of members without an access group
-// @Description  Returns what members who are in no access group see: everything (all assets and findings) or nothing. Owners and admins always see everything.
-// @Tags         Tenants
-// @Produce      json
-// @Security     BearerAuth
-// @Param        tenant  path      string  true  "Tenant ID or slug"
-// @Success      200     {object}  DataScopePolicyResponse
-// @Failure      401     {object}  apierror.Error
-// @Failure      403     {object}  apierror.Error
-// @Failure      404     {object}  apierror.Error
-// @Router       /tenants/{tenant}/settings/data-scope [get]
-func (h *TenantHandler) GetDataScopePolicy(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-	policy, err := h.service.GetDataScopePolicy(r.Context(), tenantID.String())
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(dataScopePolicyResponse(policy))
-}
-
-// UpdateDataScopePolicy handles PATCH /api/v1/tenants/{tenant}/settings/data-scope
-// @Summary      Set the data scope of members without an access group
-// @Description  Switches what members who are in no access group see to nothing. "everything" is being retired: an organization that sees nothing cannot switch back (400). Owners only; owners and admins always see everything. The change is audited.
-// @Tags         Tenants
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        tenant  path      string                        true  "Tenant ID or slug"
-// @Param        body    body      UpdateDataScopePolicyRequest  true  "Policy"
-// @Success      200     {object}  DataScopePolicyResponse
-// @Failure      400     {object}  apierror.Error
-// @Failure      401     {object}  apierror.Error
-// @Failure      403     {object}  apierror.Error
-// @Failure      404     {object}  apierror.Error
-// @Router       /tenants/{tenant}/settings/data-scope [patch]
-func (h *TenantHandler) UpdateDataScopePolicy(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-	var req UpdateDataScopePolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-	policy, err := h.service.UpdateDataScopePolicy(r.Context(), tenantID.String(), req.MembersWithoutGroupSee, h.buildAuditContext(r))
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	if h.invalidateDataScopePolicy != nil {
-		h.invalidateDataScopePolicy(tenantID.String())
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(dataScopePolicyResponse(policy))
 }
 
 // UpdateAPISettingsRequest represents the request to update API settings.
@@ -2054,15 +1970,16 @@ func (h *TenantHandler) UpdateAPISettings(w http.ResponseWriter, r *http.Request
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateAPISettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateAPISettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionAPI)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // UpdateBrandingSettingsRequest represents the request to update branding settings.
@@ -2102,15 +2019,16 @@ func (h *TenantHandler) UpdateBrandingSettings(w http.ResponseWriter, r *http.Re
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateBrandingSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateBrandingSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionBranding)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // UpdateBranchSettingsRequest represents the request to update branch naming convention settings.
@@ -2142,15 +2060,16 @@ func (h *TenantHandler) UpdateBranchSettings(w http.ResponseWriter, r *http.Requ
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateBranchSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdateBranchSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionBranch)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // =============================================================================
@@ -2176,6 +2095,7 @@ func (h *TenantHandler) GetPentestSettings(w http.ResponseWriter, r *http.Reques
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionPentest)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(ps)
@@ -2206,15 +2126,16 @@ func (h *TenantHandler) UpdatePentestSettings(w http.ResponseWriter, r *http.Req
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdatePentestSettings(r.Context(), tenantID.String(), input, actx)
+	settings, err := h.service.UpdatePentestSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionPentest)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // =============================================================================
@@ -2234,6 +2155,7 @@ func (h *TenantHandler) GetRiskScoringSettings(w http.ResponseWriter, r *http.Re
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRiskScoring)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rs)
@@ -2259,11 +2181,12 @@ func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateRiskScoringSettings(r.Context(), tenantID.String(), req, actx)
+	settings, err := h.service.UpdateRiskScoringSettings(settingsWriteCtx(r), tenantID.String(), req, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRiskScoring)
 
 	// Invalidate scoring config cache so new formula takes effect immediately
 	if h.assetService != nil {
@@ -2308,6 +2231,7 @@ func (h *TenantHandler) GetAssetSourceSettings(w http.ResponseWriter, r *http.Re
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetSource)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(as)
@@ -2346,11 +2270,12 @@ func (h *TenantHandler) UpdateAssetSourceSettings(w http.ResponseWriter, r *http
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateAssetSourceSettings(r.Context(), tenantID.String(), req, actx)
+	settings, err := h.service.UpdateAssetSourceSettings(settingsWriteCtx(r), tenantID.String(), req, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetSource)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(settings.AssetSource)
@@ -2377,6 +2302,7 @@ func (h *TenantHandler) GetRetestSettings(w http.ResponseWriter, r *http.Request
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRetest)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rs)
 }
@@ -2410,11 +2336,12 @@ func (h *TenantHandler) UpdateRetestSettings(w http.ResponseWriter, r *http.Requ
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
-	rs, err := h.service.UpdateRetestSettings(r.Context(), tenantID.String(), req, h.buildAuditContext(r))
+	rs, err := h.service.UpdateRetestSettings(settingsWriteCtx(r), tenantID.String(), req, h.buildAuditContext(r))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionRetest)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rs)
 }
@@ -2436,6 +2363,7 @@ func (h *TenantHandler) GetAssetLifecycleSettings(w http.ResponseWriter, r *http
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetLifecycle)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(al)
@@ -2467,11 +2395,12 @@ func (h *TenantHandler) UpdateAssetLifecycleSettings(w http.ResponseWriter, r *h
 	}
 
 	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateAssetLifecycleSettings(r.Context(), tenantID.String(), req, actx)
+	settings, err := h.service.UpdateAssetLifecycleSettings(settingsWriteCtx(r), tenantID.String(), req, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetLifecycle)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(settings.AssetLifecycle)
@@ -3046,6 +2975,7 @@ func (h *TenantHandler) GetAssetIdentitySettings(w http.ResponseWriter, r *http.
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetIdentity)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(settings.AssetIdentity)
@@ -3078,21 +3008,16 @@ func (h *TenantHandler) UpdateAssetIdentitySettings(w http.ResponseWriter, r *ht
 		return
 	}
 
-	settings, err := h.service.GetTenantSettings(r.Context(), tenantID.String())
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	settings.AssetIdentity.StaleAssetDays = req.StaleAssetDays
-	settings.AssetIdentity.MaxIPsPerAsset = req.MaxIPsPerAsset
-
 	actx := h.buildAuditContext(r)
-	updated, err := h.service.UpdateTenantSettings(r.Context(), tenantID.String(), *settings, actx)
+	updated, err := h.service.UpdateAssetIdentitySettings(settingsWriteCtx(r), tenantID.String(), tenant.AssetIdentitySettings{
+		StaleAssetDays: req.StaleAssetDays,
+		MaxIPsPerAsset: req.MaxIPsPerAsset,
+	}, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionAssetIdentity)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(updated.AssetIdentity)
