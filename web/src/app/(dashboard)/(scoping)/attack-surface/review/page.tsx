@@ -2,31 +2,24 @@
 
 /**
  * Attack surface › Review: confirm or reject the names discovery found but
- * could not prove are the organisation's (RFC-036 §6.4, §6.11).
+ * could not prove are the organisation's (RFC-036 §6.4, §6.11). Reached from
+ * the sidebar row's Review tab (research/22 P0-12); `?tab=rejected` opens the
+ * "Not ours" list.
  */
 
-import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/features/shared'
-import { EASMReviewQueue } from '@/features/attack-surface'
+import { AttackSurfaceSectionTabs, EASMReviewQueue } from '@/features/attack-surface'
 
 export default function AttackSurfaceReviewPage() {
   return (
     <Main>
       <PageHeader
-        title="Ownership review"
+        title="Attack surface"
         description="Names found in Certificate Transparency and discovery that may be yours. Scans skip them until you confirm them."
-      >
-        <Button variant="outline" size="sm" asChild>
-          <Link href="/attack-surface">
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            Attack surface
-          </Link>
-        </Button>
-      </PageHeader>
-      <div className="mt-6">
+      />
+      <AttackSurfaceSectionTabs />
+      <div className="mt-5">
         <EASMReviewQueue />
       </div>
     </Main>

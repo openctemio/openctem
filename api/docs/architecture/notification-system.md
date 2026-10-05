@@ -410,6 +410,24 @@ lists the exempt ones (approval events, `new_asset`, `sensor.offline`), whose
 severity is a constant chosen by the emitter. The outbox honours that list when
 it matches an entry to a channel.
 
+**Only emitted types are listed** (settings plan P0-08). A type goes into
+`AllEventTypes()` together with its producer, which is code that enqueues or
+sends a notification with that type. `tests/unit/event_type_producer_test.go`
+fails on a listed type nothing emits.
+
+These types had no producer and were removed from the catalog:
+
+- `security_alert`, which was on by default;
+- `system_error`, `asset_changed`, `asset_deleted`;
+- `scan_started`, `scan_completed`, `scan_failed`;
+- `finding_confirmed`, `finding_triaged`, `exposure_resolved`.
+
+The "System Events" and "Scan Events" groups went with them. Every remaining
+type belongs to a module, so a tenant with no optional modules is offered no
+types. If a subscription saved earlier still lists a removed type, that entry
+never matches anything. To bring a type back, add its producer in the same
+change.
+
 ### Sensor events
 
 | Event | Emitted by | When |

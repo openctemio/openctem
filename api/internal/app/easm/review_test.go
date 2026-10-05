@@ -181,3 +181,28 @@ func TestDecide_LegacyFromIsConfirmed(t *testing.T) {
 		t.Fatalf("decided = %+v", res.Decided)
 	}
 }
+
+// research/22 P0-9: the follow-ups run for the decided assets only, never
+// for out-of-scope or foreign ids.
+func TestDecide_RunsEffectsForDecidedOnly(t *testing.T) {
+	inScope, outOfScope, foreign := shared.NewID(), shared.NewID(), shared.NewID()
+	store := &fakeReviewStore{prev: map[string]attribution.State{inScope.String(): attribution.StateNeedsReview}}
+	repo := &scopeRepo{in: map[shared.ID]bool{inScope: true, foreign: true}}
+	svc := NewReviewService(store, memberEnforcer(repo, shared.NewID()))
+	res := &fakeResolver{}
+	var reclassified []shared.ID
+	svc.SetDecisionEffects(NewDecisionEffects(res, func(_ context.Context, _ shared.ID, ids []shared.ID) {
+		reclassified = append(reclassified, ids...)
+	}, nil))
+
+	if _, err := svc.Decide(context.Background(), shared.NewID(),
+		[]string{inScope.String(), outOfScope.String(), foreign.String()}, attribution.StateRejected, ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(reclassified) != 1 || reclassified[0] != inScope {
+		t.Fatalf("reclassified %v, want only the decided asset", reclassified)
+	}
+	if len(res.calls) != 1 || len(res.calls[0]) != 1 || res.calls[0][0] != inScope {
+		t.Fatalf("resolver calls %v", res.calls)
+	}
+}

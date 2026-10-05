@@ -45,7 +45,7 @@ platform data: a tenant, a sensor or a report cannot widen it.
 - **Hop limit** (owner decision G5): a derived target is at most 3 discovery
   hops from the run's seeds.
 - **Registry outputs (research/27 F3).** `tools.output_types` (migration
-  001020) records what each platform tool produces, backfilled from the
+  001040) records what each platform tool produces, backfilled from the
   catalogue. No API writes it; a DB test keeps it equal to the catalogue.
 - **Validation.** `stage.ValidateChain` checks an engine's stages: known
   capabilities, unique ids, `from` naming only earlier stages or the seeds (no
