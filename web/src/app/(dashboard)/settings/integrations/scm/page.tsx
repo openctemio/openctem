@@ -23,7 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import {
   Plus,
   Link2,
@@ -283,17 +283,19 @@ export default function SCMConnectionsPage() {
               label: 'Sync repositories',
               icon: GitBranch,
               onClick: () => handleSyncClick(connection),
+              route: 'POST /api/v1/integrations/{id}/sync',
             },
             {
               label: 'Test connection',
               icon: Eye,
               onClick: () => handleTestConnection(connection),
+              route: 'POST /api/v1/integrations/{id}/test',
             },
             {
               label: 'Edit',
               icon: Pencil,
               onClick: () => handleEditClick(connection),
-              permission: Permission.ScmConnectionsWrite,
+              route: 'PUT /api/v1/integrations/{id}',
             },
             {
               label: 'Delete',
@@ -301,7 +303,7 @@ export default function SCMConnectionsPage() {
               onClick: () => handleDeleteClick(connection),
               destructive: true,
               separatorBefore: true,
-              permission: Permission.ScmConnectionsDelete,
+              route: 'DELETE /api/v1/integrations/{id}',
             },
           ]
           return <DataTableRowActions actions={actions} />
@@ -329,7 +331,7 @@ export default function SCMConnectionsPage() {
             <GitBranch className="me-2 h-4 w-4" />
             Repositories
           </Button>
-          <Can permission={Permission.ScmConnectionsWrite}>
+          <Can route="POST /api/v1/integrations">
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
               Add connection
@@ -357,7 +359,7 @@ export default function SCMConnectionsPage() {
                   title="No SCM connections"
                   description="Connect your GitHub, GitLab, Bitbucket, or Azure DevOps account to import and scan repositories."
                   action={
-                    <Can permission={Permission.ScmConnectionsWrite}>
+                    <Can route="POST /api/v1/integrations">
                       <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                         <Plus className="me-2 h-4 w-4" />
                         Add connection

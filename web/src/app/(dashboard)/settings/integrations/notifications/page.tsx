@@ -24,7 +24,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import {
   Plus,
   Bell,
@@ -466,12 +466,13 @@ export default function NotificationIntegrationsPage() {
               label: 'Send test',
               icon: Send,
               onClick: () => void handleTestNotification(integration),
+              route: 'POST /api/v1/integrations/{id}/test-notification',
             },
             {
               label: 'Edit',
               icon: Pencil,
               onClick: () => handleEditClick(integration),
-              permission: Permission.NotificationsWrite,
+              route: 'PUT /api/v1/integrations/{id}/notification',
             },
             {
               label: 'View events',
@@ -480,7 +481,7 @@ export default function NotificationIntegrationsPage() {
                 router.push(
                   `/settings/integrations/notifications/history?integration=${integration.id}`
                 ),
-              permission: Permission.IntegrationsManage,
+              route: 'PUT /api/v1/integrations/{id}',
             },
             {
               label: 'Delete',
@@ -488,7 +489,7 @@ export default function NotificationIntegrationsPage() {
               onClick: () => handleDeleteClick(integration),
               destructive: true,
               separatorBefore: true,
-              permission: Permission.NotificationsDelete,
+              route: 'DELETE /api/v1/integrations/{id}',
             },
           ]
           return <DataTableRowActions actions={actions} />
@@ -520,7 +521,7 @@ export default function NotificationIntegrationsPage() {
           title="Notification channels"
           description="Send security alerts to Slack, Microsoft Teams, Telegram and custom webhooks."
         >
-          <Can permission={Permission.IntegrationsManage}>
+          <Can route="PUT /api/v1/integrations/{id}">
             <Button
               variant="outline"
               size="sm"
@@ -538,7 +539,7 @@ export default function NotificationIntegrationsPage() {
               Queue
             </Button>
           </Can>
-          <Can permission={Permission.NotificationsWrite}>
+          <Can route="POST /api/v1/integrations/notifications">
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
               Add channel
@@ -566,7 +567,7 @@ export default function NotificationIntegrationsPage() {
                   title="No notification channels"
                   description="Add Slack, Microsoft Teams, Telegram, or webhook integrations to receive security alerts."
                   action={
-                    <Can permission={Permission.NotificationsWrite}>
+                    <Can route="POST /api/v1/integrations/notifications">
                       <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                         <Plus className="me-2 h-4 w-4" />
                         Add channel

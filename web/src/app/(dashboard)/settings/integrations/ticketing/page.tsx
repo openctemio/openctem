@@ -46,7 +46,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { RoutingRulesDialog } from '@/features/integrations/components/routing-rules-dialog'
 import { mergeShownMapping } from '@/features/integrations/lib/ticketing-mapping'
@@ -541,7 +541,7 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
     onClick: () => setDeleteOpen(true),
     destructive: true,
     separatorBefore: true,
-    permission: Permission.IntegrationsManage,
+    route: 'DELETE /api/v1/integrations/{id}' as const,
   }
 
   async function handleSync() {
@@ -592,7 +592,7 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
                   icon: PlugZap,
                   onClick: () => void handleTest(),
                   disabled: isTesting,
-                  permission: Permission.IntegrationsManage,
+                  route: 'POST /api/v1/integrations/{id}/test' as const,
                 },
               ]
             : []),
@@ -603,6 +603,7 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
                   icon: RefreshCw,
                   onClick: () => void handleSync(),
                   disabled: isSyncing,
+                  route: 'POST /api/v1/integrations/{id}/sync' as const,
                 },
               ]
             : []),
@@ -611,12 +612,14 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
             icon: Route,
             onClick: () => setRoutingOpen(true),
             disabled: !jiraReady,
+            route: 'PUT /api/v1/integrations/{id}' as const,
           },
           {
             label: 'Configure',
             icon: Settings,
             onClick: () => setConfigOpen(true),
             disabled: !jiraReady,
+            route: 'PUT /api/v1/integrations/{id}' as const,
           },
           deleteAction,
         ]}
@@ -926,10 +929,12 @@ export default function TicketingIntegrationPage() {
         title="Ticketing"
         description="Connect ticketing systems to create and track remediation tickets automatically."
       >
-        <Button size="sm" onClick={() => setDialogOpen(true)}>
-          <Plus className="me-2 h-4 w-4" />
-          Connect Jira
-        </Button>
+        <Can route="POST /api/v1/integrations">
+          <Button size="sm" onClick={() => setDialogOpen(true)}>
+            <Plus className="me-2 h-4 w-4" />
+            Connect Jira
+          </Button>
+        </Can>
       </PageHeader>
 
       {error ? (
@@ -956,10 +961,12 @@ export default function TicketingIntegrationPage() {
                 title="No ticketing systems connected"
                 description="Connect a ticketing system to automatically create and track remediation tickets."
                 action={
-                  <Button size="sm" onClick={() => setDialogOpen(true)}>
-                    <Plus className="me-2 h-4 w-4" />
-                    Connect Jira
-                  </Button>
+                  <Can route="POST /api/v1/integrations">
+                    <Button size="sm" onClick={() => setDialogOpen(true)}>
+                      <Plus className="me-2 h-4 w-4" />
+                      Connect Jira
+                    </Button>
+                  </Can>
                 }
               />
             ) : (
