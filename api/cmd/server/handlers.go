@@ -324,8 +324,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
 		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		ScanFreeze:      handler.NewScanFreezeWindowHandler(svc.ScanFreeze, log),
 		Ingest:          ingestHandler,
 		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, log),
+		SensorPairing:   newSensorPairingHandler(svc, log),
 		IOC:             newIOCHandlerWithFindingCheck(deps, log),
 		Validation:      validationHandler,
 		SCIM: func() *handler.SCIMHandler {
@@ -852,6 +854,20 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
+	// Break-glass reaches every administrator (in-app) and the tenant's
+	// channels subscribed to ci.break_glass.
+	var admins cirunapp.AdminLister
+	if repos.MemberLifecycle != nil {
+		admins = repos.MemberLifecycle
+	}
+	var inApp cirunapp.InAppNotifier
+	if svc.Notification != nil {
+		inApp = svc.Notification
+	}
+	var ob cirunapp.Notifier
+	if svc.Outbox != nil {
+		ob = svc.Outbox
+	}
 	ciSvc := cirunapp.NewService(cirunapp.Deps{
 		Repo:     repos.CIRun,
 		Verifier: verifier,
@@ -861,6 +877,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		Ingester: svc.Ingest,
 		Units:    repos.CIRun,
 		Audit:    audit,
+		Alerts:   cirunapp.NewAdminAlerts(admins, inApp, ob, log),
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: cirun.StatusPolicy{
 		LatestVersion: sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion),
 		MinVersion:    sensordom.NormalizeVersion(cfg.SensorConfig.MinVersion),
@@ -873,4 +890,13 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
 	return admin, handler.NewCIRunnerHandler(ciSvc, log)
+}
+
+// newSensorPairingHandler builds the pairing handler (RFC-052); nil when
+// pairing is disabled.
+func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorPairingHandler {
+	if svc.SensorPairing == nil || svc.Sensor == nil {
+		return nil
+	}
+	return handler.NewSensorPairingHandler(svc.SensorPairing, svc.Sensor, log)
 }

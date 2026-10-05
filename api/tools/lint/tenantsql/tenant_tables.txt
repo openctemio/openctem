@@ -108,6 +108,7 @@ runtime_telemetry_events
 saml_providers
 saved_views
 scan_coverage_state
+scan_freeze_windows
 scan_profiles
 scan_run_stage_plans
 scan_run_targets
@@ -128,6 +129,7 @@ sensor_events
 sensor_heartbeat_history
 sensor_keys
 sensor_manifests
+sensor_pairings
 sensor_result_policies
 sensor_result_quarantine
 sensors

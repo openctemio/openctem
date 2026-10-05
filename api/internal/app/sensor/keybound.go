@@ -8,11 +8,15 @@ package sensor
 
 import (
 	"context"
+
 	"crypto/ed25519"
 	"errors"
 	"net"
 	"sync"
 	"time"
+
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -155,4 +159,88 @@ func (m *memoryNonceStore) Use(_ context.Context, keyID, nonce string, ttl time.
 	}
 	m.seen[k] = now.Add(ttl)
 	return true, nil
+}
+
+// RecordEvents writes events to the sensors' timelines (best effort), for
+// services outside this package (pairing, grants).
+func (s *SensorService) RecordEvents(ctx context.Context, events []sensordom.Event) {
+	s.recordEvents(ctx, events)
+}
+
+// SetIdentityPolicyRepository wires the organization's identity policy
+// (RFC-052 D-4). Without it bearer-key sensors may always be created.
+func (s *SensorService) SetIdentityPolicyRepository(repo sensordom.IdentityPolicyRepository) {
+	s.identityPolicy = repo
+}
+
+// BearerKeysAllowed reports whether tenantID may create bearer-key sensors.
+func (s *SensorService) BearerKeysAllowed(ctx context.Context, tenantID shared.ID) (bool, error) {
+	if s.identityPolicy == nil {
+		return true, nil
+	}
+	return s.identityPolicy.BearerKeysAllowed(ctx, tenantID)
+}
+
+// SetBearerKeysAllowed changes the policy and audits a change at high
+// severity. The caller checked the permission: requiring key-bound identity
+// narrows (sensors:grant:narrow), allowing bearer keys widens
+// (sensors:grant:widen).
+func (s *SensorService) SetBearerKeysAllowed(ctx context.Context, actx auditapp.AuditContext, tenantID shared.ID, allowed bool) error {
+	if s.identityPolicy == nil {
+		return shared.NewDomainError("UNAVAILABLE", "identity policy not available", shared.ErrValidation)
+	}
+	changed, err := s.identityPolicy.SetBearerKeysAllowed(ctx, tenantID, allowed)
+	if err != nil || !changed {
+		return err
+	}
+	msg := "Sensors must use key-bound identity (pairing); no new API keys can be created"
+	if allowed {
+		msg = "New sensors may again be created with an API key (bearer key)"
+	}
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionSensorIdentityPolicySet, audit.ResourceTypeSensor, tenantID.String()).
+		WithMessage(msg).WithSeverity(audit.SeverityHigh).WithMetadata("bearer_keys_allowed", allowed))
+	return nil
+}
+
+// logAudit writes an audit event (best effort).
+func (s *SensorService) logAudit(ctx context.Context, actx auditapp.AuditContext, ev auditapp.AuditEvent) {
+	if s.auditService == nil {
+		return
+	}
+	s.warnAudit(s.auditService.LogEvent(ctx, actx, ev), string(ev.Action), ev.ResourceID)
+}
+
+// ListSigningKeys returns a sensor's public keys (tenant-scoped).
+func (s *SensorService) ListSigningKeys(ctx context.Context, tenantID, sensorID shared.ID) ([]*sensordom.SigningKey, error) {
+	if s.signingKeys == nil {
+		return nil, nil
+	}
+	if _, err := s.repo.GetByTenantAndID(ctx, tenantID, sensorID); err != nil {
+		return nil, err
+	}
+	return s.signingKeys.ListBySensor(ctx, tenantID, sensorID)
+}
+
+// RevokeSigningKey revokes one key of a sensor of the tenant, effective on
+// the sensor's next request, and audits it. Another tenant's sensor or key
+// is shared.ErrNotFound.
+func (s *SensorService) RevokeSigningKey(ctx context.Context, actx auditapp.AuditContext, tenantID, sensorID, keyID shared.ID) error {
+	if s.signingKeys == nil {
+		return shared.ErrNotFound
+	}
+	a, err := s.repo.GetByTenantAndID(ctx, tenantID, sensorID)
+	if err != nil {
+		return err
+	}
+	ok, err := s.signingKeys.Revoke(ctx, tenantID, sensorID, keyID, sensordom.KeyRevokedAdmin, s.now())
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return shared.ErrNotFound
+	}
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionSensorKeyRevoked, audit.ResourceTypeSensor, sensorID.String()).
+		WithResourceName(a.Name).WithMessage("Revoked a signing key of sensor "+a.Name).
+		WithSeverity(audit.SeverityHigh).WithMetadata("key_id", keyID.String()))
+	return nil
 }
