@@ -26,10 +26,21 @@ type EASMSeeder interface {
 
 // EASMSeedHandler serves /api/v1/easm/seeds.
 type EASMSeedHandler struct {
-	svc    EASMSeeder
-	audit  AttributionAuditor
-	logger *logger.Logger
+	svc     EASMSeeder
+	audit   AttributionAuditor
+	logger  *logger.Logger
+	sweeper SeedSweeper
 }
+
+// SeedSweeper starts a sweep for a tenant after a seed is added
+// (*easm.SweepService; research/22 P0-11).
+type SeedSweeper interface {
+	SweepForSeed(tenantID shared.ID)
+}
+
+// SetSweeper makes a new seed with discovery on start a sweep, so its first
+// results arrive in minutes instead of at the next daily run.
+func (h *EASMSeedHandler) SetSweeper(s SeedSweeper) { h.sweeper = s }
 
 // NewEASMSeedHandler creates the handler. A nil auditor skips audit records
 // (tests only; production wires the audit service).
@@ -159,6 +170,9 @@ func (h *EASMSeedHandler) Create(w http.ResponseWriter, r *http.Request) {
 	h.auditEvent(r, auditdom.ActionEASMSeedCreated, v.ID, v.Value, map[string]any{
 		"kind": v.Kind, "value": v.Value, "discovery_enabled": v.DiscoveryEnabled, "attested": true,
 	})
+	if h.sweeper != nil && v.DiscoveryEnabled {
+		h.sweeper.SweepForSeed(tenantID)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(v)
