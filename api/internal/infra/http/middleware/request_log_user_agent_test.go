@@ -18,7 +18,7 @@ func TestLogger_RecordsUserAgent(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/agent/heartbeat", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/sensor/heartbeat", nil)
 	req.Header.Set("User-Agent", "openctemio-sensor/0.3.1 openctem-sdk-go/0.7.4")
 	h.ServeHTTP(httptest.NewRecorder(), req)
 

@@ -1,5 +1,11 @@
 # SIEM ingest → CTEM Detect/Respond
 
+> **Retired 2026-10-05.** This route was part of sensor protocol v1
+> (`/api/v1/agent/telemetry-events`), which was removed
+> ([RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md)).
+> Protocol v2 has no telemetry route yet, so SIEM inbound is unavailable
+> until one ships. Stored events and the IOC catalogue are kept.
+
 How a SIEM/EDR/XDR (Splunk, Sentinel, CrowdStrike, …) pushes detections **into**
 OpenCTEM so they close the CTEM Stage-4 Detect/Respond loop: a runtime detection
 that matches a known indicator auto-reopens the finding it came from.
