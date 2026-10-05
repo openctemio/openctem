@@ -135,10 +135,15 @@ type MemberWithUser struct {
 
 // MemberStats contains statistics about tenant members.
 type MemberStats struct {
-	TotalMembers   int            `json:"total_members"`
-	ActiveMembers  int            `json:"active_members"`
-	PendingInvites int            `json:"pending_invites"`
-	RoleCounts     map[string]int `json:"role_counts"`
+	TotalMembers  int `json:"total_members"`
+	ActiveMembers int `json:"active_members"`
+	// SuspendedMembers are disabled members (access cut, reversible).
+	SuspendedMembers int `json:"suspended_members"`
+	// OffboardedMembers are tombstones of members who left. They are not
+	// counted in TotalMembers.
+	OffboardedMembers int            `json:"offboarded_members"`
+	PendingInvites    int            `json:"pending_invites"`
+	RoleCounts        map[string]int `json:"role_counts"`
 }
 
 // MemberSearchFilters defines filters for searching members.
@@ -149,12 +154,19 @@ type MemberSearchFilters struct {
 	SearchNameOnly bool
 	Limit          int // Maximum number of results (0 = no limit)
 	Offset         int // Offset for pagination
-	// Status filters on the membership status (active, suspended); empty = any.
+	// Status filters by membership status: "active", "suspended",
+	// "offboarded", or "all". Empty lists active and suspended members (not
+	// the offboarded tombstones).
 	Status string
 	// Role filters on the effective system role (owner, admin, member,
 	// viewer); empty = any.
 	Role string
 }
+
+// Member status filter values for MemberSearchFilters.Status.
+const (
+	MemberFilterAll = "all"
+)
 
 // MemberSearchResult contains the search results and total count.
 type MemberSearchResult struct {
