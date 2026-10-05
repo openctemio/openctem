@@ -169,6 +169,14 @@ const (
 	SecretStoreRead   Permission = "scans:secret_store:read"
 	SecretStoreWrite  Permission = "scans:secret_store:write"
 	SecretStoreDelete Permission = "scans:secret_store:delete"
+
+	// CI runs, CI trust configurations and the CI gate (scans:ci:*,
+	// RFC-051). Write (trust configurations issue upload credentials, gate
+	// policies decide what blocks a pipeline) and override (break-glass) are
+	// admin-only.
+	CIRead     Permission = "scans:ci:read"
+	CIWrite    Permission = "scans:ci:write"
+	CIOverride Permission = "scans:ci:override"
 )
 
 // =============================================================================
@@ -433,6 +441,7 @@ func AllPermissions() []Permission {
 		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
+		CIRead, CIWrite, CIOverride,
 
 		// Sensors module
 		SensorsRead, SensorsWrite, SensorsDelete,
