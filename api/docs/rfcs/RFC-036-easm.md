@@ -813,7 +813,13 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
   rejected or deleted assets, 30 immediate alerts per tenant per hour.
   [easm.md §4c](../architecture/easm.md#4c-alerts-built-p0-7).
 
-- **P0-8 DNS checks on by default, takeover on dependency names (E3, E13):** open.
+- **P0-8 DNS checks on by default, takeover on dependency names (E3, E13):**
+  shipped (#1143, migration `001017`). `EASM_DNS_CHECKS_ENABLED` defaults to
+  true; the CT controller runs the DNS checks for each tenant right after its
+  CT sweep; the email check also covers root-domain seeds and verified
+  domains with no domain asset (22c B3); a nuclei takeover-only scan may
+  probe a `dependency` asset with an open `dangling_cname`. The per-tenant
+  off switch comes with P0-11.
 
 - **P0-9 rejection hygiene and reclassify on decision (B2, B4):** open.
 
