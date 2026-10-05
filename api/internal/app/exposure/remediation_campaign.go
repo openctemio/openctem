@@ -87,6 +87,9 @@ type RemediationCampaignService struct {
 // postgres.AccessControlRepository.IsActiveTenantMember implements it.
 type CampaignAssigneeChecker interface {
 	IsActiveTenantMember(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+	// IsGroupInTenant reports whether a group (the campaign's validator
+	// team) belongs to the tenant.
+	IsGroupInTenant(ctx context.Context, tenantID, groupID shared.ID) (bool, error)
 }
 
 // SetAssigneeChecker wires the campaign owner membership check. Without it
@@ -100,6 +103,32 @@ func (s *RemediationCampaignService) SetAssigneeChecker(c CampaignAssigneeChecke
 // suspended or deactivated), so the endpoint is no oracle for which user ids
 // exist elsewhere (research doc 21b, C2 / L-15).
 var ErrInvalidCampaignAssignee = fmt.Errorf("%w: the assignee must be an active member of this organization", shared.ErrValidation)
+
+// ErrInvalidCampaignTeam is the one answer for a validator team that is not a
+// group of the campaign's organization (unknown or another organization's),
+// so the endpoint is no oracle for group ids elsewhere.
+var ErrInvalidCampaignTeam = fmt.Errorf("%w: the team must be a group of this organization", shared.ErrValidation)
+
+// assertTeam refuses a validator team that is not a group of the tenant.
+// remediation_campaigns.assigned_team carries no tenant check of its own. A
+// nil id (no team, or unassign) needs no check; without a checker naming a
+// team is refused (fail closed).
+func (s *RemediationCampaignService) assertTeam(ctx context.Context, tenantID shared.ID, groupID *shared.ID) error {
+	if groupID == nil {
+		return nil
+	}
+	if s.assignees == nil {
+		return ErrInvalidCampaignTeam
+	}
+	ok, err := s.assignees.IsGroupInTenant(ctx, tenantID, *groupID)
+	if err != nil {
+		return fmt.Errorf("check campaign team: %w", err)
+	}
+	if !ok {
+		return ErrInvalidCampaignTeam
+	}
+	return nil
+}
 
 // assertAssignee refuses an owner who is not an active member of the tenant.
 // A nil id (no owner, or unassign) needs no check.
@@ -303,6 +332,9 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 			if terr != nil {
 				return nil, fmt.Errorf("%w: invalid assigned_team id", shared.ErrValidation)
 			}
+			if err := s.assertTeam(ctx, campaign.TenantID(), &team); err != nil {
+				return nil, err
+			}
 			teamPtr = &team
 		}
 		campaign.SetAssignment(toPtr, teamPtr)
@@ -448,6 +480,12 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 		teamPtr, terr := resolveAssignee(campaign.AssignedTeam(), input.AssignedTeam, "assigned_team")
 		if terr != nil {
 			return nil, terr
+		}
+		// Only a newly named team is checked; keeping it or clearing it is not.
+		if input.AssignedTeam != nil && teamPtr != nil {
+			if err := s.assertTeam(ctx, campaign.TenantID(), teamPtr); err != nil {
+				return nil, err
+			}
 		}
 		campaign.SetAssignment(toPtr, teamPtr)
 	}
