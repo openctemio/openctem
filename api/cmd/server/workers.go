@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
+	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
@@ -444,13 +445,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Interval:    cfg.Worker.CertMonitorInterval,
 				Logger:      log.With("controller", "cert-monitor"),
 				ModuleGuard: svc.Module, // skip tenants without the attack-surface module
+				DNSFollowUp: dnsFollowUp(svc.EASMDNS),
 			},
 		))
 	}
 
 	// EASM DNS-only checks — daily, fail-open, passive (RFC-036 P1): dangling
-	// CNAME/NS and email posture of the tenant's own domains. Disable with
-	// EASM_DNS_CHECKS_ENABLED=false.
+	// CNAME/NS and email posture of the tenant's own domains. On by default
+	// (research/22 E3); disable platform-wide with EASM_DNS_CHECKS_ENABLED=false.
+	// The CT controller also runs them for a tenant right after its CT sweep,
+	// so names CT just promoted are checked in the same pass.
 	if svc.EASMDNS != nil {
 		w.ControllerManager.Register(controller.NewEASMDNSController(
 			svc.EASMDNS,
@@ -952,4 +956,13 @@ func (d connectorCoverageDispatcher) DispatchTenableScan(ctx context.Context, in
 	}
 	id, err := d.svc.DispatchCoverageBatch(ctx, in.TenantID, *in.IntegrationID, in.Targets, session)
 	return id, session, err
+}
+
+// dnsFollowUp returns the DNS checks for the CT controller to run after each
+// tenant's CT sweep, or nil when they are off (a typed nil would not be nil).
+func dnsFollowUp(s *easmdnsapp.Service) controller.EASMDNSChecker {
+	if s == nil {
+		return nil
+	}
+	return s
 }

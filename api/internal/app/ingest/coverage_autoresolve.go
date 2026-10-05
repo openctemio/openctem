@@ -32,6 +32,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -143,6 +144,7 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 
 	q := ingestreport.CoverageQuery{ProfileID: c.ProfileID}
 	seenAssets := map[shared.ID]struct{}{}
+	templates, templatesSet := "", false
 	for _, r := range c.Reports {
 		switch r.State {
 		case protov2.StateCompleted:
@@ -195,6 +197,16 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 			return coverageDecision{reason: coverageToolMismatch}
 		}
 		q.SeenScanIDs = append(q.SeenScanIDs, r.ReportID)
+		// The template release of the run: one value across its reports,
+		// else unknown.
+		_, d := reportTemplateRelease(header.Tool)
+		d = vulnerability.SanitizeTemplateDigest(d)
+		switch {
+		case !templatesSet:
+			templates, templatesSet = d, true
+		case templates != d:
+			templates = ""
+		}
 		for _, a := range r.TouchedAssetIDs {
 			if _, dup := seenAssets[a]; !dup {
 				seenAssets[a] = struct{}{}
@@ -208,6 +220,7 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	if len(q.AssetIDs) == 0 {
 		return coverageDecision{reason: coverageNoCoveredAssets}
 	}
+	q.TemplatesDigest = templates
 	return coverageDecision{reason: coverageEligible, query: q}
 }
 
@@ -217,7 +230,47 @@ type CoverageOutcome struct {
 	Reason       string
 	WouldResolve []shared.ID
 	Resolved     []shared.ID
-	Held         bool
+	// TemplateDrift are the candidates whose last sighting ran other
+	// template content than this run (research/18 O6): not proven fixed,
+	// marked not_observed (NotObserved) in enforce mode.
+	TemplateDrift []shared.ID
+	NotObserved   []shared.ID
+	Held          bool
+}
+
+// templateDriftRepo is implemented by the postgres finding repository.
+type templateDriftRepo interface {
+	TemplateDriftedFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID, runDigest string) ([]shared.ID, error)
+	MarkCoverageNotObserved(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error)
+}
+
+// splitTemplateDrift separates, from the stale candidates, those whose last
+// sighting recorded a template release other than the run's. A lookup
+// error keeps every candidate open (fail closed): ok is false.
+func (s *Service) splitTemplateDrift(ctx context.Context, tenantID shared.ID, stale []shared.ID, runDigest string) (resolvable, drifted []shared.ID, ok bool) {
+	repo, has := s.findingRepo.(templateDriftRepo)
+	if !has {
+		return stale, nil, true
+	}
+	drifted, err := repo.TemplateDriftedFindings(ctx, tenantID, stale, runDigest)
+	if err != nil {
+		s.logger.Warn("coverage auto-resolve: template drift check failed; nothing closed", "error", err)
+		return nil, nil, false
+	}
+	if len(drifted) == 0 {
+		return stale, nil, true
+	}
+	skip := make(map[shared.ID]struct{}, len(drifted))
+	for _, id := range drifted {
+		skip[id] = struct{}{}
+	}
+	resolvable = make([]shared.ID, 0, len(stale)-len(drifted))
+	for _, id := range stale {
+		if _, d := skip[id]; !d {
+			resolvable = append(resolvable, id)
+		}
+	}
+	return resolvable, drifted, true
 }
 
 // SetCoverageAutoResolve sets the mode and the blinding guard (the same guard
@@ -286,13 +339,19 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 	if len(stale) == 0 {
 		return out
 	}
-	out.WouldResolve = stale
 	out.Held = s.coverageGuard.Holds(len(stale), open)
+	resolvable, drifted, ok := s.splitTemplateDrift(ctx, tenantID, stale, d.query.TemplatesDigest)
+	if !ok {
+		out.Reason = "error"
+		return out
+	}
+	out.WouldResolve, out.TemplateDrift = resolvable, drifted
+	stale = resolvable
 
 	logArgs := []any{
 		"command_id", commandID.String(), "tool_name", sanitizeIngestLogField(d.query.ToolName),
 		"profile_id", d.query.ProfileID, "covered_assets", len(d.query.AssetIDs),
-		"would_resolve", len(stale), "open", open, "held", out.Held, "mode", string(mode),
+		"would_resolve", len(stale), "template_drift", len(drifted), "open", open, "held", out.Held, "mode", string(mode),
 	}
 	switch {
 	case out.Held:
@@ -302,6 +361,19 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "would_resolve").Add(float64(len(stale)))
 		s.logger.Info("coverage auto-resolve (dry run): would resolve findings", logArgs...)
 	default:
+		if len(drifted) > 0 {
+			// Template drift: the run's absence proves nothing; the finding
+			// is stale, not fixed, until a new sighting re-baselines it.
+			if dr, ok := s.findingRepo.(templateDriftRepo); ok {
+				marked, err := dr.MarkCoverageNotObserved(ctx, tenantID, drifted)
+				if err != nil {
+					s.logger.Warn("coverage auto-resolve: marking template-drifted findings not_observed failed", append(logArgs, "error", err)...)
+				} else {
+					out.NotObserved = marked
+					metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "not_observed").Add(float64(len(marked)))
+				}
+			}
+		}
 		resolved, err := repo.ResolveCoverageStale(ctx, tenantID, stale)
 		if err != nil {
 			s.logger.Warn("coverage auto-resolve failed", append(logArgs, "error", err)...)
@@ -450,6 +522,7 @@ func (s *Service) auditCoverageAutoResolve(ctx context.Context, tenantID, comman
 	event.Metadata = map[string]any{
 		"mode": string(out.Mode), "held": out.Held, "tool_name": q.ToolName, "profile_id": q.ProfileID,
 		"covered_assets": len(q.AssetIDs), "open": open, "count": len(ids),
+		"template_drift": len(out.TemplateDrift), "not_observed": len(out.NotObserved),
 		"finding_ids": listed, "finding_ids_truncated": len(ids) > maxAuditedFindingIDs,
 	}
 	if err := s.writeIngestAuditLog(ctx, auditapp.AuditContext{TenantID: tenantID.String()}, event); err != nil {
