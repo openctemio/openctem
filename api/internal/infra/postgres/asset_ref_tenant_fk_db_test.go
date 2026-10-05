@@ -8,10 +8,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"github.com/lib/pq"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
