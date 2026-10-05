@@ -319,8 +319,9 @@ cloned identities"), `version_unsupported`, `sdk_unsupported` (see "Build inform
 `no_tools` (a scanning daemon with no tools), `error_reported`,
 `heartbeat_late` (the sensor is late or stale, or its last delivered heartbeat
 came more than 1.5 intervals after the previous one, `control.gap_s`) and
-`control_slow` (`control.lag_ms` or `build_ms` above 5 s). An online sensor
-with any reason is `degraded`.
+`control_slow` (`control.lag_ms` or `build_ms` above 5 s), and from the
+config report (below) `config_check_failed`, `config_check_warning` and
+`config_report_stale`. An online sensor with any reason is `degraded`.
 
 **Release channel**: `SENSOR_LATEST_VERSION` (default: the newest sensor release
 when the API was built, `none` turns it off) and `SENSOR_MIN_VERSION` (default
@@ -1332,6 +1333,39 @@ and narrows dispatch:
   privilege escalation, seccomp RuntimeDefault, writable tmpfs/emptyDir
   scratch directories). The Helm snippet turns on `sensor.localPolicy` of
   chart 0.11.0.
+
+## Config report: the setup checklist (research/26)
+
+> Design: [RFC-033 §11](../rfcs/RFC-033-sensor-manifest.md), from research/26
+> (sensor config doctor) P0. Operators: [Fix a sensor's setup checklist](../how-to/fix-sensor-setup-checklist.md).
+
+A sensor runs preflight checks on itself and sends the results with
+`PUT /api/v2/sensor/config-report` (hello feature `config_report`, at most
+64 KiB). Its heartbeat carries `config_report.digest`, the digest the
+platform returned; a different digest gets the action `send_config_report`.
+
+- **Sanitized, never trusted** (`pkg/domain/sensor/config_report.go`): closed
+  sets, typed and re-validated params, depth ≤ 6, ≤ 200 checks, bounded
+  plain text, unknown members dropped and listed in `ignored`. Settings keep
+  name, set, source, secret and valid only; a value is never stored.
+- **Stored** (migration 001061): the latest report per sensor in
+  `sensor_config_reports` (tenant-scoped), `sensors.config_report_digest` and
+  `config_health` (the platform's rollup: ok, attention, impaired, blocked),
+  and `sensors.config_heartbeat_digest`, written by every heartbeat. The two
+  digests differ when the stored report is stale.
+- **Health**: `config_check_failed` (any fail or error), `config_check_warning`
+  (a warn of severity warning or above), `config_report_stale` (online, and
+  the heartbeat echoes another digest or none). A stale report raises only the
+  stale reason. The list and detail responses carry `config_health`.
+- **Read**: `GET /api/v1/sensors/{id}/config-report` (`sensors:read`, 404 for
+  another tenant). Each check is explained from the platform catalog
+  (`internal/app/sensor/config_check_catalog.go`): group, title, why, fix
+  snippets for env, compose and helm with the check's values escaped per
+  format, and a docs link. Sensor text (`summary`, `excerpt`) is data, shown
+  as plain text. Sensors without a report get a checklist derived from the
+  heartbeat (`state: derived`): tool install states, `tools.available`,
+  `policy.local`.
+- **No dispatch change** in P0: a report only informs.
 
 ## Network egress and proxies (RFC-034, proposed)
 

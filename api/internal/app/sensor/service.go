@@ -664,6 +664,11 @@ type SensorHeartbeatData struct {
 	// from a sensor that registers no manifest, whose manifest is then
 	// derived from this heartbeat's report.
 	ManifestDigest string
+
+	// ConfigReport is the config report summary the heartbeat carried
+	// (research/26), untrusted; nil when it carried none. Only its digest
+	// is stored, validated (sensordom.HeartbeatConfigDigest).
+	ConfigReport *sensordom.ConfigReportSummary
 }
 
 // canonicalToolNames writes tool limits the way sensors report tools:
@@ -815,6 +820,8 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		Interval:      sensordom.FollowedHeartbeatInterval(data.Control, data.AdvisedSeconds, data.DoorbellAware),
 		Control:       data.Control,
 		LocalPolicy:   localPolicy,
+		// The digest the sensor holds: "" (none) marks a stored report stale.
+		ConfigReportDigest: sensordom.HeartbeatConfigDigest(data.ConfigReport),
 	})
 	if err != nil {
 		return err

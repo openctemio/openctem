@@ -22,10 +22,6 @@ type mockDashboardRepo struct {
 	getRecentActivityErr          error
 	getFindingTrendErr            error
 	getAllStatsErr                error
-	getGlobalAssetStatsErr        error
-	getGlobalFindingStatsErr      error
-	getGlobalRepositoryStatsErr   error
-	getGlobalRecentActivityErr    error
 	getFilteredAssetStatsErr      error
 	getFilteredFindingStatsErr    error
 	getFilteredRepositoryStatsErr error
@@ -38,11 +34,6 @@ type mockDashboardRepo struct {
 	findingTrend   []app.FindingTrendPoint
 	allStats       *app.DashboardAllStats
 
-	globalAssetStats     app.AssetStatsData
-	globalFindingStats   app.FindingStatsData
-	globalRepoStats      app.RepositoryStatsData
-	globalRecentActivity []app.ActivityItem
-
 	filteredAssetStats     app.AssetStatsData
 	filteredFindingStats   app.FindingStatsData
 	filteredRepoStats      app.RepositoryStatsData
@@ -51,10 +42,6 @@ type mockDashboardRepo struct {
 	// Call tracking
 	getAllStatsCalls               int
 	getFindingTrendCalls           int
-	getGlobalAssetStatsCalls       int
-	getGlobalFindingStatsCalls     int
-	getGlobalRepoStatsCalls        int
-	getGlobalRecentActivityCalls   int
 	getFilteredAssetStatsCalls     int
 	getFilteredFindingStatsCalls   int
 	getFilteredRepoStatsCalls      int
@@ -113,39 +100,6 @@ func (m *mockDashboardRepo) GetAllStats(_ context.Context, tenantID shared.ID, _
 		return nil, m.getAllStatsErr
 	}
 	return m.allStats, nil
-}
-
-func (m *mockDashboardRepo) GetGlobalAssetStats(_ context.Context) (app.AssetStatsData, error) {
-	m.getGlobalAssetStatsCalls++
-	if m.getGlobalAssetStatsErr != nil {
-		return app.AssetStatsData{}, m.getGlobalAssetStatsErr
-	}
-	return m.globalAssetStats, nil
-}
-
-func (m *mockDashboardRepo) GetGlobalFindingStats(_ context.Context) (app.FindingStatsData, error) {
-	m.getGlobalFindingStatsCalls++
-	if m.getGlobalFindingStatsErr != nil {
-		return app.FindingStatsData{}, m.getGlobalFindingStatsErr
-	}
-	return m.globalFindingStats, nil
-}
-
-func (m *mockDashboardRepo) GetGlobalRepositoryStats(_ context.Context) (app.RepositoryStatsData, error) {
-	m.getGlobalRepoStatsCalls++
-	if m.getGlobalRepositoryStatsErr != nil {
-		return app.RepositoryStatsData{}, m.getGlobalRepositoryStatsErr
-	}
-	return m.globalRepoStats, nil
-}
-
-func (m *mockDashboardRepo) GetGlobalRecentActivity(_ context.Context, limit int) ([]app.ActivityItem, error) {
-	m.getGlobalRecentActivityCalls++
-	m.lastLimit = limit
-	if m.getGlobalRecentActivityErr != nil {
-		return nil, m.getGlobalRecentActivityErr
-	}
-	return m.globalRecentActivity, nil
 }
 
 func (m *mockDashboardRepo) GetFilteredAssetStats(_ context.Context, tenantIDs []string) (app.AssetStatsData, error) {
@@ -525,232 +479,6 @@ func TestDashboardService_GetStats_MapFields(t *testing.T) {
 	}
 	if stats.RepositoriesWithFindings != 18 {
 		t.Errorf("RepositoriesWithFindings = %d, want 18", stats.RepositoriesWithFindings)
-	}
-}
-
-// =============================================================================
-// Tests: GetGlobalStats (deprecated, not tenant-scoped)
-// =============================================================================
-
-func TestDashboardService_GetGlobalStats(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name            string
-		setupRepo       func(*mockDashboardRepo)
-		wantAssetCount  int
-		wantFindCount   int
-		wantRepoCount   int
-		wantTrendLen    int
-		wantActivityLen int
-	}{
-		{
-			name: "happy path - all global data returned",
-			setupRepo: func(m *mockDashboardRepo) {
-				m.globalAssetStats = sampleAssetStats()
-				m.globalFindingStats = sampleFindingStats()
-				m.globalRepoStats = sampleRepoStats()
-				m.globalRecentActivity = sampleActivity()
-			},
-			wantAssetCount:  150,
-			wantFindCount:   300,
-			wantRepoCount:   25,
-			wantTrendLen:    0, // Global stats don't include trend
-			wantActivityLen: 2,
-		},
-		{
-			name: "all global queries fail - returns empty stats",
-			setupRepo: func(m *mockDashboardRepo) {
-				m.getGlobalAssetStatsErr = errors.New("db error")
-				m.getGlobalFindingStatsErr = errors.New("db error")
-				m.getGlobalRepositoryStatsErr = errors.New("db error")
-				m.getGlobalRecentActivityErr = errors.New("db error")
-			},
-			wantAssetCount:  0,
-			wantFindCount:   0,
-			wantRepoCount:   0,
-			wantTrendLen:    0,
-			wantActivityLen: 0,
-		},
-		{
-			name: "asset stats fail - other stats still returned",
-			setupRepo: func(m *mockDashboardRepo) {
-				m.getGlobalAssetStatsErr = errors.New("timeout")
-				m.globalFindingStats = sampleFindingStats()
-				m.globalRepoStats = sampleRepoStats()
-				m.globalRecentActivity = sampleActivity()
-			},
-			wantAssetCount:  0,
-			wantFindCount:   300,
-			wantRepoCount:   25,
-			wantTrendLen:    0,
-			wantActivityLen: 2,
-		},
-		{
-			name: "finding stats fail - other stats still returned",
-			setupRepo: func(m *mockDashboardRepo) {
-				m.globalAssetStats = sampleAssetStats()
-				m.getGlobalFindingStatsErr = errors.New("timeout")
-				m.globalRepoStats = sampleRepoStats()
-				m.globalRecentActivity = sampleActivity()
-			},
-			wantAssetCount:  150,
-			wantFindCount:   0,
-			wantRepoCount:   25,
-			wantTrendLen:    0,
-			wantActivityLen: 2,
-		},
-		{
-			name: "repo stats fail - other stats still returned",
-			setupRepo: func(m *mockDashboardRepo) {
-				m.globalAssetStats = sampleAssetStats()
-				m.globalFindingStats = sampleFindingStats()
-				m.getGlobalRepositoryStatsErr = errors.New("timeout")
-				m.globalRecentActivity = sampleActivity()
-			},
-			wantAssetCount:  150,
-			wantFindCount:   300,
-			wantRepoCount:   0,
-			wantTrendLen:    0,
-			wantActivityLen: 2,
-		},
-		{
-			name: "activity fail - other stats still returned",
-			setupRepo: func(m *mockDashboardRepo) {
-				m.globalAssetStats = sampleAssetStats()
-				m.globalFindingStats = sampleFindingStats()
-				m.globalRepoStats = sampleRepoStats()
-				m.getGlobalRecentActivityErr = errors.New("timeout")
-			},
-			wantAssetCount:  150,
-			wantFindCount:   300,
-			wantRepoCount:   25,
-			wantTrendLen:    0,
-			wantActivityLen: 0,
-		},
-		{
-			name: "empty database - zero stats",
-			setupRepo: func(m *mockDashboardRepo) {
-				m.globalAssetStats = app.AssetStatsData{ByType: make(map[string]int), ByStatus: make(map[string]int)}
-				m.globalFindingStats = app.FindingStatsData{BySeverity: make(map[string]int), ByStatus: make(map[string]int)}
-				m.globalRepoStats = app.RepositoryStatsData{}
-				m.globalRecentActivity = []app.ActivityItem{}
-			},
-			wantAssetCount:  0,
-			wantFindCount:   0,
-			wantRepoCount:   0,
-			wantTrendLen:    0,
-			wantActivityLen: 0,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			repo := newMockDashboardRepo()
-			tc.setupRepo(repo)
-			svc := newTestDashboardService(repo)
-
-			stats, err := svc.GetGlobalStats(context.Background())
-
-			// GetGlobalStats never returns an error (falls back to empty)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if stats == nil {
-				t.Fatal("expected non-nil stats")
-			}
-
-			if stats.AssetCount != tc.wantAssetCount {
-				t.Errorf("AssetCount = %d, want %d", stats.AssetCount, tc.wantAssetCount)
-			}
-			if stats.FindingCount != tc.wantFindCount {
-				t.Errorf("FindingCount = %d, want %d", stats.FindingCount, tc.wantFindCount)
-			}
-			if stats.RepositoryCount != tc.wantRepoCount {
-				t.Errorf("RepositoryCount = %d, want %d", stats.RepositoryCount, tc.wantRepoCount)
-			}
-			if len(stats.FindingTrend) != tc.wantTrendLen {
-				t.Errorf("FindingTrend length = %d, want %d", len(stats.FindingTrend), tc.wantTrendLen)
-			}
-			if len(stats.RecentActivity) != tc.wantActivityLen {
-				t.Errorf("RecentActivity length = %d, want %d", len(stats.RecentActivity), tc.wantActivityLen)
-			}
-		})
-	}
-}
-
-func TestDashboardService_GetGlobalStats_CallCounts(t *testing.T) {
-	t.Parallel()
-
-	repo := newMockDashboardRepo()
-	repo.globalAssetStats = sampleAssetStats()
-	repo.globalFindingStats = sampleFindingStats()
-	repo.globalRepoStats = sampleRepoStats()
-	repo.globalRecentActivity = sampleActivity()
-	svc := newTestDashboardService(repo)
-
-	_, err := svc.GetGlobalStats(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if repo.getGlobalAssetStatsCalls != 1 {
-		t.Errorf("GetGlobalAssetStats called %d times, want 1", repo.getGlobalAssetStatsCalls)
-	}
-	if repo.getGlobalFindingStatsCalls != 1 {
-		t.Errorf("GetGlobalFindingStats called %d times, want 1", repo.getGlobalFindingStatsCalls)
-	}
-	if repo.getGlobalRepoStatsCalls != 1 {
-		t.Errorf("GetGlobalRepositoryStats called %d times, want 1", repo.getGlobalRepoStatsCalls)
-	}
-	if repo.getGlobalRecentActivityCalls != 1 {
-		t.Errorf("GetGlobalRecentActivity called %d times, want 1", repo.getGlobalRecentActivityCalls)
-	}
-}
-
-func TestDashboardService_GetGlobalStats_ActivityLimit(t *testing.T) {
-	t.Parallel()
-
-	repo := newMockDashboardRepo()
-	repo.globalAssetStats = app.AssetStatsData{ByType: make(map[string]int), ByStatus: make(map[string]int)}
-	repo.globalFindingStats = app.FindingStatsData{BySeverity: make(map[string]int), ByStatus: make(map[string]int)}
-	repo.globalRepoStats = app.RepositoryStatsData{}
-	repo.globalRecentActivity = []app.ActivityItem{}
-	svc := newTestDashboardService(repo)
-
-	_, err := svc.GetGlobalStats(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if repo.lastLimit != 10 {
-		t.Errorf("GetGlobalRecentActivity called with limit = %d, want 10", repo.lastLimit)
-	}
-}
-
-func TestDashboardService_GetGlobalStats_NoFindingTrend(t *testing.T) {
-	t.Parallel()
-
-	repo := newMockDashboardRepo()
-	repo.globalAssetStats = sampleAssetStats()
-	repo.globalFindingStats = sampleFindingStats()
-	repo.globalRepoStats = sampleRepoStats()
-	repo.globalRecentActivity = sampleActivity()
-	svc := newTestDashboardService(repo)
-
-	stats, err := svc.GetGlobalStats(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// GetGlobalStats always returns empty FindingTrend
-	if stats.FindingTrend == nil {
-		t.Error("FindingTrend should not be nil, expected empty slice")
-	}
-	if len(stats.FindingTrend) != 0 {
-		t.Errorf("FindingTrend length = %d, want 0 (global stats don't include trend)", len(stats.FindingTrend))
 	}
 }
 
@@ -1164,41 +892,6 @@ func TestDashboardService_GetStats_ErrorFallbackMapsInitialized(t *testing.T) {
 	}
 
 	// Verify maps are initialized (not nil) even on error fallback
-	if stats.AssetsByType == nil {
-		t.Error("AssetsByType should be initialized on error fallback")
-	}
-	if stats.AssetsByStatus == nil {
-		t.Error("AssetsByStatus should be initialized on error fallback")
-	}
-	if stats.FindingsBySeverity == nil {
-		t.Error("FindingsBySeverity should be initialized on error fallback")
-	}
-	if stats.FindingsByStatus == nil {
-		t.Error("FindingsByStatus should be initialized on error fallback")
-	}
-	if stats.RecentActivity == nil {
-		t.Error("RecentActivity should be initialized on error fallback")
-	}
-	if stats.FindingTrend == nil {
-		t.Error("FindingTrend should be initialized on error fallback")
-	}
-}
-
-func TestDashboardService_GetGlobalStats_ErrorFallbackMapsInitialized(t *testing.T) {
-	t.Parallel()
-
-	repo := newMockDashboardRepo()
-	repo.getGlobalAssetStatsErr = errors.New("fail")
-	repo.getGlobalFindingStatsErr = errors.New("fail")
-	repo.getGlobalRepositoryStatsErr = errors.New("fail")
-	repo.getGlobalRecentActivityErr = errors.New("fail")
-	svc := newTestDashboardService(repo)
-
-	stats, err := svc.GetGlobalStats(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
 	if stats.AssetsByType == nil {
 		t.Error("AssetsByType should be initialized on error fallback")
 	}
