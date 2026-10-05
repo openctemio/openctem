@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/group"
@@ -21,14 +21,14 @@ import (
 
 // GroupHandler handles group-related HTTP requests for the Access Control system.
 type GroupHandler struct {
-	service     *app.GroupService
-	syncService *app.GroupSyncService
+	service     *accesscontrol.GroupService
+	syncService *accesscontrol.GroupSyncService
 	validator   *validator.Validator
 	logger      *logger.Logger
 }
 
 // NewGroupHandler creates a new group handler.
-func NewGroupHandler(svc *app.GroupService, v *validator.Validator, log *logger.Logger) *GroupHandler {
+func NewGroupHandler(svc *accesscontrol.GroupService, v *validator.Validator, log *logger.Logger) *GroupHandler {
 	return &GroupHandler{
 		service:   svc,
 		validator: v,
@@ -37,7 +37,7 @@ func NewGroupHandler(svc *app.GroupService, v *validator.Validator, log *logger.
 }
 
 // WithSyncService sets the group sync service on the handler.
-func (h *GroupHandler) WithSyncService(syncService *app.GroupSyncService) *GroupHandler {
+func (h *GroupHandler) WithSyncService(syncService *accesscontrol.GroupSyncService) *GroupHandler {
 	h.syncService = syncService
 	return h
 }
@@ -239,8 +239,8 @@ func toGroupWithRoleResponse(g *group.GroupWithRole) GroupWithRoleResponse {
 // =============================================================================
 
 // buildAuditContext builds an AuditContext from the HTTP request.
-func (h *GroupHandler) buildAuditContext(r *http.Request) app.AuditContext {
-	actx := app.AuditContext{
+func (h *GroupHandler) buildAuditContext(r *http.Request) audit.AuditContext {
+	actx := audit.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
@@ -342,7 +342,7 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateGroupInput{
+	input := accesscontrol.CreateGroupInput{
 		TenantID:           tenantID,
 		Name:               req.Name,
 		Slug:               req.Slug,
@@ -434,7 +434,7 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	input := app.ListGroupsInput{
+	input := accesscontrol.ListGroupsInput{
 		TenantID: tenantID,
 		Search:   r.URL.Query().Get("search"),
 		Limit:    limit,
@@ -517,7 +517,7 @@ func (h *GroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateGroupInput{
+	input := accesscontrol.UpdateGroupInput{
 		Name:               req.Name,
 		Slug:               req.Slug,
 		Description:        req.Description,
@@ -637,7 +637,7 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.AddGroupMemberInput{
+	input := accesscontrol.AddGroupMemberInput{
 		GroupID: groupID,
 		UserID:  memberUserID,
 		Role:    req.Role,
@@ -691,7 +691,7 @@ func (h *GroupHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.UpdateGroupMemberRoleInput{
+	input := accesscontrol.UpdateGroupMemberRoleInput{
 		GroupID: groupID,
 		UserID:  uid,
 		Role:    req.Role,
@@ -845,7 +845,7 @@ func (h *GroupHandler) AssignAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.AssignAssetInput{
+	input := accesscontrol.AssignAssetInput{
 		GroupID:       groupID,
 		AssetID:       req.AssetID,
 		OwnershipType: req.OwnershipType,
@@ -896,7 +896,7 @@ func (h *GroupHandler) BulkAssignAssets(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrol.BulkAssignAssetsInput{
 		GroupID:       groupID,
 		AssetIDs:      req.AssetIDs,
 		OwnershipType: req.OwnershipType,
@@ -934,7 +934,7 @@ func (h *GroupHandler) UnassignAsset(w http.ResponseWriter, r *http.Request) {
 	groupID := chi.URLParam(r, "groupId")
 	assetID := chi.URLParam(r, "assetId")
 
-	input := app.UnassignAssetInput{
+	input := accesscontrol.UnassignAssetInput{
 		GroupID: groupID,
 		AssetID: assetID,
 	}
@@ -983,7 +983,7 @@ func (h *GroupHandler) UpdateAssetOwnership(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	input := app.UpdateAssetOwnershipInput{
+	input := accesscontrol.UpdateAssetOwnershipInput{
 		GroupID:       groupID,
 		AssetID:       assetID,
 		OwnershipType: req.OwnershipType,

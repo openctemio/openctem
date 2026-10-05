@@ -19,6 +19,7 @@ import (
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/oidc"
@@ -78,6 +79,23 @@ type Config struct {
 	// WebBaseURL is the web console's address, for the links in a verdict
 	// ("" gives relative links).
 	WebBaseURL string
+	// PipelineCaps bound the pipelines per tenant and per trust
+	// configuration (zero values take the defaults).
+	PipelineCaps cirun.PipelineCaps
+	// Versions is the sensor release channel a runner's version is judged
+	// against (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION).
+	Versions cirun.StatusPolicy
+}
+
+func (c Config) caps() cirun.PipelineCaps {
+	out := c.PipelineCaps
+	if out.PerTenant <= 0 {
+		out.PerTenant = cirun.DefaultMaxPipelinesPerTenant
+	}
+	if out.PerTrustConfig <= 0 {
+		out.PerTrustConfig = cirun.DefaultMaxPipelinesPerTrustConfig
+	}
+	return out
 }
 
 // Service is the CI run service.
@@ -202,6 +220,14 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		s.auditRefusal(ctx, tenantID, in, claims, refusals)
 		return nil, ErrExchangeRefused
 	}
+	// The pipeline's identity comes from the verified claims only: a token
+	// without an immutable repository id or a usable workflow path is not
+	// admitted, whatever the trust configuration says.
+	key, refusal := cirun.PipelineKeyFromClaims(cfg.Provider, cfg.Issuer, claims)
+	if refusal != nil {
+		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
+		return nil, ErrExchangeRefused
+	}
 	fresh, err := s.repo.ClaimJTI(ctx, tok.Issuer, tok.JTI, tok.ExpiresAt.Add(time.Hour))
 	if err != nil {
 		return nil, fmt.Errorf("record token id: %w", err)
@@ -219,7 +245,12 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 				Detail: "the token does not belong to the run it asked to continue"}})
 		}
 	} else {
-		out, err = s.createRun(ctx, tenantID, cfg, claims)
+		out, err = s.createRun(ctx, tenantID, cfg, claims, key, in.UserAgent)
+		if errors.Is(err, cirun.ErrPipelineCap) {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "pipeline_cap",
+				Detail: "the organization or the trust configuration has the most CI pipelines it may have"}})
+			return nil, ErrExchangeRefused
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -281,7 +312,8 @@ func admit(configs []cirun.TrustConfig, tok *oidc.WorkloadToken, claims cirun.Cl
 	return nil, refusals
 }
 
-func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims) (*ExchangeOutput, error) {
+func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims,
+	key cirun.PipelineKey, userAgent string) (*ExchangeOutput, error) {
 	repoName := cirun.CanonicalRepository(cfg.Provider, cfg.Issuer, c.Repository)
 	repoAsset, err := s.repositoryAsset(ctx, tenantID, repoName)
 	if err != nil {
@@ -293,13 +325,25 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 			defaultBranch = b.Name()
 		}
 	}
+	now := s.now().UTC()
+	cfgID := cfg.ID
+	templateRef, templateSHA := cirun.Template(cfg.Provider, cfg.Issuer, c)
+	pipeline, err := s.upsertPipeline(ctx, &cirun.Pipeline{
+		ID: shared.NewID(), TenantID: tenantID, Provider: key.Provider, Issuer: key.Issuer,
+		ExternalRepoID: key.ExternalRepoID, WorkflowPath: key.WorkflowPath, RepositoryAssetID: repoAsset.ID(),
+		TrustConfigID: &cfgID, RepositoryName: repoAsset.Name(),
+		WorkflowName: cirun.SanitizeLabel(c.WorkflowName, 255),
+		TemplateRef:  templateRef, TemplateSHA: templateSHA, DefaultBranch: defaultBranch, CreatedAt: now,
+	}, c.IsForkEvent(), cfg)
+	if err != nil {
+		return nil, err
+	}
+	_, sensorVersion := sensor.ResolveBuild(sensor.BuildReport{}, "", userAgent, now)
 	token, hash, err := cirun.NewToken()
 	if err != nil {
 		return nil, err
 	}
-	now := s.now().UTC()
 	expires := now.Add(cirun.TokenTTL)
-	cfgID := cfg.ID
 	run := &cirun.Run{
 		ID:                shared.NewID(),
 		TenantID:          tenantID,
@@ -325,13 +369,53 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		TokenHash:         hash,
 		TokenExpiresAt:    &expires,
 		Status:            cirun.StatusRunning,
+		PipelineID:        &pipeline.ID,
+		SensorVersion:     sensor.NormalizeVersion(sensorVersion),
+		TemplateRef:       templateRef,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
 	if err := s.repo.CreateRun(ctx, run); err != nil {
 		return nil, fmt.Errorf("create run: %w", err)
 	}
+	s.refreshPipeline(ctx, tenantID, run.PipelineID)
 	return &ExchangeOutput{Run: run, Token: token, ExpiresAt: expires}, nil
+}
+
+// upsertPipeline finds or creates the run's pipeline within the caps and
+// audits a new one. Only an admitted, verified exchange gets here.
+func (s *Service) upsertPipeline(ctx context.Context, p *cirun.Pipeline, fork bool, cfg *cirun.TrustConfig) (*cirun.Pipeline, error) {
+	out, created, err := s.repo.UpsertPipeline(ctx, p, fork, s.cfg.caps())
+	if err != nil {
+		if errors.Is(err, cirun.ErrPipelineCap) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("upsert pipeline: %w", err)
+	}
+	if created {
+		s.logAudit(ctx, p.TenantID, Actor{Email: "ci:" + string(p.Provider)},
+			auditapp.NewSuccessEvent(auditdom.ActionCIPipelineCreated, auditdom.ResourceTypeCIPipeline, out.ID.String()).
+				WithResourceName(out.RepositoryName+" "+out.WorkflowPath).
+				WithMessage(fmt.Sprintf("CI pipeline %s on %s registered by %q", out.WorkflowPath, out.RepositoryName, cfg.Name)).
+				WithMetadata("trust_config_id", cfg.ID.String()).
+				WithMetadata("provider", string(out.Provider)).
+				WithMetadata("external_repo_id", out.ExternalRepoID).
+				WithMetadata("workflow_path", out.WorkflowPath).
+				WithMetadata("repository_asset_id", out.RepositoryAssetID.String()).
+				WithMetadata("fork", fork))
+	}
+	return out, nil
+}
+
+// refreshPipeline recomputes a pipeline's run summary. A failure is logged:
+// the next run refreshes it again, and the run itself is recorded.
+func (s *Service) refreshPipeline(ctx context.Context, tenantID shared.ID, pipelineID *shared.ID) {
+	if pipelineID == nil {
+		return
+	}
+	if err := s.repo.RefreshPipeline(ctx, tenantID, *pipelineID); err != nil {
+		s.log.Warn("ci pipeline summary not refreshed", "pipeline_id", pipelineID.String(), "error", logger.SanitizeError(err))
+	}
 }
 
 // continueRun issues a fresh token for an existing run of the same pipeline
@@ -505,6 +589,15 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 	}
 	if err := s.repo.RecordRunReport(ctx, run.TenantID, run.ID, out.SightedFingerprints); err != nil {
 		return nil, fmt.Errorf("record run findings: %w", err)
+	}
+	// The tool block is self-declared: a label on the run, sanitized and
+	// capped, never part of an identity.
+	if report.Tool != nil && report.Tool.Name != "" {
+		if err := s.repo.RecordRunTools(ctx, run.TenantID, run.ID,
+			[]cirun.ToolLabel{{Name: report.Tool.Name, Version: report.Tool.Version}}); err != nil {
+			s.log.Warn("ci run tools not recorded", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
+		}
+		s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	}
 	return out, nil
 }

@@ -2,6 +2,11 @@
 
 > Status: **Accepted** (product owner, 2026-10-02: "move sensors fully to v2
 > now, so we can start phasing out agent"; one release, one announcement).
+> **Protocol v1 retired 2026-10-05** (owner: young product, minimal back-compat):
+> the live API served 3,303 `/api/v2/sensor/*` and 0 `/api/v1/agent/*` requests
+> in the preceding 24 hours, so the v1 routes, the `/api/v1/agents` redirect and
+> `pkg/sensorproto/legacyv1` were removed ahead of the 2027-04-01 sunset.
+> Sensors older than v0.9.0 must be upgraded.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`).
 > Builds on: [RFC-023](RFC-023-scan-zones-and-scanners.md) (sensors, §9.2
 > C1–C8 compatibility contract, §9.2a doorbell, §9.2b suppressions, D20/D24),
@@ -467,6 +472,18 @@ release that ships after 2027-04-01 **and** after the deployment's telemetry
 shows no v1 heartbeat for 30 days, or after the operator raises the minimum
 sensor protocol (RFC-023 C7/D24; collectors below it keep pushing until
 removal). Self-hosted operators decide with their own telemetry.
+
+**Amended 2026-10-05 (owner decision):** protocol v1 was removed ahead of the
+sunset date. The live API had served 0 `/api/v1/agent/*` requests (and 3,303
+`/api/v2/sensor/*`) in the preceding 24 hours, and every sensor from v0.9.0 on
+speaks v2 for the whole surface. Removed: every route under `/api/v1/agent`
+(including the ones without a v2 successor: `ingest/sarif`, `ingest/recon`,
+`ingest/scan`, `ingest/scanners`, `scans`, `telemetry-events`,
+`credentials/ingest`), the `/api/v1/agents` redirects, the v1 heartbeat's
+`X-OpenCTEM-Protocol` advert, `pkg/sensorproto/legacyv1` (except the
+renamed-environment-variable table), the v1 golden test and the
+`compat-v1` CI job. The paths answer 404; a sensor older than v0.9.0 must be
+upgraded before the API is.
 
 ## 6. SDK behaviour (sdk-go v0.9.0)
 

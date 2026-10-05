@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scansession"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -273,11 +273,11 @@ func (m *scanSessionMockSensorRepo) GetTenantSensorStats(_ context.Context, _ sh
 // Helpers
 // =============================================================================
 
-func newTestScanSessionService() (*app.ScanSessionService, *scanSessionMockRepo, *scanSessionMockSensorRepo) {
+func newTestScanSessionService() (*scan.ScanSessionService, *scanSessionMockRepo, *scanSessionMockSensorRepo) {
 	sessionRepo := newScanSessionMockRepo()
 	sensorRepo := newScanSessionMockSensorRepo()
 	log := logger.New(logger.Config{Level: "error", Format: "text"})
-	svc := app.NewScanSessionService(sessionRepo, sensorRepo, log)
+	svc := scan.NewScanSessionService(sessionRepo, sensorRepo, log)
 	return svc, sessionRepo, sensorRepo
 }
 
@@ -293,8 +293,8 @@ func newTestSensorWithoutTenant() *sensor.Sensor {
 	return agt
 }
 
-func defaultRegisterScanInput() app.RegisterScanInput {
-	return app.RegisterScanInput{
+func defaultRegisterScanInput() scan.RegisterScanInput {
+	return scan.RegisterScanInput{
 		ScannerName:    "semgrep",
 		ScannerVersion: "1.2.3",
 		ScannerType:    "sast",
@@ -444,19 +444,19 @@ func TestScanSessionService_RegisterScan_EmptyRequiredFields(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		input app.RegisterScanInput
+		input scan.RegisterScanInput
 	}{
 		{
 			name:  "empty scanner_name",
-			input: app.RegisterScanInput{ScannerName: "", AssetType: "repo", AssetValue: "val"},
+			input: scan.RegisterScanInput{ScannerName: "", AssetType: "repo", AssetValue: "val"},
 		},
 		{
 			name:  "empty asset_type",
-			input: app.RegisterScanInput{ScannerName: "semgrep", AssetType: "", AssetValue: "val"},
+			input: scan.RegisterScanInput{ScannerName: "semgrep", AssetType: "", AssetValue: "val"},
 		},
 		{
 			name:  "empty asset_value",
-			input: app.RegisterScanInput{ScannerName: "semgrep", AssetType: "repo", AssetValue: ""},
+			input: scan.RegisterScanInput{ScannerName: "semgrep", AssetType: "repo", AssetValue: ""},
 		},
 	}
 
@@ -501,7 +501,7 @@ func TestScanSessionService_UpdateScanSession_Complete(t *testing.T) {
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
-	input := app.UpdateScanSessionInput{
+	input := scan.UpdateScanSessionInput{
 		Status:        "completed",
 		FindingsTotal: 10,
 		FindingsNew:   3,
@@ -543,7 +543,7 @@ func TestScanSessionService_UpdateScanSession_Failed(t *testing.T) {
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
-	input := app.UpdateScanSessionInput{
+	input := scan.UpdateScanSessionInput{
 		Status:       "failed",
 		ErrorMessage: "scanner crashed",
 	}
@@ -572,7 +572,7 @@ func TestScanSessionService_UpdateScanSession_Canceled(t *testing.T) {
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
-	input := app.UpdateScanSessionInput{
+	input := scan.UpdateScanSessionInput{
 		Status: "canceled",
 	}
 
@@ -591,7 +591,7 @@ func TestScanSessionService_UpdateScanSession_NoTenantContext(t *testing.T) {
 	svc, _, _ := newTestScanSessionService()
 	agt := newTestSensorWithoutTenant()
 
-	input := app.UpdateScanSessionInput{Status: "completed"}
+	input := scan.UpdateScanSessionInput{Status: "completed"}
 
 	err := svc.UpdateScanSession(context.Background(), agt, shared.NewID().String(), input)
 	if err == nil {
@@ -604,7 +604,7 @@ func TestScanSessionService_UpdateScanSession_InvalidScanID(t *testing.T) {
 	tenantID := shared.NewID()
 	agt := newTestSensorWithTenant(tenantID)
 
-	input := app.UpdateScanSessionInput{Status: "completed"}
+	input := scan.UpdateScanSessionInput{Status: "completed"}
 
 	err := svc.UpdateScanSession(context.Background(), agt, "not-a-valid-uuid", input)
 	if err == nil {
@@ -620,7 +620,7 @@ func TestScanSessionService_UpdateScanSession_NotFound(t *testing.T) {
 	tenantID := shared.NewID()
 	agt := newTestSensorWithTenant(tenantID)
 
-	input := app.UpdateScanSessionInput{Status: "completed"}
+	input := scan.UpdateScanSessionInput{Status: "completed"}
 
 	err := svc.UpdateScanSession(context.Background(), agt, shared.NewID().String(), input)
 	if err == nil {
@@ -639,7 +639,7 @@ func TestScanSessionService_UpdateScanSession_WrongSensor(t *testing.T) {
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
-	input := app.UpdateScanSessionInput{Status: "completed"}
+	input := scan.UpdateScanSessionInput{Status: "completed"}
 
 	err := svc.UpdateScanSession(context.Background(), otherSensor, session.ID.String(), input)
 	if err == nil {
@@ -661,7 +661,7 @@ func TestScanSessionService_UpdateScanSession_UpdateRepoError(t *testing.T) {
 	sessionRepo.addSession(session)
 	sessionRepo.updateErr = errors.New("db update failed")
 
-	input := app.UpdateScanSessionInput{Status: "completed"}
+	input := scan.UpdateScanSessionInput{Status: "completed"}
 
 	err := svc.UpdateScanSession(context.Background(), agt, session.ID.String(), input)
 	if err == nil {
@@ -682,7 +682,7 @@ func TestScanSessionService_UpdateScanSession_InvalidStateTransition(t *testing.
 	sessionRepo.addSession(session)
 
 	// Try to complete again
-	input := app.UpdateScanSessionInput{Status: "completed"}
+	input := scan.UpdateScanSessionInput{Status: "completed"}
 
 	err := svc.UpdateScanSession(context.Background(), agt, session.ID.String(), input)
 	if err == nil {
@@ -702,7 +702,7 @@ func TestScanSessionService_UpdateScanSession_CancelTerminalState(t *testing.T) 
 	_ = session.Fail("some error")
 	sessionRepo.addSession(session)
 
-	input := app.UpdateScanSessionInput{Status: "canceled"}
+	input := scan.UpdateScanSessionInput{Status: "canceled"}
 
 	err := svc.UpdateScanSession(context.Background(), agt, session.ID.String(), input)
 	if err == nil {
@@ -781,7 +781,7 @@ func TestScanSessionService_ListScanSessions_Success(t *testing.T) {
 		sessionRepo.addSession(session)
 	}
 
-	input := app.ListScanSessionsInput{}
+	input := scan.ListScanSessionsInput{}
 	page := pagination.Pagination{Page: 1, PerPage: 10}
 
 	result, err := svc.ListScanSessions(context.Background(), tenantID, input, page)
@@ -798,7 +798,7 @@ func TestScanSessionService_ListScanSessions_WithStatusFilter(t *testing.T) {
 	svc, _, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
 
-	input := app.ListScanSessionsInput{
+	input := scan.ListScanSessionsInput{
 		Status: "running",
 	}
 	page := pagination.Pagination{Page: 1, PerPage: 10}
@@ -815,7 +815,7 @@ func TestScanSessionService_ListScanSessions_WithFilters(t *testing.T) {
 	tenantID := shared.NewID()
 
 	now := time.Now()
-	input := app.ListScanSessionsInput{
+	input := scan.ListScanSessionsInput{
 		ScannerName: "trivy",
 		AssetType:   "container",
 		AssetValue:  "nginx:latest",
@@ -838,7 +838,7 @@ func TestScanSessionService_ListScanSessions_RepoError(t *testing.T) {
 
 	sessionRepo.listErr = errors.New("db error")
 
-	input := app.ListScanSessionsInput{}
+	input := scan.ListScanSessionsInput{}
 	page := pagination.Pagination{Page: 1, PerPage: 10}
 
 	_, err := svc.ListScanSessions(context.Background(), tenantID, input, page)
@@ -1038,7 +1038,7 @@ func TestScanSessionService_UpdateScanSession_CompleteFromPending(t *testing.T) 
 	// Do NOT call Start() - leave in pending state
 	sessionRepo.addSession(session)
 
-	input := app.UpdateScanSessionInput{
+	input := scan.UpdateScanSessionInput{
 		Status:        "completed",
 		FindingsTotal: 5,
 	}
@@ -1063,7 +1063,7 @@ func TestScanSessionService_UpdateScanSession_FailFromPending(t *testing.T) {
 	session.SetSensor(agt.ID)
 	sessionRepo.addSession(session)
 
-	input := app.UpdateScanSessionInput{
+	input := scan.UpdateScanSessionInput{
 		Status:       "failed",
 		ErrorMessage: "could not start scanner",
 	}
@@ -1094,7 +1094,7 @@ func TestScanSessionService_UpdateScanSession_NilSensorID_OnSession(t *testing.T
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
-	input := app.UpdateScanSessionInput{Status: "completed"}
+	input := scan.UpdateScanSessionInput{Status: "completed"}
 
 	// RFC-040 §5.3: a session no sensor registered is not any sensor's to
 	// update (it used to pass, so any sensor key of the tenant could).
@@ -1114,7 +1114,7 @@ func TestScanSessionService_UpdateScanSession_SameSensor_Succeeds(t *testing.T) 
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
-	input := app.UpdateScanSessionInput{
+	input := scan.UpdateScanSessionInput{
 		Status:        "completed",
 		FindingsTotal: 42,
 		FindingsNew:   10,
