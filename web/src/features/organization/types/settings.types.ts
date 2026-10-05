@@ -226,7 +226,6 @@ export type SettingsSectionKey =
   | 'risk_scoring'
   | 'pentest'
   | 'asset_identity'
-  | 'asset_source'
   | 'asset_lifecycle'
   | 'retest'
 
