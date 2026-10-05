@@ -1,7 +1,18 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { Plus, RadioTower, Loader2, Search, Download, Trash2, Ban, Layers } from 'lucide-react'
+import Link from 'next/link'
+import {
+  Plus,
+  RadioTower,
+  Loader2,
+  Search,
+  Download,
+  Trash2,
+  Ban,
+  Layers,
+  Workflow,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ScanZonesPanel } from '@/features/scan-zones'
@@ -56,7 +67,19 @@ import { useSensorGrantSummaries } from '@/lib/api/sensor-grant-hooks'
 import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
 import { Tabs, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PlatformSensorsLink } from '@/features/platform'
-import { BulkActionBar, EmptyState, ErrorState, FilterSheet, PageHeader } from '@/features/shared'
+import {
+  BulkActionBar,
+  EmptyState,
+  ErrorState,
+  FilterSheet,
+  PageHeader,
+  SegmentedLens,
+} from '@/features/shared'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
+import { useFleet } from '@/features/ci-runners/api/use-ci'
+import { CIPipelinesPanel } from '@/features/ci-runners/components/ci-pipelines-panel'
+import { CIPipelineSheet } from '@/features/ci-runners/components/ci-pipeline-sheet'
+import { FleetAllView } from './fleet-all-view'
 
 import {
   DEFAULT_FLEET_THRESHOLDS,
@@ -104,6 +127,32 @@ const VERSION_STATUSES: SensorVersionStatus[] = [
   'unknown',
 ]
 const MODES: SensorModeFilter[] = ['daemon', 'ci']
+
+/**
+ * The page's Mode (api RFC-051 §10): a sensor row runs as a daemon; a CI
+ * pipeline is a sensor in runner mode. The role (scanner, collector) is
+ * independent of the mode.
+ */
+export type FleetPageMode = 'all' | 'daemon' | 'runner'
+
+/**
+ * The mode a URL asks for. `?mode=` once held the run-style facet
+ * (daemon|ci|standalone) and the old collector tab: those links open the
+ * daemon list with the same filter.
+ */
+export function fleetPageMode(raw: string, canDaemon: boolean, canRunner: boolean): FleetPageMode {
+  const allowed = (m: FleetPageMode) =>
+    m === 'all' ? canDaemon && canRunner : m === 'daemon' ? canDaemon : canRunner
+  const values = raw.split(',').map((v) => v.trim())
+  for (const v of values) {
+    if ((v === 'all' || v === 'daemon' || v === 'runner') && allowed(v)) return v
+  }
+  if (values.some((v) => v === 'ci' || v === 'standalone' || v === 'collector') && canDaemon) {
+    return 'daemon'
+  }
+  if (canDaemon && canRunner) return 'all'
+  return canDaemon ? 'daemon' : 'runner'
+}
 const PROTOCOLS: SensorProtocolFilter[] = ['v2', 'v1', 'unknown']
 const GROUP_LABELS: Record<Exclude<FleetGroupBy, 'none'>, string> = {
   zone: 'Zone',
@@ -146,7 +195,7 @@ function LiveIndicator({ updatedAt, now }: { updatedAt: number | null; now: numb
 export function SensorsSection({
   typeFilter,
   title = 'Sensors',
-  description = 'The scanners and collectors that run inside your networks and report back to the platform.',
+  description = 'The scanners and collectors that run inside your networks (daemon mode) and the CI pipelines that scan your repositories (runner mode).',
 }: SensorsSectionProps) {
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
@@ -174,6 +223,8 @@ export function SensorsSection({
   const [roleParam, setRoleParam] = useUrlFilterList('role')
   const [stateParam, setStateParam] = useUrlFilterList('state')
   const [versionParam, setVersionParam] = useUrlFilterList('version')
+  // The run-style facet; legacy links carried it in ?mode=.
+  const [execParam, setExecParam] = useUrlFilterList('exec')
   const [modeParam, setModeParam] = useUrlFilterList('mode')
   const [protocolParam, setProtocolParam] = useUrlFilterList('protocol')
   const [policyParam, setPolicyParam] = useUrlFilterList('policy')
@@ -194,6 +245,22 @@ export function SensorsSection({
     [grantSummaries?.data]
   )
   const zonesTab = tabParam === 'zones' && canReadZones && !typeFilter
+  const canDaemon = useHasPermission(Permission.SensorsRead)
+  const scansEnabled = useModuleEnabled('scans')
+  const canRunner = useHasPermission(Permission.CIRead) && scansEnabled && !typeFilter
+  const fleetMode: FleetPageMode = typeFilter
+    ? 'daemon'
+    : fleetPageMode(modeParam.join(','), canDaemon, canRunner)
+  const setFleetMode = useCallback(
+    (m: FleetPageMode) => setModeParam(m === fleetPageMode('', canDaemon, canRunner) ? [] : [m]),
+    [setModeParam, canDaemon, canRunner]
+  )
+  // Header counts for the Mode switch (one row of the fleet read model).
+  const { data: fleetCounts } = useFleet({ mode: 'all', perPage: 1 }, { enabled: canRunner })
+  const runnerCount = fleetCounts?.counts?.runner
+    ? (fleetCounts.counts.runner.total ?? 0) - (fleetCounts.counts.runner.inactive ?? 0)
+    : undefined
+  const [openPipeline, setOpenPipeline] = useState<string | null>(null)
 
   const filters = useMemo<FleetFilters>(() => {
     const roles = roleParam.filter((r): r is SensorRole => (ROLES as string[]).includes(r))
@@ -204,7 +271,7 @@ export function SensorsSection({
     const states = stateParam.filter((s): s is SensorState =>
       (SENSOR_STATES as string[]).includes(s)
     )
-    const modes = modeParam
+    const modes = [...execParam, ...modeParam.filter((m) => m === 'ci' || m === 'standalone')]
       .map((m) => (m === 'standalone' ? 'ci' : m))
       .filter((m): m is SensorModeFilter => (MODES as string[]).includes(m))
     return {
@@ -231,6 +298,7 @@ export function SensorsSection({
     roleParam,
     stateParam,
     versionParam,
+    execParam,
     modeParam,
     attentionParam,
     searchQuery,
@@ -242,7 +310,11 @@ export function SensorsSection({
   const clearLegacy = useCallback(() => {
     if (legacyStatus) setLegacyStatus('')
     if (tabParam === 'scanners' || tabParam === 'collectors') setTabParam('')
-  }, [legacyStatus, setLegacyStatus, tabParam, setTabParam])
+    // A legacy ?mode=ci|standalone|collector becomes the daemon list plus the facet.
+    if (modeParam.some((m) => m !== 'all' && m !== 'daemon' && m !== 'runner')) {
+      setModeParam(['daemon'])
+    }
+  }, [legacyStatus, setLegacyStatus, tabParam, setTabParam, modeParam, setModeParam])
 
   const setFilters = useCallback(
     (next: FleetFilters) => {
@@ -250,7 +322,7 @@ export function SensorsSection({
       setRoleParam(next.roles)
       setStateParam(next.states)
       setVersionParam(next.versions)
-      setModeParam(next.modes)
+      setExecParam(next.modes)
       setProtocolParam(next.protocols)
       setPolicyParam(next.policies)
       setSdkVersionParam(next.sdkVersions)
@@ -261,7 +333,7 @@ export function SensorsSection({
       setRoleParam,
       setStateParam,
       setVersionParam,
-      setModeParam,
+      setExecParam,
       setProtocolParam,
       setPolicyParam,
       setSdkVersionParam,
@@ -581,8 +653,52 @@ export function SensorsSection({
     />
   )
 
+  const modeOptions = [
+    ...(canDaemon && canRunner
+      ? [
+          {
+            value: 'all' as const,
+            label: 'All',
+            count: runnerCount === undefined ? undefined : scopedSensors.length + runnerCount,
+            description: 'Daemons and CI pipelines in one list',
+          },
+        ]
+      : []),
+    ...(canDaemon
+      ? [
+          {
+            value: 'daemon' as const,
+            label: 'Daemon',
+            count: isLoading ? undefined : scopedSensors.length,
+            description: 'Sensors that run continuously and take jobs',
+          },
+        ]
+      : []),
+    ...(canRunner
+      ? [
+          {
+            value: 'runner' as const,
+            label: 'Runner',
+            count: runnerCount,
+            description: 'CI pipelines: the sensor runs inside a CI job',
+          },
+        ]
+      : []),
+  ]
+  const modeLens =
+    modeOptions.length > 1 ? (
+      <SegmentedLens<FleetPageMode>
+        label="Mode"
+        value={fleetMode}
+        options={modeOptions}
+        onChange={setFleetMode}
+        countNoun="sensors"
+      />
+    ) : null
+
   const toolbarStart = (
     <>
+      {modeLens}
       <div className="relative min-w-0 flex-1 sm:max-w-sm">
         <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -618,7 +734,9 @@ export function SensorsSection({
     </>
   )
 
-  const fleetEmpty = inlineInstall || (!isLoading && !error && scopedSensors.length === 0)
+  const fleetEmpty =
+    fleetMode === 'daemon' &&
+    (inlineInstall || (!isLoading && !error && scopedSensors.length === 0))
 
   let body: React.ReactNode
   if (error && !inlineInstall) {
@@ -628,22 +746,27 @@ export function SensorsSection({
   } else if (fleetEmpty) {
     // No sensors yet: the page is the install flow (admins), or says who can
     // install one (everyone else).
-    body = canWriteSensors ? (
-      <SensorInstallFlow
-        title="Install your first sensor"
-        onCreated={() => setInlineInstall(true)}
-        onOpen={(s) => {
-          setInlineInstall(false)
-          handleViewSensor(s)
-        }}
-        onDone={() => setInlineInstall(false)}
-      />
-    ) : (
-      <EmptyState
-        icon={RadioTower}
-        title="No sensors yet"
-        description="A sensor runs inside your network, scans what the platform cannot reach and sends the results back over HTTPS. An organization admin can install one."
-      />
+    body = (
+      <>
+        {modeLens && <div className="mb-4">{modeLens}</div>}
+        {canWriteSensors ? (
+          <SensorInstallFlow
+            title="Install your first sensor"
+            onCreated={() => setInlineInstall(true)}
+            onOpen={(s) => {
+              setInlineInstall(false)
+              handleViewSensor(s)
+            }}
+            onDone={() => setInlineInstall(false)}
+          />
+        ) : (
+          <EmptyState
+            icon={RadioTower}
+            title="No sensors yet"
+            description="A sensor runs inside your network, scans what the platform cannot reach and sends the results back over HTTPS. An organization admin can install one."
+          />
+        )}
+      </>
     )
   } else {
     body = (
@@ -693,15 +816,25 @@ export function SensorsSection({
             {/* Shared platform sensors have their own page, linked only where
                 the tenant has them (the same condition the old card used). */}
             {!typeFilter && <PlatformSensorsLink />}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={filteredSensors.length === 0}
-            >
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
+            {fleetMode === 'daemon' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExport}
+                disabled={filteredSensors.length === 0}
+              >
+                <Download className="h-4 w-4" />
+                Export
+              </Button>
+            )}
+            {fleetMode === 'runner' && (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/settings/scanning/ci">
+                  <Workflow className="h-4 w-4" />
+                  Connect a CI pipeline
+                </Link>
+              </Button>
+            )}
             <Can permission={Permission.SensorsWrite}>
               <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
@@ -720,7 +853,10 @@ export function SensorsSection({
         >
           <TabsList>
             <TabsTrigger value="sensors">
-              Sensors <TabsCount value={isLoading ? null : roleCount} />
+              Sensors{' '}
+              <TabsCount
+                value={isLoading ? null : roleCount + (canRunner ? (runnerCount ?? 0) : 0)}
+              />
             </TabsTrigger>
             <TabsTrigger value="zones">
               Scan zones <TabsCount value={zonesData ? zones.length : null} />
@@ -731,6 +867,20 @@ export function SensorsSection({
 
       {zonesTab ? (
         <ScanZonesPanel createOpen={zoneCreateOpen} onCreateOpenChange={setZoneCreateOpen} />
+      ) : fleetMode === 'runner' ? (
+        <CIPipelinesPanel toolbarStart={modeLens} />
+      ) : fleetMode === 'all' ? (
+        <>
+          <FleetAllView
+            toolbarStart={modeLens}
+            onOpenDaemon={(id) => {
+              const s = sensors.find((x) => x.id === id)
+              if (s) handleViewSensor(s)
+            }}
+            onOpenRunner={setOpenPipeline}
+          />
+          <CIPipelineSheet id={openPipeline} onClose={() => setOpenPipeline(null)} />
+        </>
       ) : (
         <>
           {!fleetEmpty && (
