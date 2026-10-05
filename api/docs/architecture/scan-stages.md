@@ -108,4 +108,56 @@ what makes chained outputs trustworthy.
   unsolicited reports keep their own gate.
 - Every case writes a `sensor.results_quarantined` audit entry (reason,
   tool, counts, type labels) and a metric.
-||||||| d6e8da6c2
+
+## 3. The hop router: chaining with a gate at every hop
+
+`internal/app/pipeline/hop_router.go`; tables `scan_step_outputs`,
+`scan_run_stage_plans`, `scan_run_targets` (migrations 001048, 001049).
+
+- **E6.** A step used to receive the run's seeds whatever came before it. Now,
+  when a step's direct predecessors produce asset types its stage takes (and
+  produced results: `completed` or `partial`), its targets are the seeds plus
+  what those predecessors produced, after the gate.
+- **Data flows through the inventory only (G3).** Ingest records the assets
+  each command-bound report wrote (`scan_step_outputs`), keyed by the step run
+  the command names server-side (`commands.step_run_id`, now set on every step
+  command). A sensor's raw output is never read, and a sensor cannot attribute
+  output to another step, run or tenant.
+- **Stage barrier (G4).** A chained stage is planned once its predecessors
+  finished **and** no v2 report of their commands is still open. A pending
+  report defers the step; the v2 commit calls `OnCommandIngested`, which
+  advances the run. (A report that expires uncommitted wakes nothing: the run
+  timeout ends such a run; P1 adds a sweep.)
+- **The per-hop gate.** Each candidate: the stage takes its stored pair; the
+  name parses strictly (host, IP, host:port or an http(s) URL without
+  credentials; no control or bidi characters; at most 2 048 characters);
+  hop ≤ 3 (G5); per-parent and per-stage caps; then `scan.ResolveDispatchTargets`,
+  the one gate of every active path: target validator (internal, metadata and
+  link-local addresses), scope exclusions, act scope of the run's actor (the
+  person who triggered it, else the scan owner), zone routing (a chained
+  step never leaves its run's zone), and the ownership gate. A **T0** stage
+  runs it with `PassiveOnly`: only rejected names (tombstone, rejected record,
+  rejected parent) are refused, so a `needs_review` name may be resolved. A
+  **T1** stage takes only what `easm.ActiveGate` allows. A **T2** stage is
+  never fed derived targets (`STAGE_NOT_CHAINABLE`).
+- **Hops (research/30 V3).** A hop counts only when the chain reaches a new
+  name: a port, service or URL on a host the run already reached keeps that
+  host's hop; a subdomain of a parent name is one hop further; a resolved
+  address or alias is one hop beyond the furthest parent. So a six-stage
+  chain on one host stays within the limit.
+- **Exactly once.** `scan_run_stage_plans (run_id, stage_key)` is claimed in
+  the same transaction that records the targets; a duplicate completion or
+  ingest event plans nothing.
+- **No inputs.** A chained stage left with no target is settled `completed`
+  without a command, with `no inputs: ...` and the counts, and the run moves on.
+- **Provenance and lanes.** `scan_run_targets` keeps one row per (run, stage,
+  target): seed or derived, parent asset and stage, relation (`same_host`,
+  `subdomain_of`, `derived`), hop, and the rule that allowed it
+  (`seed`, `passive_allowed`, `gate_allowed`) or why it was skipped
+  (`excluded`, `unconfirmed`, `refused`, `other_zone`, `hop_limit`,
+  `over_cap`, `duplicate`, `invalid`). `GET /api/v1/pipeline-runs/{id}/stages`
+  (`pipelines:read`, tenant-scoped, counts only) serves the per-stage counts.
+- **Tenant isolation.** Every query is scoped to the run's tenant, and every
+  row references the run and assets with composite tenant foreign keys, so a
+  cross-tenant row is refused by the database. Asset merges move these rows to
+  the kept asset.
