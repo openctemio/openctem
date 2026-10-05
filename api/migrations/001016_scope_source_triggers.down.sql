@@ -1,4 +1,4 @@
--- Reverse of 001015: the application refreshes the materialisation itself
+-- Reverse of 001016: the application refreshes the materialisation itself
 -- again. Rows of deactivated rules that the up migration removed are
 -- re-created by the next reconcile if the rule is re-activated.
 DROP TRIGGER IF EXISTS scope_rule_deactivate_scope_sync ON group_asset_scope_rules;

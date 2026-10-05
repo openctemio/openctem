@@ -8,7 +8,7 @@ published at https://docs.openctem.io (operations/release-notes-*).
 ### Security: deactivating an access group removes its access at once
 
 - `user_accessible_assets` is now kept in step with its sources by database
-  triggers, in the writing transaction (migration **001015**, RFC-050 W6):
+  triggers, in the writing transaction (migration **001016**, RFC-050 W6):
   group asset assign/unassign, a member leaving a group, a group deactivated,
   re-activated or deleted, a scope rule deactivated or deleted. Before, a
   deactivated or deleted access group kept granting its assets indefinitely
@@ -51,7 +51,7 @@ published at https://docs.openctem.io (operations/release-notes-*).
   only for an active principal (`principal_is_active` in every refresh
   function), an inactive member gets no full-data bypass, and a background
   job acting for a disabled or offboarded administrator refuses.
-- **Migration 001013** adds the `offboarded` membership status
+- **Migration 001015** adds the `offboarded` membership status
   (`offboarded_at`, `offboarded_by`), the `suspended` API key status,
   `users.erased_at`, the `principal_is_active` and `refresh_access_for_user`
   functions, gates the refresh functions and drops scope rows of members who
