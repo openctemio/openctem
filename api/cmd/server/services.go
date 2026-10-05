@@ -910,7 +910,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetDataScope(s.DataScope)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
-	s.CertMonitor = certmonitorapp.NewService(repos.Asset, repos.Exposure, cfg.Worker.CertMonitorFeedBaseURL, log)
+	// EASM producers write exposures through one writer that announces new
+	// and reopened rows through the notification outbox in the same
+	// transaction (research/22 P0-7, decision E4).
+	easmDB := &postgres.DB{DB: deps.DB}
+	easmAlerts := postgres.NewEASMAlerter(easmDB)
+	easmExposures := postgres.NewEASMExposureWriter(easmDB, easmAlerts)
+	repos.EASMDNS.WithAlerts(easmAlerts)
+	s.CertMonitor = certmonitorapp.NewService(repos.Asset, easmExposures, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
 	s.CertMonitor.SetSeedSource(repos.EASMSeed)
 	// Stored CT exposures follow their host to its own asset (research/22 P0-9).
@@ -928,7 +935,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		if err != nil {
 			log.Warn("EASM DNS checks disabled: no resolver", "error", err)
 		} else {
-			s.EASMDNS = easmdnsapp.NewService(dnsClient, repos.EASMDNS, repos.Exposure, log)
+			s.EASMDNS = easmdnsapp.NewService(dnsClient, repos.EASMDNS, easmExposures, log)
 			s.EASMDNS.SetLimits(cfg.Worker.EASMDNSMaxNamesPerRun, cfg.Worker.EASMDNSInterval*5/6)
 		}
 	}
@@ -1466,7 +1473,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A nuclei takeover-template match from a tenant scan confirms an open
 	// dangling_cname as subdomain_takeover (RFC-036 P1).
 	if repos.EASMDNS != nil && repos.Exposure != nil {
-		s.Ingest.SetTakeoverConfirmer(easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, repos.Exposure, log))
+		s.Ingest.SetTakeoverConfirmer(easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, postgres.NewEASMExposureWriter(&postgres.DB{DB: deps.DB}, postgres.NewEASMAlerter(&postgres.DB{DB: deps.DB})), log))
 	}
 	// CT names become inventory assets through this same ingest path, with
 	// attribution evidence (RFC-036 P0). Wired here because the CT monitor is
