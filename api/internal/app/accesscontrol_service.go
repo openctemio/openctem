@@ -2,7 +2,7 @@ package app
 
 // Compatibility shim — real impl lives in internal/app/accesscontrol/.
 // Covers role, group, membership-cache, permission-cache,
-// permission-version, rule, group-sync services (RBAC bounded context).
+// permission-version and group-sync services (RBAC bounded context).
 
 import "github.com/openctemio/openctem/api/internal/app/accesscontrol"
 
@@ -15,7 +15,6 @@ type (
 	GroupServiceOption          = accesscontrol.GroupServiceOption
 	GroupSyncService            = accesscontrol.GroupSyncService
 	MembershipCacheService      = accesscontrol.MembershipCacheService
-	RuleService                 = accesscontrol.RuleService
 	CachedMembership            = accesscontrol.CachedMembership
 	AddGroupMemberInput         = accesscontrol.AddGroupMemberInput
 	AssignAssetInput            = accesscontrol.AssignAssetInput
@@ -24,29 +23,17 @@ type (
 	BulkAssignAssetsResult      = accesscontrol.BulkAssignAssetsResult
 	BulkAssignRoleToUsersInput  = accesscontrol.BulkAssignRoleToUsersInput
 	BulkAssignRoleToUsersResult = accesscontrol.BulkAssignRoleToUsersResult
-	CompleteBundleInput         = accesscontrol.CompleteBundleInput
-	CreateBundleInput           = accesscontrol.CreateBundleInput
 	CreateGroupInput            = accesscontrol.CreateGroupInput
-	CreateOverrideInput         = accesscontrol.CreateOverrideInput
 	CreateRoleInput             = accesscontrol.CreateRoleInput
-	CreateSourceInput           = accesscontrol.CreateSourceInput
 	GroupCounts                 = accesscontrol.GroupCounts
-	ListBundlesInput            = accesscontrol.ListBundlesInput
 	ListGroupsInput             = accesscontrol.ListGroupsInput
 	ListGroupsOutput            = accesscontrol.ListGroupsOutput
-	ListOverridesInput          = accesscontrol.ListOverridesInput
-	ListRulesInput              = accesscontrol.ListRulesInput
-	ListSourcesInput            = accesscontrol.ListSourcesInput
 	SetUserRolesInput           = accesscontrol.SetUserRolesInput
-	SyncResult                  = accesscontrol.SyncResult
-	SyncSourceInput             = accesscontrol.SyncSourceInput
 	UnassignAssetInput          = accesscontrol.UnassignAssetInput
 	UpdateAssetOwnershipInput   = accesscontrol.UpdateAssetOwnershipInput
 	UpdateGroupInput            = accesscontrol.UpdateGroupInput
 	UpdateGroupMemberRoleInput  = accesscontrol.UpdateGroupMemberRoleInput
-	UpdateOverrideInput         = accesscontrol.UpdateOverrideInput
 	UpdateRoleInput             = accesscontrol.UpdateRoleInput
-	UpdateSourceInput           = accesscontrol.UpdateSourceInput
 )
 
 var (
@@ -56,7 +43,6 @@ var (
 	NewGroupService                    = accesscontrol.NewGroupService
 	NewGroupSyncService                = accesscontrol.NewGroupSyncService
 	NewMembershipCacheService          = accesscontrol.NewMembershipCacheService
-	NewRuleService                     = accesscontrol.NewRuleService
 	WithAccessControlRepository        = accesscontrol.WithAccessControlRepository
 	WithGroupAuditService              = accesscontrol.WithGroupAuditService
 	WithGroupDataScope                 = accesscontrol.WithGroupDataScope
@@ -66,7 +52,4 @@ var (
 	WithRolePermissionVersionService   = accesscontrol.WithRolePermissionVersionService
 	WithRoleMembershipCacheInvalidator = accesscontrol.WithRoleMembershipCacheInvalidator
 	WithScopeDelegationCap             = accesscontrol.WithScopeDelegationCap
-
-	ComputeContentHash    = accesscontrol.ComputeContentHash
-	GenerateBundleVersion = accesscontrol.GenerateBundleVersion
 )
