@@ -55,7 +55,7 @@ func TestAccessGrantMigration_PreservesOwnerAccess(t *testing.T) {
 	}
 	for _, u := range []shared.ID{ownerOnly, ownerInGroup} {
 		// ON CONFLICT: the group asset insert above already materialized the
-		// group member's row (trigger asset_owners_scope_sync, migration 001034).
+		// group member's row (trigger asset_owners_scope_sync, migration 001045).
 		exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'primary')
 		      ON CONFLICT (user_id, tenant_id, asset_id) DO NOTHING`,
 			u.String(), tenant.String(), asset.String())
