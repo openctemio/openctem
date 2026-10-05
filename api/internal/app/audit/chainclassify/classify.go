@@ -269,7 +269,14 @@ type Builder struct {
 
 // NewBuilder starts the classification of one tenant's chain.
 func NewBuilder() *Builder {
-	return &Builder{fp: sha256.New(), sampled: map[Class]int{}, report: Report{Samples: []Sample{}}}
+	return NewBuilderFrom("")
+}
+
+// NewBuilderFrom starts the classification of a chain whose oldest remaining
+// row must link to prevHash: the retention anchor of a pruned chain ("" for a
+// chain that was never pruned).
+func NewBuilderFrom(prevHash string) *Builder {
+	return &Builder{fp: sha256.New(), sampled: map[Class]int{}, report: Report{Samples: []Sample{}}, prevStored: prevHash}
 }
 
 // Add classifies the next row of the chain.
@@ -278,7 +285,7 @@ func (b *Builder) Add(r Row) Result {
 	// A row whose own hash is explained but which does not link to the row
 	// before it means a chain row was removed or re-ordered: the hash check
 	// alone cannot see that, because it recomputes against the row's OWN
-	// stored prev_hash. The first row links to "".
+	// stored prev_hash. The first row links to "", or to the retention anchor.
 	if !res.Class.Blocking() && r.PrevHash != b.prevStored {
 		res = Result{Class: LinkBroken}
 	}
