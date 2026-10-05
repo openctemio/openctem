@@ -14,7 +14,7 @@ package ingest
 //     sent them in the new members; a report that sets cve_id or rule_id keeps
 //     exactly the key it had, so no stored fingerprint changes;
 //   - stores the interop data per sighting (findings columns of migration
-//     001078), for the finding detail view only;
+//     001105), for the finding detail view only;
 //   - acts on a VEX not_affected statement under INGEST_VEX (off, dry_run by
 //     default, enforce), with the same guards as source-asserted resolve: the
 //     report is bound to a command assigned to the submitting sensor, the
