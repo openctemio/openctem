@@ -24,6 +24,13 @@ const (
 	ActionCIGateOverrideCreated Action = "ci_gate_override.created"
 	ActionCIGateOverrideRevoked Action = "ci_gate_override.revoked"
 	ActionCIGateOverrideUsed    Action = "ci_gate_override.used"
+
+	// ActionCIPipelineCreated records a new CI pipeline (the first verified
+	// run of a workflow file of a repository).
+	ActionCIPipelineCreated Action = "ci_pipeline.created"
+	// ActionCIPipelinesRevoked records the pipelines of a trust
+	// configuration revoked because it was disabled, deleted or re-pointed.
+	ActionCIPipelinesRevoked Action = "ci_pipeline.revoked"
 )
 
 // Resource types of the CI actions.
@@ -32,6 +39,7 @@ const (
 	ResourceTypeCIRun          ResourceType = "ci_run"
 	ResourceTypeCIGatePolicy   ResourceType = "ci_gate_policy"
 	ResourceTypeCIGateOverride ResourceType = "ci_gate_override"
+	ResourceTypeCIPipeline     ResourceType = "ci_pipeline"
 )
 
 var _ = registerActions("ci", map[Action]Severity{
@@ -47,10 +55,12 @@ var _ = registerActions("ci", map[Action]Severity{
 	ActionCIGateOverrideCreated: SeverityHigh,
 	ActionCIGateOverrideRevoked: SeverityMedium,
 	ActionCIGateOverrideUsed:    SeverityHigh,
+	ActionCIPipelineCreated:     SeverityLow,
+	ActionCIPipelinesRevoked:    SeverityMedium,
 })
 
 func init() {
-	for _, r := range []ResourceType{ResourceTypeCITrustConfig, ResourceTypeCIRun, ResourceTypeCIGatePolicy, ResourceTypeCIGateOverride} {
+	for _, r := range []ResourceType{ResourceTypeCITrustConfig, ResourceTypeCIRun, ResourceTypeCIGatePolicy, ResourceTypeCIGateOverride, ResourceTypeCIPipeline} {
 		configResourceTypes[r] = struct{}{}
 	}
 }

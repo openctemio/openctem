@@ -8746,6 +8746,120 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ci/pipelines': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List CI pipelines
+     * @description CI pipelines (sensors in runner mode) on the repositories the caller may see, most urgent first. Archived, revoked and never-run pipelines are hidden unless include_inactive=true or a status filter names them.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Comma-separated statuses (revoked, failing, degraded, stale, running, fresh, never, archived) */
+          status?: string
+          /** @description Also list archived, revoked and never-run pipelines */
+          include_inactive?: boolean
+          /** @description github or gitlab */
+          provider?: string
+          /** @description Repository asset */
+          repository_asset_id?: string
+          /** @description Repository, workflow path or name */
+          search?: string
+          /** @description Page (default 1) */
+          page?: number
+          /** @description Per page (default 25, max 200) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIPipelineListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/pipelines/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get a CI pipeline
+     * @description The pipeline with its status, its branches (runs per branch; the branch is never part of its identity) and its default-branch gate trend. Its runs are GET /ci/runs?pipeline_id=. 404 when the repository is outside the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Pipeline ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIPipelineDetailResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ci/runs': {
     parameters: {
       query?: never
@@ -8762,6 +8876,8 @@ export interface paths {
         query?: {
           /** @description Repository asset */
           repository_asset_id?: string
+          /** @description CI pipeline */
+          pipeline_id?: string
           /** @description pass, fail or none */
           verdict?: string
           /** @description github or gitlab */
@@ -17324,6 +17440,80 @@ export interface paths {
             'application/json': {
               [key: string]: string
             }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/fleet': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List the fleet
+     * @description Everything that scans for the organization in one list: sensors in daemon mode (heartbeat; can be offline; needs sensors:read) and CI pipelines in runner mode (freshness against their cadence; never offline, never dispatched; needs scans:ci:read and follows the data scope). Each mode is filtered by its own permission. Inactive rows are hidden unless include_inactive=true.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description all (default), daemon or runner */
+          mode?: string
+          /** @description scanner or collector */
+          role?: string
+          /** @description Comma-separated statuses of the modes listed */
+          status?: string
+          /** @description Only rows that need attention */
+          attention?: boolean
+          /** @description Also list inactive rows */
+          include_inactive?: boolean
+          /** @description Name, repository or workflow */
+          search?: string
+          /** @description Page (default 1) */
+          page?: number
+          /** @description Per page (default 25, max 200) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FleetListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -38320,6 +38510,12 @@ export interface components {
       repository_asset_id?: string
       revoked_at?: string
     }
+    'internal_infra_http_handler.CIGatePointResponse': {
+      commit_sha?: string
+      evaluated_at?: string
+      run_id?: string
+      verdict?: string
+    }
     'internal_infra_http_handler.CIGatePolicyListResponse': {
       data?: components['schemas']['internal_infra_http_handler.CIGatePolicyResponse'][]
       default?: components['schemas']['internal_infra_http_handler.CIGatePolicyResponse']
@@ -38347,6 +38543,146 @@ export interface components {
       scope_type?: string
       updated_at?: string
     }
+    'internal_infra_http_handler.CIPipelineBranchResponse': {
+      branch?: string
+      is_default_branch?: boolean
+      last_run_at?: string
+      last_verdict?: string
+      runs?: number
+    }
+    'internal_infra_http_handler.CIPipelineDetailResponse': {
+      branches?: components['schemas']['internal_infra_http_handler.CIPipelineBranchResponse'][]
+      created_at?: string
+      default_branch?: string
+      first_run_at?: string
+      /** @enum {string} */
+      freshness?: 'running' | 'fresh' | 'stale' | 'archived' | 'never'
+      /** @enum {string} */
+      gate?: 'passing' | 'failing' | 'none'
+      gate_trend?: components['schemas']['internal_infra_http_handler.CIGatePointResponse'][]
+      /** @enum {string} */
+      health?: 'ok' | 'degraded' | 'unknown'
+      health_reasons?: string[]
+      id?: string
+      inactive?: boolean
+      /** @enum {string} */
+      kind?: 'ci_pipeline'
+      last_default_run_at?: string
+      last_default_verdict?: string
+      last_fork_run_at?: string
+      last_pr_verdict?: string
+      last_run_at?: string
+      last_run_id?: string
+      /**
+       * @description Legacy: backfilled from runs that predate pipelines; the next run
+       *     confirms its repository id.
+       */
+      legacy?: boolean
+      median_interval_seconds?: number
+      /** @enum {string} */
+      mode?: 'runner'
+      /** @enum {string} */
+      pr_gate?: 'passing' | 'failing' | 'none'
+      /** @enum {string} */
+      provider?: 'github' | 'gitlab'
+      repository?: string
+      repository_asset_id?: string
+      revoked_at?: string
+      /** @enum {string} */
+      role?: 'scanner'
+      runs_count?: number
+      schedule_interval_seconds?: number
+      scheduled?: boolean
+      sensor_version?: string
+      /**
+       * @description StaleAfterSeconds is the expected-cadence threshold; StaleAt when the
+       *     pipeline turns stale without another run.
+       */
+      stale_after_seconds?: number
+      stale_at?: string
+      /** @enum {string} */
+      status?:
+        'revoked' | 'failing' | 'degraded' | 'stale' | 'running' | 'fresh' | 'never' | 'archived'
+      template_ref?: string
+      template_sha?: string
+      tools?: components['schemas']['internal_infra_http_handler.CIToolLabel'][]
+      trust_config_id?: string
+      /** @enum {string} */
+      version_status?: 'latest' | 'update_available' | 'unsupported' | 'unknown'
+      workflow_name?: string
+      workflow_path?: string
+    }
+    'internal_infra_http_handler.CIPipelineListResponse': {
+      counts?: {
+        [key: string]: number
+      }
+      data?: components['schemas']['internal_infra_http_handler.CIPipelineResponse'][]
+      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
+    }
+    'internal_infra_http_handler.CIPipelineResponse': {
+      created_at?: string
+      default_branch?: string
+      first_run_at?: string
+      /** @enum {string} */
+      freshness?: 'running' | 'fresh' | 'stale' | 'archived' | 'never'
+      /** @enum {string} */
+      gate?: 'passing' | 'failing' | 'none'
+      /** @enum {string} */
+      health?: 'ok' | 'degraded' | 'unknown'
+      health_reasons?: string[]
+      id?: string
+      inactive?: boolean
+      /** @enum {string} */
+      kind?: 'ci_pipeline'
+      last_default_run_at?: string
+      last_default_verdict?: string
+      last_fork_run_at?: string
+      last_pr_verdict?: string
+      last_run_at?: string
+      last_run_id?: string
+      /**
+       * @description Legacy: backfilled from runs that predate pipelines; the next run
+       *     confirms its repository id.
+       */
+      legacy?: boolean
+      median_interval_seconds?: number
+      /** @enum {string} */
+      mode?: 'runner'
+      /** @enum {string} */
+      pr_gate?: 'passing' | 'failing' | 'none'
+      /** @enum {string} */
+      provider?: 'github' | 'gitlab'
+      repository?: string
+      repository_asset_id?: string
+      revoked_at?: string
+      /** @enum {string} */
+      role?: 'scanner'
+      runs_count?: number
+      schedule_interval_seconds?: number
+      scheduled?: boolean
+      sensor_version?: string
+      /**
+       * @description StaleAfterSeconds is the expected-cadence threshold; StaleAt when the
+       *     pipeline turns stale without another run.
+       */
+      stale_after_seconds?: number
+      stale_at?: string
+      /** @enum {string} */
+      status?:
+        'revoked' | 'failing' | 'degraded' | 'stale' | 'running' | 'fresh' | 'never' | 'archived'
+      template_ref?: string
+      template_sha?: string
+      tools?: components['schemas']['internal_infra_http_handler.CIToolLabel'][]
+      trust_config_id?: string
+      /** @enum {string} */
+      version_status?: 'latest' | 'update_available' | 'unsupported' | 'unknown'
+      workflow_name?: string
+      workflow_path?: string
+    }
     'internal_infra_http_handler.CIRunResponse': {
       actor?: string
       branch?: string
@@ -38361,6 +38697,7 @@ export interface components {
       fork?: boolean
       id?: string
       is_default_branch?: boolean
+      pipeline_id?: string
       pipeline_url?: string
       provider?: string
       pull_request?: string
@@ -38369,7 +38706,15 @@ export interface components {
       repository?: string
       repository_asset_id?: string
       run_attempt?: string
+      scan_failures?: number
+      /**
+       * @description SensorVersion is the runner's version; Tools what its reports
+       *     declared; ScanFailures what it reported at evaluation. Labels only.
+       */
+      sensor_version?: string
       status?: string
+      template_ref?: string
+      tools?: components['schemas']['internal_infra_http_handler.CIToolLabel'][]
       trust_config_id?: string
       verdict?: string
       /**
@@ -38385,6 +38730,10 @@ export interface components {
       is_past_due?: boolean
       notes?: string
       ransomware_use?: string
+    }
+    'internal_infra_http_handler.CIToolLabel': {
+      name?: string
+      version?: string
     }
     'internal_infra_http_handler.CITrustConfigListResponse': {
       data?: components['schemas']['internal_infra_http_handler.CITrustConfigResponse'][]
@@ -39828,6 +40177,69 @@ export interface components {
       regex?: string
       /** @description Replacement string */
       replacement?: string
+    }
+    'internal_infra_http_handler.FleetItem': {
+      /**
+       * @description Attention: the row needs someone to look (offline/degraded/stale
+       *     daemon; failing/degraded/stale pipeline).
+       */
+      attention?: boolean
+      description?: string
+      freshness?: string
+      gate?: string
+      health?: string
+      id?: string
+      /**
+       * @description Inactive rows (revoked or disabled daemons; archived, revoked or
+       *     never-run pipelines) are hidden unless include_inactive=true.
+       */
+      inactive?: boolean
+      /** @enum {string} */
+      kind?: 'sensor' | 'ci_pipeline'
+      last_seen_at?: string
+      links?: components['schemas']['internal_infra_http_handler.FleetLinks']
+      /** @enum {string} */
+      mode?: 'daemon' | 'runner'
+      name?: string
+      /** @description Runner-only fields. */
+      provider?: string
+      repository?: string
+      repository_asset_id?: string
+      /** @enum {string} */
+      role?: 'scanner' | 'collector'
+      /**
+       * @description Status is the mode's own status: a sensor state for a daemon
+       *     (online, degraded, late, stale, offline, idle, never_connected,
+       *     disabled, revoked), a pipeline status for a runner (failing, degraded,
+       *     stale, running, fresh, never, archived, revoked). A runner is never
+       *     offline.
+       */
+      status?: string
+      version?: string
+      workflow?: string
+    }
+    'internal_infra_http_handler.FleetLinks': {
+      self?: string
+    }
+    'internal_infra_http_handler.FleetListResponse': {
+      counts?: {
+        [key: string]: components['schemas']['internal_infra_http_handler.FleetModeCounts']
+      }
+      data?: components['schemas']['internal_infra_http_handler.FleetItem'][]
+      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
+      modes?: string[]
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
+    }
+    'internal_infra_http_handler.FleetModeCounts': {
+      attention?: number
+      by_status?: {
+        [key: string]: number
+      }
+      inactive?: number
+      total?: number
     }
     'internal_infra_http_handler.FleetRefreshContentResponse': {
       commands_created?: number
