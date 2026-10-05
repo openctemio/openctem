@@ -15,8 +15,10 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -102,6 +104,14 @@ func WireAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
 	}
 }
 
+// newPipelineHandler builds the pipeline handler with the run page's task
+// logs (RFC-029 §4.4.1).
+func newPipelineHandler(svc *pipelinesvc.Service, logs *commandlog.Service, v *validator.Validator, log *logger.Logger) *handler.PipelineHandler {
+	h := handler.NewPipelineHandler(svc, v, log)
+	h.SetTaskLogs(logs)
+	return h
+}
+
 // NewHandlers creates all HTTP handlers.
 func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	cfg := deps.Config
@@ -143,6 +153,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Continuous retest (RFC-039): a retest check's evidence is recorded
 	// advisory-only and its retest settled when the sensor completes or fails it.
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
+	// Per-task logs from sensors (RFC-029 §4.4.1), shown on the run page.
+	commandLogs := commandlog.NewService(repos.CommandLog)
+	commandHandler.SetCommandLogs(commandLogs)
 	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
 	// Sensor authentication and the services the protocol v2 control handler
@@ -353,7 +366,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CI:              handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:         ciAdmin,
 		CIRunner:        ciRunner,
-		Pipeline:        handler.NewPipelineHandler(svc.Pipeline, v, log),
+		Pipeline:        newPipelineHandler(svc.Pipeline, commandLogs, v, log),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
