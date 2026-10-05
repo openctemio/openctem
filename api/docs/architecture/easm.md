@@ -296,6 +296,41 @@ query, so ids of another tenant announce nothing; the throttle counter
 locked for the transaction, which serializes one tenant's alert writes.
 Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_test.go`.
 
+## 4e. Settings and run-now (built, P0-11)
+
+| Route | Permission | What |
+|---|---|---|
+| `GET /api/v1/easm/settings` | `settings:read` | switches, intervals (effective, floor 6 h, max 168 h), what the platform runs, last CT run, last DNS check, when run-now is allowed again |
+| `PUT /api/v1/easm/settings` | `settings:write` | `ct_enabled`, `dns_checks_enabled`, `ct_interval_hours`, `dns_interval_hours` (0 = platform default, else 6 to 168; 1 → 400). Audited high (`easm_settings.updated`) |
+| `POST /api/v1/easm/sweeps` | `attack_surface:scope:write` | runs CT, then the DNS checks, for the caller's tenant in the background (202); at most once per 15 minutes per tenant across replicas (429 with `Retry-After`). Audited (`easm_sweep.requested`) |
+
+The settings live in the tenant settings section `easm` (`tenant.EASMSettings`,
+written with the section compare-and-swap). The zero value is the default:
+CT and DNS checks on at the platform cadence (decisions E3, E8). Turning CT off
+is the per-tenant opt-out from sending domain names to crt.sh and Cert
+Spotter (22b S6).
+
+Enforcement sits in the services, so every path honors it: the CT and DNS
+controllers, the CT follow-up, run-now and seed sweeps. `certmonitor` and
+`easmdns` read the tenant's settings at the start of each tenant run; an
+unreadable setting skips the tenant (fail closed: an opted-out tenant's
+names are never sent on a database error). A tenant interval becomes the
+re-check window (interval minus 30 minutes), and the controllers now **tick
+hourly**: `CERT_MONITOR_INTERVAL` and `EASM_DNS_CHECK_INTERVAL` are the
+platform default interval, and a name is queried only once its window has
+passed.
+
+**Run-now limit:** a controller lease `easm_run_now:<tenant>` taken for 15
+minutes and never released, so it expires on its own; a lease error refuses
+(fail closed). **Seed sweep:** creating a seed with discovery on starts the
+same sweep for that tenant without the run-now limit, so its first CT results
+and DNS checks arrive within minutes. The services' own per-tenant locks keep
+two sweeps from overlapping. Background sweeps are bounded to 30 minutes.
+
+Web: the **Monitoring** card on `/attack-surface` shows the last runs, the
+switches with a privacy note for CT, the cadence, and **Run now** (disabled
+inside the 15-minute window). How-to:
+[easm-monitoring-settings.md](../how-to/easm-monitoring-settings.md).
 ## 4h. Port and service results (built, P0-6)
 
 A port scanner (naabu, nmap, masscan, rustscan) reports an IP address with
