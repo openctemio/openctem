@@ -36,6 +36,7 @@ var permSeedMigrations = []string{
 	"000267_scope_exclusion_approval.up.sql",       // attack_surface:scope:exclusions:approve
 	"000774_dashboard_aggregate_permission.up.sql", // dashboard:aggregate (D6)
 	"001077_ci_runner_identity.up.sql",             // scans:ci:* (RFC-051)
+	"001110_scan_freeze_windows.up.sql",            // scans:freeze:override
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with

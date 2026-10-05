@@ -135,6 +135,12 @@ type Command struct {
 	// the reaper unpins it. Never sent on the protocol-v1 wire.
 	ScanZoneID *shared.ID
 
+	// FreezeOverride lets the command through an active scan freeze window.
+	// Only the server sets it, on the commands of a run a member with
+	// scans:freeze:override started during a window (audited); it is
+	// written on create and never read back from a request.
+	FreezeOverride bool
+
 	// ==========================================================================
 	// Platform Job Fields (v3.2)
 	// ==========================================================================

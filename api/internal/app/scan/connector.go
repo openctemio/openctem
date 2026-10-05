@@ -76,7 +76,7 @@ func connectorRunUser(sc *scan.Scan) *shared.ID {
 // connector_scan command is queued for the connector's sensor.
 func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resolved *resolvedTargets,
 	triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int,
-	scheduledFor *time.Time) (*pipeline.Run, error) {
+	scheduledFor *time.Time, freezeOverride bool) (*pipeline.Run, error) {
 	if s.connectorScans == nil {
 		return nil, ErrConnectorScansUnavailable
 	}
@@ -100,11 +100,18 @@ func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resol
 			"no target of this scan passed the scan target checks; nothing was sent to Tenable.sc", shared.ErrValidation)
 	}
 
+	// A connector scan is active work outside any zone.
+	override, err := s.checkFreeze(ctx, sc, freezeRequest{triggerType, triggeredBy, freezeOverride}, nil, true)
+	if err != nil {
+		return nil, err
+	}
+
 	quickScanTemplateID, _ := shared.IDFromString(QuickScanTemplateID)
 	run, err := pipeline.NewRun(quickScanTemplateID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create run: %w", err)
 	}
+	run.FreezeOverride = override
 	run.SetTotalSteps(1)
 	run.RetryAttempt = retryAttempt
 	run.ScheduledFor = scheduledFor
@@ -126,6 +133,7 @@ func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resol
 	}
 	cmd, err := s.connectorScans.NewScanCommand(ctx, sc.TenantID, sc.ScannerConfig, gated.Allowed, bk)
 	if err == nil {
+		cmd.FreezeOverride = run.FreezeOverride
 		err = s.commandRepo.Create(ctx, cmd)
 	}
 	if err != nil {
