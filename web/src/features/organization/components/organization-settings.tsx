@@ -412,16 +412,16 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
         website: settings.general.website || '',
       })
       setSecurityForm({
-        mfa_required: settings.security.mfa_required || false,
-        session_timeout_min: settings.security.session_timeout_min || 60,
-        ip_whitelist: (settings.security.ip_whitelist || []).join('\n'),
-        allowed_domains: (settings.security.allowed_domains || []).join('\n'),
+        mfa_required: settings.security?.mfa_required || false,
+        session_timeout_min: settings.security?.session_timeout_min || 60,
+        ip_whitelist: (settings.security?.ip_whitelist || []).join('\n'),
+        allowed_domains: (settings.security?.allowed_domains || []).join('\n'),
         email_verification_mode:
-          (settings.security.email_verification_mode as 'auto' | 'always' | 'never') || 'auto',
+          (settings.security?.email_verification_mode as 'auto' | 'always' | 'never') || 'auto',
         require_sensor_local_policy_for_private_targets:
-          settings.security.require_sensor_local_policy_for_private_targets || false,
-        allow_sensor_interactsh: settings.security.allow_sensor_interactsh || false,
-        allow_sensor_custom_templates: settings.security.allow_sensor_custom_templates || false,
+          settings.security?.require_sensor_local_policy_for_private_targets || false,
+        allow_sensor_interactsh: settings.security?.allow_sensor_interactsh || false,
+        allow_sensor_custom_templates: settings.security?.allow_sensor_custom_templates || false,
       })
       setBrandingForm({
         primary_color: settings.branding.primary_color || '#3B82F6',

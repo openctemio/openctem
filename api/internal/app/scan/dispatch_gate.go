@@ -56,6 +56,13 @@ type DispatchTargetsInput struct {
 	// a person starts; system paths (coverage, validation) leave it off.
 	ActScope     bool
 	FallbackUser *shared.ID
+	// PassiveOnly gates targets for a passive (T0) stage of a chain
+	// (research/27 §5.7): the ownership gate refuses only rejected names
+	// (a rejection tombstone, a rejected record, or a name under a rejected
+	// parent). A name that is not confirmed yet (needs_review, candidate,
+	// unattributed) may be resolved, never actively probed: every other
+	// path leaves this off and gets the full active-scan gate.
+	PassiveOnly bool
 }
 
 // RefusedTarget is a target the gate will not dispatch, with the reason.
@@ -270,6 +277,15 @@ func (s *Service) refuseUnconfirmed(ctx context.Context, in DispatchTargetsInput
 		if !no {
 			state, no = blockedTyped[t]
 		}
+		if no && in.PassiveOnly {
+			// A passive stage may resolve a name nobody confirmed yet; only
+			// a rejection (of any asset behind the target) refuses it.
+			if rejectedState(in.Assets, t, blocked) || blockedTyped[t] == attribution.StateRejected {
+				state = attribution.StateRejected
+			} else {
+				no = false
+			}
+		}
 		if no {
 			s.logRefusedTarget(ctx, in.TenantID, "dispatch_gate", t, state)
 			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: ReasonOwnershipNotConfirmed})
@@ -293,6 +309,20 @@ func unconfirmedState(assets map[string]DispatchAsset, target string, blocked ma
 		}
 	}
 	return "", false
+}
+
+// rejectedState reports whether any asset behind target is rejected.
+func rejectedState(assets map[string]DispatchAsset, target string, blocked map[string]attribution.State) bool {
+	a, ok := assetOf(assets, target)
+	if !ok {
+		return false
+	}
+	for _, id := range a.IDs {
+		if blocked[id] == attribution.StateRejected {
+			return true
+		}
+	}
+	return false
 }
 
 // refuseOutOfActScopeTargets moves every kept target the actor may not scan
