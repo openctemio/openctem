@@ -439,6 +439,39 @@ func ForTool(tool string) []Stage {
 	return out
 }
 
+// PassiveTool reports whether every stage the tool implements is passive
+// (T0): it sends no traffic to its targets. A tool the catalog does not know
+// is not passive.
+func PassiveTool(tool string) bool {
+	stages := ForTool(tool)
+	if len(stages) == 0 {
+		return false
+	}
+	for _, s := range stages {
+		if !s.Tier.Passive() {
+			return false
+		}
+	}
+	return true
+}
+
+// PassiveTools returns every tool for which PassiveTool holds, sorted.
+func PassiveTools() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range catalog {
+		for _, impl := range s.Implementations {
+			t := normalizeTool(impl.Tool)
+			if !seen[t] && PassiveTool(t) {
+				seen[t] = true
+				out = append(out, t)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // OutputTypes is the union of the asset types a tool's stages produce, sorted
 // (what tools.output_types records for a platform tool). Nil for a tool the
 // catalog does not know.

@@ -6678,6 +6678,118 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/auth/step-up': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Step-up re-authentication state
+     * @description method is totp (an authenticator code), password, or fresh_sign_in (an SSO account without an authenticator: sign in again). valid_until is set while the session is inside its window.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.StepUpState']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Step-up re-authentication
+     * @description Verifies a current authenticator code (accounts with two-factor authentication; recovery codes are not accepted) or the password (other local accounts) and lets this session perform sensitive actions for 10 minutes. The window belongs to this session only and is extended only by another successful step-up. Failures count towards the account lockout. SSO accounts without an authenticator get STEP_UP_UNAVAILABLE and sign in again instead.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Authenticator code or password */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.StepUpRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.StepUpResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/auth/token': {
     parameters: {
       query?: never
@@ -7340,6 +7452,15 @@ export interface paths {
         }
         /** @description Unauthorized */
         401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description RUNNER_OUTDATED: the runner reports a version below the minimum supported one */
+        403: {
           headers: {
             [name: string]: unknown
           }
@@ -20841,6 +20962,322 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scan-freeze-windows': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List scan freeze windows
+     * @description The organization's freeze windows, each with whether it is active now. scan_zone_id lists one zone's windows; scope=tenant lists only the windows that freeze the whole organization.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Scan zone ID */
+          scan_zone_id?: string
+          /** @description tenant: only organization-wide windows */
+          scope?: 'tenant'
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Create scan freeze window
+     * @description While the window is active, active (T1/T2) scan work of the organization, or of the zone, is not dispatched: scheduled runs are deferred to the window's end, other triggers are refused (409 SCAN_FREEZE_ACTIVE) unless the caller overrides with scans:freeze:override. Passive work and ingest continue. At most 50 windows per organization.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Freeze window */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CreateScanFreezeWindowRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description scan zone not in this organization */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scan-freeze-windows/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get scan freeze window */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Freeze window ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    /** Delete scan freeze window */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Freeze window ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    /**
+     * Update scan freeze window
+     * @description Omitted fields are unchanged; the zone cannot change. Disabling a window releases the work it held.
+     */
+    patch: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Freeze window ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Changes */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateScanFreezeWindowRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    trace?: never
+  }
   '/scan-profiles': {
     parameters: {
       query?: never
@@ -24117,8 +24554,26 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description override_freeze without scans:freeze:override */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Not Found */
         404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description SCAN_FREEZE_ACTIVE: a scan freeze window is active */
+        409: {
           headers: {
             [name: string]: unknown
           }
@@ -26549,6 +27004,292 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/sensor-pairings/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Approve a sensor pairing
+     * @description Binds the sensor's key to this organization: a new sensor, or the registration being re-paired (its earlier keys revoked). Needs fingerprint_confirmed=true and step-up re-authentication (TOTP, else password, else a sign-in younger than 10 minutes). Audited at high severity; every administrator is notified.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Pairing id */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Approval */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.PairingApproveRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_sensorpairing.View']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensor-pairings/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Reject a sensor pairing request */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Pairing id */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensor-pairings/expectations': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Expect a sensor (reverse pairing)
+     * @description Returns a single-use code (10 minutes) to run as `openctemio-sensor pair <CODE>` on the host.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Expected sensor */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.PairingExpectRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_sensorpairing.View']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensor-pairings/expectations/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get a pairing request of the organization
+     * @description A reverse-mode expectation (once the sensor connected: its SAS fingerprint, host facts and source address), or a request this organization approved or denied.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Pairing id */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_sensorpairing.View']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensor-pairings/lookup': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Look up a pairing code
+     * @description Returns the open pairing request with this code: the SAS fingerprint, key fingerprint, host facts and source address to compare. One 404 for unknown, expired, used and foreign codes.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Code shown by the sensor */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.PairingLookupRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_sensorpairing.View']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors': {
     parameters: {
       query?: never
@@ -27388,6 +28129,105 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/sensors/{id}/keys': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List a sensor's signing keys */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorSigningKeyResponse'][]
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/{id}/keys/{key_id}/revoke': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Revoke one signing key of a sensor
+     * @description Effective on the sensor's next request. The sensor must be re-paired to work again.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+          /** @description Key ID */
+          key_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors/{id}/manifest': {
     parameters: {
       query?: never
@@ -27865,6 +28705,79 @@ export interface paths {
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/identity-policy': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get the sensor identity policy */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorIdentityPolicy']
+          }
+        }
+      }
+    }
+    /**
+     * Set the sensor identity policy
+     * @description Requiring key-bound identity narrows (sensors:grant:narrow); allowing bearer keys again widens (sensors:grant:widen). Audited at high severity.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Policy */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.SensorIdentityPolicy']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorIdentityPolicy']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -35161,6 +36074,20 @@ export interface components {
       offset_ns?: number
       position?: number
     }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod':
+      'totp' | 'password' | 'fresh_sign_in' | ''
+    'github_com_openctemio_openctem_api_internal_app_auth.StepUpProof': {
+      password?: string
+      totp?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_auth.StepUpState': {
+      method?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod']
+      /** @description ValidUntil is when the current window closes; nil when it is closed. */
+      valid_until?: string
+      /** @description WindowSeconds is the length of a window opened by a step-up. */
+      window_seconds?: number
+    }
     'github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord': {
       host?: string
       type?: string
@@ -35508,6 +36435,26 @@ export interface components {
       /** @description WindowDays is the freshness window the stats were computed against. */
       window_days?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_sensorpairing.View': {
+      code?: string
+      created_at?: string
+      expires_at?: string
+      host_facts?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.PairingHostFacts']
+      id?: string
+      key_fingerprint?: string
+      mode?: string
+      repair_sensor_id?: string
+      repair_sensor_name?: string
+      sas?: string
+      sensor_id?: string
+      source_ip?: string
+      status?: string
+      /**
+       * @description StepUp is what the viewer must present to approve ("totp",
+       *     "password" or "fresh_sign_in").
+       */
+      step_up?: string
+    }
     /** @enum {string} */
     'github_com_openctemio_openctem_api_pkg_apierror.Code':
       | 'BAD_REQUEST'
@@ -35796,9 +36743,10 @@ export interface components {
        */
       repositories?: string[]
       /**
-       * @description RequireProtectedRef admits only pipelines on a protected branch or tag
-       *     (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
-       *     configuration with this set admits nothing).
+       * @description RequireProtectedRef admits only pipelines on a protected branch or tag.
+       *     GitLab: the token's ref_protected claim. GitHub tokens carry no such
+       *     claim: the job must run in one of Environments (required with this
+       *     switch), whose deployment branch rules admit only protected refs.
        */
       require_protected_ref?: boolean
     }
@@ -36166,6 +37114,16 @@ export interface components {
     'github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns': {
       allow_custom_templates?: boolean
       allow_interactsh?: boolean
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.PairingHostFacts': {
+      arch?: string
+      hostname?: string
+      instance_id?: string
+      name?: string
+      os?: string
+      product?: string
+      sdk_version?: string
+      sensor_version?: string
     }
     'github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity': {
       active_jobs?: number
@@ -38231,6 +39189,20 @@ export interface components {
       p3_days?: number
       warning_threshold_pct?: number
     }
+    'internal_infra_http_handler.CreateScanFreezeWindowRequest': {
+      days?: number[]
+      description?: string
+      enabled?: boolean
+      end_time?: string
+      ends_at?: string
+      name?: string
+      /** @enum {string} */
+      recurrence?: 'once' | 'weekly'
+      scan_zone_id?: string
+      start_time?: string
+      starts_at?: string
+      timezone?: string
+    }
     'internal_infra_http_handler.CreateScanProfileRequest': {
       description?: string
       /** @enum {string} */
@@ -40023,6 +40995,28 @@ export interface components {
       prev?: string
       self?: string
     }
+    'internal_infra_http_handler.PairingApproveRequest': {
+      /**
+       * @description Code is the code the approver entered (default mode; not needed for
+       *     an expectation of this organization).
+       */
+      code?: string
+      fingerprint_confirmed?: boolean
+      grant_profile?: string
+      name?: string
+      step_up?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.StepUpProof']
+      type?: string
+      zone_ids?: string[]
+    }
+    'internal_infra_http_handler.PairingExpectRequest': {
+      grant_profile?: string
+      name?: string
+      repair_sensor_id?: string
+      zone_ids?: string[]
+    }
+    'internal_infra_http_handler.PairingLookupRequest': {
+      code?: string
+    }
     'internal_infra_http_handler.PermissionsResponse': {
       permissions?: string[]
       version?: number
@@ -40670,6 +41664,30 @@ export interface components {
       total_runs?: number
       updated_at?: string
     }
+    'internal_infra_http_handler.ScanFreezeWindowListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse'][]
+      total?: number
+    }
+    'internal_infra_http_handler.ScanFreezeWindowResponse': {
+      active?: boolean
+      active_until?: string
+      created_at?: string
+      created_by?: string
+      days?: number[]
+      description?: string
+      enabled?: boolean
+      end_time?: string
+      ends_at?: string
+      id?: string
+      name?: string
+      /** @enum {string} */
+      recurrence?: 'once' | 'weekly'
+      scan_zone_id?: string
+      start_time?: string
+      starts_at?: string
+      timezone?: string
+      updated_at?: string
+    }
     'internal_infra_http_handler.ScanProfileResponse': {
       created_at?: string
       created_by?: string
@@ -41136,6 +42154,13 @@ export interface components {
       buckets?: components['schemas']['internal_infra_http_handler.SensorHeartbeatBucketResponse'][]
       hours?: number
     }
+    'internal_infra_http_handler.SensorIdentityPolicy': {
+      /**
+       * @description BearerKeysAllowed: new sensors may be created with an API key
+       *     (octs_). False: pairing (key-bound identity) only.
+       */
+      bearer_keys_allowed?: boolean
+    }
     'internal_infra_http_handler.SensorLoadResponse': {
       capacity?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity']
       fresh?: boolean
@@ -41448,6 +42473,17 @@ export interface components {
     'internal_infra_http_handler.SensorRevokeRequest': {
       reason?: string
     }
+    'internal_infra_http_handler.SensorSigningKeyResponse': {
+      activated_at?: string
+      created_at?: string
+      fingerprint?: string
+      id?: string
+      last_used_at?: string
+      last_used_ip?: string
+      revoked_at?: string
+      revoked_reason?: string
+      status?: string
+    }
     'internal_infra_http_handler.SensorStatsResponse': {
       active_jobs?: number
       by_execution_mode?: {
@@ -41585,6 +42621,14 @@ export interface components {
       status?: string
       step_id?: string
       step_key?: string
+    }
+    'internal_infra_http_handler.StepUpRequest': {
+      password?: string
+      totp?: string
+    }
+    'internal_infra_http_handler.StepUpResponse': {
+      valid_until?: string
+      window_seconds?: number
     }
     'internal_infra_http_handler.SyncResponse': {
       message?: string
@@ -41856,6 +42900,11 @@ export interface components {
       context?: {
         [key: string]: unknown
       }
+      /**
+       * @description OverrideFreeze starts the scan although a scan freeze window is
+       *     active. Needs scans:freeze:override (403 otherwise); audited.
+       */
+      override_freeze?: boolean
     }
     'internal_infra_http_handler.TriggerSyncRequest': {
       /** @description empty or "all" for all sources */
@@ -42077,6 +43126,19 @@ export interface components {
       p2_days?: number
       p3_days?: number
       warning_threshold_pct?: number
+    }
+    'internal_infra_http_handler.UpdateScanFreezeWindowRequest': {
+      days?: number[]
+      description?: string
+      enabled?: boolean
+      end_time?: string
+      ends_at?: string
+      name?: string
+      /** @enum {string} */
+      recurrence?: 'once' | 'weekly'
+      start_time?: string
+      starts_at?: string
+      timezone?: string
     }
     'internal_infra_http_handler.UpdateScanProfileRequest': {
       description?: string

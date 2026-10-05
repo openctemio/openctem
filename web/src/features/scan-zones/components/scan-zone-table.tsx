@@ -3,7 +3,7 @@
 import type * as React from 'react'
 import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Pencil, RadioTower, Trash2 } from 'lucide-react'
+import { CalendarClock, Pencil, RadioTower, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import {
@@ -28,6 +28,10 @@ interface ScanZoneTableProps {
   onEdit: (zone: ScanZone) => void
   onSensors: (zone: ScanZone) => void
   onDelete: (zone: ScanZone) => void
+  /** Opens the zone's freeze windows. */
+  onFreezeWindows?: (zone: ScanZone) => void
+  /** Zones a freeze window holds now. */
+  frozenZoneIds?: Set<string>
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
 }
@@ -106,6 +110,8 @@ export function ScanZoneTable({
   onEdit,
   onSensors,
   onDelete,
+  onFreezeWindows,
+  frozenZoneIds,
   toolbarStart,
   toolbarEnd,
 }: ScanZoneTableProps) {
@@ -127,6 +133,11 @@ export function ScanZoneTable({
                 {z.is_default && (
                   <Badge variant="secondary" className="shrink-0 text-xs font-normal">
                     Default
+                  </Badge>
+                )}
+                {frozenZoneIds?.has(z.id) && (
+                  <Badge variant="destructive" className="shrink-0 text-xs font-normal">
+                    Frozen
                   </Badge>
                 )}
               </p>
@@ -174,6 +185,13 @@ export function ScanZoneTable({
           const z = row.original
           // Only the actions this user may take; a read-only user gets no menu.
           const actions: RowAction[] = []
+          if (onFreezeWindows) {
+            actions.push({
+              label: 'Freeze windows',
+              icon: CalendarClock,
+              onClick: () => onFreezeWindows(z),
+            })
+          }
           if (canWrite) {
             actions.push(
               { label: 'Edit', icon: Pencil, onClick: () => onEdit(z) },
@@ -193,7 +211,17 @@ export function ScanZoneTable({
         },
       },
     ],
-    [coverageByZone, sensorsById, onEdit, onSensors, onDelete, canWrite, canDelete]
+    [
+      coverageByZone,
+      sensorsById,
+      onEdit,
+      onSensors,
+      onDelete,
+      onFreezeWindows,
+      frozenZoneIds,
+      canWrite,
+      canDelete,
+    ]
   )
 
   return (

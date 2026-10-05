@@ -9,7 +9,8 @@ import { getE2EConfig } from '../helpers/env'
  * Regressions this guards:
  *   1. /settings/integrations/saml (and verified-domains) redirected a tenant
  *      owner into the platform admin console's sign-in. SSO moved there
- *      (RFC-022); both now redirect to Authentication, which says so.
+ *      (RFC-022): saml redirects to Authentication, which says so;
+ *      verified-domains redirects to the seeds in Scoping > Boundaries.
  *   2. Members and viewers saw an enabled "Generate token" on the SCIM page,
  *      which the API refuses (owner/admin only).
  *
@@ -18,14 +19,20 @@ import { getE2EConfig } from '../helpers/env'
  */
 
 test('SSO settings explain that the platform administrator configures SSO', async ({ page }) => {
-  for (const path of ['/settings/integrations/saml', '/settings/integrations/verified-domains']) {
-    await page.goto(path)
-    await expect(
-      page.getByText(/SSO is configured by your platform administrator/),
-      path
-    ).toBeVisible({ timeout: 30_000 })
-    expect(new URL(page.url()).pathname, path).toBe('/settings/authentication')
-  }
+  await page.goto('/settings/integrations/saml')
+  await expect(page.getByText(/SSO is configured by your platform administrator/)).toBeVisible({
+    timeout: 30_000,
+  })
+  expect(new URL(page.url()).pathname).toBe('/settings/authentication')
+})
+
+test('verified domains open on the seeds of Scoping > Boundaries', async ({ page }) => {
+  // Domain verification for attack-surface management lives on each seed.
+  await page.goto('/settings/integrations/verified-domains')
+  await expect(page.getByRole('tab', { name: /^Seeds/, selected: true })).toBeVisible({
+    timeout: 30_000,
+  })
+  expect(new URL(page.url()).pathname).toBe('/scope-config')
 })
 
 base('SCIM tokens: no Generate token for a member or viewer', async ({ page }) => {

@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/api/internal/app/workflow"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
@@ -54,6 +55,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/scan"
+	scanfreezeapp "github.com/openctemio/openctem/api/internal/app/scanfreeze"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	"github.com/openctemio/openctem/api/internal/app/sla"
@@ -548,9 +550,14 @@ type Services struct {
 	Notification   *app.NotificationService
 
 	// Sensors & Commands
-	Sensor   *app.SensorService
-	ScanZone *scanzoneapp.Service
-	Command  *command.Service
+	Sensor *app.SensorService
+	// SensorPairing runs interactive pairing (RFC-052); nil when the
+	// installation has no encryption key to derive the pairing key from.
+	SensorPairing *sensorpairing.Service
+	ScanZone      *scanzoneapp.Service
+	// ScanFreeze manages scan freeze windows.
+	ScanFreeze *scanfreezeapp.Service
+	Command    *command.Service
 	// SensorContent is the scanner content policy and refresh (RFC-031).
 	SensorContent *sensorapp.ContentService
 	// TenableSC queues and follows Tenable.sc connector syncs (RFC-047).
@@ -1412,6 +1419,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		logTokensOnPreviousPepper(&postgres.DB{DB: deps.DB}, crypto.PepperID(cfg.Encryption.Key), crypto.PepperID(sensorPepper), log)
 	}
 	s.Sensor.SetLegacyPeppers(sensorLegacyPeppers...)
+	// Interactive pairing (RFC-052): the platform pairing key derives from
+	// APP_ENCRYPTION_KEY, pairing codes are hashed with the sensor-key pepper.
+	if sp, err := sensorpairing.NewService(repos.SensorPairing, repos.Sensor, cfg.Encryption.Key, sensorPepper, log); err != nil {
+		log.Warn("sensor pairing disabled", "error", err)
+	} else {
+		s.SensorPairing = sp
+		s.SensorPairing.SetAudit(s.Audit)
+		s.SensorPairing.SetEvents(s.Sensor)
+	}
 	// Optional short-lived sensor credentials (RFC-014 Phase 1b). Zero =
 	// disabled (renewed keys never expire), preserving today's behavior.
 	s.Sensor.SetKeyTTL(cfg.SensorConfig.KeyTTL)
@@ -1425,6 +1441,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Key-bound sensors (RFC-052): public keys and the shared nonce store
 	// of signed requests.
 	s.Sensor.SetSigningKeyRepository(repos.SensorSigningKey)
+	s.Sensor.SetIdentityPolicyRepository(postgres.NewSensorIdentityPolicyRepository(&postgres.DB{DB: deps.DB}))
 	if deps.RedisClient != nil {
 		s.Sensor.SetNonceStore(redis.NewSensorNonceStore(deps.RedisClient))
 	}
@@ -1640,6 +1657,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to from the platform.
 		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
+		// Freeze windows: a scheduled run is deferred to the window's end,
+		// any other trigger refused unless overridden (audited).
+		scan.WithFreezeWindows(repos.ScanFreezeWindow),
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
@@ -1660,6 +1680,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
+	s.ScanFreeze = scanfreezeapp.NewService(repos.ScanFreezeWindow, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
 	// service from here on.
 	probeGate.set(s.Scan)
@@ -2195,6 +2216,13 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// pauses schedules or a deprovisioned member still owns work.
 	s.Tenant.SetLifecycleRepository(repos.MemberLifecycle)
 	s.Tenant.SetLifecycleNotifier(s.Notification)
+
+	// Sensor pairing approvals need step-up re-authentication and notify
+	// every administrator (RFC-052 D-2, D-6).
+	if s.SensorPairing != nil {
+		s.SensorPairing.SetStepUp(s.Auth)
+		s.SensorPairing.SetNotifications(repos.MemberLifecycle, s.Notification)
+	}
 }
 
 // InitEmailServices initializes email-related services.

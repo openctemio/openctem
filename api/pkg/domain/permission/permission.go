@@ -177,6 +177,11 @@ const (
 	CIRead     Permission = "scans:ci:read"
 	CIWrite    Permission = "scans:ci:write"
 	CIOverride Permission = "scans:ci:override"
+
+	// ScanFreezeOverride starts a scan by hand while a scan freeze window
+	// is active (audited). Managing the windows themselves needs
+	// sensors:zones:write / sensors:zones:delete.
+	ScanFreezeOverride Permission = "scans:freeze:override"
 )
 
 // =============================================================================
@@ -199,6 +204,17 @@ const (
 	ScanZonesRead   Permission = "sensors:zones:read"
 	ScanZonesWrite  Permission = "sensors:zones:write"
 	ScanZonesDelete Permission = "sensors:zones:delete"
+
+	// Pairing and per-sensor grants (RFC-052). Pair: look up a pairing
+	// code, expect a sensor, deny a request. Approve: bind a sensor key to
+	// the organization (with step-up). GrantNarrow / GrantWiden: narrow or
+	// widen a sensor's grant and demote or promote its trust level. Revoke:
+	// revoke a sensor or one of its keys.
+	SensorsPair        Permission = "sensors:pair"
+	SensorsApprove     Permission = "sensors:approve"
+	SensorsGrantNarrow Permission = "sensors:grant:narrow"
+	SensorsGrantWiden  Permission = "sensors:grant:widen"
+	SensorsRevoke      Permission = "sensors:revoke"
 )
 
 // =============================================================================
@@ -442,11 +458,13 @@ func AllPermissions() []Permission {
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIOverride,
+		ScanFreezeOverride,
 
 		// Sensors module
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
+		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 
 		// Team module
 		TeamRead, TeamUpdate, TeamDelete,

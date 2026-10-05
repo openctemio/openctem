@@ -6,6 +6,7 @@ import Link from 'next/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import { SensorOptInBanner } from '@/features/sensors/components/sensor-opt-in-banner'
+import { FreezeBanner } from '@/features/scan-freeze'
 import {
   PageHeader,
   MetricStrip,
@@ -265,6 +266,8 @@ export default function ScansPage() {
             </Button>
           </Can>
         </PageHeader>
+
+        <FreezeBanner className="mt-4" />
 
         <div className="mt-4">
           <SensorOptInBanner />

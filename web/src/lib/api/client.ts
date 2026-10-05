@@ -9,6 +9,7 @@ import { endSessionAndSignIn, useAuthStore } from '@/stores/auth-store'
 import type { ApiError, ApiRequestOptions, ApiResponse } from './types'
 import { ApiClientError } from './error-handler'
 import { IP_NOT_ALLOWED_MESSAGE, isIpNotAllowed, notifyIpNotAllowed } from './ip-not-allowed'
+import { isStepUpRequired, requestStepUp } from './step-up'
 import { dispatchPermissionStaleEvent } from '@/context/permission-provider'
 import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
@@ -254,6 +255,7 @@ export async function apiClient<T = unknown>(
     timeout = DEFAULT_TIMEOUT,
     retry: _retry, // Reserved for future retry implementation
     _skipRefreshRetry = false,
+    _skipStepUpRetry = false,
     ...fetchOptions
   } = options
 
@@ -354,6 +356,15 @@ export async function apiClient<T = unknown>(
       }
 
       const error = await parseErrorResponse(response)
+
+      // A sensitive route needs a recent sign-in or step-up in this session:
+      // ask the user to re-authenticate (one shared dialog), then retry the
+      // original request once. Cancelling throws the original error.
+      if (isStepUpRequired(error) && !_skipStepUpRetry && !skipAuth && !isServer()) {
+        if (await requestStepUp()) {
+          return apiClient<T>(endpoint, { ...options, _skipStepUpRetry: true })
+        }
+      }
 
       // The organization's IP allowlist blocked this request. Replace the
       // server text with a message that says what happened, and toast once.
