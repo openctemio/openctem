@@ -792,6 +792,12 @@ func (p *AssetProcessor) processBatch(
 		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered, excl)
 	}
 
+	// Step 8: Typed edges from related_assets (service -> the certificate
+	// it served).
+	if p.relRepo != nil {
+		p.createRelatedAssetRelationships(ctx, tenantID, report, assetMap, alterRefs)
+	}
+
 	// What this ingest wrote, for attribution (scan_attribution.go): every
 	// asset it created (report assets, root domains, resolved addresses) and
 	// every existing one it updated.
