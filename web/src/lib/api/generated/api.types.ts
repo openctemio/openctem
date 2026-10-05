@@ -13059,6 +13059,8 @@ export interface paths {
           open_on_branch_id?: string[]
           /** @description fixed on branch id: any of (comma list) */
           fixed_on_branch_id?: string[]
+          /** @description branch only equals */
+          branch_only?: boolean
           /** @description component id: any of (comma list) */
           component_id?: string[]
           /** @description component id: none of (comma list) */
@@ -14699,6 +14701,8 @@ export interface paths {
           open_on_branch_id?: string[]
           /** @description fixed on branch id: any of (comma list) */
           fixed_on_branch_id?: string[]
+          /** @description branch only equals */
+          branch_only?: boolean
           /** @description component id: any of (comma list) */
           component_id?: string[]
           /** @description component id: none of (comma list) */
@@ -15080,6 +15084,8 @@ export interface paths {
           open_on_branch_id?: string[]
           /** @description fixed on branch id: any of (comma list) */
           fixed_on_branch_id?: string[]
+          /** @description branch only equals */
+          branch_only?: boolean
           /** @description component id: any of (comma list) */
           component_id?: string[]
           /** @description component id: none of (comma list) */
@@ -15393,6 +15399,8 @@ export interface paths {
           open_on_branch_id?: string[]
           /** @description fixed on branch id: any of (comma list) */
           fixed_on_branch_id?: string[]
+          /** @description branch only equals */
+          branch_only?: boolean
           /** @description component id: any of (comma list) */
           component_id?: string[]
           /** @description component id: none of (comma list) */
@@ -15852,6 +15860,8 @@ export interface paths {
           open_on_branch_id?: string[]
           /** @description fixed on branch id: any of (comma list) */
           fixed_on_branch_id?: string[]
+          /** @description branch only equals */
+          branch_only?: boolean
           /** @description component id: any of (comma list) */
           component_id?: string[]
           /** @description component id: none of (comma list) */
@@ -38985,6 +38995,11 @@ export interface components {
       attack_prerequisites?: string
       baseline_state?: string
       branch_id?: string
+      /**
+       * @description BranchOnly: seen only on branches that do not count as exposure (a
+       *     feature or merge-request branch); left out of exposure views.
+       */
+      branch_only?: boolean
       comments_count?: number
       compliance_control_description?: string
       compliance_control_id?: string

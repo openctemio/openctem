@@ -2114,6 +2114,7 @@ func (r *FindingRepository) selectQuery() string {
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
+			branch_only,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2244,6 +2245,8 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		createdBy sql.NullString
 		// Provenance channel — nullable; NULL means unrecorded.
 		ingestChannel sql.NullString
+		// Branch-only mark (migration 001131)
+		branchOnly bool
 		// Data flow flag
 		hasDataFlow bool
 	)
@@ -2280,7 +2283,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	dests = append(dests, typeCols.dests()...)
 	dests = append(dests, netCols.dests()...)
 	dests = append(dests, scanCols.dests()...)
-	dests = append(dests, &hasDataFlow)
+	dests = append(dests, &branchOnly, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
 	}
@@ -2327,6 +2330,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	f.RestoreTypeDetails(typeCols.details())
 	f.RestoreNetwork(netCols.location())
 	f.RestoreScannerDetails(scanCols.details())
+	f.RestoreBranchOnly(branchOnly)
 	return f, nil
 }
 
@@ -3695,7 +3699,14 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 		return 0, fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	return affected, nil
+	// Branch-only findings no live branch still shows
+	// (docs/architecture/branch-only-findings.md).
+	gone, err := r.expireBranchOnlyFindings(ctx, tenantID, defaultExpiryDays)
+	if err != nil {
+		return affected, err
+	}
+
+	return affected + gone, nil
 }
 
 // CountBySeverityForScan returns the count of findings grouped by severity for a scan.
@@ -3847,6 +3858,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
+			branch_only,
 			FALSE AS has_data_flow
 		FROM findings
 	`
