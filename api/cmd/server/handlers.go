@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"net/url"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
@@ -22,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -729,7 +732,21 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
-	return h.SetReview(easmapp.NewReviewService(repos.Attribution, svc.DataScope), audit)
+	review := easmapp.NewReviewService(repos.Attribution, svc.DataScope)
+	review.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	return h.SetReview(review, audit)
+}
+
+// easmDecisionEffects reclassifies the decided assets' findings now and, on a
+// rejection, resolves the name's EASM exposures (research/22 P0-9).
+func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger) *easmapp.DecisionEffects {
+	var reclassify easmapp.AssetReclassifier
+	if pub := svc.ControlChangePub; pub != nil {
+		reclassify = func(ctx context.Context, tenantID shared.ID, ids []shared.ID) {
+			pub.PublishAssetReclassify(ctx, tenantID, ids, controller.ReasonAssetChange, "attribution decided")
+		}
+	}
+	return easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
 }
 
 // newEASMSeedHandler builds the seeds handler; every change is audited.
@@ -751,6 +768,7 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 	if svc.Audit != nil {
 		h.SetAuditService(svc.Audit)
 	}
+	h.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
 	return h
 }
 
