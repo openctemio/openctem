@@ -1,4 +1,4 @@
-### Added: sensor setup checklist from the sensor's config report (migration 001054)
+### Added: sensor setup checklist from the sensor's config report (migration 001061)
 
 - Sensors that see the hello feature `config_report` send the results of
   their preflight checks with `PUT /api/v2/sensor/config-report` (at most

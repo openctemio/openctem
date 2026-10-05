@@ -1,6 +1,6 @@
 package postgres
 
-// Sensor config reports (research/26, migration 001054): the latest
+// Sensor config reports (research/26, migration 001061): the latest
 // sanitized report per sensor and the sensor's pointer to it. Every query
 // is scoped to the sensor's tenant.
 

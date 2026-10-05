@@ -79,16 +79,16 @@ func TestSensorConfigReportStore_TenantScoped(t *testing.T) {
 	}
 }
 
-// Migration 001054 is additive and reversible on populated tables:
+// Migration 001061 is additive and reversible on populated tables:
 // replayed up -> down -> up in a rolled-back transaction with a sensor and
 // its report in place.
 func TestSensorConfigReportsMigration_UpDownUp(t *testing.T) {
 	ctx := context.Background()
-	up, err := os.ReadFile("../../../migrations/001054_sensor_config_reports.up.sql")
+	up, err := os.ReadFile("../../../migrations/001061_sensor_config_reports.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	down, err := os.ReadFile("../../../migrations/001054_sensor_config_reports.down.sql")
+	down, err := os.ReadFile("../../../migrations/001061_sensor_config_reports.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
