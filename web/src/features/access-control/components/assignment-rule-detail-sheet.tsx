@@ -145,7 +145,7 @@ export function AssignmentRuleDetailSheet({
     try {
       await updateAssignmentRule({
         name: editForm.name,
-        description: editForm.description || undefined,
+        description: editForm.description.trim(),
         priority: editForm.priority,
         target_group_id: editForm.target_group_id,
         is_active: editForm.is_active,

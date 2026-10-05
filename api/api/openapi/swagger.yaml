@@ -36295,7 +36295,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.UserResponse'
+            $ref: '#/definitions/internal_infra_http_handler.PreferencesDTO'
         "400":
           description: Bad Request
           schema:
