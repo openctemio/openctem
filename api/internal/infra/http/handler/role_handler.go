@@ -9,10 +9,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/openctemio/openctem/api/internal/app"
-
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
@@ -223,8 +221,8 @@ func toPermissionResponse(p *role.Permission) PermissionResponse {
 // Helpers
 // =============================================================================
 
-func (h *RoleHandler) buildAuditContext(r *http.Request) app.AuditContext {
-	actx := app.AuditContext{
+func (h *RoleHandler) buildAuditContext(r *http.Request) audit.AuditContext {
+	actx := audit.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),

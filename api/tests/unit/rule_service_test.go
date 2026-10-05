@@ -8,9 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
-
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/rule"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -629,7 +628,7 @@ func newRuleSvcTestDeps() *ruleSvcTestDeps {
 	syncHistoryRepo := newRuleSvcMockSyncHistoryRepo()
 	auditRepo := newRuleSvcMockAuditRepo()
 	log := logger.NewNop()
-	auditSvc := app.NewAuditService(auditRepo, log)
+	auditSvc := auditsvc.NewAuditService(auditRepo, log)
 
 	svc := accesscontrol.NewRuleService(
 		sourceRepo,

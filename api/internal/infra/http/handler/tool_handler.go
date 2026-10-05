@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
 	"github.com/go-chi/chi/v5"
@@ -22,7 +22,7 @@ import (
 // ToolHandler handles HTTP requests for tool registry.
 type ToolHandler struct {
 	service   *tool.Service
-	audit     *app.AuditService
+	audit     *auditsvc.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
@@ -39,7 +39,7 @@ func NewToolHandler(service *tool.Service, v *validator.Validator, log *logger.L
 // SetAuditService records changes to tools and to the tenant's tool
 // configuration in the tenant's audit log, with the state before and after
 // (RFC-040 §5.11).
-func (h *ToolHandler) SetAuditService(svc *app.AuditService) {
+func (h *ToolHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 

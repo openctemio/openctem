@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
@@ -57,7 +57,7 @@ type scanCommandGate interface {
 type CommandHandler struct {
 	service          *command.Service
 	scanGate         scanCommandGate
-	audit            *app.AuditService
+	audit            *auditsvc.AuditService
 	pipelineService  *pipelinesvc.Service
 	validationIngest validationEvidenceIngester
 	retestEvidence   retestEvidenceRecorder
@@ -81,7 +81,7 @@ func NewCommandHandler(svc *command.Service, v *validator.Validator, log *logger
 // the API in the tenant's audit log. A command makes a sensor run something on
 // the tenant's network; the sensor's own poll/ack/complete calls are not
 // audited here.
-func (h *CommandHandler) SetAuditService(svc *app.AuditService) {
+func (h *CommandHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 
@@ -306,7 +306,7 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event := app.NewSuccessEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, cmd.ID.String()).
+	event := auditsvc.NewSuccessEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, cmd.ID.String()).
 		WithResourceName(string(cmd.Type)).
 		WithMessage("Command " + string(cmd.Type) + " created")
 	if cmd.SensorID != nil {
@@ -340,7 +340,7 @@ func auditTargetList(targets []string) []string {
 // a scan command. A refusal is answered and audited here; ok is false then.
 func (h *CommandHandler) gateScanCommand(w http.ResponseWriter, r *http.Request, tenantID string, input *command.CreateInput) (*scanapp.GatedCommand, bool) {
 	deny := func(reason string) {
-		event := app.NewDeniedEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, "", reason).
+		event := auditsvc.NewDeniedEvent(audit.ActionCommandCreated, audit.ResourceTypeCommand, "", reason).
 			WithResourceName(input.Type).
 			WithMessage("Scan command refused: " + reason)
 		if input.SensorID != "" {
@@ -1117,10 +1117,9 @@ func (h *CommandHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
-	logRequestChange(h.audit, h.logger, r,
-		app.NewSuccessEvent(audit.ActionCommandCanceled, audit.ResourceTypeCommand, cmd.ID.String()).
-			WithResourceName(string(cmd.Type)).
-			WithMessage("Command "+string(cmd.Type)+" canceled"))
+	logRequestChange(h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionCommandCanceled, audit.ResourceTypeCommand, cmd.ID.String()).
+		WithResourceName(string(cmd.Type)).
+		WithMessage("Command "+string(cmd.Type)+" canceled"))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
@@ -1147,9 +1146,8 @@ func (h *CommandHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
-	logRequestChange(h.audit, h.logger, r,
-		app.NewSuccessEvent(audit.ActionCommandDeleted, audit.ResourceTypeCommand, commandID).
-			WithMessage("Command deleted"))
+	logRequestChange(h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionCommandDeleted, audit.ResourceTypeCommand, commandID).
+		WithMessage("Command deleted"))
 
 	w.WriteHeader(http.StatusNoContent)
 }
