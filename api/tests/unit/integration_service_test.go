@@ -2347,10 +2347,10 @@ func TestGetNotificationIntegration_NotANotification(t *testing.T) {
 // =============================================================================
 
 func TestValidateEventTypes_AllValid(t *testing.T) {
-	enabledModules := []string{"assets", "scans", "findings"}
+	enabledModules := []string{"assets", "findings", "sensors"}
 	eventTypes := []integration.EventType{
 		integration.EventTypeNewFinding,
-		integration.EventTypeScanCompleted,
+		integration.EventTypeSensorOffline,
 		integration.EventTypeNewAsset,
 	}
 
@@ -2376,18 +2376,18 @@ func TestValidateEventTypes_ModuleNotEnabled(t *testing.T) {
 	}
 }
 
-func TestValidateEventTypes_SystemEventsAlwaysValid(t *testing.T) {
-	// No modules enabled at all
-	enabledModules := []string{}
+// security_alert was never emitted and is no longer in the catalog, so a
+// channel cannot subscribe to it any more, whatever modules are on.
+func TestValidateEventTypes_NeverEmittedTypesAreInvalid(t *testing.T) {
+	enabledModules := []string{"assets", "scans", "findings", "sensors"}
 
-	eventTypes := []integration.EventType{
-		integration.EventTypeSecurityAlert, // system event, always valid
-		integration.EventTypeSystemError,   // system event, always valid
-	}
-
-	valid, invalidTypes := integration.ValidateEventTypes(eventTypes, enabledModules)
-	if !valid {
-		t.Errorf("system events should always be valid, got invalid: %v", invalidTypes)
+	valid, invalidTypes := integration.ValidateEventTypes([]integration.EventType{
+		integration.EventTypeSecurityAlert,
+		integration.EventTypeScanCompleted,
+		integration.EventTypeNewFinding,
+	}, enabledModules)
+	if valid || len(invalidTypes) != 2 {
+		t.Errorf("want security_alert and scan_completed invalid, got valid=%v invalid=%v", valid, invalidTypes)
 	}
 }
 

@@ -236,6 +236,9 @@ const (
 	FilterUnrecorded  = "unknown"
 	FilterUnconfirmed = "unconfirmed"
 	FilterApproved    = "approved"
+	// FilterAll asks for every asset whatever its attribution (no filter;
+	// research/22 P0-12: the web "Show all" sends it).
+	FilterAll = "all"
 )
 
 // StateFilter is a parsed attribution filter: the stored states to match,
@@ -264,6 +267,8 @@ func ParseFilter(values []string) (StateFilter, bool, error) {
 		switch v {
 		case "":
 			continue
+		case FilterAll:
+			return StateFilter{}, false, nil
 		case FilterUnrecorded:
 			f.Unrecorded = true
 		case FilterUnconfirmed:
