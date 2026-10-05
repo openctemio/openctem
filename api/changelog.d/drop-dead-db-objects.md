@@ -1,6 +1,6 @@
 ### Removed: database objects nothing used
 
-- Migration 001056 drops objects that had no reader or writer, all verified
+- Migration 001059 drops objects that had no reader or writer, all verified
   empty or unreferenced: the `deprecated` schema and its seven quarantined
   tables (000213), `webhook_deliveries` (outbound webhooks never delivered;
   the `webhooks` table stays for now), the views `v_assets_domain_summary`,
