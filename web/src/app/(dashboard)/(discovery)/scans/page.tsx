@@ -5,6 +5,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
+import { SensorOptInBanner } from '@/features/sensors/components/sensor-opt-in-banner'
 import {
   PageHeader,
   MetricStrip,
@@ -264,6 +265,10 @@ export default function ScansPage() {
             </Button>
           </Can>
         </PageHeader>
+
+        <div className="mt-4">
+          <SensorOptInBanner />
+        </div>
 
         <Tabs value={mainTab} onValueChange={setTabParam} className="mt-4">
           <TabsList>
