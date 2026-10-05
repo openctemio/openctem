@@ -86,7 +86,7 @@ cannot reopen one, recount its findings or record its outcome twice.
   Scoping IA decision D10 and have been **removed**: the
   `/api/v1/scope/schedules` API, the service, the repository and the
   `total_schedules` / `enabled_schedules` fields of `GET /scope/stats` are
-  gone, and migration 001061 drops `scan_schedules`. Schedules belong to the
+  gone, and migration 001067 drops `scan_schedules`. Schedules belong to the
   Scan; do not reintroduce a second scheduler.
 - **Interactsh** is off on the sensor unless the sensor-local policy and the
   job both allow it (RFC-040, RFC-046 D6).

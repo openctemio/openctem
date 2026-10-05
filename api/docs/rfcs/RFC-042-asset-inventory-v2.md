@@ -1749,7 +1749,7 @@ implementation, which honestly reverses 000205.
 - **Per-group cadence** creates or updates a scan that targets the group,
   through the existing scan scheduler (`api/internal/app/scan/scheduler.go`).
   This avoids a second scheduler; the inert scope-schedules feature
-  (Scoping IA D10) has since been removed (migration 001061 drops
+  (Scoping IA D10) has since been removed (migration 001067 drops
   `scan_schedules`).
 - **Sharing.**
   - Who can see a group is decided by RBAC (`assets:groups:read`) and the
