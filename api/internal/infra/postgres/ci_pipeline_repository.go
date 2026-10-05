@@ -213,9 +213,12 @@ UPDATE ci_pipelines p SET
     last_scan_failures = (SELECT scan_failures FROM last_eval),
     sensor_version = COALESCE((SELECT sensor_version FROM last_version), ''),
     tools = COALESCE((SELECT tools FROM last_tools), '[]'::jsonb),
-    median_interval_seconds = (SELECT LEAST(percentile_cont(0.5) WITHIN GROUP (ORDER BY gap), 2147483647)::int
+    -- NULL without two runs (LEAST would turn a NULL median into the cap).
+    median_interval_seconds = (SELECT CASE WHEN count(gap) = 0 THEN NULL
+        ELSE LEAST(percentile_cont(0.5) WITHIN GROUP (ORDER BY gap), 2147483647)::int END
         FROM gaps WHERE gap IS NOT NULL),
-    schedule_interval_seconds = (SELECT LEAST(percentile_cont(0.5) WITHIN GROUP (ORDER BY gap), 2147483647)::int
+    schedule_interval_seconds = (SELECT CASE WHEN count(gap) = 0 THEN NULL
+        ELSE LEAST(percentile_cont(0.5) WITHIN GROUP (ORDER BY gap), 2147483647)::int END
         FROM sched_gaps WHERE gap IS NOT NULL),
     updated_at = NOW()
 WHERE p.tenant_id = $1 AND p.id = $2`, tenantID.String(), pipelineID.String())
