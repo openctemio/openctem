@@ -37,7 +37,7 @@ var permSeedMigrations = []string{
 	"000774_dashboard_aggregate_permission.up.sql", // dashboard:aggregate (D6)
 	"001101_sensor_pairing.up.sql",                 // sensors:pair, :approve, :grant:narrow/widen, :revoke (RFC-052)
 	"001077_ci_runner_identity.up.sql",             // scans:ci:* (RFC-051)
-	"001110_scan_freeze_windows.up.sql",            // scans:freeze:override
+	"001115_scan_freeze_windows.up.sql",            // scans:freeze:override
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with

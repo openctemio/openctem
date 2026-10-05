@@ -157,7 +157,7 @@ for maintenance windows and change freezes. Passive (T0) work (subdomain
 discovery, DNS, code, dependency and image analysis), collection, connector
 syncs and ingest are never held.
 
-Data (migration `001110`): `scan_freeze_windows` with `scan_zone_id` (NULL =
+Data (migration `001115`): `scan_freeze_windows` with `scan_zone_id` (NULL =
 the whole organization; composite foreign key `(tenant_id, scan_zone_id)`,
 deleted with its zone), `name`, `timezone` (IANA), `recurrence`, `enabled`, and
 either `starts_at`/`ends_at` (`once`: two instants, at most 31 days, ending in
