@@ -663,8 +663,7 @@ type Services struct {
 	BusinessUnit *app.BusinessUnitService
 
 	// API Keys & Webhooks
-	APIKey  *apikey.Service
-	Webhook *app.WebhookService
+	APIKey *apikey.Service
 
 	// Jira Bidirectional Sync
 	JiraSync *jira.SyncService
@@ -1298,7 +1297,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// During an encryption-key rotation, keys hashed under the old key
 	// (APP_ENCRYPTION_KEY_PREVIOUS) keep authenticating.
 	s.APIKey.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
-	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 
 	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.
 	repos.ScimToken.SetKeyPepperID(crypto.PepperID(cfg.Encryption.Key))
@@ -1631,6 +1629,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),
 	)
+	// A scheduled run acts as the scan owner: refused without one, paused
+	// when the owner is no longer an active member (RFC-050 W2).
+	s.Scan.SetOwnerActivity(repos.AccessControl)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
 	// service from here on.

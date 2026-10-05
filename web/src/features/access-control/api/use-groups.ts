@@ -25,6 +25,11 @@ import type {
 } from '../types'
 
 const API_BASE = '/api/v1/groups'
+/**
+ * The caller's own groups: GET /api/v1/me/groups. Not `${API_BASE}/me`, which
+ * the API reads as group id "me" and answers 400 (invalid group id format).
+ */
+export const MY_GROUPS_URL = '/api/v1/me/groups'
 
 // Generic API response type - using Record for flexible property access
 type ApiResponse<T> = T[] | Record<string, T[] | unknown>
@@ -76,7 +81,7 @@ export function useGroups(filters?: GroupFilters) {
  */
 export function useMyGroups() {
   const { data, error, isLoading, mutate } = useSWR<{ groups: Group[] } | Group[]>(
-    `${API_BASE}/me`,
+    MY_GROUPS_URL,
     fetcher,
     {
       revalidateOnFocus: false,
