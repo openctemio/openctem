@@ -91,8 +91,6 @@ export const DEV_USER: AuthUser & {
     'integrations:scm:write',
     'integrations:notifications:read',
     'integrations:notifications:write',
-    'integrations:webhooks:read',
-    'integrations:webhooks:write',
     'integrations:api_keys:read',
     'integrations:api_keys:write',
     'integrations:pipelines:read',

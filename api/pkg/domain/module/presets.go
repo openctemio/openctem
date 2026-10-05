@@ -387,9 +387,9 @@ var presetOffensive = ModulePreset{
 		// Operations — recon scanning at scale
 		"scanner_templates", "template_sources", "scan_pipelines",
 		"scan_profiles", "tools", "iocs",
-		// Settings — webhook (bounty) + ticketing (pentest handoff)
+		// Settings — ticketing (pentest handoff)
 		"integrations", "integrations.scm", "integrations.cloud",
-		"integrations.scanners", "integrations.webhooks",
+		"integrations.scanners",
 		"integrations.ticketing", "integrations.notifications",
 	},
 }
@@ -640,7 +640,7 @@ var presetCTEMFull = ModulePreset{
 		"integrations", "integrations.scm", "integrations.cloud",
 		"integrations.ticketing", "integrations.notifications",
 		"integrations.siem", "integrations.scanners",
-		"integrations.pipelines", "integrations.webhooks",
+		"integrations.pipelines",
 		"integrations.api",
 	},
 }

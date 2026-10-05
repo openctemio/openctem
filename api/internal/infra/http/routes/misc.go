@@ -401,27 +401,6 @@ func registerPlatformStatsRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerWebhookRoutes registers webhook management routes.
-func registerWebhookRoutes(
-	router Router,
-	h *handler.WebhookHandler,
-	authMiddleware Middleware,
-	userSyncMiddleware Middleware,
-) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	router.Group("/api/v1/webhooks", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.WebhooksRead))
-		r.POST("/", h.Create, middleware.Require(permission.WebhooksWrite))
-		r.GET("/{id}", h.Get, middleware.Require(permission.WebhooksRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.WebhooksWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.WebhooksDelete))
-		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.WebhooksWrite))
-		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.WebhooksWrite))
-		r.GET("/{id}/deliveries", h.ListDeliveries, middleware.Require(permission.WebhooksRead))
-	}, tenantMiddlewares...)
-}
-
 // F-1: wire HMAC verification around the Jira webhook. The tenant query
 // param remains for routing, but the middleware now requires a valid
 // HMAC-SHA256 of the body signed with JIRA_WEBHOOK_SECRET before the

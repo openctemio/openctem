@@ -519,6 +519,26 @@ The `notification_history` table has been **removed** in migration `000075_drop_
 
 All related code (repository, service methods, API endpoints) has been removed.
 
+### Outbound webhooks `/api/v1/webhooks` (REMOVED)
+
+`/api/v1/webhooks` stored endpoint URLs and signing secrets, but no worker
+ever delivered to them. Nothing was sent, and nothing wrote
+`webhook_deliveries`. Owner decision B9 removed the feature: the routes,
+handler, service, repository and domain package are gone. Migration `001012`
+does three things:
+
+- archives and removes the `integrations:webhooks:*` permissions and their role
+  grants (the down migration restores them);
+- deprecates the `integrations.webhooks` module toggle;
+- keeps the `webhooks` and `webhook_deliveries` tables untouched (no data is
+  destroyed).
+
+For outbound delivery, use a notification channel (Slack, Teams, Telegram,
+email, or a custom webhook channel, all sent through the outbox) or the SIEM
+integration. Inbound webhooks (`/api/v1/webhooks/incoming/*`, HMAC-verified)
+are unaffected. `tests/unit/outbound_webhooks_removed_test.go` keeps the
+permissions and the module toggle from coming back without a sender.
+
 ## Related Documents
 
 - [Clean Architecture](./clean-arch.md)

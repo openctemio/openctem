@@ -63,7 +63,6 @@ DELETE /api/v1/tenants/{}/invitations/{}
 DELETE /api/v1/tenants/{}/members/{}
 DELETE /api/v1/threat-actors/{}
 DELETE /api/v1/users/{}/roles/{}
-DELETE /api/v1/webhooks/{}
 DELETE /api/v1/workflows/{}
 DELETE /api/v1/workflows/{}/edges/{}
 DELETE /api/v1/workflows/{}/nodes/{}
@@ -240,9 +239,6 @@ GET /api/v1/users/{}/roles
 GET /api/v1/validation/coverage
 GET /api/v1/verification-checklists/{}
 GET /api/v1/vulnerabilities/cve/{}/affected-assets
-GET /api/v1/webhooks
-GET /api/v1/webhooks/{}
-GET /api/v1/webhooks/{}/deliveries
 GET /api/v1/workflow-runs
 GET /api/v1/workflow-runs/{}
 GET /api/v1/workflows
@@ -403,11 +399,8 @@ POST /api/v1/threat-intel/enrich
 POST /api/v1/threat-models/generate
 POST /api/v1/users/{}/roles
 POST /api/v1/validation/evidence
-POST /api/v1/webhooks
 POST /api/v1/webhooks/incoming/github
 POST /api/v1/webhooks/incoming/jira
-POST /api/v1/webhooks/{}/disable
-POST /api/v1/webhooks/{}/enable
 POST /api/v1/workflow-runs/{}/cancel
 POST /api/v1/workflows
 POST /api/v1/workflows/{}/edges
@@ -439,7 +432,6 @@ PUT /api/v1/tenants/{}/settings/asset-lifecycle
 PUT /api/v1/tenants/{}/settings/asset-source
 PUT /api/v1/users/{}/roles
 PUT /api/v1/verification-checklists/{}
-PUT /api/v1/webhooks/{}
 PUT /api/v1/workflows/{}
 PUT /api/v1/workflows/{}/graph
 PUT /api/v1/workflows/{}/nodes/{}

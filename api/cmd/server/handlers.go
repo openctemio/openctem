@@ -382,8 +382,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		BusinessService: handler.NewBusinessServiceHandler(deps.DB.DB, log).WithDataScope(svc.DataScope),
 
 		// API Keys & Webhooks
-		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
-		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),
+		APIKey: handler.NewAPIKeyHandler(svc.APIKey, v, log),
 
 		// AI Triage (always initialized - handler returns 503 if service is nil)
 		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
