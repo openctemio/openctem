@@ -206,8 +206,8 @@ export interface PentestConfigOption {
 }
 
 export interface PentestSettings {
-  campaign_types?: PentestConfigOption[]
-  methodologies?: PentestConfigOption[]
+  campaign_types?: PentestConfigOption[] | null
+  methodologies?: PentestConfigOption[] | null
 }
 
 /** Top-level settings sections, as keyed in TenantSettings.etags. */

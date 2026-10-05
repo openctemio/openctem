@@ -226,9 +226,14 @@ type BranchSettings struct {
 }
 
 // PentestSettings holds pentest-related configuration per tenant.
+//
+// A nil list means "never configured" (clients show their built-in
+// defaults); an empty, non-nil list means the organization cleared it on
+// purpose. The fields therefore have no omitempty: with it, a cleared list was
+// dropped on save and came back as the defaults on the next read.
 type PentestSettings struct {
-	CampaignTypes []ConfigOption `json:"campaign_types,omitempty"`
-	Methodologies []ConfigOption `json:"methodologies,omitempty"`
+	CampaignTypes []ConfigOption `json:"campaign_types"`
+	Methodologies []ConfigOption `json:"methodologies"`
 }
 
 // ConfigOption represents a configurable option with value and label.
