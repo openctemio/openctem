@@ -5,7 +5,7 @@
 
 'use client'
 
-import useSWR from 'swr'
+import useSWR, { mutate as globalMutate } from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { get, post, del } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
@@ -21,15 +21,36 @@ interface APIKeyListResponse {
   total_pages: number
 }
 
-export function useApiKeys() {
+export interface APIKeyListParams {
+  /** 1-based, as the API pages. */
+  page?: number
+  perPage?: number
+  search?: string
+}
+
+/** The list key: every page of the list starts with BASE_URL. */
+export function apiKeysListKey(params: APIKeyListParams = {}): string {
+  const q = new URLSearchParams()
+  q.set('page', String(Math.max(1, params.page ?? 1)))
+  q.set('per_page', String(params.perPage ?? 20))
+  if (params.search) q.set('search', params.search)
+  return `${BASE_URL}?${q.toString()}`
+}
+
+/** Revalidate every cached page of the list after a create/revoke/delete. */
+function revalidateApiKeyLists() {
+  return globalMutate((key) => typeof key === 'string' && key.startsWith(`${BASE_URL}?`))
+}
+
+/**
+ * One server page of API keys. The list used to fetch a single capped page
+ * (`per_page=100`) and page it in the browser, hiding every key past it
+ * (23a B20).
+ */
+export function useApiKeys(params: APIKeyListParams = {}) {
   const { currentTenant } = useTenant()
-  return useSWR<APIKeyListResponse>(
-    // Same key the mutation hooks bind to, so SWR's automatic post-mutation
-    // revalidation actually hits this subscription. A query string here (e.g.
-    // `?per_page=100`) silently breaks that match, leaving the list stale
-    // whenever a caller forgets an explicit mutate().
-    currentTenant ? BASE_URL : null,
-    (url: string) => get<APIKeyListResponse>(`${url}?per_page=100`)
+  return useSWR<APIKeyListResponse>(currentTenant ? apiKeysListKey(params) : null, (url: string) =>
+    get<APIKeyListResponse>(url)
   )
 }
 
@@ -37,8 +58,11 @@ export function useCreateApiKey() {
   const { currentTenant } = useTenant()
   return useSWRMutation(
     currentTenant ? BASE_URL : null,
-    async (url: string, { arg }: { arg: CreateAPIKeyRequest }) =>
-      post<CreateAPIKeyResponse>(url, arg)
+    async (url: string, { arg }: { arg: CreateAPIKeyRequest }) => {
+      const res = await post<CreateAPIKeyResponse>(url, arg)
+      void revalidateApiKeyLists()
+      return res
+    }
   )
 }
 
@@ -46,7 +70,10 @@ export function useRevokeApiKey() {
   const { currentTenant } = useTenant()
   return useSWRMutation(
     currentTenant ? BASE_URL : null,
-    async (_url: string, { arg }: { arg: string }) => post<void>(`${BASE_URL}/${arg}/revoke`, {})
+    async (_url: string, { arg }: { arg: string }) => {
+      await post<void>(`${BASE_URL}/${arg}/revoke`, {})
+      void revalidateApiKeyLists()
+    }
   )
 }
 
@@ -54,6 +81,9 @@ export function useDeleteApiKey() {
   const { currentTenant } = useTenant()
   return useSWRMutation(
     currentTenant ? BASE_URL : null,
-    async (_url: string, { arg }: { arg: string }) => del<void>(`${BASE_URL}/${arg}`)
+    async (_url: string, { arg }: { arg: string }) => {
+      await del<void>(`${BASE_URL}/${arg}`)
+      void revalidateApiKeyLists()
+    }
   )
 }

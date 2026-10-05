@@ -158,6 +158,9 @@ type MemberSearchFilters struct {
 	// "offboarded", or "all". Empty lists active and suspended members (not
 	// the offboarded tombstones).
 	Status string
+	// Role filters on the effective system role (owner, admin, member,
+	// viewer); empty = any.
+	Role string
 }
 
 // Member status filter values for MemberSearchFilters.Status.
