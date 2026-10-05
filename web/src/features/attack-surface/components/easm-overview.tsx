@@ -106,7 +106,7 @@ export function EASMOverview() {
                 <Row label="Confirmed ours" value={a?.confirmed ?? 0} />
                 <Row
                   label="Needs review"
-                  value={a?.needs_review ?? 0}
+                  value={(a?.needs_review ?? 0) + (a?.candidate ?? 0)}
                   hint={
                     (a?.needs_review ?? 0) + (a?.candidate ?? 0) > 0 ? (
                       <>
