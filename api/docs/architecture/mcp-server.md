@@ -66,6 +66,10 @@ plaintext `oct_…` once).
   needs — a scopeless key can call nothing.
 - **Offboarding**: a user-scoped key stops authenticating the moment its owner's
   membership is suspended or removed.
+- **Network policy**: the organization IP allowlist (`security.ip_whitelist`)
+  runs right after key auth, exactly as for the same key on the REST API: a key
+  used from outside the listed networks gets `403 IP_NOT_ALLOWED` on both. The
+  chain is `[per-IP rate limit, key auth, IP allowlist]` (`routes/mcp.go`).
 - **Rate limit**: a per-IP limiter runs before auth. List tools clamp to ≤100 rows.
 - **Errors**: internal errors are redacted; only input-validation messages surface.
 

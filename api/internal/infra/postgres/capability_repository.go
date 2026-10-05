@@ -497,11 +497,14 @@ func (r *CapabilityRepository) CountByTenant(ctx context.Context, tenantID share
 	return count, nil
 }
 
-// GetCategories returns all unique capability categories.
-func (r *CapabilityRepository) GetCategories(ctx context.Context) ([]string, error) {
-	query := "SELECT DISTINCT category FROM capabilities WHERE category IS NOT NULL ORDER BY category"
+// GetCategories returns the unique categories of platform capabilities and of
+// the tenant's own custom capabilities (never another tenant's labels).
+func (r *CapabilityRepository) GetCategories(ctx context.Context, tenantID shared.ID) ([]string, error) {
+	query := `SELECT DISTINCT category FROM capabilities
+		WHERE category IS NOT NULL AND (tenant_id IS NULL OR tenant_id = $1)
+		ORDER BY category`
 
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get capability categories: %w", err)
 	}
@@ -526,11 +529,16 @@ func (r *CapabilityRepository) GetCategories(ctx context.Context) ([]string, err
 // GetUsageStats returns usage statistics for a capability.
 // Checks both the tool_capabilities junction table AND tools.capabilities array
 // Also checks sensors.capabilities array for sensor counts.
-func (r *CapabilityRepository) GetUsageStats(ctx context.Context, capabilityID shared.ID) (*capability.CapabilityUsageStats, error) {
+//
+// Tenant isolation: only the caller's own tools and sensors are counted and
+// named, plus platform tools (tenant_id IS NULL), which are public catalog
+// data. Another tenant's sensors and custom tools are never visible.
+func (r *CapabilityRepository) GetUsageStats(ctx context.Context, tenantID, capabilityID shared.ID) (*capability.CapabilityUsageStats, error) {
 	// First get the capability name (needed for array lookups)
 	var capName string
-	nameQuery := "SELECT name FROM capabilities WHERE id = $1"
-	err := r.db.QueryRowContext(ctx, nameQuery, capabilityID.String()).Scan(&capName)
+	// A capability is visible to its owning tenant and, when tenant_id IS NULL, to everyone.
+	nameQuery := "SELECT name FROM capabilities WHERE id = $1 AND (tenant_id IS NULL OR tenant_id = $2)"
+	err := r.db.QueryRowContext(ctx, nameQuery, capabilityID.String(), tenantID.String()).Scan(&capName)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: capability not found", shared.ErrNotFound)
@@ -545,12 +553,12 @@ func (r *CapabilityRepository) GetUsageStats(ctx context.Context, capabilityID s
 		SELECT DISTINCT t.name
 		FROM tools t
 		LEFT JOIN tool_capabilities tc ON tc.tool_id = t.id AND tc.capability_id = $1
-		WHERE tc.capability_id IS NOT NULL
-		   OR $2 = ANY(t.capabilities)
+		WHERE (t.tenant_id IS NULL OR t.tenant_id = $3)
+		  AND (tc.capability_id IS NOT NULL OR $2 = ANY(t.capabilities))
 		ORDER BY t.name
 		LIMIT 10
 	`
-	toolRows, err := r.db.QueryContext(ctx, toolQuery, capabilityID.String(), capName)
+	toolRows, err := r.db.QueryContext(ctx, toolQuery, capabilityID.String(), capName, tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to count tools: %w", err)
 	}
@@ -571,11 +579,11 @@ func (r *CapabilityRepository) GetUsageStats(ctx context.Context, capabilityID s
 	// Count sensors with this capability (via array)
 	sensorQuery := `
 		SELECT name FROM sensors
-		WHERE $1 = ANY(capabilities)
+		WHERE tenant_id = $2 AND $1 = ANY(capabilities)
 		ORDER BY name
 		LIMIT 10
 	`
-	sensorRows, err := r.db.QueryContext(ctx, sensorQuery, capName)
+	sensorRows, err := r.db.QueryContext(ctx, sensorQuery, capName, tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to count sensors: %w", err)
 	}
@@ -599,7 +607,8 @@ func (r *CapabilityRepository) GetUsageStats(ctx context.Context, capabilityID s
 // GetUsageStatsBatch returns usage statistics for multiple capabilities.
 // Performance: Uses single queries with UNNEST to avoid N+1 problem.
 // Total queries: 3 (names, tools, sensors) regardless of batch size.
-func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilityIDs []shared.ID) (map[shared.ID]*capability.CapabilityUsageStats, error) {
+// Tenant isolation is the same as GetUsageStats.
+func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, tenantID shared.ID, capabilityIDs []shared.ID) (map[shared.ID]*capability.CapabilityUsageStats, error) {
 	if len(capabilityIDs) == 0 {
 		return map[shared.ID]*capability.CapabilityUsageStats{}, nil
 	}
@@ -619,8 +628,13 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilit
 	placeholderStr := strings.Join(placeholders, ", ")
 
 	// Query 1: Get capability id->name mapping
-	nameQuery := fmt.Sprintf("SELECT id, name FROM capabilities WHERE id IN (%s)", placeholderStr)
-	nameRows, err := r.db.QueryContext(ctx, nameQuery, args...)
+	// (only capabilities the tenant may see: its own or platform ones).
+	// The tenant is the parameter after the capability ids in every query below.
+	tenantParam := fmt.Sprintf("$%d", len(args)+1)
+	tenantArgs := append(append(make([]any, 0, len(args)+1), args...), tenantID.String())
+	nameQuery := fmt.Sprintf("SELECT id, name FROM capabilities WHERE id IN (%s) AND (tenant_id IS NULL OR tenant_id = %s)",
+		placeholderStr, tenantParam)
+	nameRows, err := r.db.QueryContext(ctx, nameQuery, tenantArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get capability names: %w", err)
 	}
@@ -649,10 +663,12 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilit
 		FROM capabilities c
 		LEFT JOIN tool_capabilities tc ON tc.capability_id = c.id
 		LEFT JOIN tools t ON (tc.tool_id = t.id OR c.name = ANY(t.capabilities))
+			AND (t.tenant_id IS NULL OR t.tenant_id = ` + tenantParam + `)
 		WHERE c.id IN (` + placeholderStr + `)
+		  AND (c.tenant_id IS NULL OR c.tenant_id = ` + tenantParam + `)
 		GROUP BY c.id
 	`
-	toolRows, err := r.db.QueryContext(ctx, toolQuery, args...)
+	toolRows, err := r.db.QueryContext(ctx, toolQuery, tenantArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count tools: %w", err)
 	}
@@ -684,12 +700,14 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilit
 			nameArgs[i] = name
 		}
 
+		sensorTenantParam := fmt.Sprintf("$%d", len(nameArgs)+1)
 		sensorQuery := `
 			SELECT cap_name, COUNT(DISTINCT a.id) as sensor_count
 			FROM UNNEST(ARRAY[` + strings.Join(namePlaceholders, ", ") + `]::text[]) AS cap_name
-			LEFT JOIN sensors a ON cap_name = ANY(a.capabilities)
+			LEFT JOIN sensors a ON cap_name = ANY(a.capabilities) AND a.tenant_id = ` + sensorTenantParam + `
 			GROUP BY cap_name
 		`
+		nameArgs = append(nameArgs, tenantID.String())
 		sensorRows, err := r.db.QueryContext(ctx, sensorQuery, nameArgs...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to count sensors: %w", err)
