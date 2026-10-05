@@ -95,6 +95,9 @@ type CoverageRepository interface {
 	FireAlert(ctx context.Context, tenantID shared.ID, a Alert, at time.Time) (bool, error)
 	ClearAlert(ctx context.Context, tenantID, subjectID shared.ID, kind AlertKind) error
 	PipelineTenantsForPlatform(ctx context.Context) ([]shared.ID, error)
+	// TokenRefusalsSince counts the tenant's refused CI token exchanges
+	// (audited, so verified tokens only) since the time.
+	TokenRefusalsSince(ctx context.Context, tenantID shared.ID, since time.Time) (int, error)
 	MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *Pipeline) ([]shared.ID, error)
 	RetirePipeline(ctx context.Context, tenantID, pipelineID shared.ID, by *shared.ID, reason string, at time.Time) (*Pipeline, []shared.ID, error)
 }

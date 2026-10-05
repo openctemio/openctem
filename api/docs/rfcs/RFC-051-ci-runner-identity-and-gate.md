@@ -163,7 +163,8 @@ prefix of at least 7 hex characters) of one repository passes until the
 override expires (default 24 hours, at most 7 days) or is revoked. A reason of
 10 to 2000 characters is required. Creating, revoking and every use
 (`ci_gate_override.used`, with the run and the blocking count) are audited at
-high severity.
+high severity. Creating and every use also notify every active owner and
+administrator in-app and the `ci.break_glass` channel event.
 
 ## 7. Runner
 
@@ -374,8 +375,14 @@ per run. The job runs every 15 minutes on one replica.
 | `ci.coverage_regression` | repository | has active pipelines, none fresh | on |
 | `ci.gate_failing` | pipeline | last default-branch verdict failed | opt-in |
 | `ci.runner_outdated` | pipeline | runner below `SENSOR_MIN_VERSION` | on |
+| `ci.token_refusals` | tenant | at least 20 refused token exchanges (verified tokens, so audited) in 30 minutes | on |
 
-Revoked, retired and archived pipelines raise nothing.
+Revoked, retired and archived pipelines raise nothing. The job walks every
+tenant with a pipeline or a trust configuration.
+
+`ci.break_glass` (on by default) is sent when a break-glass is created and each
+time it lets a failing run pass, not through the alert state; the same notice
+goes in-app to every active owner and administrator of the organization.
 
 | Endpoint | Permission |
 |---|---|

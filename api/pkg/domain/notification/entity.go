@@ -58,6 +58,9 @@ const (
 	// needs them: a disable paused schedules, or a deprovisioned member still
 	// owns work to reassign.
 	TypeMemberLifecycle = "member_lifecycle"
+	// TypeCISecurity tells administrators about a CI gate security event
+	// (break-glass created or used).
+	TypeCISecurity = "ci_security"
 )
 
 // Notification represents an in-app notification.
