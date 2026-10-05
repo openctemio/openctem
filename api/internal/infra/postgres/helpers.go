@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -177,24 +176,6 @@ func nullBytes(b []byte) any {
 		return nil
 	}
 	return b
-}
-
-// toJSONB marshals a value to JSON bytes for JSONB columns.
-// Returns nil if the value is nil.
-func toJSONB(v any) ([]byte, error) {
-	if v == nil {
-		return nil, nil
-	}
-	return json.Marshal(v)
-}
-
-// fromJSONB unmarshals JSON bytes from a JSONB column into the target.
-// Does nothing if data is nil or empty.
-func fromJSONB(data []byte, target any) error {
-	if len(data) == 0 {
-		return nil
-	}
-	return json.Unmarshal(data, target)
 }
 
 // unmarshalJSONBMap decodes JSONB bytes into a map.
