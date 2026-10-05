@@ -329,13 +329,6 @@ func (s *TenantService) LogAuditEvent(ctx context.Context, actx auditapp.AuditCo
 	s.logAudit(ctx, actx, event)
 }
 
-// hasTenantModule checks if a tenant has access to a specific module.
-// In OSS edition, all modules are enabled by default.
-func (s *TenantService) hasTenantModule(ctx context.Context, tenantID string, moduleID string) (bool, error) {
-	// OSS edition: all modules are enabled
-	return true, nil
-}
-
 // =============================================================================
 // Tenant Operations
 // =============================================================================
@@ -416,7 +409,17 @@ type UpdateTenantInput struct {
 	Slug        *string `json:"slug" validate:"omitempty,min=3,max=100,slug"`
 	Description *string `json:"description" validate:"omitempty,max=500"`
 	LogoURL     *string `json:"logo_url" validate:"omitempty,url,max=500"`
+	// CallerIsOwner is set by the handler from the caller's membership role.
+	// Renaming the slug is owner-only (owner decision B13).
+	CallerIsOwner bool `json:"-"`
 }
+
+// ErrSlugChangeOwnerOnly: only the organization owner may rename the slug.
+var ErrSlugChangeOwnerOnly = fmt.Errorf("%w: only the organization owner can change the slug", shared.ErrForbidden)
+
+// ErrSlugChangeWithSSO: SAML/SSO sign-in URLs are keyed by the slug, so it is
+// frozen while an identity provider is configured.
+var ErrSlugChangeWithSSO = fmt.Errorf("%w: the slug cannot change while single sign-on is configured; the SSO sign-in URLs registered at your identity provider use it", shared.ErrValidation)
 
 // UpdateTenant updates a tenant's information.
 func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input UpdateTenantInput, actx auditapp.AuditContext) (*tenantdom.Tenant, error) {
@@ -438,6 +441,18 @@ func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input
 	}
 
 	if input.Slug != nil && *input.Slug != t.Slug() {
+		if !input.CallerIsOwner {
+			return nil, ErrSlugChangeOwnerOnly
+		}
+		if s.ssoPathChecker != nil {
+			usable, err := s.ssoPathChecker.HasUsableSSOPath(ctx, t.Slug())
+			if err != nil {
+				return nil, fmt.Errorf("failed to check SSO configuration: %w", err)
+			}
+			if usable {
+				return nil, ErrSlugChangeWithSSO
+			}
+		}
 		// Check if new slug already exists
 		exists, err := s.repo.ExistsBySlug(ctx, *input.Slug)
 		if err != nil {
@@ -1774,73 +1789,6 @@ func (s *TenantService) auditSensorOptIn(ctx context.Context, actx auditapp.Audi
 		WithMetadata("from", from).
 		WithMetadata("to", to)
 	s.logAudit(ctx, actx, event)
-}
-
-// UpdateAPISettingsInput is a partial-update payload. Scalars are pointers
-// (nil == keep existing); WebhookEvents uses nil-vs-[] (absent => keep,
-// explicit [] => clear). This stops toggling api_key_enabled from wiping the
-// webhook URL/secret/events.
-type UpdateAPISettingsInput struct {
-	APIKeyEnabled *bool    `json:"api_key_enabled"`
-	WebhookURL    *string  `json:"webhook_url"` // url format checked in domain Validate
-	WebhookSecret *string  `json:"webhook_secret"`
-	WebhookEvents []string `json:"webhook_events"`
-}
-
-// UpdateAPISettings updates only the API settings.
-func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, input UpdateAPISettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	var before tenantdom.APISettings
-	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionAPI, func(t *tenantdom.Tenant) error {
-		before = t.TypedSettings().API
-		// Check plan limits for API via licensing service. Only gate when this
-		// request explicitly asserts API access enabled.
-		if input.APIKeyEnabled != nil && *input.APIKeyEnabled {
-			hasAPIModule, err := s.hasTenantModule(ctx, tenantID, "api")
-			if err != nil {
-				s.logger.Warn("failed to check API module access", "tenant_id", tenantID, "error", err)
-			}
-			if !hasAPIModule {
-				return fmt.Errorf("%w: API access is not available on your plan", shared.ErrValidation)
-			}
-		}
-
-		// Partial merge: start from the persisted section and overlay only the
-		// fields the client actually sent. Omitted fields are preserved.
-		api := t.TypedSettings().API
-		if input.APIKeyEnabled != nil {
-			api.APIKeyEnabled = *input.APIKeyEnabled
-		}
-		if input.WebhookURL != nil {
-			api.WebhookURL = *input.WebhookURL
-		}
-		if input.WebhookSecret != nil {
-			api.WebhookSecret = *input.WebhookSecret
-		}
-		if input.WebhookEvents != nil {
-			webhookEvents := make([]tenantdom.WebhookEvent, len(input.WebhookEvents))
-			for i, e := range input.WebhookEvents {
-				webhookEvents[i] = tenantdom.WebhookEvent(e)
-			}
-			api.WebhookEvents = webhookEvents
-		}
-
-		return t.UpdateAPISettings(api)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	s.logger.Info("API settings updated", "tenant_id", tenantID)
-
-	// Log audit event
-	actx.TenantID = tenantID
-	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
-		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().API)).
-		WithMessage("API settings updated")
-	s.logAudit(ctx, actx, event)
-
-	result := t.TypedSettings()
-	return &result, nil
 }
 
 // UpdateBrandingSettingsInput is a partial-update payload: pointer fields so a

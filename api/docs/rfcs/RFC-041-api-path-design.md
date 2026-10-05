@@ -220,10 +220,9 @@ Impact is ranked on three questions:
   `/settings/api`), data-scope policy, module toggles, members and roles.
 - The admin console addresses tenants a third way:
   `/api/v1/admin/tenants/{tenantId}`.
-- Every security vendor surveyed (§4.4) derives the tenant from the
-  credential, never from the path. GitHub and Azure ARM use a path owner
-  because one credential spans many owners. OpenCTEM's tokens are
-  per-tenant, so the path tenant is redundant input that has to be checked.
+- A tenant in the path is only needed when one credential spans many
+  owners. OpenCTEM's tokens are per-tenant, so the path tenant is redundant
+  input that has to be checked (§4.3 rule 1).
 
 #### P2. Planes are not separable by prefix (security, RFC-040)
 
@@ -434,7 +433,7 @@ callers, but it changes the path keys in `web/src/lib/api/generated/api.types.ts
   authenticator runs there, and user JWTs, cookies and `oct_` keys get a
   401. It is already what a "sensor gateway prefix" should be.
 
-## 4. Standards and peers
+## 4. Standards
 
 ### 4.1 What the guides say
 
@@ -465,8 +464,7 @@ Sources:
 
 ### 4.2 Where the guides disagree, and the choice
 
-- **Path versioning.** Azure and Zalando forbid it; Google, GitHub, Stripe and
-  CrowdStrike use it.
+- **Path versioning.** Azure and Zalando forbid it; Google AIP uses it.
   - OpenCTEM has a major version in the path on every plane, and its sensors
     already negotiate features through `GET /api/v2/sensor/hello`.
   - Changing the versioning scheme would be churn without benefit. The rule
@@ -500,23 +498,8 @@ These come from OWASP API Security Top 10 2023 and the REST cheat sheet.
 4. **No secrets in URLs.** Tokens go in headers or the body.
 5. **Reads are safe.** A `GET` never changes state (RFC 9110 §9.2.1).
 
-### 4.4 Peers
-
-| Product | Tenancy | Planes and hosts | Versioning |
-|---|---|---|---|
-| Tenable Vulnerability Management | from the API key (`X-ApiKeys`), never in the path | `cloud.tenable.com`; legacy unversioned roots (`/scans`, `/workbenches/assets`, `POST /vulns/export` → poll `/status`) next to `/api/v3/...` kebab-case with `_verb` actions | mixed; legacy and v3 coexist on one host |
-| Tenable Security Center | from the API key | `/rest/<resource>` on-prem | — |
-| Qualys | from the account; regional pod host | separate "API server" and "API gateway" hosts per pod | `/api/2.0/fo/asset/host/?action=list`: the verb-in-query anti-pattern, GET or POST interchangeable |
-| Rapid7 InsightVM / Insight | from the key; regional host `<region>.api.insight.rapid7.com` | console API `/api/3/...` | major in path |
-| GitHub | owner in the path (`/orgs/{org}`, `/repos/{owner}/{repo}`), because one token spans owners | `api.github.com` plus `uploads.github.com` for binary uploads; GHES `/api/v3` | dated header `X-GitHub-Api-Version`, 24-month support, `410` after |
-| ProjectDiscovery Cloud | key plus team header `X-Team-Id` | `api.projectdiscovery.io/v1/...` | major in path |
-| CrowdStrike Falcon | from the OAuth client | regional API hosts | version **per endpoint** at the end (`/devices/queries/devices/v1`) |
-| Azure ARM | subscription in the path | control plane `management.azure.com`, data plane per-resource hosts; RBAC differs per plane | `api-version` query |
-
-The pattern for security vendors is a tenant from the credential, a region
-or plane in the **host**, and major versions that coexist for years.
-OpenCTEM's token-tenant model already matches it. The `/tenants/{tenant}`
-model is the outlier.
+OpenCTEM's token-tenant model follows rule 1, and a region or plane can live
+in the host. The `/tenants/{tenant}` model is the outlier.
 
 ## 5. Options
 
