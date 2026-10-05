@@ -18,7 +18,7 @@ type fakeStepGate struct {
 	err error
 }
 
-func (f *fakeStepGate) FilterStepTargets(context.Context, string, map[string]any) (*scanapp.StepTargets, error) {
+func (f *fakeStepGate) FilterStepTargets(context.Context, shared.ID, string, map[string]any) (*scanapp.StepTargets, error) {
 	return f.out, f.err
 }
 
@@ -85,3 +85,7 @@ func TestStepDispatch_SendsOnlyCompatibleTargets(t *testing.T) {
 		t.Fatalf("context targets = %v", ctx["targets"])
 	}
 }
+
+// The fake must keep satisfying the interface the dispatcher type-asserts,
+// or the gate is silently skipped and these tests prove nothing.
+var _ StepTargetFilter = (*fakeStepGate)(nil)

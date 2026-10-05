@@ -1,6 +1,6 @@
 # REST API Improvements Roadmap
 
-Based on industry best practices from GitHub, Stripe, and Twilio APIs.
+Improvements to bring the REST API to a consistent, predictable contract.
 
 ## Current Score: 8.5/10
 
@@ -75,7 +75,7 @@ type CursorListResponse[T any] struct {
 
 ## Priority 5: Idempotency Keys (For mutations)
 
-Stripe-style idempotency for safe retries.
+An `Idempotency-Key` header makes retried mutations safe: a replay with the same key returns the stored result instead of applying the change twice.
 
 ```go
 // middleware/idempotency.go
@@ -162,8 +162,4 @@ w.Header().Set("Link", `</api/v2/auth/login>; rel="successor-version"`)
 
 ## References
 
-- [GitHub REST API](https://docs.github.com/en/rest)
-- [Stripe API](https://stripe.com/docs/api)
-- [Twilio API](https://www.twilio.com/docs/usage/api)
 - [JSON:API Specification](https://jsonapi.org/)
-- [Microsoft REST API Guidelines](https://github.com/microsoft/api-guidelines)
