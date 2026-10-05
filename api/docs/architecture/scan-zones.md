@@ -8,6 +8,22 @@ may scan them. Zones answer "who can reach this address"; scope answers "may we
 scan it" (D17). Zones are opt-in: a tenant without zones dispatches exactly as
 before.
 
+## A zone is also the sensor pool
+
+There is no separate pool entity. The sensors assigned to a zone share that
+zone's work: a command routed to a zone can be claimed by any of its sensors
+(layer 2), so adding a sensor to a zone adds capacity, and a sensor that stops
+claiming leaves the work to the others (leases expire and the command is
+claimed again). Keep the two grouping ideas apart:
+
+- **Zones** are infrastructure: which sensors can reach which ranges, and who
+  shares the work.
+- **Asset groups and scan targets** are scope: which assets a scan covers.
+
+A dedicated pool (several replicas of one sensor, each with its own instance
+identity) is only needed for autoscaled deployments; until then a zone with
+several sensors is the pool.
+
 ## Data model (migration 000231)
 
 | Table / column | Purpose |
