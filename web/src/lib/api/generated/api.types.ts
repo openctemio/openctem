@@ -6801,6 +6801,169 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ci/coverage': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Repository coverage
+     * @description Repository x capability (sast, sca, secrets, iac) coverage from any executor: CI pipelines (their default-branch runs and the tools they reported) and daemon scans. A capability is fresh while its pipeline runs within its cadence (30 days for a scan), stale up to 90 days, never after. Gaps first (an expected capability not fresh), then uncovered, by criticality. Only repositories in the caller's data scope. Template drift lists reusable workflows whose pipelines run different versions.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description gap, uncovered or covered */
+          filter?: string
+          /** @description sast, sca, secrets or iac (with state) */
+          capability?: string
+          /** @description fresh, stale or never (with capability) */
+          state?: string
+          /** @description Only repositories marked as expected */
+          expected?: boolean
+          /** @description critical, high, medium, low or none */
+          criticality?: string
+          /** @description Repository name */
+          search?: string
+          /** @description Page (default 1) */
+          page?: number
+          /** @description Per page (default 25, max 200) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CICoverageResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/coverage/expectations/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    /**
+     * Expect a repository to be covered
+     * @description Marks a repository as expected to be scanned (for the listed capabilities, all four when empty), so a capability that is not fresh shows as a gap and "never scanned" is visible. Audited. 404 when the repository is outside the caller's data scope.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Repository asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Capabilities */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CICoverageExpectationRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CICoverageExpectationResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    /**
+     * Stop expecting a repository to be covered
+     * @description Audited. 404 when the repository is outside the caller's data scope or was not expected.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Repository asset ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ci/gate-overrides': {
     parameters: {
       query?: never
@@ -7309,6 +7472,80 @@ export interface paths {
     }
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/pipelines/{id}/retire': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Retire a CI pipeline
+     * @description The pipeline is hidden as retired and the open findings only it reported close as "source retired" (audited; each can be reopened). Findings another source still observes are untouched. The next verified run of the pipeline brings it back. 404 when its repository is outside the caller's data scope; 409 when already retired.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Pipeline ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Reason */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIRetirePipelineRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIRetirePipelineResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     delete?: never
     options?: never
     head?: never
@@ -36825,6 +37062,50 @@ export interface components {
     'internal_infra_http_handler.CIBaselineDiffRequest': {
       fingerprints?: string[]
     }
+    'internal_infra_http_handler.CICapabilityCoverage': {
+      /** @enum {string} */
+      capability?: 'sast' | 'sca' | 'secrets' | 'iac'
+      expected?: boolean
+      last_at?: string
+      pipeline_id?: string
+      /** @enum {string} */
+      source_kind?: 'ci_pipeline' | 'scan'
+      source_name?: string
+      /** @enum {string} */
+      state?: 'fresh' | 'stale' | 'never'
+    }
+    'internal_infra_http_handler.CICoverageExpectationRequest': {
+      /** @description Capabilities expected (sast, sca, secrets, iac); empty = all four. */
+      capabilities?: string[]
+    }
+    'internal_infra_http_handler.CICoverageExpectationResponse': {
+      capabilities?: string[]
+      repository_asset_id?: string
+    }
+    'internal_infra_http_handler.CICoverageResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CIRepositoryCoverage'][]
+      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
+      page?: number
+      per_page?: number
+      summary?: components['schemas']['internal_infra_http_handler.CICoverageSummary']
+      templates?: components['schemas']['internal_infra_http_handler.CITemplateDrift'][]
+      total?: number
+      total_pages?: number
+      truncated?: boolean
+    }
+    'internal_infra_http_handler.CICoverageSummary': {
+      covered?: number
+      expected?: number
+      fresh_by_capability?: {
+        [key: string]: number
+      }
+      gaps?: number
+      repositories?: number
+      uncovered?: number
+      uncovered_by_criticality?: {
+        [key: string]: number
+      }
+    }
     'internal_infra_http_handler.CIEvaluateRequest': {
       /**
        * @description ScanFailures counts scanners that failed to run or whose output could
@@ -36957,6 +37238,8 @@ export interface components {
       provider?: 'github' | 'gitlab'
       repository?: string
       repository_asset_id?: string
+      retire_reason?: string
+      retired_at?: string
       revoked_at?: string
       /** @enum {string} */
       role?: 'scanner'
@@ -36972,7 +37255,15 @@ export interface components {
       stale_at?: string
       /** @enum {string} */
       status?:
-        'revoked' | 'failing' | 'degraded' | 'stale' | 'running' | 'fresh' | 'never' | 'archived'
+        | 'retired'
+        | 'revoked'
+        | 'failing'
+        | 'degraded'
+        | 'stale'
+        | 'running'
+        | 'fresh'
+        | 'never'
+        | 'archived'
       template_ref?: string
       template_sha?: string
       tools?: components['schemas']['internal_infra_http_handler.CIToolLabel'][]
@@ -37028,6 +37319,8 @@ export interface components {
       provider?: 'github' | 'gitlab'
       repository?: string
       repository_asset_id?: string
+      retire_reason?: string
+      retired_at?: string
       revoked_at?: string
       /** @enum {string} */
       role?: 'scanner'
@@ -37043,7 +37336,15 @@ export interface components {
       stale_at?: string
       /** @enum {string} */
       status?:
-        'revoked' | 'failing' | 'degraded' | 'stale' | 'running' | 'fresh' | 'never' | 'archived'
+        | 'retired'
+        | 'revoked'
+        | 'failing'
+        | 'degraded'
+        | 'stale'
+        | 'running'
+        | 'fresh'
+        | 'never'
+        | 'archived'
       template_ref?: string
       template_sha?: string
       tools?: components['schemas']['internal_infra_http_handler.CIToolLabel'][]
@@ -37052,6 +37353,25 @@ export interface components {
       version_status?: 'latest' | 'update_available' | 'unsupported' | 'unknown'
       workflow_name?: string
       workflow_path?: string
+    }
+    'internal_infra_http_handler.CIRepositoryCoverage': {
+      capabilities?: components['schemas']['internal_infra_http_handler.CICapabilityCoverage'][]
+      covered?: boolean
+      criticality?: string
+      expected?: boolean
+      expected_capabilities?: string[]
+      gap?: boolean
+      pipelines?: number
+      repository?: string
+      repository_asset_id?: string
+    }
+    'internal_infra_http_handler.CIRetirePipelineRequest': {
+      /** @description Reason, 10 to 2000 characters (audited). */
+      reason?: string
+    }
+    'internal_infra_http_handler.CIRetirePipelineResponse': {
+      findings_closed?: number
+      pipeline_id?: string
     }
     'internal_infra_http_handler.CIRunResponse': {
       actor?: string
@@ -37100,6 +37420,18 @@ export interface components {
       is_past_due?: boolean
       notes?: string
       ransomware_use?: string
+    }
+    'internal_infra_http_handler.CITemplateDrift': {
+      current?: string
+      drifted?: number
+      template?: string
+      total?: number
+      versions?: components['schemas']['internal_infra_http_handler.CITemplateVersion'][]
+    }
+    'internal_infra_http_handler.CITemplateVersion': {
+      last_run_at?: string
+      pipeline_ids?: string[]
+      version?: string
     }
     'internal_infra_http_handler.CIToolLabel': {
       name?: string
