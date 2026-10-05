@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
@@ -323,8 +324,7 @@ func newMFAHarness(t *testing.T) *mfaHarness {
 	tenants := newMockAuthTenantRepo()
 	audits := &capturingAuditRepo{}
 	cfg := defaultAuthTestConfig()
-	svc := app.NewAuthService(users, sessions, newMockAuthRefreshTokenRepo(), tenants,
-		app.NewAuditService(audits, logger.NewNop()), cfg, logger.NewNop())
+	svc := app.NewAuthService(users, sessions, newMockAuthRefreshTokenRepo(), tenants, auditsvc.NewAuditService(audits, logger.NewNop()), cfg, logger.NewNop())
 	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatalf("cipher: %v", err)
@@ -362,7 +362,7 @@ func (h *mfaHarness) enroll(t *testing.T, userID shared.ID) (string, []string) {
 		t.Fatalf("BeginMFASetup: %v", err)
 	}
 	code, _ := totp.Code(setup.Secret, time.Now())
-	codes, err := h.svc.EnableMFA(context.Background(), app.AuditContext{ActorID: userID.String()}, userID.String(), mfaTestPassword, code)
+	codes, err := h.svc.EnableMFA(context.Background(), auditsvc.AuditContext{ActorID: userID.String()}, userID.String(), mfaTestPassword, code)
 	if err != nil {
 		t.Fatalf("EnableMFA: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestMFA_Enrollment(t *testing.T) {
 		h := newMFAHarness(t)
 		uid := h.seedUser(t, "b@example.com")
 		setup, _ := h.svc.BeginMFASetup(context.Background(), uid.String())
-		_, err := h.svc.EnableMFA(context.Background(), app.AuditContext{}, uid.String(), mfaTestPassword, wrongCode(currentCode(t, setup.Secret)))
+		_, err := h.svc.EnableMFA(context.Background(), auditsvc.AuditContext{}, uid.String(), mfaTestPassword, wrongCode(currentCode(t, setup.Secret)))
 		if !errors.Is(err, app.ErrMFACodeInvalid) {
 			t.Fatalf("want ErrMFACodeInvalid, got %v", err)
 		}
@@ -489,7 +489,7 @@ func TestMFA_Enrollment(t *testing.T) {
 	t.Run("enable without setup is refused", func(t *testing.T) {
 		h := newMFAHarness(t)
 		uid := h.seedUser(t, "c@example.com")
-		_, err := h.svc.EnableMFA(context.Background(), app.AuditContext{}, uid.String(), mfaTestPassword, "123456")
+		_, err := h.svc.EnableMFA(context.Background(), auditsvc.AuditContext{}, uid.String(), mfaTestPassword, "123456")
 		if !errors.Is(err, app.ErrMFANoPendingSetup) {
 			t.Fatalf("want ErrMFANoPendingSetup, got %v", err)
 		}
@@ -523,8 +523,7 @@ func TestMFA_Enrollment(t *testing.T) {
 		other := h.login(t, "e@example.com")
 
 		setup, _ := h.svc.BeginMFASetup(context.Background(), uid.String())
-		_, err := h.svc.EnableMFA(context.Background(),
-			app.AuditContext{ActorID: uid.String(), SessionID: cur.SessionID}, uid.String(), mfaTestPassword, currentCode(t, setup.Secret))
+		_, err := h.svc.EnableMFA(context.Background(), auditsvc.AuditContext{ActorID: uid.String(), SessionID: cur.SessionID}, uid.String(), mfaTestPassword, currentCode(t, setup.Secret))
 		if err != nil {
 			t.Fatalf("EnableMFA: %v", err)
 		}
@@ -755,11 +754,11 @@ func TestMFA_RecoveryCodes(t *testing.T) {
 		uid := h.seedUser(t, "regen@example.com")
 		secret, old := h.enroll(t, uid)
 
-		if _, err := h.svc.RegenerateRecoveryCodes(context.Background(), app.AuditContext{}, uid.String(), old[0]); !errors.Is(err, app.ErrMFACodeInvalid) {
+		if _, err := h.svc.RegenerateRecoveryCodes(context.Background(), auditsvc.AuditContext{}, uid.String(), old[0]); !errors.Is(err, app.ErrMFACodeInvalid) {
 			t.Fatalf("recovery code must not regenerate codes, got %v", err)
 		}
 		h.forgetLastStep(uid)
-		fresh, err := h.svc.RegenerateRecoveryCodes(context.Background(), app.AuditContext{}, uid.String(), currentCode(t, secret))
+		fresh, err := h.svc.RegenerateRecoveryCodes(context.Background(), auditsvc.AuditContext{}, uid.String(), currentCode(t, secret))
 		if err != nil || len(fresh) != mfa.RecoveryCodeCount {
 			t.Fatalf("regenerate: %v (%d codes)", err, len(fresh))
 		}
@@ -792,7 +791,7 @@ func TestMFA_Disable(t *testing.T) {
 
 	t.Run("needs the current password", func(t *testing.T) {
 		h, uid, secret := setup(t)
-		err := h.svc.DisableMFA(context.Background(), app.AuditContext{}, uid.String(), "wrong", currentCode(t, secret))
+		err := h.svc.DisableMFA(context.Background(), auditsvc.AuditContext{}, uid.String(), "wrong", currentCode(t, secret))
 		if !errors.Is(err, app.ErrPasswordMismatch) {
 			t.Fatalf("want ErrPasswordMismatch, got %v", err)
 		}
@@ -800,7 +799,7 @@ func TestMFA_Disable(t *testing.T) {
 
 	t.Run("needs a valid code", func(t *testing.T) {
 		h, uid, secret := setup(t)
-		err := h.svc.DisableMFA(context.Background(), app.AuditContext{}, uid.String(), mfaTestPassword, wrongCode(currentCode(t, secret)))
+		err := h.svc.DisableMFA(context.Background(), auditsvc.AuditContext{}, uid.String(), mfaTestPassword, wrongCode(currentCode(t, secret)))
 		if !errors.Is(err, app.ErrMFACodeInvalid) {
 			t.Fatalf("want ErrMFACodeInvalid, got %v", err)
 		}
@@ -808,7 +807,7 @@ func TestMFA_Disable(t *testing.T) {
 
 	t.Run("password + code disables, audits, notifies, and login stops asking", func(t *testing.T) {
 		h, uid, secret := setup(t)
-		if err := h.svc.DisableMFA(context.Background(), app.AuditContext{}, uid.String(), mfaTestPassword, currentCode(t, secret)); err != nil {
+		if err := h.svc.DisableMFA(context.Background(), auditsvc.AuditContext{}, uid.String(), mfaTestPassword, currentCode(t, secret)); err != nil {
 			t.Fatalf("DisableMFA: %v", err)
 		}
 		if !h.audits.has(audit.ActionAuthMFADisabled) || h.notifier.mfaDisabled != 1 {
@@ -823,7 +822,7 @@ func TestMFA_Disable(t *testing.T) {
 		h := newMFAHarness(t)
 		uid := h.seedUser(t, "off2@example.com")
 		_, codes := h.enroll(t, uid)
-		if err := h.svc.DisableMFA(context.Background(), app.AuditContext{}, uid.String(), mfaTestPassword, codes[0]); err != nil {
+		if err := h.svc.DisableMFA(context.Background(), auditsvc.AuditContext{}, uid.String(), mfaTestPassword, codes[0]); err != nil {
 			t.Fatalf("DisableMFA with recovery code: %v", err)
 		}
 	})
@@ -1007,7 +1006,7 @@ func TestEnableMFA_NeedsCurrentPassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = h.svc.EnableMFA(context.Background(), app.AuditContext{}, uid.String(), "wrong", currentCode(t, setup.Secret))
+	_, err = h.svc.EnableMFA(context.Background(), auditsvc.AuditContext{}, uid.String(), "wrong", currentCode(t, setup.Secret))
 	if !errors.Is(err, app.ErrPasswordMismatch) {
 		t.Fatalf("enable with a wrong password: want ErrPasswordMismatch, got %v", err)
 	}
@@ -1015,7 +1014,7 @@ func TestEnableMFA_NeedsCurrentPassword(t *testing.T) {
 	if u.FailedLoginAttempts() != 1 {
 		t.Fatalf("failed attempts after a wrong password = %d, want 1", u.FailedLoginAttempts())
 	}
-	if _, err := h.svc.EnableMFA(context.Background(), app.AuditContext{}, uid.String(), mfaTestPassword, currentCode(t, setup.Secret)); err != nil {
+	if _, err := h.svc.EnableMFA(context.Background(), auditsvc.AuditContext{}, uid.String(), mfaTestPassword, currentCode(t, setup.Secret)); err != nil {
 		t.Fatalf("enable with the password: %v", err)
 	}
 }

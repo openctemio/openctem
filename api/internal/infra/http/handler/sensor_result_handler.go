@@ -13,7 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -25,7 +25,7 @@ import (
 // SensorResultHandler serves the policy and quarantine review endpoints.
 type SensorResultHandler struct {
 	service *ingest.Service
-	audit   func(r *http.Request) *app.AuditContext
+	audit   func(r *http.Request) *auditsvc.AuditContext
 	logger  *logger.Logger
 }
 

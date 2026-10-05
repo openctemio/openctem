@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -270,15 +270,15 @@ func (m *mockAuditRepo) CountByAction(_ context.Context, tenantID *shared.ID, ac
 // Test Helpers
 // =============================================================================
 
-func newTestAuditService() (*app.AuditService, *mockAuditRepo) {
+func newTestAuditService() (*auditsvc.AuditService, *mockAuditRepo) {
 	repo := newMockAuditRepo()
 	log := logger.NewNop()
-	svc := app.NewAuditService(repo, log)
+	svc := auditsvc.NewAuditService(repo, log)
 	return svc, repo
 }
 
-func newTestAuditContext() app.AuditContext {
-	return app.AuditContext{
+func newTestAuditContext() auditsvc.AuditContext {
+	return auditsvc.AuditContext{
 		TenantID:   shared.NewID().String(),
 		ActorID:    shared.NewID().String(),
 		ActorEmail: "test@example.com",
@@ -299,7 +299,7 @@ func TestAuditService_LogEvent_SuccessFullContext(t *testing.T) {
 	actx := newTestAuditContext()
 
 	changes := audit.NewChanges().Set("name", "old", "new")
-	event := app.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123").
+	event := auditsvc.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123").
 		WithResourceName("John Doe").
 		WithChanges(changes).
 		WithMessage("User created").
@@ -375,9 +375,9 @@ func TestAuditService_LogEvent_SuccessMinimalContext(t *testing.T) {
 	svc, repo := newTestAuditService()
 	ctx := context.Background()
 
-	actx := app.AuditContext{} // Empty context - no IPs, no tenant, no actor
+	actx := auditsvc.AuditContext{} // Empty context - no IPs, no tenant, no actor
 
-	event := app.NewSuccessEvent(audit.ActionSettingsUpdated, audit.ResourceTypeSettings, "settings-1")
+	event := auditsvc.NewSuccessEvent(audit.ActionSettingsUpdated, audit.ResourceTypeSettings, "settings-1")
 
 	err := svc.LogEvent(ctx, actx, event)
 	if err != nil {
@@ -417,7 +417,7 @@ func TestAuditService_LogEvent_RepositoryError(t *testing.T) {
 	repoErr := errors.New("database connection refused")
 	repo.createErr = repoErr
 
-	event := app.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123")
+	event := auditsvc.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123")
 
 	err := svc.LogEvent(ctx, actx, event)
 	if err == nil {
@@ -436,13 +436,13 @@ func TestAuditService_LogEvent_InvalidTenantID(t *testing.T) {
 	svc, repo := newTestAuditService()
 	ctx := context.Background()
 
-	actx := app.AuditContext{
+	actx := auditsvc.AuditContext{
 		TenantID:   "not-a-valid-uuid",
 		ActorID:    shared.NewID().String(),
 		ActorEmail: "test@example.com",
 	}
 
-	event := app.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123")
+	event := auditsvc.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123")
 
 	// LogEvent should handle invalid tenant ID gracefully (skip setting it)
 	err := svc.LogEvent(ctx, actx, event)
@@ -578,7 +578,7 @@ func TestAuditService_ListAuditLogs_SuccessWithFilters(t *testing.T) {
 	since := time.Now().Add(-24 * time.Hour)
 	until := time.Now()
 
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		TenantID:      tenantID.String(),
 		ActorID:       actorID.String(),
 		Actions:       []string{"user.created"},
@@ -660,7 +660,7 @@ func TestAuditService_ListAuditLogs_EmptyResult(t *testing.T) {
 	svc, repo := newTestAuditService()
 	ctx := context.Background()
 
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		Page:    1,
 		PerPage: 10,
 	}
@@ -686,7 +686,7 @@ func TestAuditService_ListAuditLogs_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestAuditService()
 	ctx := context.Background()
 
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		TenantID: "not-a-uuid",
 	}
 
@@ -703,7 +703,7 @@ func TestAuditService_ListAuditLogs_InvalidActorID(t *testing.T) {
 	svc, _ := newTestAuditService()
 	ctx := context.Background()
 
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		ActorID: "bad-id",
 	}
 
@@ -979,7 +979,7 @@ func TestAuditService_LogAuthFailed(t *testing.T) {
 // =============================================================================
 
 func TestNewSuccessEvent(t *testing.T) {
-	event := app.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1")
+	event := auditsvc.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1")
 
 	if event.Action != audit.ActionUserCreated {
 		t.Errorf("expected action %s, got %s", audit.ActionUserCreated, event.Action)
@@ -1000,7 +1000,7 @@ func TestNewSuccessEvent(t *testing.T) {
 
 func TestNewFailureEvent(t *testing.T) {
 	origErr := errors.New("something went wrong")
-	event := app.NewFailureEvent(audit.ActionScanFailed, audit.ResourceTypeScan, "scan-1", origErr)
+	event := auditsvc.NewFailureEvent(audit.ActionScanFailed, audit.ResourceTypeScan, "scan-1", origErr)
 
 	if event.Result != audit.ResultFailure {
 		t.Errorf("expected result failure, got %s", event.Result)
@@ -1011,7 +1011,7 @@ func TestNewFailureEvent(t *testing.T) {
 }
 
 func TestNewFailureEvent_NilError(t *testing.T) {
-	event := app.NewFailureEvent(audit.ActionScanFailed, audit.ResourceTypeScan, "scan-1", nil)
+	event := auditsvc.NewFailureEvent(audit.ActionScanFailed, audit.ResourceTypeScan, "scan-1", nil)
 
 	if event.Result != audit.ResultFailure {
 		t.Errorf("expected result failure, got %s", event.Result)
@@ -1022,7 +1022,7 @@ func TestNewFailureEvent_NilError(t *testing.T) {
 }
 
 func TestNewDeniedEvent(t *testing.T) {
-	event := app.NewDeniedEvent(audit.ActionPermissionDenied, audit.ResourceTypeAsset, "asset-1", "no access")
+	event := auditsvc.NewDeniedEvent(audit.ActionPermissionDenied, audit.ResourceTypeAsset, "asset-1", "no access")
 
 	if event.Result != audit.ResultDenied {
 		t.Errorf("expected result denied, got %s", event.Result)
@@ -1036,7 +1036,7 @@ func TestNewDeniedEvent(t *testing.T) {
 }
 
 func TestNewDeniedEvent_EmptyReason(t *testing.T) {
-	event := app.NewDeniedEvent(audit.ActionPermissionDenied, audit.ResourceTypeAsset, "asset-1", "")
+	event := auditsvc.NewDeniedEvent(audit.ActionPermissionDenied, audit.ResourceTypeAsset, "asset-1", "")
 
 	if _, ok := event.Metadata["reason"]; ok {
 		t.Error("expected no reason key in metadata when empty reason passed")
@@ -1050,7 +1050,7 @@ func TestNewDeniedEvent_EmptyReason(t *testing.T) {
 func TestAuditEvent_BuilderChain(t *testing.T) {
 	changes := audit.NewChanges().Set("role", "viewer", "admin")
 
-	event := app.NewSuccessEvent(audit.ActionMemberRoleChanged, audit.ResourceTypeMembership, "m-1").
+	event := auditsvc.NewSuccessEvent(audit.ActionMemberRoleChanged, audit.ResourceTypeMembership, "m-1").
 		WithResourceName("user@example.com").
 		WithChanges(changes).
 		WithMessage("Role changed").
@@ -1086,11 +1086,11 @@ func TestAuditService_LogEvent_ActorEmailOnly(t *testing.T) {
 	svc, repo := newTestAuditService()
 	ctx := context.Background()
 
-	actx := app.AuditContext{
+	actx := auditsvc.AuditContext{
 		ActorEmail: "system@example.com",
 	}
 
-	event := app.NewSuccessEvent(audit.ActionSettingsUpdated, audit.ResourceTypeSettings, "settings-1")
+	event := auditsvc.NewSuccessEvent(audit.ActionSettingsUpdated, audit.ResourceTypeSettings, "settings-1")
 
 	err := svc.LogEvent(ctx, actx, event)
 	if err != nil {
@@ -1204,7 +1204,7 @@ func TestAuditService_RebaselineChain_HealsBrokenChain(t *testing.T) {
 		})
 	}
 
-	svc := app.NewAuditService(repo, logger.NewNop())
+	svc := auditsvc.NewAuditService(repo, logger.NewNop())
 	ctx := context.Background()
 
 	// Before: every entry should verify as broken.
@@ -1221,7 +1221,7 @@ func TestAuditService_RebaselineChain_HealsBrokenChain(t *testing.T) {
 
 	// Re-baseline re-signs the whole chain from current data.
 	actorID := shared.NewID()
-	actx := app.AuditContext{ActorID: actorID.String(), ActorEmail: "admin@example.test"}
+	actx := auditsvc.AuditContext{ActorID: actorID.String(), ActorEmail: "admin@example.test"}
 	res, err := svc.RebaselineChain(ctx, tenantID, actx)
 	if err != nil {
 		t.Fatalf("RebaselineChain: %v", err)
@@ -1304,9 +1304,9 @@ func TestAuditService_RebaselineChain_AbortsOnMissingLog(t *testing.T) {
 		ChainPosition: 1,
 	})
 
-	svc := app.NewAuditService(repo, logger.NewNop())
+	svc := auditsvc.NewAuditService(repo, logger.NewNop())
 
-	_, err := svc.RebaselineChain(context.Background(), tenantID, app.AuditContext{ActorID: shared.NewID().String()})
+	_, err := svc.RebaselineChain(context.Background(), tenantID, auditsvc.AuditContext{ActorID: shared.NewID().String()})
 	if !errors.Is(err, audit.ErrChainSourceMissing) {
 		t.Fatalf("expected ErrChainSourceMissing, got %v", err)
 	}
@@ -1336,8 +1336,8 @@ func TestAuditService_RebaselineChain_ApplyFailureIsNotReportedAsSuccess(t *test
 	repo.chainLogs[log.ID()] = log
 	repo.chainStore = []audit.ChainEntry{{AuditLogID: log.ID(), TenantID: tenantID, Hash: "stale", ChainPosition: 1}}
 
-	svc := app.NewAuditService(repo, logger.NewNop())
-	if _, err := svc.RebaselineChain(context.Background(), tenantID, app.AuditContext{}); !errors.Is(err, audit.ErrChainRebaselineConflict) {
+	svc := auditsvc.NewAuditService(repo, logger.NewNop())
+	if _, err := svc.RebaselineChain(context.Background(), tenantID, auditsvc.AuditContext{}); !errors.Is(err, audit.ErrChainRebaselineConflict) {
 		t.Fatalf("expected ErrChainRebaselineConflict, got %v", err)
 	}
 	events := repo.eventsWithAction(audit.ActionAuditChainRebaselined)
@@ -1381,7 +1381,7 @@ func TestAuditService_VerifyChain_WalksPastTenThousandEntries(t *testing.T) {
 	tenantID := shared.NewID()
 	seedValidChain(t, repo, tenantID, n)
 
-	svc := app.NewAuditService(repo, logger.NewNop())
+	svc := auditsvc.NewAuditService(repo, logger.NewNop())
 	ctx := context.Background()
 
 	clean, err := svc.VerifyChain(ctx, tenantID, 0)
@@ -1425,8 +1425,8 @@ func TestAuditService_RebaselineChain_CoversWholeLongChain(t *testing.T) {
 		repo.chainStore[i].Hash = strings.Repeat("a", 64)
 	}
 
-	svc := app.NewAuditService(repo, logger.NewNop())
-	res, err := svc.RebaselineChain(context.Background(), tenantID, app.AuditContext{ActorID: shared.NewID().String()})
+	svc := auditsvc.NewAuditService(repo, logger.NewNop())
+	res, err := svc.RebaselineChain(context.Background(), tenantID, auditsvc.AuditContext{ActorID: shared.NewID().String()})
 	if err != nil {
 		t.Fatalf("RebaselineChain: %v", err)
 	}

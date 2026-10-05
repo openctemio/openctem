@@ -9,7 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -21,12 +22,12 @@ import (
 
 // RemediationCampaignHandler handles remediation campaign endpoints.
 type RemediationCampaignHandler struct {
-	service *app.RemediationCampaignService
+	service *exposure.RemediationCampaignService
 	logger  *logger.Logger
 }
 
 // NewRemediationCampaignHandler creates a new handler.
-func NewRemediationCampaignHandler(svc *app.RemediationCampaignService, log *logger.Logger) *RemediationCampaignHandler {
+func NewRemediationCampaignHandler(svc *exposure.RemediationCampaignService, log *logger.Logger) *RemediationCampaignHandler {
 	return &RemediationCampaignHandler{service: svc, logger: log}
 }
 
@@ -63,7 +64,7 @@ func (h *RemediationCampaignHandler) List(w http.ResponseWriter, r *http.Request
 
 	// Batch-load linked Jira epics so the list shows what's already ticketed
 	// (avoids N+1). Best-effort: a lookup failure just omits the links.
-	var tickets map[string]*app.CampaignTicketLink
+	var tickets map[string]*exposure.CampaignTicketLink
 	if tid, terr := shared.IDFromString(tenantID); terr == nil {
 		ids := make([]shared.ID, 0, len(result.Data))
 		for _, c := range result.Data {
@@ -105,7 +106,7 @@ func (h *RemediationCampaignHandler) Create(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	campaign, err := h.service.CreateCampaign(r.Context(), app.CreateRemediationCampaignInput{
+	campaign, err := h.service.CreateCampaign(r.Context(), exposure.CreateRemediationCampaignInput{
 		TenantID:      tenantID,
 		Name:          req.Name,
 		Description:   req.Description,
@@ -171,7 +172,7 @@ func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	resolved, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, app.CampaignResolveInput{
+	resolved, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, exposure.CampaignResolveInput{
 		Status:              req.Status,
 		Resolution:          req.Resolution,
 		ActorID:             middleware.GetUserID(r.Context()),
@@ -216,7 +217,7 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	campaign, err := h.service.UpdateCampaign(r.Context(), tenantID, id, app.UpdateRemediationCampaignInput{
+	campaign, err := h.service.UpdateCampaign(r.Context(), tenantID, id, exposure.UpdateRemediationCampaignInput{
 		Name:          req.Name,
 		Description:   req.Description,
 		Priority:      req.Priority,
@@ -287,8 +288,8 @@ func (h *RemediationCampaignHandler) Delete(w http.ResponseWriter, r *http.Reque
 
 // buildAuditContext names who changed a campaign and from where. Forwarding
 // headers count only from a trusted proxy (S-4), as for every audit context.
-func (h *RemediationCampaignHandler) buildAuditContext(r *http.Request) app.AuditContext {
-	return app.AuditContext{
+func (h *RemediationCampaignHandler) buildAuditContext(r *http.Request) audit.AuditContext {
+	return audit.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
 		ActorID:    middleware.GetUserID(r.Context()),
 		ActorEmail: auditActorEmail(r.Context()),
@@ -364,7 +365,7 @@ type RemediationCampaignResponse struct {
 
 	// Ticket is the linked external tracker epic (e.g. Jira), or null when the
 	// campaign has no linked ticket. Lets the UI show/relink the epic.
-	Ticket *app.CampaignTicketLink `json:"ticket,omitempty"`
+	Ticket *exposure.CampaignTicketLink `json:"ticket,omitempty"`
 }
 
 func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignResponse {

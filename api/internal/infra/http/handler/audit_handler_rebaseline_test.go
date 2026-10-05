@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -24,7 +24,7 @@ func (m *conflictAuditRepo) ApplyChainRebaseline(_ context.Context, _ auditdom.C
 
 func doRebaseline(t *testing.T, repo auditdom.Repository, tenantID, userID string) *httptest.ResponseRecorder {
 	t.Helper()
-	h := NewAuditHandler(app.NewAuditService(repo, logger.NewNop()), nil, logger.NewNop())
+	h := NewAuditHandler(audit.NewAuditService(repo, logger.NewNop()), nil, logger.NewNop())
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/audit-logs/rebaseline", nil)
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
 	ctx = context.WithValue(ctx, middleware.UserIDKey, userID)
