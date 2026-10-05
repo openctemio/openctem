@@ -8,6 +8,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"github.com/lib/pq"
 	"os"
 	"strings"
 	"testing"
@@ -25,6 +26,10 @@ var assetRefTables = []string{
 	"relationship_suggestions", "runtime_telemetry_events", "scan_coverage_state", "scan_sessions",
 	"sla_policies", "suppression_rules", "user_accessible_assets",
 }
+
+// compositeFromCreation are composite (tenant_id, asset) keys that later
+// migrations created with their tables; 000921's down does not drop them.
+var compositeFromCreation = []string{"fk_ci_runs_asset", "fk_ci_gate_overrides_asset"}
 
 func seedRefAsset(ctx context.Context, t *testing.T, db interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
@@ -47,8 +52,10 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 		 WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2`).Scan(&n, &allValid); err != nil {
 		t.Fatal(err)
 	}
-	if n != 27 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 27 validated", n, allValid.Bool)
+	// 27 from migrations 000921/000922, plus the CI run and break-glass
+	// keys of migration 001053 (RFC-051), created composite from the start.
+	if n != 27+len(compositeFromCreation) || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want %d validated", n, allValid.Bool, 27+len(compositeFromCreation))
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing
@@ -216,7 +223,8 @@ func TestAssetRefTenantFKs_MigrationReplay(t *testing.T) {
 		}
 		exec(tx, "rollback to savepoint", `ROLLBACK TO SAVEPOINT before_up`)
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pg_constraint WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2`).Scan(&n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pg_constraint WHERE contype = 'f' AND confrelid = 'assets'::regclass
+			AND array_length(conkey, 1) = 2 AND NOT (conname = ANY($1))`, pq.Array(compositeFromCreation)).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		if n != 0 {
