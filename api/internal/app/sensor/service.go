@@ -75,9 +75,12 @@ type SensorService struct {
 	// is the shared store of spent request nonces, memNonces the
 	// per-replica fallback (keybound.go).
 	signingKeys sensordom.SigningKeyRepository
-	nonces      sensordom.NonceStore
-	nonceOnce   sync.Once
-	memNonces   *memoryNonceStore
+	// identityPolicy is the organization's sensor identity policy
+	// (RFC-052 D-4); nil allows bearer-key sensors.
+	identityPolicy sensordom.IdentityPolicyRepository
+	nonces         sensordom.NonceStore
+	nonceOnce      sync.Once
+	memNonces      *memoryNonceStore
 	// lbWeights are the load-balancing weights used to recompute a sensor's
 	// load_score on every heartbeat. Defaults to the compiled-in set;
 	// SetLoadBalancingWeights installs the operator's AGENT_LB_* values.
@@ -370,6 +373,17 @@ func (s *SensorService) CreateSensor(ctx context.Context, input CreateSensorInpu
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	// An organization that requires key-bound identity creates no bearer
+	// keys: its sensors pair (RFC-052 D-4). Existing bearer-key sensors are
+	// untouched.
+	allowed, err := s.BearerKeysAllowed(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, sensordom.ErrBearerKeysDisabled
 	}
 
 	sensorType := sensordom.SensorType(input.Type)
@@ -1801,6 +1815,14 @@ func (s *SensorService) RevokeSensor(ctx context.Context, tenantID, sensorID, re
 		s.warnAudit(s.auditService.LogSensorRevoked(ctx, *auditCtx, sensorID, a.Name, reason), "LogSensorRevoked", sensorID)
 	}
 	s.releaseHeldCommands(ctx, a, auditCtx)
+	// A revoked sensor's signing keys are revoked too (they already
+	// authenticate nothing once the sensor is revoked; this keeps the key
+	// list honest and survives a later reactivation attempt).
+	if s.signingKeys != nil && a.TenantID != nil {
+		if _, err := s.signingKeys.RevokeAllForSensor(ctx, *a.TenantID, a.ID, sensordom.KeyRevokedSensor, s.now()); err != nil {
+			s.logger.Warn("failed to revoke signing keys of a revoked sensor", "sensor_id", a.ID.String(), "error", err)
+		}
+	}
 
 	s.logger.Info("sensor revoked", "sensor_id", logger.SanitizeValue(sensorID), "reason", logger.SanitizeValue(reason))
 	return a, nil

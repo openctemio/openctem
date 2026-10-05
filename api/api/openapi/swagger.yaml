@@ -2640,6 +2640,13 @@ definitions:
       position:
         type: integer
     type: object
+  github_com_openctemio_openctem_api_internal_app_auth.StepUpProof:
+    properties:
+      password:
+        type: string
+      totp:
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock:
     properties:
       candidate:
@@ -3160,6 +3167,40 @@ definitions:
       window_days:
         description: WindowDays is the freshness window the stats were computed against.
         type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_sensorpairing.View:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      host_facts:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.PairingHostFacts'
+      id:
+        type: string
+      key_fingerprint:
+        type: string
+      mode:
+        type: string
+      repair_sensor_id:
+        type: string
+      repair_sensor_name:
+        type: string
+      sas:
+        type: string
+      sensor_id:
+        type: string
+      source_ip:
+        type: string
+      status:
+        type: string
+      step_up:
+        description: |-
+          StepUp is what the viewer must present to approve ("totp",
+          "password" or "fresh_sign_in").
+        type: string
     type: object
   github_com_openctemio_openctem_api_pkg_apierror.Code:
     enum:
@@ -4255,6 +4296,25 @@ definitions:
         type: boolean
       allow_interactsh:
         type: boolean
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.PairingHostFacts:
+    properties:
+      arch:
+        type: string
+      hostname:
+        type: string
+      instance_id:
+        type: string
+      name:
+        type: string
+      os:
+        type: string
+      product:
+        type: string
+      sdk_version:
+        type: string
+      sensor_version:
+        type: string
     type: object
   github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity:
     properties:
@@ -11007,6 +11067,46 @@ definitions:
       self:
         type: string
     type: object
+  internal_infra_http_handler.PairingApproveRequest:
+    properties:
+      code:
+        description: |-
+          Code is the code the approver entered (default mode; not needed for
+          an expectation of this organization).
+        type: string
+      fingerprint_confirmed:
+        type: boolean
+      grant_profile:
+        type: string
+      name:
+        type: string
+      step_up:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_auth.StepUpProof'
+      type:
+        type: string
+      zone_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.PairingExpectRequest:
+    properties:
+      grant_profile:
+        type: string
+      name:
+        type: string
+      repair_sensor_id:
+        type: string
+      zone_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.PairingLookupRequest:
+    properties:
+      code:
+        type: string
+    type: object
   internal_infra_http_handler.PermissionsResponse:
     properties:
       permissions:
@@ -13082,6 +13182,14 @@ definitions:
       hours:
         type: integer
     type: object
+  internal_infra_http_handler.SensorIdentityPolicy:
+    properties:
+      bearer_keys_allowed:
+        description: |-
+          BearerKeysAllowed: new sensors may be created with an API key
+          (octs_). False: pairing (key-bound identity) only.
+        type: boolean
+    type: object
   internal_infra_http_handler.SensorLoadResponse:
     properties:
       capacity:
@@ -13534,6 +13642,27 @@ definitions:
     properties:
       reason:
         maxLength: 500
+        type: string
+    type: object
+  internal_infra_http_handler.SensorSigningKeyResponse:
+    properties:
+      activated_at:
+        type: string
+      created_at:
+        type: string
+      fingerprint:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      last_used_ip:
+        type: string
+      revoked_at:
+        type: string
+      revoked_reason:
+        type: string
+      status:
         type: string
     type: object
   internal_infra_http_handler.SensorStatsResponse:
@@ -33243,6 +33372,160 @@ paths:
       summary: Rotate credential
       tags:
       - Credentials
+  /sensor-pairings/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      description: 'Binds the sensor''s key to this organization: a new sensor, or
+        the registration being re-paired (its earlier keys revoked). Needs fingerprint_confirmed=true
+        and step-up re-authentication (TOTP, else password, else a sign-in younger
+        than 10 minutes). Audited at high severity; every administrator is notified.'
+      parameters:
+      - description: Pairing id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Approval
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.PairingApproveRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_sensorpairing.View'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Approve a sensor pairing
+      tags:
+      - sensor-pairing
+  /sensor-pairings/{id}/reject:
+    post:
+      parameters:
+      - description: Pairing id
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reject a sensor pairing request
+      tags:
+      - sensor-pairing
+  /sensor-pairings/expectations:
+    post:
+      consumes:
+      - application/json
+      description: Returns a single-use code (10 minutes) to run as `openctemio-sensor
+        pair <CODE>` on the host.
+      parameters:
+      - description: Expected sensor
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.PairingExpectRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_sensorpairing.View'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Expect a sensor (reverse pairing)
+      tags:
+      - sensor-pairing
+  /sensor-pairings/expectations/{id}:
+    get:
+      description: 'A reverse-mode expectation (once the sensor connected: its SAS
+        fingerprint, host facts and source address), or a request this organization
+        approved or denied.'
+      parameters:
+      - description: Pairing id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_sensorpairing.View'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a pairing request of the organization
+      tags:
+      - sensor-pairing
+  /sensor-pairings/lookup:
+    post:
+      consumes:
+      - application/json
+      description: 'Returns the open pairing request with this code: the SAS fingerprint,
+        key fingerprint, host facts and source address to compare. One 404 for unknown,
+        expired, used and foreign codes.'
+      parameters:
+      - description: Code shown by the sensor
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.PairingLookupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_sensorpairing.View'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Look up a pairing code
+      tags:
+      - sensor-pairing
   /sensors:
     get:
       consumes:
@@ -33715,6 +33998,59 @@ paths:
       summary: Sensor heartbeat history
       tags:
       - Sensors
+  /sensors/{id}/keys:
+    get:
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_infra_http_handler.SensorSigningKeyResponse'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List a sensor's signing keys
+      tags:
+      - Sensors
+  /sensors/{id}/keys/{key_id}/revoke:
+    post:
+      description: Effective on the sensor's next request. The sensor must be re-paired
+        to work again.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Key ID
+        in: path
+        name: key_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Revoke one signing key of a sensor
+      tags:
+      - Sensors
   /sensors/{id}/manifest:
     get:
       description: 'The sensor''s current manifest (RFC-033): build, platform, resources,
@@ -33967,6 +34303,48 @@ paths:
       security:
       - BearerAuth: []
       summary: Refresh scanner content on every sensor
+      tags:
+      - Sensors
+  /sensors/identity-policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorIdentityPolicy'
+      security:
+      - BearerAuth: []
+      summary: Get the sensor identity policy
+      tags:
+      - Sensors
+    put:
+      consumes:
+      - application/json
+      description: Requiring key-bound identity narrows (sensors:grant:narrow); allowing
+        bearer keys again widens (sensors:grant:widen). Audited at high severity.
+      parameters:
+      - description: Policy
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SensorIdentityPolicy'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorIdentityPolicy'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Set the sensor identity policy
       tags:
       - Sensors
   /sensors/quarantined-results:

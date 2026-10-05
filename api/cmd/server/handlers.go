@@ -320,6 +320,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		Ingest:           ingestHandler,
 		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, log),
+		SensorPairing:    newSensorPairingHandler(svc, log),
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              newIOCHandlerWithFindingCheck(deps, log),
 		Validation:       validationHandler,
@@ -801,4 +802,13 @@ func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.Suppressi
 	h := handler.NewSuppressionHandler(svc.Suppression, log)
 	h.SetAuditService(svc.Audit)
 	return h
+}
+
+// newSensorPairingHandler builds the pairing handler (RFC-052); nil when
+// pairing is disabled.
+func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorPairingHandler {
+	if svc.SensorPairing == nil || svc.Sensor == nil {
+		return nil
+	}
+	return handler.NewSensorPairingHandler(svc.SensorPairing, svc.Sensor, log)
 }

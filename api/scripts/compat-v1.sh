@@ -71,6 +71,10 @@ ACCESS_TOKEN=$(call POST /api/v1/auth/token "{\"tenant_id\":\"$TENANT_ID\"}" | j
 # (RFC-040 §5.3, mode "quarantine"); tenants that existed before that policy
 # are on "warn", which is the case this check is about.
 call PUT /api/v1/sensors/result-policy '{"mode":"warn"}' >/dev/null
+# Protocol v1 sensors use bearer keys. A new tenant requires key-bound
+# identity (RFC-052 D-4); tenants that existed before that policy allow
+# bearer keys, which is the case this check is about.
+call PUT /api/v1/sensors/identity-policy '{"bearer_keys_allowed":true}' >/dev/null
 
 created=$(call POST /api/v1/sensors \
 	'{"name":"compat-v1","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}')
