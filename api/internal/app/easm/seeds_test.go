@@ -142,3 +142,34 @@ func TestSeedService_UpdateAndDeleteAreTenantScoped(t *testing.T) {
 		t.Fatalf("update = %+v %v", got, err)
 	}
 }
+
+// research/22 P0-13 (22c B9): a root domain under one of the tenant's seeds
+// is refused; a parent, a look-alike and another tenant's seed are not.
+func TestSeedService_RefusesSubdomainOfSeed(t *testing.T) {
+	a, b := shared.NewID(), shared.NewID()
+	store := &memSeeds{byTenant: map[shared.ID][]easmseed.Seed{}}
+	svc := NewSeedService(store, verifiedFor{})
+	ctx := context.Background()
+	add := func(tn shared.ID, v string) error {
+		_, err := svc.Create(ctx, tn, CreateSeedInput{Kind: "root_domain", Value: v, Attested: true})
+		return err
+	}
+	if err := add(a, "eu.acme.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := add(a, "www.eu.acme.com"); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("subdomain of a seed: %v", err)
+	}
+	if err := add(a, "acme.com"); err != nil {
+		t.Fatalf("parent of a seed refused: %v", err)
+	}
+	if err := add(a, "neweu.acme.com"); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("now under acme.com: %v", err)
+	}
+	if err := add(a, "notacme.com"); err != nil {
+		t.Fatalf("look-alike refused: %v", err)
+	}
+	if err := add(b, "www.eu.acme.com"); err != nil {
+		t.Fatalf("another tenant's seed applied: %v", err)
+	}
+}
