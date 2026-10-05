@@ -30,11 +30,6 @@ const (
 	FailAction     = "fail"
 )
 
-// CommandActionPath is the full path of a transition on one command.
-func CommandActionPath(commandID, action string) string {
-	return PathPrefix + CommandsPath + "/" + commandID + "/" + action
-}
-
 // ManifestResponse answers PUT /manifest (RFC-033 §6.4): the digest the
 // platform stored (the sensor echoes it as the heartbeat's manifest_digest),
 // whether it was new, and what was accepted and ignored.

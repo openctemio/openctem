@@ -1,32 +1,34 @@
 package routes
 
 import (
-	"context"
-	"net/http"
-	"net/url"
-	"time"
-
-	"github.com/go-chi/chi/v5"
-
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/internal/metrics"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // IngestMaxConcurrentPerTenant caps in-flight report-ingest requests per
 // tenant (see middleware.TenantConcurrencyLimiter).
 const IngestMaxConcurrentPerTenant = 8
 
-// Sensor self-renewal budget, per sensor: a burst of 5, then one every 2 minutes.
-const (
-	renewRatePerSecond = 1.0 / 120.0
-	renewBurst         = 5
-)
+// ingestMiddlewareChain orders the ingest middlewares so the cheap rejections
+// (per-tenant rate limit, per-tenant concurrency cap) run BEFORE the body is
+// decompressed. Decompression buffers up to 100MB per request; when the limiter
+// ran after it, a throttled tenant still made the server inflate every rejected
+// body. nil limiters are skipped. Used by the CI run upload (routes/ci.go).
+func ingestMiddlewareChain(
+	rateLimiter *middleware.TelemetryRateLimiter,
+	concurrency *middleware.TenantConcurrencyLimiter,
+	bodyLimit, decompress Middleware,
+) []Middleware {
+	chain := make([]Middleware, 0, 4)
+	if rateLimiter != nil {
+		chain = append(chain, rateLimiter.Middleware())
+	}
+	if concurrency != nil {
+		chain = append(chain, concurrency.Middleware())
+	}
+	return append(chain, bodyLimit, decompress)
+}
 
 // registerCommandRoutes registers command management endpoints.
 // Commands are server-side instructions sent to sensors.
@@ -52,200 +54,6 @@ func registerCommandRoutes(
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.CommandsDelete))
 	}, tenantMiddlewares...)
-}
-
-// ingestMiddlewareChain orders the ingest middlewares so the cheap rejections
-// (per-tenant rate limit, per-tenant concurrency cap) run BEFORE the body is
-// decompressed. Decompression buffers up to 100MB per request; when the limiter
-// ran after it, a throttled tenant still made the server inflate every rejected
-// body. nil limiters are skipped.
-func ingestMiddlewareChain(
-	rateLimiter *middleware.TelemetryRateLimiter,
-	concurrency *middleware.TenantConcurrencyLimiter,
-	bodyLimit, decompress Middleware,
-) []Middleware {
-	chain := make([]Middleware, 0, 4)
-	if rateLimiter != nil {
-		chain = append(chain, rateLimiter.Middleware())
-	}
-	if concurrency != nil {
-		chain = append(chain, concurrency.Middleware())
-	}
-	return append(chain, bodyLimit, decompress)
-}
-
-// countV1Ingest counts one protocol v1 ingest route. route is a fixed name.
-func countV1Ingest(route string) Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			metrics.IngestV1RequestsTotal.WithLabelValues(route).Inc()
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-// v1Sensor is the middleware of a protocol v1 sensor route: it counts the
-// request (sensor_protocol_requests_total{protocol="1"}) and, when the route
-// has a protocol v2 successor, adds the deprecation headers naming it
-// (RFC-029 §5.2). successor nil: no successor yet, so not deprecated.
-func v1Sensor(route string, successor func(*http.Request) string) []Middleware {
-	count := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			metrics.SensorProtocolRequestsTotal.WithLabelValues("1", route).Inc()
-			next.ServeHTTP(w, r)
-		})
-	}
-	if successor == nil {
-		return []Middleware{count}
-	}
-	return []Middleware{count, legacyv1.DeprecatedRoute(successor)}
-}
-
-// v2Path is the successor function of a fixed protocol v2 path.
-func v2Path(path string) func(*http.Request) string {
-	return legacyv1.Successor(protov2.PathPrefix + path)
-}
-
-// v2CommandAction is the successor of a v1 command transition: the same
-// command's v2 action.
-func v2CommandAction(action string) func(*http.Request) string {
-	return func(r *http.Request) string {
-		return protov2.CommandActionPath(url.PathEscape(chi.URLParam(r, "id")), action)
-	}
-}
-
-// registerSensorRoutes registers sensor API endpoints.
-// These endpoints are authenticated using source API keys (not JWT).
-//
-// telemetryRateLimiter may be nil; when non-nil it is applied ONLY to
-// the /telemetry-events route. The per-tenant token-bucket keeps one
-// noisy EDR/XDR sensor from saturating the ingest worker for the whole
-// cluster — a single compromised sensor API key could otherwise replay
-// cached batches at line rate.
-func registerSensorRoutes(
-	router Router,
-	ingestHandler *handler.IngestHandler,
-	commandHandler *handler.CommandHandler,
-	scanSessionHandler *handler.ScanSessionHandler,
-	runtimeTelemetryHandler *handler.RuntimeTelemetryHandler,
-	suppressionHandler *handler.SuppressionHandler,
-	moduleGate *middleware.ModuleGate,
-	telemetryRateLimiter *middleware.TelemetryRateLimiter,
-	ingestRateLimiter *middleware.TelemetryRateLimiter,
-	log *logger.Logger,
-) {
-	// Build middleware chain: API key auth
-	baseMiddleware := ingestHandler.AuthenticateSource
-
-	// Decompression middleware for ingest endpoints (supports gzip and zstd)
-	decompressMiddleware := middleware.DecompressForIngest()
-
-	// Ingest body limit: 50MB for large scan reports. BodyLimit REPLACES the
-	// global 10MB limit for these routes (see middleware.BodyLimit); before it
-	// nested under it, so the 50MB limit never applied.
-	ingestBodyLimit := middleware.BodyLimit(middleware.IngestMaxBodySize)
-
-	// Per-tenant rate limit for the heavy report-ingest endpoints. Each request
-	// can carry up to 100k findings / 100MB decompressed, so an unbounded loop
-	// (or a compromised sensor key) could exhaust DB/CPU. Pass-through when the
-	// limiter is nil (dev / opt-out). Applied AFTER AuthenticateSource so the
-	// tenant is in context.
-	//
-	// ORDER MATTERS: the rate limiter and the per-tenant concurrency cap run
-	// BEFORE decompression. Decompression buffers up to 100MB per request; when
-	// the limiter ran after it, a throttled tenant still made the server
-	// inflate every rejected body first.
-	ingestMW := ingestMiddlewareChain(ingestRateLimiter,
-		middleware.NewTenantConcurrencyLimiter(IngestMaxConcurrentPerTenant),
-		ingestBodyLimit, decompressMiddleware)
-
-	// Self-renewal is cheap per call but mints a credential (and, under a key
-	// TTL, a new key row) each time, so it is throttled per AGENT — a stolen
-	// key must not be able to mint an unbounded set of fresh credentials.
-	// Always on (independent of the global rate-limit toggle): legitimate
-	// sensors renew once per key lifetime.
-	renewLimiter := middleware.NewTelemetryRateLimiter(renewRatePerSecond, renewBurst, time.Hour, log)
-	renewMW := renewLimiter.MiddlewareKeyed(func(r *http.Request) string {
-		if agt := handler.SensorFromContext(r.Context()); agt != nil {
-			return agt.ID.String()
-		}
-		return ""
-	}, "key renewal rate limit exceeded")
-
-	// Sensor protocol v1 — authenticated via sensor API key. The mount keeps
-	// its pre-sensor name: deployed sensors and SDKs call it (RFC-023 §9.2 C1).
-	router.Group(legacyv1.PathPrefix, func(r Router) {
-		// Heartbeat - essential for sensor health monitoring
-		r.POST("/heartbeat", ingestHandler.Heartbeat, v1Sensor("heartbeat", v2Path(protov2.HeartbeatPath))...)
-
-		// Self-service credential renewal: the sensor rotates its own key by
-		// presenting the current one. Authenticated by AuthenticateSource like
-		// every other endpoint in this group; the building block for
-		// auto-rotating credentials (RFC-014).
-		r.POST("/renew", ingestHandler.RenewKey, append(v1Sensor("renew", v2Path(protov2.KeysPath)), renewMW)...)
-
-		// Ingest findings/assets
-		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
-		// All ingest endpoints support compressed request bodies (Content-Encoding: gzip or zstd)
-		// Ingest endpoints use a 50MB body limit (vs 10MB default) for large scan reports
-		// Each v1 ingest route is counted (ingest_v1_requests_total{route}) so
-		// it can be retired on evidence (RFC-026 §8.3). Counting adds no byte.
-		v1 := func(route string, successor func(*http.Request) string) []Middleware {
-			return append(append(v1Sensor(route, successor), countV1Ingest(route)), ingestMW...)
-		}
-		results := v2Path(protov2.ResultsPath)
-		r.POST("/ingest", ingestHandler.IngestCTIS, v1("ingest", results)...) // Primary CTIS ingest endpoint
-		r.POST("/ingest/check", ingestHandler.CheckFingerprints, v1("ingest_check", v2Path(protov2.FingerprintsCheckPath))...)
-		r.POST("/ingest/baseline-diff", ingestHandler.BaselineDiff, v1("ingest_baseline_diff", v2Path(protov2.BaselineDiffPath))...) // RFC-008 Phase 3: PR new-vs-target
-		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, v1("ingest_sarif", nil)...)
-		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, v1("ingest_ctis", results)...)
-		r.POST("/ingest/recon", ingestHandler.IngestReconReport, v1("ingest_recon", nil)...)
-		r.POST("/ingest/scan", ingestHandler.IngestScan, v1("ingest_scan", nil)...)
-		r.POST("/ingest/chunk", ingestHandler.IngestChunk, v1("ingest_chunk", results)...)
-		r.GET("/ingest/scanners", ingestHandler.ListScanners, v1Sensor("ingest_scanners", nil)...)
-
-		// Async ingest job status poll (RFC-005). No-op store returns 404 when
-		// async mode is disabled.
-		r.GET("/ingest/jobs/{id}", ingestHandler.GetIngestJob, v1Sensor("ingest_jobs", results)...)
-
-		// Command polling and status updates
-		r.GET("/commands", commandHandler.Poll, v1Sensor("commands", v2Path(protov2.CommandsPath))...)
-		r.POST("/commands/{id}/acknowledge", commandHandler.Acknowledge, v1Sensor("acknowledge", v2CommandAction(protov2.ClaimAction))...)
-		r.POST("/commands/{id}/start", commandHandler.Start, v1Sensor("start", v2CommandAction(protov2.StartAction))...)
-		r.POST("/commands/{id}/complete", commandHandler.Complete, v1Sensor("complete", v2CommandAction(protov2.CompleteAction))...)
-		r.POST("/commands/{id}/fail", commandHandler.Fail, v1Sensor("fail", v2CommandAction(protov2.FailAction))...)
-
-		// Active suppression rules of the sensor's tenant, for the sensor-side
-		// security gate (additive v1 route, legacyv1.SuppressionsPath). Tenant
-		// from the sensor identity only; an empty list when the suppressions
-		// module is disabled for the tenant.
-		if suppressionHandler != nil {
-			r.GET("/suppressions", suppressionHandler.SensorActiveRules(func(ctx context.Context, tenantID string) bool {
-				return moduleGate.IsEnabled(ctx, tenantID, moduledom.ModuleSuppressions)
-			}), v1Sensor("suppressions", v2Path(protov2.SuppressionsPath))...)
-		}
-
-		// Scan session management
-		if scanSessionHandler != nil {
-			r.POST("/scans", scanSessionHandler.RegisterScan, v1Sensor("scans", nil)...)
-			r.PATCH("/scans/{id}", scanSessionHandler.UpdateScan, v1Sensor("scans", nil)...)
-			r.GET("/scans/{id}", scanSessionHandler.GetScan, v1Sensor("scans", nil)...)
-		}
-
-		// Runtime telemetry — batched EDR/XDR events from endpoint
-		// sensors. Feeds the IOC correlator and CTEM maturity dashboards.
-		// Same sensor API-key auth as the other ingest endpoints; 50 MB
-		// body limit for backlogged batches.
-		if runtimeTelemetryHandler != nil {
-			// Optional per-tenant rate limit. Pass-through when the
-			// limiter is not configured (development, or operators who
-			// opt out via config) so the wiring change is backward
-			// compatible.
-			// Rate limiter first, for the same reason as ingestMW above.
-			telemetryMW := ingestMiddlewareChain(telemetryRateLimiter, nil, ingestBodyLimit, decompressMiddleware)
-			r.POST("/telemetry-events", runtimeTelemetryHandler.Ingest, append(v1Sensor("telemetry_events", nil), telemetryMW...)...)
-		}
-	}, baseMiddleware)
 }
 
 // registerSensorManagementRoutes registers sensor management endpoints.
@@ -327,24 +135,6 @@ func registerSensorManagementRoutes(
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete))
 	}, tenantMiddlewares...)
 
-	// The management API used to live at /api/v1/agents. Every one of its
-	// routes now answers 308 to the same resource under /api/v1/sensors, with
-	// Deprecation/Sunset headers, until legacyv1.SunsetAt. No auth here: the
-	// client re-sends its credentials to the target, which is gated as above.
-	router.Group(legacyv1.ManagementPathPrefix, func(r Router) {
-		r.GET("/", h.RedirectDeprecatedPath)
-		r.GET("/stats", h.RedirectDeprecatedPath)
-		r.GET("/{id}", h.RedirectDeprecatedPath)
-		r.GET("/{id}/config-templates", h.RedirectDeprecatedPath)
-		r.GET("/available-capabilities", h.RedirectDeprecatedPath)
-		r.POST("/", h.RedirectDeprecatedPath)
-		r.PUT("/{id}", h.RedirectDeprecatedPath)
-		r.POST("/{id}/regenerate-key", h.RedirectDeprecatedPath)
-		r.POST("/{id}/activate", h.RedirectDeprecatedPath)
-		r.POST("/{id}/deactivate", h.RedirectDeprecatedPath)
-		r.POST("/{id}/revoke", h.RedirectDeprecatedPath)
-		r.DELETE("/{id}", h.RedirectDeprecatedPath)
-	})
 }
 
 // registerScanZoneRoutes registers the scan zone management API (RFC-023
@@ -710,9 +500,6 @@ func registerScanRoutes(
 
 // registerScanSessionRoutes registers scan session endpoints.
 // Scan sessions track individual scan executions from sensors.
-// Two sets of routes:
-// 1. Sensor routes (API key auth): /api/v1/agent/scans - register, update, get scans
-// 2. Admin routes (JWT auth): /api/v1/scan-sessions - list, view, manage sessions
 func registerScanSessionRoutes(
 	router Router,
 	h *handler.ScanSessionHandler,
