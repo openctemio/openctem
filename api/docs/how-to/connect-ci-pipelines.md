@@ -66,6 +66,8 @@ token from GitHub on `pull_request`; that is intended.
 
 ## 3. GitLab CI
 
+Step-by-step GitLab guide (variables, templates, enforcing the gate, self-managed GitLab, troubleshooting): [Run OpenCTEM security scans in GitLab CI/CD](gitlab-ci.md).
+
 ```yaml
 openctem-security:
   image: ghcr.io/openctemio/sensor:latest-ci
