@@ -24,8 +24,10 @@ interface MembersTabProps {
   limit: number
   offset: number
   onPageChange: (offset: number) => void
-  onAddMember: () => void
-  onRemoveMember: (userId: string, name: string) => void
+  /** Omitted when the caller may not add members (the button is hidden). */
+  onAddMember?: () => void
+  /** Omitted when the caller may not remove members (the action is hidden). */
+  onRemoveMember?: (userId: string, name: string) => void
 }
 
 export function MembersTab({
@@ -65,10 +67,12 @@ export function MembersTab({
     <div>
       <div className="flex items-center justify-between mb-4">
         <h4 className="text-sm font-medium">Group Members ({totalCount})</h4>
-        <Button size="sm" onClick={onAddMember}>
-          <UserPlus className="me-2 h-4 w-4" />
-          Add Member
-        </Button>
+        {onAddMember && (
+          <Button size="sm" onClick={onAddMember}>
+            <UserPlus className="me-2 h-4 w-4" />
+            Add Member
+          </Button>
+        )}
       </div>
 
       <div className="relative mb-4">
@@ -130,17 +134,19 @@ export function MembersTab({
                     {member.role === 'member' && <User className="h-3 w-3 me-1" />}
                     {roleConfig.label}
                   </Badge>
-                  <DataTableRowActions
-                    actions={[
-                      {
-                        label: 'Remove',
-                        icon: Trash2,
-                        destructive: true,
-                        onClick: () =>
-                          onRemoveMember(member.user_id || member.user?.id || '', name),
-                      },
-                    ]}
-                  />
+                  {onRemoveMember && (
+                    <DataTableRowActions
+                      actions={[
+                        {
+                          label: 'Remove',
+                          icon: Trash2,
+                          destructive: true,
+                          onClick: () =>
+                            onRemoveMember(member.user_id || member.user?.id || '', name),
+                        },
+                      ]}
+                    />
+                  )}
                 </div>
               </div>
             )

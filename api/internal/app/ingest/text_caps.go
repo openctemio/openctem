@@ -98,7 +98,52 @@ func capReportText(report *ctis.Report) int {
 	for i := range report.Findings {
 		capFindingText(c, &report.Findings[i])
 	}
+	for i := range report.Assets {
+		if t := report.Assets[i].Technical; t != nil && t.Certificate != nil {
+			capCertificateText(c, t.Certificate)
+		}
+	}
 	return c.changed
+}
+
+// Caps on a certificate's text (research/22 E5): the scanned server chose
+// every value of the certificate it presented.
+const (
+	MaxCertNameLen      = 255 // subject CN, issuer CN and organization
+	MaxCertSerialLen    = 128
+	MaxCertFingerprint  = 128
+	MaxCertAlgorithmLen = 64
+	MaxCertSANs         = 100
+	MaxCertSANLen       = 253
+)
+
+func capCertificateText(c *textCapper, ct *ctis.CertificateTechnical) {
+	ct.SubjectCN = c.str(stripControl(c, ct.SubjectCN), MaxCertNameLen)
+	ct.IssuerCN = c.str(stripControl(c, ct.IssuerCN), MaxCertNameLen)
+	ct.IssuerOrg = c.str(stripControl(c, ct.IssuerOrg), MaxCertNameLen)
+	ct.SerialNumber = c.str(stripControl(c, ct.SerialNumber), MaxCertSerialLen)
+	ct.Fingerprint = c.str(stripControl(c, ct.Fingerprint), MaxCertFingerprint)
+	ct.SignatureAlgorithm = c.str(stripControl(c, ct.SignatureAlgorithm), MaxCertAlgorithmLen)
+	ct.KeyAlgorithm = c.str(stripControl(c, ct.KeyAlgorithm), MaxCertAlgorithmLen)
+	for i := range ct.SANs {
+		ct.SANs[i] = stripControl(c, ct.SANs[i])
+	}
+	ct.SANs = c.list(ct.SANs, MaxCertSANs, MaxCertSANLen)
+}
+
+// stripControl removes control characters (newlines included): certificate
+// names are shown and logged on one line.
+func stripControl(c *textCapper, s string) string {
+	out := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) {
+			return -1
+		}
+		return r
+	}, s)
+	if out != s {
+		c.changed++
+	}
+	return out
 }
 
 func capFindingText(c *textCapper, f *ctis.Finding) {

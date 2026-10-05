@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Save, Building, Upload, Loader2, AlertCircle, Lock } from 'lucide-react'
-import { usePermissions, Permission } from '@/lib/permissions'
+import { useCanMutate } from '@/lib/permissions'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -36,6 +36,7 @@ import {
   useUpdateBrandingSettings,
 } from '../api/use-tenant-settings'
 import { useTenantLogo } from '../hooks/use-tenant-logo'
+import { planGeneralSave, planHasChanges } from '../lib/general-save-plan'
 import {
   VALID_TIMEZONES,
   VALID_LANGUAGES,
@@ -315,12 +316,17 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
   const { currentTenant, updateCurrentTenant, refreshTenants } = useTenant()
   const tenantId = currentTenant?.id
 
-  // Permission check - can user update tenant settings?
-  const { can, isOwner } = usePermissions()
-  const canUpdateTenant = can(Permission.TeamUpdate)
-  // Security settings are owner-only on the backend (RequireTeamOwner);
-  // TeamUpdate alone would render a dead control for admins.
-  const canManageSecurityAndAPI = canUpdateTenant && isOwner()
+  // Controls follow the API route gates (permission + role), so a custom
+  // role with team:update but not admin no longer sees a Save that 403s.
+  const canUpdateTenant = useCanMutate(
+    'PATCH /api/v1/tenants/{tenant}',
+    'PATCH /api/v1/tenants/{tenant}/settings/general',
+    'PATCH /api/v1/tenants/{tenant}/settings/branding'
+  )
+  // Security settings are owner-only on the backend (RequireTeamOwner).
+  const canManageSecurityAndAPI = useCanMutate('PATCH /api/v1/tenants/{tenant}/settings/security')
+  // Storage configuration is admin-only (RequireAdmin).
+  const canSaveStorage = useCanMutate('PATCH /api/v1/attachments/storage-config')
 
   // Fetch settings
   const { settings, isLoading, isError, error, mutate } = useTenantSettings(tenantId)
@@ -344,6 +350,10 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
     slug: '',
   })
   const [_hasOrgInfoChanges, setHasOrgInfoChanges] = useState(false)
+
+  // A logo picked or removed but not saved yet: undefined = unchanged,
+  // a data URL = replace, null = remove. The header Save writes it.
+  const [logoDraft, setLogoDraft] = useState<string | null | undefined>(undefined)
 
   // Cached logo hook
   const { logoSrc, updateLogo } = useTenantLogo(
@@ -460,53 +470,44 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
     }
   }
 
-  // Save handlers - Combined save for General tab (org info + general settings)
+  // Save handler for the General tab: org info, general settings and the logo
+  // all go through this one Save (see lib/general-save-plan.ts).
   const handleSaveSettings = async () => {
+    const plan = planGeneralSave({
+      orgInfo: orgInfoForm,
+      current: currentTenant,
+      generalForm,
+      savedGeneral: settings?.general,
+      branding: brandingForm,
+      logoDraft,
+    })
+    if (!planHasChanges(plan)) {
+      toast.info('No changes to save')
+      return
+    }
     try {
-      let hasChanges = false
-
-      // Track org info changes
-      const orgChanges: { name?: string; slug?: string } = {}
-      if (orgInfoForm.name !== currentTenant?.name) {
-        orgChanges.name = orgInfoForm.name
-      }
-      if (orgInfoForm.slug !== currentTenant?.slug) {
-        orgChanges.slug = orgInfoForm.slug
-      }
-
-      // Track general settings changes
-      const hasGeneralChanges =
-        settings &&
-        (generalForm.timezone !== (settings.general.timezone || 'UTC') ||
-          generalForm.language !== (settings.general.language || 'en') ||
-          generalForm.industry !== (settings.general.industry || '') ||
-          generalForm.website !== (settings.general.website || ''))
-
-      // Save org info if there are changes
-      if (Object.keys(orgChanges).length > 0) {
-        await updateTenant(orgChanges)
+      if (plan.orgChanges) {
+        await updateTenant(plan.orgChanges)
         // Update tenant context without reload
-        updateCurrentTenant(orgChanges)
+        updateCurrentTenant(plan.orgChanges)
         // Refresh tenants list in background
         refreshTenants()
-        hasChanges = true
         setHasOrgInfoChanges(false)
       }
-
-      // Save general settings only if there are changes
-      if (hasGeneralChanges) {
-        const result = await updateGeneralSettings(generalForm)
+      if (plan.general) {
+        const result = await updateGeneralSettings(plan.general)
+        if (result) mutate(result)
+      }
+      if (plan.branding) {
+        const result = await updateBrandingSettings(plan.branding)
         if (result) {
           mutate(result)
-          hasChanges = true
+          updateLogo(plan.branding.logo_data)
+          setBrandingForm(plan.branding)
+          setLogoDraft(undefined)
         }
       }
-
-      if (hasChanges) {
-        toast.success('Settings saved successfully')
-      } else {
-        toast.info('No changes to save')
-      }
+      toast.success('Settings saved successfully')
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to save settings'))
     }
@@ -590,7 +591,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
           {activeTab === 'general' && (
             <HeaderSaveButton
               onClick={handleSaveGeneral}
-              busy={isUpdatingGeneral}
+              busy={isUpdatingTenant || isUpdatingGeneral || isUpdatingBranding}
               locked={!canUpdateTenant}
               lockedReason="You do not have permission to update organization settings"
             />
@@ -608,6 +609,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
               form={STORAGE_FORM_ID}
               busy={storageStatus.saving}
               disabled={!storageStatus.canSave}
+              locked={!canSaveStorage}
+              lockedReason="Only administrators can change the file storage"
             />
           )}
         </PageHeader>
@@ -814,7 +817,13 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                       {/* Logo with Hover Upload */}
                       <div className="relative group">
                         <Avatar className="h-24 w-24 ring-2 ring-border">
-                          <AvatarImage src={safeImageSrc(brandingForm.logo_data || logoSrc)} />
+                          <AvatarImage
+                            src={
+                              logoDraft === null
+                                ? undefined
+                                : safeImageSrc(logoDraft ?? (brandingForm.logo_data || logoSrc))
+                            }
+                          />
                           <AvatarFallback className="text-3xl bg-primary/10">
                             {currentTenant?.name?.charAt(0) || 'T'}
                           </AvatarFallback>
@@ -850,7 +859,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                                     const ctx = canvas.getContext('2d')
                                     ctx?.drawImage(img, 0, 0, w, h)
                                     const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
-                                    setBrandingForm({ ...brandingForm, logo_data: dataUrl })
+                                    setLogoDraft(dataUrl)
                                   }
                                   img.src = ev.target?.result as string
                                 }
@@ -877,52 +886,19 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
 
                       {/* Logo Actions */}
                       <div className="flex flex-col items-center gap-2">
-                        {brandingForm.logo_data ? (
+                        {logoDraft !== undefined ? (
                           <>
                             <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
-                              Unsaved changes
+                              {logoDraft === null ? 'Logo will be removed' : 'New logo'}: unsaved,
+                              use Save changes
                             </span>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  setBrandingForm({ ...brandingForm, logo_data: null })
-                                }
-                              >
-                                Cancel
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={async () => {
-                                  try {
-                                    // PATCH /settings/branding is a full-struct
-                                    // replace — omitted fields reset to "". Echo
-                                    // back primary_color/logo_dark_url so saving
-                                    // the logo doesn't wipe them.
-                                    const result = await updateBrandingSettings({
-                                      primary_color: brandingForm.primary_color,
-                                      logo_dark_url: brandingForm.logo_dark_url,
-                                      logo_data: brandingForm.logo_data,
-                                    })
-                                    if (result) {
-                                      mutate(result)
-                                      updateLogo(brandingForm.logo_data)
-                                      toast.success('Logo updated')
-                                    }
-                                  } catch {
-                                    toast.error('Failed to update logo')
-                                  }
-                                }}
-                                disabled={isUpdatingBranding}
-                              >
-                                {isUpdatingBranding ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  'Save'
-                                )}
-                              </Button>
-                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setLogoDraft(undefined)}
+                            >
+                              Discard
+                            </Button>
                           </>
                         ) : (
                           <>
@@ -946,23 +922,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                onClick={async () => {
-                                  try {
-                                    const result = await updateBrandingSettings({
-                                      primary_color: brandingForm.primary_color,
-                                      logo_dark_url: brandingForm.logo_dark_url,
-                                      logo_data: null,
-                                    })
-                                    if (result) {
-                                      mutate(result)
-                                      updateLogo(null)
-                                      toast.success('Logo removed')
-                                    }
-                                  } catch {
-                                    toast.error('Failed to remove logo')
-                                  }
-                                }}
-                                disabled={isUpdatingBranding}
+                                onClick={() => setLogoDraft(null)}
                               >
                                 Remove
                               </Button>

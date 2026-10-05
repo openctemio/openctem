@@ -368,6 +368,16 @@ export interface ApiFinding {
   cvss_version?: string
   cve_ids?: string[]
   patch_published_at?: string
+  /** The scanner reported a public exploit (findings.exploit_available). */
+  exploit_available?: boolean
+  network_port?: number
+  network_transport?: string
+  network_service?: string
+  /** Detail only (GET /findings/{id}): both CVSS vectors and the scanner's output. */
+  cvss_v2_vector?: string
+  cvss_v3_vector?: string
+  /** The scanner's proof (plugin output). Untrusted plain text: render escaped. */
+  scanner_output?: { text: string; updated_at?: string; truncated: boolean }
 }
 
 // ============================================

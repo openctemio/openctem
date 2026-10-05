@@ -293,3 +293,40 @@ func TestRecordSuppressions_OnlyForCreated(t *testing.T) {
 		t.Fatal("recorded link does not match the created finding + its rule")
 	}
 }
+
+type stubModuleGuard struct{ disabled map[string]bool }
+
+func (g stubModuleGuard) TenantDisabledModules(context.Context, string) map[string]bool {
+	return g.disabled
+}
+
+// The suppressions module toggle is enforced at ingest (settings plan P0-08):
+// a tenant that turned the module off (or whose bundles leave it out) gets
+// its findings as reported, and its rules are not even loaded.
+func TestApplySuppressions_ModuleOff_NoSuppression(t *testing.T) {
+	tenantID := shared.NewID()
+	assetID := shared.NewID()
+	rule := buildRule(tenantID, suppression.RuleStatusApproved, "semgrep", "sql-injection", nil)
+
+	checker := &stubSuppressionChecker{rules: []*suppression.Rule{rule}}
+	p := NewFindingProcessor(&stubFindingRepository{}, nil, nil, logger.NewNop())
+	p.SetSuppressionChecker(checker)
+	p.SetSuppressionModuleGuard(stubModuleGuard{disabled: map[string]bool{"suppressions": true}})
+
+	f := buildSuppFinding(t, tenantID, assetID, "semgrep", "sql-injection", "fp-1")
+	if d := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}); len(d) != 0 {
+		t.Fatalf("module off: %d suppression decisions, want 0", len(d))
+	}
+	if f.Status().IsClosed() {
+		t.Fatalf("module off: finding was closed (%s)", f.Status())
+	}
+	if checker.listCalls != 0 {
+		t.Fatalf("module off: rules loaded %d times, want 0", checker.listCalls)
+	}
+
+	// Another module being off changes nothing.
+	p.SetSuppressionModuleGuard(stubModuleGuard{disabled: map[string]bool{"pentest": true}})
+	if d := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}); len(d) != 1 {
+		t.Fatalf("module on: %d suppression decisions, want 1", len(d))
+	}
+}

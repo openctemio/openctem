@@ -796,10 +796,54 @@ Effort is engineer-weeks across all repos.
 
 | Phase | Status |
 |---|---|
-| P0 | Shipped on the api/web side: E1 CT rotation and retries (#811, migration `000266`), `certificate_expired` for the newest certificate only, E7 presets with shipped tools only (#815, `000270`), E8/E9 honest numbers and real trends (#829), E11 (#724); CT names promoted to assets and the scan attribution gate (#839). Open: E10 (automatic external/shadow scope). E2–E5 are tracked in sdk-go and the sensor. |
-| P1 | Shipped: dangling CNAME/NS and email posture checks (#852, `000325`; **off by default**, `EASM_DNS_CHECKS_ENABLED`) and the lame-delegation check (#1012); attribution side tables and evidence, CT promotion and `GET /api/v1/easm/summary` (#839, `000324`); tenant-scan evidence `tenant_scanned` (#1004); the asset Ownership section (#856); the EASM overview cards on `/attack-surface` (#857); the review queue with bulk decisions and the asset-list attribution filter (#994 API, #1023 web: `/attack-surface/review`, inventory shows approved assets by default; [easm.md §4b](../architecture/easm.md)); findings on unconfirmed assets capped at P2 (#1009); takeover confirmation: a nuclei takeover-template match from a tenant scan on an open `dangling_cname` raises `subdomain_takeover` (high) (#1018, `000485`). Open: sensor-side C17 (dnsx resolver fallback, sensor repository). |
+| P0 | Shipped on the api/web side: E1 CT rotation and retries (#811, migration `000266`), `certificate_expired` for the newest certificate only, E7 presets with shipped tools only (#815, `000270`), E8/E9 honest numbers and real trends (#829), E11 (#724); CT names promoted to assets and the scan attribution gate (#839). Open: E10 (automatic external/shadow scope). E2–E4 are tracked in sdk-go and the sensor. E5 (httpx certificate, favicon, JARM, ASN, CDN): api ingest of the certificate asset and `serves_certificate` shipped (migration `001026`); the ctis converter, sdk-go `LiveHost` and sensor defaults (`-tls-grab -favicon -jarm -cdn`, same-host redirects, same-host crawl, rate limit honoured) are open PRs in those repositories. |
+| P1 | Shipped: dangling CNAME/NS and email posture checks (#852, `000325`; on by default since research/22 P0-8, `EASM_DNS_CHECKS_ENABLED`) and the lame-delegation check (#1012); attribution side tables and evidence, CT promotion and `GET /api/v1/easm/summary` (#839, `000324`); tenant-scan evidence `tenant_scanned` (#1004); the asset Ownership section (#856); the EASM overview cards on `/attack-surface` (#857); the review queue with bulk decisions and the asset-list attribution filter (#994 API, #1023 web: `/attack-surface/review`, inventory shows approved assets by default; [easm.md §4b](../architecture/easm.md)); findings on unconfirmed assets capped at P2 (#1009); takeover confirmation: a nuclei takeover-template match from a tenant scan on an open `dangling_cname` raises `subdomain_takeover` (high) (#1018, `000485`). Open: sensor-side C17 (dnsx resolver fallback, sensor repository). |
 | P2 | In progress: seeds (#1041: `easm_seeds`, `root_domain` watched by the CT monitor). Open: candidates and tombstones, CIDR/ASN/organization seeds with RDAP/RIPEstat/PTR collectors, noisy-OR learning, rule precision. |
 | P3–P6 | Not started (no `easm_observations`). |
+
+**research/22 P0 (EASM maturity plan, owner decisions E1–E13, 2026-10-04).**
+One entry per item; the sensor items (P0-1 to P0-4) live in the sensor and
+sdk-go repositories, P0-5 with the scan-engine work (research/27).
+
+- **P0-7 EASM alerts through the notification outbox:** shipped (this PR,
+  migration `001014`). The CT monitor, the DNS checks and takeover
+  confirmation write exposures through one writer that announces inserted
+  and reopened rows as `new_exposure` in the same transaction: immediate for
+  medium or higher on approved assets, a daily digest otherwise, never for
+  rejected or deleted assets, 30 immediate alerts per tenant per hour.
+  [easm.md §4c](../architecture/easm.md#4c-alerts-built-p0-7).
+
+- **P0-8 DNS checks on by default, takeover on dependency names (E3, E13):**
+  shipped (#1143, migration `001017`). `EASM_DNS_CHECKS_ENABLED` defaults to
+  true; the CT controller runs the DNS checks for each tenant right after its
+  CT sweep; the email check also covers root-domain seeds and verified
+  domains with no domain asset (22c B3); a nuclei takeover-only scan may
+  probe a `dependency` asset with an open `dangling_cname`. The per-tenant
+  off switch comes with P0-11.
+
+- **P0-9 rejection hygiene and reclassify on decision (B2, B4):** shipped
+  (#1145, migration `001018`). Rejected and tombstoned names (and names
+  under them) produce no CT exposure and their open CT and DNS-check
+  exposures are resolved on rejection; CT exposures link to the host's own
+  asset with an asset-independent fingerprint (stored rows re-keyed); every
+  decision queues an asset-scoped reclassify, drained every minute.
+  [easm.md §5a](../architecture/easm.md#5a-after-a-decision-built-p0-9).
+
+- **P0-10 tenant domain verification with a purpose (E6):** open.
+
+- **P0-11 EASM settings and run-now:** open.
+
+- **P0-12 review queue reachable, honest counts (E1):** shipped (this PR,
+  no migration). Attack surface has Overview | Review tabs and a sidebar
+  badge with the queue's own total (needs_review + candidate); `?tab=rejected`
+  opens "Not ours"; the overview, the exposed list and `/attack-surface/external`
+  count approved assets only; "internet-facing" means `exposure = public`
+  everywhere; `?attribution=all` is accepted. The E1 308 of
+  `/attack-surface/external` waits for the inventory's external columns.
+
+- **P0-13 honest EASM numbers:** open.
+
+- **P0-6 port and service results surfaced (B6):** open.
 
 **When and where.** Implementation is written directly in the monorepo
 (`api/` + `web/`); sdk-go and sensor changes (E2–E5, P3 tools) stay in their

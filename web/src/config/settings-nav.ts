@@ -298,7 +298,7 @@ export const settingsNav: SettingsNavGroup[] = [
         description: 'Campaign types, methodologies and the finding library.',
         url: '/settings/pentest',
         icon: Crosshair,
-        permission: Permission.PentestWrite,
+        permission: Permission.PentestRead,
         module: 'pentest',
         keywords: ['pentest', 'campaign types', 'methodology', 'finding library', 'templates'],
       },
