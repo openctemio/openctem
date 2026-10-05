@@ -7,7 +7,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // commentReactionsPerMinute caps reaction add/remove requests per user.
@@ -109,20 +108,14 @@ func registerThreatIntelRoutes(
 
 // registerCredentialRoutes registers credential leak management endpoints.
 // Credentials are tenant-scoped (tenant from JWT token).
-// Two sets of routes:
-// 1. Admin routes (JWT auth): /api/v1/credentials - import, stats, management
-// 2. Sensor routes (API key auth): /api/v1/agent/credentials - ingest from sensors
 func registerCredentialRoutes(
 	router Router,
 	h *handler.CredentialImportHandler,
-	ingestHandler *handler.IngestHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token. The module gate applies only
-	// to the JWT admin group below; the sensor ingest group keeps its own
-	// API-key chain so data ingestion is never blocked by a bundle subset.
+	// Build tenant middleware chain from JWT token, then the module gate.
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Credential routes - tenant from JWT token (admin interface)
@@ -167,15 +160,6 @@ func registerCredentialRoutes(
 		r.POST("/{id}/reactivate", h.Reactivate, middleware.Require(permission.CredentialsWrite))
 	}, tenantMiddlewares...)
 
-	// Sensor routes for credential ingest (API key auth) - only if ingest handler exists
-	if ingestHandler != nil {
-		sensorMiddlewares := []Middleware{ingestHandler.AuthenticateSource}
-
-		router.Group(legacyv1.CredentialsPathPrefix, func(r Router) {
-			// Ingest credentials from sensors
-			r.POST("/ingest", h.Import)
-		}, sensorMiddlewares...)
-	}
 }
 
 // registerVulnerabilityRoutes registers vulnerability and finding management endpoints.

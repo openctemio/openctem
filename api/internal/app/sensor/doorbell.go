@@ -4,7 +4,7 @@ package sensor
 //
 // The heartbeat tells a sensor that something is waiting for it and how soon
 // to ring again; it never carries the work itself. Jobs are fetched and
-// claimed through GET /api/v1/agent/commands as before, so authorization,
+// claimed through GET /api/v2/sensor/commands, so authorization,
 // the zone claim predicate and claim semantics stay in one place.
 
 import (

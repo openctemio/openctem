@@ -23,11 +23,10 @@ func TestDispatch_OnlyToolsTheSensorVerified(t *testing.T) {
 	ctx := context.Background()
 	tid := shared.MustIDFromString(h.tenantID)
 
-	// Never reported (a v1 heartbeat without tools); the administrator
+	// Never reported (a heartbeat without tools); the administrator
 	// declared trivy on it.
 	declared := h.newLimitedSensor(h.tenantID, "declared-trivy", []string{"trivy"}, []string{"trivy"}, 0)
-	resp, raw := h.call(declared.key, http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{"status": "running"})
-	h.want(resp, raw, 200, "")
+	h.heartbeatV2(declared, map[string]any{"status": "running"})
 	// Reports trivy, but its probe failed (installed: false).
 	probeFailed := h.newLimitedSensor(h.tenantID, "trivy-probe-failed", nil, nil, 0)
 	h.heartbeatV2(probeFailed, map[string]any{"status": "running",
@@ -70,13 +69,17 @@ func TestDispatch_OnlyToolsTheSensorVerified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, raw = h.call(declared.key, http.MethodGet, "/api/v1/agent/commands", nil)
+	resp, raw := h.call(declared.key, http.MethodGet, "/api/v2/sensor/commands", nil)
 	h.want(resp, raw, 200, "")
-	var polled []struct {
-		ID string `json:"id"`
+	var polled struct {
+		Commands []struct {
+			ID string `json:"id"`
+		} `json:"commands"`
 	}
-	_ = json.Unmarshal(raw, &polled)
-	for _, p := range polled {
+	if err := json.Unmarshal(raw, &polled); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range polled.Commands {
 		if p.ID == cmd.ID.String() {
 			t.Fatal("the trivy command was offered to a sensor that never verified trivy")
 		}

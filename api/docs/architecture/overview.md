@@ -21,12 +21,11 @@
 ┌──────────────┐                    │       OpenCTEM Control Plane        │
 │   Clients    │                    ├─────────────────────────────────────┤
 ├──────────────┤                    │  HTTP API (REST)                    │
-│  Web App     │───────────────────▶│  - /api/v1/agents/*                 │
+│  Web App     │───────────────────▶│  - /api/v1/sensors/*                │
 │  Mobile App  │                    │  - /api/v1/pipelines/*              │
 │  CLI         │                    │  - /api/v1/findings/*               │
-└──────────────┘                    │  - /api/v1/agent/* (agent API)      │
-                                    │  - /api/v1/telemetry-events         │
-                                    │  - /api/v1/audit-logs/verify        │
+└──────────────┘                    │  - /api/v2/sensor/* (sensor API)    │
+                                                                        │  - /api/v1/audit-logs/verify        │
                                     └──────────────┬──────────────────────┘
                                                    │
                         ┌──────────────────────────┼──────────────────────────┐
