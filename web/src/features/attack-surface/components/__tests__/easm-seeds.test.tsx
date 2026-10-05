@@ -26,7 +26,7 @@ const modules = vi.hoisted(() => ({ ids: ['attack_surface'] }))
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useTenantModules: () => ({ moduleIds: modules.ids, isLoading: false }),
 }))
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 
 const { EASMSeedsPanel } = await import('../easm-seeds')
 
@@ -130,5 +130,47 @@ describe('EASMSeedsPanel', () => {
     wrap(<EASMSeedsPanel />)
     expect(api.get).not.toHaveBeenCalled()
     expect(screen.getByText(/not enabled/)).toBeInTheDocument()
+  })
+
+  // research/22 P0-10: an unverified seed offers Verify; starting it shows the
+  // TXT record, and Check now asks the server to look it up.
+  it('verifies a seed with a DNS TXT record', async () => {
+    const row = {
+      id: 'vd1',
+      domain: 'acme.io',
+      status: 'pending',
+      purpose: 'easm',
+      managed: false,
+      instructions: {
+        host: '_openctem-verify.acme.io',
+        type: 'TXT',
+        value: 'openctem-domain-verification=tok',
+      },
+      created_at: '2026-10-05T00:00:00Z',
+    }
+    api.get.mockImplementation((url: string) =>
+      Promise.resolve(url.includes('verified-domains') ? { data: [] } : seeds)
+    )
+    api.post.mockImplementation((url: string) =>
+      Promise.resolve(url.endsWith('/verify') ? { ...row, status: 'verified' } : row)
+    )
+    wrap(<EASMSeedsPanel />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Verify' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Start verification' }))
+    expect(api.post).toHaveBeenCalledWith('/api/v1/easm/verified-domains', { domain: 'acme.io' })
+    expect(await screen.findByText('_openctem-verify.acme.io')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Check now/ }))
+    expect(api.post).toHaveBeenCalledWith('/api/v1/easm/verified-domains/vd1/verify', {})
+    expect(await screen.findByText(/Verified\. It is re-checked/)).toBeInTheDocument()
+  })
+
+  it('offers no Verify without scope:write', async () => {
+    perms.write = false
+    api.get.mockImplementation((url: string) =>
+      Promise.resolve(url.includes('verified-domains') ? { data: [] } : seeds)
+    )
+    wrap(<EASMSeedsPanel />)
+    expect(await screen.findByText('acme.io')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Verify' })).not.toBeInTheDocument()
   })
 })
