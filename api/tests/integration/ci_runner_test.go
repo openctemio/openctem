@@ -98,6 +98,11 @@ type ciRig struct {
 
 func newCIRig(t *testing.T) *ciRig {
 	t.Helper()
+	return newCIRigWith(t, cirunapp.Config{WebBaseURL: "https://console.example"})
+}
+
+func newCIRigWith(t *testing.T, cfg cirunapp.Config) *ciRig {
+	t.Helper()
 	sqldb := setupTestDB(t)
 	t.Cleanup(func() { _ = sqldb.Close() })
 	db := &postgres.DB{DB: sqldb}
@@ -113,7 +118,7 @@ func newCIRig(t *testing.T) *ciRig {
 		Repo: repo, Verifier: oidc.NewClient(idp.srv.Client(), nil), Assets: postgres.NewAssetRepository(db),
 		Branches: postgres.NewBranchRepository(db), Baseline: postgres.NewFindingRepository(db), Ingester: ing,
 		Units: repo, Audit: auditapp.NewAuditService(postgres.NewAuditRepository(db), log),
-	}, cirunapp.Config{WebBaseURL: "https://console.example"}, log)
+	}, cfg, log)
 
 	h := handler.NewCIRunnerHandler(svc, log)
 	router := infrahttp.NewChiRouter()

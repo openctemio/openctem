@@ -6957,6 +6957,17 @@ definitions:
       revoked_at:
         type: string
     type: object
+  internal_infra_http_handler.CIGatePointResponse:
+    properties:
+      commit_sha:
+        type: string
+      evaluated_at:
+        type: string
+      run_id:
+        type: string
+      verdict:
+        type: string
+    type: object
   internal_infra_http_handler.CIGatePolicyListResponse:
     properties:
       data:
@@ -7010,6 +7021,312 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.CIPipelineBranchResponse:
+    properties:
+      branch:
+        type: string
+      is_default_branch:
+        type: boolean
+      last_run_at:
+        type: string
+      last_verdict:
+        type: string
+      runs:
+        type: integer
+    type: object
+  internal_infra_http_handler.CIPipelineDetailResponse:
+    properties:
+      branches:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIPipelineBranchResponse'
+        type: array
+      created_at:
+        type: string
+      default_branch:
+        type: string
+      first_run_at:
+        type: string
+      freshness:
+        enum:
+        - running
+        - fresh
+        - stale
+        - archived
+        - never
+        type: string
+      gate:
+        enum:
+        - passing
+        - failing
+        - none
+        type: string
+      gate_trend:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIGatePointResponse'
+        type: array
+      health:
+        enum:
+        - ok
+        - degraded
+        - unknown
+        type: string
+      health_reasons:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      inactive:
+        type: boolean
+      kind:
+        enum:
+        - ci_pipeline
+        type: string
+      last_default_run_at:
+        type: string
+      last_default_verdict:
+        type: string
+      last_fork_run_at:
+        type: string
+      last_pr_verdict:
+        type: string
+      last_run_at:
+        type: string
+      last_run_id:
+        type: string
+      legacy:
+        description: |-
+          Legacy: backfilled from runs that predate pipelines; the next run
+          confirms its repository id.
+        type: boolean
+      median_interval_seconds:
+        type: integer
+      mode:
+        enum:
+        - runner
+        type: string
+      pr_gate:
+        enum:
+        - passing
+        - failing
+        - none
+        type: string
+      provider:
+        enum:
+        - github
+        - gitlab
+        type: string
+      repository:
+        type: string
+      repository_asset_id:
+        type: string
+      revoked_at:
+        type: string
+      role:
+        enum:
+        - scanner
+        type: string
+      runs_count:
+        type: integer
+      schedule_interval_seconds:
+        type: integer
+      scheduled:
+        type: boolean
+      sensor_version:
+        type: string
+      stale_after_seconds:
+        description: |-
+          StaleAfterSeconds is the expected-cadence threshold; StaleAt when the
+          pipeline turns stale without another run.
+        type: integer
+      stale_at:
+        type: string
+      status:
+        enum:
+        - revoked
+        - failing
+        - degraded
+        - stale
+        - running
+        - fresh
+        - never
+        - archived
+        type: string
+      template_ref:
+        type: string
+      template_sha:
+        type: string
+      tools:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIToolLabel'
+        type: array
+      trust_config_id:
+        type: string
+      version_status:
+        enum:
+        - latest
+        - update_available
+        - unsupported
+        - unknown
+        type: string
+      workflow_name:
+        type: string
+      workflow_path:
+        type: string
+    type: object
+  internal_infra_http_handler.CIPipelineListResponse:
+    properties:
+      counts:
+        additionalProperties:
+          type: integer
+        type: object
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIPipelineResponse'
+        type: array
+      links:
+        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_infra_http_handler.CIPipelineResponse:
+    properties:
+      created_at:
+        type: string
+      default_branch:
+        type: string
+      first_run_at:
+        type: string
+      freshness:
+        enum:
+        - running
+        - fresh
+        - stale
+        - archived
+        - never
+        type: string
+      gate:
+        enum:
+        - passing
+        - failing
+        - none
+        type: string
+      health:
+        enum:
+        - ok
+        - degraded
+        - unknown
+        type: string
+      health_reasons:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      inactive:
+        type: boolean
+      kind:
+        enum:
+        - ci_pipeline
+        type: string
+      last_default_run_at:
+        type: string
+      last_default_verdict:
+        type: string
+      last_fork_run_at:
+        type: string
+      last_pr_verdict:
+        type: string
+      last_run_at:
+        type: string
+      last_run_id:
+        type: string
+      legacy:
+        description: |-
+          Legacy: backfilled from runs that predate pipelines; the next run
+          confirms its repository id.
+        type: boolean
+      median_interval_seconds:
+        type: integer
+      mode:
+        enum:
+        - runner
+        type: string
+      pr_gate:
+        enum:
+        - passing
+        - failing
+        - none
+        type: string
+      provider:
+        enum:
+        - github
+        - gitlab
+        type: string
+      repository:
+        type: string
+      repository_asset_id:
+        type: string
+      revoked_at:
+        type: string
+      role:
+        enum:
+        - scanner
+        type: string
+      runs_count:
+        type: integer
+      schedule_interval_seconds:
+        type: integer
+      scheduled:
+        type: boolean
+      sensor_version:
+        type: string
+      stale_after_seconds:
+        description: |-
+          StaleAfterSeconds is the expected-cadence threshold; StaleAt when the
+          pipeline turns stale without another run.
+        type: integer
+      stale_at:
+        type: string
+      status:
+        enum:
+        - revoked
+        - failing
+        - degraded
+        - stale
+        - running
+        - fresh
+        - never
+        - archived
+        type: string
+      template_ref:
+        type: string
+      template_sha:
+        type: string
+      tools:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIToolLabel'
+        type: array
+      trust_config_id:
+        type: string
+      version_status:
+        enum:
+        - latest
+        - update_available
+        - unsupported
+        - unknown
+        type: string
+      workflow_name:
+        type: string
+      workflow_path:
+        type: string
+    type: object
   internal_infra_http_handler.CIRunResponse:
     properties:
       actor:
@@ -7038,6 +7355,8 @@ definitions:
         type: string
       is_default_branch:
         type: boolean
+      pipeline_id:
+        type: string
       pipeline_url:
         type: string
       provider:
@@ -7054,8 +7373,21 @@ definitions:
         type: string
       run_attempt:
         type: string
+      scan_failures:
+        type: integer
+      sensor_version:
+        description: |-
+          SensorVersion is the runner's version; Tools what its reports
+          declared; ScanFailures what it reported at evaluation. Labels only.
+        type: string
       status:
         type: string
+      template_ref:
+        type: string
+      tools:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIToolLabel'
+        type: array
       trust_config_id:
         type: string
       verdict:
@@ -7080,6 +7412,13 @@ definitions:
       notes:
         type: string
       ransomware_use:
+        type: string
+    type: object
+  internal_infra_http_handler.CIToolLabel:
+    properties:
+      name:
+        type: string
+      version:
         type: string
     type: object
   internal_infra_http_handler.CITrustConfigListResponse:
@@ -10058,6 +10397,112 @@ definitions:
       replacement:
         description: Replacement string
         type: string
+    type: object
+  internal_infra_http_handler.FleetItem:
+    properties:
+      attention:
+        description: |-
+          Attention: the row needs someone to look (offline/degraded/stale
+          daemon; failing/degraded/stale pipeline).
+        type: boolean
+      description:
+        type: string
+      freshness:
+        type: string
+      gate:
+        type: string
+      health:
+        type: string
+      id:
+        type: string
+      inactive:
+        description: |-
+          Inactive rows (revoked or disabled daemons; archived, revoked or
+          never-run pipelines) are hidden unless include_inactive=true.
+        type: boolean
+      kind:
+        enum:
+        - sensor
+        - ci_pipeline
+        type: string
+      last_seen_at:
+        type: string
+      links:
+        $ref: '#/definitions/internal_infra_http_handler.FleetLinks'
+      mode:
+        enum:
+        - daemon
+        - runner
+        type: string
+      name:
+        type: string
+      provider:
+        description: Runner-only fields.
+        type: string
+      repository:
+        type: string
+      repository_asset_id:
+        type: string
+      role:
+        enum:
+        - scanner
+        - collector
+        type: string
+      status:
+        description: |-
+          Status is the mode's own status: a sensor state for a daemon
+          (online, degraded, late, stale, offline, idle, never_connected,
+          disabled, revoked), a pipeline status for a runner (failing, degraded,
+          stale, running, fresh, never, archived, revoked). A runner is never
+          offline.
+        type: string
+      version:
+        type: string
+      workflow:
+        type: string
+    type: object
+  internal_infra_http_handler.FleetLinks:
+    properties:
+      self:
+        type: string
+    type: object
+  internal_infra_http_handler.FleetListResponse:
+    properties:
+      counts:
+        additionalProperties:
+          $ref: '#/definitions/internal_infra_http_handler.FleetModeCounts'
+        type: object
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.FleetItem'
+        type: array
+      links:
+        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
+      modes:
+        items:
+          type: string
+        type: array
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_infra_http_handler.FleetModeCounts:
+    properties:
+      attention:
+        type: integer
+      by_status:
+        additionalProperties:
+          type: integer
+        type: object
+      inactive:
+        type: integer
+      total:
+        type: integer
     type: object
   internal_infra_http_handler.FleetRefreshContentResponse:
     properties:
@@ -20970,6 +21415,85 @@ paths:
       summary: Exchange a CI OIDC token for a run upload token
       tags:
       - CI
+  /ci/pipelines:
+    get:
+      description: CI pipelines (sensors in runner mode) on the repositories the caller
+        may see, most urgent first. Archived, revoked and never-run pipelines are
+        hidden unless include_inactive=true or a status filter names them.
+      parameters:
+      - description: Comma-separated statuses (revoked, failing, degraded, stale,
+          running, fresh, never, archived)
+        in: query
+        name: status
+        type: string
+      - description: Also list archived, revoked and never-run pipelines
+        in: query
+        name: include_inactive
+        type: boolean
+      - description: github or gitlab
+        in: query
+        name: provider
+        type: string
+      - description: Repository asset
+        in: query
+        name: repository_asset_id
+        type: string
+      - description: Repository, workflow path or name
+        in: query
+        name: search
+        type: string
+      - description: Page (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Per page (default 25, max 200)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIPipelineListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List CI pipelines
+      tags:
+      - CI
+  /ci/pipelines/{id}:
+    get:
+      description: The pipeline with its status, its branches (runs per branch; the
+        branch is never part of its identity) and its default-branch gate trend. Its
+        runs are GET /ci/runs?pipeline_id=. 404 when the repository is outside the
+        caller's data scope.
+      parameters:
+      - description: Pipeline ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIPipelineDetailResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a CI pipeline
+      tags:
+      - CI
   /ci/runs:
     get:
       description: CI pipeline runs (not sensors), newest first, on the repositories
@@ -20978,6 +21502,10 @@ paths:
       - description: Repository asset
         in: query
         name: repository_asset_id
+        type: string
+      - description: CI pipeline
+        in: query
+        name: pipeline_id
         type: string
       - description: pass, fail or none
         in: query
@@ -28384,6 +28912,66 @@ paths:
       summary: Get finding statistics
       tags:
       - Findings
+  /fleet:
+    get:
+      description: 'Everything that scans for the organization in one list: sensors
+        in daemon mode (heartbeat; can be offline; needs sensors:read) and CI pipelines
+        in runner mode (freshness against their cadence; never offline, never dispatched;
+        needs scans:ci:read and follows the data scope). Each mode is filtered by
+        its own permission. Inactive rows are hidden unless include_inactive=true.'
+      parameters:
+      - description: all (default), daemon or runner
+        in: query
+        name: mode
+        type: string
+      - description: scanner or collector
+        in: query
+        name: role
+        type: string
+      - description: Comma-separated statuses of the modes listed
+        in: query
+        name: status
+        type: string
+      - description: Only rows that need attention
+        in: query
+        name: attention
+        type: boolean
+      - description: Also list inactive rows
+        in: query
+        name: include_inactive
+        type: boolean
+      - description: Name, repository or workflow
+        in: query
+        name: search
+        type: string
+      - description: Page (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Per page (default 25, max 200)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FleetListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List the fleet
+      tags:
+      - Sensors
   /groups:
     get:
       description: List all groups in the tenant with optional filtering

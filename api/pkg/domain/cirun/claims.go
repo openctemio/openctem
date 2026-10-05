@@ -35,8 +35,17 @@ type Claims struct {
 	RunID       string // GitHub run_id, GitLab pipeline_id
 	RunAttempt  string
 	Workflow    string // GitHub workflow_ref, GitLab ci_config_ref_uri
-	Event       string // GitHub event_name, GitLab pipeline_source
-	Environment string
+	// WorkflowName is the workflow's display name (GitHub workflow; GitLab
+	// has none). A label, never part of an identity.
+	WorkflowName string
+	// JobWorkflowRef is the reusable workflow the job runs (GitHub
+	// job_workflow_ref, "org/security/.github/workflows/scan.yml@v2"), and
+	// JobWorkflowSHA its commit (GitHub job_workflow_sha; GitLab
+	// ci_config_sha). The pipeline's template, for drift.
+	JobWorkflowRef string
+	JobWorkflowSHA string
+	Event          string // GitHub event_name, GitLab pipeline_source
+	Environment    string
 	// Audience is the audience the token was verified for.
 	Audience string
 }
@@ -158,21 +167,24 @@ var mergeRequestRefRE = regexp.MustCompile(`^refs/merge-requests/([0-9]{1,10})/(
 // ParseGitHubClaims normalizes the claims of a GitHub Actions token.
 func ParseGitHubClaims(m map[string]any) Claims {
 	c := Claims{
-		Provider:     ProviderGitHub,
-		Issuer:       str(m, "iss"),
-		Subject:      str(m, "sub"),
-		JTI:          str(m, "jti"),
-		Repository:   strings.ToLower(str(m, "repository")),
-		RepositoryID: str(m, "repository_id"),
-		Ref:          str(m, "ref"),
-		RefType:      str(m, "ref_type"),
-		SHA:          strings.ToLower(str(m, "sha")),
-		Actor:        str(m, "actor"),
-		RunID:        str(m, "run_id"),
-		RunAttempt:   str(m, "run_attempt"),
-		Workflow:     str(m, "workflow_ref"),
-		Event:        str(m, "event_name"),
-		Environment:  str(m, "environment"),
+		Provider:       ProviderGitHub,
+		Issuer:         str(m, "iss"),
+		Subject:        str(m, "sub"),
+		JTI:            str(m, "jti"),
+		Repository:     strings.ToLower(str(m, "repository")),
+		RepositoryID:   str(m, "repository_id"),
+		Ref:            str(m, "ref"),
+		RefType:        str(m, "ref_type"),
+		SHA:            strings.ToLower(str(m, "sha")),
+		Actor:          str(m, "actor"),
+		RunID:          str(m, "run_id"),
+		RunAttempt:     str(m, "run_attempt"),
+		Workflow:       str(m, "workflow_ref"),
+		Event:          str(m, "event_name"),
+		Environment:    str(m, "environment"),
+		WorkflowName:   str(m, "workflow"),
+		JobWorkflowRef: str(m, "job_workflow_ref"),
+		JobWorkflowSHA: strings.ToLower(str(m, "job_workflow_sha")),
 	}
 	switch {
 	case pullRefRE.MatchString(c.Ref):
@@ -188,20 +200,23 @@ func ParseGitHubClaims(m map[string]any) Claims {
 // sends bare ref names; they are expanded to full refs.
 func ParseGitLabClaims(m map[string]any) Claims {
 	c := Claims{
-		Provider:     ProviderGitLab,
-		Issuer:       str(m, "iss"),
-		Subject:      str(m, "sub"),
-		JTI:          str(m, "jti"),
-		Repository:   strings.ToLower(str(m, "project_path")),
-		RepositoryID: str(m, "project_id"),
-		RefType:      str(m, "ref_type"),
-		RefProtected: str(m, "ref_protected") == "true",
-		SHA:          strings.ToLower(str(m, "sha")),
-		Actor:        str(m, "user_login"),
-		RunID:        str(m, "pipeline_id"),
-		Workflow:     str(m, "ci_config_ref_uri"),
-		Event:        str(m, "pipeline_source"),
-		Environment:  str(m, "environment"),
+		Provider:       ProviderGitLab,
+		Issuer:         str(m, "iss"),
+		Subject:        str(m, "sub"),
+		JTI:            str(m, "jti"),
+		Repository:     strings.ToLower(str(m, "project_path")),
+		RepositoryID:   str(m, "project_id"),
+		RefType:        str(m, "ref_type"),
+		RefProtected:   str(m, "ref_protected") == "true",
+		SHA:            strings.ToLower(str(m, "sha")),
+		Actor:          str(m, "user_login"),
+		RunID:          str(m, "pipeline_id"),
+		Workflow:       str(m, "ci_config_ref_uri"),
+		Event:          str(m, "pipeline_source"),
+		Environment:    str(m, "environment"),
+		JobWorkflowSHA: strings.ToLower(str(m, "ci_config_sha")),
+		// user_email is never read: a person's address is not needed to
+		// identify a pipeline or a run (the login is).
 	}
 	ref := str(m, "ref")
 	switch {

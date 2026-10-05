@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -869,10 +870,15 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		Ingester: svc.Ingest,
 		Units:    repos.CIRun,
 		Audit:    audit,
-	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL}, log)
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: cirun.StatusPolicy{
+		LatestVersion: sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion),
+		MinVersion:    sensordom.NormalizeVersion(cfg.SensorConfig.MinVersion),
+	}}, log)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
 		ds = svc.DataScope
 	}
-	return handler.NewCIAdminHandler(ciSvc, ds, log), handler.NewCIRunnerHandler(ciSvc, log)
+	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
+	admin.SetPipelineService(ciSvc)
+	return admin, handler.NewCIRunnerHandler(ciSvc, log)
 }
