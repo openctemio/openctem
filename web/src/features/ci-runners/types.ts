@@ -33,4 +33,20 @@ export type FleetList = S['internal_infra_http_handler.FleetListResponse']
 /** The fleet mode: a sensor row (daemon) or a CI pipeline (runner). */
 export type FleetMode = 'daemon' | 'runner'
 export type CIPipelineStatus =
-  'revoked' | 'failing' | 'degraded' | 'stale' | 'running' | 'fresh' | 'never' | 'archived'
+  | 'retired'
+  | 'revoked'
+  | 'failing'
+  | 'degraded'
+  | 'stale'
+  | 'running'
+  | 'fresh'
+  | 'never'
+  | 'archived'
+
+/** Coverage: repository x capability from any executor (RFC-051 §10.6). */
+export type CICoverage = S['internal_infra_http_handler.CICoverageResponse']
+export type CIRepositoryCoverage = S['internal_infra_http_handler.CIRepositoryCoverage']
+export type CICapabilityCoverage = S['internal_infra_http_handler.CICapabilityCoverage']
+export type CICapability = 'sast' | 'sca' | 'secrets' | 'iac'
+export type CICoverageState = 'fresh' | 'stale' | 'never'
+export type CICoverageFilter = '' | 'gap' | 'uncovered' | 'covered'
