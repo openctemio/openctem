@@ -5,4 +5,4 @@
 - New permissions `sensors:pair`, `sensors:approve`, `sensors:grant:narrow`, `sensors:grant:widen` and `sensors:revoke`, held by owners and administrators, admin-only. Revoking a sensor accepts `sensors:revoke`.
 - **Behaviour change:** new organizations require key-bound identity: `POST /api/v1/sensors` (a sensor with an API key) answers `403 BEARER_KEYS_DISABLED`; pair the sensor instead. Existing organizations keep the option; switch it with `PUT /api/v1/sensors/identity-policy`.
 - New: `GET /api/v1/sensors/{id}/keys`, `POST /api/v1/sensors/{id}/keys/{key_id}/revoke`.
-- Migration **001078** adds `sensor_pairings`, `tenants.sensor_bearer_keys_allowed` (true for existing organizations, false for new ones) and the five permissions.
+- Migration **001082** adds `sensor_pairings`, `tenants.sensor_bearer_keys_allowed` (true for existing organizations, false for new ones) and the five permissions.
