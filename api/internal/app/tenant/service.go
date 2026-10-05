@@ -1979,70 +1979,6 @@ func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID 
 	return &result, nil
 }
 
-// UpdateAssetSourceSettings updates only the asset-source priority
-// settings (RFC-003 Phase 1a).
-//
-// Phase 1a only validates structurally — duplicates, unknown trust
-// levels, UUID shape — because TenantService does not yet carry a
-// DataSourceRepo. Existence validation (UUIDs must belong to the
-// tenant's data_sources) moves into Phase 1b once the ingest
-// priority gate naturally joins with the data_sources table. A
-// misconfigured UUID in the meantime is harmless: the Phase 1b gate
-// treats unknown source IDs as lowest-rank and logs once per batch.
-func (s *TenantService) UpdateAssetSourceSettings(
-	ctx context.Context,
-	tenantID string,
-	as tenantdom.AssetSourceSettings,
-	actx auditapp.AuditContext,
-) (*tenantdom.Settings, error) {
-	var before tenantdom.AssetSourceSettings
-	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionAssetSource, func(t *tenantdom.Tenant) error {
-		// Snapshot the pre-change state so the audit event can carry a
-		// full before/after diff. Compliance frameworks that ask "who
-		// changed this setting and what specifically changed" lean on
-		// this — bare counts are not enough.
-		before = t.TypedSettings().AssetSource
-
-		return t.UpdateAssetSourceSettings(as)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	s.logger.Info("asset source settings updated",
-		"tenant_id", tenantID,
-		"priority_count", len(as.Priority),
-		"trust_levels_count", len(as.TrustLevels),
-		"track_attribution", as.TrackFieldAttribution,
-	)
-
-	// Build ordered []string of UUIDs for audit metadata. Bounded
-	// by MaxAssetSourcePriorityLen so we don't blow up the audit
-	// row on an oversize-but-accepted list.
-	toStrings := func(ids []shared.ID) []string {
-		out := make([]string, 0, len(ids))
-		for _, id := range ids {
-			out = append(out, id.String())
-		}
-		return out
-	}
-
-	actx.TenantID = tenantID
-	event := auditapp.NewSuccessEvent(audit.ActionTenantAssetSourceUpdated, audit.ResourceTypeTenant, tenantID).
-		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().AssetSource)).
-		WithMessage("Asset source priority settings updated").
-		WithMetadata("priority_before", toStrings(before.Priority)).
-		WithMetadata("priority_after", toStrings(as.Priority)).
-		WithMetadata("trust_levels_before", before.TrustLevels).
-		WithMetadata("trust_levels_after", as.TrustLevels).
-		WithMetadata("track_field_attribution_before", before.TrackFieldAttribution).
-		WithMetadata("track_field_attribution_after", as.TrackFieldAttribution)
-	s.logAudit(ctx, actx, event)
-
-	result := t.TypedSettings()
-	return &result, nil
-}
-
 // UpdateAssetLifecycleSettings updates only the asset-lifecycle
 // settings. The first-time-enable rule ("must run dry-run first")
 // lives in the domain validator; this service layer is where we
@@ -2186,29 +2122,6 @@ func (s *TenantService) StampAssetLifecycleDryRunCompleted(
 		return t.UpdateSettings(settings)
 	})
 	return err
-}
-
-// GetAssetSourceSettings returns the current asset-source settings
-// for a tenant. Zero-value (empty priority + no trust levels) means
-// the feature is not enabled; ingest will fall back to today's
-// last-write-wins merge.
-func (s *TenantService) GetAssetSourceSettings(
-	ctx context.Context,
-	tenantID string,
-) (*tenantdom.AssetSourceSettings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-
-	t, err := s.repo.GetByID(ctx, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	settings := t.TypedSettings()
-	as := settings.AssetSource
-	return &as, nil
 }
 
 // GetRiskScoringSettings returns the current risk scoring settings for a tenant.

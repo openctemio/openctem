@@ -26,7 +26,6 @@ const (
 	SectionRiskScoring    = "risk_scoring"
 	SectionPentest        = "pentest"
 	SectionAssetIdentity  = "asset_identity"
-	SectionAssetSource    = "asset_source"
 	SectionAssetLifecycle = "asset_lifecycle"
 	SectionRetest         = "retest"
 )
@@ -44,7 +43,6 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionRiskScoring:    &s.RiskScoring,
 		SectionPentest:        &s.Pentest,
 		SectionAssetIdentity:  &s.AssetIdentity,
-		SectionAssetSource:    &s.AssetSource,
 		SectionAssetLifecycle: &s.AssetLifecycle,
 		SectionRetest:         &s.Retest,
 	}

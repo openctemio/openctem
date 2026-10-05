@@ -41,7 +41,6 @@ control_tests
 credentials
 ct_monitor_state
 ctem_cycles
-data_sources
 definition_identifiers
 definition_relations
 definition_taxonomy

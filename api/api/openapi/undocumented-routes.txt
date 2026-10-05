@@ -211,7 +211,6 @@ GET /api/v1/tenants/{}/members/stats
 GET /api/v1/tenants/{}/settings
 GET /api/v1/tenants/{}/settings/asset-identity
 GET /api/v1/tenants/{}/settings/asset-lifecycle
-GET /api/v1/tenants/{}/settings/asset-source
 GET /api/v1/tenants/{}/settings/modules
 GET /api/v1/tenants/{}/settings/modules/bundles
 GET /api/v1/tenants/{}/settings/modules/graph
@@ -428,7 +427,6 @@ PUT /api/v1/scim-tokens/group-mappings
 PUT /api/v1/simulations/{}
 PUT /api/v1/suppressions/{}
 PUT /api/v1/tenants/{}/settings/asset-lifecycle
-PUT /api/v1/tenants/{}/settings/asset-source
 PUT /api/v1/users/{}/roles
 PUT /api/v1/verification-checklists/{}
 PUT /api/v1/workflows/{}
