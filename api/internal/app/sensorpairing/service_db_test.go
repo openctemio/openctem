@@ -135,7 +135,7 @@ func (f *fixture) start(s *sensor, code, repair string) {
 	resp, err := f.svc.Start(context.Background(), sensorpairing.StartInput{
 		Request: pairing.StartRequest{Protocol: pairing.Version, PublicKey: pairing.Encode(s.pub()),
 			Commitment: pairing.Encode(s.commitment), Code: code, SensorID: repair,
-			Host: pairing.HostFacts{Hostname: "scan01‮", OS: "linux", Arch: "amd64", SensorVersion: "0.10.0"}},
+			Host: pairing.HostFacts{Hostname: "scan01\u202e", OS: "linux", Arch: "amd64", SensorVersion: "0.10.0"}},
 		PublicKey: s.pub(), SourceIP: net.ParseIP("203.0.113.9"),
 	})
 	if err != nil {
