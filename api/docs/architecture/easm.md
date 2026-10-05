@@ -295,6 +295,26 @@ query, so ids of another tenant announce nothing; the throttle counter
 locked for the transaction, which serializes one tenant's alert writes.
 Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_test.go`.
 
+## 4g. Honest numbers (built, P0-13)
+
+- `GET /easm/summary` counts only exposure types something writes today
+  (`EASMExposureTypes`: subdomain_discovered, certificate_expiring/expired,
+  port_open, service_detected, ssl_issue, dangling_cname/ns,
+  email_security_weak, subdomain_takeover). `api_exposed`, `bucket_public`,
+  `header_missing`, `dns_change`, `port_closed`, `service_changed` and
+  `subdomain_removed` return when they get a producer;
+  `TestEASMExposureTypesHaveProducers` fails if a listed type has none.
+- The web labels every exposure type the API declares
+  (`exposure-types-sync.test.ts` reads `pkg/domain/exposure/value_objects.go`).
+- CT: a name seen only as a wildcard (`*.dev.example.com`) is not a
+  discovered subdomain: it names no host and was counted with no asset.
+  Certificate expiry is still reported for it.
+- Seeds: a `root_domain` under one of the tenant's root-domain seeds is
+  refused (it adds nothing).
+- Certificates page: the client-side Validity filter was never applied by the
+  inventory page and is removed; each row shows its expiry, and expiring or
+  expired certificates are listed on Exposures.
+
 ## 5. Data model (planned)
 
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and

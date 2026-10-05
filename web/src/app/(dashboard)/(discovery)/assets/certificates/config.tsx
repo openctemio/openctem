@@ -56,7 +56,11 @@ export const certificatesConfig: AssetPageConfig = {
   type: 'certificate',
   label: 'Certificate',
   labelPlural: 'Certificates',
-  description: 'Manage SSL/TLS certificate assets in your infrastructure',
+  // The row shows each certificate's expiry; expiring and expired ones are
+  // listed server-side on Exposures (certificate_expiring / certificate_expired).
+  // The old client-side Validity filter was never applied (research/22 P0-13).
+  description:
+    'SSL/TLS certificate assets. Expiring and expired certificates are listed on Exposures.',
   icon: ShieldCheck,
   iconColor: 'text-green-500',
   gradientFrom: 'from-green-500/20',
@@ -207,17 +211,6 @@ export const certificatesConfig: AssetPageConfig = {
       variant: 'warning',
     },
   ],
-
-  customFilter: {
-    label: 'Validity',
-    options: [
-      { label: 'Valid', value: 'valid' },
-      { label: 'Expiring', value: 'expiring' },
-      { label: 'Expired', value: 'expired' },
-      { label: 'Unknown', value: 'unknown' },
-    ],
-    filterFn: (asset: Asset, value: string) => getCertStatus(asset) === value,
-  },
 
   copyAction: {
     label: 'Copy Name',
