@@ -174,7 +174,7 @@ func (s *Service) run(ctx context.Context, tenantID shared.ID, kind string, chec
 			}
 			clearFPs = append(clearFPs, clear...)
 		}
-		saveErr := error(nil)
+		var saveErr error
 		if t.AssetID.IsZero() {
 			saveErr = s.store.SaveNameState(ctx, tenantID, t.Name, kind, outcome, errText, s.now())
 		} else {
