@@ -247,14 +247,17 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 		limit = 100
 	}
 
-	cmds, err := s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, limit)
+	cmds, err := s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, candidateLimit(limit))
 	if err != nil {
 		return nil, err
 	}
-	// The tenant keeps private targets away from sensors without a local
-	// policy (RFC-040 Q3 (a)): they stay pending for one that has it.
-	if anyPrivateTarget(cmds) && s.withholdPrivate(ctx, tenantID, sensorID) {
-		cmds = withoutPrivateTargets(cmds)
+	// A sensor never gets a command its reported local policy refuses, nor
+	// one with private targets when the tenant requires a local policy for
+	// them (RFC-040 §5.7, research/25 §3.6): those stay pending for a
+	// sensor that accepts them.
+	cmds = s.gateFor(ctx, tenantID, sensorID, cmds).accepted(cmds)
+	if len(cmds) > limit {
+		cmds = cmds[:limit]
 	}
 	if input.MaxScanCommands != nil {
 		cmds = capScanCommands(cmds, *input.MaxScanCommands)
@@ -280,8 +283,8 @@ type ClaimInput struct {
 
 // Claim is the claim-N poll (RFC-046 §11, RFC-030 §5.3): it selects what the
 // sensor may run in the fair dispatch order (priority class with aging,
-// round-robin across runs), keeps private targets from a sensor without a
-// local policy, caps scans at the sensor's free slots, and claims the lot in
+// round-robin across runs), withholds what the sensor's reported local
+// policy refuses (and private targets from a sensor without one), caps scans at the sensor's free slots, and claims the lot in
 // one statement. The commands returned are already acknowledged to the
 // sensor with a lease; its later claim of each is a replay. Commands another
 // sensor took in the meantime are simply not returned.
@@ -314,12 +317,13 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		limit = 10
 	}
 	limit = min(limit, 100)
-	cands, err := s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, input.Capabilities, limit)
+	cands, err := s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, input.Capabilities, candidateLimit(limit))
 	if err != nil {
 		return nil, err
 	}
-	if anyPrivateTarget(cands) && s.withholdPrivate(ctx, tenantID, &sensorID) {
-		cands = withoutPrivateTargets(cands)
+	cands = s.gateFor(ctx, tenantID, &sensorID, cands).accepted(cands)
+	if len(cands) > limit {
+		cands = cands[:limit]
 	}
 	cands = capScanCommands(cands, slots)
 	if len(cands) == 0 {
@@ -414,8 +418,11 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	if !cmd.CanBeAcknowledged() {
 		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
 	}
-	if sid, err := shared.IDFromString(sensorID); err == nil && HasPrivateTarget(cmd.Payload) && s.withholdPrivate(ctx, cmd.TenantID, &sid) {
-		return nil, ErrLocalPolicyRequired
+	if sid, err := shared.IDFromString(sensorID); err == nil {
+		cmds := []*commanddom.Command{cmd}
+		if err := s.gateFor(ctx, cmd.TenantID, &sid, cmds).claimError(cmd); err != nil {
+			return nil, err
+		}
 	}
 
 	// Atomic claim: only one concurrent poller can transition a pending
