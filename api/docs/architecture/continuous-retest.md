@@ -58,6 +58,33 @@ RetestScheduler (controller, every minute, every replica)
           oldest-retested eligible findings, through the same Request path
 ```
 
+## Template digest drift (research/18 O6)
+
+A retest proves something only when it re-ran the template content the
+finding was last seen with. The sensor (sensor#134) reports, per nuclei
+finding, `properties.template_digest` (sha256 of the matching template file)
+and `template_path`, and per report the template release in
+`tool.properties.content` (`nuclei-templates`: version, archive digest).
+Ingest keeps them on the finding as the last sighting's baseline (migration
+000951: `findings.template_digest`, `template_path`, `templates_version`,
+`templates_digest`, `template_seen_at`; sanitized: sha256 digests only, a
+relative path without `..`, a short version token). A sighting without a
+digest keeps the baseline; one with a new digest re-baselines.
+
+When the retest settles (`retestdom.ApplyTemplateDrift`), a conclusive
+outcome (`fixed` or `still_present`) becomes `unknown` (inconclusive, the
+finding does not move) when the finding has a baseline digest and the
+template re-run reported a different digest or none
+(`evidence.template_digest`). A finding without a baseline (sighted before
+provenance existed, or by another tool) is decided as before. A baseline that
+cannot be read is inconclusive (fail closed).
+
+The scan side is coverage auto-resolve: a covered nuclei run whose template
+release differs from the release of a candidate's last sighting (or that
+reported none) does not resolve that candidate; in enforce mode it becomes
+`not_observed` ([finding-status-not-observed.md](finding-status-not-observed.md)).
+A run whose reports disagree on the release counts as reporting none.
+
 ## Limits (server-side)
 
 | | |
