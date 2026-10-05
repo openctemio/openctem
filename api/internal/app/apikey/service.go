@@ -123,6 +123,15 @@ type HolderPermissions interface {
 // its user is demoted.
 func (s *Service) SetHolderPermissions(h HolderPermissions) { s.holder = h }
 
+// MaxExpiresInDays is the longest lifetime an API key may have (settings
+// decision B14, 2026-10-04): every key expires, at most a year after it is
+// minted. An organization may later tighten this; it may not loosen it.
+const MaxExpiresInDays = 365
+
+// ErrExpiryRequired is returned when a key is requested without an expiry or
+// with one longer than MaxExpiresInDays.
+var ErrExpiryRequired = fmt.Errorf("%w: expires_in_days must be between 1 and %d: every API key expires", shared.ErrValidation, MaxExpiresInDays)
+
 // CreateInput represents input for creating an API key.
 type CreateInput struct {
 	TenantID      string   `json:"tenant_id" validate:"required,uuid"`
@@ -156,6 +165,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	if input.ExpiresInDays < 1 || input.ExpiresInDays > MaxExpiresInDays {
+		return nil, ErrExpiryRequired
 	}
 
 	// Generate random key bytes
@@ -208,10 +220,8 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 		key.SetRateLimit(input.RateLimit)
 	}
 
-	if input.ExpiresInDays > 0 {
-		exp := key.CreatedAt().AddDate(0, 0, input.ExpiresInDays)
-		key.SetExpiresAt(&exp)
-	}
+	exp := key.CreatedAt().AddDate(0, 0, input.ExpiresInDays)
+	key.SetExpiresAt(&exp)
 
 	if input.UserID != "" {
 		uid, err := shared.IDFromString(input.UserID)
@@ -428,8 +438,23 @@ type RevokeInput struct {
 	TenantID  string `json:"tenant_id" validate:"required,uuid"`
 	RevokedBy string `json:"revoked_by" validate:"required,uuid"`
 
+	// OwnerID, when set, limits the call to that user's own keys: someone
+	// else's key reads as not found. Empty means any key of the tenant (an
+	// organization owner or administrator).
+	OwnerID string `json:"-"`
+
 	// AuditContext, when set, records an api_key.revoked audit event.
 	AuditContext *auditapp.AuditContext `json:"-"`
+}
+
+// ownedBy reports whether ownerID may act on key: an empty ownerID (an
+// owner or administrator) may act on any key of the tenant, anyone else only
+// on a key bound to themselves.
+func ownedBy(key *apikeydom.APIKey, ownerID string) bool {
+	if ownerID == "" {
+		return true
+	}
+	return key.UserID() != nil && key.UserID().String() == ownerID
 }
 
 // Revoke revokes an API key.
@@ -444,10 +469,15 @@ func (s *Service) Revoke(ctx context.Context, input RevokeInput) (*apikeydom.API
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	// Fetch with tenant isolation - no separate ownership check needed
+	// Fetch with tenant isolation, then the ownership check: a member may
+	// revoke only their own keys (settings audit A-M3). Someone else's key
+	// reads as not found, as it does for Get.
 	key, err := s.repo.GetByID(ctx, keyID, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	if !ownedBy(key, input.OwnerID) {
+		return nil, apikeydom.ErrAPIKeyNotFound
 	}
 
 	revokedByID, err := shared.IDFromString(input.RevokedBy)
@@ -477,6 +507,14 @@ func (s *Service) Revoke(ctx context.Context, input RevokeInput) (*apikeydom.API
 // Delete deletes an API key. Tenant isolation enforced at DB level. A non-nil
 // auditCtx records an api_key.deleted audit event.
 func (s *Service) Delete(ctx context.Context, id, tenantIDStr string, auditCtx ...*auditapp.AuditContext) error {
+	return s.DeleteOwned(ctx, id, tenantIDStr, "", auditCtx...)
+}
+
+// DeleteOwned deletes an API key that ownerID may act on: with an empty
+// ownerID (an organization owner or administrator) any key of the tenant,
+// otherwise only a key bound to ownerID. Someone else's key reads as not
+// found (settings audit A-M3).
+func (s *Service) DeleteOwned(ctx context.Context, id, tenantIDStr, ownerID string, auditCtx ...*auditapp.AuditContext) error {
 	keyID, err := shared.IDFromString(id)
 	if err != nil {
 		return fmt.Errorf("%w: invalid ID", shared.ErrValidation)
@@ -487,7 +525,17 @@ func (s *Service) Delete(ctx context.Context, id, tenantIDStr string, auditCtx .
 		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	// Single query: DELETE WHERE id AND tenant_id - no separate GET needed
+	if ownerID != "" {
+		key, err := s.repo.GetByID(ctx, keyID, tenantID)
+		if err != nil {
+			return err
+		}
+		if !ownedBy(key, ownerID) {
+			return apikeydom.ErrAPIKeyNotFound
+		}
+	}
+
+	// DELETE WHERE id AND tenant_id.
 	if err := s.repo.Delete(ctx, keyID, tenantID); err != nil {
 		return err
 	}
