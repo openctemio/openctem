@@ -1348,7 +1348,7 @@ platform returned; a different digest gets the action `send_config_report`.
   sets, typed and re-validated params, depth ≤ 6, ≤ 200 checks, bounded
   plain text, unknown members dropped and listed in `ignored`. Settings keep
   name, set, source, secret and valid only; a value is never stored.
-- **Stored** (migration 001054): the latest report per sensor in
+- **Stored** (migration 001061): the latest report per sensor in
   `sensor_config_reports` (tenant-scoped), `sensors.config_report_digest` and
   `config_health` (the platform's rollup: ok, attention, impaired, blocked),
   and `sensors.config_heartbeat_digest`, written by every heartbeat. The two
