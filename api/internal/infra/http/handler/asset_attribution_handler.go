@@ -8,6 +8,7 @@ import (
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -42,8 +43,13 @@ type AssetAttributionHandler struct {
 	assets      ScopedAssetGetter
 	audit       AttributionAuditor
 	activeGate  ActiveScanGate
+	effects     *easmapp.DecisionEffects
 	logger      *logger.Logger
 }
+
+// SetDecisionEffects runs reclassification and rejection hygiene after a
+// decision (research/22 P0-9).
+func (h *AssetAttributionHandler) SetDecisionEffects(e *easmapp.DecisionEffects) { h.effects = e }
 
 // ActiveScanGate is the active-scan ownership gate (*easm.ActiveGate).
 type ActiveScanGate interface {
@@ -239,6 +245,7 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 		apierror.NotFound("Asset").WriteJSON(w)
 		return
 	}
+	h.effects.AfterDecision(ctx, tenantID, []string{assetID}, state)
 	if h.audit != nil {
 		event := auditapp.NewSuccessEvent(auditdom.ActionAssetAttributionDecided, auditdom.ResourceTypeAsset, assetID).
 			WithMessage("Attribution set to "+string(state)).

@@ -491,7 +491,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.ReclassifyQueue,
 			svc.Reclassifier,
 			&controller.PriorityReclassifyConfig{
-				Logger: log.With("controller", "priority-reclassify"),
+				// Drained every minute: an attribution decision reclassifies
+				// its assets' findings within two minutes (research/22 P0-9).
+				Interval: time.Minute,
+				Logger:   log.With("controller", "priority-reclassify"),
 			},
 		))
 
