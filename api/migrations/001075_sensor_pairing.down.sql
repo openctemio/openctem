@@ -1,4 +1,4 @@
--- Reverts 001066. Pairing requests are dropped; sensors already paired keep
+-- Reverts 001075. Pairing requests are dropped; sensors already paired keep
 -- their keys (sensor_keys, 001065).
 SET lock_timeout = '5s';
 

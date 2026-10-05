@@ -218,6 +218,40 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/config-report:
+    put:
+      summary: Store this sensor's preflight check results (feature "config_report", research/26)
+      operationId: sensorV2PutConfigReport
+      description: >-
+        The results of the checks the sensor ran on itself (settings, state
+        volume, tools, TLS trust, local policy) and the settings it declares:
+        name, set, source, secret, valid, never a value. Sent after start,
+        when a result changes and when a heartbeat answer carries the action
+        send_config_report. The platform sanitizes it (closed sets, typed
+        parameters, bounded text; unknown members and items are dropped and
+        listed in ignored, never an error), keeps the latest per sensor and
+        returns its own digest. At most 65536 bytes (413 content-too-large);
+        not JSON or nested deeper than 6 is 400 invalid-request; schema other
+        than 1 or no checks array is 422 config-report-invalid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfigReport" }
+      responses:
+        "200":
+          description: The digest stored (echo it as the heartbeat's config_report.digest) and what was dropped.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigReportResponse" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "415": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/commands:
     get:
       summary: Commands this sensor may claim now
@@ -738,6 +772,20 @@ components:
             When it is not the platform's current one the answer carries the
             action send_manifest. Absent: the platform derives the manifest
             from this heartbeat's tools.
+        config_report:
+          type: object
+          description: >-
+            Summary of the sensor's config report (feature "config_report",
+            research/26). digest is the one PUT /config-report returned; when
+            it is not the platform's stored one the answer carries the action
+            send_config_report. A heartbeat without it marks a stored report
+            stale. Read leniently.
+          properties:
+            digest: { type: string, maxLength: 71 }
+            health: { type: string, enum: [ok, attention, impaired, blocked] }
+            fail: { type: integer }
+            warn: { type: integer }
+            observed_at: { type: string, format: date-time }
         name: { type: string }
         status: { type: string }
         version: { type: string }
@@ -922,6 +970,66 @@ components:
               path: { type: string }
               value: { type: string }
               reason: { type: string, enum: [unknown-member, unknown-tool, invalid-name, unknown-capability, limit] }
+    ConfigReport:
+      type: object
+      required: [schema, checks]
+      properties:
+        schema: { type: integer, enum: [1] }
+        observed_at: { type: string, format: date-time }
+        trigger: { type: string, enum: [start, change, requested] }
+        runtime:
+          type: object
+          properties:
+            kind: { type: string, enum: [docker, kubernetes, systemd, binary, unknown] }
+        config_health: { type: string, enum: [ok, attention, impaired, blocked], description: The sensor's own rollup; the platform recomputes it. }
+        truncated: { type: boolean }
+        checks:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            required: [id, status]
+            properties:
+              id: { type: string, maxLength: 96, pattern: '^[a-z][a-z0-9_]*(\.[a-z0-9_-]+){1,3}$' }
+              status: { type: string, enum: [pass, warn, fail, skip, error] }
+              severity: { type: string, enum: [info, warning, critical] }
+              code: { type: string, pattern: '^[a-z][a-z0-9_]{0,47}$' }
+              params:
+                type: object
+                maxProperties: 16
+                description: 'Typed values, each an object with exactly one member: int, bool, enum, path, host, version, name or names.'
+                additionalProperties: { type: object, minProperties: 1, maxProperties: 1 }
+              keys: { type: array, maxItems: 8, items: { type: string } }
+              summary: { type: string, maxLength: 300 }
+              excerpt: { type: string, maxLength: 512 }
+              blocks: { type: array, maxItems: 8, items: { type: string } }
+        settings:
+          type: array
+          maxItems: 300
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: { type: string }
+              set: { type: boolean }
+              source: { type: string, enum: [env, option, default, unset] }
+              secret: { type: boolean }
+              valid: { type: boolean }
+    ConfigReportResponse:
+      type: object
+      required: [config_report_digest, changed, ignored]
+      properties:
+        config_report_digest: { type: string, description: '"sha256:" + hex over the canonical JSON of the sanitized report with observed_at emptied.' }
+        changed: { type: boolean, description: False when it was already the stored report. }
+        ignored:
+          type: array
+          items:
+            type: object
+            required: [path, reason]
+            properties:
+              path: { type: string }
+              value: { type: string }
+              reason: { type: string, enum: [unknown-member, invalid-value, limit, duplicate] }
     HeartbeatResponse:
       type: object
       required: [sensor_id, tenant_id, status, pending_jobs, next_heartbeat_seconds, actions, config_version]
@@ -931,7 +1039,7 @@ components:
         status: { type: string, enum: [ok, paused] }
         pending_jobs: { type: integer }
         next_heartbeat_seconds: { type: integer }
-        actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update, send_manifest (RFC-033: PUT /manifest; only for a sensor that sent manifest_digest, or one that sent a slim heartbeat while slim heartbeats are switched off); ignore unknown values" } }
+        actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update, send_manifest (RFC-033: PUT /manifest; only for a sensor that sent manifest_digest, or one that sent a slim heartbeat while slim heartbeats are switched off), send_config_report (PUT /config-report; only for a sensor that sent config_report.digest); ignore unknown values" } }
         config_version: { type: string }
     Command:
       type: object

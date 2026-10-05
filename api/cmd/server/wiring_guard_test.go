@@ -310,7 +310,6 @@ var optionalServiceSetters = map[string]string{
 	"SensorPairing.SetMaxOpen":            "the RFC-052 default cap applies; the override exists for tests",
 	"SensorPairing.SetApprovalHook":       "the grant hook arrives with per-sensor grants (RFC-052 SP2)",
 	"Retest.SetClock":                     "test clock; production uses time.Now",
-	"Vulnerability.SetFindingNotifier":    "deprecated; superseded by the notification outbox",
 	"WebSocketHub.SetAuthorizeFunc":       "superseded by SetChannelAccessChecker",
 	"WebSocketHub.SetPublisher":           "set by websocket.NewRedisBridge on the hub it is given",
 	"WebSocketHub.SetRevocationPublisher": "set by websocket.NewRedisBridge on the hub it is given",

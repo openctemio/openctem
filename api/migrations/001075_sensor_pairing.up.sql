@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 001066: interactive sensor pairing (RFC-052 SP1)
+-- Migration 001075: interactive sensor pairing (RFC-052 SP1)
 -- =============================================================================
 -- 1. sensor_pairings: one row per pairing request. A default-mode request is
 --    created by an unauthenticated (but key-signed) sensor and has NO tenant

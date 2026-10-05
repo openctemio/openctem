@@ -82,6 +82,9 @@ func (h *SensorControlV2Handler) Features() []string {
 	if h.commands != nil {
 		out = append(out, protov2.FeatureCapacity, protov2.FeatureRefusal)
 	}
+	if h.ingest != nil && h.ingest.sensorService.SupportsConfigReports() {
+		out = append(out, protov2.FeatureConfigReport)
+	}
 	return out
 }
 
@@ -216,7 +219,72 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 		(d != s.ManifestDigest || (req.Tools == nil && !h.ingest.sensorService.SlimHeartbeat())) {
 		resp.Actions = append(resp.Actions, protov2.ActionSendManifest)
 	}
+	// research/26: a sensor that echoes a config report digest the platform
+	// does not have as the stored one is asked to send its report again.
+	if d := sensor.HeartbeatConfigDigest(sensor.ParseConfigReportSummary(req.ConfigReport)); !id.Paused && d != "" &&
+		d != s.ConfigReportDigest && h.ingest.sensorService.SupportsConfigReports() {
+		resp.Actions = append(resp.Actions, protov2.ActionSendConfigReport)
+	}
 	writeV2JSON(w, http.StatusOK, resp)
+}
+
+// PutConfigReport handles PUT /api/v2/sensor/config-report (research/26):
+// the sensor stores the results of its preflight checks. The body is a
+// JSON report (schema 1, at most protov2.MaxConfigReportBytes); it is
+// sanitized, and what was dropped is listed, never an error.
+func (h *SensorControlV2Handler) PutConfigReport(w http.ResponseWriter, r *http.Request) {
+	s := sensorForV2(w, r)
+	if s == nil {
+		return
+	}
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		mt, _, err := mime.ParseMediaType(ct)
+		if err != nil || mt != protov2.MediaTypeJSON {
+			protov2.NewProblem(protov2.ProblemUnsupportedMediaType).WithAccept(protov2.MediaTypeJSON).Write(w)
+			return
+		}
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, protov2.MaxConfigReportBytes+1))
+	if err != nil {
+		protov2.NewProblem(protov2.ProblemInvalidRequest).Write(w)
+		return
+	}
+	if len(raw) > protov2.MaxConfigReportBytes {
+		protov2.NewProblem(protov2.ProblemContentTooLarge).WithLimit(protov2.MaxConfigReportBytes).Write(w)
+		return
+	}
+	res, err := h.ingest.sensorService.RegisterConfigReport(r.Context(), s, raw)
+	switch {
+	case err == nil:
+	case errors.Is(err, sensor.ErrConfigReportTooLarge):
+		protov2.NewProblem(protov2.ProblemContentTooLarge).WithLimit(protov2.MaxConfigReportBytes).Write(w)
+		return
+	case errors.Is(err, sensor.ErrConfigReportMalformed):
+		protov2.NewProblem(protov2.ProblemInvalidRequest).Write(w)
+		return
+	case errors.Is(err, sensor.ErrConfigReportInvalid):
+		protov2.NewProblem(protov2.ProblemConfigReportInvalid).Write(w)
+		return
+	case errors.Is(err, app.ErrConfigReportSensorInactive):
+		protov2.NewProblem(protov2.ProblemScopeDenied).Write(w)
+		return
+	case errors.Is(err, app.ErrConfigReportUnavailable):
+		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)
+		return
+	default:
+		h.logger.Error("failed to store sensor config report", "sensor_id", s.ID, "error", err)
+		protov2.NewProblem(protov2.ProblemInternal).Write(w)
+		return
+	}
+	out := protov2.ConfigReportResponse{
+		ConfigReportDigest: res.Digest,
+		Changed:            res.Changed,
+		Ignored:            make([]protov2.ConfigReportIgnored, 0, len(res.Ignored)),
+	}
+	for _, i := range res.Ignored {
+		out.Ignored = append(out.Ignored, protov2.ConfigReportIgnored{Path: i.Path, Value: i.Value, Reason: i.Reason})
+	}
+	writeV2JSON(w, http.StatusOK, out)
 }
 
 // PutManifest handles PUT /api/v2/sensor/manifest (RFC-033): the sensor
@@ -366,6 +434,8 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		Control:        sensor.ParseControlReport(req.Control),
 		// Untrusted; sanitized by the service before it is stored.
 		LocalPolicy: req.LocalPolicy,
+		// Untrusted; only a well-formed digest is stored.
+		ConfigReport: sensor.ParseConfigReportSummary(req.ConfigReport),
 	}
 }
 

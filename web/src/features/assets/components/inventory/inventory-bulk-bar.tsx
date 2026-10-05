@@ -13,6 +13,7 @@
  * On success the parent refetches the list + stats and clears the selection.
  */
 
+import { PICKER_MEMBER_STATUS } from '@/features/organization/api/use-members'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -150,7 +151,12 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
 
   const membersUrl = (() => {
     if (!ownerDialogOpen || !tenantSlug) return null
-    const params = new URLSearchParams({ include: 'user', limit: '50' })
+    // Owner picker: active members only (never a disabled or offboarded person).
+    const params = new URLSearchParams({
+      include: 'user',
+      limit: '50',
+      status: PICKER_MEMBER_STATUS,
+    })
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim())
     return `/api/v1/tenants/${tenantSlug}/members?${params.toString()}`
   })()

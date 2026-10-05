@@ -9,7 +9,7 @@
  */
 
 export const PEER_ADMIN_LOCK_REASON =
-  'Only the organization owner can change, suspend or remove an administrator.'
+  'Only the organization owner can change, disable or offboard an administrator.'
 
 interface MemberLike {
   /** Membership role: owner | admin | member | viewer. */

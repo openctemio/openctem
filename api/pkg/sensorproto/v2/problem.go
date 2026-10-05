@@ -76,6 +76,9 @@ const (
 	// Pairing (RFC-052): one answer for an unknown, expired, used or
 	// foreign pairing request.
 	ProblemPairingNotFound ProblemType = "pairing-not-found"
+
+	// Config report (ProblemTypeBaseSensor).
+	ProblemConfigReportInvalid ProblemType = "config-report-invalid"
 )
 
 type problemDef struct {
@@ -139,6 +142,8 @@ var problemDefs = map[ProblemType]problemDef{
 	ProblemManifestNotFound:          {http.StatusNotFound, "Manifest not found", "This sensor has no registered manifest; PUT it first.", false, ProblemTypeBaseSensor},
 	ProblemPairingNotFound:           {http.StatusNotFound, "Pairing not found", "No open pairing request with this id is bound to this key.", false, ProblemTypeBaseSensor},
 	ProblemManifestSchemaUnsupported: {http.StatusUnprocessableEntity, "Manifest schema unsupported", "The manifest's schema version is not one this server reads; send schema 1.", false, ProblemTypeBaseSensor},
+
+	ProblemConfigReportInvalid: {http.StatusUnprocessableEntity, "Config report invalid", "The config report is not a JSON object with schema 1 and a checks array.", false, ProblemTypeBaseSensor},
 }
 
 // ProblemTypes returns every defined problem type, for tests and docs.

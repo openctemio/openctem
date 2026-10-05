@@ -10,6 +10,10 @@ Openctem-Protocol: 2
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/ingest/command-not-found","title":"Command not found","status":404,"detail":"No open command with this id is assigned to this sensor.","retryable":false}
+## config-report-invalid
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/config-report-invalid","title":"Config report invalid","status":422,"detail":"The config report is not a JSON object with schema 1 and a checks array.","retryable":false}
 ## content-too-large
 Content-Type: application/problem+json
 Openctem-Protocol: 2

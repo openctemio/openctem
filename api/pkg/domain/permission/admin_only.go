@@ -19,7 +19,7 @@ var adminOnlyPermissions = []Permission{
 	CommandsDelete,
 	ScanZonesWrite,
 	ScanZonesDelete,
-	// RFC-052: pairing, approval, grants and revocation (migration 001066
+	// RFC-052: pairing, approval, grants and revocation (migration 001075
 	// extends the trigger).
 	SensorsPair,
 	SensorsApprove,
