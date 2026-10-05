@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -252,9 +253,9 @@ func TestCredentialImport_UpdateAllReplacesLegacyPlaintext(t *testing.T) {
 
 func TestExposureService_SealsSecretsFromGenericEndpoints(t *testing.T) {
 	repo := newCredImportMockExposureRepo()
-	svc := app.NewExposureService(repo, newCredImportMockStateHistoryRepo(), logger.NewNop())
+	svc := exposure.NewExposureService(repo, newCredImportMockStateHistoryRepo(), logger.NewNop())
 	svc.SetSecretProtector(testProtector(t, testEncKeyHex))
-	ev, err := svc.CreateExposure(context.Background(), app.CreateExposureInput{
+	ev, err := svc.CreateExposure(context.Background(), exposure.CreateExposureInput{
 		TenantID:  shared.NewID().String(),
 		EventType: "credential_leaked",
 		Severity:  "high",

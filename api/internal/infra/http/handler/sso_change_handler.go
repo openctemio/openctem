@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -24,12 +25,12 @@ import (
 // the list/approve/reject endpoints to the organization's owners.
 type SSOChangeHandler struct {
 	svc    *app.SSOChangeService
-	audit  *app.AuditService
+	audit  *auditsvc.AuditService
 	logger *logger.Logger
 }
 
 // NewSSOChangeHandler creates the handler.
-func NewSSOChangeHandler(svc *app.SSOChangeService, auditSvc *app.AuditService, log *logger.Logger) *SSOChangeHandler {
+func NewSSOChangeHandler(svc *app.SSOChangeService, auditSvc *auditsvc.AuditService, log *logger.Logger) *SSOChangeHandler {
 	return &SSOChangeHandler{svc: svc, audit: auditSvc, logger: log.With("handler", "sso_change")}
 }
 
@@ -211,7 +212,7 @@ func (h *SSOChangeHandler) decide(w http.ResponseWriter, r *http.Request, approv
 	if approve {
 		action, message = audit.ActionSSOChangeApproved, "SSO change approved and applied: "
 	}
-	event := app.NewSuccessEvent(action, audit.ResourceTypeSSOChange, c.ID.String()).
+	event := auditsvc.NewSuccessEvent(action, audit.ResourceTypeSSOChange, c.ID.String()).
 		WithMessage(message+app.DescribeSSOChange(c)).
 		WithMetadata("kind", string(c.Kind)).
 		WithMetadata("requested_by", c.RequestedByEmail)
@@ -219,7 +220,7 @@ func (h *SSOChangeHandler) decide(w http.ResponseWriter, r *http.Request, approv
 		event = event.WithMetadata("target_id", c.TargetID)
 	}
 	if h.audit != nil {
-		actx := app.AuditContext{
+		actx := auditsvc.AuditContext{
 			TenantID:  tenantID.String(),
 			ActorIP:   middleware.ClientIP(r),
 			UserAgent: r.UserAgent(),
@@ -272,8 +273,8 @@ func ssoChangeRequester(r *http.Request) *app.SSOChangeRequester {
 
 // writeSSOChangePending answers a submission stored for an owner's approval
 // (202) and records it in the organization's audit log.
-func writeSSOChangePending(w http.ResponseWriter, r *http.Request, auditSvc *app.AuditService, log *logger.Logger, c *ssochange.Change) {
-	event := app.NewSuccessEvent(audit.ActionSSOChangeRequested, audit.ResourceTypeSSOChange, c.ID.String()).
+func writeSSOChangePending(w http.ResponseWriter, r *http.Request, auditSvc *auditsvc.AuditService, log *logger.Logger, c *ssochange.Change) {
+	event := auditsvc.NewSuccessEvent(audit.ActionSSOChangeRequested, audit.ResourceTypeSSOChange, c.ID.String()).
 		WithMessage("SSO change proposed, waiting for an owner's approval: "+app.DescribeSSOChange(c)).
 		WithMetadata("kind", string(c.Kind)).
 		WithMetadata("expires_at", c.ExpiresAt.UTC().Format(time.RFC3339))

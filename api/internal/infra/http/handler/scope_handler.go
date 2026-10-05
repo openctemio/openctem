@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 
 	"github.com/go-chi/chi/v5"
@@ -25,7 +25,7 @@ import (
 // ScopeHandler handles scope configuration HTTP requests.
 type ScopeHandler struct {
 	service   *scope.Service
-	audit     *app.AuditService
+	audit     *auditsvc.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
@@ -41,7 +41,7 @@ func NewScopeHandler(svc *scope.Service, v *validator.Validator, log *logger.Log
 
 // SetAuditService records every change to scope targets and exclusions in
 // the tenant's audit log, with the state before and after (RFC-040 §5.11).
-func (h *ScopeHandler) SetAuditService(svc *app.AuditService) {
+func (h *ScopeHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 

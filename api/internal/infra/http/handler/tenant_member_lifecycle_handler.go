@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -38,7 +39,7 @@ type OffboardMemberRequest struct {
 
 // tokenTenantAuditContext is buildAuditContext for the token-tenant chain:
 // the tenant comes from the credential.
-func (h *TenantHandler) tokenTenantAuditContext(r *http.Request) app.AuditContext {
+func (h *TenantHandler) tokenTenantAuditContext(r *http.Request) audit.AuditContext {
 	actx := h.buildAuditContext(r)
 	actx.TenantID = middleware.GetTenantID(r.Context())
 	return actx
