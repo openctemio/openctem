@@ -2245,7 +2245,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		createdBy sql.NullString
 		// Provenance channel — nullable; NULL means unrecorded.
 		ingestChannel sql.NullString
-		// Branch-only mark (migration 001131)
+		// Branch-only mark (migration 001132)
 		branchOnly bool
 		// Data flow flag
 		hasDataFlow bool

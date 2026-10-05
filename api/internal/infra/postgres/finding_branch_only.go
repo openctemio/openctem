@@ -2,7 +2,7 @@ package postgres
 
 // Branch-only findings (docs/architecture/branch-only-findings.md): a
 // finding seen only on branches that do not count as exposure. The database
-// marks it on insert and clears it (migration 001131); these are the reads
+// marks it on insert and clears it (migration 001132); these are the reads
 // and writes the ingest path and the lifecycle job need.
 
 import (
