@@ -512,6 +512,7 @@
 "PUT /api/v1/workflows/{id}/nodes/{nodeId}": {"permissions":["findings:workflows:write"]},
 "PUT /api/v2/sensor/commands/{command_id}/results/{report_id}": {},
 "PUT /api/v2/sensor/commands/{command_id}/results/{report_id}/segments/{seq}": {},
+"PUT /api/v2/sensor/config-report": {},
 "PUT /api/v2/sensor/manifest": {},
 "PUT /api/v2/sensor/results/{report_id}": {},
 "PUT /api/v2/sensor/results/{report_id}/segments/{seq}": {},

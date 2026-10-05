@@ -50,6 +50,7 @@ var Paths = map[string]string{
 	"BaselineDiffPath":      BaselineDiffPath,
 	"KeysPath":              KeysPath,
 	"ManifestPath":          ManifestPath,
+	"ConfigReportPath":      ConfigReportPath,
 }
 
 // ReportLocation is the status resource of a report: the Location header of a
