@@ -997,6 +997,11 @@ results an out-of-scope id is reported exactly like an unknown id.
   `FilterAssetRefs` + `actscope.Check`; 404 otherwise; 21b H4). Simulation
   list/get are not scoped yet (RFC-050 W3 remainder).
 
+- **Asset findings list** (`GET /assets/{id}/findings`) goes through the
+  same `visibleFilter` as the findings list: scope plus the pentest-membership
+  rule, so a pentest finding (PoC in its metadata) reaches campaign members
+  only (21b H5).
+
 - **Asset-less exposures are full-data only for writes too** (D11, research
   21b H1): exposure create, ingest and bulk ingest refuse an exposure with no
   `asset_id` from a restricted caller (400), so the fingerprint upsert cannot
