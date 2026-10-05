@@ -19083,7 +19083,7 @@ paths:
     get:
       description: Returns paginated audit logs for the current tenant
       parameters:
-      - description: Page number
+      - description: Page number (1-based; 0 or missing means 1)
         in: query
         name: page
         type: integer
@@ -19205,7 +19205,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Page number
+      - description: Page number (1-based; 0 or missing means 1)
         in: query
         name: page
         type: integer
@@ -19262,7 +19262,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Page number
+      - description: Page number (1-based; 0 or missing means 1)
         in: query
         name: page
         type: integer
