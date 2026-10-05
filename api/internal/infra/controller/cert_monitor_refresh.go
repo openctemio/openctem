@@ -6,6 +6,7 @@ import (
 
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -26,6 +27,12 @@ type CertMonitorControllerConfig struct {
 	// so a tenant that turned attack-surface off should not have crt.sh queried
 	// on its behalf. Optional; nil means "never skip" (fully backward compatible).
 	ModuleGuard ModuleGuard
+
+	// DNSFollowUp, when set, runs the EASM DNS checks for a tenant right
+	// after its CT sweep (research/22 P0-8), so the names CT just promoted
+	// are checked in the same pass instead of a full interval later. Names
+	// already checked within the DNS re-check window are not re-queried.
+	DNSFollowUp EASMDNSChecker
 }
 
 // CertMonitorController periodically runs the CT discovery sweep for every
@@ -100,6 +107,7 @@ func (c *CertMonitorController) Reconcile(ctx context.Context) (int, error) {
 			continue
 		}
 		n, err := c.service.MonitorTenant(ctx, tenantID)
+		c.followUpDNS(ctx, tenantID)
 		if err != nil {
 			c.logger.Warn("cert-monitor sweep failed; continuing with next tenant",
 				"tenant_id", tenantID.String(), "error", err)
@@ -112,4 +120,18 @@ func (c *CertMonitorController) Reconcile(ctx context.Context) (int, error) {
 		}
 	}
 	return swept, nil
+}
+
+// followUpDNS runs the DNS checks for one tenant after its CT sweep. A
+// failure is logged and never stops the sweep.
+func (c *CertMonitorController) followUpDNS(ctx context.Context, tenantID shared.ID) {
+	if c.config.DNSFollowUp == nil {
+		return
+	}
+	if _, err := c.config.DNSFollowUp.MonitorTenant(ctx, tenantID); err != nil {
+		c.logger.Warn("dangling-DNS check after the CT sweep failed", "tenant_id", tenantID.String(), "error", err)
+	}
+	if _, err := c.config.DNSFollowUp.MonitorEmail(ctx, tenantID); err != nil {
+		c.logger.Warn("email-posture check after the CT sweep failed", "tenant_id", tenantID.String(), "error", err)
+	}
 }

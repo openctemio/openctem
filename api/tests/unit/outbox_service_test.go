@@ -2421,7 +2421,6 @@ func TestDefaultEnabledEventTypes(t *testing.T) {
 	// (#396 priority escalation, #399 the six undeliverable types). Keeping it
 	// explicit is what makes a lost entry visible at merge time.
 	want := []integration.EventType{
-		integration.EventTypeSecurityAlert,
 		integration.EventTypeNewFinding,
 		integration.EventTypeNewExposure,
 		integration.EventTypeFindingPriorityEscalated,
@@ -2464,10 +2463,11 @@ func TestDefaultEnabledEventTypes(t *testing.T) {
 }
 
 func TestGetEventTypesByModules(t *testing.T) {
-	// System events should always be included
+	// Every event type belongs to a module (the module-less system events
+	// were never emitted and are gone), so no modules means no types.
 	types := integration.GetEventTypesByModules(nil)
-	if len(types) < 2 {
-		t.Error("expected at least system events when no modules enabled")
+	if len(types) != 0 {
+		t.Errorf("expected no event types when no modules are enabled, got %d", len(types))
 	}
 
 	// With all modules
@@ -2489,7 +2489,7 @@ func TestGetEventTypesByModules(t *testing.T) {
 func TestValidateEventTypes(t *testing.T) {
 	// All types valid when all modules enabled
 	valid, invalid := integration.ValidateEventTypes(
-		[]integration.EventType{integration.EventTypeNewFinding, integration.EventTypeScanCompleted},
+		[]integration.EventType{integration.EventTypeNewFinding, integration.EventTypeNewAsset},
 		[]string{"assets", "scans", "findings"},
 	)
 	if !valid {
