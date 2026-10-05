@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -11,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -20,8 +22,12 @@ import (
 type SCIMTokenHandler struct {
 	tokens *scim.TokenService
 	groups *scim.GroupService
+	audit  *auditapp.AuditService
 	logger *logger.Logger
 }
+
+// SetAuditService wires the audit log for SCIM token creation and revocation.
+func (h *SCIMTokenHandler) SetAuditService(a *auditapp.AuditService) { h.audit = a }
 
 // NewSCIMTokenHandler creates the handler.
 func NewSCIMTokenHandler(tokens *scim.TokenService, log *logger.Logger) *SCIMTokenHandler {
@@ -126,6 +132,13 @@ func (h *SCIMTokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to create SCIM token").WriteJSON(w)
 		return
 	}
+	// A SCIM token can create, suspend and re-role members: High.
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r),
+		auditapp.NewSuccessEvent(auditdom.ActionSCIMTokenCreated, auditdom.ResourceTypeSCIMToken, res.Token.ID().String()).
+			WithResourceName(res.Token.Name()).
+			WithSeverity(auditdom.SeverityHigh).
+			WithMessage(fmt.Sprintf("SCIM token %q created", res.Token.Name())).
+			WithMetadata("prefix", res.Token.Prefix()))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -188,5 +201,9 @@ func (h *SCIMTokenHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 		apierror.NotFound("SCIM token").WriteJSON(w)
 		return
 	}
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r),
+		auditapp.NewSuccessEvent(auditdom.ActionSCIMTokenRevoked, auditdom.ResourceTypeSCIMToken, id.String()).
+			WithSeverity(auditdom.SeverityMedium).
+			WithMessage("SCIM token revoked"))
 	w.WriteHeader(http.StatusNoContent)
 }

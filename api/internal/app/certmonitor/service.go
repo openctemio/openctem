@@ -36,6 +36,7 @@ import (
 
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -455,8 +456,9 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// gatherRoots collects every domain the tenant asked us to watch: all domain
-// assets (paged, no cap), verified domains, root_domain seeds with discovery
+// gatherRoots collects every domain the tenant asked us to watch: its domain
+// assets that are not awaiting review or rejected (paged, no cap), verified
+// domains, root_domain seeds with discovery
 // on and active domain scope targets.
 // It also returns the domain assets by name so a discovered host can be tied
 // to its nearest known domain asset.
@@ -464,9 +466,17 @@ func (s *Service) gatherRoots(ctx context.Context, tenantID shared.ID) ([]rootDo
 	var in []rootDomain
 	assetsByName := map[string]shared.ID{}
 
+	// Only domain assets the tenant has not left to review or rejected: a
+	// domain a sensor report created (needs_review or candidate) must not
+	// widen the CT watch list by itself (research/22b S2).
+	approved, _, err := attribution.ParseFilter([]string{attribution.FilterApproved})
+	if err != nil {
+		return nil, nil, err
+	}
 	filter := assetdom.NewFilter().
 		WithTenantID(tenantID.String()).
-		WithTypes(assetdom.AssetTypeDomain)
+		WithTypes(assetdom.AssetTypeDomain).
+		WithAttribution(approved)
 	seen := 0
 	for pageNum := 1; ; pageNum++ {
 		res, err := s.assetRepo.List(ctx, filter, assetdom.NewListOptions(), pagination.New(pageNum, assetPageSize))
