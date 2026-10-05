@@ -134,6 +134,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetZoneLister(repos.ScanZone)
+	sensorHandler.SetGrantService(svc.SensorGrant)
 	commandHandler.SetPipelineService(svc.Pipeline)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
@@ -150,7 +151,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Sensor, log)
 	// Heartbeat doorbell (RFC-023 §9.2a): the heartbeat tells a sensor that
 	// work is waiting and when to ring again. One cheap query per heartbeat.
-	ingestHandler.SetDoorbell(app.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log))
+	doorbell := app.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log)
+	// Gated actions (rotate_key) ring only when the sensor's grant lists
+	// them (RFC-052 §5.3).
+	doorbell.SetGrants(repos.SensorGrant)
+	ingestHandler.SetDoorbell(doorbell)
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
 	ingestHandler.SetHeartbeatObserver(svc.SensorPlatformHealth)
