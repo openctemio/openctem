@@ -1,6 +1,6 @@
 package postgres
 
-// Migration 000946 (research doc 21b C2 / L-15): activity rows that recorded
+// Migration 001012 (research doc 21b C2 / L-15): activity rows that recorded
 // the name and email of an assignee outside the row's organization get a
 // neutral label instead; same-organization rows, ids and timestamps are
 // untouched. Replayed in a rolled-back transaction as the migrator.
@@ -19,11 +19,11 @@ import (
 
 func TestForeignAssigneeScrubMigration(t *testing.T) {
 	ctx := context.Background()
-	up, err := os.ReadFile("../../../migrations/000946_scrub_foreign_assignee_pii.up.sql")
+	up, err := os.ReadFile("../../../migrations/001012_scrub_foreign_assignee_pii.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	down, err := os.ReadFile("../../../migrations/000946_scrub_foreign_assignee_pii.down.sql")
+	down, err := os.ReadFile("../../../migrations/001012_scrub_foreign_assignee_pii.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

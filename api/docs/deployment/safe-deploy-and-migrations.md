@@ -253,11 +253,11 @@ keep *both* the deploy and the rollback boringly safe.
 
 ---
 
-## Foreign assignee scrub (migration 000946)
+## Foreign assignee scrub (migration 001012)
 
 Before the assignee membership check (#1096), a finding could be assigned to
 any platform user, and the activity row stored that user's name and email in
-the assigning organization's history. `000946` replaces that text, in
+the assigning organization's history. `001012` replaces that text, in
 `finding_activities` only:
 
 - an `assigned` row whose `assignee_id` is not a member of the row's
@@ -269,7 +269,7 @@ the assigning organization's history. `000946` replaces that text, in
 - `message` is cleared when it quoted the removed name or email.
 
 Rows, ids (`assignee_id` stays) and timestamps are kept, and each scrubbed
-row is marked `changes.assignee_scrubbed = "000946"`. "Not a member" is
+row is marked `changes.assignee_scrubbed = "001012"`. "Not a member" is
 judged at migration time, so a former member removed from the organization
 gets the label too (it is true, and the id still identifies them).
 
@@ -279,7 +279,7 @@ anywhere. That is safe for a rollback: these fields are display-only.
 Read-only pre-flight (what it will change):
 
 ```sql
--- Read-only pre-flight for migration 000946: what it would change.
+-- Read-only pre-flight for migration 001012: what it would change.
 WITH uuid_re AS (SELECT '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text AS re),
 assigned AS (
     SELECT fa.*, (fa.changes->>'assignee_id') AS who

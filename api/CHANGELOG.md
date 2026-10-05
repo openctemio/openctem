@@ -5,7 +5,7 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
-### Security: foreign assignee names and emails scrubbed from finding history (migration 000946)
+### Security: foreign assignee names and emails scrubbed from finding history (migration 001012)
 
 - Finding activity rows that recorded the name and email of an assignee
   outside the organization (possible before #1096) now show
