@@ -1229,6 +1229,40 @@ and narrows dispatch:
   command waits for a qualifying sensor. Names that resolve to private
   addresses in public DNS are not detected here; the sensor's own policy
   covers them. An unreadable tenant setting withholds (fail closed).
+- **Dispatch pre-check** (research/25 §3.6). One function,
+  `sensor.Accepts(report, job, options)` (`pkg/domain/sensor/accepts.go`),
+  decides whether a sensor's last report would refuse a job, reading the
+  payload as the sensor's admission check does (`sensor.JobOf`: tool from
+  `scanner`/`scanner_name`/`preferred_tool`, `config.allow_interactsh`,
+  `custom_templates`, `config.ports`, literal private addresses). It mirrors
+  the summary: kill switch (withholds everything), `checks.allow`,
+  `tools.allow`, `allow_custom_templates`, `allow_interactsh`, `ports.allow`
+  (exact lists only; named lists such as `top-100` are left to the sensor),
+  `targets.allow_private` (literal RFC 1918 / fc00::/7 targets only), and the
+  tenant switch above (layer `managed`). Allow and deny ranges are reported as
+  counts, so they are left to the sensor. A sensor without a report or
+  without a policy accepts what the policy would decide (the absent policy
+  allows both opt-ins, owner decision Q4 (a)). The same check runs in three
+  places:
+  - **poll and claim** (`command.Service.Poll`, `Claim`): commands the sensor
+    would refuse are left pending for another sensor; the poll reads a wider
+    candidate window so a refused queue head does not starve the sensor;
+  - **claim by id** (`Acknowledge`): refused as "claimed"
+    (`ErrSensorPolicyRefuses`), the command stays pending;
+  - **scan trigger** (`scan.Service`, `policy_preflight.go`): a zone batch is
+    pinned only to a zone sensor that accepts it (least loaded among those);
+    a zone where no online sensor accepts reports its targets as not scanned,
+    with the layer, rule and count ("allow_interactsh: refused by the local
+    policy on 2 of 2 sensor(s) in scan zone "DMZ" ..."); targets outside
+    zones are judged against the tenant's available sensors. When nothing is
+    left to run the trigger is refused with `SENSOR_POLICY_REFUSED` (400) and
+    no run or command is created. The zone-routing preview uses the same
+    code.
+
+  The pre-check only narrows: a report comes from the sensor, so a lying
+  sensor can only withhold jobs from itself, and the sensor keeps enforcing
+  its own policy on whatever it receives. Failures to read the sensor or the
+  tenant setting withhold (fail closed).
 - **Install dialog.** `GET /sensors/{id}/config-templates` returns `policy`, a
   sensor-policy/v1 template (`configs/sensor-templates/policy.tmpl`)
   prefilled with the ranges of the sensor's scan zones (none for a sensor in
