@@ -13,9 +13,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -76,6 +78,9 @@ type Service struct {
 	repo     verifieddomain.Repository
 	resolver Resolver
 	logger   *logger.Logger
+
+	limiter     VerifyLimiter
+	limiterOnce sync.Once
 }
 
 // NewService creates a Service. When resolver is nil a NetResolver is used.
@@ -154,7 +159,20 @@ func (s *Service) AddDomain(ctx context.Context, tenantID shared.ID, rawDomain s
 		return nil, TXTRecord{}, err
 	}
 	if err := s.repo.Create(ctx, vd); err != nil {
-		return nil, TXTRecord{}, err
+		if !errors.Is(err, verifieddomain.ErrAlreadyExists) {
+			return nil, TXTRecord{}, err
+		}
+		// The tenant verified it for EASM itself: the administrator makes it
+		// an SSO domain, keeping its token and verification (E6).
+		existing, gerr := s.repo.GetByTenantAndDomain(ctx, tenantID, domain)
+		if gerr != nil || existing.Purpose() != verifieddomain.PurposeEASM {
+			return nil, TXTRecord{}, err
+		}
+		existing.PromoteToSSO(time.Now())
+		if uerr := s.repo.Update(ctx, existing); uerr != nil {
+			return nil, TXTRecord{}, uerr
+		}
+		vd = existing
 	}
 	return vd, Instructions(vd.Domain(), vd.VerificationToken()), nil
 }
@@ -237,7 +255,9 @@ func (s *Service) IsVerifiedDomain(ctx context.Context, tenantID, emailDomain st
 		}
 		return false, err
 	}
-	return vd.IsVerified(), nil
+	// Only an SSO-purpose domain admits users; a domain the tenant verified
+	// for EASM never does (research/22 E6).
+	return vd.AdmitsSSO(), nil
 }
 
 // ReverifyDue re-checks verified domains that have not been checked since

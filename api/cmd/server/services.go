@@ -8,7 +8,14 @@ import (
 	"net"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/aitriage"
+	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/capability"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/api/internal/app/workflow"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
@@ -354,14 +361,14 @@ func (a pentestTenantMemberAdapter) IsTenantMember(ctx context.Context, tenantID
 // import app/jira — that would cycle through the app shim).
 type workflowJiraTicketAdapter struct{ svc *jira.SyncService }
 
-func (a workflowJiraTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (app.TicketRef, error) {
+func (a workflowJiraTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (workflow.TicketRef, error) {
 	info, err := a.svc.CreateTicketFromFinding(ctx, jira.CreateTicketInput{
 		TenantID: tenantID, FindingID: findingID, ProjectKey: projectKey, IssueType: issueType,
 	})
 	if err != nil {
-		return app.TicketRef{}, err
+		return workflow.TicketRef{}, err
 	}
-	return app.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+	return workflow.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
 }
 
 func (a workflowJiraTicketAdapter) SyncFindingStatus(ctx context.Context, tenantID, findingID shared.ID) error {
@@ -374,14 +381,14 @@ type workflowGitHubTicketAdapter struct {
 	svc *ticketing.GitHubTicketService
 }
 
-func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, owner, repo string) (app.TicketRef, error) {
+func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, owner, repo string) (workflow.TicketRef, error) {
 	info, err := a.svc.CreateTicketFromFinding(ctx, ticketing.GitHubTicketInput{
 		TenantID: tenantID, FindingID: findingID, Owner: owner, Repo: repo,
 	})
 	if err != nil {
-		return app.TicketRef{}, err
+		return workflow.TicketRef{}, err
 	}
-	return app.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+	return workflow.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
 }
 
 // wsChannelAccess adapts the RBAC and group services to
@@ -479,7 +486,7 @@ type Services struct {
 	Session *app.SessionService
 
 	// Core
-	Audit  *app.AuditService
+	Audit  *audit.AuditService
 	User   *app.UserService
 	Tenant *app.TenantService
 	// UserProvisioning creates accounts on behalf of administrators.
@@ -507,10 +514,10 @@ type Services struct {
 
 	// Vulnerabilities & Exposures
 	Vulnerability   *app.VulnerabilityService
-	FindingActivity *app.FindingActivityService
+	FindingActivity *activity.FindingActivityService
 	FindingActions  *app.FindingActionsService
 	SourceAnalytics *app.SourceAnalyticsService
-	Exposure        *app.ExposureService
+	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
 	CTEMID          *ctemidapp.Service
 	CertMonitor     *certmonitorapp.Service
@@ -523,11 +530,11 @@ type Services struct {
 	// Components & Branches
 	Component      *app.ComponentService
 	SBOMImport     *app.SBOMImportService
-	ReportSchedule *app.ReportScheduleService
+	ReportSchedule *module.ReportScheduleService
 	Branch         *app.BranchService
 
 	// Dashboard
-	Dashboard *app.DashboardService
+	Dashboard *module.DashboardService
 
 	// Per-user customizable dashboards (RFC-021)
 	UserDashboard *dashboardapp.Service
@@ -554,11 +561,11 @@ type Services struct {
 	Ingest               *ingest.Service
 
 	// Scanning & Pipelines
-	ScanProfile     *app.ScanProfileService
-	ScanSession     *app.ScanSessionService
+	ScanProfile     *scan.ScanProfileService
+	ScanSession     *scan.ScanSessionService
 	Tool            *tool.Service
 	ToolCategory    *tool.CategoryService
-	Capability      *app.CapabilityService
+	Capability      *capability.CapabilityService
 	Scan            *scan.Service
 	Pipeline        *pipeline.Service
 	ScannerTemplate *app.ScannerTemplateService
@@ -571,8 +578,8 @@ type Services struct {
 	TemplateKeys *scannertemplate.Keyring
 
 	// Workflows
-	Workflow           *app.WorkflowService
-	WorkflowDispatcher *app.WorkflowEventDispatcher
+	Workflow           *workflow.WorkflowService
+	WorkflowDispatcher *workflow.WorkflowEventDispatcher
 
 	// AssetDiscoveryNotifier turns newly discovered internet-facing assets into
 	// throttled tenant notifications (in-app + new_asset outbox event).
@@ -603,7 +610,7 @@ type Services struct {
 	MembershipCache *app.MembershipCacheService
 
 	// Module Service (OSS - all modules enabled, UI metadata only)
-	Module *app.ModuleService
+	Module *module.ModuleService
 
 	// SLA
 	SLA *sla.Service
@@ -628,14 +635,14 @@ type Services struct {
 	BulkGuard *app.BulkGuard
 
 	// Pentest
-	Pentest    *app.PentestService
+	Pentest    *compliance.PentestService
 	Attachment *app.AttachmentService
 
 	// Compliance
-	Compliance *app.ComplianceService
+	Compliance *compliance.ComplianceService
 
 	// Attack Simulation & Control Testing
-	Simulation *app.SimulationService
+	Simulation *compliance.SimulationService
 
 	// Validation (CTEM Stage-4): proof-of-fix / technique-execution evidence
 	// recorded by sensors, reconciling finding status from the outcome.
@@ -650,7 +657,7 @@ type Services struct {
 	ThreatActor *threat.ActorService
 
 	// Remediation Campaigns
-	RemediationCampaign *app.RemediationCampaignService
+	RemediationCampaign *exposure.RemediationCampaignService
 	RemediationGroup    *remediation.GroupService
 
 	// Business Units
@@ -666,7 +673,7 @@ type Services struct {
 	GitHubTicket *ticketing.GitHubTicketService
 
 	// AI Triage
-	AITriage *app.AITriageService
+	AITriage *aitriage.AITriageService
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
@@ -717,8 +724,8 @@ type scimMembershipAdapter struct {
 	svc *app.TenantService
 }
 
-func scimAuditContext(tenantID shared.ID) app.AuditContext {
-	return app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"}
+func scimAuditContext(tenantID shared.ID) audit.AuditContext {
+	return audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"}
 }
 
 func (a scimMembershipAdapter) AddMember(ctx context.Context, tenantID, userID shared.ID, role string) error {
@@ -749,7 +756,7 @@ func (a scimMembershipAdapter) OffboardMember(ctx context.Context, tenantID, mem
 func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, membershipID shared.ID, role string, actorID *shared.ID) error {
 	actx := scimAuditContext(tenantID)
 	if actorID != nil {
-		actx = app.AuditContext{TenantID: tenantID.String(), ActorID: actorID.String()}
+		actx = audit.AuditContext{TenantID: tenantID.String(), ActorID: actorID.String()}
 	}
 	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, actx)
 	return err
@@ -781,7 +788,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 
 	// Initialize audit service first (used by others)
-	s.Audit = app.NewAuditService(repos.Audit, log)
+	s.Audit = audit.NewAuditService(repos.Audit, log)
 
 	// Initialize core services
 	s.User = app.NewUserService(repos.User, log)
@@ -857,7 +864,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Component.SetDataScope(s.DataScope)
 	s.SBOMImport = app.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.SBOMImport.SetDataScope(s.DataScope)
-	s.ReportSchedule = app.NewReportScheduleService(repos.ReportSchedule, log)
+	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
 	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
 	// Saved list views (D15): one page config per page that has views.
@@ -884,7 +891,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataScope(s.DataScope)
 	s.Vulnerability.SetAssetRefChecker(s.DataScope) // POST /findings asset_id: tenant + caller scope
 	s.Vulnerability.SetBranchLookup(repos.Branch)   // a finding branch must belong to its asset
-	s.FindingActivity = app.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
+	s.FindingActivity = activity.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
 
@@ -905,7 +912,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// SourceBreakdown query.
 	s.SourceAnalytics = app.NewSourceAnalyticsService(repos.Finding, log)
 
-	s.Exposure = app.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
+	s.Exposure = exposure.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.Exposure.SetDataScope(s.DataScope)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
@@ -961,7 +968,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetSecretProtector(s.CredentialSecrets)
 
 	// Initialize dashboard service
-	s.Dashboard = app.NewDashboardService(repos.Dashboard, log)
+	s.Dashboard = module.NewDashboardService(repos.Dashboard, log)
 	s.Dashboard.SetDataScope(s.DataScope)
 	// D6: a restricted viewer holding dashboard:aggregate sees organization
 	// totals (k-floor on breakdowns); others see their own scope.
@@ -1020,7 +1027,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// CVE id. Additive and best-effort: nil-safe deps degrade gracefully, and no
 	// exposure row is mutated or migrated.
 	if s.Exposure != nil {
-		exposureEnricher := app.NewExposureEnricher(repos.Asset, log)
+		exposureEnricher := exposure.NewExposureEnricher(repos.Asset, log)
 		exposureEnricher.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
 		if s.AttackSurface != nil {
 			exposureEnricher.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
@@ -1086,7 +1093,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.BulkGuard = app.NewBulkGuard(app.BulkGuardConfig{})
 
 	// Initialize Pentest service
-	s.Pentest = app.NewPentestService(
+	s.Pentest = compliance.NewPentestService(
 		repos.PentestCampaign, repos.PentestFinding,
 		repos.PentestRetest, repos.PentestTemplate,
 		repos.PentestReport, log,
@@ -1147,7 +1154,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetEvidenceStore(s.Attachment)
 
 	// Initialize Compliance service
-	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
+	s.Simulation = compliance.NewSimulationService(repos.Simulation, repos.ControlTest, log)
 	// Persist simulation runs (previously the run repo was never wired, so every
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
@@ -1230,7 +1237,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Retest.SetAuditLogger(s.Audit)
 
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
-	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
+	s.RemediationCampaign = exposure.NewRemediationCampaignService(repos.RemediationCampaign, log)
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
 	// progress) is computed from live finding data instead of staying at zero.
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
@@ -1245,7 +1252,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
-	s.Compliance = app.NewComplianceService(
+	s.Compliance = compliance.NewComplianceService(
 		repos.ComplianceFramework, repos.ComplianceControl,
 		repos.ComplianceAssessment, repos.ComplianceMapping, log,
 	)
@@ -1254,7 +1261,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize AI Triage service (if configured)
 	if cfg.AITriage.IsConfigured() {
 		llmFactory := llm.NewFactoryWithEncryption(cfg.AITriage, s.Encryptor)
-		s.AITriage = app.NewAITriageService(
+		s.AITriage = aitriage.NewAITriageService(
 			repos.AITriage,
 			repos.Finding,
 			repos.Tenant,
@@ -1278,14 +1285,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Check()/Record() short-circuit when BudgetEnabled=false —
 		// the Phase 1 rollout ships the flag off so there is zero
 		// behavior change on this deploy.
-		budgetSvc := app.NewAITriageBudgetService(
-			repos.AITriageBudget,
-			app.AITriageBudgetServiceConfig{
+		budgetSvc := aitriage.NewBudgetService(
+			repos.AITriageBudget, aitriage.BudgetServiceConfig{
 				Enabled:               cfg.AITriage.BudgetEnabled,
 				Strict:                cfg.AITriage.BudgetStrict,
 				DefaultTokensPerMonth: cfg.AITriage.BudgetDefaultTokensPerMonth,
-			},
-			log,
+			}, log,
 		)
 		s.AITriage.SetBudgetService(budgetSvc)
 		log.Info("AI triage service initialized",
@@ -1431,7 +1436,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if deps.RedisClient != nil {
 		s.Sensor.SetNonceStore(redis.NewSensorNonceStore(deps.RedisClient))
 	}
-	// Operator-tunable load-balancing weights (AGENT_LB_*). Applied to the
+	// Operator-tunable load-balancing weights (SENSOR_LB_*). Applied to the
 	// load_score recomputed on every heartbeat.
 	s.Sensor.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
 	// Activity timeline: heartbeat diffs and online/offline transitions are
@@ -1551,8 +1556,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetResultQuarantine(repos.SensorResult, sensorresult.DefaultLimits())
 
 	// Initialize scanning services
-	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)
-	s.ScanSession = app.NewScanSessionService(repos.ScanSession, repos.Sensor, log)
+	s.ScanProfile = scan.NewScanProfileService(repos.ScanProfile, log)
+	s.ScanSession = scan.NewScanSessionService(repos.ScanSession, repos.Sensor, log)
 	s.ScannerTemplate = app.NewScannerTemplateService(repos.ScannerTemplate, cfg.Encryption.Key, log)
 	s.ScannerTemplate.SetSigningKeys(s.TemplateKeys)
 	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
@@ -1596,11 +1601,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Tool.SetSensorRepo(repos.Sensor)         // Enable tool availability checking
 	s.Tool.SetCategoryRepo(repos.ToolCategory) // Enable category info in responses
 	s.ToolCategory = tool.NewCategoryService(repos.ToolCategory, repos.Tool, log)
-	s.Capability = app.NewCapabilityService(repos.Capability, s.Audit, log)
+	s.Capability = capability.NewCapabilityService(repos.Capability, s.Audit, log)
 
 	// Initialize sensor selector for load balancing
 	s.SensorSelector = app.NewSensorSelector(repos.Sensor, repos.Command, deps.SensorStateStore, log)
-	// Same AGENT_LB_* weights drive job placement, so tuning them changes
+	// Same SENSOR_LB_* weights drive job placement, so tuning them changes
 	// scheduling and not just the reported score.
 	s.SensorSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
 
@@ -1754,15 +1759,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Tool.SetPipelineDeactivator(s.Pipeline)
 
 	// Initialize workflow executor
-	workflowExecutor := app.NewWorkflowExecutor(
+	workflowExecutor := workflow.NewWorkflowExecutor(
 		repos.Workflow,
 		repos.WorkflowRun,
 		repos.WorkflowNodeRun,
-		log,
-		app.WithExecutorDB(deps.DB),
-		app.WithExecutorOutboxService(s.Outbox),
-		app.WithExecutorIntegrationService(s.Integration),
-		app.WithExecutorAuditService(s.Audit),
+		log, workflow.WithExecutorDB(deps.DB), workflow.WithExecutorOutboxService(s.Outbox), workflow.WithExecutorIntegrationService(s.Integration), workflow.WithExecutorAuditService(s.Audit),
 	)
 
 	// Register all action handlers for the workflow executor. Use the AI-aware
@@ -1771,15 +1772,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// so create_ticket/update_ticket file real issues instead of returning a
 	// false success. Adapters are built only when the underlying service exists
 	// so a nil service yields a nil interface (not a non-nil box over nil).
-	var wfJira app.WorkflowJiraTicketService
+	var wfJira workflow.JiraTicketService
 	if s.JiraSync != nil {
 		wfJira = workflowJiraTicketAdapter{svc: s.JiraSync}
 	}
-	var wfGitHub app.WorkflowGitHubTicketService
+	var wfGitHub workflow.GitHubTicketService
 	if s.GitHubTicket != nil {
 		wfGitHub = workflowGitHubTicketAdapter{svc: s.GitHubTicket}
 	}
-	app.RegisterAllActionHandlersWithAI(
+	workflow.RegisterAllActionHandlersWithAI(
 		workflowExecutor,
 		s.Vulnerability,
 		s.Pipeline,
@@ -1792,19 +1793,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 
 	// Initialize workflow service with executor
-	s.Workflow = app.NewWorkflowService(
+	s.Workflow = workflow.NewWorkflowService(
 		repos.Workflow,
 		repos.WorkflowNode,
 		repos.WorkflowEdge,
 		repos.WorkflowRun,
 		repos.WorkflowNodeRun,
-		log,
-		app.WithWorkflowAuditService(s.Audit),
-		app.WithWorkflowExecutor(workflowExecutor),
+		log, workflow.WithWorkflowAuditService(s.Audit), workflow.WithWorkflowExecutor(workflowExecutor),
 	)
 
 	// Initialize workflow event dispatcher for automatic workflow triggering
-	s.WorkflowDispatcher = app.NewWorkflowEventDispatcher(
+	s.WorkflowDispatcher = workflow.NewWorkflowEventDispatcher(
 		repos.Workflow,
 		repos.WorkflowNode,
 		s.Workflow,
@@ -1973,7 +1972,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Tenant.SetRoleService(s.Role)
 
 	// Initialize licensing service (OSS edition - modules from database)
-	s.Module = app.NewModuleService(repos.Module, log)
+	s.Module = module.NewModuleService(repos.Module, log)
 	s.Module.SetTenantModuleRepo(repos.TenantModule)
 	s.Module.SetAuditService(s.Audit)
 	// Product-bundle subscription: resolves the enabled-module baseline live from
@@ -1983,7 +1982,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// for ETag generation on module-list endpoints and as the cache-
 	// key suffix in any future Redis payload cache. Bumped on every
 	// toggle / preset apply / reset via notifyModuleChange.
-	s.Module.SetVersionService(app.NewModuleVersionService(deps.RedisClient, log))
+	s.Module.SetVersionService(module.NewVersionService(deps.RedisClient, log))
 	// Ingest honors the suppressions module toggle: with the module off (or
 	// left out of the tenant's bundles) findings land as reported.
 	s.Ingest.SetSuppressionModuleGuard(s.Module)
@@ -2149,6 +2148,14 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// auto-provisioning gate — a non-member is auto-joined only when the email
 	// domain is DNS-verified for the tenant (see SSOService.jitProvisioningAllowed).
 	s.DomainVerify = domainverify.NewService(repos.VerifiedDomain, domainverify.NewNetResolver(), log)
+	// Tenant verification checks: 10 per organization per hour across
+	// replicas (Redis), the in-process window on a Redis error.
+	if redisClient != nil {
+		if rl, err := redis.NewRateLimiter(redisClient, "easm_domain_verify", domainverify.MaxEASMVerifyPerHour, time.Hour, log); err == nil {
+			s.DomainVerify.SetVerifyLimiter(&redisVerifyLimiter{rl: rl,
+				fallback: domainverify.NewWindowLimiter(domainverify.MaxEASMVerifyPerHour, time.Hour)})
+		}
+	}
 	s.SSO.SetDomainVerifier(s.DomainVerify)
 	// SCIM attaches an EXISTING account only on a domain the organization has
 	// DNS-verified; anyone else must be invited (their consent).
@@ -2332,7 +2339,7 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 // the same asynq server, their tasks are enqueued whether or not SMTP is on,
 // and SMTP_ENABLED defaults to false. Returning early here (as this used to)
 // left those queues with no consumer in a default deployment.
-func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
+func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *aitriage.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 	redisTLS, err := redis.TLSConfig(&cfg.Redis)
 	if err != nil {
@@ -2397,6 +2404,21 @@ func connectorScansIfEnabled(c *tenablesc.Service) scan.ConnectorScans {
 		return nil
 	}
 	return c
+}
+
+// redisVerifyLimiter counts tenant domain-verification checks in Redis, and
+// in-process when Redis fails (never unlimited).
+type redisVerifyLimiter struct {
+	rl       *redis.RateLimiter
+	fallback *domainverify.WindowLimiter
+}
+
+func (l *redisVerifyLimiter) Allow(ctx context.Context, tenantID shared.ID) (bool, error) {
+	res, err := l.rl.Allow(ctx, "tenant:"+tenantID.String())
+	if err != nil || res == nil {
+		return l.fallback.Allow(ctx, tenantID)
+	}
+	return res.Allowed, nil
 }
 
 // easmRecheck is the default re-check window of the EASM sweeps for an

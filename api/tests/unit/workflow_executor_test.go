@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -309,7 +309,7 @@ type wfExecMockActionHandler struct {
 	returnOutput map[string]any
 }
 
-func (h *wfExecMockActionHandler) Execute(ctx context.Context, input *app.ActionInput) (map[string]any, error) {
+func (h *wfExecMockActionHandler) Execute(ctx context.Context, input *workflowsvc.ActionInput) (map[string]any, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.callCount++
@@ -416,9 +416,9 @@ func wfExecNewExecutor(
 	workflowRepo *wfExecMockWorkflowRepo,
 	runRepo *wfExecMockRunRepo,
 	nodeRunRepo *wfExecMockNodeRunRepo,
-) *app.WorkflowExecutor {
+) *workflowsvc.WorkflowExecutor {
 	log := logger.NewNop()
-	return app.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, log)
+	return workflowsvc.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, log)
 }
 
 // =============================================================================
@@ -431,7 +431,7 @@ func TestWfExec_NewWorkflowExecutor_DefaultConfig(t *testing.T) {
 	nodeRunRepo := newWfExecMockNodeRunRepo()
 	log := logger.NewNop()
 
-	executor := app.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, log)
+	executor := workflowsvc.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, log)
 	if executor == nil {
 		t.Fatal("expected non-nil executor")
 	}
@@ -888,7 +888,7 @@ func TestWfExec_Execute_NotificationNode_NoHandlerConfigured(t *testing.T) {
 // =============================================================================
 
 func TestWfExec_ConditionEval_SimpleEquality_True(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{"severity": "critical"},
 	}
@@ -902,7 +902,7 @@ func TestWfExec_ConditionEval_SimpleEquality_True(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_SimpleEquality_False(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{"severity": "low"},
 	}
@@ -916,7 +916,7 @@ func TestWfExec_ConditionEval_SimpleEquality_False(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_NumericGreaterThan_True(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{"cvss": 9.0},
 	}
@@ -930,7 +930,7 @@ func TestWfExec_ConditionEval_NumericGreaterThan_True(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_NumericGreaterThan_False(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{"cvss": 5.0},
 	}
@@ -944,7 +944,7 @@ func TestWfExec_ConditionEval_NumericGreaterThan_False(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_BooleanEquality_True(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{"is_confirmed": true},
 	}
@@ -958,7 +958,7 @@ func TestWfExec_ConditionEval_BooleanEquality_True(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_BooleanEquality_False(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{"is_confirmed": false},
 	}
@@ -972,7 +972,7 @@ func TestWfExec_ConditionEval_BooleanEquality_False(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_NestedPathResolution(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"finding": map[string]any{
@@ -990,7 +990,7 @@ func TestWfExec_ConditionEval_NestedPathResolution(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_EmptyExpression_ReturnsTrue(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	result, err := evaluator.Evaluate(context.Background(), "", map[string]any{})
 	if err != nil {
 		t.Fatalf("Evaluate error: %v", err)
@@ -1001,7 +1001,7 @@ func TestWfExec_ConditionEval_EmptyExpression_ReturnsTrue(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_LiteralTrue(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	result, err := evaluator.Evaluate(context.Background(), "true", map[string]any{})
 	if err != nil {
 		t.Fatalf("Evaluate error: %v", err)
@@ -1012,7 +1012,7 @@ func TestWfExec_ConditionEval_LiteralTrue(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_LiteralFalse(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	result, err := evaluator.Evaluate(context.Background(), "false", map[string]any{})
 	if err != nil {
 		t.Fatalf("Evaluate error: %v", err)
@@ -1023,7 +1023,7 @@ func TestWfExec_ConditionEval_LiteralFalse(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_ExpressionTooLong_ReturnsError(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	longExpr := make([]byte, 501)
 	for i := range longExpr {
 		longExpr[i] = 'a'
@@ -1035,7 +1035,7 @@ func TestWfExec_ConditionEval_ExpressionTooLong_ReturnsError(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_MissingPath_ReturnsFalse(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{},
 	}
@@ -1049,7 +1049,7 @@ func TestWfExec_ConditionEval_MissingPath_ReturnsFalse(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_InequalityOperator(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{"severity": "low"},
 	}
@@ -1063,7 +1063,7 @@ func TestWfExec_ConditionEval_InequalityOperator(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_InOperator_True(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{"severity": "critical"},
 	}
@@ -1077,7 +1077,7 @@ func TestWfExec_ConditionEval_InOperator_True(t *testing.T) {
 }
 
 func TestWfExec_ConditionEval_InOperator_False(t *testing.T) {
-	evaluator := &app.DefaultConditionEvaluator{}
+	evaluator := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{"severity": "low"},
 	}

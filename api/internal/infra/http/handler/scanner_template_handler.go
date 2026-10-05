@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -31,7 +32,7 @@ const (
 // ScannerTemplateHandler handles HTTP requests for scanner templates.
 type ScannerTemplateHandler struct {
 	service   *app.ScannerTemplateService
-	audit     *app.AuditService
+	audit     *auditsvc.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
@@ -48,7 +49,7 @@ func NewScannerTemplateHandler(service *app.ScannerTemplateService, v *validator
 // SetAuditService records template changes in the tenant's audit log with
 // the state before and after (RFC-040 §5.11): a custom template is code
 // sensors run.
-func (h *ScannerTemplateHandler) SetAuditService(svc *app.AuditService) {
+func (h *ScannerTemplateHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 
