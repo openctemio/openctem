@@ -76,6 +76,32 @@ describe('diffManifests', () => {
     }
     expect(isEmptyDiff(diffManifests(prev, same))).toBe(true)
   })
+
+  // The same rule as the API: a tool-contract digest change is a change.
+  it('lists a tool contract that appeared or changed', () => {
+    const c = (digest: string) => ({
+      api_version: 'openctem.io/tool/v1',
+      digest,
+      version: '1.0.0',
+      class: 'target-scan',
+      tier: 'T1',
+      produces: ['asset:domain'],
+    })
+    const a = `sha256:${'a'.repeat(64)}`
+    const b = `sha256:${'b'.repeat(64)}`
+    const ported = { ...prev, tools: [{ ...prev.tools[0], contract: c(a) }, prev.tools[1]] }
+    const moved = { ...prev, tools: [{ ...prev.tools[0], contract: c(b) }, prev.tools[1]] }
+    expect(diffManifests(prev, ported).contracts).toEqual([{ tool: 'nuclei', from: '', to: a }])
+    const d = diffManifests(ported, moved)
+    expect(isEmptyDiff(d)).toBe(false)
+    expect(manifestDiffLines(d)).toEqual([
+      'nuclei tool contract sha256:aaaaaaaaaaaa → sha256:bbbbbbbbbbbb',
+    ])
+    expect(manifestDiffLines(diffManifests(prev, ported))).toEqual([
+      'nuclei tool contract — → sha256:aaaaaaaaaaaa',
+    ])
+    expect(isEmptyDiff(diffManifests(moved, moved))).toBe(true)
+  })
 })
 
 describe('manifestHistory', () => {

@@ -81,6 +81,61 @@ describe('SensorManifestTab', () => {
     await userEvent.click(screen.getAllByRole('button', { name: /Copy manifest digest/ })[0])
   })
 
+  it("shows a ported tool's contract and a contract change in the history", async () => {
+    const contract = (digest: string) => ({
+      api_version: 'openctem.io/tool/v1',
+      digest,
+      version: '1.0.0',
+      class: 'target-scan',
+      tier: 'T1',
+      network: 'targets',
+      consumes: ['domain', 'http_service'],
+      produces: ['asset:http_service', 'asset:certificate'],
+    })
+    const withContract = (v: SensorManifestVersion, digest: string): SensorManifestVersion => ({
+      ...v,
+      manifest: {
+        ...v.manifest,
+        tools: v.manifest.tools.map((t) => ({ ...t, contract: contract(digest) })),
+      },
+    })
+    const newC = `sha256:${'d'.repeat(64)}`
+    const oldC = `sha256:${'c'.repeat(64)}`
+    const items = [
+      withContract(version(`sha256:${'b'.repeat(64)}`, 'v3.12.0', true), newC),
+      withContract(version(`sha256:${'a'.repeat(64)}`, 'v3.12.0', false), oldC),
+    ]
+    manifests.value = { data: { items }, error: undefined, isLoading: false }
+    render(<SensorManifestTab sensor={sensor} now={Date.now()} />)
+
+    const block = screen.getByLabelText('nuclei tool contract')
+    expect(block).toHaveTextContent('target-scan · T1 · network: targets')
+    expect(block).toHaveTextContent('v1.0.0')
+    expect(block).toHaveTextContent('Consumesdomainhttp_service')
+    expect(block).toHaveTextContent('Producesasset:http_serviceasset:certificate')
+    expect(
+      within(block).getByRole('button', { name: `Copy tool contract digest ${newC}` })
+    ).toBeInTheDocument()
+
+    const history = screen.getByRole('list', { name: 'Manifest versions' })
+    expect(
+      within(history).getByText('nuclei tool contract sha256:cccccccccccc → sha256:dddddddddddd')
+    ).toBeInTheDocument()
+  })
+
+  it('names an ignored invalid tool contract', () => {
+    const v = version(`sha256:${'b'.repeat(64)}`, 'v3.12.0', true)
+    v.ignored = [
+      { path: 'tools[0].contract', value: 'invalid produces entry', reason: 'invalid-contract' },
+    ]
+    manifests.value = { data: { items: [v] }, error: undefined, isLoading: false }
+    render(<SensorManifestTab sensor={sensor} now={Date.now()} />)
+    expect(screen.getByRole('note')).toHaveTextContent(
+      '"invalid produces entry": not a valid tool contract'
+    )
+    expect(screen.queryByLabelText('nuclei tool contract')).not.toBeInTheDocument()
+  })
+
   it('says when there is no manifest yet', () => {
     manifests.value = { data: { items: [] }, error: undefined, isLoading: false }
     render(<SensorManifestTab sensor={sensor} now={Date.now()} />)

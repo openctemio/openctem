@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DetailField, DetailFieldGrid, DetailSection, DetailSections } from '@/features/shared'
 import { useSensorManifests } from '@/lib/api/sensor-hooks'
-import type { Sensor, SensorManifestVersion } from '@/lib/api/sensor-types'
+import type { Sensor, SensorManifestVersion, SensorToolContract } from '@/lib/api/sensor-types'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +19,7 @@ import {
   IGNORED_REASON_LABEL,
   MANIFEST_SOURCE_LABEL,
   concurrencyText,
+  contractSummary,
   isEmptyDiff,
   manifestDiffLines,
   manifestHistory,
@@ -28,21 +29,58 @@ import {
 /** Versions shown before "Show all". */
 const HISTORY_PREVIEW = 5
 
-function Digest({ digest }: { digest: string }) {
+function Digest({ digest, what = 'Manifest' }: { digest: string; what?: string }) {
   return (
     <button
       type="button"
       className="inline-flex max-w-full items-center gap-1 rounded-sm font-mono text-xs hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      aria-label={`Copy manifest digest ${digest}`}
+      aria-label={`Copy ${what.toLowerCase()} digest ${digest}`}
       title={digest}
       onClick={() => {
         copyToClipboard(digest)
-        toast.success('Manifest digest copied')
+        toast.success(`${what} digest copied`)
       }}
     >
       <span className="truncate">{shortDigest(digest)}</span>
       <Copy className="h-3 w-3 shrink-0" aria-hidden />
     </button>
+  )
+}
+
+/** A ported tool's contract: what it is and the output types it may produce. */
+function ToolContract({ tool, c }: { tool: string; c: SensorToolContract }) {
+  return (
+    <div
+      className="space-y-1 rounded-md bg-muted/40 px-2 py-1.5 text-xs"
+      aria-label={`${tool} tool contract`}
+    >
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-medium">Tool contract</span>
+        <span className="text-muted-foreground">{contractSummary(c)}</span>
+        <span className="text-muted-foreground tabular-nums">v{c.version}</span>
+        <Digest digest={c.digest} what="Tool contract" />
+      </div>
+      {(c.consumes?.length ?? 0) > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-muted-foreground">Consumes</span>
+          {c.consumes!.map((v) => (
+            <SensorTag key={v}>{v}</SensorTag>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="text-muted-foreground">Produces</span>
+        {c.produces.length === 0 ? (
+          <span className="text-muted-foreground">nothing</span>
+        ) : (
+          c.produces.map((v) => (
+            <SensorTag key={v} tone="info">
+              {v}
+            </SensorTag>
+          ))
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -123,6 +161,7 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
                 {t.content!.map((c) => [c.name, c.version].filter(Boolean).join(' ')).join(' · ')}
               </div>
             )}
+            {t.contract && <ToolContract tool={t.name} c={t.contract} />}
           </li>
         ))}
       </ul>
