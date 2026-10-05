@@ -462,16 +462,6 @@ func leastLoadedOf(load []int, idx []int) int {
 	return best
 }
 
-func leastLoaded(load []int) int {
-	best := 0
-	for i := 1; i < len(load); i++ {
-		if load[i] < load[best] {
-			best = i
-		}
-	}
-	return best
-}
-
 func appendUnique(xs []string, x string) []string {
 	for _, v := range xs {
 		if v == x {
