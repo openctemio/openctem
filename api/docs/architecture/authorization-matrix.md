@@ -661,9 +661,8 @@ Authorization is enforced at the **route layer** in
 ### SSO / identity-federation setup (platform administrator)
 
 SSO **setup** for an organization (SAML, OIDC identity providers, verified
-domains, SSO enforcement) is a platform-administrator operation, modeled on
-Tenable Security Center's system-level Configuration. It lives only under the
-admin realm, `/api/v1/admin/tenants/{tenantId}/sso/*` (next section). The former
+domains, SSO enforcement) is a platform-administrator operation: identity
+federation is system-level configuration, so it lives only under the admin realm, `/api/v1/admin/tenants/{tenantId}/sso/*` (next section). The former
 tenant-context routes `/api/v1/settings/{saml,identity-providers,verified-domains}`
 and the `PLATFORM_ADMIN_EMAILS` flag that guarded them were removed; no tenant
 role, however high, can reach SSO setup. The SSO **login** flow
@@ -1400,13 +1399,12 @@ Legend: (R) = Read, (W) = Write, (U) = Update, (D) = Delete
 
 The authorization model was reviewed end-to-end (2026-09, `docs/authz-audit.md`)
 and standardized. The following are **decisions**, not accidents — each was made
-deliberately and, where a design choice was involved, benchmarked against
-Tenable.sc's RBAC.
+deliberately.
 
 1. **Allow-only, default-deny, roles only.** A user's effective permissions are
    the *union* of what their roles grant, and roles are the **only** source of
-   permissions. There is no deny-override. This mirrors Tenable.sc, which is
-   purely additive with no deny-override.
+   permissions. There is no deny-override: purely additive grants keep the
+   effective permission set easy to reason about and audit.
 
    Groups (teams) carry **only data scope** (which assets their members see),
    never permissions. Group permission sets and per-group permission overrides
@@ -1436,9 +1434,8 @@ Tenable.sc's RBAC.
    *product* decision made via seed/migration, never by silently widening a route's
    gate.
 
-5. **No time-limited grants.** There is no `expires_at` on role assignments.
-   Tenable.sc has no expiring grants either; revocation is immediate via
-   `RevokeAllSessions` + version bump. → we will **not** build expiring grants (YAGNI).
+5. **No time-limited grants.** There is no `expires_at` on role assignments;
+   revocation is immediate via `RevokeAllSessions` + version bump. → we will **not** build expiring grants (YAGNI).
 
 6. **The module gate is a feature flag, not a security boundary.** It is fail-open
    by design (see "Module-Gate Layer"). Never rely on it to protect data — that is
