@@ -6982,7 +6982,11 @@ definitions:
       verdict:
         type: string
       verdict_detail:
-        type: object
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Verdict'
+        description: |-
+          VerdictDetail is the last verdict with its reasons and links (detail
+          view only).
       workflow:
         type: string
     type: object

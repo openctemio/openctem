@@ -97,32 +97,34 @@ type CITrustConfigListResponse struct {
 
 // CIRunResponse is a CI run.
 type CIRunResponse struct {
-	ID                string          `json:"id"`
-	TrustConfigID     string          `json:"trust_config_id,omitempty"`
-	RepositoryAssetID string          `json:"repository_asset_id"`
-	Provider          string          `json:"provider"`
-	Repository        string          `json:"repository"`
-	Ref               string          `json:"ref"`
-	Branch            string          `json:"branch,omitempty"`
-	CommitSHA         string          `json:"commit_sha"`
-	PullRequest       string          `json:"pull_request,omitempty"`
-	DefaultBranch     string          `json:"default_branch,omitempty"`
-	IsDefaultBranch   bool            `json:"is_default_branch"`
-	Event             string          `json:"event,omitempty"`
-	Environment       string          `json:"environment,omitempty"`
-	Actor             string          `json:"actor,omitempty"`
-	ExternalRunID     string          `json:"external_run_id,omitempty"`
-	RunAttempt        string          `json:"run_attempt,omitempty"`
-	Workflow          string          `json:"workflow,omitempty"`
-	PipelineURL       string          `json:"pipeline_url,omitempty"`
-	Fork              bool            `json:"fork"`
-	Status            string          `json:"status"`
-	Verdict           string          `json:"verdict,omitempty"`
-	VerdictDetail     json.RawMessage `json:"verdict_detail,omitempty" swaggertype:"object"`
-	EvaluatedAt       *time.Time      `json:"evaluated_at,omitempty"`
-	ReportsCount      int             `json:"reports_count"`
-	FindingsCount     int             `json:"findings_count"`
-	CreatedAt         time.Time       `json:"created_at"`
+	ID                string `json:"id"`
+	TrustConfigID     string `json:"trust_config_id,omitempty"`
+	RepositoryAssetID string `json:"repository_asset_id"`
+	Provider          string `json:"provider"`
+	Repository        string `json:"repository"`
+	Ref               string `json:"ref"`
+	Branch            string `json:"branch,omitempty"`
+	CommitSHA         string `json:"commit_sha"`
+	PullRequest       string `json:"pull_request,omitempty"`
+	DefaultBranch     string `json:"default_branch,omitempty"`
+	IsDefaultBranch   bool   `json:"is_default_branch"`
+	Event             string `json:"event,omitempty"`
+	Environment       string `json:"environment,omitempty"`
+	Actor             string `json:"actor,omitempty"`
+	ExternalRunID     string `json:"external_run_id,omitempty"`
+	RunAttempt        string `json:"run_attempt,omitempty"`
+	Workflow          string `json:"workflow,omitempty"`
+	PipelineURL       string `json:"pipeline_url,omitempty"`
+	Fork              bool   `json:"fork"`
+	Status            string `json:"status"`
+	Verdict           string `json:"verdict,omitempty"`
+	// VerdictDetail is the last verdict with its reasons and links (detail
+	// view only).
+	VerdictDetail *cirunapp.Verdict `json:"verdict_detail,omitempty"`
+	EvaluatedAt   *time.Time        `json:"evaluated_at,omitempty"`
+	ReportsCount  int               `json:"reports_count"`
+	FindingsCount int               `json:"findings_count"`
+	CreatedAt     time.Time         `json:"created_at"`
 }
 
 func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
@@ -135,8 +137,11 @@ func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
 	if r.TrustConfigID != nil {
 		out.TrustConfigID = r.TrustConfigID.String()
 	}
-	if withDetail {
-		out.VerdictDetail = r.VerdictDetail
+	if withDetail && len(r.VerdictDetail) > 0 {
+		var v cirunapp.Verdict
+		if json.Unmarshal(r.VerdictDetail, &v) == nil {
+			out.VerdictDetail = &v
+		}
 	}
 	return out
 }
