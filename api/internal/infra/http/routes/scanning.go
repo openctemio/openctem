@@ -660,6 +660,9 @@ func registerScanRoutes(
 		// Import scan config (must be before /{id} to avoid matching)
 		r.POST("/import", h.ImportConfig, middleware.Require(permission.ScansWrite))
 
+		// Scan stage catalog: static platform data (must be before /{id})
+		r.GET("/stages", h.ListStages, middleware.Require(permission.ScansRead))
+
 		// Read operations
 		r.GET("/", h.ListScans, middleware.Require(permission.ScansRead))
 		r.GET("/{id}", h.GetScan, middleware.Require(permission.ScansRead))
