@@ -4,7 +4,9 @@
 > branch-aware findings → **risk-aware gate** + **PR/MR decoration**. Design:
 > [RFC-008](../rfcs/RFC-008-native-shift-left-ci-scanning.md). Complements
 > [Scan Orchestration](scan-orchestration.md) (platform-run scanners) — this doc
-> covers the **CI-runner** scanning path.
+> covers the **CI-runner** scanning path. How a CI job authenticates (OIDC,
+> no stored key) and gets a central pass/fail verdict:
+> [CI runner identity and the CI gate](ci-runner-identity.md) (RFC-051).
 
 OpenCTEM runs its **own** agent in the customer's CI (no third-party tool, no
 bridge). The agent detects the CI environment, runs scanners on the checked-out

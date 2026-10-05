@@ -84,18 +84,22 @@ type Handlers struct {
 	// DataScope enforces the Layer 2 (group) data scope on every by-id asset
 	// and finding route of the token-tenant chain (DataScopeGuard). nil
 	// disables the guard (tests with a minimal handler set).
-	DataScope       middleware.DataScopeAsserter
-	Sensor          *handler.SensorHandler          // nil if not initialized (no database)
-	SensorContent   *handler.SensorContentHandler   // scanner content policy + refresh (RFC-031); nil without a database
-	SensorResults   *handler.SensorResultHandler    // unsolicited results policy + quarantine review (RFC-040); nil without a database
-	ScanZone        *handler.ScanZoneHandler        // nil if not initialized (no database)
-	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
-	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
-	Tool            *handler.ToolHandler            // nil if not initialized (no database)
-	ToolCategory    *handler.ToolCategoryHandler    // nil if not initialized (no database)
-	Capability      *handler.CapabilityHandler      // nil if not initialized (no database)
-	Scan            *handler.ScanHandler            // nil if not initialized (no database)
-	CI              *handler.CIHandler              // nil if not initialized (no database) - CI/CD snippet generator
+	DataScope     middleware.DataScopeAsserter
+	Sensor        *handler.SensorHandler        // nil if not initialized (no database)
+	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
+	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
+	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
+	Pipeline      *handler.PipelineHandler      // nil if not initialized (no database)
+	ScanProfile   *handler.ScanProfileHandler   // nil if not initialized (no database)
+	Tool          *handler.ToolHandler          // nil if not initialized (no database)
+	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
+	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
+	Scan          *handler.ScanHandler          // nil if not initialized (no database)
+	CI            *handler.CIHandler            // nil if not initialized (no database) - CI/CD snippet generator
+	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
+	// without a database.
+	CIAdmin         *handler.CIAdminHandler
+	CIRunner        *handler.CIRunnerHandler
 	ScanSession     *handler.ScanSessionHandler     // nil if not initialized (no database)
 	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
 	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
@@ -702,6 +706,13 @@ func Register(
 	// Ingest/Sensor routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
 		registerSensorRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, h.Suppression, h.ModuleGate, telemetryRateLimiter, ingestRateLimiter, log)
+	}
+
+	// CI runs: OIDC exchange, run-token uploads and the gate, administration
+	// (RFC-051).
+	if h.CIAdmin != nil || h.CIRunner != nil {
+		registerCIRoutes(router, h.CIAdmin, h.CIRunner, authMiddleware, userSync,
+			h.ModuleGate.RequireModule(moduledom.ModuleScans), ingestRateLimiter, log)
 	}
 
 	// Sensor protocol v2 results (RFC-026): its own route group and

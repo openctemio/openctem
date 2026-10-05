@@ -42,6 +42,10 @@ const (
 	leeway    = 2 * time.Minute
 	jwksTTL   = time.Hour
 	userAgent = "OpenCTEM-OIDC/1"
+	// jwksMinRefresh is the shortest interval between two fetches of one
+	// JWKS: a token naming an unknown kid cannot make every request fetch the
+	// provider's keys again.
+	jwksMinRefresh = 30 * time.Second
 )
 
 // signingMethods are the accepted id_token algorithms. HMAC and "none" are
@@ -56,6 +60,8 @@ type Client struct {
 
 	mu   sync.Mutex
 	jwks map[string]*jwksEntry
+	// discovery caches the jwks_uri of workload-token issuers (workload.go).
+	discovery map[string]discoveredJWKS
 }
 
 type jwksEntry struct {
@@ -352,6 +358,9 @@ func (c *Client) key(ctx context.Context, jwksURI, kid string) (any, error) {
 	if k, ok := c.cachedKey(jwksURI, kid); ok {
 		return k, nil
 	}
+	if c.recentlyFetched(jwksURI) {
+		return nil, fmt.Errorf("no signing key for kid %q", kid)
+	}
 	if err := c.refreshJWKS(ctx, jwksURI); err != nil {
 		return nil, err
 	}
@@ -359,6 +368,15 @@ func (c *Client) key(ctx context.Context, jwksURI, kid string) (any, error) {
 		return k, nil
 	}
 	return nil, fmt.Errorf("no signing key for kid %q", kid)
+}
+
+// recentlyFetched reports whether the JWKS was fetched within
+// jwksMinRefresh (and is cached): an unknown kid then fails without a fetch.
+func (c *Client) recentlyFetched(jwksURI string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.jwks[jwksURI]
+	return ok && c.now().Sub(e.fetchedAt) < jwksMinRefresh
 }
 
 func (c *Client) cachedKey(jwksURI, kid string) (any, bool) {

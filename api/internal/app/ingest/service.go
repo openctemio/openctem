@@ -92,6 +92,9 @@ type Service struct {
 	commands     commandReader
 	results      sensorresult.Repository
 	resultLimits sensorresult.Limits
+	// contracts reads the submitting sensor's manifest, where a ported
+	// tool declares what it produces (output_binding.go). Nil-safe.
+	contracts ToolContractSource
 
 	logger *logger.Logger
 
@@ -345,7 +348,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		opts.RequireAssetForFindings = true
 	}
 	binding := opts.Binding
-	if agt.ID.IsZero() {
+	// A server-side ingest (synthetic sensor, zero id) is trusted, except a
+	// CI run's report: it has no sensor row either, and keeps its binding.
+	if agt.ID.IsZero() && binding.Kind != BindingCIRun {
 		binding = TrustedBinding()
 	}
 	if binding.Kind == BindingCommand && binding.Tool != "" &&
@@ -531,7 +536,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		scanID := report.Metadata.ID
 		branchName := report.Metadata.Branch.Name
 		for _, assetID := range assetMap {
-			if binding.Kind == BindingCommand && !scope.allowedAsset(assetID) {
+			if (binding.Kind == BindingCommand || binding.Kind == BindingCIRun) && !scope.allowedAsset(assetID) {
 				continue
 			}
 			br, err := s.branchRepo.GetByName(ctx, assetID, branchName)
