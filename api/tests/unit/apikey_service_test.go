@@ -286,8 +286,9 @@ func TestCreateAPIKey(t *testing.T) {
 		{
 			name: "success - minimal input",
 			input: apikey.CreateInput{
-				TenantID: tenantID.String(),
-				Name:     "My API Key",
+				TenantID:      tenantID.String(),
+				ExpiresInDays: 90,
+				Name:          "My API Key",
 			},
 			check: func(t *testing.T, result *apikey.CreateResult, repo *mockAPIKeyRepo) {
 				if result == nil {
@@ -378,8 +379,9 @@ func TestCreateAPIKey(t *testing.T) {
 		{
 			name: "error - invalid tenant ID",
 			input: apikey.CreateInput{
-				TenantID: "not-a-uuid",
-				Name:     "Test Key",
+				TenantID:      "not-a-uuid",
+				ExpiresInDays: 90,
+				Name:          "Test Key",
 			},
 			wantErr:   true,
 			errTarget: shared.ErrValidation,
@@ -387,8 +389,9 @@ func TestCreateAPIKey(t *testing.T) {
 		{
 			name: "error - empty tenant ID",
 			input: apikey.CreateInput{
-				TenantID: "",
-				Name:     "Test Key",
+				TenantID:      "",
+				ExpiresInDays: 90,
+				Name:          "Test Key",
 			},
 			wantErr:   true,
 			errTarget: shared.ErrValidation,
@@ -396,8 +399,9 @@ func TestCreateAPIKey(t *testing.T) {
 		{
 			name: "error - repo create fails",
 			input: apikey.CreateInput{
-				TenantID: tenantID.String(),
-				Name:     "Test Key",
+				TenantID:      tenantID.String(),
+				ExpiresInDays: 90,
+				Name:          "Test Key",
 			},
 			repoErr: errors.New("database connection lost"),
 			wantErr: true,
@@ -405,8 +409,9 @@ func TestCreateAPIKey(t *testing.T) {
 		{
 			name: "error - repo returns name conflict",
 			input: apikey.CreateInput{
-				TenantID: tenantID.String(),
-				Name:     "Duplicate Key",
+				TenantID:      tenantID.String(),
+				ExpiresInDays: 90,
+				Name:          "Duplicate Key",
 			},
 			repoErr: apikeydom.ErrAPIKeyNameExists,
 			wantErr: true,
@@ -414,9 +419,10 @@ func TestCreateAPIKey(t *testing.T) {
 		{
 			name: "success - invalid user ID is silently ignored",
 			input: apikey.CreateInput{
-				TenantID: tenantID.String(),
-				Name:     "Key with bad user ID",
-				UserID:   "not-a-uuid",
+				TenantID:      tenantID.String(),
+				ExpiresInDays: 90,
+				Name:          "Key with bad user ID",
+				UserID:        "not-a-uuid",
 			},
 			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
 				// Invalid user ID is silently ignored (err == nil check in code)
@@ -428,9 +434,10 @@ func TestCreateAPIKey(t *testing.T) {
 		{
 			name: "success - invalid created_by is silently ignored",
 			input: apikey.CreateInput{
-				TenantID:  tenantID.String(),
-				Name:      "Key with bad created by",
-				CreatedBy: "invalid",
+				TenantID:      tenantID.String(),
+				ExpiresInDays: 90,
+				Name:          "Key with bad created by",
+				CreatedBy:     "invalid",
 			},
 			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
 				if result.Key.CreatedBy() != nil {
@@ -441,9 +448,10 @@ func TestCreateAPIKey(t *testing.T) {
 		{
 			name: "success - zero rate limit uses default",
 			input: apikey.CreateInput{
-				TenantID:  tenantID.String(),
-				Name:      "Default rate limit key",
-				RateLimit: 0,
+				TenantID:      tenantID.String(),
+				ExpiresInDays: 90,
+				Name:          "Default rate limit key",
+				RateLimit:     0,
 			},
 			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
 				if result.Key.RateLimit() != 1000 {
@@ -452,24 +460,33 @@ func TestCreateAPIKey(t *testing.T) {
 			},
 		},
 		{
-			name: "success - no expiration when expires_in_days is 0",
+			// Every key expires (settings decision B14): no "never".
+			name: "error - expires_in_days 0 (never) is refused",
 			input: apikey.CreateInput{
 				TenantID:      tenantID.String(),
 				Name:          "No expiry key",
 				ExpiresInDays: 0,
 			},
-			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
-				if result.Key.ExpiresAt() != nil {
-					t.Errorf("expected nil expires_at, got %v", result.Key.ExpiresAt())
-				}
+			wantErr:   true,
+			errTarget: shared.ErrValidation,
+		},
+		{
+			name: "error - expires_in_days above 365 is refused",
+			input: apikey.CreateInput{
+				TenantID:      tenantID.String(),
+				Name:          "Too long key",
+				ExpiresInDays: 366,
 			},
+			wantErr:   true,
+			errTarget: shared.ErrValidation,
 		},
 		{
 			name: "success - empty scopes stay empty",
 			input: apikey.CreateInput{
-				TenantID: tenantID.String(),
-				Name:     "No scope key",
-				Scopes:   []string{},
+				TenantID:      tenantID.String(),
+				ExpiresInDays: 90,
+				Name:          "No scope key",
+				Scopes:        []string{},
 			},
 			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
 				if len(result.Key.Scopes()) != 0 {
@@ -515,16 +532,18 @@ func TestCreateAPIKey_UniquePlaintext(t *testing.T) {
 
 	// Create two keys and verify they have unique plaintexts
 	result1, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID: tenantID.String(),
-		Name:     "Key 1",
+		TenantID:      tenantID.String(),
+		ExpiresInDays: 90,
+		Name:          "Key 1",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	result2, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID: tenantID.String(),
-		Name:     "Key 2",
+		TenantID:      tenantID.String(),
+		ExpiresInDays: 90,
+		Name:          "Key 2",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1468,8 +1487,9 @@ func TestAPIKeyService_CrossTenantIsolation(t *testing.T) {
 
 	// Create key for tenant A
 	resultA, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID: tenantA.String(),
-		Name:     "Tenant A Key",
+		TenantID:      tenantA.String(),
+		ExpiresInDays: 90,
+		Name:          "Tenant A Key",
 	})
 	if err != nil {
 		t.Fatalf("create key A: %v", err)
@@ -1477,8 +1497,9 @@ func TestAPIKeyService_CrossTenantIsolation(t *testing.T) {
 
 	// Create key for tenant B
 	_, err = svc.Create(context.Background(), apikey.CreateInput{
-		TenantID: tenantB.String(),
-		Name:     "Tenant B Key",
+		TenantID:      tenantB.String(),
+		ExpiresInDays: 90,
+		Name:          "Tenant B Key",
 	})
 	if err != nil {
 		t.Fatalf("create key B: %v", err)
@@ -1556,8 +1577,9 @@ func TestCreateAPIKey_HashIsDeterministicForSamePlaintext(t *testing.T) {
 	svc := newTestAPIKeyService(repo)
 
 	result, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID: shared.NewID().String(),
-		Name:     "Hash Test Key",
+		TenantID:      shared.NewID().String(),
+		ExpiresInDays: 90,
+		Name:          "Hash Test Key",
 	})
 	if err != nil {
 		t.Fatalf("create error: %v", err)
@@ -1595,8 +1617,9 @@ func TestCreateAPIKey_ConcurrentCreation(t *testing.T) {
 	for i := 0; i < numKeys; i++ {
 		go func(idx int) {
 			r, err := svc.Create(context.Background(), apikey.CreateInput{
-				TenantID: tenantID.String(),
-				Name:     fmt.Sprintf("Concurrent Key %d", idx),
+				TenantID:      tenantID.String(),
+				ExpiresInDays: 90,
+				Name:          fmt.Sprintf("Concurrent Key %d", idx),
 			})
 			results <- result{res: r, err: err}
 		}(i)
@@ -1636,8 +1659,9 @@ func TestCreateAPIKey_PlaintextFormat(t *testing.T) {
 	svc := newTestAPIKeyService(repo)
 
 	result, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID: shared.NewID().String(),
-		Name:     "Format Test",
+		TenantID:      shared.NewID().String(),
+		ExpiresInDays: 90,
+		Name:          "Format Test",
 	})
 	if err != nil {
 		t.Fatalf("create error: %v", err)
@@ -1677,8 +1701,9 @@ func TestAPIKeyService_RevokeAndDeleteWorkflow(t *testing.T) {
 
 	// Step 1: Create
 	result, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID: tenantID.String(),
-		Name:     "Workflow Key",
+		TenantID:      tenantID.String(),
+		ExpiresInDays: 90,
+		Name:          "Workflow Key",
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -1747,9 +1772,10 @@ func TestAuthenticate_Success(t *testing.T) {
 	tenantID := shared.NewID()
 
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID: tenantID.String(),
-		Name:     "MCP key",
-		Scopes:   []string{"findings:read"},
+		TenantID:      tenantID.String(),
+		ExpiresInDays: 90,
+		Name:          "MCP key",
+		Scopes:        []string{"findings:read"},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -1797,6 +1823,7 @@ func TestAuthenticate_RevokedKeyRejected(t *testing.T) {
 
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(), Name: "revoke-me",
+		ExpiresInDays: 90,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -1819,6 +1846,7 @@ func TestAuthenticate_ExpiredKeyRejected(t *testing.T) {
 
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(), Name: "expired",
+		ExpiresInDays: 90,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -1855,6 +1883,7 @@ func TestAuthenticate_InactiveMemberRejected(t *testing.T) {
 
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(), UserID: userID.String(), Name: "offboard-me",
+		ExpiresInDays: 90,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -1877,6 +1906,7 @@ func TestAuthenticate_ActiveMemberAllowed(t *testing.T) {
 
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(), UserID: userID.String(), Name: "active",
+		ExpiresInDays: 90,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -1895,6 +1925,7 @@ func TestAuthenticate_TouchFailureIsNonFatal(t *testing.T) {
 
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(), Name: "touch-fail",
+		ExpiresInDays: 90,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -1925,6 +1956,7 @@ func mintForHolder(t *testing.T, svc *apikey.Service, userID string, scopes ...s
 	t.Helper()
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: shared.NewID().String(), UserID: userID, Name: "holder-" + shared.NewID().String()[:8], Scopes: scopes,
+		ExpiresInDays: 90,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -2011,7 +2043,7 @@ func TestAuthenticateWithPermissions_RevokedKeyRejected(t *testing.T) {
 	holder := &fakeHolder{all: true}
 	svc.SetHolderPermissions(holder)
 	tenantID := shared.NewID()
-	created, err := svc.Create(context.Background(), apikey.CreateInput{TenantID: tenantID.String(), Name: "revoked", Scopes: []string{"assets:read"}})
+	created, err := svc.Create(context.Background(), apikey.CreateInput{TenantID: tenantID.String(), Name: "revoked", Scopes: []string{"assets:read"}, ExpiresInDays: 90})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -2036,6 +2068,7 @@ func TestAuthenticate_PreviousPepperDuringKeyRotation(t *testing.T) {
 	old := apikey.NewService(repo, "old-pepper", logger.NewNop())
 	created, err := old.Create(context.Background(), apikey.CreateInput{
 		TenantID: shared.NewID().String(), Name: "pre-rotation", Scopes: []string{"findings:read"},
+		ExpiresInDays: 90,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -2059,6 +2092,7 @@ func TestAuthenticate_PreviousPepperKeyIsRehashed(t *testing.T) {
 	old := apikey.NewService(repo, "old-pepper", logger.NewNop())
 	created, err := old.Create(context.Background(), apikey.CreateInput{
 		TenantID: shared.NewID().String(), Name: "pre-rotation", Scopes: []string{"findings:read"},
+		ExpiresInDays: 90,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)

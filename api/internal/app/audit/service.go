@@ -126,6 +126,12 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 		log.WithMetadata("api_key_id", k.id)
 		log.WithMetadata("api_key_prefix", k.prefix)
 	}
+	// Same for the organization's identity provider acting with a SCIM token.
+	if k, ok := scimTokenActorFrom(ctx); ok {
+		log.WithMetadata("auth_method", "scim_token")
+		log.WithMetadata("scim_token_id", k.id)
+		log.WithMetadata("scim_token_prefix", k.prefix)
+	}
 
 	// Persist
 	if err := s.auditRepo.Create(ctx, log); err != nil {

@@ -178,8 +178,11 @@ func (m *mockAITriageTenantRepo) Create(_ context.Context, _ *tenant.Tenant) err
 func (m *mockAITriageTenantRepo) GetBySlug(_ context.Context, _ string) (*tenant.Tenant, error) {
 	return nil, nil
 }
-func (m *mockAITriageTenantRepo) Update(_ context.Context, _ *tenant.Tenant) error { return nil }
-func (m *mockAITriageTenantRepo) Delete(_ context.Context, _ shared.ID) error      { return nil }
+func (m *mockAITriageTenantRepo) UpdateProfile(_ context.Context, _ *tenant.Tenant) error { return nil }
+func (m *mockAITriageTenantRepo) UpdateSettingsSection(_ context.Context, _ shared.ID, _ string, _ any, _ bool, _ any) error {
+	return nil
+}
+func (m *mockAITriageTenantRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
 func (m *mockAITriageTenantRepo) ExistsBySlug(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }

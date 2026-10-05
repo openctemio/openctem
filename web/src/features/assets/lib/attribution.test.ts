@@ -42,6 +42,24 @@ describe('describeEvidence', () => {
   })
 })
 
+describe('describeEvidence scan rules', () => {
+  const base = {
+    technique: 'subfinder',
+    source: 'sensor:s1',
+    weight: 0.6,
+    first_observed_at: '',
+    last_observed_at: '',
+  }
+  it('tells a scanned target from a name a scan found', () => {
+    expect(describeEvidence({ ...base, rule: 'tenant_scanned' })).toMatch(
+      /^A target your organization scanned/
+    )
+    expect(describeEvidence({ ...base, rule: 'tenant_scan_discovered' })).toMatch(
+      /^Found by a scan/
+    )
+  })
+})
+
 describe('scanStanding', () => {
   it('explains what a scan does', () => {
     expect(scanStanding({ active_checks_allowed: true, state: 'confirmed' })).toMatch(/can reach/)
@@ -49,6 +67,21 @@ describe('scanStanding', () => {
       /until its ownership/
     )
     expect(scanStanding({ active_checks_allowed: false, state: 'dependency' })).toMatch(/passively/)
+    // A legacy asset (reported as confirmed) outside every scope target.
+    expect(
+      scanStanding({
+        active_checks_allowed: false,
+        state: 'confirmed',
+        active_checks_blocked_by: 'unattributed',
+      })
+    ).toMatch(/no scope target or seed/)
+    expect(
+      scanStanding({
+        active_checks_allowed: false,
+        state: 'confirmed',
+        active_checks_blocked_by: 'rejected',
+      })
+    ).toMatch(/marked not yours/)
   })
 })
 
