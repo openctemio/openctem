@@ -38,10 +38,13 @@ test('a scan with a run in progress counts it and names who triggered it', async
     const active = runs.filter((r) => ['pending', 'queued', 'running'].includes(r.status))
     if (active.length === 0) continue
 
-    // The stat card counts the in-progress runs.
-    const card = page.getByText('Total Runs', { exact: false }).locator('xpath=..')
+    // The "Runs" metric counts the in-progress runs (MetricStrip: a dt label
+    // and a dd holding the number and its hint).
+    const card = page
+      .locator('dl > div, dl > button')
+      .filter({ has: page.locator('dt', { hasText: /^Runs$/ }) })
     await expect(card).toContainText(`${active.length} in progress`)
-    const total = Number((await card.locator('p').first().innerText()).trim())
+    const total = Number((await card.locator('dd span').first().innerText()).replace(/,/g, '').trim())
     expect(total).toBeGreaterThanOrEqual(active.length)
 
     // No raw user id in the run history; a named trigger shows the name.
