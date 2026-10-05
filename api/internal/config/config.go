@@ -50,6 +50,19 @@ type Config struct {
 	// AdminAuditRetention controls pruning of the platform-level
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
+
+	// AuditRetention controls the tenant audit log retention (hash-chain
+	// prefix archive and prune).
+	AuditRetention AuditRetentionConfig
+}
+
+// AuditRetentionConfig controls tenant audit-log retention. Entries older than
+// Days are written to a gzip JSONL archive under ArchiveDir, the chain head
+// they leave is recorded as an anchor, then they are deleted. Without an
+// ArchiveDir nothing is deleted. Days below 365 are raised to 365.
+type AuditRetentionConfig struct {
+	Days       int    // AUDIT_RETENTION_DAYS, default 365, minimum 365
+	ArchiveDir string // AUDIT_ARCHIVE_DIR, default "" (retention off)
 }
 
 // AdminAuditRetentionConfig controls the admin-audit-log retention controller.
@@ -1205,6 +1218,10 @@ func Load() (*Config, error) {
 			// SECURITY: default NON-public. See MetricsConfig docs.
 			Public: getEnvBool("METRICS_PUBLIC", false),
 			Token:  getEnv("METRICS_TOKEN", ""),
+		},
+		AuditRetention: AuditRetentionConfig{
+			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
+			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
