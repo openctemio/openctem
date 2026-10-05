@@ -105,7 +105,7 @@ const PHASE_GROUPS: { key: string; label: string; categories: string[] }[] = [
 ]
 
 const PAGE_DESCRIPTION =
-  'Pick the products your team runs and fine-tune individual features; nothing here is destructive.'
+  'Pick the products your team runs and fine-tune individual features. Turning a module off hides it; its data is kept.'
 
 export default function ModuleManagementPage() {
   const { currentTenant } = useTenant()
@@ -384,7 +384,7 @@ export default function ModuleManagementPage() {
             disabled={isResetting}
           >
             <RotateCcw className="h-4 w-4" />
-            Reset to defaults
+            Remove my changes
           </Button>
         </Can>
       </PageHeader>
@@ -641,9 +641,9 @@ export default function ModuleManagementPage() {
       <ConfirmDialog
         open={showResetDialog}
         onOpenChange={setShowResetDialog}
-        title="Reset modules to defaults"
-        desc="This will enable all modules for your organization. Any modules you previously disabled will be re-enabled. This action cannot be undone."
-        confirmText="Reset all"
+        title="Remove your module changes"
+        desc="This removes every module you turned on or off by hand. Modules then follow your product bundles: a module outside them turns off, even if you had turned it on. Without a bundle subscription, every module is on. Your changes cannot be restored."
+        confirmText="Remove changes"
         isLoading={isResetting}
         handleConfirm={() => void handleReset()}
       />

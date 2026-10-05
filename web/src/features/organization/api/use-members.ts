@@ -19,6 +19,10 @@ import type {
   MemberWithUser,
   CreateTenantUserInput,
   CreatedTenantUser,
+  MemberStatusFilter,
+  MemberAccessReport,
+  OffboardMemberInput,
+  OffboardResult,
 } from '../types/member.types'
 
 // ============================================
@@ -34,8 +38,13 @@ export interface UseMembersOptions {
   limit?: number
   /** Pagination offset */
   offset?: number
-  /** Membership status filter (server-side) */
-  status?: 'active' | 'suspended'
+  /**
+   * Membership status filter (server-side). Defaults to `active`: every
+   * picker (assignee, group member, approver, owner) must never offer a
+   * disabled member or a person who left (RFC-050). `current` lists active
+   * and disabled members (the server default), `all` adds offboarded ones.
+   */
+  status?: MemberStatusFilter | 'current'
   /** Effective system role filter (server-side) */
   role?: 'owner' | 'admin' | 'member' | 'viewer'
 }
@@ -78,8 +87,9 @@ export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMemb
   if (options?.offset && options.offset > 0) {
     params.set('offset', String(options.offset))
   }
-  if (options?.status) {
-    params.set('status', options.status)
+  const status = options?.status ?? PICKER_MEMBER_STATUS
+  if (status !== 'current') {
+    params.set('status', status)
   }
   if (options?.role) {
     params.set('role', options.role)
@@ -183,6 +193,41 @@ export function useRemoveMember(tenantIdOrSlug: string | undefined, memberId: st
     isRemoving: isMutating,
     error,
   }
+}
+
+// ============================================
+// MEMBER LIFECYCLE (RFC-050)
+// ============================================
+
+/** The member list filter every picker uses (RFC-050: no deactivated people). */
+export const PICKER_MEMBER_STATUS: MemberStatusFilter = 'active'
+
+/**
+ * What a member holds and owns. Fetched only when `memberId` is set and the
+ * caller can manage members (the API answers 403 otherwise).
+ */
+export function useMemberAccessReport(memberId: string | undefined) {
+  const { can } = usePermissions()
+  const shouldFetch = !!memberId && can(Permission.MembersManage)
+  const { data, error, isLoading, mutate } = useSWR<MemberAccessReport>(
+    shouldFetch ? tenantEndpoints.memberAccessReport(memberId) : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  )
+  return { report: data, isLoading: shouldFetch ? isLoading : false, error, mutate }
+}
+
+/** Offboard a member (mandatory reassignment; 409 reassignment_required otherwise). */
+export function offboardMember(memberId: string, input: OffboardMemberInput) {
+  return fetcherWithOptions<OffboardResult>(tenantEndpoints.offboardMember(memberId), {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+/** Erase an offboarded person's name and email (owner only). */
+export function eraseMemberPersonalData(memberId: string) {
+  return fetcherWithOptions<void>(tenantEndpoints.eraseMember(memberId), { method: 'POST' })
 }
 
 // ============================================
@@ -313,8 +358,9 @@ export function getMembersKey(tenantIdOrSlug: string, options?: UseMembersOption
   if (options?.offset && options.offset > 0) {
     params.set('offset', String(options.offset))
   }
-  if (options?.status) {
-    params.set('status', options.status)
+  const status = options?.status ?? PICKER_MEMBER_STATUS
+  if (status !== 'current') {
+    params.set('status', status)
   }
   if (options?.role) {
     params.set('role', options.role)

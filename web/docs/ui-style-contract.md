@@ -8,7 +8,7 @@ list page.
 Decisions D14–D16 (approved 2026-10-03) added density, default sort, saved
 views, "Scroll all", the batch-bar rule, server facets, honest dashboard
 tiles and the three empty-state kinds. Background:
-`docs/ui/pd-inspired-inventory-integrations-2026-10.md` §10.
+`docs/ui/inventory-integrations-2026-10.md` §10.
 
 ## 1. Page anatomy
 
