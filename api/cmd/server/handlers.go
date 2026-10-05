@@ -388,7 +388,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
 
 		// Suppressions
-		Suppression: handler.NewSuppressionHandler(svc.Suppression, log),
+		Suppression: newSuppressionHandler(svc, log),
 
 		// Access Control
 		Group:          handler.NewGroupHandler(svc.Group, v, log),
@@ -764,6 +764,14 @@ func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImpo
 // trail.
 func newReportScheduleHandler(svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
 	h := handler.NewReportScheduleHandler(svc.ReportSchedule, log)
+	h.SetAuditService(svc.Audit)
+	return h
+}
+
+// newSuppressionHandler wires the suppression handler with the tenant audit log
+// (approvals, and self-approvals at Critical severity, are recorded there).
+func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.SuppressionHandler {
+	h := handler.NewSuppressionHandler(svc.Suppression, log)
 	h.SetAuditService(svc.Audit)
 	return h
 }
