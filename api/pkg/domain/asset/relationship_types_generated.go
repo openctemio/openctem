@@ -13,24 +13,25 @@ package asset
 // Add a new type by editing the YAML and running the codegen — never
 // add constants here by hand.
 const (
-	RelTypeRunsOn          RelationshipType = "runs_on"
-	RelTypeDeployedTo      RelationshipType = "deployed_to"
-	RelTypeContains        RelationshipType = "contains"
-	RelTypeExposes         RelationshipType = "exposes"
-	RelTypeResolvesTo      RelationshipType = "resolves_to"
-	RelTypeCnameOf         RelationshipType = "cname_of"
-	RelTypeDependsOn       RelationshipType = "depends_on"
-	RelTypePeerOf          RelationshipType = "peer_of"
-	RelTypeReplicatesTo    RelationshipType = "replicates_to"
-	RelTypeSendsDataTo     RelationshipType = "sends_data_to"
-	RelTypeStoresDataIn    RelationshipType = "stores_data_in"
-	RelTypeAuthenticatesTo RelationshipType = "authenticates_to"
-	RelTypeGrantedTo       RelationshipType = "granted_to"
-	RelTypeHasAccessTo     RelationshipType = "has_access_to"
-	RelTypeLoadBalances    RelationshipType = "load_balances"
-	RelTypeProtectedBy     RelationshipType = "protected_by"
-	RelTypeMonitors        RelationshipType = "monitors"
-	RelTypeManages         RelationshipType = "manages"
+	RelTypeRunsOn            RelationshipType = "runs_on"
+	RelTypeDeployedTo        RelationshipType = "deployed_to"
+	RelTypeContains          RelationshipType = "contains"
+	RelTypeExposes           RelationshipType = "exposes"
+	RelTypeResolvesTo        RelationshipType = "resolves_to"
+	RelTypeServesCertificate RelationshipType = "serves_certificate"
+	RelTypeCnameOf           RelationshipType = "cname_of"
+	RelTypeDependsOn         RelationshipType = "depends_on"
+	RelTypePeerOf            RelationshipType = "peer_of"
+	RelTypeReplicatesTo      RelationshipType = "replicates_to"
+	RelTypeSendsDataTo       RelationshipType = "sends_data_to"
+	RelTypeStoresDataIn      RelationshipType = "stores_data_in"
+	RelTypeAuthenticatesTo   RelationshipType = "authenticates_to"
+	RelTypeGrantedTo         RelationshipType = "granted_to"
+	RelTypeHasAccessTo       RelationshipType = "has_access_to"
+	RelTypeLoadBalances      RelationshipType = "load_balances"
+	RelTypeProtectedBy       RelationshipType = "protected_by"
+	RelTypeMonitors          RelationshipType = "monitors"
+	RelTypeManages           RelationshipType = "manages"
 )
 
 // allRelationshipTypesGenerated is the canonical list of every valid
@@ -41,6 +42,7 @@ var allRelationshipTypesGenerated = []RelationshipType{
 	RelTypeContains,
 	RelTypeExposes,
 	RelTypeResolvesTo,
+	RelTypeServesCertificate,
 	RelTypeCnameOf,
 	RelTypeDependsOn,
 	RelTypePeerOf,
@@ -188,6 +190,19 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 			{
 				Sources: []string{"domain", "subdomain"},
 				Targets: []string{"ip_address", "load_balancer"},
+			},
+		},
+	},
+	RelTypeServesCertificate: {
+		ID:          RelTypeServesCertificate,
+		Category:    "attack_surface_mapping",
+		Direct:      "Serves Certificate",
+		Inverse:     "Served By",
+		Description: "TLS — this service presented this certificate in its handshake (an HTTP probe grabbed the leaf). One certificate can be served by many services; the certificate is identified by its SHA-256 fingerprint.",
+		Constraints: []RelationshipConstraint{
+			{
+				Sources: []string{"service", "http_service"},
+				Targets: []string{"certificate"},
 			},
 		},
 	},
