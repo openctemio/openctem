@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -545,6 +546,11 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 	if !ok {
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
+	if role == tenantdom.RoleAdmin {
+		if err := s.authorizeAdminPromotion(ctx, parsedTenantID, actx); err != nil {
+			return nil, err
+		}
+	}
 
 	// Check if user is already a member. A suspended membership blocks
 	// re-add: the admin must reactivate the existing row instead of
@@ -653,6 +659,11 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	// Prevent promoting to owner
 	if role == tenantdom.RoleOwner {
 		return nil, fmt.Errorf("%w: cannot promote to owner", shared.ErrValidation)
+	}
+	if role == tenantdom.RoleAdmin && membership.Role() != tenantdom.RoleAdmin {
+		if err := s.authorizeAdminPromotion(ctx, membership.TenantID(), actx); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := membership.UpdateRole(role); err != nil {
@@ -1006,6 +1017,18 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	// Role ids must be well-formed and never the owner role.
 	if err := accesscontrol.ValidateGrantableRoleIDs(input.RoleIDs); err != nil {
 		return nil, err
+	}
+	// Only the owner may invite someone as an administrator (settings
+	// decision B2). Acceptance grants the roles as the inviter, which the role
+	// service would refuse too; refusing here keeps the invitation from being
+	// sent at all.
+	for _, raw := range input.RoleIDs {
+		if raw == roledom.AdminRoleID.String() {
+			if err := s.authorizeAdminPromotion(ctx, parsedID, actx); err != nil {
+				return nil, err
+			}
+			break
+		}
 	}
 	// ...and each must be a system role or one of this tenant's own roles. The
 	// handler's anti-escalation check is skipped for administrators, so this is

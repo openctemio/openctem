@@ -517,6 +517,10 @@ export interface FindingApiFilters {
   view?: string
   /** Scanner rule families (Nessus / Tenable.sc plugin family). Sent as `family`. */
   families?: string[]
+  /** The asset's primary owner (a group-by-owner row's View). Sent as `asset_owner_id`. */
+  asset_owner_id?: string
+  /** Assets with no primary owner (the Unassigned owner row). Sent as `asset_owner_id_null=true`. */
+  asset_owner_unassigned?: boolean
   /** Sort spec, e.g. 'priority_class,severity,-created_at'. */
   sort?: string
   page?: number
