@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -13,7 +13,7 @@ import (
 // Scan profiles and user-issued sensor commands are changed through services
 // that do not audit, so their handlers record the change here. The change
 // has already happened: a failure is logged, not returned.
-func logRequestChange(svc *app.AuditService, log *logger.Logger, r *http.Request, event app.AuditEvent) {
+func logRequestChange(svc *audit.AuditService, log *logger.Logger, r *http.Request, event audit.AuditEvent) {
 	if svc == nil {
 		return
 	}

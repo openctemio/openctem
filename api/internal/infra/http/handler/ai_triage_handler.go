@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -17,13 +17,13 @@ import (
 // 1. Module middleware (checks is_active in database)
 // 2. Service availability (checks if LLM provider is configured)
 type AITriageHandler struct {
-	triageService *app.AITriageService // May be nil if AI triage is not configured
+	triageService *aitriage.AITriageService // May be nil if AI triage is not configured
 	logger        *logger.Logger
 }
 
 // NewAITriageHandler creates a new AI triage handler.
 // triageService can be nil - handler will return 503 for operations that require the service.
-func NewAITriageHandler(triageSvc *app.AITriageService, log *logger.Logger) *AITriageHandler {
+func NewAITriageHandler(triageSvc *aitriage.AITriageService, log *logger.Logger) *AITriageHandler {
 	return &AITriageHandler{
 		triageService: triageSvc,
 		logger:        log,
@@ -147,7 +147,7 @@ func (h *AITriageHandler) RequestTriage(w http.ResponseWriter, r *http.Request) 
 	)
 
 	// Request triage
-	triageReq := app.TriageRequest{
+	triageReq := aitriage.TriageRequest{
 		TenantID:   tenantID,
 		FindingID:  findingID,
 		TriageType: "manual",
@@ -348,7 +348,7 @@ func (h *AITriageHandler) RequestBulkTriage(w http.ResponseWriter, r *http.Reque
 	)
 
 	// Request bulk triage
-	bulkReq := app.BulkTriageRequest{
+	bulkReq := aitriage.BulkTriageRequest{
 		TenantID:   tenantID,
 		FindingIDs: req.FindingIDs,
 		UserID:     &userID,
@@ -385,7 +385,7 @@ func (h *AITriageHandler) RequestBulkTriage(w http.ResponseWriter, r *http.Reque
 // Helpers
 // =============================================================================
 
-func (h *AITriageHandler) toTriageResponse(r *app.TriageResultResponse) TriageResultResponse {
+func (h *AITriageHandler) toTriageResponse(r *aitriage.TriageResultResponse) TriageResultResponse {
 	resp := TriageResultResponse{
 		ID:                      r.ID,
 		Status:                  r.Status,
