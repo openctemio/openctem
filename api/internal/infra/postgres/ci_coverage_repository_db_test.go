@@ -11,7 +11,7 @@ import (
 )
 
 // Coverage, alert state and stale sources against the real schema
-// (migration 001091): observations from pipeline runs and daemon scans
+// (migration 001086): observations from pipeline runs and daemon scans
 // through the tool catalog, expectations and alert state tenant-scoped,
 // stale marking and retirement touching only findings this pipeline alone
 // reported. Requires DATABASE_URL.
