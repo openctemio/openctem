@@ -518,11 +518,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
-  // CI runners (RFC-051): pipeline runs, not sensors; scans module.
-  '/ci-runners': {
-    permission: Permission.CIRead,
-    module: Module.Scans,
-  },
   '/settings/scanning/ci': {
     permission: Permission.CIRead,
     module: Module.Scans,
