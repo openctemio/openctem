@@ -220,7 +220,7 @@ custom roles).
 | R3 | Diff-aware scans, fingerprint stability across commits | Open |
 | R4 | Remote repository execution by a zoned daemon sensor | Open (needs the executor sandbox and the credential broker) |
 | R5 | Signed runner image, GitHub Action and GitLab component, SARIF upload | Open |
-| F1 | CI pipelines: identity, JIT creation, caps, revocation, status, fleet read model (section 10, migration 001081) | Implemented |
+| F1 | CI pipelines: identity, JIT creation, caps, revocation, status, fleet read model (section 10, migration 001084) | Implemented |
 | F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Open |
 | F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6) | Open |
 | F4, F5 | Sensor pools; policy timeouts for daemons (section 10.7) | Design only |
