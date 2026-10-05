@@ -51,8 +51,15 @@ type CreatePolicyInput struct {
 	LowDays             int `validate:"required,min=1,max=365"`
 	InfoDays            int `validate:"required,min=1,max=365"`
 	WarningThresholdPct int `validate:"min=0,max=100"`
-	EscalationEnabled   bool
-	EscalationConfig    map[string]any
+	// EscalationEnabled turns approaching/breached notifications on for the
+	// policy's findings. Nil = on (the default for a new policy).
+	EscalationEnabled *bool
+	// P0Days..P3Days are the priority-class windows. Nil = the default for
+	// that class (DefaultPriorityDays).
+	P0Days *int
+	P1Days *int
+	P2Days *int
+	P3Days *int
 }
 
 // CreateSLAPolicy creates a new SLA policy.
@@ -103,8 +110,12 @@ func (s *Service) CreateSLAPolicy(ctx context.Context, input CreatePolicyInput) 
 		}
 	}
 
-	if input.EscalationEnabled {
-		policy.EnableEscalation(input.EscalationConfig)
+	if input.EscalationEnabled != nil && !*input.EscalationEnabled {
+		policy.DisableEscalation()
+	}
+
+	if err := applyPriorityDays(policy, input.P0Days, input.P1Days, input.P2Days, input.P3Days); err != nil {
+		return nil, err
 	}
 
 	if err := s.repo.Create(ctx, policy); err != nil {
@@ -180,8 +191,34 @@ type UpdatePolicyInput struct {
 	InfoDays            *int `validate:"omitempty,min=1,max=365"`
 	WarningThresholdPct *int `validate:"omitempty,min=0,max=100"`
 	EscalationEnabled   *bool
-	EscalationConfig    map[string]any
 	IsActive            *bool
+	// P0Days..P3Days: nil = unchanged.
+	P0Days *int
+	P1Days *int
+	P2Days *int
+	P3Days *int
+}
+
+// applyPriorityDays overlays the given P0..P3 windows (nil = keep the current
+// value) and validates the result as a whole.
+func applyPriorityDays(policy *sladom.Policy, p0, p1, p2, p3 *int) error {
+	if p0 == nil && p1 == nil && p2 == nil && p3 == nil {
+		return nil
+	}
+	v0, v1, v2, v3 := policy.P0Days(), policy.P1Days(), policy.P2Days(), policy.P3Days()
+	if p0 != nil {
+		v0 = *p0
+	}
+	if p1 != nil {
+		v1 = *p1
+	}
+	if p2 != nil {
+		v2 = *p2
+	}
+	if p3 != nil {
+		v3 = *p3
+	}
+	return policy.UpdatePriorityDays(v0, v1, v2, v3)
 }
 
 // updateSLADaysIfNeeded updates SLA days if any are provided in the input.
@@ -261,6 +298,9 @@ func (s *Service) UpdateSLAPolicy(ctx context.Context, policyID, tenantID string
 	if err := s.updateSLADaysIfNeeded(policy, input); err != nil {
 		return nil, err
 	}
+	if err := applyPriorityDays(policy, input.P0Days, input.P1Days, input.P2Days, input.P3Days); err != nil {
+		return nil, err
+	}
 
 	if input.WarningThresholdPct != nil {
 		if err := policy.SetWarningThreshold(*input.WarningThresholdPct); err != nil {
@@ -270,7 +310,7 @@ func (s *Service) UpdateSLAPolicy(ctx context.Context, policyID, tenantID string
 
 	if input.EscalationEnabled != nil {
 		if *input.EscalationEnabled {
-			policy.EnableEscalation(input.EscalationConfig)
+			policy.EnableEscalation()
 		} else {
 			policy.DisableEscalation()
 		}
@@ -345,9 +385,9 @@ func (s *Service) ListTenantPolicies(ctx context.Context, tenantID string) ([]*s
 // CalculateSLADeadlineForPriority computes the SLA deadline honouring CTEM
 // priority class first (P0..P3) with a fallback to severity-based days.
 //
-// F3: this is the canonical entry point for new code. Prefer it
-// over CalculateSLADeadline, which retains the severity-only path for
-// backward compatibility with legacy callers that have no priority class.
+// This is the canonical entry point. Prefer it over CalculateSLADeadline,
+// which retains the severity-only path for legacy callers that have no
+// priority class.
 func (s *Service) CalculateSLADeadlineForPriority(
 	ctx context.Context,
 	tenantID, assetID string,

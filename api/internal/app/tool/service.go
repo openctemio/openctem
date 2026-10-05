@@ -894,8 +894,8 @@ func (s *Service) CreateTenantToolConfig(ctx context.Context, input CreateTenant
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
-	// Verify tool exists
-	if _, err := s.toolRepo.GetByID(ctx, toolID); err != nil {
+	// Verify the tool exists and the tenant may see it (platform or its own).
+	if _, err := s.visibleTool(ctx, tenantID, toolID); err != nil {
 		return nil, fmt.Errorf("tool not found: %w", err)
 	}
 
@@ -949,7 +949,26 @@ func (s *Service) GetEffectiveToolConfig(ctx context.Context, tenantID, toolID s
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
+	if _, err := s.visibleTool(ctx, tid, toid); err != nil {
+		return nil, err
+	}
+
 	return s.configRepo.GetEffectiveConfig(ctx, tid, toid)
+}
+
+// visibleTool loads a tool the tenant may see: a platform tool (tenant_id IS
+// NULL) or the tenant's own custom tool. Another tenant's custom tool answers
+// not-found, the same as a tool that does not exist, so its existence, its
+// definition and its default config never cross the tenant boundary.
+func (s *Service) visibleTool(ctx context.Context, tenantID, toolID shared.ID) (*tooldom.Tool, error) {
+	t, err := s.toolRepo.GetByID(ctx, toolID)
+	if err != nil {
+		return nil, err
+	}
+	if !t.IsPlatformTool() && !t.BelongsToTenant(tenantID) {
+		return nil, fmt.Errorf("%w: tool not found", shared.ErrNotFound)
+	}
+	return t, nil
 }
 
 // ListTenantToolConfigsInput represents the input for listing tenant tool configs.
@@ -1008,8 +1027,8 @@ func (s *Service) UpdateTenantToolConfig(ctx context.Context, input UpdateTenant
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
-	// Verify tool exists
-	if _, err := s.toolRepo.GetByID(ctx, toolID); err != nil {
+	// Verify the tool exists and the tenant may see it (platform or its own).
+	if _, err := s.visibleTool(ctx, tenantID, toolID); err != nil {
 		return nil, fmt.Errorf("tool not found: %w", err)
 	}
 
@@ -1236,8 +1255,8 @@ func (s *Service) GetToolWithConfig(ctx context.Context, tenantID, toolID string
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
-	// Get tool
-	t, err := s.toolRepo.GetByID(ctx, toid)
+	// Get tool (platform or the tenant's own)
+	t, err := s.visibleTool(ctx, tid, toid)
 	if err != nil {
 		return nil, err
 	}

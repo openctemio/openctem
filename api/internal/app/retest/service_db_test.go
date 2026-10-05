@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+
 	_ "github.com/lib/pq"
 
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
@@ -69,6 +71,10 @@ func newFixture(t *testing.T) *fixture {
 		_, _ = db.ExecContext(bg, `DELETE FROM tenants WHERE id = $1`, fx.tenant.String())
 		_, _ = db.ExecContext(bg, `DELETE FROM users WHERE id = $1`, fx.user.String())
 	})
+	// The tenant authorizes its own domain for active checks (RFC-036 §6.3):
+	// an asset with no attribution record is probed only inside a scope
+	// target or under a seed.
+	fx.exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES ($1, 'domain', '*.example.com', 'active')`, fx.tenant.String())
 	fx.asset = fx.newAsset("shop.example.com")
 	return fx
 }
@@ -110,7 +116,7 @@ func (fx *fixture) gate() *scanapp.Service {
 	log := logger.NewNop()
 	scope := scopeapp.NewService(postgres.NewScopeTargetRepository(fx.pg), postgres.NewScopeExclusionRepository(fx.pg),
 		nil, postgres.NewAssetRepository(fx.pg), log)
-	return scanapp.NewTargetGate(scope, postgres.NewAttributionRepository(fx.pg), postgres.NewScanZoneRepository(fx.pg), nil, log)
+	return scanapp.NewTargetGate(scope, easmapp.NewActiveGate(postgres.NewAttributionRepository(fx.pg), postgres.NewAssetRepository(fx.pg), scope, postgres.NewEASMSeedRepository(fx.pg)), postgres.NewScanZoneRepository(fx.pg), nil, log)
 }
 
 // finish reports a sensor result for a command: completed with an outcome, or
