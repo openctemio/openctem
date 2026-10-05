@@ -17,9 +17,43 @@ fact breaks the chain from that point on, and the break is detectable.
 | Classify breaks offline, every tenant | `cmd/chainaudit` |
 | Classify and rebaseline one organization from the admin console | `GET`/`POST /api/v1/admin/tenants/{tenantId}/audit-chain[/rebaseline]` (`AuditService.ClassifyChain`, `RebaselineChainIfExplained`) |
 | Rebaseline: `POST /api/v1/audit-logs/rebaseline` (owner only) | `AuditService.RebaselineChain` |
+| Retention: archive and prune the oldest prefix past `AUDIT_RETENTION_DAYS` | `AuditService.PruneExpiredChains`, `internal/infra/controller/data_expiration.go`, migration 000914 |
 
 `payload` is `action|resource_type|resource_id|result`. The timestamp is
 rounded to microseconds, as PostgreSQL stores it.
+
+## Retention
+
+Tenant audit logs stay online for `AUDIT_RETENTION_DAYS` (default and minimum
+365). The hourly data-expiration controller then prunes the **oldest
+contiguous prefix** of each chain (tenant chains and the system chain), never
+rows in the middle:
+
+1. read up to 1000 of the chain's oldest entries logged before the cutoff,
+   stopping at the first newer one;
+2. write them, chain entry plus the audit row as stored, to
+   `AUDIT_ARCHIVE_DIR/<tenant>/audit-<first>-<last>-<time>.jsonl.gz`
+   (mode 0600, synced to disk) and hash the file;
+3. in one transaction, under the same advisory lock appends take: check the
+   entries are still exactly the chain's oldest ones and the last still has the
+   hash that was read, insert an `audit_chain_anchors` row (anchor hash = the
+   last pruned entry's hash, positions, counts, archive path and SHA-256), and
+   delete the entries, their rebaseline archive rows and their audit rows.
+
+A chain that changed in between (a rebaseline, a racing append) is skipped and
+retried next run; its archive file is removed. Without `AUDIT_ARCHIVE_DIR`
+nothing is deleted and the controller logs one warning.
+
+Every walk starts from the newest anchor instead of `""`: verify, classify and
+rebaseline expect the first remaining entry to link to it, and an append to a
+chain with no entries left links to it too. To check a pruned prefix, recompute
+its hashes from the archive lines (oldest first, `prev_hash` of the first line
+= the previous anchor or `""`); the last line's hash must equal the anchor.
+
+The old rule "keep high and critical rows forever" no longer applies online:
+it deleted rows from the middle of the chain (which the foreign key refused, so
+retention never ran). Every pruned row, whatever its severity, is in the
+archive.
 
 ## Rebaselining
 

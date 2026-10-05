@@ -54,6 +54,7 @@ var orphanAllowlist = map[string]string{
 	"audit_log_chain":                "hash chain of audit_logs; audit_logs keep their rows (tenant_id SET NULL) and the chain must stay verifiable",
 	"audit_chain_rebaselines":        "record of an admin re-signing the audit chain; evidence, no FK to tenants by design",
 	"audit_chain_rebaseline_entries": "hashes a chain rebaseline overwrote; evidence, no FK to tenants by design",
+	"audit_chain_anchors":            "chain head left by an audit retention prune; evidence, no FK to tenants by design",
 	"priority_class_audit_log":       "append-only priority audit trail; no FK to tenants by design",
 }
 
@@ -224,6 +225,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	},
 	"audit_log_chain": func(*schemaSeeder) map[string]any {
 		return map[string]any{"hash": strings.Repeat("ab", 32), "prev_hash": ""}
+	},
+	"audit_chain_anchors": func(*schemaSeeder) map[string]any {
+		h := strings.Repeat("ab", 32)
+		return map[string]any{"anchor_hash": h, "archive_sha256": h, "pruned_count": 1}
 	},
 	"audit_chain_rebaseline_entries": func(*schemaSeeder) map[string]any {
 		h := strings.Repeat("ab", 32)
