@@ -384,7 +384,9 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		return
 	}
 	if errors.Is(err, tenant.ErrSettingsSectionCorrupt) {
-		h.logger.Error("settings section unreadable", "error", err)
+		// The service already logged the tenant and section; the error text can
+		// carry stored values, so it is not logged here.
+		h.logger.Error("settings section unreadable")
 		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
 		return
 	}
