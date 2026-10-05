@@ -91,6 +91,7 @@ remediation_campaign_tickets
 remediation_campaigns
 report_schedules
 risk_snapshots
+role_permissions_admin_only_stripped
 roles
 rule_bundles
 rule_overrides
