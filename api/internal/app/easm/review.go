@@ -84,7 +84,12 @@ type ReviewStore interface {
 type ReviewService struct {
 	store     ReviewStore
 	dataScope *datascope.Enforcer
+	effects   *DecisionEffects
 }
+
+// SetDecisionEffects runs reclassification and rejection hygiene after each
+// decision (research/22 P0-9). Nil: none.
+func (s *ReviewService) SetDecisionEffects(e *DecisionEffects) { s.effects = e }
 
 // NewReviewService creates the service. A nil enforcer means unrestricted.
 func NewReviewService(store ReviewStore, scope *datascope.Enforcer) *ReviewService {
@@ -203,6 +208,11 @@ func (s *ReviewService) Decide(ctx context.Context, tenantID shared.ID, assetIDs
 		}
 		res.Decided = append(res.Decided, Decision{AssetID: id, From: string(from), To: string(state)})
 	}
+	decided := make([]string, 0, len(res.Decided))
+	for _, d := range res.Decided {
+		decided = append(decided, d.AssetID)
+	}
+	s.effects.AfterDecision(ctx, tenantID, decided, state)
 	return res, nil
 }
 

@@ -357,6 +357,27 @@ func (s *Scan) OccurrenceAfter(t time.Time) *time.Time {
 	return s.occurrenceAfter(t)
 }
 
+// MaxUpcomingOccurrences bounds UpcomingOccurrences (a preview, not a plan).
+const MaxUpcomingOccurrences = 10
+
+// UpcomingOccurrences returns the schedule's next n occurrences strictly after
+// t, in UTC, in order: the occurrences the scheduler fires (OccurrenceAfter
+// applied n times). n is capped at MaxUpcomingOccurrences; a manual scan or an
+// unusable schedule has none, and a rule that ends (UNTIL) returns fewer.
+func (s *Scan) UpcomingOccurrences(t time.Time, n int) []time.Time {
+	n = min(n, MaxUpcomingOccurrences)
+	out := make([]time.Time, 0, max(n, 0))
+	for len(out) < n {
+		next := s.occurrenceAfter(t)
+		if next == nil || !next.After(t) {
+			break
+		}
+		out = append(out, *next)
+		t = *next
+	}
+	return out
+}
+
 func (s *Scan) occurrenceAfter(t time.Time) *time.Time {
 	if s.ScheduleType == ScheduleManual {
 		return nil
