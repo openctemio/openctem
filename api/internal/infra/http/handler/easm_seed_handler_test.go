@@ -32,7 +32,8 @@ func (f *fakeSeeder) Create(_ context.Context, tid shared.ID, in easmapp.CreateS
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &easmapp.SeedView{ID: shared.NewID().String(), Kind: in.Kind, Value: in.Value}, nil
+	on := in.DiscoveryEnabled == nil || *in.DiscoveryEnabled
+	return &easmapp.SeedView{ID: shared.NewID().String(), Kind: in.Kind, Value: in.Value, DiscoveryEnabled: on}, nil
 }
 
 func (f *fakeSeeder) Update(_ context.Context, tid, _ shared.ID, _ *string, _ *bool) (*easmapp.SeedView, error) {
@@ -110,5 +111,36 @@ func TestEASMSeedHandler_ErrorsMap(t *testing.T) {
 	var body EASMSeedListResponse
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Data == nil {
 		t.Fatalf("list: %d %s", rec.Code, rec.Body)
+	}
+}
+
+type recordingSweeper struct{ tenants []shared.ID }
+
+func (r *recordingSweeper) SweepForSeed(id shared.ID) { r.tenants = append(r.tenants, id) }
+
+// research/22 P0-11: a new seed with discovery on starts a sweep for the
+// token's tenant; one with discovery off, or a refused create, does not.
+func TestEASMSeedHandler_CreateStartsSweep(t *testing.T) {
+	tenant := shared.NewID()
+	svc := &fakeSeeder{}
+	sw := &recordingSweeper{}
+	h := NewEASMSeedHandler(svc, nil, logger.NewNop())
+	h.SetSweeper(sw)
+
+	rec := httptest.NewRecorder()
+	h.Create(rec, seedReq(http.MethodPost, "/", `{"kind":"root_domain","value":"acme.com","attested":true}`, tenant, "u"))
+	if rec.Code != http.StatusCreated || len(sw.tenants) != 1 || sw.tenants[0] != tenant {
+		t.Fatalf("status %d sweeps %v", rec.Code, sw.tenants)
+	}
+	rec = httptest.NewRecorder()
+	h.Create(rec, seedReq(http.MethodPost, "/", `{"kind":"root_domain","value":"b.com","attested":true,"discovery_enabled":false}`, tenant, "u"))
+	if len(sw.tenants) != 1 {
+		t.Fatal("a seed with discovery off started a sweep")
+	}
+	svc.err = shared.ErrConflict
+	rec = httptest.NewRecorder()
+	h.Create(rec, seedReq(http.MethodPost, "/", `{"kind":"root_domain","value":"acme.com","attested":true}`, tenant, "u"))
+	if len(sw.tenants) != 1 {
+		t.Fatal("a refused create started a sweep")
 	}
 }

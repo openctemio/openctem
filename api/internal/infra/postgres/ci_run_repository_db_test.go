@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// CI runs against the real schema (migration 001072): tenant isolation on
+// CI runs against the real schema (migration 001077): tenant isolation on
 // every read and write, the data scope on the run list, token lookups that
 // honor expiry, OIDC replay, the per-run findings cap, overrides by commit
 // prefix, and policies through business units. Requires DATABASE_URL.
