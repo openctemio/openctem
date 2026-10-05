@@ -13,18 +13,18 @@ import (
 	"github.com/openctemio/openctem/api/internal/testdb"
 )
 
-// Migration 000913 (settings decision B1) strips admin-only permissions from
+// Migration 000945 (settings decision B1) strips admin-only permissions from
 // custom roles, reports what it removed, and installs a trigger that refuses
 // to put them back. The down migration restores the stripped rows. The test
 // replays down -> up -> down -> up inside a rolled-back transaction as the
 // migrator (the migration is DDL).
-func TestMigration000913_StripsAdminOnlyPermissionsFromCustomRoles(t *testing.T) {
+func TestMigration000945_StripsAdminOnlyPermissionsFromCustomRoles(t *testing.T) {
 	ctx := context.Background()
-	up, err := os.ReadFile("../../migrations/000913_custom_roles_admin_only_permissions.up.sql")
+	up, err := os.ReadFile("../../migrations/000945_custom_roles_admin_only_permissions.up.sql")
 	if err != nil {
 		t.Fatalf("read up: %v", err)
 	}
-	down, err := os.ReadFile("../../migrations/000913_custom_roles_admin_only_permissions.down.sql")
+	down, err := os.ReadFile("../../migrations/000945_custom_roles_admin_only_permissions.down.sql")
 	if err != nil {
 		t.Fatalf("read down: %v", err)
 	}
