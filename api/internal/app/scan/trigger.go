@@ -158,6 +158,20 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 		}
 	}
 
+	// The organization's sensor opt-ins (research/25 D3): interactsh is
+	// removed for this run, custom templates refuse the trigger.
+	optInWarning, err := s.applyOptInsAtTrigger(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	if optInWarning != "" {
+		if input.Context == nil {
+			input.Context = map[string]any{}
+		}
+		warnings, _ := input.Context["dispatch_warnings"].([]string)
+		input.Context["dispatch_warnings"] = append(warnings, optInWarning)
+	}
+
 	// Validate tools are still available and active before triggering
 	// (Tools may have been disabled or removed since scan was created)
 	if err := s.validateToolsAtTriggerTime(ctx, sc); err != nil {
@@ -1222,7 +1236,8 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 		runContext["archived_target_count"] = r.Archived
 	}
 	if len(r.Warnings) > 0 {
-		runContext["dispatch_warnings"] = r.Warnings
+		prev, _ := runContext["dispatch_warnings"].([]string)
+		runContext["dispatch_warnings"] = append(prev, r.Warnings...)
 	}
 	if r.Unconfirmed > 0 {
 		runContext["unconfirmed_target_count"] = r.Unconfirmed

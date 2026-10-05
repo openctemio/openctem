@@ -5,9 +5,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { formatRiskScore } from '@/features/shared'
 import { TrendingUp, TrendingDown } from 'lucide-react'
-import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from '@/components/charts'
+import dynamic from 'next/dynamic'
 import type { ExecutiveSummary, RiskTrendPoint } from '../../hooks/use-ctem-dashboard'
-import { CHART_TOOLTIP_PROPS, PRIORITY_CHART_COLORS, STATE_TEXT } from '../../lib/ctem-colors'
+import { STATE_TEXT } from '../../lib/ctem-colors'
+
+// recharts loads after the card's numbers (see trend-charts.tsx).
+const P0TrendLine = dynamic(() => import('./trend-charts').then((m) => m.P0TrendLine), {
+  ssr: false,
+  loading: () => <Skeleton className="h-full min-h-16 w-full" />,
+})
 
 interface ExposureHeroProps {
   summary?: ExecutiveSummary
@@ -129,24 +135,7 @@ export function ExposureHero({ summary, trend, kevChainCount, isLoading }: Expos
           </div>
           {series.length > 1 ? (
             <div className="w-full flex-1 min-h-16">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-                  <XAxis dataKey="date" hide />
-                  <YAxis hide domain={[0, 'dataMax + 1']} />
-                  <Tooltip
-                    {...CHART_TOOLTIP_PROPS}
-                    labelFormatter={(v) => new Date(String(v)).toLocaleDateString()}
-                    formatter={(value) => [value as number, 'P0 open']}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="p0"
-                    stroke={PRIORITY_CHART_COLORS.P0}
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <P0TrendLine series={series} />
             </div>
           ) : (
             <div className="flex flex-1 min-h-16 items-center justify-center text-xs text-muted-foreground">

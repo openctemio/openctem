@@ -217,47 +217,40 @@ func TestGetTenantEventTypes_DefaultEnabledMatchesDomain(t *testing.T) {
 // TestGetTenantEventTypes_FiltersByTenantModules proves the server is doing the
 // module filtering, which is the job a client should not be reimplementing.
 func TestGetTenantEventTypes_FiltersByTenantModules(t *testing.T) {
-	// A tenant with no optional modules at all: only the module-less system
-	// events survive.
+	// Every event type has a producer in some module (security_alert and
+	// system_error, which needed none, were never emitted and are gone), so a
+	// tenant with no optional modules is offered nothing.
 	h := newEventTypesHandler(t)
 
 	rec := httptest.NewRecorder()
 	h.GetTenantEventTypes(rec, newEventTypesRequest())
 	resp := decodeEventTypes(t, rec)
 
-	if len(resp.EventTypes) == 0 {
-		t.Fatal("a tenant with no optional modules got zero event types; system events " +
-			"require no module and must always be available")
-	}
 	for _, et := range resp.EventTypes {
 		if et.RequiredModule != "" {
 			t.Errorf("event type %q requires module %q but the tenant has no modules enabled",
 				et.Type, et.RequiredModule)
 		}
-	}
-
-	// The scans module gates the scan events; without it they must be absent.
-	for _, et := range resp.EventTypes {
-		if et.Type == string(integrationdom.EventTypeScanCompleted) {
-			t.Errorf("scan_completed returned for a tenant without the scans module")
+		if et.Type == string(integrationdom.EventTypeNewAsset) {
+			t.Errorf("new_asset returned for a tenant without the assets module")
 		}
 	}
 
 	// ...and present once the module is on, so the filter is a real filter and
 	// not an unconditional drop.
-	withScans := newEventTypesHandler(t, integrationdom.ModuleScans)
+	withAssets := newEventTypesHandler(t, integrationdom.ModuleAssets)
 	rec2 := httptest.NewRecorder()
-	withScans.GetTenantEventTypes(rec2, newEventTypesRequest())
+	withAssets.GetTenantEventTypes(rec2, newEventTypesRequest())
 	resp2 := decodeEventTypes(t, rec2)
 
 	found := false
 	for _, et := range resp2.EventTypes {
-		if et.Type == string(integrationdom.EventTypeScanCompleted) {
+		if et.Type == string(integrationdom.EventTypeNewAsset) {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("scan_completed missing for a tenant WITH the scans module")
+		t.Error("new_asset missing for a tenant WITH the assets module")
 	}
 }
 
