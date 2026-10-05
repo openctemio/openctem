@@ -21,6 +21,14 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Security: pentest findings stay with their campaign on the asset page
 
+- `GET /assets/{id}/findings` now applies the findings list's visibility:
+  the data scope and the pentest-membership rule. A pentest finding, whose
+  metadata carries the PoC and steps to reproduce, was listed for anyone who
+  could see the asset (research 21b H5, RFC-050 W4); it is now listed only for
+  members of its campaign (administrators unchanged).
+
+### Security: member lifecycle (disable, offboard, erase)
+
 - **Nobody is hard-deleted any more** (RFC-050 §2, owner decision 2026-10-04).
   Removing a member used to delete the membership and clean only its roles, so
   groups, grants and scope rows survived and a re-invite restored the old
