@@ -327,6 +327,90 @@ SELECT 'campaigns with a validator team of another tenant (not changed here)', c
 
 ---
 
+## Asset tenant foreign keys (migrations 000920-000922)
+
+Every column that references `assets(id)` from a table with a `tenant_id` also
+has a composite foreign key `(tenant_id, <asset column>) → assets(tenant_id, id)`,
+so a row of one organization can never point at another organization's asset,
+whatever code writes it (research doc 21b, C1/C3/C4 backstop).
+
+| Migration | What it does | Lock |
+|---|---|---|
+| `000920` | `CREATE UNIQUE INDEX CONCURRENTLY uq_assets_tenant_id_id ON assets (tenant_id, id)` | none on writes |
+| `000921` | Pre-flight, then 27 composite keys `NOT VALID` | brief `SHARE ROW EXCLUSIVE`, no table scan |
+| `000922` | `VALIDATE CONSTRAINT` on each key | `SHARE UPDATE EXCLUSIVE` (reads and writes continue) |
+
+The single-column keys stay. Each composite key repeats its table's `ON DELETE`
+action; `SET NULL` clears only the asset column (`ON DELETE SET NULL (asset_id)`),
+never `tenant_id`.
+
+### When 000921 refuses to run
+
+`000921` first counts, per column, rows whose asset belongs to another
+organization. If any exist it stops with:
+
+```
+cross-tenant asset references found, migration not applied: findings.asset_id: 2, exposure_events.asset_id: 1
+```
+
+Nothing is changed (the file is one transaction), but `golang-migrate` marks
+version 921 dirty. Existing cross-tenant rows are another organization's data
+pointing at an asset, so they are never deleted automatically: decide row by
+row with the owner of each organization.
+
+1. List the rows (read-only), replacing the table and column from the error:
+
+   ```sql
+   SELECT x.id, x.tenant_id AS row_tenant, a.tenant_id AS asset_tenant, x.asset_id
+     FROM findings x JOIN assets a ON a.id = x.asset_id
+    WHERE x.tenant_id <> a.tenant_id;
+   ```
+
+2. For each row: repoint it to the right asset of its own organization, clear
+   the reference where the column is nullable (`exposure_events`,
+   `pipeline_runs`, `scan_sessions`, `finding_retests`,
+   `runtime_telemetry_events`), or delete the row if it is junk. Keep the
+   listing output with the change ticket.
+3. `migrate force 920`, then `migrate up` again.
+
+The read-only pre-flight for every column, to run before deploying:
+`api/migrations/000921_asset_ref_tenant_fks.up.sql` (the `DO $preflight$`
+block) or the query below.
+
+```sql
+SELECT ref, n FROM (
+    SELECT 'assets.parent_id' AS ref, COUNT(*) AS n FROM assets x JOIN assets a ON a.id = x.parent_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'asset_access_grants.asset_id' AS ref, COUNT(*) AS n FROM asset_access_grants x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'asset_attributions.asset_id' AS ref, COUNT(*) AS n FROM asset_attributions x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'asset_components.asset_id' AS ref, COUNT(*) AS n FROM asset_components x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'asset_identifiers.asset_id' AS ref, COUNT(*) AS n FROM asset_identifiers x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'asset_relationships.source_asset_id' AS ref, COUNT(*) AS n FROM asset_relationships x JOIN assets a ON a.id = x.source_asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'asset_relationships.target_asset_id' AS ref, COUNT(*) AS n FROM asset_relationships x JOIN assets a ON a.id = x.target_asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'asset_services.asset_id' AS ref, COUNT(*) AS n FROM asset_services x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'asset_state_history.asset_id' AS ref, COUNT(*) AS n FROM asset_state_history x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'asset_type_reclassifications.asset_id' AS ref, COUNT(*) AS n FROM asset_type_reclassifications x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'business_service_assets.asset_id' AS ref, COUNT(*) AS n FROM business_service_assets x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'business_unit_assets.asset_id' AS ref, COUNT(*) AS n FROM business_unit_assets x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'easm_dns_check_state.asset_id' AS ref, COUNT(*) AS n FROM easm_dns_check_state x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'easm_evidence.asset_id' AS ref, COUNT(*) AS n FROM easm_evidence x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'exposure_events.asset_id' AS ref, COUNT(*) AS n FROM exposure_events x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'exposures.asset_id' AS ref, COUNT(*) AS n FROM exposures x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'finding_retests.asset_id' AS ref, COUNT(*) AS n FROM finding_retests x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'findings.asset_id' AS ref, COUNT(*) AS n FROM findings x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'pipeline_runs.asset_id' AS ref, COUNT(*) AS n FROM pipeline_runs x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'relationship_suggestions.source_asset_id' AS ref, COUNT(*) AS n FROM relationship_suggestions x JOIN assets a ON a.id = x.source_asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'relationship_suggestions.target_asset_id' AS ref, COUNT(*) AS n FROM relationship_suggestions x JOIN assets a ON a.id = x.target_asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'runtime_telemetry_events.endpoint_asset_id' AS ref, COUNT(*) AS n FROM runtime_telemetry_events x JOIN assets a ON a.id = x.endpoint_asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'scan_coverage_state.asset_id' AS ref, COUNT(*) AS n FROM scan_coverage_state x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'scan_sessions.asset_id' AS ref, COUNT(*) AS n FROM scan_sessions x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'sla_policies.asset_id' AS ref, COUNT(*) AS n FROM sla_policies x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'suppression_rules.asset_id' AS ref, COUNT(*) AS n FROM suppression_rules x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+    UNION ALL SELECT 'user_accessible_assets.asset_id' AS ref, COUNT(*) AS n FROM user_accessible_assets x JOIN assets a ON a.id = x.asset_id WHERE x.tenant_id <> a.tenant_id
+) counts ORDER BY ref;
+```
+
+---
+
 ## Related
 
 - [Kubernetes Deployment](kubernetes.md) — init-container / pre-deploy-Job manifests

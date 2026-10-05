@@ -157,6 +157,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
 // @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, validated_fixed, not_observed, resolved, false_positive, accepted, duplicate, draft, in_review, remediation, retest, verified, accepted_risk)
 // @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, validated_fixed, not_observed, resolved, false_positive, accepted, duplicate, draft, in_review, remediation, retest, verified, accepted_risk)
+// @Param  state  query  string  false  "state equals"  Enums(open, fixed, dispositioned, all)
 // @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(sast, dast, sca, secret, iac, container, cspm, easm, va, rasp, waf, siem, manual, pentest, bug_bounty, red_team, external, threat_intel, vendor, sarif, sca_tool)
 // @Param  source_not  query  []string  false  "source: none of (comma list)"  collectionFormat(csv)  Enums(sast, dast, sca, secret, iac, container, cspm, easm, va, rasp, waf, siem, manual, pentest, bug_bounty, red_team, external, threat_intel, vendor, sarif, sca_tool)
 // @Param  sla_status  query  []string  false  "sla status: any of (comma list)"  collectionFormat(csv)  Enums(on_track, warning, overdue, exceeded, not_applicable)
@@ -198,6 +199,10 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  last_seen_at_lte  query  string  false  "last seen at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  last_seen_at_gt  query  string  false  "last seen at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  last_seen_at_lt  query  string  false  "last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  resolved_at_gte  query  string  false  "resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  resolved_at_lte  query  string  false  "resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  resolved_at_gt  query  string  false  "resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)"
+// @Param  resolved_at_lt  query  string  false  "resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  network_port  query  []integer  false  "network port: any of (comma list)"  collectionFormat(csv)
 // @Param  network_port_not  query  []integer  false  "network port: none of (comma list)"  collectionFormat(csv)
 // @Param  network_port_gte  query  integer  false  "network port at least"

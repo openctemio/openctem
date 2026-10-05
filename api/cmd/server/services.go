@@ -513,14 +513,16 @@ type Services struct {
 	FindingSourceCache *app.FindingSourceCacheService
 
 	// Vulnerabilities & Exposures
-	Vulnerability    *app.VulnerabilityService
-	FindingActivity  *app.FindingActivityService
-	FindingActions   *app.FindingActionsService
-	SourceAnalytics  *app.SourceAnalyticsService
-	Exposure         *app.ExposureService
-	ThreatIntel      *threat.IntelService
-	CTEMID           *ctemidapp.Service
-	CertMonitor      *certmonitorapp.Service
+	Vulnerability   *app.VulnerabilityService
+	FindingActivity *app.FindingActivityService
+	FindingActions  *app.FindingActionsService
+	SourceAnalytics *app.SourceAnalyticsService
+	Exposure        *app.ExposureService
+	ThreatIntel     *threat.IntelService
+	CTEMID          *ctemidapp.Service
+	CertMonitor     *certmonitorapp.Service
+	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
+	ActiveGate       *easmapp.ActiveGate
 	EASMDNS          *easmdnsapp.Service
 	CredentialImport *app.CredentialImportService
 
@@ -1572,6 +1574,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
+	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.EASMSeed)
+
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(
 		repos.Scan,
@@ -1592,7 +1596,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithProfileRepo(repos.ScanProfile),
 		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
 		scan.WithScopeExclusionFilter(s.Scope),
-		scan.WithAttributionGate(repos.Attribution),
+		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
+		// or unrecorded inside a scope target / under a seed; never rejected.
+		scan.WithAttributionGate(s.ActiveGate),
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to from the platform.
 		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
