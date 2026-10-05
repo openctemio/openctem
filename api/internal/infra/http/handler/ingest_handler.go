@@ -52,7 +52,7 @@ type contextKey string
 
 const sensorContextKey contextKey = "sensor"
 
-// sensorIdentityContextKey carries the app.SensorIdentity AuthenticateSource
+// sensorIdentityContextKey carries the sensor.SensorIdentity AuthenticateSource
 // resolved (paused flag, presented key expiry) for the heartbeat doorbell.
 const sensorIdentityContextKey contextKey = "sensor_identity"
 
