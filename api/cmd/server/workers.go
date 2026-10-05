@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -23,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -252,6 +254,25 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// D3): just started, stalled, or slow to handle heartbeats.
 	sensorHealth.SetPlatformHealth(svc.SensorPlatformHealth)
 	w.ControllerManager.Register(sensorHealth)
+
+	// CI alerts (RFC-051 §10.6): missed schedules, lost coverage, failing
+	// default branches and outdated runners, once each while they hold; and
+	// findings only a stale pipeline reported become not observed.
+	if repos.CIRun != nil {
+		var notifier cirunapp.Notifier
+		if svc.Outbox != nil {
+			notifier = svc.Outbox
+		}
+		var auditor cirunapp.Auditor
+		if svc.Audit != nil {
+			auditor = svc.Audit
+		}
+		job := cirunapp.NewAlertJob(repos.CIRun, notifier, auditor, cirun.StatusPolicy{
+			LatestVersion: sensordom.NormalizeVersion(deps.Config.SensorConfig.LatestVersion),
+			MinVersion:    sensordom.NormalizeVersion(deps.Config.SensorConfig.MinVersion),
+		}, log)
+		w.ControllerManager.Register(controller.NewCIAlertsController(job, 0))
+	}
 
 	jobRecovery := controller.NewJobRecoveryController(
 		repos.Command,
