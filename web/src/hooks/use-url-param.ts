@@ -48,6 +48,28 @@ function writeSearch(params: URLSearchParams) {
 }
 
 /**
+ * Navigate to a new query string on the same page, as a NEW history entry.
+ *
+ * For a drill-down (a group row's "View"), which is a destination rather than
+ * a refinement: Back must return to where the user came from, with its
+ * filters. Filter edits keep using replaceState (writeSearch). The current
+ * history state object is carried over, so the framework router still
+ * recognises the entry on Back.
+ */
+export function pushUrlSearch(params: URLSearchParams) {
+  const qs = params.toString()
+  const { pathname, search, hash } = window.location
+  if (qs === new URLSearchParams(search).toString()) return
+  window.history.pushState(window.history.state, '', `${pathname}${qs ? `?${qs}` : ''}${hash}`)
+  window.dispatchEvent(new Event(URL_PARAMS_CHANGED))
+}
+
+/** Replace the query string in place (a refinement; no new history entry). */
+export function replaceUrlSearch(params: URLSearchParams) {
+  writeSearch(params)
+}
+
+/**
  * Read a URL search parameter reactively without useSearchParams (avoids Suspense).
  */
 export function useUrlParam(key: string): string | null {
