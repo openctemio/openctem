@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -52,7 +52,7 @@ func CampaignRoleResolver(roleQuerier CampaignRoleQuerier) func(http.Handler) ht
 			// Share the resolved role via request-scoped cache so service-layer
 			// helpers (ResolveCampaignRoleForFinding etc.) don't re-query the DB.
 			if role != "" {
-				ctx = app.WithCachedCampaignRole(ctx, tenantID, campaignID, userID, role)
+				ctx = compliance.WithCachedCampaignRole(ctx, tenantID, campaignID, userID, role)
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

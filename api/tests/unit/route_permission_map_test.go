@@ -281,28 +281,10 @@ func normalizeGate(g routeGate) routeGate {
 	return g
 }
 
-// webIrrelevantRoutePrefixes are route families the web console never calls:
-// the frozen sensor protocol v1 (/api/v1/agent/*) and the /api/v1/agents
-// redirects. Leaving them out keeps the map free of the legacy vocabulary the
-// web sensor-vocabulary guard forbids.
-var webIrrelevantRoutePrefixes = []string{"/api/v1/agent/", "/api/v1/agents"}
-
-func webRelevantRoute(key string) bool {
-	_, path, _ := strings.Cut(key, " ")
-	for _, p := range webIrrelevantRoutePrefixes {
-		if strings.HasPrefix(path, p) {
-			return false
-		}
-	}
-	return true
-}
-
 func renderRoutePermissionMap(m map[string]routeGate) []byte {
 	keys := make([]string, 0, len(m))
 	for k := range m {
-		if webRelevantRoute(k) {
-			keys = append(keys, k)
-		}
+		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	var buf bytes.Buffer

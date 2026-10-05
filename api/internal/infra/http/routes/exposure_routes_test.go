@@ -88,7 +88,7 @@ func TestCredentialRoutes_DispositionsNeedApprover(t *testing.T) {
 			})
 		}
 		passthrough := func(next http.Handler) http.Handler { return next }
-		registerCredentialRoutes(router, handler.NewCredentialImportHandler(nil, nil, logger.NewNop()), nil, as, passthrough, passthrough)
+		registerCredentialRoutes(router, handler.NewCredentialImportHandler(nil, nil, logger.NewNop()), as, passthrough, passthrough)
 		mux := router.(interface{ Handler() http.Handler }).Handler()
 		defer func() {
 			if recover() != nil {
