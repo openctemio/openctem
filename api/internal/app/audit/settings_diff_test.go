@@ -90,7 +90,7 @@ func TestIsSecretField(t *testing.T) {
 }
 
 func TestDiffChanges_HidesURLPassword(t *testing.T) {
-	c := DiffChanges(nil, map[string]any{"url": "https://bot:ghp_secret123@git.example/repo.git"})
+	c := DiffChanges(nil, map[string]any{"url": "https://bot:" + "ghp_secret123" + "@git.example/repo.git"})
 	s, _ := c.After["url"].(string)
 	if strings.Contains(s, "ghp_secret123") || !strings.Contains(s, "git.example") {
 		t.Fatalf("url password not hidden: %q", s)

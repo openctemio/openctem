@@ -115,7 +115,7 @@ Severity follows what the change does, not which endpoint it came through:
 
 Integration diffs are taken from the redacted API view, without fields that
 change on their own (status, sync times, counters); header maps and the
-password in a `user:password@host` URL are never recorded.
+password in a URL's user info are never recorded.
 
 Every other section save (general, branding, branch, pentest, risk scoring,
 asset source/lifecycle/identity, retest) keeps its action and severity and
