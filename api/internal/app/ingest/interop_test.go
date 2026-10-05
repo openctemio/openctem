@@ -220,7 +220,7 @@ func TestParseVEXMode(t *testing.T) {
 func TestIdentityHints(t *testing.T) {
 	ca := &ctis.Asset{Type: ctis.AssetTypeHost, Value: "10.20.0.15", IdentityHints: &ctis.IdentityHints{
 		FQDN: "db01.corp.example.com", NetBIOSName: "DB01", MACAddresses: []string{"00:50:56:9a:1b:2c"},
-		OSCPE: "cpe:/o:canonical:ubuntu_linux:22.04", AgentID: "agent\n-1", CloudResourceID: "i-0abc123def4567890",
+		OSCPE: "cpe:/o:canonical:ubuntu_linux:22.04", ScannerAgentID: "agent\n-1", CloudResourceID: "i-0abc123def4567890",
 	}}
 	ids := identifiersFor(ca, asset.AssetTypeHost, "10.20.0.15")
 	kinds := map[asset.IdentifierKind]bool{}
