@@ -390,7 +390,7 @@ func (h *DashboardHandler) GetProcessMetrics(w http.ResponseWriter, r *http.Requ
 // @Produce      json
 // @Security     BearerAuth
 // @Param        days  query     int  false  "Window in days (1-365, default 90)"
-// @Success      200   {object}  app.ProgramMetrics
+// @Success      200   {object}  module.ProgramMetrics
 // @Failure      400   {object}  apierror.Error
 // @Failure      401   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
