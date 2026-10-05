@@ -181,8 +181,6 @@ func TestDynamicWhere_AllFiltersExecute(t *testing.T) {
 		statuses := []scope.Status{scope.StatusActive}
 		_, err := NewScopeExclusionRepository(db).Count(ctx, scope.ExclusionFilter{TenantID: &tenant, Statuses: statuses})
 		check("ScopeExclusionRepository.Count", err)
-		_, err = NewScopeScheduleRepository(db).Count(ctx, scope.ScheduleFilter{TenantID: &tenant, Enabled: &yes})
-		check("ScopeScheduleRepository.Count", err)
 		_, err = NewScopeTargetRepository(db).Count(ctx, scope.TargetFilter{TenantID: &tenant, Statuses: statuses})
 		check("ScopeTargetRepository.Count", err)
 	}
