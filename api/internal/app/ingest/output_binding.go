@@ -170,7 +170,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 	if mode == sensorresult.ModeWarn {
 		metrics.SensorUnsolicitedResultsTotal.WithLabelValues("out_of_contract_warned").Inc()
 		s.logger.Warn("sensor report carries asset types its tool does not produce; applied (tenant mode warn)",
-			"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", tool,
+			"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", sanitizeIngestLogField(tool),
 			"assets", sp.heldCount(), "report_id", sanitizeIngestLogField(report.Metadata.ID))
 		s.auditAsync(auditapp.AuditContext{TenantID: tenantID.String()},
 			event.WithMessage(fmt.Sprintf("Sensor report applied with %d asset(s) of types its tool does not produce (warn mode)", sp.heldCount())))
@@ -198,7 +198,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 	}
 	metrics.SensorUnsolicitedResultsTotal.WithLabelValues("out_of_contract_quarantined").Inc()
 	s.logger.Info("sensor report: asset types its tool does not produce were held for review",
-		"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", tool,
+		"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", sanitizeIngestLogField(tool),
 		"assets", sp.heldCount(), "findings", sp.heldFindings, "quarantine_id", quarantineID)
 	s.auditAsync(auditapp.AuditContext{TenantID: tenantID.String()},
 		event.WithMetadata("quarantine_id", quarantineID).
