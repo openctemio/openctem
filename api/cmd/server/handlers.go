@@ -844,6 +844,20 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
+	// Break-glass reaches every administrator (in-app) and the tenant's
+	// channels subscribed to ci.break_glass.
+	var admins cirunapp.AdminLister
+	if repos.MemberLifecycle != nil {
+		admins = repos.MemberLifecycle
+	}
+	var inApp cirunapp.InAppNotifier
+	if svc.Notification != nil {
+		inApp = svc.Notification
+	}
+	var ob cirunapp.Notifier
+	if svc.Outbox != nil {
+		ob = svc.Outbox
+	}
 	ciSvc := cirunapp.NewService(cirunapp.Deps{
 		Repo:     repos.CIRun,
 		Verifier: verifier,
@@ -853,6 +867,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		Ingester: svc.Ingest,
 		Units:    repos.CIRun,
 		Audit:    audit,
+		Alerts:   cirunapp.NewAdminAlerts(admins, inApp, ob, log),
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: cirun.StatusPolicy{
 		LatestVersion: sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion),
 		MinVersion:    sensordom.NormalizeVersion(cfg.SensorConfig.MinVersion),

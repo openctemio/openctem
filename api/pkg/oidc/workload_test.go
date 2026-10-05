@@ -178,3 +178,29 @@ func TestUnverifiedIssuer(t *testing.T) {
 		}
 	}
 }
+
+// Clock skew is tolerated for one minute, no more: a token expired 30
+// seconds ago verifies, one expired (or issued) two minutes off does not.
+func TestWorkloadClockSkewBounds(t *testing.T) {
+	p := newTestIdP(t)
+	now := time.Now()
+	at := func(f func(c jwtv5.MapClaims)) string {
+		c := p.workloadClaims()
+		c["jti"] = "skew-" + strings.ReplaceAll(time.Now().Format(time.RFC3339Nano), ":", "")
+		f(c)
+		return p.sign(t, c)
+	}
+	if _, err := p.client().VerifyWorkloadToken(context.Background(),
+		at(func(c jwtv5.MapClaims) { c["exp"] = now.Add(-30 * time.Second).Unix() }), p.workloadExpect()); err != nil {
+		t.Fatalf("a token within the leeway was refused: %v", err)
+	}
+	for name, f := range map[string]func(c jwtv5.MapClaims){
+		"expired two minutes ago":      func(c jwtv5.MapClaims) { c["exp"] = now.Add(-2 * time.Minute).Unix() },
+		"issued two minutes ahead":     func(c jwtv5.MapClaims) { c["iat"] = now.Add(2 * time.Minute).Unix() },
+		"valid from two minutes ahead": func(c jwtv5.MapClaims) { c["nbf"] = now.Add(2 * time.Minute).Unix() },
+	} {
+		if _, err := p.client().VerifyWorkloadToken(context.Background(), at(f), p.workloadExpect()); err == nil {
+			t.Fatalf("%s: accepted beyond the leeway", name)
+		}
+	}
+}
