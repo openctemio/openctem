@@ -95,6 +95,8 @@ type Repositories struct {
 	// Sensors & Commands
 	Sensor       *postgres.SensorRepository
 	SensorAPIKey *postgres.SensorAPIKeyRepository
+	// SensorSigningKey: public keys of key-bound sensors (RFC-052).
+	SensorSigningKey *postgres.SensorSigningKeyRepository
 	// SensorEvent is the sensor activity timeline (sensor_events).
 	SensorEvent *postgres.SensorEventRepository
 	// SensorHeartbeatHistory is the per-sensor heartbeat history behind the
@@ -336,6 +338,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Sensors & Commands
 		Sensor:                 postgres.NewSensorRepository(db),
 		SensorAPIKey:           postgres.NewSensorAPIKeyRepository(db),
+		SensorSigningKey:       postgres.NewSensorSigningKeyRepository(db),
 		SensorEvent:            postgres.NewSensorEventRepository(db),
 		SensorHeartbeatHistory: postgres.NewSensorHeartbeatHistoryRepository(db),
 		Command:                postgres.NewCommandRepository(db),
