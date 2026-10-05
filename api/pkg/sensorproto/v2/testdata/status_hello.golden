@@ -105,6 +105,7 @@
     "manifest",
     "local_policy",
     "capacity",
+    "refusal",
     "config_report"
   ],
   "media_types": [

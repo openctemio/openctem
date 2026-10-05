@@ -54,6 +54,10 @@ const (
 	// TypeSSOChangePending tells an organization owner that a platform
 	// administrator proposed an SSO change that waits for their approval.
 	TypeSSOChangePending = "sso_change_pending"
+	// TypeMemberLifecycle tells administrators that a member lifecycle action
+	// needs them: a disable paused schedules, or a deprovisioned member still
+	// owns work to reassign.
+	TypeMemberLifecycle = "member_lifecycle"
 )
 
 // Notification represents an in-app notification.
