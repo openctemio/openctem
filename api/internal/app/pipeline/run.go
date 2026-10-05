@@ -412,7 +412,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 	}
 	stepTargets = planned
 
-	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), settings.SensorPreference, stepTargets)
+	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), stepTargets)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}

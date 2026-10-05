@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/module"
@@ -37,7 +39,7 @@ var recalculateLastRun sync.Map
 // Note: "Team" is the UI-facing name for tenants.
 type TenantHandler struct {
 	service         *app.TenantService
-	roleService     *app.RoleService
+	roleService     *accesscontrol.RoleService
 	assetService    *app.AssetService
 	moduleService   *module.ModuleService
 	lifecycleWorker *assetapp.AssetLifecycleWorker
@@ -81,7 +83,7 @@ func NewTenantHandler(svc *app.TenantService, v *validator.Validator, log *logge
 }
 
 // SetRoleService sets the role service for fetching RBAC roles.
-func (h *TenantHandler) SetRoleService(svc *app.RoleService) {
+func (h *TenantHandler) SetRoleService(svc *accesscontrol.RoleService) {
 	h.roleService = svc
 }
 

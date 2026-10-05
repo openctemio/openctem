@@ -23,7 +23,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -224,13 +223,7 @@ func (h *SensorResultsV2Handler) Abandon(w http.ResponseWriter, r *http.Request)
 
 // Hello handles GET /hello: protocol level, features and limits (RFC-023 C3).
 func (h *SensorResultsV2Handler) Hello(w http.ResponseWriter, _ *http.Request) {
-	hello := protov2.NewHello(h.receiver.Limits(), h.features...)
-	if len(h.features) > 0 {
-		hello = hello.WithDeprecation(protov2.DeprecationProtocolV1, protov2.Deprecation{
-			DeprecatedAt: legacyv1.ProtocolDeprecatedAt, SunsetAt: legacyv1.ProtocolSunsetAt,
-		})
-	}
-	h.writeJSON(w, http.StatusOK, hello)
+	h.writeJSON(w, http.StatusOK, protov2.NewHello(h.receiver.Limits(), h.features...))
 }
 
 func (h *SensorResultsV2Handler) writeStatus(w http.ResponseWriter, res *ingest.PutResult) {

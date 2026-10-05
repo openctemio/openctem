@@ -72,8 +72,6 @@ GET /api/v1/admin/target-mappings/stats
 GET /api/v1/admin/target-mappings/{}
 GET /api/v1/admin/users
 GET /api/v1/admin/users/{}
-GET /api/v1/agent/ingest/jobs/{}
-GET /api/v1/agent/ingest/scanners
 GET /api/v1/api-keys
 GET /api/v1/api-keys/{}
 GET /api/v1/approvals
@@ -267,10 +265,6 @@ PATCH /api/v1/tenants/{}/settings/pentest
 PATCH /api/v1/tenants/{}/settings/risk-scoring
 PATCH /api/v1/tenants/{}/settings/security
 POST /api/v1/admin/target-mappings
-POST /api/v1/agent/credentials/ingest
-POST /api/v1/agent/ingest
-POST /api/v1/agent/ingest/scan
-POST /api/v1/agent/telemetry-events
 POST /api/v1/api-keys
 POST /api/v1/api-keys/{}/revoke
 POST /api/v1/approvals/{}/approve
