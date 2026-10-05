@@ -997,6 +997,11 @@ results an out-of-scope id is reported exactly like an unknown id.
   direct targets); a scheduled run refuses a scan with no owner and pauses a
   scan whose owner is no longer an active member (`scan.refuseOwnerlessSchedule`).
 
+- **Asset findings list** (`GET /assets/{id}/findings`) goes through the
+  same `visibleFilter` as the findings list: scope plus the pentest-membership
+  rule, so a pentest finding (PoC in its metadata) reaches campaign members
+  only (21b H5).
+
 - **Asset-less exposures are full-data only for writes too** (D11, research
   21b H1): exposure create, ingest and bulk ingest refuse an exposure with no
   `asset_id` from a restricted caller (400), so the fingerprint upsert cannot
