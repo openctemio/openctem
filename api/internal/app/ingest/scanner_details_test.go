@@ -36,7 +36,7 @@ func TestSetFindingScannerDetails(t *testing.T) {
 func TestScannerEvidenceUpdate(t *testing.T) {
 	v2 := "AV:N/AC:L/Au:N/C:P/I:P/A:P"
 	v3 := "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
-	hostile := "Server: <img src=x onerror=alert(1)>\x1b[2J‮"
+	hostile := "Server: <img src=x onerror=alert(1)>\x1b[2J\u202e"
 	cf := &ctis.Finding{
 		Type:          ctis.FindingTypeVulnerability,
 		Evidence:      hostile,

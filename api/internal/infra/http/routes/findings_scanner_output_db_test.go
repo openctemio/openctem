@@ -21,7 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-const soHostile = "Server: <script>alert('so')</script>\x1b[31mSO-MARKER\x1b[0m ‮txt.exe\r\nline2"
+const soHostile = "Server: <script>alert('so')</script>\x1b[31mSO-MARKER\x1b[0m \u202etxt.exe\r\nline2"
 
 type soDetail struct {
 	CVSSv2Vector  string `json:"cvss_v2_vector"`
