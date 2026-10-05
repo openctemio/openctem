@@ -1885,6 +1885,11 @@ export const scanEndpoints = {
    */
   save: (scanId: string) => `${API_BASE.SCANS}/${scanId}/save`,
 
+  /**
+   * Next occurrences of a schedule, validated as saving would (stateless)
+   */
+  schedulePreview: () => `${API_BASE.SCANS}/schedule-preview`,
+
   // ============================================
   // BULK OPERATIONS
   // ============================================
