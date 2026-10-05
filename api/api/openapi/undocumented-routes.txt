@@ -259,7 +259,6 @@ PATCH /api/v1/remediation/campaigns/{}/status
 PATCH /api/v1/reports/schedules/{}/toggle
 PATCH /api/v1/tenants/{}
 PATCH /api/v1/tenants/{}/members/{}
-PATCH /api/v1/tenants/{}/settings/api
 PATCH /api/v1/tenants/{}/settings/asset-identity
 PATCH /api/v1/tenants/{}/settings/branch
 PATCH /api/v1/tenants/{}/settings/branding

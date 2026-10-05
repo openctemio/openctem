@@ -172,7 +172,7 @@ func TestAdminOrgSSOChangesReachOrganizationAuditLog(t *testing.T) {
 	call(http.MethodPut, "/saml", map[string]any{
 		"idp_entity_id": "https://idp.example.test/entity", "idp_sso_url": "https://idp.example.test/sso",
 		"idp_certificate": cert, "allowed_domains": []string{"victim.example.test"},
-		"default_role": "admin", "auto_provision": true, "enabled": true,
+		"default_role": "member", "auto_provision": true, "enabled": true,
 	}, http.StatusOK)
 	idp := call(http.MethodPost, "/identity-providers", map[string]any{
 		"provider": "google_workspace", "display_name": "Rogue IdP", "client_id": "cid",
