@@ -66,3 +66,35 @@ func (w *EASMExposureWriter) BulkUpsert(ctx context.Context, events []*exposure.
 	}
 	return nil
 }
+
+// AnnouncingExposureRepository is the exposure repository of the recon asset
+// bridge (port_open, service_detected, certificate and TLS exposures from
+// scans): a Create also announces the new exposure through the notification
+// outbox, in the same transaction (research/22 P0-6 with P0-7). Every other
+// method is the plain repository's.
+type AnnouncingExposureRepository struct {
+	*ExposureRepository
+	db     *DB
+	alerts *EASMAlerter
+}
+
+// NewAnnouncingExposureRepository builds the repository.
+func NewAnnouncingExposureRepository(db *DB, alerts *EASMAlerter) *AnnouncingExposureRepository {
+	return &AnnouncingExposureRepository{ExposureRepository: NewExposureRepository(db), db: db, alerts: alerts}
+}
+
+// Create inserts the event and announces it in one transaction.
+func (r *AnnouncingExposureRepository) Create(ctx context.Context, event *exposure.ExposureEvent) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin exposure create: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.CreateInTx(ctx, tx, event); err != nil {
+		return err
+	}
+	if err := r.alerts.EnqueueInTx(ctx, tx, event.TenantID(), []string{event.ID().String()}, easmalert.ReasonNew); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

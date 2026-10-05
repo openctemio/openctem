@@ -112,10 +112,19 @@ func (r *AccessControlRepository) IsGroupInTenant(ctx context.Context, tenantID,
 	return exists, nil
 }
 
-// IsUserInTenant reports whether the user is a member of the tenant. Mirrors the
-// `tenant_members WHERE tenant_id` screen the read-side owner queries use.
+// IsUserInTenant reports whether the user is an ACTIVE member of the tenant
+// (active membership, active account). It gates adding someone to an access
+// group and naming them as an asset owner: a disabled member, or the
+// offboarded tombstone of someone who left, cannot be given a group (which
+// would otherwise survive into a later re-join) or ownership (member
+// lifecycle, RFC-050).
 func (r *AccessControlRepository) IsUserInTenant(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
-	const query = `SELECT EXISTS (SELECT 1 FROM tenant_members WHERE user_id = $1 AND tenant_id = $2)`
+	const query = `
+		SELECT EXISTS (
+			SELECT 1 FROM tenant_members m
+			  JOIN users u ON u.id = m.user_id
+			 WHERE m.user_id = $1 AND m.tenant_id = $2
+			   AND m.status = 'active' AND u.status = 'active')`
 	var exists bool
 	if err := r.db.QueryRowContext(ctx, query, userID.String(), tenantID.String()).Scan(&exists); err != nil {
 		return false, fmt.Errorf("failed to check user tenant membership: %w", err)
