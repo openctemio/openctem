@@ -517,6 +517,7 @@ type Services struct {
 	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
 	ActiveGate       *easmapp.ActiveGate
 	EASMDNS          *easmdnsapp.Service
+	EASMSweep        *easmapp.SweepService
 	CredentialImport *app.CredentialImportService
 
 	// Components & Branches
@@ -926,7 +927,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CertMonitor.SetCertSpotterFallback(cfg.Worker.CertMonitorCertSpotterURL)
 	// Re-check a little under the sweep interval: the next scheduled run
 	// re-queries, an API restart in between does not.
-	s.CertMonitor.SetLimits(cfg.Worker.CertMonitorMaxDomainsPerRun, cfg.Worker.CertMonitorInterval*5/6)
+	s.CertMonitor.SetLimits(cfg.Worker.CertMonitorMaxDomainsPerRun, easmRecheck(cfg.Worker.CertMonitorInterval))
+	// A tenant may turn CT off (E8 opt-out) or set its own interval (P0-11).
+	s.CertMonitor.SetTenantSettings(s.Tenant)
 	// DNS-only EASM checks (RFC-036 P1): dangling CNAME/NS, email posture.
 	if cfg.Worker.EASMDNSChecksEnabled {
 		dnsClient, err := dnsprobe.New(dnsprobe.Config{Server: cfg.Worker.EASMDNSResolver, QPS: cfg.Worker.EASMDNSQPS})
@@ -934,9 +937,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			log.Warn("EASM DNS checks disabled: no resolver", "error", err)
 		} else {
 			s.EASMDNS = easmdnsapp.NewService(dnsClient, repos.EASMDNS, easmExposures, log)
-			s.EASMDNS.SetLimits(cfg.Worker.EASMDNSMaxNamesPerRun, cfg.Worker.EASMDNSInterval*5/6)
+			s.EASMDNS.SetLimits(cfg.Worker.EASMDNSMaxNamesPerRun, easmRecheck(cfg.Worker.EASMDNSInterval))
+			s.EASMDNS.SetTenantSettings(s.Tenant)
 		}
 	}
+	// Run-now and seed-triggered sweeps (research/22 P0-11): CT then DNS
+	// checks for one tenant, each honoring the tenant's switches.
+	var sweepCT easmapp.SweepCT
+	if cfg.Worker.CertMonitorEnabled {
+		sweepCT = s.CertMonitor
+	}
+	var sweepDNS easmapp.SweepDNS
+	if s.EASMDNS != nil {
+		sweepDNS = s.EASMDNS
+	}
+	s.EASMSweep = easmapp.NewSweepService(sweepCT, sweepDNS, postgres.NewEASMSweepRepository(&postgres.DB{DB: deps.DB}), log)
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.CredentialImport.SetDataScope(s.DataScope)
 	// Leaked-credential secrets are sealed with the platform credential key
@@ -1410,6 +1425,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Multi-key store for rotation overlap (RFC-014 Phase 3). Additive: auth
 	// still accepts the inline key; renewal under a TTL issues overlapping keys.
 	s.Sensor.SetAPIKeyRepository(repos.SensorAPIKey)
+	// Key-bound sensors (RFC-052): public keys and the shared nonce store
+	// of signed requests.
+	s.Sensor.SetSigningKeyRepository(repos.SensorSigningKey)
+	if deps.RedisClient != nil {
+		s.Sensor.SetNonceStore(redis.NewSensorNonceStore(deps.RedisClient))
+	}
 	// Operator-tunable load-balancing weights (AGENT_LB_*). Applied to the
 	// load_score recomputed on every heartbeat.
 	s.Sensor.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
@@ -2396,4 +2417,14 @@ func (l *redisVerifyLimiter) Allow(ctx context.Context, tenantID shared.ID) (boo
 		return l.fallback.Allow(ctx, tenantID)
 	}
 	return res.Allowed, nil
+}
+
+// easmRecheck is the default re-check window of the EASM sweeps for an
+// interval: half an hour short of it, so the hourly controller tick re-queries
+// a name once per interval (research/22 P0-11).
+func easmRecheck(interval time.Duration) time.Duration {
+	if interval <= time.Hour {
+		return interval * 5 / 6
+	}
+	return interval - 30*time.Minute
 }
