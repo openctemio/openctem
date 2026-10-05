@@ -193,6 +193,14 @@ func TestCIPipelineRepository(t *testing.T) {
 
 	// Tools: sanitized, de-duplicated, capped; another tenant cannot write.
 	runID := addRun(pb.ID, now, "push", "t1", false, true, "")
+	// One run, no schedule: no cadence yet (not the cap), so the floor applies.
+	if err := repo.RefreshPipeline(ctx, tenant, pb.ID); err != nil {
+		t.Fatal(err)
+	}
+	if one, _ := repo.GetPipeline(ctx, tenant, pb.ID); one.ScheduleInterval != 0 || one.MedianInterval != 0 ||
+		one.StaleAfter() != cirun.MinStaleAfter {
+		t.Fatalf("single-run cadence = schedule %s, median %s", one.ScheduleInterval, one.MedianInterval)
+	}
 	many := make([]cirun.ToolLabel, 0, 40)
 	for i := range 40 {
 		many = append(many, cirun.ToolLabel{Name: fmt.Sprintf("Tool-%02d", i), Version: "1.0"})
