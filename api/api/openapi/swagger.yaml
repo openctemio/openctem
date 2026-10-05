@@ -20649,6 +20649,11 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: 'RUNNER_OUTDATED: the runner reports a version below the minimum
+            supported one'
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "429":
           description: Too Many Requests
           schema:
