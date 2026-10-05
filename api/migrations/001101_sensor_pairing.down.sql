@@ -1,4 +1,4 @@
--- Reverts 001098 (the trigger function goes back to 001077's list).
+-- Reverts 001101 (the trigger function goes back to 001077's list).
 -- Pairing requests are dropped; sensors already paired keep
 -- their keys (sensor_keys, 001074).
 SET lock_timeout = '5s';

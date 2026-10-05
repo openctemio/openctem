@@ -6868,6 +6868,99 @@ definitions:
           type: string
         type: array
     type: object
+  internal_infra_http_handler.CICapabilityCoverage:
+    properties:
+      capability:
+        enum:
+        - sast
+        - sca
+        - secrets
+        - iac
+        type: string
+      expected:
+        type: boolean
+      last_at:
+        type: string
+      pipeline_id:
+        type: string
+      source_kind:
+        enum:
+        - ci_pipeline
+        - scan
+        type: string
+      source_name:
+        type: string
+      state:
+        enum:
+        - fresh
+        - stale
+        - never
+        type: string
+    type: object
+  internal_infra_http_handler.CICoverageExpectationRequest:
+    properties:
+      capabilities:
+        description: Capabilities expected (sast, sca, secrets, iac); empty = all
+          four.
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.CICoverageExpectationResponse:
+    properties:
+      capabilities:
+        items:
+          type: string
+        type: array
+      repository_asset_id:
+        type: string
+    type: object
+  internal_infra_http_handler.CICoverageResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIRepositoryCoverage'
+        type: array
+      links:
+        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
+      page:
+        type: integer
+      per_page:
+        type: integer
+      summary:
+        $ref: '#/definitions/internal_infra_http_handler.CICoverageSummary'
+      templates:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CITemplateDrift'
+        type: array
+      total:
+        type: integer
+      total_pages:
+        type: integer
+      truncated:
+        type: boolean
+    type: object
+  internal_infra_http_handler.CICoverageSummary:
+    properties:
+      covered:
+        type: integer
+      expected:
+        type: integer
+      fresh_by_capability:
+        additionalProperties:
+          type: integer
+        type: object
+      gaps:
+        type: integer
+      repositories:
+        type: integer
+      uncovered:
+        type: integer
+      uncovered_by_criticality:
+        additionalProperties:
+          type: integer
+        type: object
+    type: object
   internal_infra_http_handler.CIEvaluateRequest:
     properties:
       scan_failures:
@@ -7122,6 +7215,10 @@ definitions:
         type: string
       repository_asset_id:
         type: string
+      retire_reason:
+        type: string
+      retired_at:
+        type: string
       revoked_at:
         type: string
       role:
@@ -7145,6 +7242,7 @@ definitions:
         type: string
       status:
         enum:
+        - retired
         - revoked
         - failing
         - degraded
@@ -7275,6 +7373,10 @@ definitions:
         type: string
       repository_asset_id:
         type: string
+      retire_reason:
+        type: string
+      retired_at:
+        type: string
       revoked_at:
         type: string
       role:
@@ -7298,6 +7400,7 @@ definitions:
         type: string
       status:
         enum:
+        - retired
         - revoked
         - failing
         - degraded
@@ -7327,6 +7430,44 @@ definitions:
       workflow_name:
         type: string
       workflow_path:
+        type: string
+    type: object
+  internal_infra_http_handler.CIRepositoryCoverage:
+    properties:
+      capabilities:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CICapabilityCoverage'
+        type: array
+      covered:
+        type: boolean
+      criticality:
+        type: string
+      expected:
+        type: boolean
+      expected_capabilities:
+        items:
+          type: string
+        type: array
+      gap:
+        type: boolean
+      pipelines:
+        type: integer
+      repository:
+        type: string
+      repository_asset_id:
+        type: string
+    type: object
+  internal_infra_http_handler.CIRetirePipelineRequest:
+    properties:
+      reason:
+        description: Reason, 10 to 2000 characters (audited).
+        type: string
+    type: object
+  internal_infra_http_handler.CIRetirePipelineResponse:
+    properties:
+      findings_closed:
+        type: integer
+      pipeline_id:
         type: string
     type: object
   internal_infra_http_handler.CIRunResponse:
@@ -7414,6 +7555,32 @@ definitions:
       notes:
         type: string
       ransomware_use:
+        type: string
+    type: object
+  internal_infra_http_handler.CITemplateDrift:
+    properties:
+      current:
+        type: string
+      drifted:
+        type: integer
+      template:
+        type: string
+      total:
+        type: integer
+      versions:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CITemplateVersion'
+        type: array
+    type: object
+  internal_infra_http_handler.CITemplateVersion:
+    properties:
+      last_run_at:
+        type: string
+      pipeline_ids:
+        items:
+          type: string
+        type: array
+      version:
         type: string
     type: object
   internal_infra_http_handler.CIToolLabel:
@@ -20091,6 +20258,125 @@ paths:
       summary: Verify email
       tags:
       - Authentication
+  /ci/coverage:
+    get:
+      description: 'Repository x capability (sast, sca, secrets, iac) coverage from
+        any executor: CI pipelines (their default-branch runs and the tools they reported)
+        and daemon scans. A capability is fresh while its pipeline runs within its
+        cadence (30 days for a scan), stale up to 90 days, never after. Gaps first
+        (an expected capability not fresh), then uncovered, by criticality. Only repositories
+        in the caller''s data scope. Template drift lists reusable workflows whose
+        pipelines run different versions.'
+      parameters:
+      - description: gap, uncovered or covered
+        in: query
+        name: filter
+        type: string
+      - description: sast, sca, secrets or iac (with state)
+        in: query
+        name: capability
+        type: string
+      - description: fresh, stale or never (with capability)
+        in: query
+        name: state
+        type: string
+      - description: Only repositories marked as expected
+        in: query
+        name: expected
+        type: boolean
+      - description: critical, high, medium, low or none
+        in: query
+        name: criticality
+        type: string
+      - description: Repository name
+        in: query
+        name: search
+        type: string
+      - description: Page (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Per page (default 25, max 200)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CICoverageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Repository coverage
+      tags:
+      - CI
+  /ci/coverage/expectations/{id}:
+    delete:
+      description: Audited. 404 when the repository is outside the caller's data scope
+        or was not expected.
+      parameters:
+      - description: Repository asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Stop expecting a repository to be covered
+      tags:
+      - CI
+    put:
+      consumes:
+      - application/json
+      description: Marks a repository as expected to be scanned (for the listed capabilities,
+        all four when empty), so a capability that is not fresh shows as a gap and
+        "never scanned" is visible. Audited. 404 when the repository is outside the
+        caller's data scope.
+      parameters:
+      - description: Repository asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Capabilities
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CICoverageExpectationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CICoverageExpectationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Expect a repository to be covered
+      tags:
+      - CI
   /ci/gate-overrides:
     get:
       parameters:
@@ -20393,6 +20679,51 @@ paths:
       security:
       - BearerAuth: []
       summary: Get a CI pipeline
+      tags:
+      - CI
+  /ci/pipelines/{id}/retire:
+    post:
+      consumes:
+      - application/json
+      description: The pipeline is hidden as retired and the open findings only it
+        reported close as "source retired" (audited; each can be reopened). Findings
+        another source still observes are untouched. The next verified run of the
+        pipeline brings it back. 404 when its repository is outside the caller's data
+        scope; 409 when already retired.
+      parameters:
+      - description: Pipeline ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Reason
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIRetirePipelineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIRetirePipelineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Retire a CI pipeline
       tags:
       - CI
   /ci/runs:
