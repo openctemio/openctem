@@ -67,6 +67,21 @@ describe('scanStanding', () => {
       /until its ownership/
     )
     expect(scanStanding({ active_checks_allowed: false, state: 'dependency' })).toMatch(/passively/)
+    // A legacy asset (reported as confirmed) outside every scope target.
+    expect(
+      scanStanding({
+        active_checks_allowed: false,
+        state: 'confirmed',
+        active_checks_blocked_by: 'unattributed',
+      })
+    ).toMatch(/no scope target or seed/)
+    expect(
+      scanStanding({
+        active_checks_allowed: false,
+        state: 'confirmed',
+        active_checks_blocked_by: 'rejected',
+      })
+    ).toMatch(/marked not yours/)
   })
 })
 

@@ -26,6 +26,12 @@ export interface AssetAttribution {
   recorded: boolean
   human_decided: boolean
   active_checks_allowed: boolean
+  /**
+   * Why scans skip the asset when active_checks_allowed is false: its state,
+   * `rejected` also for a name under a rejected name, or `unattributed` (no
+   * record, and no scope target, seed or verified domain covers it).
+   */
+  active_checks_blocked_by?: AttributionState | 'unattributed'
   decided_at?: string
   evidence: AttributionEvidence[]
 }
@@ -106,8 +112,14 @@ function formatDay(iso: string): string {
 }
 
 /** What a scan does with this asset, in words. */
-export function scanStanding(a: Pick<AssetAttribution, 'active_checks_allowed' | 'state'>): string {
+export function scanStanding(
+  a: Pick<AssetAttribution, 'active_checks_allowed' | 'state' | 'active_checks_blocked_by'>
+): string {
   if (a.active_checks_allowed) return 'Scans can reach this asset.'
+  if (a.active_checks_blocked_by === 'unattributed')
+    return 'Scans skip this asset: nobody has confirmed it is yours, and no scope target or seed domain covers it. Confirm it here, or add it to Scoping › Targets.'
+  if (a.active_checks_blocked_by === 'rejected' && a.state !== 'rejected')
+    return 'Scans skip this asset: a name it sits under was marked not yours.'
   if (a.state === 'needs_review' || a.state === 'candidate')
     return 'Scans skip this asset until its ownership is confirmed.'
   return 'Scans skip this asset; it is watched passively only.'

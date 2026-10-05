@@ -83,16 +83,12 @@ func (r *TenantRepository) GetBySlug(ctx context.Context, slug string) (*tenant.
 	return r.scanTenant(r.db.QueryRowContext(ctx, query, slug))
 }
 
-// Update updates an existing tenant.
-func (r *TenantRepository) Update(ctx context.Context, t *tenant.Tenant) error {
-	settings, err := json.Marshal(t.Settings())
-	if err != nil {
-		return fmt.Errorf("failed to marshal settings: %w", err)
-	}
-
+// UpdateProfile writes the organization profile columns. It never touches
+// settings, so a profile save cannot revert a concurrent settings change.
+func (r *TenantRepository) UpdateProfile(ctx context.Context, t *tenant.Tenant) error {
 	query := `
 		UPDATE tenants
-		SET name = $2, slug = $3, description = $4, logo_url = $5, settings = $6, updated_at = $7
+		SET name = $2, slug = $3, description = $4, logo_url = $5, updated_at = $6
 		WHERE id = $1
 	`
 
@@ -102,7 +98,6 @@ func (r *TenantRepository) Update(ctx context.Context, t *tenant.Tenant) error {
 		t.Slug(),
 		t.Description(),
 		t.LogoURL(),
-		settings,
 		t.UpdatedAt(),
 	)
 	if err != nil {
@@ -118,6 +113,67 @@ func (r *TenantRepository) Update(ctx context.Context, t *tenant.Tenant) error {
 	}
 
 	return nil
+}
+
+// UpdateSettingsSection replaces one top-level key of tenants.settings with a
+// compare-and-swap on that key alone (jsonb_set), so writers of different
+// sections never overwrite each other and a writer whose snapshot is stale
+// loses instead of reverting the newer value. jsonb equality is semantic
+// (key order and number formatting do not matter).
+func (r *TenantRepository) UpdateSettingsSection(
+	ctx context.Context, id shared.ID, section string, expected any, expectedPresent bool, next any,
+) error {
+	if !tenant.IsSettingsSection(section) {
+		return fmt.Errorf("%w: unknown settings section %q", shared.ErrValidation, section)
+	}
+	nextJSON, err := json.Marshal(next)
+	if err != nil {
+		return fmt.Errorf("failed to marshal settings section: %w", err)
+	}
+	var expectedJSON any // SQL NULL = the key must be absent
+	if expectedPresent {
+		b, err := json.Marshal(expected)
+		if err != nil {
+			return fmt.Errorf("failed to marshal settings section: %w", err)
+		}
+		expectedJSON = string(b)
+	}
+
+	const query = `
+		UPDATE tenants
+		SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), ARRAY[$2::text], $4::jsonb, true),
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND (COALESCE(settings, '{}'::jsonb) -> $2::text) IS NOT DISTINCT FROM $3::jsonb
+	`
+	result, err := r.db.ExecContext(ctx, query, id.String(), section, expectedJSON, string(nextJSON))
+	if err != nil {
+		return fmt.Errorf("failed to update settings section %s: %w", section, err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rows == 1 {
+		return nil
+	}
+
+	// Nothing updated: the tenant is gone, or the section changed.
+	var current []byte
+	err = r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(settings, '{}'::jsonb) -> $2::text FROM tenants WHERE id = $1`,
+		id.String(), section).Scan(&current)
+	if errors.Is(err, sql.ErrNoRows) {
+		return shared.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read settings section %s: %w", section, err)
+	}
+	var cur any
+	if len(current) > 0 {
+		_ = json.Unmarshal(current, &cur)
+	}
+	return &tenant.SettingsConflictError{Section: section, ETag: tenant.SectionETag(cur), Current: cur}
 }
 
 // Delete removes a tenant.
