@@ -9,7 +9,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -24,11 +24,11 @@ func NewDashboardRepository(db *sql.DB) *DashboardRepository {
 }
 
 // Ensure DashboardRepository implements app.DashboardStatsRepository
-var _ app.DashboardStatsRepository = (*DashboardRepository)(nil)
+var _ module.DashboardStatsRepository = (*DashboardRepository)(nil)
 
 // GetFindingStats returns finding statistics for a tenant.
-func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shared.ID) (app.FindingStatsData, error) {
-	stats := app.FindingStatsData{
+func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shared.ID) (module.FindingStatsData, error) {
+	stats := module.FindingStatsData{
 		BySeverity: make(map[string]int),
 		ByStatus:   make(map[string]int),
 	}
@@ -90,8 +90,8 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 }
 
 // GetRepositoryStats returns repository statistics for a tenant.
-func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID shared.ID) (app.RepositoryStatsData, error) {
-	stats := app.RepositoryStatsData{}
+func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID shared.ID) (module.RepositoryStatsData, error) {
+	stats := module.RepositoryStatsData{}
 
 	// Get total count of repositories (assets with type 'repository')
 	err := r.db.QueryRowContext(ctx,
@@ -118,7 +118,7 @@ func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID s
 
 // GetRecentActivity returns recent activity for a tenant. A non-nil scope
 // keeps only findings whose asset is in that Layer 2 data scope.
-func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]app.ActivityItem, error) {
+func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]module.ActivityItem, error) {
 	// For now, get recent findings as activity
 	// In future, this could be from an audit log table
 	scopeCond, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
@@ -141,9 +141,9 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 	}
 	defer rows.Close()
 
-	var activity []app.ActivityItem
+	var activity []module.ActivityItem
 	for rows.Next() {
-		var item app.ActivityItem
+		var item module.ActivityItem
 		if err := rows.Scan(&item.Type, &item.RefID, &item.Title, &item.Description, &item.Timestamp); err != nil {
 			return nil, err
 		}
@@ -158,7 +158,7 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 
 // GetAllStats returns all dashboard statistics for a tenant in 2 optimized queries
 // instead of 10+ separate queries. This is used by the main dashboard endpoint.
-func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*app.DashboardAllStats, error) {
+func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*module.DashboardAllStats, error) {
 	tid := tenantID.String()
 	// A non-nil scope counts only the viewer's in-scope assets and their
 	// findings ($2, $3).
@@ -167,12 +167,12 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 	assetIn, _ := dataScopeCond("id", scope, []any{tid})
 	fIn, _ := dataScopeCond("f.asset_id", scope, []any{tid})
 	aIn, _ := dataScopeCond("a.id", scope, []any{tid})
-	result := &app.DashboardAllStats{
-		Assets: app.AssetStatsData{
+	result := &module.DashboardAllStats{
+		Assets: module.AssetStatsData{
 			ByType:   make(map[string]int),
 			ByStatus: make(map[string]int),
 		},
-		Findings: app.FindingStatsData{
+		Findings: module.FindingStatsData{
 			BySeverity: make(map[string]int),
 			ByStatus:   make(map[string]int),
 		},
@@ -275,7 +275,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		return nil, err
 	}
 
-	result.Activity = make([]app.ActivityItem, 0)
+	result.Activity = make([]module.ActivityItem, 0)
 
 	// Query 2: Recent activity (separate query - different result shape)
 	activityRows, err := r.db.QueryContext(ctx,
@@ -296,7 +296,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 	defer activityRows.Close()
 
 	for activityRows.Next() {
-		var item app.ActivityItem
+		var item module.ActivityItem
 		if err := activityRows.Scan(&item.Type, &item.RefID, &item.Title, &item.Description, &item.Timestamp); err != nil {
 			return result, nil
 		}
@@ -312,7 +312,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 
 // GetFindingTrend returns monthly finding counts by severity for a tenant.
 // Uses a single query with date_trunc and FILTER to pivot severity counts.
-func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, months int) ([]app.FindingTrendPoint, error) {
+func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, months int) ([]module.FindingTrendPoint, error) {
 	if months <= 0 || months > 24 {
 		months = 6
 	}
@@ -364,9 +364,9 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 	}
 	defer rows.Close()
 
-	trend := make([]app.FindingTrendPoint, 0, months)
+	trend := make([]module.FindingTrendPoint, 0, months)
 	for rows.Next() {
-		var p app.FindingTrendPoint
+		var p module.FindingTrendPoint
 		if err := rows.Scan(&p.Date, &p.Critical, &p.High, &p.Medium, &p.Low, &p.Info); err != nil {
 			return nil, err
 		}
@@ -425,7 +425,7 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 
 // GetRiskVelocity returns new vs resolved findings per week for trending analysis.
 // Positive velocity = losing ground, negative = improving.
-func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]app.RiskVelocityPoint, error) {
+func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]module.RiskVelocityPoint, error) {
 	if weeks < 1 {
 		weeks = 12
 	}
@@ -452,9 +452,9 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 	}
 	defer rows.Close()
 
-	var points []app.RiskVelocityPoint
+	var points []module.RiskVelocityPoint
 	for rows.Next() {
-		var p app.RiskVelocityPoint
+		var p module.RiskVelocityPoint
 		if err := rows.Scan(&p.Week, &p.NewCount, &p.ResolvedCount); err != nil {
 			return nil, fmt.Errorf("failed to scan velocity: %w", err)
 		}
@@ -474,8 +474,8 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 // ============================================================
 
 // GetFilteredAssetStats returns asset statistics filtered by tenant IDs.
-func (r *DashboardRepository) GetFilteredAssetStats(ctx context.Context, tenantIDs []string) (app.AssetStatsData, error) {
-	stats := app.AssetStatsData{
+func (r *DashboardRepository) GetFilteredAssetStats(ctx context.Context, tenantIDs []string) (module.AssetStatsData, error) {
+	stats := module.AssetStatsData{
 		ByType:   make(map[string]int),
 		ByStatus: make(map[string]int),
 	}
@@ -558,8 +558,8 @@ func (r *DashboardRepository) GetFilteredAssetStats(ctx context.Context, tenantI
 }
 
 // GetFilteredFindingStats returns finding statistics filtered by tenant IDs.
-func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenantIDs []string) (app.FindingStatsData, error) {
-	stats := app.FindingStatsData{
+func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenantIDs []string) (module.FindingStatsData, error) {
+	stats := module.FindingStatsData{
 		BySeverity: make(map[string]int),
 		ByStatus:   make(map[string]int),
 	}
@@ -646,8 +646,8 @@ func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenan
 }
 
 // GetFilteredRepositoryStats returns repository statistics filtered by tenant IDs.
-func (r *DashboardRepository) GetFilteredRepositoryStats(ctx context.Context, tenantIDs []string) (app.RepositoryStatsData, error) {
-	stats := app.RepositoryStatsData{}
+func (r *DashboardRepository) GetFilteredRepositoryStats(ctx context.Context, tenantIDs []string) (module.RepositoryStatsData, error) {
+	stats := module.RepositoryStatsData{}
 
 	if len(tenantIDs) == 0 {
 		return stats, nil
@@ -684,9 +684,9 @@ func (r *DashboardRepository) GetFilteredRepositoryStats(ctx context.Context, te
 // GetFilteredRecentActivity returns recent activity across tenants. Findings
 // of tenantIDs are all visible; findings of restrictedTenantIDs only when the
 // asset is in userID's Layer 2 data scope for that tenant.
-func (r *DashboardRepository) GetFilteredRecentActivity(ctx context.Context, tenantIDs, restrictedTenantIDs []string, userID string, limit int) ([]app.ActivityItem, error) {
+func (r *DashboardRepository) GetFilteredRecentActivity(ctx context.Context, tenantIDs, restrictedTenantIDs []string, userID string, limit int) ([]module.ActivityItem, error) {
 	if len(tenantIDs) == 0 && len(restrictedTenantIDs) == 0 {
-		return []app.ActivityItem{}, nil
+		return []module.ActivityItem{}, nil
 	}
 	if userID == "" {
 		userID = shared.ID{}.String() // matches no scope row
@@ -711,9 +711,9 @@ func (r *DashboardRepository) GetFilteredRecentActivity(ctx context.Context, ten
 	}
 	defer rows.Close()
 
-	var activity []app.ActivityItem
+	var activity []module.ActivityItem
 	for rows.Next() {
-		var item app.ActivityItem
+		var item module.ActivityItem
 		var timestamp time.Time
 		if err := rows.Scan(&item.Type, &item.Title, &item.Description, &timestamp); err != nil {
 			return nil, err
@@ -783,7 +783,7 @@ func joinStrings(strs []string, sep string) string {
 }
 
 // GetRiskTrend returns risk snapshot time-series for a tenant.
-func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]app.RiskTrendPoint, error) {
+func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]module.RiskTrendPoint, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
@@ -800,9 +800,9 @@ func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.
 	}
 	defer func() { _ = rows.Close() }()
 
-	var points []app.RiskTrendPoint
+	var points []module.RiskTrendPoint
 	for rows.Next() {
-		var p app.RiskTrendPoint
+		var p module.RiskTrendPoint
 		var d time.Time
 		if err := rows.Scan(&d, &p.RiskScoreAvg, &p.FindingsOpen, &p.SLACompliancePct,
 			&p.P0Open, &p.P1Open, &p.P2Open, &p.P3Open); err != nil {
@@ -816,7 +816,7 @@ func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.
 
 // GetDataQualityScorecard computes data quality metrics for a tenant.
 // Uses a single CTE query for efficiency.
-func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*app.DataQualityScorecard, error) {
+func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*module.DataQualityScorecard, error) {
 	query := `
 		WITH asset_stats AS (
 			SELECT
@@ -858,7 +858,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 		FROM asset_stats a, finding_stats f, dedup_stats d
 	`
 
-	var sc app.DataQualityScorecard
+	var sc module.DataQualityScorecard
 	var assetTotal, findingTotal int
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
 		&sc.AssetOwnershipPct,
@@ -880,7 +880,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 }
 
 // GetExecutiveSummary returns executive-level metrics for a time period using CTEs.
-func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*app.ExecutiveSummary, error) {
+func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*module.ExecutiveSummary, error) {
 	if days <= 0 || days > 365 {
 		days = 30
 	}
@@ -975,7 +975,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		LEFT JOIN prev_risk pr ON TRUE
 	`
 
-	summary := &app.ExecutiveSummary{
+	summary := &module.ExecutiveSummary{
 		Period: fmt.Sprintf("%d days", days),
 	}
 
@@ -1027,9 +1027,9 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	}
 	defer func() { _ = rows.Close() }()
 
-	topRisks := make([]app.TopRisk, 0, 5)
+	topRisks := make([]module.TopRisk, 0, 5)
 	for rows.Next() {
-		var tr app.TopRisk
+		var tr module.TopRisk
 		if err := rows.Scan(&tr.FindingID, &tr.FindingTitle, &tr.Severity, &tr.PriorityClass,
 			&tr.AssetID, &tr.AssetName, &tr.EPSSScore, &tr.IsInKEV); err != nil {
 			return nil, fmt.Errorf("scan top risk: %w", err)
@@ -1045,7 +1045,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 }
 
 // GetMTTRAnalytics returns MTTR breakdown by severity, priority class, and overall.
-func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*app.MTTRAnalytics, error) {
+func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*module.MTTRAnalytics, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
@@ -1100,7 +1100,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 		return nil, fmt.Errorf("mttr analytics: %w", err)
 	}
 
-	result := &app.MTTRAnalytics{
+	result := &module.MTTRAnalytics{
 		BySeverity: map[string]float64{
 			"critical": mttrCritical,
 			"high":     mttrHigh,
@@ -1121,7 +1121,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 }
 
 // GetProcessMetrics computes process efficiency metrics for a tenant.
-func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*app.ProcessMetrics, error) {
+func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*module.ProcessMetrics, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
@@ -1156,7 +1156,7 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 			as2.avg_assign_hours
 		FROM approval_stats a, stale_stats s, assign_stats as2
 	`
-	var m app.ProcessMetrics
+	var m module.ProcessMetrics
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
 		&m.ApprovalAvgHours, &m.ApprovalCount,
 		&m.RetestAvgHours, &m.RetestCount,

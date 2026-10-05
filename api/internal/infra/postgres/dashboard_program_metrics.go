@@ -15,7 +15,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -25,11 +25,11 @@ const programMetricsMaxDays = 365
 
 // GetProgramMetrics computes the CTEM program metrics for a tenant over the
 // last `days` days.
-func (r *DashboardRepository) GetProgramMetrics(ctx context.Context, tenantID shared.ID, days int) (*app.ProgramMetrics, error) {
+func (r *DashboardRepository) GetProgramMetrics(ctx context.Context, tenantID shared.ID, days int) (*module.ProgramMetrics, error) {
 	if days <= 0 || days > programMetricsMaxDays {
 		days = 90
 	}
-	m := &app.ProgramMetrics{PeriodDays: days}
+	m := &module.ProgramMetrics{PeriodDays: days}
 
 	var err error
 	if m.MTTDInternetFacing, err = r.mttdInternetFacing(ctx, tenantID, days); err != nil {
@@ -92,10 +92,10 @@ const mttdInternetFacingQuery = `
 	FROM timed
 `
 
-func (r *DashboardRepository) mttdInternetFacing(ctx context.Context, tenantID shared.ID, days int) (app.DurationMetric, error) {
+func (r *DashboardRepository) mttdInternetFacing(ctx context.Context, tenantID shared.ID, days int) (module.DurationMetric, error) {
 	var (
 		mean, median sql.NullFloat64
-		out          app.DurationMetric
+		out          module.DurationMetric
 	)
 	if err := r.db.QueryRowContext(ctx, mttdInternetFacingQuery, tenantID.String(), days).
 		Scan(&mean, &median, &out.SampleSize, &out.Unmeasured); err != nil {
@@ -135,10 +135,10 @@ const mttrValidatedQuery = `
 	FROM timed
 `
 
-func (r *DashboardRepository) mttrValidated(ctx context.Context, tenantID shared.ID, days int) (app.DurationMetric, error) {
+func (r *DashboardRepository) mttrValidated(ctx context.Context, tenantID shared.ID, days int) (module.DurationMetric, error) {
 	var (
 		mean, median sql.NullFloat64
-		out          app.DurationMetric
+		out          module.DurationMetric
 	)
 	if err := r.db.QueryRowContext(ctx, mttrValidatedQuery, tenantID.String(), days).
 		Scan(&mean, &median, &out.SampleSize); err != nil {
@@ -213,8 +213,8 @@ const ownerAcceptanceQuery = `
 	FROM judged
 `
 
-func (r *DashboardRepository) ownerAcceptance(ctx context.Context, tenantID shared.ID, days int) (app.OwnerAcceptanceMetric, error) {
-	var out app.OwnerAcceptanceMetric
+func (r *DashboardRepository) ownerAcceptance(ctx context.Context, tenantID shared.ID, days int) (module.OwnerAcceptanceMetric, error) {
+	var out module.OwnerAcceptanceMetric
 	if err := r.db.QueryRowContext(ctx, ownerAcceptanceQuery, tenantID.String(), days).
 		Scan(&out.Accepted, &out.Missed, &out.Pending, &out.Excluded); err != nil {
 		return out, fmt.Errorf("program metrics owner acceptance: %w", err)
