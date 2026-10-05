@@ -2612,6 +2612,15 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_openctemio_openctem_api_internal_app_cirun.Settings:
+    properties:
+      require_oidc:
+        description: |-
+          RequireOIDC refuses CI results sent with a sensor key: a CI job must
+          prove its identity with its provider's OIDC token. On for every
+          organization created after migration 001112; existing ones opt in.
+        type: boolean
+    type: object
   github_com_openctemio_openctem_api_internal_app_cirun.Verdict:
     properties:
       baseline:
@@ -7399,6 +7408,14 @@ definitions:
         type: string
       ransomware_use:
         type: string
+    type: object
+  internal_infra_http_handler.CISettingsRequest:
+    properties:
+      require_oidc:
+        description: |-
+          RequireOIDC refuses CI results sent with a sensor key (a CI job must
+          use its provider's OIDC identity).
+        type: boolean
     type: object
   internal_infra_http_handler.CITemplateDrift:
     properties:
@@ -20623,6 +20640,51 @@ paths:
       security:
       - CIRunToken: []
       summary: Upload a CI run's results
+      tags:
+      - CI
+  /ci/settings:
+    get:
+      description: Whether the organization requires the CI job's OIDC identity for
+        CI results (a CI sensor's key is then refused). On for organizations created
+        since this setting exists.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Settings'
+      security:
+      - BearerAuth: []
+      summary: CI settings
+      tags:
+      - CI
+    put:
+      consumes:
+      - application/json
+      description: Turning require_oidc off lets CI sensors authenticate with a sensor
+        key again (audited at high severity).
+      parameters:
+      - description: CI settings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CISettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Settings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change the CI settings
       tags:
       - CI
   /ci/trust-configs:

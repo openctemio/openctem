@@ -198,6 +198,25 @@ func (r *CIRunRepository) PurgeExpiredJTIs(ctx context.Context, before time.Time
 	return res.RowsAffected()
 }
 
+// CIRequireOIDC reads the tenant's "OIDC required for CI" setting.
+func (r *CIRunRepository) CIRequireOIDC(ctx context.Context, tenantID shared.ID) (bool, error) {
+	var v bool
+	err := r.db.QueryRowContext(ctx, `SELECT ci_require_oidc FROM tenants WHERE id = $1`, tenantID.String()).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, shared.ErrNotFound
+	}
+	return v, err
+}
+
+// SetCIRequireOIDC writes the tenant's "OIDC required for CI" setting.
+func (r *CIRunRepository) SetCIRequireOIDC(ctx context.Context, tenantID shared.ID, require bool) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE tenants SET ci_require_oidc = $2 WHERE id = $1`, tenantID.String(), require)
+	if err != nil {
+		return err
+	}
+	return requireOneRow(res, shared.ErrNotFound)
+}
+
 // ----------------------------------------------------------------- runs ---
 
 const ciRunColumns = `id, tenant_id, trust_config_id, repository_asset_id, provider, issuer, repository, ref, branch,

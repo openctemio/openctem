@@ -461,6 +461,7 @@
 "PUT /api/v1/business-services/{id}": {"permissions":["ctem:business_services:write"]},
 "PUT /api/v1/business-units/{id}": {"permissions":["assets:write"]},
 "PUT /api/v1/ci/coverage/expectations/{id}": {"permissions":["scans:ci:write"]},
+"PUT /api/v1/ci/settings": {"permissions":["scans:ci:write"]},
 "PUT /api/v1/ci/trust-configs/{id}": {"permissions":["scans:ci:write"]},
 "PUT /api/v1/compensating-controls/{id}": {"permissions":["ctem:compensating_controls:write"]},
 "PUT /api/v1/components/{id}": {"permissions":["assets:components:write"]},
