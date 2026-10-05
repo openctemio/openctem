@@ -59,14 +59,14 @@ key; the sensor's start request fills in the key and turns it `pending`.
 | Piece | Where |
 |---|---|
 | Model, profiles, admission, command tier, narrowing comparison, effective grant | `pkg/domain/sensor/grant.go` (tier: the stage catalog's lowest tier for the tool; custom templates and callbacks raise to T2; an unknown tool is T2) |
-| Repository | `internal/infra/postgres/sensor_grant_repository.go` (`sensor_grants` keyed on `(tenant_id, sensor_id)`, and the trust level on `sensors.trust_level`; migration 001083: legacy-broad backfill, insert trigger for the narrow default) |
+| Repository | `internal/infra/postgres/sensor_grant_repository.go` (`sensor_grants` keyed on `(tenant_id, sensor_id)`, and the trust level on `sensors.trust_level`; migration 001086: legacy-broad backfill, insert trigger for the narrow default) |
 | Service (narrow/widen, compare-and-swap, audit, notifications, pairing hook) | `internal/app/sensorgrant/service.go` |
-| Claim gate | `internal/app/command/local_policy.go` `dispatchGate.refusal` (poll, claim-N, claim by id). A refused claim by id answers like a lost claim (v2 `command-claimed`, v1 `409`) so deployed sensors drop the command; it is audited with the dimension. Claim by id also checks the command's required capabilities now (`ClaimForSensor`). |
-| Push ingest | `internal/app/ingest/quarantine.go` `admitPush` (grant first, then role and tenant policy): v1 `422 PUSH_INGEST_NOT_GRANTED` (not 403: sensors read 403 as a lost key), v2 segment item error `push_ingest_not_granted` |
+| Claim gate | `internal/app/command/local_policy.go` `dispatchGate.refusal` (poll, claim-N, claim by id). A refused claim by id answers like a lost claim (`command-claimed`) so deployed sensors drop the command; it is audited with the dimension. Claim by id also checks the command's required capabilities now (`ClaimForSensor`). |
+| Push ingest | `internal/app/ingest/quarantine.go` `admitPush` (grant first, then role and tenant policy): the segment's items are rejected with item error `push_ingest_not_granted` |
 | Remote actions | the heartbeat doorbell rings a gated action (`rotate_key`) only when the grant lists it (`internal/app/sensor/doorbell.go`) |
 | Management API | `GET/PUT /api/v1/sensors/{id}/grant` (trust level included), `GET /api/v1/sensors/grant-profiles`, `GET /api/v1/sensors/grant-summaries` (list flags) |
 
-Every sensor has exactly one grant: sensors that existed before 001083 got
+Every sensor has exactly one grant: sensors that existed before 001086 got
 `legacy-broad` at trust level `trusted`; a sensor inserted later gets
 `internal-network-scanner` at `new` from a trigger, and the pairing approval
 replaces it with the chosen profile in its transaction. A missing or

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	accesscontrolsvc "github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/group"
@@ -228,9 +228,9 @@ func (m *mockGroupRepoForBulk) ListGroupIDsByUser(_ context.Context, _, _ shared
 // Helpers
 // =============================================================================
 
-func newGroupServiceForBulk(groupRepo group.Repository, acRepo accesscontrol.Repository) *app.GroupService {
+func newGroupServiceForBulk(groupRepo group.Repository, acRepo accesscontrol.Repository) *accesscontrolsvc.GroupService {
 	log := logger.New(logger.Config{Level: "error"})
-	return app.NewGroupService(groupRepo, log, app.WithAccessControlRepository(acRepo))
+	return accesscontrolsvc.NewGroupService(groupRepo, log, accesscontrolsvc.WithAccessControlRepository(acRepo))
 }
 
 func makeTestGroup(tenantID shared.ID) *group.Group {
@@ -260,7 +260,7 @@ func TestBulkAssignAssets_Success(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      assetIDs,
 		OwnershipType: "primary",
@@ -310,7 +310,7 @@ func TestBulkAssignAssets_AllOwnershipTypes(t *testing.T) {
 			acRepo := &mockACRepoForBulk{}
 			svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-			input := app.BulkAssignAssetsInput{
+			input := accesscontrolsvc.BulkAssignAssetsInput{
 				GroupID:       g.ID().String(),
 				AssetIDs:      generateAssetIDs(2),
 				OwnershipType: ot,
@@ -332,7 +332,7 @@ func TestBulkAssignAssets_InvalidGroupID(t *testing.T) {
 	groupRepo := newMockGroupRepoForBulk()
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       "not-a-uuid",
 		AssetIDs:      generateAssetIDs(3),
 		OwnershipType: "primary",
@@ -356,7 +356,7 @@ func TestBulkAssignAssets_InvalidOwnershipType(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(3),
 		OwnershipType: "invalid_type",
@@ -376,7 +376,7 @@ func TestBulkAssignAssets_GroupNotFound(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       shared.NewID().String(),
 		AssetIDs:      generateAssetIDs(3),
 		OwnershipType: "primary",
@@ -404,7 +404,7 @@ func TestBulkAssignAssets_MixedValidInvalidAssetIDs(t *testing.T) {
 	invalidIDs := []string{"not-a-uuid", "also-invalid", "bad"}
 	allIDs := append(validIDs, invalidIDs...)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      allIDs,
 		OwnershipType: "primary",
@@ -445,7 +445,7 @@ func TestBulkAssignAssets_RepoError(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(5),
 		OwnershipType: "primary",
@@ -468,7 +468,7 @@ func TestBulkAssignAssets_RefreshErrorNonBlocking(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(3),
 		OwnershipType: "primary",
@@ -496,9 +496,9 @@ func TestBulkAssignAssets_AccessControlRepoNotConfigured(t *testing.T) {
 	groupRepo.addGroup(g)
 	// Create service WITHOUT access control repo
 	log := logger.New(logger.Config{Level: "error"})
-	svc := app.NewGroupService(groupRepo, log) // no WithAccessControlRepository
+	svc := accesscontrolsvc.NewGroupService(groupRepo, log) // no WithAccessControlRepository
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(3),
 		OwnershipType: "primary",
@@ -520,7 +520,7 @@ func TestBulkAssignAssets_LargeDataset(t *testing.T) {
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
 	// Test with 100 assets (reasonable for unit test)
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(100),
 		OwnershipType: "secondary",
@@ -550,7 +550,7 @@ func TestBulkAssignAssets_PartialBulkInsert(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(5),
 		OwnershipType: "primary",
@@ -581,7 +581,7 @@ func TestAssignAsset_UsesIncrementalRefresh(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.AssignAssetInput{
+	input := accesscontrolsvc.AssignAssetInput{
 		GroupID:       g.ID().String(),
 		AssetID:       shared.NewID().String(),
 		OwnershipType: "primary",
@@ -609,7 +609,7 @@ func TestAssignAsset_RefreshErrorNonBlocking(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.AssignAssetInput{
+	input := accesscontrolsvc.AssignAssetInput{
 		GroupID:       g.ID().String(),
 		AssetID:       shared.NewID().String(),
 		OwnershipType: "primary",
@@ -635,7 +635,7 @@ func TestUnassignAsset_UsesIncrementalRefresh(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.UnassignAssetInput{
+	input := accesscontrolsvc.UnassignAssetInput{
 		GroupID: g.ID().String(),
 		AssetID: shared.NewID().String(),
 	}
@@ -662,7 +662,7 @@ func TestUnassignAsset_RefreshErrorNonBlocking(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.UnassignAssetInput{
+	input := accesscontrolsvc.UnassignAssetInput{
 		GroupID: g.ID().String(),
 		AssetID: shared.NewID().String(),
 	}
@@ -688,7 +688,7 @@ func TestAddMember_UsesIncrementalRefresh(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.AddGroupMemberInput{
+	input := accesscontrolsvc.AddGroupMemberInput{
 		GroupID: g.ID().String(),
 		UserID:  userID,
 		Role:    "member",
@@ -717,7 +717,7 @@ func TestAddMember_RefreshErrorNonBlocking(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.AddGroupMemberInput{
+	input := accesscontrolsvc.AddGroupMemberInput{
 		GroupID: g.ID().String(),
 		UserID:  shared.NewID(),
 		Role:    "member",

@@ -13,8 +13,8 @@ name: API CI
 #                   other DB-backed tests fail on the PR, not first in the merge
 #                   queue (owner decision D-30). PR runs are cancelled by a newer
 #                   push to the same PR (concurrency below).
-#   merge_group,    the same, plus `Protocol v1 Compatibility` (+ the release
-#   push            binaries), and on main the Docker build.
+#   merge_group,    the same, plus `Release Binaries`, and on main the Docker
+#   push            build.
 # `API CI OK` needs the DB-backed tests on every event, so nothing reaches
 # develop/main without them, and they ran on the PR already. `Tests
 # (least-privilege DB role)` (D-6) runs on every event too.
@@ -404,51 +404,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash ../.github/scripts/check-db-test-skips.sh lp-test.json
 
-  # Merge queue and pushes only. Also builds and uploads the release-style static binaries (the
-  # former separate `Build` job).
-  compat-v1:
-    name: Protocol v1 Compatibility
+  # Merge queue and pushes only: the release-style static binaries (the former
+  # separate `Build` job).
+  binaries:
+    name: Release Binaries
     needs: changes
     if: needs.changes.outputs.api == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: openctem
-          # Job-scoped throwaway database: no password at all (trust auth on
-          # the service network), so no credential literal lives in the repo.
-          POSTGRES_HOST_AUTH_METHOD: trust
-          POSTGRES_DB: app_compat
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgres://openctem@localhost:5432/app_compat?sslmode=disable
-      APP_ENV: development
-      DB_HOST: localhost
-      DB_PORT: 5432
-      DB_USER: openctem
-      DB_NAME: app_compat
-      DB_SSLMODE: disable
-      REDIS_HOST: localhost
-      REDIS_PORT: 6379
-      SERVER_PORT: 8080
-      AUTH_PROVIDER: local
-      AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -458,42 +420,7 @@ jobs:
         with:
           go-version-file: api/go.mod
           cache: true
-          cache-dependency-path: |
-            api/go.sum
-            api/tests/compat/v1/go.sum
-
-      - name: Generate secrets
-        run: |
-          echo "AUTH_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-          echo "APP_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-
-      - name: Install golang-migrate
-        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
-
-      - name: Apply migrations
-        run: migrate -path migrations -database "$DATABASE_URL" up
-
-      - name: Build API and bootstrap-admin
-        run: go build -o bin/ ./cmd/server ./cmd/bootstrap-admin
-
-      - name: Start API
-        run: |
-          nohup ./bin/server > server.log 2>&1 &
-          for _ in $(seq 1 60); do
-            curl -sf http://127.0.0.1:8080/health >/dev/null && exit 0
-            sleep 1
-          done
-          echo "API did not become healthy"; cat server.log; exit 1
-
-      - name: Run the last released SDK against this build
-        run: bash scripts/compat-v1.sh
-        env:
-          COMPAT_API_URL: http://127.0.0.1:8080
-          BOOTSTRAP_ADMIN_BIN: ./bin/bootstrap-admin
-
-      - name: API log on failure
-        if: failure()
-        run: tail -200 server.log
+          cache-dependency-path: api/go.sum
 
       - name: Build release binaries (linux/amd64, static)
         run: |
@@ -540,7 +467,7 @@ jobs:
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, static, test, least-privilege, compat-v1, docker]
+    needs: [changes, static, test, least-privilege, binaries, docker]
     runs-on: ubuntu-latest
     steps:
       - name: All API jobs passed or were skipped; the event's tier actually ran
@@ -558,7 +485,7 @@ jobs:
           # the tier for this event must have RUN and passed, so a mistyped
           # condition cannot wave a queued PR through without its tests.
           if [ "$API" = true ]; then
-            if [ "$EVENT" = pull_request ]; then required="changes static test least-privilege"; else required="changes static test least-privilege compat-v1"; fi
+            if [ "$EVENT" = pull_request ]; then required="changes static test least-privilege"; else required="changes static test least-privilege binaries"; fi
             for j in $required; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
               if [ "$r" != success ]; then echo "::error::$j must run and pass for $EVENT, got: $r"; exit 1; fi
