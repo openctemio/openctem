@@ -19,6 +19,10 @@ import type {
   MemberWithUser,
   CreateTenantUserInput,
   CreatedTenantUser,
+  MemberStatusFilter,
+  MemberAccessReport,
+  OffboardMemberInput,
+  OffboardResult,
 } from '../types/member.types'
 
 // ============================================
@@ -34,6 +38,35 @@ export interface UseMembersOptions {
   limit?: number
   /** Pagination offset */
   offset?: number
+  /**
+   * Membership status to list. Defaults to `active`: every picker (assignee,
+   * group member, approver, owner) must never offer a disabled member or a
+   * person who left. The Members page passes `all`.
+   */
+  status?: MemberStatusFilter
+}
+
+/** The member list filter every picker uses (RFC-050: no deactivated people). */
+export const PICKER_MEMBER_STATUS: MemberStatusFilter = 'active'
+
+function membersQuery(options?: UseMembersOptions): URLSearchParams {
+  const params = new URLSearchParams()
+  const includes = ['user']
+  if (options?.includeRoles) {
+    includes.push('roles')
+  }
+  params.set('include', includes.join(','))
+  if (options?.search) {
+    params.set('search', options.search)
+  }
+  if (options?.limit && options.limit > 0) {
+    params.set('limit', String(options.limit))
+  }
+  if (options?.offset && options.offset > 0) {
+    params.set('offset', String(options.offset))
+  }
+  params.set('status', options?.status ?? PICKER_MEMBER_STATUS)
+  return params
 }
 
 /**
@@ -54,26 +87,7 @@ export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMemb
   // Only fetch if user has permission
   const shouldFetch = tenantIdOrSlug && canReadMembers
 
-  // Build query parameters
-  const params = new URLSearchParams()
-
-  // Include parameter
-  const includes = ['user']
-  if (options?.includeRoles) {
-    includes.push('roles')
-  }
-  params.set('include', includes.join(','))
-
-  // Search and pagination parameters
-  if (options?.search) {
-    params.set('search', options.search)
-  }
-  if (options?.limit && options.limit > 0) {
-    params.set('limit', String(options.limit))
-  }
-  if (options?.offset && options.offset > 0) {
-    params.set('offset', String(options.offset))
-  }
+  const params = membersQuery(options)
 
   const { data, error, isLoading, mutate } = useSWR<MemberListResponse>(
     shouldFetch ? `${tenantEndpoints.members(tenantIdOrSlug)}?${params.toString()}` : null,
@@ -173,6 +187,38 @@ export function useRemoveMember(tenantIdOrSlug: string | undefined, memberId: st
     isRemoving: isMutating,
     error,
   }
+}
+
+// ============================================
+// MEMBER LIFECYCLE (RFC-050)
+// ============================================
+
+/**
+ * What a member holds and owns. Fetched only when `memberId` is set and the
+ * caller can manage members (the API answers 403 otherwise).
+ */
+export function useMemberAccessReport(memberId: string | undefined) {
+  const { can } = usePermissions()
+  const shouldFetch = !!memberId && can(Permission.MembersManage)
+  const { data, error, isLoading, mutate } = useSWR<MemberAccessReport>(
+    shouldFetch ? tenantEndpoints.memberAccessReport(memberId) : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  )
+  return { report: data, isLoading: shouldFetch ? isLoading : false, error, mutate }
+}
+
+/** Offboard a member (mandatory reassignment; 409 reassignment_required otherwise). */
+export function offboardMember(memberId: string, input: OffboardMemberInput) {
+  return fetcherWithOptions<OffboardResult>(tenantEndpoints.offboardMember(memberId), {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+/** Erase an offboarded person's name and email (owner only). */
+export function eraseMemberPersonalData(memberId: string) {
+  return fetcherWithOptions<void>(tenantEndpoints.eraseMember(memberId), { method: 'POST' })
 }
 
 // ============================================
@@ -286,25 +332,7 @@ export function issueSetupLink(tenantIdOrSlug: string, userId: string) {
  * Get the SWR key for members list
  */
 export function getMembersKey(tenantIdOrSlug: string, options?: UseMembersOptions) {
-  const params = new URLSearchParams()
-
-  const includes = ['user']
-  if (options?.includeRoles) {
-    includes.push('roles')
-  }
-  params.set('include', includes.join(','))
-
-  if (options?.search) {
-    params.set('search', options.search)
-  }
-  if (options?.limit && options.limit > 0) {
-    params.set('limit', String(options.limit))
-  }
-  if (options?.offset && options.offset > 0) {
-    params.set('offset', String(options.offset))
-  }
-
-  return `${tenantEndpoints.members(tenantIdOrSlug)}?${params.toString()}`
+  return `${tenantEndpoints.members(tenantIdOrSlug)}?${membersQuery(options).toString()}`
 }
 
 /**

@@ -386,6 +386,22 @@ export const tenantEndpoints = {
    */
   resetMemberMfa: (memberId: string) => `/api/v1/organization/members/${memberId}/mfa`,
 
+  /**
+   * What a member holds and owns (GET, owner/admin) — member lifecycle, RFC-050
+   */
+  memberAccessReport: (memberId: string) =>
+    `/api/v1/organization/members/${memberId}/access-report`,
+
+  /**
+   * Offboard a member with mandatory reassignment (POST, owner/admin)
+   */
+  offboardMember: (memberId: string) => `/api/v1/organization/members/${memberId}/offboard`,
+
+  /**
+   * Erase an offboarded person's name and email (POST, owner only)
+   */
+  eraseMember: (memberId: string) => `/api/v1/organization/members/${memberId}/erase`,
+
   // ============================================
   // SETTINGS MANAGEMENT
   // ============================================
