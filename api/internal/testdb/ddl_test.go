@@ -31,7 +31,7 @@ func TestLockForDDL_BacksOffBeforeADeadlock(t *testing.T) {
 	defer cancel()
 
 	// The DDL transaction takes LockForDDL's advisory lock BEFORE the writer
-	// locks assets. Other test packages run in parallel and serialise their
+	// locks assets. Other test packages run in parallel and serialize their
 	// DDL on that advisory lock; if the writer held assets first, one of them
 	// could hold the advisory lock while waiting for assets, and this test's
 	// DDL would wait for the advisory lock: nobody moves until the timeout.
