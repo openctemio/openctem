@@ -108,6 +108,7 @@ type Service struct {
 	ingester  ReportIngester
 	units     BusinessUnits
 	audit     Auditor
+	alerts    AdminAlerter
 	cfg       Config
 	log       *logger.Logger
 	now       func() time.Time
@@ -125,6 +126,8 @@ type Deps struct {
 	Ingester ReportIngester
 	Units    BusinessUnits
 	Audit    Auditor
+	// Alerts tells every administrator about break-glass (nil: audit only).
+	Alerts AdminAlerter
 }
 
 // NewService creates the service.
@@ -133,7 +136,7 @@ func NewService(d Deps, cfg Config, log *logger.Logger) *Service {
 		log = logger.NewNop()
 	}
 	return &Service{repo: d.Repo, verifier: d.Verifier, assets: d.Assets, branches: d.Branches, baseline: d.Baseline,
-		ingester: d.Ingester, units: d.Units, audit: d.Audit, cfg: cfg, log: log.With("service", "cirun"), now: time.Now}
+		ingester: d.Ingester, units: d.Units, audit: d.Audit, alerts: d.Alerts, cfg: cfg, log: log.With("service", "cirun"), now: time.Now}
 }
 
 // SetClock replaces the clock (tests).
@@ -155,6 +158,12 @@ func (s *Service) logAudit(ctx context.Context, tenantID shared.ID, a Actor, ev 
 	if err := s.audit.LogEvent(ctx, auditapp.AuditContext{TenantID: tenantID.String(), ActorID: a.UserID,
 		ActorEmail: a.Email, ActorIP: a.IP, UserAgent: a.UserAgent, RequestID: a.RequestID}, ev); err != nil {
 		s.log.Warn("ci audit record not written", "action", ev.Action.String(), "error", logger.SanitizeError(err))
+	}
+}
+
+func (s *Service) alertAdmins(ctx context.Context, tenantID shared.ID, a AdminAlert) {
+	if s.alerts != nil {
+		s.alerts.AlertAdmins(ctx, tenantID, a)
 	}
 }
 

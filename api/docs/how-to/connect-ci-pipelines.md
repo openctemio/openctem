@@ -102,7 +102,10 @@ honored; a scanner that fails to run fails the job. **Warn** mode reports what
 would fail and passes.
 
 When a release cannot wait, **Break-glass** lets one commit pass for a limited
-time with a reason; it is audited, and so is each run it lets through.
+time with a reason; it is audited, and so is each run it lets through. Every
+owner and administrator is notified in-app when it is created and each time
+it is used, and so are channels subscribed to **CI Break-glass**. A burst of
+refused token exchanges raises **CI Token Refusals**.
 
 When the platform cannot be reached, `-fail-on <severity>` makes the sensor
 judge locally instead.

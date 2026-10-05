@@ -366,6 +366,16 @@ const (
 	AlertCoverageRegression AlertKind = "coverage_regression"
 	AlertGateFailing        AlertKind = "gate_failing"
 	AlertRunnerOutdated     AlertKind = "runner_outdated"
+	// AlertTokenRefusals: a burst of refused CI token exchanges in the
+	// tenant (verified tokens only; the subject is the tenant).
+	AlertTokenRefusals AlertKind = "token_refusals"
+)
+
+// A tenant whose CI token exchanges were refused TokenRefusalBurst times
+// within TokenRefusalWindow raises AlertTokenRefusals.
+const (
+	TokenRefusalBurst  = 20
+	TokenRefusalWindow = 30 * time.Minute
 )
 
 // Alert is one condition that holds now, for one subject (a pipeline, or a
