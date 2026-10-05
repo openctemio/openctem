@@ -93,19 +93,25 @@ them.
 A job that already writes a file another tool understands does not need to
 build a CTIS report. POST the file itself to
 `/api/v1/ci/runs/{run_id}/results` with the token from the OIDC exchange
-(`Authorization: Bearer <token>`); any `Content-Type` works, the format is
-read from the content. Every format the platform's importers read is
-accepted (an SBOM, OSV scanner results, a DefectDojo Generic Findings
-export, a VEX document, and the others listed in
-`docs/architecture/finding-import.md`), and a ZIP of several such files.
+(`Authorization: Bearer <token>`); the format is read from the content
+(`Content-Type: application/sarif+json` also marks a SARIF file). Every
+format the platform's importers read is accepted: SARIF 2.1.0 from any
+analyzer (CodeQL, semgrep, trivy, ...), semgrep, trivy, grype, gitleaks,
+nuclei and ZAP output, an SBOM, OSV scanner results, a DefectDojo Generic
+Findings export, a VEX document, and the others listed in
+`docs/architecture/finding-import.md`, or a ZIP of several such files.
+
+Already have SARIF? POST it with the token from the OIDC exchange:
 
 ```bash
 curl -sf -X POST "$OPENCTEM_URL/api/v1/ci/runs/$RUN_ID/results" \
-  -H "Authorization: Bearer $RUN_TOKEN" --data-binary @osv-results.json
+  -H "Authorization: Bearer $RUN_TOKEN" \
+  -H "Content-Type: application/sarif+json" --data-binary @results.sarif
 ```
 
 The same rules as for a CTIS report hold: everything is filed on the run's
-repository, and the branch, commit and pull request come from the verified
+repository (a repository the file names, such as SARIF
+`versionControlProvenance`, is ignored), and the branch, commit and pull request come from the verified
 token, never from the file. Findings the file puts on any other asset (a
 host, a domain, an image, another repository) are not ingested; the response
 counts them in `findings_dropped_out_of_scope`. A VEX document is stored on
