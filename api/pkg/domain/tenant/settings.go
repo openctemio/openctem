@@ -316,6 +316,16 @@ type SecuritySettings struct {
 	// jobs wait for a sensor whose network owner installed a policy. Off by
 	// default: sensors without a policy work as before.
 	RequireSensorLocalPolicyForPrivateTargets bool `json:"require_sensor_local_policy_for_private_targets,omitempty"`
+
+	// AllowSensorInteractsh and AllowSensorCustomTemplates are the
+	// organization's switches for out-of-band callbacks (interactsh) and
+	// custom templates in sensor jobs (research/25 D3). Off by default, for
+	// existing and new organizations: the platform then refuses scans that
+	// ask for them, strips allow_interactsh at trigger and never dispatches
+	// such a job, whatever the sensor's own policy allows. Turning one on is
+	// an owner action, audited at critical severity and alerted (D9).
+	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh,omitempty"`
+	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates,omitempty"`
 }
 
 // EmailVerificationMode controls per-tenant email verification behavior.

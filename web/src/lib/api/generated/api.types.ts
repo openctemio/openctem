@@ -23982,6 +23982,63 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scans/sensor-opt-in-impact': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Scans affected by the sensor opt-ins
+     * @description The organization's switches for out-of-band callbacks (interactsh) and custom templates in sensor jobs (both off unless an owner enabled them, research/25 D3), and the scans whose scanner_config asks for either (at most 100; truncated says more exist). While a switch is off, those scans run without interactsh or are refused (custom templates).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.OptInImpact']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/scans/stats': {
     parameters: {
       query?: never
@@ -34934,6 +34991,19 @@ export interface components {
       pending?: number
       rate_pct?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_scan.OptInImpact': {
+      opt_ins?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns']
+      scans?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan'][]
+      /** @description Truncated: more scans are affected than listed. */
+      truncated?: boolean
+    }
+    'github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan': {
+      id?: string
+      name?: string
+      status?: string
+      uses_custom_templates?: boolean
+      uses_interactsh?: boolean
+    }
     'github_com_openctemio_openctem_api_internal_app_scan.PreviewError': {
       code?: string
       message?: string
@@ -35552,6 +35622,10 @@ export interface components {
       name?: string
       target_types?: string[]
       version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns': {
+      allow_custom_templates?: boolean
+      allow_interactsh?: boolean
     }
     'github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity': {
       active_jobs?: number

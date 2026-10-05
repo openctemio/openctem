@@ -1646,6 +1646,11 @@ type SecuritySettingsResponse struct {
 	// RequireSensorLocalPolicyForPrivateTargets: jobs with private targets
 	// go only to sensors that enforce a local policy (RFC-040 §5.7).
 	RequireSensorLocalPolicyForPrivateTargets bool `json:"require_sensor_local_policy_for_private_targets"`
+	// AllowSensorInteractsh / AllowSensorCustomTemplates: the platform sends
+	// jobs with out-of-band callbacks / custom templates to sensors only when
+	// on (research/25 D3; off by default).
+	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh"`
+	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates"`
 	// CurrentIP is the caller's IP as the API sees it, the value the IP
 	// allowlist is checked against (empty outside a request context).
 	CurrentIP string `json:"current_ip,omitempty"`
@@ -1689,6 +1694,8 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			AllowedDomains:        s.Security.AllowedDomains,
 			EmailVerificationMode: string(s.Security.EmailVerificationMode),
 			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
+			AllowSensorInteractsh:                     s.Security.AllowSensorInteractsh,
+			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
 		},
 		API: APISettingsResponse{
 			APIKeyEnabled:           s.API.APIKeyEnabled,
@@ -1806,6 +1813,11 @@ type UpdateSecuritySettingsRequest struct {
 	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
 	// RequireSensorLocalPolicyForPrivateTargets: see SecuritySettingsResponse.
 	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
+	// AllowSensorInteractsh / AllowSensorCustomTemplates: see
+	// SecuritySettingsResponse. Turning one on is audited (critical) and
+	// alerted.
+	AllowSensorInteractsh      *bool `json:"allow_sensor_interactsh"`
+	AllowSensorCustomTemplates *bool `json:"allow_sensor_custom_templates"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -1839,6 +1851,8 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		AllowedDomains:        req.AllowedDomains,
 		EmailVerificationMode: req.EmailVerificationMode,
 		RequireSensorLocalPolicyForPrivateTargets: req.RequireSensorLocalPolicyForPrivateTargets,
+		AllowSensorInteractsh:                     req.AllowSensorInteractsh,
+		AllowSensorCustomTemplates:                req.AllowSensorCustomTemplates,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
 	}
