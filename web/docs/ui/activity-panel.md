@@ -44,25 +44,18 @@ visible from every tab.
 | Send                   | `⌘/Ctrl+Enter` in the comment box.                                                                                         |
 | Filter                 | All · Comments · Changes, a radio group (arrow keys move between them).                                                    |
 
-## What the best tools do
+## Patterns the panel follows
 
-Studied October 2026 from public docs and the products themselves.
-
-- **Linear.** Comments are the feed; property changes are one muted line each
-  ("Jamie changed status from Todo to In Progress · 2h"). The composer is at the
-  bottom of the issue. Reactions sit under the comment with a hover bar.
-- **GitHub issues and PRs.** A chronological timeline; long runs of events fold
-  into "N hidden items · Load more"; edited comments say "edited" with a
-  history; reactions are pills that show who reacted on hover.
-- **Jira.** "All / Comments / History / Work log" tabs over the activity; the
-  default is Comments, which is what people read.
-- **Sentry.** The issue's activity is a side feed of compact system lines with
-  comments in between; the comment box is at the top.
-- **Notion.** Comments open in a side panel with the composer at the bottom
-  and a "resolve" per thread.
-- **Slack / Discord.** The reaction model: an emoji + count pill, highlighted
-  when you reacted, a quick-reaction bar on hover, a searchable picker with
-  "frequently used" and skin tones.
+- **Comments are the feed;** a property change is one muted line
+  ("Jamie changed status from Todo to In Progress · 2h"), and long runs of
+  system events fold into "N hidden items · Load more".
+- **A filter over the activity** (All · Comments · Changes); what people read
+  most is the comments.
+- **The composer sits at the bottom of the feed;** edited comments say
+  "edited".
+- **Reactions:** an emoji + count pill, highlighted when you reacted, showing
+  who reacted on hover; a quick-reaction bar on hover and a searchable picker
+  with "frequently used" and skin tones.
 
 ## Layout of the panel
 
@@ -102,8 +95,7 @@ cross-spawn ReDoS · 3 comments
   without jargon: "Status Confirmed → In progress", "Trivy recorded this
   finding".
 - **A run of three or more consecutive events folds** into one row ("12
-  changes by System and 2 others · Show"), like GitHub's hidden items. Runs fold
-  only in the All view, never across a day or the unread divider.
+  changes by System and 2 others · Show"). Runs fold only in the All view, never across a day or the unread divider.
 
 ### Order and anchoring
 

@@ -23,9 +23,8 @@ runtime_telemetry_events  ──►  IOC Correlator  ──►  auto-reopen sour
 Rather than build a second, separate ingest endpoint (more attack surface, a new
 auth path, duplicated tenant-scoping), a SIEM forwarder authenticates as a
 **collector agent** — an agent whose capability is `collect` — and posts to the
-same endpoint. This mirrors how Elastic (Agent + Fleet) and OpenCTI (connectors)
-model external data sources, and reuses the security controls that path already
-enforces:
+same endpoint. An external data source is then just another authenticated
+collector, and it reuses the security controls that path already enforces:
 
 - tenant is taken from the agent's identity, **never** from the request body — a
   compromised forwarder cannot write into another tenant;
