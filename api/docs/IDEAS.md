@@ -131,7 +131,8 @@ existing seam.
 ### 3.2 Prioritization & Validation
 9. **Risk-score explainability API/UI** (M) — `/findings/{id}/scoring-breakdown`
    returning the factors + weights + confidence behind a P-class (the `Reason`
-   is computed but never exposed). Table-stakes vs Wiz/Tenable VPR. Builds on:
+   is computed but never exposed). Operators need to see why a finding got its
+   priority before they trust it. Builds on:
    `PriorityContext` + `ClassifyPriority`.
 10. **What-if priority simulator** (L) — "if I add control X / if this CVE goes
     KEV, what's the new priority / blast radius?" The engine is deterministic;
@@ -179,8 +180,8 @@ existing seam.
 
 ### 3.4 Shift-left agent & CI/CD
 24. **Auto-fix PRs** (M) — SCA finding with a fixed version → open a dependency-
-    bump PR; secret committed → PR with placeholder + rotation guide. The
-    differentiator vs code-secure. Builds on: SCA parsing, PR-comment machinery,
+    bump PR; secret committed → PR with placeholder + rotation guide. Closes the
+    loop from finding to fix inside the developer's workflow. Builds on: SCA parsing, PR-comment machinery,
     branch-aware lifecycle.
 25. **SBOM + license-compliance gate** (M) — Trivy SBOM → CycloneDX export; gate
     on GPL/AGPL/proprietary deps in a PR. Builds on: Trivy scanner + gate framework.
@@ -235,8 +236,8 @@ Balancing ROI, narrative completeness, and reuse of existing infra:
    high-integrity.
 2. **Remediation campaign → Jira epic** (§3, #16) ✅ *(campaigns shipped, RFC-015;
    deeper Jira-epic sync is the remaining polish)*.
-3. **Risk-score explainability** (§3, #9) — competitive table-stakes; the data
-   already exists.
+3. **Risk-score explainability** (§3, #9) — needed for operators to trust the
+   priority; the data already exists.
 4. **GitHub Issues provider** (§3, #17) — validates the ticket abstraction; large
    audience.
 5. **PDF report output** (§2.5) — unblocks compliance reporting.
