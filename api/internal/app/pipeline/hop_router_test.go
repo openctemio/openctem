@@ -396,7 +396,7 @@ func TestHopRouter_HostileOutputsBounded(t *testing.T) {
 	f.seed("subs", "acme.com", 0, nil)
 	f.settle("subs", pipelinedom.StepRunStatusCompleted)
 	for _, n := range []string{
-		"evil‮gnp.acme.com", "a\x00b.acme.com", "tab\tx.acme.com",
+		"evil\u202egnp.acme.com", "a\x00b.acme.com", "tab\tx.acme.com",
 		strings.Repeat("a", 3000) + ".acme.com", "-bad.acme.com", "fine.acme.com",
 	} {
 		f.output("subs", n, "subdomain", "", "")
