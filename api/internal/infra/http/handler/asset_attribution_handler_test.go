@@ -140,3 +140,43 @@ func TestAssetAttributionHandler_Decide(t *testing.T) {
 		t.Fatalf("out-of-scope decision: %d, saved=%v", rec.Code, out.found)
 	}
 }
+
+type fakeActiveGate struct {
+	state attribution.State
+	err   error
+	asked shared.ID
+}
+
+func (g *fakeActiveGate) ActiveCheckBlocked(_ context.Context, tenantID shared.ID, ids []string) (map[string]attribution.State, error) {
+	g.asked = tenantID
+	if g.err != nil {
+		return nil, g.err
+	}
+	out := map[string]attribution.State{}
+	if g.state != "" {
+		out[ids[0]] = g.state
+	}
+	return out, nil
+}
+
+// active_checks_allowed answers with the scans' own gate: a legacy asset
+// outside every scope target is reported as not scannable, with the reason;
+// a failed lookup reports not scannable.
+func TestAssetAttributionHandler_ActiveGate(t *testing.T) {
+	tenant := shared.NewID()
+	h := NewAssetAttributionHandler(&fakeAttrReader{view: &postgres.AttributionView{}}, fakeScopedAssets{}, logger.NewNop())
+	gate := &fakeActiveGate{state: attribution.StateUnattributed}
+	h.SetActiveGate(gate)
+	_, body := getAttribution(t, h, tenant)
+	if body.ActiveChecksAllowed || body.ActiveChecksBlockedBy != "unattributed" || !gate.asked.Equals(tenant) {
+		t.Fatalf("unattributed: %+v (asked %s)", body, gate.asked)
+	}
+	gate.state = ""
+	if _, body := getAttribution(t, h, tenant); !body.ActiveChecksAllowed || body.ActiveChecksBlockedBy != "" {
+		t.Fatalf("allowed: %+v", body)
+	}
+	gate.err = context.DeadlineExceeded
+	if _, body := getAttribution(t, h, tenant); body.ActiveChecksAllowed {
+		t.Fatalf("a failed gate lookup reported scannable: %+v", body)
+	}
+}

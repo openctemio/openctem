@@ -40,7 +40,7 @@ func refusedTargets(d *DispatchTargets) []string {
 }
 
 func TestResolveDispatchTargets_NoZones(t *testing.T) {
-	svc := &Service{scopeExclusions: &stubExclusions{values: map[string]bool{"excluded.example.com": true}}, logger: logger.NewNop()}
+	svc := &Service{scopeExclusions: &stubExclusions{values: map[string]bool{"excluded.example.com": true}}, attributionGate: &stubGate{}, logger: logger.NewNop()}
 	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{
 		TenantID: shared.NewID(),
 		Targets: []string{
@@ -89,6 +89,7 @@ func TestResolveDispatchTargets_Zones(t *testing.T) {
 	svc := &Service{
 		scopeExclusions: &stubExclusions{values: map[string]bool{"10.1.0.9": true}},
 		zones:           listZones{zones: []*scanzone.Zone{dcA, dcB, empty}},
+		attributionGate: &stubGate{},
 		logger:          logger.NewNop(),
 	}
 
@@ -201,9 +202,16 @@ func TestResolveDispatchTargets_AssetsFailClosed(t *testing.T) {
 	if _, err := (&Service{scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); err == nil {
 		t.Fatal("an asset entry without an id must refuse the dispatch")
 	}
-	// No asset entries: no attribution gate needed (a typed target).
-	if _, err := (&Service{scopeExclusions: excl, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(),
-		DispatchTargetsInput{TenantID: in.TenantID, Targets: in.Targets}); err != nil {
+	// A typed target is checked too (it may name an asset or sit under a
+	// rejected name): no gate refuses it, a gate allows it.
+	typed := DispatchTargetsInput{TenantID: in.TenantID, Targets: in.Targets}
+	if _, err := (&Service{scopeExclusions: excl, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), typed); !errors.Is(err, ErrAttributionGateUnavailable) {
+		t.Fatalf("typed target, no gate: err = %v, want ErrAttributionGateUnavailable", err)
+	}
+	if _, err := (&Service{scopeExclusions: excl, attributionGate: &stubGate{err: errors.New("db down")}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), typed); err == nil {
+		t.Fatal("typed target: a failed ownership lookup must refuse the dispatch")
+	}
+	if _, err := (&Service{scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), typed); err != nil {
 		t.Fatalf("typed target: %v", err)
 	}
 }

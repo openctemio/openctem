@@ -743,6 +743,9 @@ func newEASMSeedHandler(repos *Repositories, svc *Services, log *logger.Logger) 
 // trail (RFC-036: every human attribution decision is audited).
 func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.AssetAttributionHandler {
 	h := handler.NewAssetAttributionHandler(repos.Attribution, svc.Asset, log)
+	if svc.ActiveGate != nil {
+		h.SetActiveGate(svc.ActiveGate)
+	}
 	if svc.Audit != nil {
 		h.SetAuditService(svc.Audit)
 	}

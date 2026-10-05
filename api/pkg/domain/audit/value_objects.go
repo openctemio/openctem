@@ -262,6 +262,10 @@ const (
 	ActionSSOChangeRequested Action = "sso.change_requested"
 	ActionSSOChangeApproved  Action = "sso.change_approved"
 	ActionSSOChangeRejected  Action = "sso.change_rejected"
+	// ActionSCIMGroupMappingsUpdated: the SCIM group -> role mappings were
+	// replaced. Changes carry the before/after mapping of every group that
+	// changed; mapping a group to or from admin is owner-only.
+	ActionSCIMGroupMappingsUpdated Action = "scim.group_mappings_updated"
 
 	// Group actions
 	ActionGroupCreated Action = "group.created"
@@ -528,6 +532,7 @@ func (a Action) IsValid() bool {
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSCIMGroupMappingsUpdated,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
@@ -681,7 +686,8 @@ func (a Action) Category() string {
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
-		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected:
+		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSCIMGroupMappingsUpdated:
 		return "sso"
 	}
 	return "unknown"
@@ -739,6 +745,9 @@ const (
 	ResourceTypeVerifiedDomain      ResourceType = "verified_domain"
 	// ResourceTypeSSOChange is an SSO change waiting for an owner's approval.
 	ResourceTypeSSOChange ResourceType = "sso_change"
+	// ResourceTypeSCIMGroupMapping is the organization's SCIM group -> role
+	// mapping set (resource id: the tenant id).
+	ResourceTypeSCIMGroupMapping ResourceType = "scim_group_mapping"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
 	// of a rebaseline event is the rebaseline (archive) id.
 	ResourceTypeAuditChain     ResourceType = "audit_chain"
@@ -773,6 +782,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
+		ResourceTypeSCIMGroupMapping,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
 		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
@@ -844,6 +854,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSCIMGroupMappingsUpdated,
 		ActionUserSuspended, ActionUserDeactivated,
 		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionMemberRemoved, ActionMemberRoleChanged,
