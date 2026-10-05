@@ -21,6 +21,8 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -84,9 +86,9 @@ func newL10Harness(t *testing.T) *l10Harness {
 	credSvc.SetDataScope(enforcer)
 	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), postgres.NewFindingRepository(db), log)
 	vulnSvc.SetDataScope(enforcer)
-	groupSvc := app.NewGroupService(postgres.NewGroupRepository(db), log,
-		app.WithAccessControlRepository(postgres.NewAccessControlRepository(db)),
-		app.WithGroupDataScope(enforcer))
+	groupSvc := accesscontrol.NewGroupService(postgres.NewGroupRepository(db), log,
+		accesscontrol.WithAccessControlRepository(postgres.NewAccessControlRepository(db)),
+		accesscontrol.WithGroupDataScope(enforcer))
 
 	router := infrahttp.NewChiRouter()
 	auth := Middleware(func(next http.Handler) http.Handler {

@@ -22,6 +22,8 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -268,8 +270,8 @@ func TestCreatedOrgUserReportsEffectiveRole(t *testing.T) {
 	pg := &postgres.DB{DB: db}
 	log := logger.NewNop()
 	tenantRepo := postgres.NewTenantRepository(pg)
-	roles := app.NewRoleService(postgres.NewRoleRepository(pg), postgres.NewPermissionRepository(pg), log,
-		app.WithRoleMembershipReader(tenantRepo))
+	roles := accesscontrol.NewRoleService(postgres.NewRoleRepository(pg), postgres.NewPermissionRepository(pg), log,
+		accesscontrol.WithRoleMembershipReader(tenantRepo))
 	svc := app.NewUserProvisioningService(tenantRepo, postgres.NewUserRepository(pg), roles, nil, nil, log)
 
 	for _, tc := range []struct{ roleID, want string }{

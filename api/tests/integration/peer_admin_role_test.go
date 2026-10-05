@@ -12,6 +12,8 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -64,8 +66,8 @@ func TestPeerAdminRoleChange_OwnerOnly(t *testing.T) {
 	})
 
 	pg := &postgres.DB{DB: db}
-	svc := app.NewRoleService(postgres.NewRoleRepository(pg), postgres.NewPermissionRepository(pg), logger.NewNop(),
-		app.WithRoleMembershipReader(postgres.NewTenantRepository(pg)))
+	svc := accesscontrol.NewRoleService(postgres.NewRoleRepository(pg), postgres.NewPermissionRepository(pg), logger.NewNop(),
+		accesscontrol.WithRoleMembershipReader(postgres.NewTenantRepository(pg)))
 	const (
 		adminRole  = "00000000-0000-0000-0000-000000000002"
 		memberRole = "00000000-0000-0000-0000-000000000003"
@@ -98,22 +100,22 @@ func TestPeerAdminRoleChange_OwnerOnly(t *testing.T) {
 
 	// An administrator cannot change a peer administrator's role set.
 	forbidden("SetUserRoles peer -> [viewer]", svc.SetUserRoles(ctx,
-		app.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{viewerRole}}, admin, app.AuditContext{}))
+		accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{viewerRole}}, admin, app.AuditContext{}))
 	forbidden("RemoveRole admin from peer", svc.RemoveRole(ctx, tenantID, peer, adminRole, app.AuditContext{ActorID: admin}))
 	forbidden("AssignRole member to peer", svc.AssignRole(ctx,
-		app.AssignRoleInput{TenantID: tenantID, UserID: peer, RoleID: memberRole}, admin, app.AuditContext{}))
+		accesscontrol.AssignRoleInput{TenantID: tenantID, UserID: peer, RoleID: memberRole}, admin, app.AuditContext{}))
 	if got := rolesOf(peer); !slices.Equal(got, []string{"admin"}) {
 		t.Fatalf("peer admin's roles changed: %v", got)
 	}
 
 	// An administrator still manages members and viewers.
-	if err := svc.SetUserRoles(ctx, app.SetUserRolesInput{TenantID: tenantID, UserID: viewer, RoleIDs: []string{memberRole}},
+	if err := svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: viewer, RoleIDs: []string{memberRole}},
 		admin, app.AuditContext{}); err != nil {
 		t.Fatalf("admin re-roles a viewer: %v", err)
 	}
 
 	// The owner changes an administrator's role set.
-	if err := svc.SetUserRoles(ctx, app.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{memberRole}},
+	if err := svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: peer, RoleIDs: []string{memberRole}},
 		owner, app.AuditContext{}); err != nil {
 		t.Fatalf("owner demotes an admin: %v", err)
 	}
