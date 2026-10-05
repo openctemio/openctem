@@ -37,7 +37,7 @@ not effective).
 |---|---|---|
 | A finished **step** run could be rewritten | `StepRunRepository.Update/UpdateStatus/Complete` filtered on `id` only (`pipeline_run_repository.go:1322-1420`); a duplicate result recounted findings, a late failure flipped a completed step and failed the run, a stale copy re-queued a canceled step | P1.1 (this RFC's first PR) |
 | `POST /commands/{id}/cancel` needs only `commands:write` | `api/internal/infra/http/routes/scanning.go:50` | Decide with D12 (a scan's command is stopped through the run) |
-| Scope schedules "Run now" marks running and dispatches nothing | `api/internal/app/scope/service.go:910-934`; `ListDueSchedules` (`:853`) has no caller | Deliberately inert (Scoping IA D10): do not wire; hide "Run now" |
+| Scope schedules "Run now" marks running and dispatches nothing | `api/internal/app/scope/service.go:910-934`; `ListDueSchedules` (`:853`) has no caller | Deliberately inert (Scoping IA D10): do not wire; hide "Run now". Since removed: API and code deleted, migration 001061 drops `scan_schedules` |
 | Automations can loop | `scan_completed` → `trigger_scan` → `DispatchScanCompleted` with no origin check (`api/internal/app/workflow/event_dispatcher_discovery.go:190-240`) | B5 |
 | `command_queue_size` gauge never set | `api/internal/metrics/metrics.go:73-104` | P1 observability |
 

@@ -82,9 +82,12 @@ cannot reopen one, recount its findings or record its outcome twice.
 
 ## 3. Things that are deliberately not wired
 
-- **Scope schedules** (`scan_schedules`, Scoping › Schedules) are **inert by
-  Scoping IA decision D10**. Nothing reads `ListDueSchedules`; do not connect
-  them to the scheduler or the dispatcher. Schedules belong to the Scan.
+- **Scope schedules** (`scan_schedules`, Scoping › Schedules) were inert by
+  Scoping IA decision D10 and have been **removed**: the
+  `/api/v1/scope/schedules` API, the service, the repository and the
+  `total_schedules` / `enabled_schedules` fields of `GET /scope/stats` are
+  gone, and migration 001061 drops `scan_schedules`. Schedules belong to the
+  Scan; do not reintroduce a second scheduler.
 - **Interactsh** is off on the sensor unless the sensor-local policy and the
   job both allow it (RFC-040, RFC-046 D6).
 - **Adaptive chunk sizing** is deferred (RFC-046 D9, RFC-030 Phase 2).
