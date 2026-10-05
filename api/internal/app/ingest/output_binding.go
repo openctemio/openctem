@@ -12,14 +12,28 @@ package ingest
 // policy (the #889 modes): in "quarantine" mode those assets, and the
 // findings on them, are held for review and not applied; in "warn" mode
 // (existing tenants) they are applied and the tenant's audit log says so.
-// A tool the catalog does not know (a tenant's custom tool) has no contract
-// and is not checked.
+// A tool the catalog does not know (a tenant's custom tool) has no catalog
+// contract.
+//
+// A tool ported to the tool contract (sdk-go docs/rfcs/sensor-sdk-v2.md)
+// also declares what it produces ("asset:<type>", "finding:<type>",
+// "dependency") in its sensor's current manifest (tools[].contract). That
+// declaration narrows the binding further: an asset, a finding or a
+// dependency of a type the tool does not declare is out of contract too. It
+// only narrows, never widens: the declaration comes from the sensor, so an
+// asset must pass both the catalog (where it knows the tool) and the
+// declaration. The declaration is read from the manifest of the sensor that
+// submitted the report, scoped to that sensor's tenant: another tenant's
+// sensor never contributes one. A sensor without contracts is checked as
+// before.
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/openctemio/ctis"
 
@@ -32,6 +46,36 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
+
+// ToolContractSource reads a sensor's current manifest, where tools ported
+// to the tool contract declare what they produce (sensor.ManifestStore).
+type ToolContractSource interface {
+	CurrentManifest(ctx context.Context, tenantID *shared.ID, sensorID shared.ID) (*sensor.ManifestVersion, error)
+}
+
+// SetToolContractSource wires the sensors' manifests, so a ported tool's
+// declared produces narrow its reports (nil: the catalog contract only).
+func (s *Service) SetToolContractSource(src ToolContractSource) {
+	s.contracts = src
+}
+
+// declaredContract returns the tool contract the submitting sensor's current
+// manifest names for tool, or nil (no manifest, no contract, or an error:
+// then only the catalog contract applies, the behavior before contracts).
+func (s *Service) declaredContract(ctx context.Context, agt *sensor.Sensor, tool string) *sensor.ToolContract {
+	if s.contracts == nil || agt == nil || agt.ID.IsZero() || tool == "" {
+		return nil
+	}
+	v, err := s.contracts.CurrentManifest(ctx, agt.TenantID, agt.ID)
+	if err != nil {
+		if !errors.Is(err, shared.ErrNotFound) {
+			s.logger.Warn("ingest: could not read the sensor manifest for its tool contract",
+				"sensor_id", agt.ID.String(), "error", err)
+		}
+		return nil
+	}
+	return v.Manifest.ToolContract(tool)
+}
 
 // maxContractTypesLogged bounds the type labels named in one log or audit
 // entry; the counts are always exact.
@@ -56,51 +100,109 @@ func inContract(stages []stage.Stage, ref asset.TypeRef) bool {
 
 // contractSplit is a report divided by its tool's contract.
 type contractSplit struct {
-	kept, held    *ctis.Report
-	heldTypes     map[string]int // type label -> assets out of contract
-	heldFindings  int
-	heldAssetRefs map[string]bool
+	kept, held       *ctis.Report
+	heldTypes        map[string]int // type label -> assets out of contract
+	heldFindings     int
+	heldDependencies int
+	heldAssetRefs    map[string]bool
+}
+
+// outputRules are what a report of one tool may carry: the catalog stages
+// (nil: the catalog does not know the tool) and the tool's declared contract
+// (nil: none). Both apply when both exist.
+type outputRules struct {
+	stages   []stage.Stage
+	declared *sensor.ToolContract
+}
+
+func (r outputRules) empty() bool { return len(r.stages) == 0 && r.declared == nil }
+
+// assetAllowed reports whether the asset is in contract; label names its
+// type for the summary when it is not.
+func (r outputRules) assetAllowed(a *ctis.Asset) (bool, string) {
+	rt := resolveCTISAssetType(a).stored
+	ref := asset.TypeRef{Type: rt.Type, SubType: rt.SubType}
+	if len(r.stages) > 0 && (rt.Type == asset.AssetTypeUnclassified || !inContract(r.stages, ref)) {
+		return false, stage.Label(ref)
+	}
+	if r.declared != nil && !r.declared.Declares(sensor.ProduceAsset, string(a.Type)) {
+		return false, sensor.ProduceAsset + ":" + sanitizeContractLabel(string(a.Type))
+	}
+	return true, ""
+}
+
+func (r outputRules) findingAllowed(f *ctis.Finding) bool {
+	return r.declared == nil || r.declared.Declares(sensor.ProduceFinding, string(f.Type))
+}
+
+func (r outputRules) dependenciesAllowed() bool {
+	return r.declared == nil || r.declared.Declares(sensor.ProduceDependency, "")
+}
+
+// sanitizeContractLabel bounds a report-supplied type for logs and audit.
+func sanitizeContractLabel(v string) string {
+	v = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, strings.ToLower(strings.TrimSpace(v)))
+	if len(v) > 64 {
+		v = v[:64]
+	}
+	if v == "" {
+		return "(none)"
+	}
+	return v
 }
 
 // splitByContract divides a report into what its tool's contract allows and
-// what it does not: the out-of-contract assets and the findings that name
-// them. The input report is not changed.
-func splitByContract(report *ctis.Report, stages []stage.Stage) *contractSplit {
+// what it does not: the out-of-contract assets, the findings that name them
+// or whose type is not declared, and undeclared dependencies. The input
+// report is not changed.
+func splitByContract(report *ctis.Report, rules outputRules) *contractSplit {
 	sp := &contractSplit{heldTypes: map[string]int{}, heldAssetRefs: map[string]bool{}}
 	keptAssets := make([]ctis.Asset, 0, len(report.Assets))
-	heldAssets := make([]ctis.Asset, 0, len(report.Assets)-len(keptAssets))
+	var heldAssets []ctis.Asset
 	for i := range report.Assets {
 		a := report.Assets[i]
-		rt := resolveCTISAssetType(&a).stored
-		ref := asset.TypeRef{Type: rt.Type, SubType: rt.SubType}
-		if rt.Type != asset.AssetTypeUnclassified && inContract(stages, ref) {
-			keptAssets = append(keptAssets, a)
+		if ok, label := rules.assetAllowed(&a); !ok {
+			heldAssets = append(heldAssets, a)
+			sp.heldTypes[label]++
+			if a.ID != "" {
+				sp.heldAssetRefs[a.ID] = true
+			}
 			continue
 		}
-		heldAssets = append(heldAssets, a)
-		sp.heldTypes[stage.Label(ref)]++
-		if a.ID != "" {
-			sp.heldAssetRefs[a.ID] = true
-		}
-	}
-	if len(heldAssets) == 0 {
-		return sp
+		keptAssets = append(keptAssets, a)
 	}
 	keptFindings := make([]ctis.Finding, 0, len(report.Findings))
 	var heldFindings []ctis.Finding
-	for _, f := range report.Findings {
-		if f.AssetRef != "" && sp.heldAssetRefs[f.AssetRef] {
+	for i := range report.Findings {
+		f := report.Findings[i]
+		if (f.AssetRef != "" && sp.heldAssetRefs[f.AssetRef]) || !rules.findingAllowed(&f) {
 			heldFindings = append(heldFindings, f)
+			if !rules.findingAllowed(&f) {
+				sp.heldTypes[sensor.ProduceFinding+":"+sanitizeContractLabel(string(f.Type))]++
+			}
 			continue
 		}
 		keptFindings = append(keptFindings, f)
 	}
+	keptDeps, heldDeps := report.Dependencies, []ctis.Dependency(nil)
+	if len(report.Dependencies) > 0 && !rules.dependenciesAllowed() {
+		keptDeps, heldDeps = nil, report.Dependencies
+		sp.heldTypes[sensor.ProduceDependency] += len(heldDeps)
+	}
+	if len(heldAssets) == 0 && len(heldFindings) == 0 && len(heldDeps) == 0 {
+		return sp
+	}
 	kept := *report
-	kept.Assets, kept.Findings = keptAssets, keptFindings
+	kept.Assets, kept.Findings, kept.Dependencies = keptAssets, keptFindings, keptDeps
 	held := *report
-	held.Assets, held.Findings = heldAssets, heldFindings
-	held.Dependencies = nil
-	sp.kept, sp.held, sp.heldFindings = &kept, &held, len(heldFindings)
+	held.Assets, held.Findings, held.Dependencies = heldAssets, heldFindings, heldDeps
+	sp.kept, sp.held = &kept, &held
+	sp.heldFindings, sp.heldDependencies = len(heldFindings), len(heldDeps)
 	return sp
 }
 
@@ -123,11 +225,17 @@ func (sp *contractSplit) typeSummary() []map[string]any {
 	return out
 }
 
+// heldCount is the assets held.
 func (sp *contractSplit) heldCount() int {
 	if sp.held == nil {
 		return 0
 	}
 	return len(sp.held.Assets)
+}
+
+// anyHeld reports whether anything (assets, findings, dependencies) is held.
+func (sp *contractSplit) anyHeld() bool {
+	return sp.held != nil
 }
 
 // bindOutputTypes applies the output-type contract to a command-bound
@@ -137,19 +245,20 @@ func (sp *contractSplit) heldCount() int {
 func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, binding Binding,
 	report *ctis.Report, opts Options,
 ) *ctis.Report {
-	if binding.Kind != BindingCommand || report == nil || len(report.Assets) == 0 {
+	if binding.Kind != BindingCommand || report == nil ||
+		(len(report.Assets) == 0 && len(report.Findings) == 0 && len(report.Dependencies) == 0) {
 		return report
 	}
 	tool := binding.Tool
 	if tool == "" && report.Tool != nil {
 		tool = report.Tool.Name
 	}
-	stages := outputContract(tool)
-	if len(stages) == 0 {
-		return report // no contract for a tool the catalog does not know
+	rules := outputRules{stages: outputContract(tool), declared: s.declaredContract(ctx, agt, tool)}
+	if rules.empty() {
+		return report // no contract: a tool the catalog does not know, without a declaration
 	}
-	sp := splitByContract(report, stages)
-	if sp.heldCount() == 0 {
+	sp := splitByContract(report, rules)
+	if !sp.anyHeld() {
 		return report
 	}
 	mode := s.ResultPolicy(ctx, tenantID).Mode
@@ -161,6 +270,8 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 		WithMetadata("report_id", report.Metadata.ID).
 		WithMetadata("out_of_contract_assets", sp.heldCount()).
 		WithMetadata("out_of_contract_findings", sp.heldFindings).
+		WithMetadata("out_of_contract_dependencies", sp.heldDependencies).
+		WithMetadata("declared_contract", rules.declared != nil).
 		WithMetadata("types", sp.typeSummary()).
 		WithMetadata("mode", string(mode))
 	if binding.CommandID != nil {
@@ -169,11 +280,13 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 
 	if mode == sensorresult.ModeWarn {
 		metrics.SensorUnsolicitedResultsTotal.WithLabelValues("out_of_contract_warned").Inc()
-		s.logger.Warn("sensor report carries asset types its tool does not produce; applied (tenant mode warn)",
+		s.logger.Warn("sensor report carries output types its tool does not produce; applied (tenant mode warn)",
 			"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", sanitizeIngestLogField(tool),
-			"assets", sp.heldCount(), "report_id", sanitizeIngestLogField(report.Metadata.ID))
+			"assets", sp.heldCount(), "findings", sp.heldFindings, "dependencies", sp.heldDependencies,
+			"report_id", sanitizeIngestLogField(report.Metadata.ID))
 		s.auditAsync(auditapp.AuditContext{TenantID: tenantID.String()},
-			event.WithMessage(fmt.Sprintf("Sensor report applied with %d asset(s) of types its tool does not produce (warn mode)", sp.heldCount())))
+			event.WithMessage(fmt.Sprintf("Sensor report applied with %d asset(s), %d finding(s) and %d dependency(ies) its tool does not produce (warn mode)",
+				sp.heldCount(), sp.heldFindings, sp.heldDependencies)))
 		return report
 	}
 
@@ -192,16 +305,17 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 			}
 		}
 		if err != nil {
-			s.logger.Warn("out-of-contract assets dropped: they could not be quarantined",
+			s.logger.Warn("out-of-contract output dropped: it could not be quarantined",
 				"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "error", err)
 		}
 	}
 	metrics.SensorUnsolicitedResultsTotal.WithLabelValues("out_of_contract_quarantined").Inc()
-	s.logger.Info("sensor report: asset types its tool does not produce were held for review",
+	s.logger.Info("sensor report: output types its tool does not produce were held for review",
 		"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", sanitizeIngestLogField(tool),
-		"assets", sp.heldCount(), "findings", sp.heldFindings, "quarantine_id", quarantineID)
+		"assets", sp.heldCount(), "findings", sp.heldFindings, "dependencies", sp.heldDependencies, "quarantine_id", quarantineID)
 	s.auditAsync(auditapp.AuditContext{TenantID: tenantID.String()},
 		event.WithMetadata("quarantine_id", quarantineID).
-			WithMessage(fmt.Sprintf("%d asset(s) of types the tool does not produce were held for review, not applied", sp.heldCount())))
+			WithMessage(fmt.Sprintf("%d asset(s), %d finding(s) and %d dependency(ies) of types the tool does not produce were held for review, not applied",
+				sp.heldCount(), sp.heldFindings, sp.heldDependencies)))
 	return sp.kept
 }

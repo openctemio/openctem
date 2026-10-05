@@ -109,3 +109,51 @@ func TestSensorLocalPolicy_FromManifest_DB(t *testing.T) {
 		t.Fatalf("manifest report %+v", a.LocalPolicy)
 	}
 }
+
+// TestSensorManifest_ToolContracts_DB (sdk-go docs/rfcs/sensor-sdk-v2.md): a
+// registered manifest keeps each tool's contract, drops an invalid one with
+// the reason, and the stored contract is read back only within the sensor's
+// tenant: another tenant asking for the same sensor id gets nothing.
+func TestSensorManifest_ToolContracts_DB(t *testing.T) {
+	h := newActivityHarness(t)
+	tid := h.tenant()
+	other := h.tenant()
+	id := h.sensor(tid)
+	ctx := context.Background()
+	a, err := h.svc.GetSensor(ctx, tid.String(), id.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := `{"api_version":"openctem.io/tool/v1","digest":"sha256:` + strings.Repeat("ab", 32) +
+		`","version":"1.0.0","class":"target-scan","tier":"T1","network":"targets","consumes":["domain"],"produces":["finding:vulnerability"]}`
+	bad := `{"api_version":"openctem.io/tool/v1","digest":"sha256:short","version":"1","class":"target-scan","tier":"T1","produces":[]}`
+	raw := []byte(`{"schema":1,"tools":[` +
+		`{"name":"nuclei","kind":"scanner","installed":true,"capabilities":["dast"],"contract":` + good + `},` +
+		`{"name":"trivy","kind":"scanner","installed":true,"capabilities":["sca"],"contract":` + bad + `}]}`)
+	res, err := h.svc.RegisterManifest(ctx, a, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, i := range res.Ignored {
+		if i.Reason == sensordom.IgnoredInvalidContract {
+			found = i.Path == "tools[1].contract"
+		}
+	}
+	if !found {
+		t.Fatalf("invalid contract not reported as ignored: %+v", res.Ignored)
+	}
+	v, err := h.svc.CurrentManifest(ctx, tid.String(), id.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := v.Manifest.ToolContract("nuclei"); c == nil || c.Digest != "sha256:"+strings.Repeat("ab", 32) || !c.Declares(sensordom.ProduceFinding, "vulnerability") {
+		t.Fatalf("nuclei contract = %+v", c)
+	}
+	if v.Manifest.ToolContract("trivy") != nil {
+		t.Fatal("an invalid contract was stored")
+	}
+	if _, err := h.svc.CurrentManifest(ctx, other.String(), id.String()); err == nil {
+		t.Fatal("another tenant read the sensor's manifest and its contracts")
+	}
+}
