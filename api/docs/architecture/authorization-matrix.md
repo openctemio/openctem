@@ -996,6 +996,11 @@ results an out-of-scope id is reported exactly like an unknown id.
   21b H1): exposure create, ingest and bulk ingest refuse an exposure with no
   `asset_id` from a restricted caller (400), so the fingerprint upsert cannot
   overwrite an asset-less exposure a restricted member cannot see.
+- **Group-modification cap** (RFC-050 W7, 21b M-4): unassign, ownership
+  update and removing another member from an access group need the caller to
+  hold every asset the group holds (`GroupService.requireWholeGroupInScope`,
+  the same check as adding members under D13); unrestricted callers are not
+  capped and leaving a group oneself is always allowed.
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
