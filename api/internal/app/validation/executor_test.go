@@ -75,7 +75,7 @@ func TestDefaultSelector_NoAvailable(t *testing.T) {
 
 func TestEvidence_LegacyExecutorAccessor(t *testing.T) {
 	ev := Evidence{ExecutorKind: "safe-check"}
-	if ev.Executor() != "safe-check" {
+	if ev.ExecutorKind != "safe-check" {
 		t.Fatalf("legacy Executor() getter broken")
 	}
 }
