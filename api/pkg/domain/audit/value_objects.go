@@ -587,7 +587,7 @@ func (a Action) IsValid() bool {
 		ActionAuditChainRebaselined:
 		return true
 	}
-	return isConfigAction(a)
+	return isConfigAction(a) || isRegisteredAction(a)
 }
 
 // Category returns the category of the action (e.g., "user", "tenant").
@@ -693,6 +693,9 @@ func (a Action) Category() string {
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionSCIMGroupMappingsUpdated:
 		return "sso"
+	}
+	if c, ok := registeredCategory(a); ok {
+		return c
 	}
 	return "unknown"
 }
@@ -915,6 +918,9 @@ func SeverityForAction(a Action) Severity {
 
 	// Low - regular operations (including sensor.updated, sensor.connected, sensor.disconnected)
 	default:
+		if sev, ok := registeredSeverity(a); ok {
+			return sev
+		}
 		return SeverityLow
 	}
 }
