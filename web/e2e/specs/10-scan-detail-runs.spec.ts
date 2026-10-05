@@ -44,7 +44,8 @@ test('a scan with a run in progress counts it and names who triggered it', async
       .locator('dl > div, dl > button')
       .filter({ has: page.locator('dt', { hasText: /^Runs$/ }) })
     await expect(card).toContainText(`${active.length} in progress`)
-    const total = Number((await card.locator('dd span').first().innerText()).replace(/,/g, '').trim())
+    const totalText = await card.locator('dd span').first().innerText()
+    const total = Number(totalText.replace(/,/g, '').trim())
     expect(total).toBeGreaterThanOrEqual(active.length)
 
     // No raw user id in the run history; a named trigger shows the name.
