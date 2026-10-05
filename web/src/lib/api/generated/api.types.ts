@@ -13042,6 +13042,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -13170,6 +13172,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -14668,6 +14678,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -14796,6 +14808,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -15035,6 +15055,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -15163,6 +15185,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -15334,6 +15364,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -15462,6 +15494,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -15779,6 +15819,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -15907,6 +15949,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -31912,7 +31962,7 @@ export interface paths {
     put?: never
     /**
      * Enable 2FA
-     * @description Confirms the authenticator with a code and turns 2FA on. Signs out every other session. Returns recovery codes, shown once.
+     * @description Confirms the authenticator with a code and turns 2FA on. Needs the current password. Signs out every other session. Returns recovery codes, shown once.
      */
     post: {
       parameters: {
@@ -31921,7 +31971,12 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.MFACodeRequest']
+      /** @description Current password and authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.MFAEnableRequest']
+        }
+      }
       responses: {
         /** @description OK */
         200: {
@@ -31982,7 +32037,12 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.MFACodeRequest']
+      /** @description Authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.MFACodeRequest']
+        }
+      }
       responses: {
         /** @description OK */
         200: {
@@ -36118,6 +36178,14 @@ export interface components {
     'internal_infra_http_handler.AssetAttributionResponse': {
       /** @description ActiveChecksAllowed: whether a scan may touch the asset. */
       active_checks_allowed?: boolean
+      /**
+       * @description ActiveChecksBlockedBy says why a scan may not touch the asset when
+       *     active_checks_allowed is false: its state (needs_review, candidate,
+       *     dependency, monitor_only, rejected; rejected also for a name under a
+       *     rejected name), or unattributed: no record, and neither inside a scope
+       *     target nor under a root-domain seed or verified domain.
+       */
+      active_checks_blocked_by?: string
       confidence?: number
       decided_at?: string
       evidence?: components['schemas']['internal_infra_http_handler.AssetAttributionEvidence'][]
@@ -38050,6 +38118,15 @@ export interface components {
       by_source?: {
         [key: string]: number
       }
+      /**
+       * @description ByState counts the state lenses of the same filter: open, fixed,
+       *     dispositioned (false positive, accepted, duplicate; never counted as
+       *     fixed) and all. Send state=all with the other filters to label a lens
+       *     switcher.
+       */
+      by_state?: {
+        [key: string]: number
+      }
       by_status?: {
         [key: string]: number
       }
@@ -38783,6 +38860,10 @@ export interface components {
       code: string
     }
     'internal_infra_http_handler.MFADisableRequest': {
+      code: string
+      password: string
+    }
+    'internal_infra_http_handler.MFAEnableRequest': {
       code: string
       password: string
     }
@@ -41193,12 +41274,6 @@ export interface components {
     'internal_infra_http_handler.BulkToolIDsRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.BulkToolIDsRequest']
-      }
-    }
-    /** @description Authenticator code */
-    'internal_infra_http_handler.MFACodeRequest': {
-      content: {
-        'application/json': components['schemas']['internal_infra_http_handler.MFACodeRequest']
       }
     }
   }

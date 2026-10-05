@@ -11,7 +11,6 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/certmonitor"
-	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -22,10 +21,7 @@ type AttributionRepository struct {
 	db *DB
 }
 
-var (
-	_ certmonitor.AttributionStore = (*AttributionRepository)(nil)
-	_ scan.AttributionGate         = (*AttributionRepository)(nil)
-)
+var _ certmonitor.AttributionStore = (*AttributionRepository)(nil)
 
 // NewAttributionRepository creates the repository.
 func NewAttributionRepository(db *DB) *AttributionRepository {
@@ -205,9 +201,10 @@ func (r *AttributionRepository) Get(ctx context.Context, tenantID shared.ID, ass
 	return view, found, rows.Err()
 }
 
-// ActiveCheckBlocked returns the subset of the given assets whose
-// attribution forbids active checks (any stored state other than confirmed).
-// Assets without a record are legacy and allowed.
+// ActiveCheckBlocked returns the subset of the given assets whose stored
+// attribution is not confirmed. It reads records only (the finding priority
+// cap uses it); the active-scan gate, which also refuses unattributed and
+// rejected-parent names, is easm.ActiveGate.
 func (r *AttributionRepository) ActiveCheckBlocked(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.State, error) {
 	out := map[string]attribution.State{}
 	if len(assetIDs) == 0 {
