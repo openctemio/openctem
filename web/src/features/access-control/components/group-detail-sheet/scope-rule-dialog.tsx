@@ -96,7 +96,7 @@ export function ScopeRuleDialog({
     if (isEditing) {
       const data: UpdateScopeRuleInput = {
         name: name.trim(),
-        description: description.trim() || undefined,
+        description: description.trim(),
         match_tags: ruleType === 'tag_match' ? matchTags : undefined,
         match_logic: ruleType === 'tag_match' ? matchLogic : undefined,
         match_asset_group_ids: ruleType === 'asset_group_match' ? matchAssetGroupIds : undefined,
@@ -107,7 +107,7 @@ export function ScopeRuleDialog({
     } else {
       const data: CreateScopeRuleInput = {
         name: name.trim(),
-        description: description.trim() || undefined,
+        description: description.trim(),
         rule_type: ruleType,
         match_tags: ruleType === 'tag_match' ? matchTags : undefined,
         match_logic: ruleType === 'tag_match' ? matchLogic : undefined,

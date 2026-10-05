@@ -149,6 +149,11 @@ type MemberSearchFilters struct {
 	SearchNameOnly bool
 	Limit          int // Maximum number of results (0 = no limit)
 	Offset         int // Offset for pagination
+	// Status filters on the membership status (active, suspended); empty = any.
+	Status string
+	// Role filters on the effective system role (owner, admin, member,
+	// viewer); empty = any.
+	Role string
 }
 
 // MemberSearchResult contains the search results and total count.
