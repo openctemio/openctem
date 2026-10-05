@@ -337,10 +337,17 @@ func (s *Service) checkEmailTarget(ctx context.Context, tenantID shared.ID, t Ta
 	if err != nil {
 		return OutcomeUnknown, nil, nil, err
 	}
-	if p.Severity() == "" {
-		return OutcomeOK, nil, []string{ev.Fingerprint()}, nil
+	// A seed checked by name before its domain asset existed left an
+	// unlinked exposure; checking the asset now clears it (22c B3).
+	var clear []string
+	if !t.AssetID.IsZero() {
+		clear = append(clear, exposuredom.Fingerprint(tenantID.String(), exposuredom.EventTypeEmailSecurityWeak.String(),
+			ev.Title(), Source, "", map[string]any{"domain": t.Name}))
 	}
-	return "email_security_weak", []*exposuredom.ExposureEvent{ev}, nil, nil
+	if p.Severity() == "" {
+		return OutcomeOK, nil, append(clear, ev.Fingerprint()), nil
+	}
+	return "email_security_weak", []*exposuredom.ExposureEvent{ev}, clear, nil
 }
 
 func emailEvent(tenantID shared.ID, t Target, p EmailPosture) (*exposuredom.ExposureEvent, error) {
@@ -376,7 +383,9 @@ func emailEvent(tenantID shared.ID, t Target, p EmailPosture) (*exposuredom.Expo
 		desc = fmt.Sprintf("Email posture of %s. Most severe: %s", t.Name, issues[0].Detail)
 	}
 	ev.UpdateDescription(desc)
-	id := t.AssetID
-	ev.SetAssetID(&id)
+	if !t.AssetID.IsZero() { // a name target (seed, verified domain) has no asset
+		id := t.AssetID
+		ev.SetAssetID(&id)
+	}
 	return ev, nil
 }

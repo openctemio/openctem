@@ -66,6 +66,9 @@ type ActiveGate struct {
 	assets  ActiveGateAssets
 	scope   ActiveGateScope
 	roots   ActiveGateRoots
+	// dangling backs the takeover exception (takeover_gate.go); nil admits
+	// nothing.
+	dangling ActiveGateDangling
 }
 
 // NewActiveGate wires the gate. Every dependency is required; a nil one
