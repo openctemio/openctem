@@ -150,7 +150,7 @@ vi.mock('@/features/dashboard/hooks/use-ctem-dashboard', () => ({
 }))
 
 describe('CTEM Dashboard page', () => {
-  it('renders the action-first CTEM story sections plus the dashboard switcher header', () => {
+  it('renders the action-first CTEM story sections plus the dashboard switcher header', async () => {
     render(<Dashboard />)
 
     // Header + switcher controls (Refresh / Switch Dashboard / Options)
@@ -167,8 +167,8 @@ describe('CTEM Dashboard page', () => {
     expect(screen.getByText('Threat intel context')).toBeInTheDocument()
     expect(screen.getByText('Coverage & hygiene')).toBeInTheDocument()
 
-    // Retained analyst charts
-    expect(screen.getByText(/Analyst detail/i)).toBeInTheDocument()
+    // Retained analyst charts: loaded on demand (next/dynamic), after the cards
+    expect(await screen.findByText(/Analyst detail/i)).toBeInTheDocument()
     expect(screen.getByText('Findings trend')).toBeInTheDocument()
     expect(screen.getByText('Severity distribution')).toBeInTheDocument()
     expect(screen.getByText('Asset distribution')).toBeInTheDocument()

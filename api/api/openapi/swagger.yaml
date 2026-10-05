@@ -3013,6 +3013,31 @@ definitions:
       rate_pct:
         type: number
     type: object
+  github_com_openctemio_openctem_api_internal_app_scan.OptInImpact:
+    properties:
+      opt_ins:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns'
+      scans:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan'
+        type: array
+      truncated:
+        description: 'Truncated: more scans are affected than listed.'
+        type: boolean
+    type: object
+  github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+      uses_custom_templates:
+        type: boolean
+      uses_interactsh:
+        type: boolean
+    type: object
   github_com_openctemio_openctem_api_internal_app_scan.PreviewError:
     properties:
       code:
@@ -3489,6 +3514,7 @@ definitions:
     - contains
     - exposes
     - resolves_to
+    - serves_certificate
     - cname_of
     - depends_on
     - peer_of
@@ -3509,6 +3535,7 @@ definitions:
     - RelTypeContains
     - RelTypeExposes
     - RelTypeResolvesTo
+    - RelTypeServesCertificate
     - RelTypeCnameOf
     - RelTypeDependsOn
     - RelTypePeerOf
@@ -4221,6 +4248,13 @@ definitions:
         type: array
       version:
         type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns:
+    properties:
+      allow_custom_templates:
+        type: boolean
+      allow_interactsh:
+        type: boolean
     type: object
   github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity:
     properties:
@@ -10785,8 +10819,7 @@ definitions:
         type: string
       enabled_event_types:
         example:
-        - '["security_alert"'
-        - '"new_finding"'
+        - '["new_finding"'
         - '"new_exposure"]'
         items:
           type: string
@@ -31640,6 +31673,33 @@ paths:
       security:
       - BearerAuth: []
       summary: Preview a scan schedule
+      tags:
+      - Scans
+  /scans/sensor-opt-in-impact:
+    get:
+      description: The organization's switches for out-of-band callbacks (interactsh)
+        and custom templates in sensor jobs (both off unless an owner enabled them,
+        research/25 D3), and the scans whose scanner_config asks for either (at most
+        100; truncated says more exist). While a switch is off, those scans run without
+        interactsh or are refused (custom templates).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.OptInImpact'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Scans affected by the sensor opt-ins
       tags:
       - Scans
   /scans/stats:
