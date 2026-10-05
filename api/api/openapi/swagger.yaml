@@ -7486,9 +7486,6 @@ definitions:
       description:
         maxLength: 500
         type: string
-      escalation_config:
-        additionalProperties: {}
-        type: object
       escalation_enabled:
         type: boolean
       high_days:
@@ -7513,6 +7510,24 @@ definitions:
         maxLength: 100
         minLength: 1
         type: string
+      p0_days:
+        description: P0Days..P3Days are optional; an omitted class keeps its default
+          window.
+        maximum: 365
+        minimum: 1
+        type: integer
+      p1_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p2_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p3_days:
+        maximum: 365
+        minimum: 1
+        type: integer
       warning_threshold_pct:
         maximum: 100
         minimum: 0
@@ -11771,9 +11786,6 @@ definitions:
         type: integer
       description:
         type: string
-      escalation_config:
-        additionalProperties: {}
-        type: object
       escalation_enabled:
         type: boolean
       high_days:
@@ -11792,6 +11804,18 @@ definitions:
         type: integer
       name:
         type: string
+      p0_days:
+        description: |-
+          P0Days..P3Days are the remediation windows per CTEM priority class.
+          They take precedence over the severity windows for every finding that
+          has a priority class.
+        type: integer
+      p1_days:
+        type: integer
+      p2_days:
+        type: integer
+      p3_days:
+        type: integer
       tenant_id:
         type: string
       updated_at:
@@ -14369,9 +14393,6 @@ definitions:
       description:
         maxLength: 500
         type: string
-      escalation_config:
-        additionalProperties: {}
-        type: object
       escalation_enabled:
         type: boolean
       high_days:
@@ -14398,6 +14419,22 @@ definitions:
         maxLength: 100
         minLength: 1
         type: string
+      p0_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p1_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p2_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      p3_days:
+        maximum: 365
+        minimum: 1
+        type: integer
       warning_threshold_pct:
         maximum: 100
         minimum: 0

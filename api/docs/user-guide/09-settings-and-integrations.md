@@ -25,7 +25,8 @@ off.
 - **Priority Rules** (`/settings/priority-rules`) — override rules that set a
   finding's priority class when conditions match.
 - **SLA Policies** (`/settings/sla-policies`) — remediation deadlines per
-  severity. See [Mobilization → SLA compliance](07-mobilization.md#sla-compliance).
+  CTEM priority class (P0–P3), with severity windows for findings that have no
+  class yet. See [Mobilization → SLA compliance](07-mobilization.md#sla-compliance).
 
 ## Notifications
 
