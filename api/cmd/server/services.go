@@ -663,8 +663,7 @@ type Services struct {
 	BusinessUnit *app.BusinessUnitService
 
 	// API Keys & Webhooks
-	APIKey  *apikey.Service
-	Webhook *app.WebhookService
+	APIKey *apikey.Service
 
 	// Jira Bidirectional Sync
 	JiraSync *jira.SyncService
@@ -1298,7 +1297,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// During an encryption-key rotation, keys hashed under the old key
 	// (APP_ENCRYPTION_KEY_PREVIOUS) keep authenticating.
 	s.APIKey.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
-	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 
 	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.
 	repos.ScimToken.SetKeyPepperID(crypto.PepperID(cfg.Encryption.Key))

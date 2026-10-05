@@ -31,9 +31,9 @@ var permSeedMigrations = []string{
 	"000093_compliance_seeds.up.sql",
 	"000096_fix_applied_status.up.sql",
 	"000153_ctem_permissions.up.sql",
-	"000231_scan_zones.up.sql",                    // sensors:zones:* (RFC-023 D16)
-	"000232_credentials_reveal_permission.up.sql", // findings:credentials:reveal
-	"000267_scope_exclusion_approval.up.sql",      // attack_surface:scope:exclusions:approve
+	"000231_scan_zones.up.sql",                     // sensors:zones:* (RFC-023 D16)
+	"000232_credentials_reveal_permission.up.sql",  // findings:credentials:reveal
+	"000267_scope_exclusion_approval.up.sql",       // attack_surface:scope:exclusions:approve
 	"000774_dashboard_aggregate_permission.up.sql", // dashboard:aggregate (D6)
 }
 
@@ -50,6 +50,7 @@ var permRenameMigrations = []string{
 var permRemoveMigrations = []string{
 	"000670_remove_group_permission_sets.up.sql",   // team:permission_sets:* (permissions come only from roles)
 	"000772_remove_meaningless_permissions.up.sql", // billing/policies/compliance permissions that gate nothing
+	"001032_remove_outbound_webhooks.up.sql",       // integrations:webhooks:* (outbound webhooks never delivered; owner decision B9)
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)
