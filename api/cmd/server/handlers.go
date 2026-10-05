@@ -510,6 +510,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.DomainVerify != nil {
 		handlers.VerifiedDomain = handler.NewVerifiedDomainHandler(svc.DomainVerify, log)
 		handlers.VerifiedDomain.SetAuditService(svc.Audit)
+		// Tenant self-service verification for EASM (research/22 P0-10, E6).
+		var audit handler.AttributionAuditor
+		if svc.Audit != nil {
+			audit = svc.Audit
+		}
+		handlers.EASMVerifiedDomain = handler.NewEASMVerifiedDomainHandler(svc.DomainVerify, audit, log)
 	}
 
 	// SAML SP handler (RFC-009 9d+9e): metadata, config CRUD, and the
