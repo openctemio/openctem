@@ -92,6 +92,10 @@ type Service struct {
 	commands     commandReader
 	results      sensorresult.Repository
 	resultLimits sensorresult.Limits
+	// grants and pushRefusals enforce the sensor's push-ingest grant before
+	// the unsolicited policy (RFC-052 §5.3); nil: not enforced.
+	grants       GrantReader
+	pushRefusals PushRefusalObserver
 
 	logger *logger.Logger
 

@@ -81,6 +81,12 @@ created=$(call POST /api/v1/sensors \
 SENSOR_ID=$(jq -r '.sensor.id' <<<"$created")
 API_KEY=$(jq -r '.api_key' <<<"$created")
 [ -n "$API_KEY" ] && [ "$API_KEY" != null ] || fail "sensor created without an API key"
+# A new sensor starts at trust level New (RFC-052 §5: no results without a
+# job). Sensors that existed before grants are trusted with a broad grant,
+# which is the case this check is about: promote it and allow push ingest.
+grant=$(call GET "/api/v1/sensors/$SENSOR_ID/grant" | jq -c '.trust_level = "trusted" | .allow_push_ingest = true
+	| del(.sensor_id, .legacy_broad, .updated_at, .effective, .profile)')
+call PUT "/api/v1/sensors/$SENSOR_ID/grant" "$grant" >/dev/null
 
 COMMAND_ID=$(call POST /api/v1/commands "{\"sensor_id\":\"$SENSOR_ID\",\"type\":\"health_check\"}" | jq -r '.id')
 [ -n "$COMMAND_ID" ] && [ "$COMMAND_ID" != null ] || fail "command not created"

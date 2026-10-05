@@ -58,13 +58,22 @@ key; the sensor's start request fills in the key and turns it `pending`.
 
 | Piece | Where |
 |---|---|
-| Model, profiles, narrowing comparison, effective grant | `pkg/domain/sensor/grant.go` |
-| Command tier | `pkg/domain/sensor/grant_tier.go` (stage catalog tier of the tool; custom templates and callbacks raise to T2; unknown tool T2) |
-| Repository | `internal/infra/postgres/sensor_grant_repository.go` (`sensor_grants`) |
-| Claim gate | `internal/app/command/local_policy.go` `dispatchGate.refusal` (poll, claim-N, claim by id) |
-| Push ingest | `internal/app/ingest/quarantine.go` `admitUnsolicited` (grant first, then role and tenant policy) |
-| Remote actions | heartbeat answers filter gated actions (`internal/app/sensor/doorbell.go`) |
-| Management API | `GET/PUT /api/v1/sensors/{id}/grant`, `POST /api/v1/sensors/{id}/trust`, `GET /api/v1/sensor-grant-profiles` |
+| Model, profiles, admission, command tier, narrowing comparison, effective grant | `pkg/domain/sensor/grant.go` (tier: the stage catalog's lowest tier for the tool; custom templates and callbacks raise to T2; an unknown tool is T2) |
+| Repository | `internal/infra/postgres/sensor_grant_repository.go` (`sensor_grants`, migration 001076: legacy-broad backfill, insert trigger for the narrow default) |
+| Service (narrow/widen, compare-and-swap, audit, notifications, pairing hook) | `internal/app/sensorgrant/service.go` |
+| Claim gate | `internal/app/command/local_policy.go` `dispatchGate.refusal` (poll, claim-N, claim by id). A refused claim by id answers like a lost claim (v2 `command-claimed`, v1 `409`) so deployed sensors drop the command; it is audited with the dimension. Claim by id also checks the command's required capabilities now (`ClaimForSensor`). |
+| Push ingest | `internal/app/ingest/quarantine.go` `admitPush` (grant first, then role and tenant policy): v1 `422 PUSH_INGEST_NOT_GRANTED` (not 403: sensors read 403 as a lost key), v2 segment item error `push_ingest_not_granted` |
+| Remote actions | the heartbeat doorbell rings a gated action (`rotate_key`) only when the grant lists it (`internal/app/sensor/doorbell.go`) |
+| Management API | `GET/PUT /api/v1/sensors/{id}/grant` (trust level included), `GET /api/v1/sensors/grant-profiles`, `GET /api/v1/sensors/grant-summaries` (list flags) |
+
+Every sensor has exactly one grant: sensors that existed before 001076 got
+`legacy-broad` at trust level `trusted`; a sensor inserted later gets
+`internal-network-scanner` at `new` from a trigger, and the pairing approval
+replaces it with the chosen profile in its transaction. A missing or
+unreadable grant withholds every command and refuses push ingest (fail
+closed). Known gap: the heartbeat's `pending_jobs` count does not apply the
+grant, so a New sensor with only active work waiting polls at the busy
+interval and gets nothing.
 
 ## Audit and timeline
 
@@ -78,10 +87,9 @@ marked ✉ notify every administrator of the organization in the app.
 | `sensor.pairing_completed` | medium |
 | `sensor.repaired` ✉ | high |
 | `sensor.key_revoked` | high |
-| `sensor.grant_narrowed` | medium |
-| `sensor.grant_widened` ✉ | high |
-| `sensor.trust_changed` ✉ (promotion) | high |
-| `sensor.claim_refused_grant` | medium |
+| `sensor.grant_changed` (narrowed or demoted; the diff names each dimension) | medium |
+| `sensor.grant_changed` ✉ (widened or promoted) | high |
+| `sensor.claim_refused_grant` | high |
 | `sensor.credential_refused` | high |
 | `sensor.push_refused_grant` | medium |
 | `sensor.identity_policy_changed` ✉ | high |
@@ -93,7 +101,7 @@ marked ✉ notify every administrator of the organization in the app.
 | RFC, docs | this PR series |
 | Key-bound identity (verifier, `sensor_keys`) | in implementation (SP1b) |
 | Pairing API, step-up, identity policy | in implementation (SP1c) |
-| Grants and enforcement | in implementation (SP2a) |
+| Grants and enforcement | implemented (SP2a) |
 | SDK signer, pairing client, CA pin | in implementation (SP1d) |
 | Sensor `pair` command, auto-pair | in implementation (SP1e) |
 | Console | in implementation (SP1f/SP2b) |

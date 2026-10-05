@@ -46,6 +46,33 @@ var ErrCommandNotFound = shared.NewDomainError(CodeCommandNotFound,
 var ErrToolNotPermitted = shared.NewDomainError(CodeToolNotPermitted,
 	"the report's tool is not the tool of the command it names", shared.ErrValidation)
 
+// CodePushIngestNotGranted is the error code of a report without a command
+// from a sensor whose grant does not allow push ingest (RFC-052 §5.3).
+const CodePushIngestNotGranted = "PUSH_INGEST_NOT_GRANTED"
+
+// ErrPushIngestNotGranted: the report names no command and the sensor's
+// effective grant does not allow results without a job (push ingest is off
+// by default, and always off while the sensor is New). The report is
+// refused, not quarantined.
+var ErrPushIngestNotGranted = shared.NewDomainError(CodePushIngestNotGranted,
+	"this sensor's grant does not allow results without a job assigned to it; the report was refused", shared.ErrForbidden)
+
+// GrantReader reads a sensor's grant (RFC-052 §5).
+type GrantReader interface {
+	Get(ctx context.Context, tenantID, sensorID shared.ID) (*sensor.Grant, error)
+}
+
+// PushRefusalObserver is told about results without a job that a grant
+// refused (timeline and audit). Satisfied by the sensor service.
+type PushRefusalObserver interface {
+	ObservePushRefusal(ctx context.Context, tenantID, sensorID shared.ID, route string)
+}
+
+// SetGrants makes the unsolicited gate check the sensor's grant first:
+// without push ingest in the effective grant, a report that names no
+// command is refused before the role and the tenant policy are consulted.
+func (s *Service) SetGrants(g GrantReader, o PushRefusalObserver) { s.grants, s.pushRefusals = g, o }
+
 // QuarantinedError is returned for a report that was stored for review and
 // not applied.
 type QuarantinedError struct {
@@ -175,6 +202,9 @@ type unsolicitedSubmission struct {
 // the quarantine and a *QuarantinedError is returned (sensorresult.ErrFull
 // when the quarantine is full: the report is refused).
 func (s *Service) admitUnsolicited(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, sub unsolicitedSubmission) (warned bool, err error) {
+	if err := s.admitPush(ctx, agt.ID, tenantID, sub.Route); err != nil {
+		return false, err
+	}
 	sensorType := s.sensorTypeOf(ctx, agt)
 	if RoleMayPushUnsolicited(sensorType) {
 		metrics.SensorUnsolicitedResultsTotal.WithLabelValues("applied").Inc()
@@ -427,6 +457,11 @@ func (s *Service) admitV2Segment(ctx context.Context, prov Provenance, report *c
 			RejectedAssets: len(report.Assets), RejectedFindings: len(report.Findings),
 			Errors: []protov2.ItemError{{Segment: &seq, Pointer: "", Code: protov2.CodeQuarantineFull, Detail: protov2.DetailQuarantineFull}},
 		}, true, nil
+	case errors.Is(err, ErrPushIngestNotGranted):
+		return ingestreport.SegmentOutcome{
+			RejectedAssets: len(report.Assets), RejectedFindings: len(report.Findings),
+			Errors: []protov2.ItemError{{Segment: &seq, Pointer: "", Code: protov2.CodePushIngestNotGranted, Detail: protov2.DetailPushIngestNotGranted}},
+		}, true, nil
 	default:
 		return ingestreport.SegmentOutcome{}, false, err
 	}
@@ -444,4 +479,26 @@ func (s *Service) AdmitQueued(ctx context.Context, agt *sensor.Sensor, report *c
 		Protocol: sensorresult.ProtocolV1, Route: "ctis", ReportID: report.Metadata.ID, Report: report,
 	})
 	return err
+}
+
+// admitPush is the grant's half of the unsolicited gate: nil when the
+// sensor's effective grant allows results without a job (or grants are not
+// wired). A sensor without a grant row, which the schema does not allow, is
+// refused too (fail closed); a read error is returned as is.
+func (s *Service) admitPush(ctx context.Context, sensorID, tenantID shared.ID, route string) error {
+	if s.grants == nil {
+		return nil
+	}
+	g, err := s.grants.Get(ctx, tenantID, sensorID)
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
+		return fmt.Errorf("read sensor grant: %w", err)
+	}
+	if g != nil && g.Effective().AllowPushIngest {
+		return nil
+	}
+	metrics.SensorUnsolicitedResultsTotal.WithLabelValues("refused_grant").Inc()
+	if s.pushRefusals != nil {
+		s.pushRefusals.ObservePushRefusal(ctx, tenantID, sensorID, route)
+	}
+	return ErrPushIngestNotGranted
 }

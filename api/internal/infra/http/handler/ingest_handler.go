@@ -1349,6 +1349,10 @@ func (h *IngestHandler) writeIngestError(w http.ResponseWriter, msg string, err 
 		h.logger.Info(msg+": quarantined", "quarantine_id", qe.ID.String())
 		apierror.New(http.StatusUnprocessableEntity, ingest.CodeResultsQuarantined, qe.Error()).
 			WithDetails(map[string]string{"quarantine_id": qe.ID.String()}).WriteJSON(w)
+	case errors.As(err, &de) && de.Code == ingest.CodePushIngestNotGranted:
+		// 422, not 403: sensor SDKs read 401/403 as a key they lost.
+		h.logger.Warn(msg + ": push ingest not granted")
+		apierror.New(http.StatusUnprocessableEntity, ingest.CodePushIngestNotGranted, de.Message).WriteJSON(w)
 	case errors.Is(err, sensorresult.ErrFull):
 		h.logger.Warn(msg + ": quarantine full")
 		apierror.New(http.StatusUnprocessableEntity, "RESULTS_QUARANTINE_FULL",
