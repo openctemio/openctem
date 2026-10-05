@@ -161,7 +161,7 @@ describe('CIRunsView', () => {
     )
     expect(screen.getByRole('link', { name: /pipeline/i })).toHaveAttribute(
       'rel',
-      'noopener noreferrer'
+      'noopener noreferrer nofollow'
     )
   })
 
