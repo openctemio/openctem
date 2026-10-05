@@ -169,6 +169,9 @@ export type RunTaskSummary = Schemas['internal_infra_http_handler.RunTaskSummary
 export type RunTask = Schemas['internal_infra_http_handler.RunTaskResponse']
 /** GET /api/v1/pipeline-runs/{id}/tasks — one cursor page of a run's tasks. */
 export type RunTaskPage = Schemas['internal_infra_http_handler.RunTaskPageResponse']
+/** GET /api/v1/pipeline-runs/{id}/stages — how each stage of a run was planned. */
+export type RunStage = Schemas['internal_infra_http_handler.RunStageResponse']
+export type RunStageList = Schemas['internal_infra_http_handler.RunStageListResponse']
 /** GET /api/v1/easm/candidates — the attribution review queue. */
 export type EASMReviewPage =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']

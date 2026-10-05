@@ -28,6 +28,7 @@ import { toDisplayText } from '@/lib/untrusted-text'
 import { formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs, runRefreshInterval, runTaskProgress } from '@/features/scans/lib/run-display'
 import { RunTasksTable } from './run-tasks-table'
+import { RunStageLanes } from './run-stage-lanes'
 
 interface RunDetailSheetProps {
   runId: string | null
@@ -147,6 +148,9 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
           </DetailStatGrid>
 
           <DetailSections>
+            <DetailSection title="Stages">
+              <RunStageLanes runId={run.id} refreshInterval={runRefreshInterval(run)} />
+            </DetailSection>
             <DetailSection title="Tasks" count={run.task_summary?.total}>
               {run.tasks && run.tasks.length > 0 ? (
                 <RunTasksTable

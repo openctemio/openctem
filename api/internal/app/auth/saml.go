@@ -98,13 +98,15 @@ func (s *SAMLService) BuildConfig(ctx context.Context, tenantID shared.ID, in SA
 	}
 	role := strings.ToLower(strings.TrimSpace(in.DefaultRole))
 	switch role {
-	case string(tenantdom.RoleAdmin), string(tenantdom.RoleMember), string(tenantdom.RoleViewer):
+	case string(tenantdom.RoleMember), string(tenantdom.RoleViewer):
 	case "":
 		// Least privilege for just-in-time members; the platform administrator
 		// raises it per organization when wanted.
 		role = string(tenantdom.RoleViewer)
 	default:
-		return nil, samlValidationErr("default_role must be admin, member, or viewer")
+		// Never admin: an IdP misconfiguration (or a hostile IdP) must not mint
+		// administrators by just-in-time provisioning (owner decision B18).
+		return nil, samlValidationErr("default_role must be member or viewer")
 	}
 
 	// Preserve the existing id when updating so it's a true upsert.

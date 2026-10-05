@@ -229,9 +229,8 @@ Every source below was fetched and checked. The "[n]" numbers point to §9.
 | **GitHub Actions runner** [28] | The Listener process renews the job lock every 60 s, separate from the Runner.Worker process that runs the job. It retries until `LockedUntil + 5 min`. | Lease renewal stays in the sensor process, never in the scanner's (§5.7). A watchdog process stays an option (§5.8). |
 | **Buildkite agent** [29] | A dedicated heartbeat goroutine on a ticker with a **server-provided interval**; only unrecoverable errors stop it. | The same shape as our doorbell interval. The server knows the interval it gave and should judge against it (§5.6.1). |
 | **osquery** [30] | The watcher/worker split: the worker is killed when it exceeds 200 MB or 10 % CPU for 12 s (defaults), and the watcher survives and restarts it. | Precedent for "kill the worker, not the supervisor" (§5.3 OOM order). |
-| **Tenable Nessus Agent** [31], **Qualys Cloud Agent** [32] | Tenable: `process_priority` low/normal/high maps to nice 10/0/−5; agents "use up to 100 % of the CPU when available during jobs". Qualys: CPU limit 2–100 % (Windows), status upload interval 30–300 s (default 60 s). | `SENSOR_SCANNER_PRIORITY` low (nice 10, default) / normal (§5.3). |
-| **HTTP/2, gRPC keepalive** [33][34][35] | net/http's HTTP/2 health check (`SendPingTimeout`) is off by default. RFC 9113: "TCP head-of-line blocking is not addressed". gRPC client keepalive is off by default. | The control client has its own connection pool. No streams for control (§5.1, §5.8). |
-| **Google SRE book** [36][37] | Process health checks and service health checks "are two conceptually distinct operations". Watchdogs crash servers "due to CPU starvation". Requests carry a criticality. | Heartbeat (liveness) on its own channel with the highest criticality. Never let load fail it (§5.1). |
+| **HTTP/2, gRPC keepalive** [31][32][33] | net/http's HTTP/2 health check (`SendPingTimeout`) is off by default. RFC 9113: "TCP head-of-line blocking is not addressed". gRPC client keepalive is off by default. | The control client has its own connection pool. No streams for control (§5.1, §5.8). |
+| **Google SRE book** [34][35] | Process health checks and service health checks "are two conceptually distinct operations". Watchdogs crash servers "due to CPU starvation". Requests carry a criticality. | Heartbeat (liveness) on its own channel with the highest criticality. Never let load fail it (§5.1). |
 
 **Design lessons, in short.**
 
@@ -301,7 +300,7 @@ Every scanner the SDK starts (`ExecuteScanner`, `StreamScanner`,
 
 | Knob | Value | Why | Notes |
 |---|---|---|---|
-| CPU nice | sensor + 10 (`setpriority(PRIO_PGRP)`) | Tenable Agent's "low" process priority is nice 10. Each nice step is about ×1.25 CPU weight, so the sensor wins about 9:1 per thread. | **Autogroup** (on by default) makes nice relative only within a session. The scanner is in the sensor's session (`Setpgid` does not create a session), so it applies where it matters. The process group covers anything the scanner forked already. |
+| CPU nice | sensor + 10 (`setpriority(PRIO_PGRP)`) | nice 10 is the conventional "low priority" setting for a scanning agent. Each nice step is about ×1.25 CPU weight, so the sensor wins about 9:1 per thread. | **Autogroup** (on by default) makes nice relative only within a session. The scanner is in the sensor's session (`Setpgid` does not create a session), so it applies where it matters. The process group covers anything the scanner forked already. |
 | I/O priority | best-effort, level 7 (`ioprio_set(IOPRIO_WHO_PGRP)`) | Scanner disk I/O yields to the sensor's outbox and state writes. | Honored by bfq and mq-deadline; `none` ignores it (this host's disks are `none`/mq-deadline). |
 | `oom_score_adj` | 500 | When memory runs out, the kernel kills a scanner before the sensor (about +50 % of memory in badness). | Raising it is unprivileged; children forked after the write inherit it. Kubernetes gives BestEffort pods 1000 and the kubelet −999. |
 
@@ -545,10 +544,8 @@ RTT and failures, plus a 24 h sparkline of gaps.
 28. GitHub Actions runner, `JobDispatcher.cs` (job lock renewal) — https://github.com/actions/runner/blob/main/src/Runner.Listener/JobDispatcher.cs
 29. Buildkite agent, `agent_worker_heartbeat.go` — https://github.com/buildkite/agent/blob/main/agent/agent_worker_heartbeat.go
 30. osquery CLI flags (`--watchdog_level`) — https://github.com/osquery/osquery/blob/master/docs/wiki/installation/cli-flags.md
-31. Tenable Nessus Agent, CPU Resource Control — https://docs.tenable.com/agent/Content/CPUResourceControl.htm
-32. Qualys Cloud Agent performance settings — https://docs.qualys.com/en/ca/latest/profiles/performance_settings.htm
-33. Go `net/http` (`HTTP2Config.SendPingTimeout`, `MaxConnsPerHost`) — https://pkg.go.dev/net/http
-34. RFC 9113, HTTP/2 — https://www.rfc-editor.org/rfc/rfc9113.html
-35. gRPC keepalive guide — https://grpc.io/docs/guides/keepalive/
-36. Google SRE book, "Addressing Cascading Failures" — https://sre.google/sre-book/addressing-cascading-failures/
-37. Google SRE book, "Handling Overload" — https://sre.google/sre-book/handling-overload/
+31. Go `net/http` (`HTTP2Config.SendPingTimeout`, `MaxConnsPerHost`) — https://pkg.go.dev/net/http
+32. RFC 9113, HTTP/2 — https://www.rfc-editor.org/rfc/rfc9113.html
+33. gRPC keepalive guide — https://grpc.io/docs/guides/keepalive/
+34. Google SRE book, "Addressing Cascading Failures" — https://sre.google/sre-book/addressing-cascading-failures/
+35. Google SRE book, "Handling Overload" — https://sre.google/sre-book/handling-overload/

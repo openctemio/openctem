@@ -84,7 +84,7 @@ Key inversion vs today: **after enrollment, issue a short-lived auto-renewing
 credential instead of a permanent key.** A leaked key is then valid only until
 the next renewal — self-revoking, no CRL (exactly how k8s avoids revocation lists).
 
-### CI runners — OIDC federation (best-in-class, zero stored secret)
+### CI runners — OIDC federation (zero stored secret)
 
 For ephemeral CI runners, follow GitHub/GitLab: the CI provider's **OIDC token**
 is exchanged at OpenCTEM for a short-lived scoped agent token. **No secret stored

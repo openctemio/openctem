@@ -117,15 +117,14 @@ Non-goals
    an explicit identity recipe: a **tool-native stable id** where the tool has
    one that is known to be stable (SARIF `partialFingerprints`, Semgrep
    `match_based_id`, gitleaks' fingerprint), else a
-   hash over an explicit, per-parser field list (DefectDojo's
-   `unique_id_from_tool` / `hash_code` model). The recipe — not the sensor —
+   hash over an explicit, per-parser field list. The recipe — not the sensor —
    decides which tool fields count. The opaque `Finding.Fingerprint` a sensor
    sends is stored on the sighting (`external_fingerprint`) and never becomes the
    identity by itself (RFC-040: a sensor's claim is a hint). Today any 16-hex
    string from any sensor becomes the identity verbatim, and every non-hex
    tool id (Nessus, DefectDojo, gitleaks) is discarded. No field is
-   "always included" across tools: DefectDojo's always-on `service` field is the
-   documented way such a field silently breaks cross-scanner dedup (R1).
+   "always included" across tools: an always-on field silently breaks
+   cross-scanner dedup (R1).
 2. **Explicit scope** (R2). The unique key is `(tenant_id, scope_key,
    fingerprint)`; `scope_key` defaults to the canonical asset id and a wider
    pool (a business service, a repository family) is opt-in per tenant. Today
@@ -499,7 +498,7 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
 
 ## 14. Duplicates as linked records, earliest wins
 
-Following DefectDojo (R2), a merged-away finding is never deleted: it stays as
+A merged-away finding is never deleted (R2): it stays as
 an inactive record linked to its original (`status = duplicate`,
 `duplicate_of`). The canonical original is the **earliest-created** record,
 regardless of which ingest arrived first, so an old, triaged finding is never
@@ -508,8 +507,7 @@ accordingly: kept-asset first only breaks ties between records created at the
 same time; otherwise earliest wins. Triage state is keyed on
 `(scope, fingerprint)` so it carries to re-detections, other branches and
 re-imports (R5; Semgrep shows a fingerprint triaged on every branch it appears
-on). DefectDojo's optional "delete oldest duplicates beyond N" is **not**
-adopted.
+on). Deleting the oldest duplicates beyond N is **not** adopted.
 
 ## 15. Alternatives considered
 
@@ -529,8 +527,8 @@ Folded in from the adversarially verified report
 
 | R | Verified finding | Source | Where used |
 |---|---|---|---|
-| R1 | Layered identity: tool unique id, else per-tool hash fields (DefectDojo `hash_code` / `unique_id_from_tool` / OR); an always-included field breaks cross-scanner dedup | DefectDojo docs | §4.1.1 |
-| R2 | Explicit scope (per asset by default, wider pools opt-in); duplicates kept as linked inactive records; earliest-created is canonical | DefectDojo docs | §4.1.2, §14 |
+| R1 | Layered identity: tool unique id, else per-tool hash fields; an always-included field breaks cross-scanner dedup | finding-aggregator documentation | §4.1.1 |
+| R2 | Explicit scope (per asset by default, wider pools opt-in); duplicates kept as linked inactive records; earliest-created is canonical | finding-aggregator documentation | §4.1.2, §14 |
 | R3 | SARIF 2.1.0 Appendix B: tool + rule + path + partialFingerprints, no absolute lines/offsets; GitHub matches on `primaryLocationLineHash`; API uploads without fingerprints duplicate | OASIS SARIF 2.1.0, GitHub docs | §4.2 SAST |
 | R4 | Content hashes survive moves, break on renames; repeated snippets get an occurrence index (`hash:N`, Semgrep per-file index) | codeql-action `fingerprints.ts`, Semgrep docs | §4.2 SAST |
 | R5 | Triage follows the fingerprint across branches | Semgrep docs (single source, medium) | §14 |
