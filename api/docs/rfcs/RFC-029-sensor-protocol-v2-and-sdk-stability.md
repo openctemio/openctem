@@ -661,16 +661,6 @@ rule 3), never by version sniffing of `User-Agent`. The `compat-v1` job runs
 the last released SDK against every API build; `compat-v2` will do the same
 for v2 once v0.9.0 is the last released SDK.
 
-### 8.9 What others do (only what informed the choices)
-
-| Project | Practice we take |
-|---|---|
-| OpenTelemetry Go | Separate stable API from SDK; API interfaces embed `embedded.*` types so methods can be added without breaking implementers (§8.4 rule 3); documented stability guarantees per module. |
-| Tailscale | The client sends an integer capability version and the control server tailors responses to it: behaviour is gated on what the client declares (§4.11, §8.8). |
-| GitHub Actions runner | The service publishes the minimum runner version and stops sending jobs to older runners after a window; self-hosted runners auto-update (RFC-023 C7/D24, §5.4). |
-| Elastic Agent / Fleet | Fleet Server must be at least the agent's version; policies are versioned documents fetched on change (our `config_version` + future `GET /config`). |
-| Datadog integrations | Integrations depend on a versioned base package with minimum pins and the base package owns the runtime (§8.3 facade). |
-
 ## 9. Implementation plan
 
 Each step is its own PR, green before the next depends on it.
