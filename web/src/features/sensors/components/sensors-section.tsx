@@ -44,6 +44,7 @@ import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 import { InstallSensorDialog } from './install-sensor-dialog'
+import { PairSensorButton, PairSensorDialog } from './pair-sensor-dialog'
 import { SensorInstallFlow } from './sensor-install-flow'
 import { EditSensorDialog } from './edit-sensor-dialog'
 import { RegenerateKeyDialog } from './regenerate-key-dialog'
@@ -63,6 +64,7 @@ import {
   invalidateSensorsCache,
 } from '@/lib/api/sensor-hooks'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
+import { useSensorIdentityPolicy } from '@/lib/api/sensor-pairing-hooks'
 import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
 import { Tabs, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PlatformSensorsLink } from '@/features/platform'
@@ -195,6 +197,7 @@ export function SensorsSection({
 }: SensorsSectionProps) {
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [pairDialogOpen, setPairDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [regenerateKeyDialogOpen, setRegenerateKeyDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -233,6 +236,13 @@ export function SensorsSection({
 
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const canWriteSensors = useHasPermission(Permission.SensorsWrite)
+  const canPairSensors = useHasPermission(Permission.SensorsPair)
+  // RFC-052 D-4: an organization that requires key-bound identity cannot
+  // create a sensor with an API key (the API answers 403), so the key-based
+  // install flow gives way to pairing there.
+  const { data: identityPolicy } = useSensorIdentityPolicy()
+  const bearerKeysAllowed = identityPolicy?.bearer_keys_allowed !== false
+  const canInstallWithKey = canWriteSensors && bearerKeysAllowed
   const zonesTab = tabParam === 'zones' && canReadZones
   const canDaemon = useHasPermission(Permission.SensorsRead)
   const scansEnabled = useModuleEnabled('scans')
@@ -732,7 +742,7 @@ export function SensorsSection({
     body = (
       <>
         {modeLens && <div className="mb-4">{modeLens}</div>}
-        {canWriteSensors ? (
+        {canInstallWithKey ? (
           <SensorInstallFlow
             title="Install your first sensor"
             onCreated={() => setInlineInstall(true)}
@@ -741,6 +751,13 @@ export function SensorsSection({
               handleViewSensor(s)
             }}
             onDone={() => setInlineInstall(false)}
+          />
+        ) : canPairSensors ? (
+          <EmptyState
+            icon={RadioTower}
+            title="Pair your first sensor"
+            description="A sensor runs inside your network, scans what the platform cannot reach and sends the results back over HTTPS. Start it on the host with only the platform URL; it prints a code and a fingerprint to pair it here."
+            action={<PairSensorButton onClick={() => setPairDialogOpen(true)} />}
           />
         ) : (
           <EmptyState
@@ -817,12 +834,13 @@ export function SensorsSection({
                 </Link>
               </Button>
             )}
-            <Can permission={Permission.SensorsWrite}>
+            {fleetMode !== 'runner' && <PairSensorButton onClick={() => setPairDialogOpen(true)} />}
+            {canInstallWithKey && (
               <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Install sensor
               </Button>
-            </Can>
+            )}
           </>
         )}
       </PageHeader>
@@ -938,6 +956,10 @@ export function SensorsSection({
           </Button>
         </BulkActionBar>
       </Can>
+
+      {pairDialogOpen && (
+        <PairSensorDialog open={pairDialogOpen} onOpenChange={setPairDialogOpen} />
+      )}
 
       {/* Mounted only while open: it loads tools and zones. */}
       {addDialogOpen && (

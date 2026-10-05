@@ -221,4 +221,13 @@ describe('CITrustSettings', () => {
     await userEvent.click(screen.getByLabelText('Admit fork pull requests'))
     expect(screen.getByText(/fork code would act/i)).toBeInTheDocument()
   })
+
+  it('explains that GitHub proves protected refs with deployment environments', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    expect(screen.queryByText(/deployment branch rules/i)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('Protected branches and tags only'))
+    expect(screen.getByText(/deployment branch rules/i)).toBeInTheDocument()
+  })
 })

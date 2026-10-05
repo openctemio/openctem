@@ -290,3 +290,20 @@ func TestValidateChain(t *testing.T) {
 		t.Errorf("unreachable error = %v", err)
 	}
 }
+
+func TestPassiveTools(t *testing.T) {
+	passive := PassiveTools()
+	for _, tool := range []string{"subfinder", "dnsx", "semgrep", "trivy", "gitleaks"} {
+		if !slices.Contains(passive, tool) || !PassiveTool(tool) {
+			t.Errorf("%s is a T0 tool but not passive", tool)
+		}
+	}
+	for _, tool := range []string{"nuclei", "naabu", "httpx", "katana", "zap", "tenable_sc", "unknown-tool", ""} {
+		if slices.Contains(passive, tool) || PassiveTool(tool) {
+			t.Errorf("%s sends traffic to its targets (or is unknown) but counts as passive", tool)
+		}
+	}
+	if !PassiveTool(" Subfinder ") {
+		t.Error("tool names are compared in registry spelling")
+	}
+}

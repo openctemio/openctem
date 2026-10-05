@@ -73,6 +73,8 @@ export interface ApiRequestOptions extends RequestInit {
    * Used to prevent infinite retry loops
    */
   _skipRefreshRetry?: boolean
+  /** Internal: already retried after a step-up re-authentication. */
+  _skipStepUpRetry?: boolean
 }
 
 // ============================================

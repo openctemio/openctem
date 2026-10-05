@@ -70,9 +70,10 @@ type Rules struct {
 	// base repository's identity (pull_request_target, workflow_run,
 	// external_pull_request_event). Off by default.
 	AllowForkPullRequests bool `json:"allow_fork_pull_requests,omitempty"`
-	// RequireProtectedRef admits only pipelines on a protected branch or tag
-	// (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
-	// configuration with this set admits nothing).
+	// RequireProtectedRef admits only pipelines on a protected branch or tag.
+	// GitLab: the token's ref_protected claim. GitHub tokens carry no such
+	// claim: the job must run in one of Environments (required with this
+	// switch), whose deployment branch rules admit only protected refs.
 	RequireProtectedRef bool `json:"require_protected_ref,omitempty"`
 }
 
@@ -175,6 +176,10 @@ func (c *TrustConfig) Validate() error {
 	}
 	if len(c.DefaultBranch) > maxBranchNameLen || strings.ContainsAny(c.DefaultBranch, " \t\r\n*?[") {
 		return invalid("default_branch must be a branch name")
+	}
+	if c.Provider == ProviderGitHub && c.Rules.RequireProtectedRef && len(c.Rules.Environments) == 0 {
+		return invalid("require_protected_ref on GitHub needs environments: list the deployment environments " +
+			"whose deployment branch rules admit only protected branches and tags")
 	}
 	return c.Rules.validate()
 }

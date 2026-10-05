@@ -12,6 +12,7 @@ import {
 } from '@/components/layout'
 import { SkipToMain } from '@/components/skip-to-main'
 import { RouteGuard } from '@/components/route-guard'
+import { StepUpDialogHost } from '@/components/step-up-dialog'
 
 type SiteLayoutProps = {
   children?: React.ReactNode
@@ -72,6 +73,8 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
               </SidebarInset>
             </SidebarProvider>
           </TenantGate>
+          {/* Re-authentication prompt for sensitive actions (STEP_UP_REQUIRED). */}
+          <StepUpDialogHost />
         </LayoutProvider>
       </SearchProvider>
     </DashboardProviders>
