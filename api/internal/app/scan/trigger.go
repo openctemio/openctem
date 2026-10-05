@@ -352,6 +352,14 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	}
 	routing.record(runContext)
 
+	// Targets for the tenant's sensors outside any zone go only where a
+	// sensor's reported local policy accepts them (research/25 §3.6).
+	if !routing.usePlatform() {
+		if err := s.applyUnzonedPreflight(ctx, sc, plan, resolved.Targets, runContext); err != nil {
+			return nil, err
+		}
+	}
+
 	// Outside zones too, a scanner that reads one target per job gets one
 	// command per target, not one command that scans only the first.
 	if plan == nil {

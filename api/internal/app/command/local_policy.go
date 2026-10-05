@@ -1,20 +1,20 @@
 package command
 
-// The sensor-local policy on the platform side (RFC-040 §5.7): the jobs a
-// sensor refused under its policy are reported (detection A11), and a
-// tenant can keep jobs with private targets away from sensors that run
-// without a policy (owner decision Q3 (a)).
+// The sensor-local policy on the platform side (RFC-040 §5.7, research/25
+// §3.6): the jobs a sensor refused under its policy are reported (detection
+// A11), and the platform does not dispatch a job to a sensor whose reported
+// local policy would refuse it (sensordom.Accepts), including the tenant's
+// "private targets need a local policy" switch (owner decision Q3 (a)).
+// Withholding only ever narrows what a sensor gets: a withheld command stays
+// pending for a sensor that accepts it.
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
-	"net/netip"
-	"net/url"
-	"strings"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -37,7 +37,7 @@ type PrivateTargetPolicy interface {
 	RequiresLocalPolicyForPrivateTargets(ctx context.Context, tenantID shared.ID) (bool, error)
 }
 
-// WithPrivateTargetPolicy makes Poll and Acknowledge apply p.
+// WithPrivateTargetPolicy makes Poll, Claim and Acknowledge apply p.
 func WithPrivateTargetPolicy(p PrivateTargetPolicy) Option {
 	return func(s *Service) { s.privatePolicy = p }
 }
@@ -49,30 +49,99 @@ func WithPrivateTargetPolicy(p PrivateTargetPolicy) Option {
 // one that qualifies.
 var ErrLocalPolicyRequired = fmt.Errorf("%w (%w): private targets need a sensor with a local policy", ErrCommandClaimed, shared.ErrConflict)
 
-// withholdPrivate reports whether this sensor must not get commands with
-// private targets: the tenant requires a local policy for them and the
-// sensor enforces none. Errors fail closed (withhold).
-func (s *Service) withholdPrivate(ctx context.Context, tenantID shared.ID, sensorID *shared.ID) bool {
-	if s.privatePolicy == nil || sensorID == nil {
-		return false
+// ErrSensorPolicyRefuses: the claiming sensor's reported local policy
+// refuses the command. Like ErrLocalPolicyRequired it reads as "claimed",
+// and the command stays pending for a sensor that accepts it.
+var ErrSensorPolicyRefuses = fmt.Errorf("%w (%w): the sensor's local policy refuses this command", ErrCommandClaimed, shared.ErrConflict)
+
+// dispatchGate is what the pre-check knows about one polling sensor: its
+// last local-policy report and the tenant's platform-side settings. A nil
+// gate (no sensor identity, no lookup wired) withholds nothing.
+type dispatchGate struct {
+	report *sensordom.LocalPolicyReport
+	opts   sensordom.DispatchOptions
+	// closed: the sensor or the tenant setting could not be read; every
+	// command is withheld (fail closed) until a later poll can read them.
+	closed bool
+}
+
+// gateFor loads the dispatch gate of sensorID. The tenant's private-target
+// switch is read only when a candidate names a private target.
+func (s *Service) gateFor(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, cmds []*commanddom.Command) *dispatchGate {
+	if sensorID == nil || len(cmds) == 0 || (s.sensors == nil && s.privatePolicy == nil) {
+		return nil
 	}
-	required, err := s.privatePolicy.RequiresLocalPolicyForPrivateTargets(ctx, tenantID)
-	if err != nil {
-		s.logger.Warn("cannot read the tenant's private-target policy; withholding private targets",
-			"tenant_id", tenantID.String(), "error", err)
-		return true
-	}
-	if !required {
-		return false
+	g := &dispatchGate{}
+	if s.privatePolicy != nil && anyPrivateTarget(cmds) {
+		required, err := s.privatePolicy.RequiresLocalPolicyForPrivateTargets(ctx, tenantID)
+		if err != nil {
+			s.logger.Warn("cannot read the tenant's private-target policy; withholding commands",
+				"tenant_id", tenantID.String(), "error", err)
+			return &dispatchGate{closed: true}
+		}
+		g.opts.RequireLocalPolicyForPrivate = required
 	}
 	if s.sensors == nil {
-		return true
+		// No report to read: only the private-target switch applies, and
+		// no sensor qualifies for it.
+		return g
 	}
 	a, err := s.sensors.GetByTenantAndID(ctx, tenantID, *sensorID)
 	if err != nil || a == nil {
-		return true
+		s.logger.Warn("cannot read the polling sensor's local policy; withholding commands",
+			"tenant_id", tenantID.String(), "sensor_id", sensorID.String(), "error", err)
+		return &dispatchGate{closed: true}
 	}
-	return !a.LocalPolicy.Enforced() || a.LocalPolicy.KillSwitch
+	g.report = a.LocalPolicy
+	return g
+}
+
+// refusal is why the gate withholds c, or nil.
+func (g *dispatchGate) refusal(c *commanddom.Command) *sensordom.DispatchRefusal {
+	if g == nil {
+		return nil
+	}
+	if g.closed {
+		return &sensordom.DispatchRefusal{Layer: sensordom.RefusalLayerManaged, Rule: "unavailable",
+			Detail: "the sensor's policy could not be read"}
+	}
+	return sensordom.Accepts(g.report, sensordom.JobOf(string(c.Type), c.Payload), g.opts)
+}
+
+// accepted keeps the commands the gate does not withhold, in order.
+func (g *dispatchGate) accepted(cmds []*commanddom.Command) []*commanddom.Command {
+	if g == nil {
+		return cmds
+	}
+	out := cmds[:0:0]
+	for _, c := range cmds {
+		if g.refusal(c) == nil {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// claimError is the error a claim by id of c gets from a sensor the gate
+// refuses: ErrLocalPolicyRequired for the private-target switch, else
+// ErrSensorPolicyRefuses. nil when the sensor may claim it.
+func (g *dispatchGate) claimError(c *commanddom.Command) error {
+	r := g.refusal(c)
+	switch {
+	case r == nil:
+		return nil
+	case r.Rule == sensordom.RulePrivateNeedsLocalPlcy:
+		return ErrLocalPolicyRequired
+	default:
+		return ErrSensorPolicyRefuses
+	}
+}
+
+// candidateLimit is how many pending commands a poll reads when it may
+// withhold some: more than it returns, so commands the sensor refuses at
+// the head of the queue do not starve it of the ones it accepts.
+func candidateLimit(limit int) int {
+	return min(max(limit*2, limit+10), 100)
 }
 
 // anyPrivateTarget reports whether a command of cmds names private targets.
@@ -85,110 +154,8 @@ func anyPrivateTarget(cmds []*commanddom.Command) bool {
 	return false
 }
 
-// withoutPrivateTargets drops the commands that name private targets.
-func withoutPrivateTargets(cmds []*commanddom.Command) []*commanddom.Command {
-	out := cmds[:0:0]
-	for _, c := range cmds {
-		if !HasPrivateTarget(c.Payload) {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-// HasPrivateTarget reports whether a command payload names a private,
-// loopback, link-local or CGNAT address, a range that overlaps one, or a
-// host name of a private namespace (localhost, .local, .internal, .lan,
-// .corp, .home.arpa, .localdomain, .intranet). A payload it cannot read counts as
-// private (fail closed). Names that resolve to private addresses in public
-// DNS are not detected here; the sensor's own policy covers them.
+// HasPrivateTarget reports whether a command payload names a private
+// target (sensordom.HasPrivateTarget).
 func HasPrivateTarget(payload json.RawMessage) bool {
-	if len(payload) == 0 {
-		return false
-	}
-	var p struct {
-		Target  json.RawMessage `json:"target"`
-		Targets []string        `json:"targets"`
-	}
-	if err := json.Unmarshal(payload, &p); err != nil {
-		return true
-	}
-	targets := p.Targets
-	if len(p.Target) > 0 && string(p.Target) != "null" {
-		var str string
-		var obj struct {
-			Address string `json:"address"`
-		}
-		switch {
-		case json.Unmarshal(p.Target, &str) == nil:
-			targets = append(targets, str)
-		case json.Unmarshal(p.Target, &obj) == nil:
-			targets = append(targets, obj.Address)
-		default:
-			return true
-		}
-	}
-	for _, t := range targets {
-		if isPrivateTarget(t) {
-			return true
-		}
-	}
-	return false
-}
-
-var privatePrefixes = []netip.Prefix{
-	netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("172.16.0.0/12"),
-	netip.MustParsePrefix("192.168.0.0/16"), netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("fc00::/7"), netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("::1/128"),
-}
-
-var privateSuffixes = []string{".local", ".internal", ".lan", ".corp", ".home.arpa", ".localhost", ".localdomain", ".intranet"}
-
-func isPrivateTarget(target string) bool {
-	host := strings.TrimSpace(target)
-	if host == "" || strings.HasPrefix(host, "/") || strings.HasPrefix(host, ".") {
-		return false // a filesystem path (code scan), not a network target
-	}
-	if strings.Contains(host, "://") {
-		u, err := url.Parse(host)
-		if err != nil {
-			return true
-		}
-		host = u.Hostname()
-	}
-	if p, err := netip.ParsePrefix(host); err == nil {
-		for _, pp := range privatePrefixes {
-			if pp.Overlaps(p) {
-				return true
-			}
-		}
-		return false
-	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	} else if i := strings.IndexByte(host, '/'); i >= 0 {
-		host = host[:i] // registry/path of an image reference
-	}
-	host = strings.Trim(host, "[]")
-	if a, err := netip.ParseAddr(host); err == nil {
-		a = a.Unmap()
-		for _, pp := range privatePrefixes {
-			if pp.Contains(a) {
-				return true
-			}
-		}
-		return a.IsUnspecified()
-	}
-	name := strings.TrimSuffix(strings.ToLower(host), ".")
-	if name == "localhost" {
-		return true
-	}
-	for _, sfx := range privateSuffixes {
-		if strings.HasSuffix(name, sfx) {
-			return true
-		}
-	}
-	return false
+	return sensordom.HasPrivateTarget(payload)
 }
