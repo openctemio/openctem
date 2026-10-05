@@ -19666,6 +19666,133 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/organization/members/{member_id}/access-report': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Member access report
+     * @description Everything the member holds in the organization (roles, access groups, API keys, pentest engagements, direct grants, visible assets) and owns (scans, report schedules, workflows, open assigned findings, assets). Drives the offboarding wizard. Owner or administrator.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Membership ID */
+          member_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/members/{member_id}/erase': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Erase an offboarded member's personal data
+     * @description Owner only, after offboarding, and only when the person belongs to no other organization: the name becomes "Deleted user #<hash>", the email a non-deliverable placeholder, and credentials, second factor and federated identity are cleared. Rows and foreign keys stay, so history shows the placeholder.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Membership ID */
+          member_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/organization/members/{member_id}/mfa': {
     parameters: {
       query?: never
@@ -19732,6 +19859,89 @@ export interface paths {
         }
       }
     }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/members/{member_id}/offboard': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Offboard a member
+     * @description Reassigns the member's owned work (mandatory for every category they own something in) to another active member, revokes their API keys, removes their access groups, grants, engagements, roles and invitations, and keeps the membership as a tombstone so history stays valid. A later invitation starts from zero. 409 reassignment_required lists the categories still without a new owner. Owner or administrator; only the owner offboards an administrator.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Membership ID */
+          member_id: string
+        }
+        cookie?: never
+      }
+      /** @description Who takes over the member's work */
+      requestBody?: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.OffboardMemberRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.OffboardResult']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
     options?: never
     head?: never
     patch?: never
@@ -19833,6 +20043,48 @@ export interface paths {
         }
       }
     }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pipeline-runs/{id}/stages': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List a run's stage plans
+     * @description How each stage of the run was planned: inputs, planned targets and skipped targets by reason (counts only). A run of another organization is not found.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.RunStageListResponse']
+          }
+        }
+      }
+    }
+    put?: never
     post?: never
     delete?: never
     options?: never
@@ -35992,6 +36244,55 @@ export interface components {
       /** @description For cross-account */
       role_arn?: string
     }
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport': {
+      api_keys?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      /** @description AssignedFindings counts the member's open (not closed) findings. */
+      assigned_findings?: number
+      campaigns?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      /** @description DirectGrants is the number of per-user asset grants. */
+      direct_grants?: number
+      groups?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      membership_id?: string
+      /** @description OwnedAssets counts the assets the member is a named (user) owner of. */
+      owned_assets?: number
+      owned_report_schedules?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      /** @description Owned work that an offboarding must hand to someone else. */
+      owned_scans?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      owned_workflows?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      /** @description Access sources. */
+      roles?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'][]
+      status?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.MemberStatus']
+      user_id?: string
+      /**
+       * @description VisibleAssets is the number of materialized scope rows (0 while the
+       *     member is disabled: the rows return when re-enabled).
+       */
+      visible_assets?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef': {
+      /**
+       * @description Detail is a short type-specific note: a key prefix, a campaign role, a
+       *     schedule type.
+       */
+      detail?: string
+      id?: string
+      name?: string
+      status?: string
+    }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.MemberStatus':
+      'active' | 'suspended' | 'offboarded'
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.OffboardResult': {
+      offboarded_at?: string
+      reassigned_assets?: number
+      reassigned_findings?: number
+      reassigned_schedules?: number
+      removed_campaigns?: number
+      removed_grants?: number
+      removed_groups?: number
+      report?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport']
+      revoked_keys?: number
+    }
     'github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings': {
       auto_enabled?: boolean
       /**
@@ -39246,6 +39547,19 @@ export interface components {
       title?: string
       url?: string
     }
+    'internal_infra_http_handler.OffboardMemberRequest': {
+      /** @description New owner of the assets the member owns. */
+      assets_to?: string
+      /** @description New assignee of the member's open findings. */
+      findings_to?: string
+      /**
+       * @description New owner of the member's scans, report schedules and workflows.
+       * @example 01929c4e-0000-7000-8000-000000000001
+       */
+      schedules_to?: string
+      /** @description Put the open findings back in the queue instead (when findings_to is empty). */
+      unassign_findings?: boolean
+    }
     'internal_infra_http_handler.OpenPortResult': {
       banner?: string
       host?: string
@@ -39695,6 +40009,43 @@ export interface components {
        *     was settled at its deadline; the next scheduled run plans them first.
        */
       unfinished_target_count?: number
+    }
+    'internal_infra_http_handler.RunStageListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.RunStageResponse'][]
+    }
+    'internal_infra_http_handler.RunStageResponse': {
+      /** @description Chained: the stage took targets an earlier stage produced. */
+      chained?: boolean
+      /**
+       * @description Inputs is how many targets were considered (seeds plus outputs of the
+       *     types the stage takes); Planned how many were handed to the stage.
+       */
+      inputs?: number
+      /**
+       * @description MaxHop is the furthest discovery hop from a seed among planned
+       *     targets.
+       */
+      max_hop?: number
+      planned?: number
+      planned_at?: string
+      /**
+       * @description Skipped counts the targets left out, by reason: excluded,
+       *     unconfirmed, refused, other_zone, hop_limit, over_cap, duplicate,
+       *     invalid, incompatible_type.
+       */
+      skipped?: {
+        [key: string]: number
+      }
+      /**
+       * @description Stage is the catalog capability ("" when the catalog cannot place
+       *     the step).
+       */
+      stage?: string
+      /** @description StageKey is the step key of the stage in the run's template. */
+      stage_key?: string
+      /** @enum {string} */
+      tier?: 'T0' | 'T1' | 'T2'
+      tool?: string
     }
     'internal_infra_http_handler.RunTaskPageResponse': {
       data?: components['schemas']['internal_infra_http_handler.RunTaskResponse'][]

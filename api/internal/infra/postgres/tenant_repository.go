@@ -250,10 +250,19 @@ func (r *TenantRepository) ListActiveTenantIDs(ctx context.Context) ([]shared.ID
 // CreateMembership creates a new membership.
 // Inserts into tenant_members (membership record) and user_roles (role assignment).
 func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membership) error {
-	// Insert into tenant_members with role
+	// Insert into tenant_members with role. The offboarded tombstone of a
+	// person who left is reused for a re-join (member lifecycle): it is
+	// re-activated with the new id, role and inviter, and starts from zero
+	// because the offboarding stripped every access source. An active or
+	// suspended row is left alone and reported as a conflict.
 	memberQuery := `
 		INSERT INTO tenant_members (id, user_id, tenant_id, role, invited_by, joined_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (user_id, tenant_id) DO UPDATE
+		SET id = EXCLUDED.id, role = EXCLUDED.role, invited_by = EXCLUDED.invited_by,
+		    joined_at = EXCLUDED.joined_at, status = 'active',
+		    offboarded_at = NULL, offboarded_by = NULL, suspended_at = NULL, suspended_by = NULL
+		WHERE tenant_members.status = 'offboarded'
 	`
 
 	var invitedBy sql.NullString
@@ -261,7 +270,7 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 		invitedBy = sql.NullString{String: m.InvitedBy().String(), Valid: true}
 	}
 
-	_, err := r.db.ExecContext(ctx, memberQuery,
+	res, err := r.db.ExecContext(ctx, memberQuery,
 		m.ID().String(),
 		m.UserID().String(),
 		m.TenantID().String(),
@@ -274,6 +283,9 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 			return tenant.ErrPlatformAdminMembership
 		}
 		return fmt.Errorf("failed to create membership: %w", err)
+	}
+	if n, rerr := res.RowsAffected(); rerr == nil && n == 0 {
+		return tenant.ErrAlreadyMember
 	}
 
 	// Insert role into user_roles table (this is the source of truth for roles)
@@ -556,14 +568,16 @@ func (r *TenantRepository) DeleteMembership(ctx context.Context, memberTenantID,
 	return nil
 }
 
-// ListMembersByTenant lists all members of a tenant.
-// Role is fetched from v_user_effective_role view.
+// ListMembersByTenant lists the members of a tenant (active and suspended;
+// offboarded tombstones are left out). Role is fetched from
+// v_user_effective_role view, status from tenant_members.
 func (r *TenantRepository) ListMembersByTenant(ctx context.Context, tenantID shared.ID) ([]*tenant.Membership, error) {
 	query := `
-		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at
+		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by
 		FROM tenant_members m
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
-		WHERE m.tenant_id = $1
+		WHERE m.tenant_id = $1 AND m.status <> 'offboarded'
 		ORDER BY m.joined_at ASC
 	`
 
@@ -594,7 +608,7 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 		FROM tenants t
 		INNER JOIN tenant_members m ON t.id = m.tenant_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
-		WHERE m.user_id = $1
+		WHERE m.user_id = $1 AND m.status <> 'offboarded'
 		ORDER BY m.joined_at DESC
 	`
 
@@ -649,7 +663,7 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 
 // CountMembersByTenant counts members in a tenant.
 func (r *TenantRepository) CountMembersByTenant(ctx context.Context, tenantID shared.ID) (int64, error) {
-	query := `SELECT COUNT(*) FROM tenant_members WHERE tenant_id = $1`
+	query := `SELECT COUNT(*) FROM tenant_members WHERE tenant_id = $1 AND status <> 'offboarded'`
 
 	var count int64
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(&count)
@@ -673,7 +687,7 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
-		WHERE m.tenant_id = $1
+		WHERE m.tenant_id = $1 AND m.status <> 'offboarded'
 		ORDER BY m.joined_at ASC
 	`
 
@@ -748,6 +762,19 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 	args := []any{tenantID.String()}
 	argIndex := 2
 
+	// Status filter. The default leaves out offboarded tombstones, so every
+	// picker built on this list (assignee, group member, approver) never
+	// offers a person who left.
+	switch filters.Status {
+	case "":
+		whereClause += " AND m.status <> 'offboarded'"
+	case tenant.MemberFilterAll:
+	default:
+		whereClause += fmt.Sprintf(" AND m.status = $%d", argIndex)
+		args = append(args, filters.Status)
+		argIndex++
+	}
+
 	// Add search filter if provided
 	if filters.Search != "" {
 		searchPattern := "%" + escapeLikePattern(filters.Search) + "%"
@@ -757,11 +784,6 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			whereClause += fmt.Sprintf(" AND (LOWER(u.name) LIKE LOWER($%d) OR LOWER(u.email) LIKE LOWER($%d))", argIndex, argIndex)
 		}
 		args = append(args, searchPattern)
-		argIndex++
-	}
-	if filters.Status != "" {
-		whereClause += fmt.Sprintf(" AND COALESCE(m.status, 'active') = $%d", argIndex)
-		args = append(args, filters.Status)
 		argIndex++
 	}
 	if filters.Role != "" {
@@ -982,12 +1004,14 @@ func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.I
 			WHERE m.tenant_id = $1
 		)
 		SELECT
-			COUNT(*)                                                            AS total,
+			COUNT(*) FILTER (WHERE status <> 'offboarded')                     AS total,
 			COUNT(*) FILTER (WHERE status = 'active')                          AS active,
-			COUNT(*) FILTER (WHERE effective_role = 'owner')                   AS owners,
-			COUNT(*) FILTER (WHERE effective_role = 'admin')                   AS admins,
-			COUNT(*) FILTER (WHERE effective_role = 'member' OR effective_role IS NULL) AS members_cnt,
-			COUNT(*) FILTER (WHERE effective_role = 'viewer')                  AS viewers,
+			COUNT(*) FILTER (WHERE status = 'suspended')                       AS suspended,
+			COUNT(*) FILTER (WHERE status = 'offboarded')                      AS offboarded,
+			COUNT(*) FILTER (WHERE effective_role = 'owner' AND status <> 'offboarded')  AS owners,
+			COUNT(*) FILTER (WHERE effective_role = 'admin' AND status <> 'offboarded')  AS admins,
+			COUNT(*) FILTER (WHERE (effective_role = 'member' OR effective_role IS NULL) AND status <> 'offboarded') AS members_cnt,
+			COUNT(*) FILTER (WHERE effective_role = 'viewer' AND status <> 'offboarded') AS viewers,
 			(
 				SELECT COUNT(*)
 				FROM tenant_invitations
@@ -997,12 +1021,12 @@ func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.I
 	`
 
 	var (
-		total, active                         int
+		total, active, suspended, offboarded  int
 		owners, admins, membersCount, viewers int
 		pendingInvites                        int
 	)
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
-		&total, &active,
+		&total, &active, &suspended, &offboarded,
 		&owners, &admins, &membersCount, &viewers,
 		&pendingInvites,
 	)
@@ -1011,9 +1035,11 @@ func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.I
 	}
 
 	return &tenant.MemberStats{
-		TotalMembers:   total,
-		ActiveMembers:  active,
-		PendingInvites: pendingInvites,
+		TotalMembers:      total,
+		ActiveMembers:     active,
+		SuspendedMembers:  suspended,
+		OffboardedMembers: offboarded,
+		PendingInvites:    pendingInvites,
 		RoleCounts: map[string]int{
 			"owner":  owners,
 			"admin":  admins,
@@ -1108,10 +1134,12 @@ func (r *TenantRepository) GetUserMembershipsWithStatus(
 		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Role, &status); err != nil {
 			return nil, fmt.Errorf("failed to scan membership: %w", err)
 		}
+		// Positive buckets only: an offboarded tombstone (or any status
+		// added later) is in neither list, so it never yields a token.
 		switch status {
 		case "suspended":
 			result.Suspended = append(result.Suspended, m)
-		default:
+		case "active":
 			result.Active = append(result.Active, m)
 		}
 	}
@@ -1375,10 +1403,16 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 			return shared.ErrNotFound
 		}
 
-		// Create membership in tenant_members with role
+		// Create membership in tenant_members with role (an offboarded
+		// tombstone is re-activated from zero, see CreateMembership).
 		insertQuery := `
 			INSERT INTO tenant_members (id, user_id, tenant_id, role, invited_by, joined_at)
 			VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (user_id, tenant_id) DO UPDATE
+		SET id = EXCLUDED.id, role = EXCLUDED.role, invited_by = EXCLUDED.invited_by,
+		    joined_at = EXCLUDED.joined_at, status = 'active',
+		    offboarded_at = NULL, offboarded_by = NULL, suspended_at = NULL, suspended_by = NULL
+		WHERE tenant_members.status = 'offboarded'
 		`
 
 		var invitedBy sql.NullString
@@ -1386,7 +1420,7 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 			invitedBy = sql.NullString{String: m.InvitedBy().String(), Valid: true}
 		}
 
-		_, err = tx.ExecContext(ctx, insertQuery,
+		insRes, err := tx.ExecContext(ctx, insertQuery,
 			m.ID().String(),
 			m.UserID().String(),
 			m.TenantID().String(),
@@ -1399,6 +1433,9 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 				return tenant.ErrPlatformAdminMembership
 			}
 			return fmt.Errorf("failed to create membership: %w", err)
+		}
+		if n, rerr := insRes.RowsAffected(); rerr == nil && n == 0 {
+			return tenant.ErrAlreadyMember
 		}
 
 		// Assign RBAC roles from invitation.RoleIDs using multi-row INSERT
@@ -1522,9 +1559,13 @@ func (r *TenantRepository) scanMembershipRow(rows *sql.Rows) (*tenant.Membership
 		idStr, userIDStr, tenantIDStr, roleStr string
 		invitedByStr                           sql.NullString
 		joinedAt                               time.Time
+		statusStr                              string
+		suspendedAt                            sql.NullTime
+		suspendedByStr                         sql.NullString
 	)
 
-	err := rows.Scan(&idStr, &userIDStr, &tenantIDStr, &roleStr, &invitedByStr, &joinedAt)
+	err := rows.Scan(&idStr, &userIDStr, &tenantIDStr, &roleStr, &invitedByStr, &joinedAt,
+		&statusStr, &suspendedAt, &suspendedByStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan membership: %w", err)
 	}
@@ -1542,7 +1583,19 @@ func (r *TenantRepository) scanMembershipRow(rows *sql.Rows) (*tenant.Membership
 		}
 	}
 
-	return tenant.ReconstituteMembership(id, userID, tenantID, role, invitedBy, joinedAt), nil
+	var suspendedAtPtr *time.Time
+	if suspendedAt.Valid {
+		t := suspendedAt.Time
+		suspendedAtPtr = &t
+	}
+	var suspendedBy *shared.ID
+	if suspendedByStr.Valid {
+		if parsed, perr := shared.IDFromString(suspendedByStr.String); perr == nil {
+			suspendedBy = &parsed
+		}
+	}
+	return tenant.ReconstituteMembershipWithStatus(id, userID, tenantID, role, invitedBy, joinedAt,
+		tenant.MemberStatus(statusStr), suspendedAtPtr, suspendedBy), nil
 }
 
 func (r *TenantRepository) scanInvitation(row *sql.Row) (*tenant.Invitation, error) {

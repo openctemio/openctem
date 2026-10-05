@@ -112,10 +112,19 @@ func (r *AccessControlRepository) IsGroupInTenant(ctx context.Context, tenantID,
 	return exists, nil
 }
 
-// IsUserInTenant reports whether the user is a member of the tenant. Mirrors the
-// `tenant_members WHERE tenant_id` screen the read-side owner queries use.
+// IsUserInTenant reports whether the user is an ACTIVE member of the tenant
+// (active membership, active account). It gates adding someone to an access
+// group and naming them as an asset owner: a disabled member, or the
+// offboarded tombstone of someone who left, cannot be given a group (which
+// would otherwise survive into a later re-join) or ownership (member
+// lifecycle, RFC-050).
 func (r *AccessControlRepository) IsUserInTenant(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
-	const query = `SELECT EXISTS (SELECT 1 FROM tenant_members WHERE user_id = $1 AND tenant_id = $2)`
+	const query = `
+		SELECT EXISTS (
+			SELECT 1 FROM tenant_members m
+			  JOIN users u ON u.id = m.user_id
+			 WHERE m.user_id = $1 AND m.tenant_id = $2
+			   AND m.status = 'active' AND u.status = 'active')`
 	var exists bool
 	if err := r.db.QueryRowContext(ctx, query, userID.String(), tenantID.String()).Scan(&exists); err != nil {
 		return false, fmt.Errorf("failed to check user tenant membership: %w", err)
@@ -2526,13 +2535,13 @@ func (r *AccessControlRepository) ListGroupsWithActiveScopeRules(ctx context.Con
 
 // ListGroupsWithAssetGroupMatchRule returns distinct access control group IDs that have
 // active scope rules referencing the given asset group ID in match_asset_group_ids.
-func (r *AccessControlRepository) ListGroupsWithAssetGroupMatchRule(ctx context.Context, assetGroupID shared.ID) ([]shared.ID, error) {
+func (r *AccessControlRepository) ListGroupsWithAssetGroupMatchRule(ctx context.Context, tenantID, assetGroupID shared.ID) ([]shared.ID, error) {
 	query := `
 		SELECT DISTINCT group_id
 		FROM group_asset_scope_rules
-		WHERE $1::uuid = ANY(match_asset_group_ids) AND is_active = true
+		WHERE tenant_id = $2 AND $1::uuid = ANY(match_asset_group_ids) AND is_active = true
 	`
-	rows, err := r.db.QueryContext(ctx, query, assetGroupID.String())
+	rows, err := r.db.QueryContext(ctx, query, assetGroupID.String(), tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list groups with asset group match rule: %w", err)
 	}

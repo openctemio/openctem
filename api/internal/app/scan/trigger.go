@@ -274,6 +274,13 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
 	runContext["routing_tags"] = sc.Tags
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
+	// Who the run acts for (act scope of chained stages): the person who
+	// triggered it, else the scan's owner. Never sent to a sensor.
+	if actor := userIDPtr(triggeredBy); actor != nil {
+		runContext[RunContextKeyActor] = actor.String()
+	} else if sc.CreatedBy != nil {
+		runContext[RunContextKeyActor] = sc.CreatedBy.String()
+	}
 	// Resolve the targets server-side (direct targets + asset-group members,
 	// minus scope exclusions) and carry them to the step commands; sensors do
 	// not resolve asset groups, so without this a group scan scans nothing.
@@ -541,13 +548,16 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *pipeline.Run, 
 		}
 		roots++
 		if !step.ConditionMet(run) {
-			s.skipWorkflowStep(ctx, run, step, "Condition not met")
+			s.skipWorkflowStep(ctx, run, step, step.ConditionSkipReason())
 			continue
 		}
 		if queued >= maxParallel {
 			continue // started by the pipeline service as slots free up
 		}
-		if err := s.queueWorkflowStep(ctx, run, step); err != nil {
+		if s.stepQueuer == nil {
+			return ErrStepQueuerUnavailable
+		}
+		if err := s.stepQueuer.QueueRunStep(ctx, run, step); err != nil {
 			return err
 		}
 		queued++
@@ -588,111 +598,6 @@ func (s *Service) skipWorkflowStep(ctx context.Context, run *pipeline.Run, step 
 			return
 		}
 	}
-}
-
-// queueWorkflowStep queues a workflow step for execution.
-func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step *pipeline.Step) error {
-	// Find the step run first to include in payload
-	var stepRunID string
-	stepRuns, _ := s.stepRunRepo.GetByPipelineRunID(ctx, run.ID)
-	for _, sr := range stepRuns {
-		if sr.StepID == step.ID {
-			stepRunID = sr.ID.String()
-			break
-		}
-	}
-
-	// The step's tool is handed only the run's targets it can scan
-	// (RFC-042 §6.3.8 O6); a step left with none fails here, before any
-	// sensor sees it.
-	stepTargets, err := s.FilterStepTargets(ctx, run.TenantID, step.Tool, run.Context)
-	failCode := codeIncompatibleTargets
-	var payloadMap map[string]any
-	if err == nil {
-		failCode = "INVALID_STEP_CONFIG"
-		payloadMap, err = workflowStepPayload(run, step, stepRunID, stepTargets)
-	}
-	if err != nil {
-		// A setting the sensor would refuse, or targets the tool cannot
-		// scan, fail the step here, with the reason, instead of a command
-		// that fails on the sensor.
-		for _, sr := range stepRuns {
-			if sr.StepID == step.ID {
-				sr.Fail(err.Error(), failCode)
-				if uerr := s.stepRunRepo.Update(ctx, sr); uerr != nil {
-					s.logger.Warn("failed to fail step run", "step_key", step.StepKey, "error", uerr)
-				}
-				break
-			}
-		}
-		return fmt.Errorf("%w: step %s: %w", shared.ErrValidation, step.StepKey, err)
-	}
-	payload, _ := json.Marshal(payloadMap)
-
-	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
-	if err != nil {
-		return fmt.Errorf("failed to create command: %w", err)
-	}
-	if zoneID := pipeline.ScanZoneFromContext(run.Context); zoneID != nil {
-		cmd.SetScanZone(*zoneID) // only the zone's sensors may claim it
-	}
-
-	if err := s.commandRepo.Create(ctx, cmd); err != nil {
-		return fmt.Errorf("failed to create command: %w", err)
-	}
-
-	// Update step run status to queued
-	for _, sr := range stepRuns {
-		if sr.StepID == step.ID {
-			sr.CommandID = &cmd.ID
-			sr.Queue()
-			if err := s.stepRunRepo.Update(ctx, sr); err != nil {
-				s.logger.Warn("failed to update step run", "error", err)
-			}
-			break
-		}
-	}
-
-	return nil
-}
-
-// workflowStepPayload is the command payload of one workflow step, with
-// consistent field names for pipeline progression. The step's settings go
-// under PayloadKeyConfig, the key the sensor reads (see
-// pipeline.NormalizeStepConfig).
-func workflowStepPayload(run *pipeline.Run, step *pipeline.Step, stepRunID string, st *StepTargets) (map[string]any, error) {
-	config, err := pipeline.NormalizeStepConfig(step.Tool, step.Config)
-	if err != nil {
-		return nil, err
-	}
-	payloadMap := map[string]any{
-		pipeline.PayloadKeyPipelineRunID: run.ID.String(),
-		pipeline.PayloadKeyStepRunID:     stepRunID,
-		pipeline.PayloadKeyStepKey:       step.StepKey,
-		"step_id":                        step.ID.String(),
-		pipeline.PayloadKeyConfig:        config,
-		"required_capabilities":          step.Capabilities,
-		"preferred_tool":                 step.Tool,
-		"timeout_seconds":                step.TimeoutSeconds,
-		"context":                        StepRunContext(run.Context, st),
-	}
-	// The sensor SDK runs the scanner the payload names in `scanner`
-	// (ScanCommandPayload); without it every step failed on the sensor with
-	// "scanner not found: ". preferred_tool stays for the platform's tool
-	// gate and older readers.
-	if step.Tool != "" {
-		payloadMap["scanner"] = step.Tool
-	}
-	// Surface direct targets at the top level of the payload — sensor executors
-	// read job.Payload["targets"], not the nested run context. Without this a
-	// workflow driven by ad-hoc targets (QuickScan) would receive none.
-	if targets, ok := run.Context["targets"]; ok {
-		payloadMap["targets"] = targets
-		if st != nil && st.Targets != nil {
-			payloadMap["targets"] = st.Targets
-		}
-	}
-	return payloadMap, nil
 }
 
 // EmbeddedTemplate represents a template embedded in scan command payload.
@@ -1199,23 +1104,17 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 			return err
 		}
 	case len(step.Capabilities) > 0:
-		matchingTool, err := s.toolRepo.FindByCapabilities(ctx, tenantID, step.Capabilities)
-		if err != nil || matchingTool == nil {
-			return shared.NewDomainError(
-				"NO_MATCHING_TOOL",
-				fmt.Sprintf("No active tool found for step '%s' with capabilities %v. Please configure a tool for this step.", step.StepKey, step.Capabilities),
-				shared.ErrValidation,
-			)
-		}
-		if err := s.checkTenantToolEnabled(ctx, tenantID, matchingTool); err != nil {
+		// The planner's own rule (step_plan.go), so a step that validates
+		// is a step the dispatcher can name a scanner for (F1).
+		resolved, err := ResolveStepTool(ctx, s.toolRepo, tenantID, step)
+		if err != nil {
 			return err
 		}
-		if !matchingTool.IsActive {
-			return shared.NewDomainError(
-				"TOOL_DISABLED",
-				fmt.Sprintf("Tool '%s' matching step '%s' capabilities is disabled.", matchingTool.Name, step.StepKey),
-				shared.ErrValidation,
-			)
+		// The tenant may have turned the resolved platform tool off.
+		if matchingTool, gerr := s.toolRepo.GetPlatformToolByName(ctx, resolved.Name); gerr == nil && matchingTool != nil {
+			if err := s.checkTenantToolEnabled(ctx, tenantID, matchingTool); err != nil {
+				return err
+			}
 		}
 	default:
 		return shared.NewDomainError(

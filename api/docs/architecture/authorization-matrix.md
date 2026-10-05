@@ -501,7 +501,10 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/members` | Team admin+ |
 | `PATCH /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
 | `POST /api/v1/tenants/{tenant}/members/{id}/suspend` · `/reactivate` | Team admin+; **owner only when the target is an administrator** |
-| `DELETE /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
+| `DELETE /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator**. An **offboarding** with no reassignment plan (member lifecycle, RFC-050): 409 `reassignment_required` when the member owns work; the membership row is never deleted |
+| `GET /api/v1/tenants/{tenant}/members/{id}/access-report` | Team admin+ (`members:read`): what the member holds and owns |
+| `POST /api/v1/tenants/{tenant}/members/{id}/offboard` | Team admin+ (`members:write`); **owner only when the target is an administrator**; reassignment targets must be active members of the same organization |
+| `POST /api/v1/tenants/{tenant}/members/{id}/erase` | **Team owner only**; only after offboarding and when the person belongs to no other organization |
 | `POST /api/v1/tenants/{tenant}/members/{id}/reset-2fa` | Team admin+; **owner only when the target is an owner or administrator**; never the caller themself; the caller needs the same authority in **every other organization** the target belongs to (the factor is account-wide). See `user-two-factor-authentication.md` › Recovery |
 | `POST /api/v1/tenants/{tenant}/invitations` | Team admin+ |
 | `DELETE /api/v1/tenants/{tenant}/invitations/{id}` | Team admin+ |
@@ -1020,6 +1023,48 @@ results an out-of-scope id is reported exactly like an unknown id.
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
+- **Only an active principal has scope** (member lifecycle, RFC-050,
+  migration 001044). `user_accessible_assets` holds rows only for an ACTIVE
+  membership of an ACTIVE account: every refresh function is gated by
+  `principal_is_active(tenant, user)`, a disable drops the rows in its
+  transaction and a re-enable recomputes them (`refresh_access_for_user`)
+  from the frozen groups and grants. `HasFullDataRole` is false for an
+  inactive member, and `datascope.MembershipAdminLookup` answers
+  `ErrInactivePrincipal` for a disabled or offboarded member, so a background
+  job acting for them (scheduled scan, report) refuses instead of running
+  with a bypass the person no longer holds.
+- **The scope follows its sources in the same transaction** (migration
+  001051, RFC-050 W6). Database triggers keep `user_accessible_assets` in
+  step whatever code path writes: a group asset row inserted or deleted
+  (`asset_owners_scope_sync`), a member leaving a group
+  (`group_members_scope_sync`), a group deactivated or re-activated
+  (`groups_active_scope_sync`, recomputes every member), a group deleted (its
+  asset rows go first, `groups_delete_scope_sync`), a scope rule deleted or
+  deactivated (its auto-assigned rows go, instead of `ON DELETE SET NULL`
+  orphaning them). A user keeps an asset another active group or a direct
+  grant still gives. Narrowing a rule reconciles the whole group (stale
+  auto-assignments removed), and an asset-group change reconciles the rules
+  of that tenant (it used to look them up with a zero tenant id). Before,
+  deactivating a group never removed the access it granted (21b H6/L-12).
+
+### Member lifecycle (disable, offboard, erase)
+
+A person is never hard-deleted (RFC-050 §2). Every membership gate is a
+positive check (`Membership.IsActive()`), never `!IsSuspended()`, and
+`users.status` must be `active` on every authenticated request.
+
+| Action | Access | Held sources | Owned work |
+|---|---|---|---|
+| Disable (`/suspend`, SCIM `active=false`) | cut at once: sessions, refresh tokens, sockets, keys `suspended`, scope rows dropped | frozen (groups, grants, ownership kept) | scan schedules `paused`, report schedules and workflows deactivated, administrators notified |
+| Re-enable (`/reactivate`) | restored: keys re-activated, scope recomputed | unchanged | stays paused until an administrator resumes it |
+| Offboard (`/offboard`, `DELETE`, SCIM delete) | gone: keys `revoked` | stripped: groups, grants, engagement memberships, roles, invitations; membership kept as an `offboarded` tombstone | reassigned (mandatory) to another active member of the tenant; open findings may go back to the queue |
+| Erase (`/erase`, owner) | — | — | — ; name and email anonymised, rows and foreign keys kept |
+
+SCIM delete offboards when the member owns nothing to reassign; otherwise it
+disables and asks administrators to finish. A re-invite, admin add, SCIM
+provisioning or SSO JIT re-activates a tombstone from zero (only the new
+role). Tombstones yield no token, no tenant-switcher entry, are left out of
+the default member list (`?status=offboarded|all` shows them) and out of SCIM.
 
 ### Coverage
 
