@@ -291,7 +291,7 @@ func TestSafeFileName(t *testing.T) {
 		strings.Repeat("é", 300):    strings.Repeat("é", 200),
 	}
 	for in, want := range cases {
-		if got := safeFileName(in); got != want {
+		if got := findingimport.SafeName(in); got != want {
 			t.Errorf("safeFileName(%q) = %q, want %q", in, got, want)
 		}
 	}

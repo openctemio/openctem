@@ -149,22 +149,53 @@ func NewService(ing Ingester, repo Repository, vexMode ingest.VEXMode, log *logg
 // VEXMode returns the mode VEX documents are applied in.
 func (s *Service) VEXMode() ingest.VEXMode { return s.vexMode }
 
-// ImportFile converts one file and, unless req.DryRun, ingests it and
-// applies its VEX statements. kb is the Qualys KnowledgeBase companion (may
-// be nil). index numbers the file within the upload.
-func (s *Service) ImportFile(ctx context.Context, req Request, index int, name string, r io.Reader, kb io.Reader) FileResult {
-	fr := FileResult{Name: name}
-	res, err := importer.Parse(ctx, r, importer.Options{
-		Format:              req.Format,
-		Limits:              FileLimits,
-		ReportID:            fmt.Sprintf("%s-%d", req.SessionID, index),
-		MinSeverity:         req.MinSeverity,
-		QualysKnowledgeBase: kb,
+// ImportUpload converts an upload (Convert) and, unless req.DryRun, stores
+// each file: an import record, the ingest of its report with the uploader's
+// rights, its VEX statements. refused is set when the upload as a whole
+// cannot be read; archive tells a ZIP from a single file.
+func (s *Service) ImportUpload(ctx context.Context, req Request, up Upload) (results []FileResult, archive bool, refused *FileError) {
+	up.Format = req.Format
+	up.MinSeverity = req.MinSeverity
+	if up.ReportIDPrefix == "" {
+		up.ReportIDPrefix = req.SessionID
+	}
+	archive, refused = Convert(ctx, up, func(c Converted) {
+		results = append(results, s.store(ctx, req, c))
 	})
-	if err != nil {
-		fr.Error = fileError(err)
+	return results, archive, refused
+}
+
+// ImportFile imports one file (not an archive); kb is the Qualys
+// KnowledgeBase companion, may be nil. index numbers the file within the
+// request.
+func (s *Service) ImportFile(ctx context.Context, req Request, index int, name string, r io.Reader, kb io.Reader) FileResult {
+	up := Upload{Name: name, Body: r, ReportIDPrefix: fmt.Sprintf("%s-%d", req.SessionID, index)}
+	if kb != nil {
+		b, err := io.ReadAll(io.LimitReader(kb, MaxKnowledgeBase+1))
+		if err != nil || len(b) > MaxKnowledgeBase {
+			return FileResult{Name: name, Error: &FileError{Kind: KindTooLarge, Message: "the knowledge base is too large"}}
+		}
+		up.KnowledgeBase = b
+	}
+	results, _, refused := s.ImportUpload(ctx, req, up)
+	if refused != nil {
+		return FileResult{Name: SafeName(name), Error: refused}
+	}
+	if len(results) == 0 {
+		return FileResult{Name: SafeName(name), Error: &FileError{Kind: KindMalformed, Message: "the file holds nothing to import"}}
+	}
+	return results[0]
+}
+
+// store records and ingests one converted file.
+func (s *Service) store(ctx context.Context, req Request, c Converted) FileResult {
+	fr := FileResult{Name: c.Name}
+	if c.Error != nil {
+		fr.Error = c.Error
 		return fr
 	}
+	res := c.Result
+	name := c.Name
 	fr.Format = res.Format
 	fr.Stats = res.Stats
 	fr.Issues = res.Issues
@@ -186,7 +217,7 @@ func (s *Service) ImportFile(ctx context.Context, req Request, index int, name s
 		}
 		if err := s.repo.CreateFindingImport(ctx, rec); err != nil {
 			s.logger.Error("finding import: record", "tenant_id", req.TenantID.String(), "error", err)
-			fr.Error = &FileError{Message: "recording the import failed", Kind: "failed"}
+			fr.Error = &FileError{Message: "recording the import failed", Kind: KindFailed}
 			return fr
 		}
 		fr.ImportID = rec.ID.String()
@@ -198,7 +229,7 @@ func (s *Service) ImportFile(ctx context.Context, req Request, index int, name s
 	if !req.DryRun && hasContent(res.Report) {
 		out, err := s.ingestReport(ctx, req, res.Report)
 		if err != nil {
-			fr.Error = &FileError{Message: err.Error(), Kind: "failed"}
+			fr.Error = &FileError{Message: err.Error(), Kind: KindFailed}
 			s.finish(ctx, req, rec, &fr)
 			return fr
 		}
@@ -208,7 +239,7 @@ func (s *Service) ImportFile(ctx context.Context, req Request, index int, name s
 		sum, err := s.applyVEX(ctx, req, res.VEX)
 		if err != nil {
 			s.logger.Error("finding import: vex", "tenant_id", req.TenantID.String(), "error", err)
-			fr.Error = &FileError{Message: "applying the VEX statements failed", Kind: "failed"}
+			fr.Error = &FileError{Message: "applying the VEX statements failed", Kind: KindFailed}
 		}
 		fr.VEX = sum
 	}
@@ -527,7 +558,7 @@ func interopVEX(v ctis.VEX) vulnerability.InteropVEX {
 // fileError maps a parse error to its public form. The message of an
 // importer.ParseError describes the input only (format, place, rule).
 func fileError(err error) *FileError {
-	fe := &FileError{Kind: "malformed", Message: "the file could not be read"}
+	fe := &FileError{Kind: KindMalformed, Message: "the file could not be read"}
 	var pe *importer.ParseError
 	if errors.As(err, &pe) {
 		fe.Message = pe.Error()
@@ -535,13 +566,13 @@ func fileError(err error) *FileError {
 	}
 	switch {
 	case errors.Is(err, importer.ErrUnknownFormat):
-		fe.Kind = "unknown_format"
+		fe.Kind = KindUnknownFormat
 	case errors.Is(err, importer.ErrTooLarge):
-		fe.Kind = "too_large"
+		fe.Kind = KindTooLarge
 	case errors.Is(err, importer.ErrUnsafe):
-		fe.Kind = "unsafe"
+		fe.Kind = KindUnsafe
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		fe.Kind = "failed"
+		fe.Kind = KindFailed
 		fe.Message = "the import took too long"
 	}
 	return fe

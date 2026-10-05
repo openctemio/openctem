@@ -1,20 +1,15 @@
 package handler
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
-	"path"
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/importer"
@@ -30,9 +25,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
-
-// importErrTooLarge is the kind of a file or archive over a limit.
-const importErrTooLarge = "too_large"
 
 // Upload limits of POST /findings/import.
 const (
@@ -310,122 +302,47 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// importPart imports one file part: a ZIP archive (each file of it) or a
-// single file. For a single file that cannot be read it returns the HTTP
-// status the request fails with.
+// importPart imports one file part through findingimport (the one entry
+// point that detects and converts an upload). For a single file that cannot
+// be read, or an upload refused as a whole, it returns the HTTP status the
+// request fails with and the file to describe.
 func (h *FindingImportHandler) importPart(ctx context.Context, req findingimport.Request, part *multipart.Part,
 	kb []byte, index int) ([]findingimport.FileResult, int, *apierror.Error) {
-	name := safeFileName(part.FileName())
+	name := findingimport.SafeName(part.FileName())
 	tr := &readErrTracker{r: part}
-	br := bufio.NewReaderSize(tr, importer.SniffLen)
-	head, err := br.Peek(importer.SniffLen)
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
-		return nil, 0, bodyError(err)
+	up := findingimport.Upload{
+		Name:           name,
+		Body:           tr,
+		KnowledgeBase:  kb,
+		ReportIDPrefix: fmt.Sprintf("%s-%d", req.SessionID, index),
+		TempDir:        h.tempDir,
 	}
-	// The content decides; the client's Content-Type and file name never do.
-	if importer.IsZip(head) {
-		return h.importArchive(ctx, req, name, br, kb, index)
+	results, archive, refused := h.svc.ImportUpload(ctx, req, up)
+	var mbe *http.MaxBytesError
+	if errors.As(tr.err, &mbe) {
+		return nil, 0, bodyError(mbe)
 	}
-	if f, ok := importer.Detect(head); ok && f == importer.FormatQualysKB {
-		fr := findingimport.FileResult{Name: name, Error: &findingimport.FileError{Kind: "unknown_format",
-			Message: "a Qualys KnowledgeBase goes in the knowledge_base part, with its detection file"}}
-		return []findingimport.FileResult{fr}, http.StatusBadRequest, nil
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, 0, apierror.ServiceUnavailable("the import took too long")
 	}
-	var kbr io.Reader
-	if kb != nil {
-		kbr = bytes.NewReader(kb)
-	}
-	fr := h.svc.ImportFile(ctx, req, index, name, br, kbr)
-	if fr.Error != nil && fr.Format == "" {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, 0, apierror.ServiceUnavailable("the import took too long")
+	if refused != nil {
+		if refused.Kind == findingimport.KindReadFailed {
+			return nil, 0, apierror.BadRequest("the upload could not be read")
 		}
-		var mbe *http.MaxBytesError
-		if errors.As(tr.err, &mbe) {
-			return nil, 0, bodyError(mbe)
-		}
-		status := http.StatusBadRequest
-		if fr.Error.Kind == importErrTooLarge {
-			status = http.StatusRequestEntityTooLarge
-		}
-		return []findingimport.FileResult{fr}, status, nil
+		return []findingimport.FileResult{{Name: name, Error: refused}}, statusOf(refused), nil
 	}
-	return []findingimport.FileResult{fr}, 0, nil
+	if !archive && len(results) == 1 && results[0].Error != nil && results[0].Format == "" {
+		return results, statusOf(results[0].Error), nil
+	}
+	return results, 0, nil
 }
 
-// importArchive spools a ZIP part to a private temporary file (a ZIP is read
-// from its end), lists it under the archive limits and imports each file.
-// Qualys KnowledgeBase files in the archive are paired with its Qualys
-// detection files.
-func (h *FindingImportHandler) importArchive(ctx context.Context, req findingimport.Request, name string, r io.Reader,
-	kb []byte, index int) ([]findingimport.FileResult, int, *apierror.Error) {
-	if req.Format != "" {
-		return nil, 0, apierror.BadRequest("format applies to a single file, not to an archive")
+// statusOf is the HTTP status of a refused upload.
+func statusOf(fe *findingimport.FileError) int {
+	if fe.Kind == findingimport.KindTooLarge {
+		return http.StatusRequestEntityTooLarge
 	}
-	tmp, err := os.CreateTemp(h.tempDir, "openctem-import-*.zip")
-	if err != nil {
-		h.logger.Error("finding import: temp file", "error", err)
-		return nil, 0, apierror.InternalServerError("import failed")
-	}
-	defer func() {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-	}()
-	size, err := io.Copy(tmp, r)
-	if err != nil {
-		return nil, 0, bodyError(err)
-	}
-	entries, err := importer.OpenZip(tmp, size, findingimport.ArchiveLimits)
-	if err != nil {
-		fr := findingimport.FileResult{Name: name, Error: archiveError(err)}
-		status := http.StatusBadRequest
-		if errors.Is(err, importer.ErrTooLarge) {
-			status = http.StatusRequestEntityTooLarge
-		}
-		return []findingimport.FileResult{fr}, status, nil
-	}
-	if len(entries) == 0 {
-		fr := findingimport.FileResult{Name: name, Error: &findingimport.FileError{Kind: "malformed", Message: "the archive holds no file"}}
-		return []findingimport.FileResult{fr}, http.StatusBadRequest, nil
-	}
-
-	// First pass: the formats, and the KnowledgeBase files.
-	formats := make([]importer.Format, len(entries))
-	for i, e := range entries {
-		f, err := detectEntry(e)
-		if err != nil {
-			return nil, 0, archiveAPIError(err)
-		}
-		formats[i] = f
-		if f == importer.FormatQualysKB && kb == nil {
-			kb, err = readEntry(e, maxImportKB)
-			if err != nil {
-				return nil, 0, archiveAPIError(err)
-			}
-		}
-	}
-	out := make([]findingimport.FileResult, 0, len(entries))
-	for i, e := range entries {
-		if formats[i] == importer.FormatQualysKB {
-			continue
-		}
-		entryName := name + "/" + safeFileName(e.Name)
-		rc, err := e.Open()
-		if err != nil {
-			return nil, 0, archiveAPIError(err)
-		}
-		var kbr io.Reader
-		if kb != nil && formats[i] == importer.FormatQualys {
-			kbr = bytes.NewReader(kb)
-		}
-		fr := h.svc.ImportFile(ctx, req, index+len(out), entryName, rc, kbr)
-		_ = rc.Close()
-		out = append(out, fr)
-		if ctx.Err() != nil {
-			return nil, 0, apierror.ServiceUnavailable("the import took too long")
-		}
-	}
-	return out, 0, nil
+	return http.StatusBadRequest
 }
 
 // readErrTracker remembers the last read error of the upload, so a body
@@ -442,59 +359,6 @@ func (t *readErrTracker) Read(p []byte) (int, error) {
 		t.err = err
 	}
 	return n, err
-}
-
-func detectEntry(e importer.ArchiveFile) (importer.Format, error) {
-	rc, err := e.Open()
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = rc.Close() }()
-	head, err := io.ReadAll(io.LimitReader(rc, importer.SniffLen))
-	if err != nil {
-		return "", err
-	}
-	f, _ := importer.Detect(head)
-	return f, nil
-}
-
-func readEntry(e importer.ArchiveFile, limit int64) ([]byte, error) {
-	rc, err := e.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rc.Close() }()
-	b, err := io.ReadAll(io.LimitReader(rc, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("%w: the knowledge base is too large", importer.ErrTooLarge)
-	}
-	return b, nil
-}
-
-func archiveError(err error) *findingimport.FileError {
-	fe := &findingimport.FileError{Kind: "malformed", Message: "the archive could not be read"}
-	var pe *importer.ParseError
-	if errors.As(err, &pe) {
-		fe.Message = pe.Error()
-	}
-	switch {
-	case errors.Is(err, importer.ErrUnsafe):
-		fe.Kind = "unsafe"
-	case errors.Is(err, importer.ErrTooLarge):
-		fe.Kind = importErrTooLarge
-	}
-	return fe
-}
-
-func archiveAPIError(err error) *apierror.Error {
-	fe := archiveError(err)
-	if fe.Kind == importErrTooLarge {
-		return apierror.New(http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", fe.Message)
-	}
-	return apierror.BadRequest(fe.Message)
 }
 
 // bodyError maps an error reading the request body.
@@ -529,25 +393,6 @@ func supportedFormats() []string {
 		out = append(out, string(f))
 	}
 	return out
-}
-
-// safeFileName keeps a client file name as a label only: the base name,
-// printable, at most 200 characters. It is never used as a path.
-func safeFileName(s string) string {
-	s = path.Base(strings.ReplaceAll(s, "\\", "/"))
-	s = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || r == unicode.ReplacementChar {
-			return -1
-		}
-		return r
-	}, s)
-	if r := []rune(s); len(r) > 200 {
-		s = string(r[:200])
-	}
-	if s == "" || s == "." || s == "/" {
-		return "upload"
-	}
-	return s
 }
 
 func toImportFileResponse(fr *findingimport.FileResult) ImportFileResponse {
