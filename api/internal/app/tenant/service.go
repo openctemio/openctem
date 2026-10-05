@@ -451,7 +451,7 @@ func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input
 		t.UpdateLogoURL(*input.LogoURL)
 	}
 
-	if err := s.repo.Update(ctx, t); err != nil {
+	if err := s.repo.UpdateProfile(ctx, t); err != nil {
 		return nil, fmt.Errorf("failed to update tenant: %w", err)
 	}
 
@@ -1410,32 +1410,29 @@ func (s *TenantService) GetTenantSettings(ctx context.Context, tenantID string) 
 	return &settings, nil
 }
 
-// UpdateTenantSettings updates all tenant settings.
-func (s *TenantService) UpdateTenantSettings(ctx context.Context, tenantID string, settings tenantdom.Settings, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-
-	t, err := s.repo.GetByID(ctx, parsedID)
+// UpdateAssetIdentitySettings replaces the asset-identity (dedup) section.
+// Bounds are checked by the handler.
+func (s *TenantService) UpdateAssetIdentitySettings(ctx context.Context, tenantID string, ai tenantdom.AssetIdentitySettings, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
+	var before tenantdom.AssetIdentitySettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionAssetIdentity, func(t *tenantdom.Tenant) error {
+		settings := t.TypedSettings()
+		before = settings.AssetIdentity
+		settings.AssetIdentity = ai
+		return t.UpdateSettings(settings)
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	if err := t.UpdateSettings(settings); err != nil {
-		return nil, err
-	}
+	s.logger.Info("asset identity settings updated", "tenant_id", tenantID)
 
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update tenant settings: %w", err)
-	}
-
-	s.logger.Info("tenant settings updated", "tenant_id", tenantID)
-
-	// Log audit event
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
-		WithMessage("Team settings updated")
+		WithMessage("Asset identity settings updated").
+		WithMetadata("stale_asset_days_before", before.StaleAssetDays).
+		WithMetadata("stale_asset_days_after", ai.StaleAssetDays).
+		WithMetadata("max_ips_per_asset_before", before.MaxIPsPerAsset).
+		WithMetadata("max_ips_per_asset_after", ai.MaxIPsPerAsset)
 	s.logAudit(ctx, actx, event)
 
 	result := t.TypedSettings()
@@ -1459,38 +1456,26 @@ type UpdateGeneralSettingsInput struct {
 
 // UpdateGeneralSettings updates only the general settings.
 func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID string, input UpdateGeneralSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-
-	t, err := s.repo.GetByID(ctx, parsedID)
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionGeneral, func(t *tenantdom.Tenant) error {
+		// Partial merge: start from the persisted section and overlay only the
+		// fields the client actually sent (non-nil). Omitted fields are preserved.
+		general := t.TypedSettings().General
+		if input.Timezone != nil {
+			general.Timezone = *input.Timezone
+		}
+		if input.Language != nil {
+			general.Language = *input.Language
+		}
+		if input.Industry != nil {
+			general.Industry = *input.Industry
+		}
+		if input.Website != nil {
+			general.Website = *input.Website
+		}
+		return t.UpdateGeneralSettings(general)
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	// Partial merge: start from the persisted section and overlay only the
-	// fields the client actually sent (non-nil). Omitted fields are preserved.
-	general := t.TypedSettings().General
-	if input.Timezone != nil {
-		general.Timezone = *input.Timezone
-	}
-	if input.Language != nil {
-		general.Language = *input.Language
-	}
-	if input.Industry != nil {
-		general.Industry = *input.Industry
-	}
-	if input.Website != nil {
-		general.Website = *input.Website
-	}
-
-	if err := t.UpdateGeneralSettings(general); err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update general settings: %w", err)
 	}
 
 	s.logger.Info("general settings updated", "tenant_id", tenantID)
@@ -1547,77 +1532,66 @@ var ErrIPAllowlistExcludesRequester = fmt.Errorf("%w: IP allowlist must include 
 
 // UpdateSecuritySettings updates only the security settings.
 func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID string, input UpdateSecuritySettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionSecurity, func(t *tenantdom.Tenant) error {
+		// Partial merge: start from the persisted section and overlay only the
+		// fields the client actually sent. Omitted fields are preserved.
+		security := t.TypedSettings().Security
+		if input.SSOEnforced != nil {
+			security.SSOEnforced = *input.SSOEnforced
+		}
+		if input.MFARequired != nil {
+			security.MFARequired = *input.MFARequired
+		}
+		if input.SessionTimeoutMin != nil {
+			security.SessionTimeoutMin = *input.SessionTimeoutMin
+		}
+		if input.IPWhitelist != nil {
+			security.IPWhitelist = input.IPWhitelist
+		}
+		if input.AllowedDomains != nil {
+			security.AllowedDomains = input.AllowedDomains
+		}
+		if input.EmailVerificationMode != nil {
+			security.EmailVerificationMode = tenantdom.EmailVerificationMode(*input.EmailVerificationMode)
+		}
+		if input.RequireSensorLocalPolicyForPrivateTargets != nil {
+			security.RequireSensorLocalPolicyForPrivateTargets = *input.RequireSensorLocalPolicyForPrivateTargets
+		}
 
-	t, err := s.repo.GetByID(ctx, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Partial merge: start from the persisted section and overlay only the
-	// fields the client actually sent. Omitted fields are preserved.
-	security := t.TypedSettings().Security
-	if input.SSOEnforced != nil {
-		security.SSOEnforced = *input.SSOEnforced
-	}
-	if input.MFARequired != nil {
-		security.MFARequired = *input.MFARequired
-	}
-	if input.SessionTimeoutMin != nil {
-		security.SessionTimeoutMin = *input.SessionTimeoutMin
-	}
-	if input.IPWhitelist != nil {
-		security.IPWhitelist = input.IPWhitelist
-	}
-	if input.AllowedDomains != nil {
-		security.AllowedDomains = input.AllowedDomains
-	}
-	if input.EmailVerificationMode != nil {
-		security.EmailVerificationMode = tenantdom.EmailVerificationMode(*input.EmailVerificationMode)
-	}
-	if input.RequireSensorLocalPolicyForPrivateTargets != nil {
-		security.RequireSensorLocalPolicyForPrivateTargets = *input.RequireSensorLocalPolicyForPrivateTargets
-	}
-
-	// Can't-enable guard: refuse to turn sso_enforced ON unless the tenant has a
-	// usable SSO path (an active identity provider or the opted-in env fallback).
-	// Without this a tenant could enforce SSO with no way for members to sign in.
-	// Only gate when this request actually asserts enforcement ON. The owner
-	// break-glass at the enforcement gate is the ultimate lock-out guarantee, so
-	// if the checker is unavailable we log and allow rather than hard-fail.
-	if input.SSOEnforced != nil && *input.SSOEnforced {
-		if s.ssoPathChecker == nil {
-			s.logger.Warn("sso_enforced enabled without an SSO-path checker wired; skipping usable-path guard",
-				"tenant_id", tenantID)
-		} else {
-			usable, perr := s.ssoPathChecker.HasUsableSSOPath(ctx, t.Slug())
-			if perr != nil {
-				s.logger.Warn("failed to verify usable SSO path", "tenant_id", tenantID, "error", perr)
-				return nil, fmt.Errorf("failed to verify SSO configuration: %w", perr)
-			}
-			if !usable {
-				return nil, fmt.Errorf("%w: cannot enforce SSO — configure an active SSO identity provider first", shared.ErrValidation)
+		// Can't-enable guard: refuse to turn sso_enforced ON unless the tenant has a
+		// usable SSO path (an active identity provider or the opted-in env fallback).
+		// Without this a tenant could enforce SSO with no way for members to sign in.
+		// Only gate when this request actually asserts enforcement ON. The owner
+		// break-glass at the enforcement gate is the ultimate lock-out guarantee, so
+		// if the checker is unavailable we log and allow rather than hard-fail.
+		if input.SSOEnforced != nil && *input.SSOEnforced {
+			if s.ssoPathChecker == nil {
+				s.logger.Warn("sso_enforced enabled without an SSO-path checker wired; skipping usable-path guard",
+					"tenant_id", tenantID)
+			} else {
+				usable, perr := s.ssoPathChecker.HasUsableSSOPath(ctx, t.Slug())
+				if perr != nil {
+					s.logger.Warn("failed to verify usable SSO path", "tenant_id", tenantID, "error", perr)
+					return fmt.Errorf("failed to verify SSO configuration: %w", perr)
+				}
+				if !usable {
+					return fmt.Errorf("%w: cannot enforce SSO — configure an active SSO identity provider first", shared.ErrValidation)
+				}
 			}
 		}
-	}
 
-	// Lockout guard: an administrator may not save an IP allowlist that would
-	// block their own next request. Checked only when this request changes the
-	// list and comes from a tenant user (the platform administrator passes no
-	// requester IP and is not subject to the allowlist).
-	if input.IPWhitelist != nil && input.RequesterIP != "" && !security.IPAllowed(input.RequesterIP) {
-		return nil, fmt.Errorf("%w (%s)", ErrIPAllowlistExcludesRequester, input.RequesterIP)
-	}
+		// Lockout guard: an administrator may not save an IP allowlist that would
+		// block their own next request. Checked only when this request changes the
+		// list and comes from a tenant user (the platform administrator passes no
+		// requester IP and is not subject to the allowlist).
+		if input.IPWhitelist != nil && input.RequesterIP != "" && !security.IPAllowed(input.RequesterIP) {
+			return fmt.Errorf("%w (%s)", ErrIPAllowlistExcludesRequester, input.RequesterIP)
+		}
 
-	if err := t.UpdateSecuritySettings(security); err != nil {
+		return t.UpdateSecuritySettings(security)
+	})
+	if err != nil {
 		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update security settings: %w", err)
 	}
 
 	s.logger.Info("security settings updated", "tenant_id", tenantID)
@@ -1646,54 +1620,43 @@ type UpdateAPISettingsInput struct {
 
 // UpdateAPISettings updates only the API settings.
 func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, input UpdateAPISettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionAPI, func(t *tenantdom.Tenant) error {
+		// Check plan limits for API via licensing service. Only gate when this
+		// request explicitly asserts API access enabled.
+		if input.APIKeyEnabled != nil && *input.APIKeyEnabled {
+			hasAPIModule, err := s.hasTenantModule(ctx, tenantID, "api")
+			if err != nil {
+				s.logger.Warn("failed to check API module access", "tenant_id", tenantID, "error", err)
+			}
+			if !hasAPIModule {
+				return fmt.Errorf("%w: API access is not available on your plan", shared.ErrValidation)
+			}
+		}
 
-	t, err := s.repo.GetByID(ctx, parsedID)
+		// Partial merge: start from the persisted section and overlay only the
+		// fields the client actually sent. Omitted fields are preserved.
+		api := t.TypedSettings().API
+		if input.APIKeyEnabled != nil {
+			api.APIKeyEnabled = *input.APIKeyEnabled
+		}
+		if input.WebhookURL != nil {
+			api.WebhookURL = *input.WebhookURL
+		}
+		if input.WebhookSecret != nil {
+			api.WebhookSecret = *input.WebhookSecret
+		}
+		if input.WebhookEvents != nil {
+			webhookEvents := make([]tenantdom.WebhookEvent, len(input.WebhookEvents))
+			for i, e := range input.WebhookEvents {
+				webhookEvents[i] = tenantdom.WebhookEvent(e)
+			}
+			api.WebhookEvents = webhookEvents
+		}
+
+		return t.UpdateAPISettings(api)
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	// Check plan limits for API via licensing service. Only gate when this
-	// request explicitly asserts API access enabled.
-	if input.APIKeyEnabled != nil && *input.APIKeyEnabled {
-		hasAPIModule, err := s.hasTenantModule(ctx, tenantID, "api")
-		if err != nil {
-			s.logger.Warn("failed to check API module access", "tenant_id", tenantID, "error", err)
-		}
-		if !hasAPIModule {
-			return nil, fmt.Errorf("%w: API access is not available on your plan", shared.ErrValidation)
-		}
-	}
-
-	// Partial merge: start from the persisted section and overlay only the
-	// fields the client actually sent. Omitted fields are preserved.
-	api := t.TypedSettings().API
-	if input.APIKeyEnabled != nil {
-		api.APIKeyEnabled = *input.APIKeyEnabled
-	}
-	if input.WebhookURL != nil {
-		api.WebhookURL = *input.WebhookURL
-	}
-	if input.WebhookSecret != nil {
-		api.WebhookSecret = *input.WebhookSecret
-	}
-	if input.WebhookEvents != nil {
-		webhookEvents := make([]tenantdom.WebhookEvent, len(input.WebhookEvents))
-		for i, e := range input.WebhookEvents {
-			webhookEvents[i] = tenantdom.WebhookEvent(e)
-		}
-		api.WebhookEvents = webhookEvents
-	}
-
-	if err := t.UpdateAPISettings(api); err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update API settings: %w", err)
 	}
 
 	s.logger.Info("API settings updated", "tenant_id", tenantID)
@@ -1719,35 +1682,24 @@ type UpdateBrandingSettingsInput struct {
 
 // UpdateBrandingSettings updates only the branding settings.
 func (s *TenantService) UpdateBrandingSettings(ctx context.Context, tenantID string, input UpdateBrandingSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionBranding, func(t *tenantdom.Tenant) error {
+		// Partial merge: start from the persisted section and overlay only the
+		// fields the client actually sent. Omitted fields are preserved.
+		branding := t.TypedSettings().Branding
+		if input.PrimaryColor != nil {
+			branding.PrimaryColor = *input.PrimaryColor
+		}
+		if input.LogoDarkURL != nil {
+			branding.LogoDarkURL = *input.LogoDarkURL
+		}
+		if input.LogoData != nil {
+			branding.LogoData = *input.LogoData
+		}
 
-	t, err := s.repo.GetByID(ctx, parsedID)
+		return t.UpdateBrandingSettings(branding)
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	// Partial merge: start from the persisted section and overlay only the
-	// fields the client actually sent. Omitted fields are preserved.
-	branding := t.TypedSettings().Branding
-	if input.PrimaryColor != nil {
-		branding.PrimaryColor = *input.PrimaryColor
-	}
-	if input.LogoDarkURL != nil {
-		branding.LogoDarkURL = *input.LogoDarkURL
-	}
-	if input.LogoData != nil {
-		branding.LogoData = *input.LogoData
-	}
-
-	if err := t.UpdateBrandingSettings(branding); err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update branding settings: %w", err)
 	}
 
 	s.logger.Info("branding settings updated", "tenant_id", tenantID)
@@ -1776,35 +1728,25 @@ type BranchTypeRuleInput struct {
 
 // UpdateBranchSettings updates only the branch naming convention settings.
 func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID string, input UpdateBranchSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-
-	t, err := s.repo.GetByID(ctx, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	rules := make(branch.BranchTypeRules, len(input.TypeRules))
-	for i, r := range input.TypeRules {
-		rules[i] = branch.BranchTypeRule{
-			Pattern:    r.Pattern,
-			MatchType:  r.MatchType,
-			BranchType: branch.Type(r.BranchType),
+	var rules branch.BranchTypeRules
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionBranch, func(t *tenantdom.Tenant) error {
+		rules = make(branch.BranchTypeRules, len(input.TypeRules))
+		for i, r := range input.TypeRules {
+			rules[i] = branch.BranchTypeRule{
+				Pattern:    r.Pattern,
+				MatchType:  r.MatchType,
+				BranchType: branch.Type(r.BranchType),
+			}
 		}
-	}
 
-	bs := tenantdom.BranchSettings{
-		TypeRules: rules,
-	}
+		bs := tenantdom.BranchSettings{
+			TypeRules: rules,
+		}
 
-	if err := t.UpdateBranchSettings(bs); err != nil {
+		return t.UpdateBranchSettings(bs)
+	})
+	if err != nil {
 		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update branch settings: %w", err)
 	}
 
 	s.logger.Info("branch settings updated", "tenant_id", tenantID, "rules_count", len(rules))
@@ -1826,27 +1768,16 @@ type UpdatePentestSettingsInput struct {
 
 // UpdatePentestSettings updates only the pentest settings.
 func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID string, input UpdatePentestSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionPentest, func(t *tenantdom.Tenant) error {
+		ps := tenantdom.PentestSettings{
+			CampaignTypes: input.CampaignTypes,
+			Methodologies: input.Methodologies,
+		}
 
-	t, err := s.repo.GetByID(ctx, parsedID)
+		return t.UpdatePentestSettings(ps)
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	ps := tenantdom.PentestSettings{
-		CampaignTypes: input.CampaignTypes,
-		Methodologies: input.Methodologies,
-	}
-
-	if err := t.UpdatePentestSettings(ps); err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update pentest settings: %w", err)
 	}
 
 	s.logger.Info("pentest settings updated", "tenant_id", tenantID)
@@ -1890,22 +1821,11 @@ func (s *TenantService) GetPentestSettings(ctx context.Context, tenantID string)
 
 // UpdateRiskScoringSettings updates only the risk scoring settings.
 func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID string, rs tenantdom.RiskScoringSettings, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-
-	t, err := s.repo.GetByID(ctx, parsedID)
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionRiskScoring, func(t *tenantdom.Tenant) error {
+		return t.UpdateRiskScoringSettings(rs)
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	if err := t.UpdateRiskScoringSettings(rs); err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update risk scoring settings: %w", err)
 	}
 
 	s.logger.Info("risk scoring settings updated", "tenant_id", tenantID, "preset", rs.Preset)
@@ -1936,28 +1856,18 @@ func (s *TenantService) UpdateAssetSourceSettings(
 	as tenantdom.AssetSourceSettings,
 	actx auditapp.AuditContext,
 ) (*tenantdom.Settings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
+	var before tenantdom.AssetSourceSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionAssetSource, func(t *tenantdom.Tenant) error {
+		// Snapshot the pre-change state so the audit event can carry a
+		// full before/after diff. Compliance frameworks that ask "who
+		// changed this setting and what specifically changed" lean on
+		// this — bare counts are not enough.
+		before = t.TypedSettings().AssetSource
 
-	t, err := s.repo.GetByID(ctx, parsedID)
+		return t.UpdateAssetSourceSettings(as)
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	// Snapshot the pre-change state so the audit event can carry a
-	// full before/after diff. Compliance frameworks that ask "who
-	// changed this setting and what specifically changed" lean on
-	// this — bare counts are not enough.
-	before := t.TypedSettings().AssetSource
-
-	if err := t.UpdateAssetSourceSettings(as); err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update asset source settings: %w", err)
 	}
 
 	s.logger.Info("asset source settings updated",
@@ -2008,30 +1918,21 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 	al tenantdom.AssetLifecycleSettings,
 	actx auditapp.AuditContext,
 ) (*tenantdom.Settings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
+	var before tenantdom.AssetLifecycleSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionAssetLifecycle, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().AssetLifecycle
 
-	t, err := s.repo.GetByID(ctx, parsedID)
+		// SECURITY: DryRunCompletedAt is server-side only. The dry-run
+		// endpoint (StampAssetLifecycleDryRunCompleted) is the sole writer.
+		// Overriding here prevents a client from bypassing the
+		// "must run dry-run before enabling" gate by submitting a
+		// fabricated timestamp in the PUT body.
+		al.DryRunCompletedAt = before.DryRunCompletedAt
+
+		return t.UpdateAssetLifecycleSettings(al)
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	before := t.TypedSettings().AssetLifecycle
-
-	// SECURITY: DryRunCompletedAt is server-side only. The dry-run
-	// endpoint (StampAssetLifecycleDryRunCompleted) is the sole writer.
-	// Overriding here prevents a client from bypassing the
-	// "must run dry-run before enabling" gate by submitting a
-	// fabricated timestamp in the PUT body.
-	al.DryRunCompletedAt = before.DryRunCompletedAt
-
-	if err := t.UpdateAssetLifecycleSettings(al); err != nil {
-		return nil, err
-	}
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update asset lifecycle settings: %w", err)
 	}
 
 	s.logger.Info("asset lifecycle settings updated",
@@ -2080,20 +1981,13 @@ func (s *TenantService) UpdateRetestSettings(
 	rs tenantdom.RetestSettings,
 	actx auditapp.AuditContext,
 ) (*tenantdom.RetestSettings, error) {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-	t, err := s.repo.GetByID(ctx, parsedID)
+	var before tenantdom.RetestSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionRetest, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().Retest
+		return t.UpdateRetestSettings(rs)
+	})
 	if err != nil {
 		return nil, err
-	}
-	before := t.TypedSettings().Retest
-	if err := t.UpdateRetestSettings(rs); err != nil {
-		return nil, err
-	}
-	if err := s.repo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to update retest settings: %w", err)
 	}
 
 	actx.TenantID = tenantID
@@ -2140,21 +2034,16 @@ func (s *TenantService) StampAssetLifecycleDryRunCompleted(
 	ctx context.Context,
 	tenantID string,
 ) error {
-	parsedID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-	t, err := s.repo.GetByID(ctx, parsedID)
-	if err != nil {
-		return err
-	}
-	settings := t.TypedSettings()
-	now := time.Now().UTC().Unix()
-	settings.AssetLifecycle.DryRunCompletedAt = &now
-	if err := t.UpdateSettings(settings); err != nil {
-		return err
-	}
-	return s.repo.Update(ctx, t)
+	// Writes only the asset_lifecycle section (compare-and-swap, retried on
+	// a concurrent write), so the stamp can no longer revert a security or
+	// bundle change saved between its read and its write.
+	_, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionAssetLifecycle, func(t *tenantdom.Tenant) error {
+		settings := t.TypedSettings()
+		now := time.Now().UTC().Unix()
+		settings.AssetLifecycle.DryRunCompletedAt = &now
+		return t.UpdateSettings(settings)
+	})
+	return err
 }
 
 // GetAssetSourceSettings returns the current asset-source settings
