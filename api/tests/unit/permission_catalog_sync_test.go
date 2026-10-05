@@ -35,7 +35,7 @@ var permSeedMigrations = []string{
 	"000232_credentials_reveal_permission.up.sql",  // findings:credentials:reveal
 	"000267_scope_exclusion_approval.up.sql",       // attack_surface:scope:exclusions:approve
 	"000774_dashboard_aggregate_permission.up.sql", // dashboard:aggregate (D6)
-	"001085_sensor_pairing.up.sql",                 // sensors:pair, :approve, :grant:narrow/widen, :revoke (RFC-052)
+	"001098_sensor_pairing.up.sql",                 // sensors:pair, :approve, :grant:narrow/widen, :revoke (RFC-052)
 	"001077_ci_runner_identity.up.sql",             // scans:ci:* (RFC-051)
 }
 

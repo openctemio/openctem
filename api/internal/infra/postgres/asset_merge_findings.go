@@ -50,8 +50,6 @@ var findingMergeRefs = []mergeRef{
 
 	{table: "finding_suppressions", column: "finding_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"suppression_rule_id"}}}},
-	{table: "finding_data_sources", column: "finding_id", idCol: "id",
-		keys: []mergeKey{{cols: []string{"source_type", "source_id"}}}},
 	{table: "finding_data_flows", column: "finding_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"flow_index"}}}},
 	{table: "finding_group_assignments", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
