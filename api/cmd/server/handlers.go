@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -23,9 +26,12 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -114,6 +120,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
 	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.App.Name, log: log})
 
+	// CI runs (RFC-051): OIDC exchange, uploads, the gate, administration.
+	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, log)
+
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
 	assetHandler.SetIntegrationService(svc.Integration)
@@ -136,8 +145,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
 	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
-	// Ingest handler — opt into async mode (RFC-005) when configured. Default
-	// (sync) leaves the handler processing reports in-request as before.
+	// Sensor authentication and the services the protocol v2 control handler
+	// shares.
 	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Sensor, log)
 	// Heartbeat doorbell (RFC-023 §9.2a): the heartbeat tells a sensor that
 	// work is waiting and when to ring again. One cheap query per heartbeat.
@@ -145,12 +154,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
 	ingestHandler.SetHeartbeatObserver(svc.SensorPlatformHealth)
-	// Protocol v2 results discovery on the v1 heartbeat (RFC-026 WP-A7).
-	ingestHandler.SetV2Advertised(cfg.Ingest.V2Results)
-	if cfg.Ingest.AsyncEnabled() && repos.IngestJob != nil {
-		ingestHandler.SetAsyncIngest(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
-		log.Info("async ingest enabled", "max_pending_per_tenant", cfg.Ingest.MaxPendingPerTenant)
-	}
 
 	// Tenant handler with role service and asset service wired.
 	// Exposed as a package-level var so main.go can back-wire the
@@ -264,6 +267,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:          newEASMHandler(repos, svc, log),
 		EASMSeed:      newEASMSeedHandler(repos, svc, log),
+		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -313,16 +317,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		DefectDojo: handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Sensors & Commands
-		Command:          commandHandler,
-		Sensor:           sensorHandler,
-		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
-		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
-		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
-		Ingest:           ingestHandler,
-		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, log),
-		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
-		IOC:              newIOCHandlerWithFindingCheck(deps, log),
-		Validation:       validationHandler,
+		Command:         commandHandler,
+		Sensor:          sensorHandler,
+		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
+		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
+		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		Ingest:          ingestHandler,
+		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, log),
+		IOC:             newIOCHandlerWithFindingCheck(deps, log),
+		Validation:      validationHandler,
 		SCIM: func() *handler.SCIMHandler {
 			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
 			h.SetGroupService(svc.SCIMGroups)
@@ -347,6 +350,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Capability:      handler.NewCapabilityHandler(svc.Capability, v, log),
 		Scan:            handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
 		CI:              handler.NewCIHandler(svc.Scan, log),
+		CIAdmin:         ciAdmin,
+		CIRunner:        ciRunner,
 		Pipeline:        handler.NewPipelineHandler(svc.Pipeline, v, log),
 
 		// Workflows
@@ -499,6 +504,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.DomainVerify != nil {
 		handlers.VerifiedDomain = handler.NewVerifiedDomainHandler(svc.DomainVerify, log)
 		handlers.VerifiedDomain.SetAuditService(svc.Audit)
+		// Tenant self-service verification for EASM (research/22 P0-10, E6).
+		var audit handler.AttributionAuditor
+		if svc.Audit != nil {
+			audit = svc.Audit
+		}
+		handlers.EASMVerifiedDomain = handler.NewEASMVerifiedDomainHandler(svc.DomainVerify, audit, log)
 	}
 
 	// SAML SP handler (RFC-009 9d+9e): metadata, config CRUD, and the
@@ -567,7 +578,7 @@ func InitLocalAuthHandler(
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
 // optional config-template service. Templates live in
-// $AGENT_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
+// $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
 // edited without rebuilding the frontend.
 func newSensorHandlerWithTemplates(
 	sensorSvc *app.SensorService,
@@ -650,23 +661,11 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
-func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *app.AuditService, log *logger.Logger) *handler.AttachmentHandler {
+func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *compliance.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *auditsvc.AuditService, log *logger.Logger) *handler.AttachmentHandler {
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
 	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
 	h.SetAuditService(auditSvc)
-	return h
-}
-
-// newRuntimeTelemetryHandlerWithCorrelator wires the IOC correlator
-// into the runtime-telemetry ingest path. The handler is nil-safe
-// without a correlator, but leaving it nil kills invariant B6 —
-// telemetry is stored but never matched.
-func newRuntimeTelemetryHandlerWithCorrelator(deps *HandlerDeps, svc *Services, log *logger.Logger) *handler.RuntimeTelemetryHandler {
-	h := handler.NewRuntimeTelemetryHandler(deps.DB.DB, log)
-	if svc.IOCCorrelator != nil {
-		h.SetCorrelator(svc.IOCCorrelator)
-	}
 	return h
 }
 
@@ -756,13 +755,38 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 	return easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
 }
 
+// newEASMSettingsHandler builds the EASM settings and run-now handler
+// (research/22 P0-11).
+func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps, log *logger.Logger) *handler.EASMSettingsHandler {
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	var sweeper handler.EASMSweeper
+	if svc.EASMSweep != nil {
+		sweeper = svc.EASMSweep
+	}
+	platform := handler.EASMPlatform{
+		CTAvailable:   cfg.Worker.CertMonitorEnabled,
+		DNSAvailable:  svc.EASMDNS != nil,
+		CTDefaultHrs:  int(cfg.Worker.CertMonitorInterval.Hours()),
+		DNSDefaultHrs: int(cfg.Worker.EASMDNSInterval.Hours()),
+	}
+	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log)
+}
+
 // newEASMSeedHandler builds the seeds handler; every change is audited.
 func newEASMSeedHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMSeedHandler {
 	var audit handler.AttributionAuditor
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
-	return handler.NewEASMSeedHandler(easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed), audit, log)
+	h := handler.NewEASMSeedHandler(easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed), audit, log)
+	// A new seed starts a sweep so its first results arrive in minutes (P0-11).
+	if svc.EASMSweep != nil {
+		h.SetSweeper(svc.EASMSweep)
+	}
+	return h
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit
@@ -801,4 +825,41 @@ func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.Suppressi
 	h := handler.NewSuppressionHandler(svc.Suppression, log)
 	h.SetAuditService(svc.Audit)
 	return h
+}
+
+// newCIHandlers builds the CI run service and its two handlers (RFC-051).
+// The CI providers' discovery and JWKS documents are fetched through the
+// SSRF-safe client: a self-managed GitLab issuer is configured by a tenant.
+func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
+	if repos.CIRun == nil || svc.Ingest == nil {
+		return nil, nil
+	}
+	verifier := oidc.NewClient(httpsec.SafeHTTPClient(10*time.Second), func(raw string) error {
+		_, err := httpsec.ValidateURL(raw)
+		return err
+	})
+	var audit cirunapp.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	ciSvc := cirunapp.NewService(cirunapp.Deps{
+		Repo:     repos.CIRun,
+		Verifier: verifier,
+		Assets:   repos.Asset,
+		Branches: repos.Branch,
+		Baseline: repos.Finding,
+		Ingester: svc.Ingest,
+		Units:    repos.CIRun,
+		Audit:    audit,
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: cirun.StatusPolicy{
+		LatestVersion: sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion),
+		MinVersion:    sensordom.NormalizeVersion(cfg.SensorConfig.MinVersion),
+	}}, log)
+	var ds handler.DataScopeEnforcer
+	if svc.DataScope != nil {
+		ds = svc.DataScope
+	}
+	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
+	admin.SetPipelineService(ciSvc)
+	return admin, handler.NewCIRunnerHandler(ciSvc, log)
 }

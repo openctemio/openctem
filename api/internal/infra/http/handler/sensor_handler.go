@@ -13,13 +13,13 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -1205,12 +1205,12 @@ func (h *SensorHandler) handleServiceError(w http.ResponseWriter, err error) {
 }
 
 // buildAuditContext extracts audit context information from the HTTP request.
-func (h *SensorHandler) buildAuditContext(r *http.Request) *app.AuditContext {
+func (h *SensorHandler) buildAuditContext(r *http.Request) *audit.AuditContext {
 	// Forwarding headers count only from a trusted proxy (S-4); a client
 	// must not be able to write any IP it likes into the audit log.
 	clientIP := getClientIP(r)
 
-	return &app.AuditContext{
+	return &audit.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
 		ActorID:    middleware.GetUserID(r.Context()),
 		ActorEmail: auditActorEmail(r.Context()),
@@ -1408,38 +1408,4 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-// RedirectDeprecatedPath answers every route of the deprecated /api/v1/agents
-// management path with 308 Permanent Redirect to the same resource under
-// /api/v1/sensors (query string kept, method and body preserved), plus
-// Deprecation (RFC 9745), Sunset (RFC 8594) and a successor Link. Each use is
-// counted (deprecated_management_path_requests_total) and logged so operators
-// can find the callers before the sunset date.
-// @Summary      Deprecated: moved to /sensors
-// @Description  The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-// @Tags         Sensors
-// @Deprecated
-// @Success      308
-// @Router       /agents [get]
-// @Router       /agents [post]
-// @Router       /agents/stats [get]
-// @Router       /agents/available-capabilities [get]
-// @Router       /agents/{id} [get]
-// @Router       /agents/{id} [put]
-// @Router       /agents/{id} [delete]
-// @Router       /agents/{id}/config-templates [get]
-// @Router       /agents/{id}/regenerate-key [post]
-// @Router       /agents/{id}/activate [post]
-// @Router       /agents/{id}/deactivate [post]
-// @Router       /agents/{id}/revoke [post]
-func (h *SensorHandler) RedirectDeprecatedPath(w http.ResponseWriter, r *http.Request) {
-	legacyv1.RedirectManagement(func(r *http.Request) {
-		// Path and User-Agent are client-controlled: strip line breaks so a
-		// crafted request cannot forge log lines.
-		path := strings.ReplaceAll(strings.ReplaceAll(r.URL.Path, "\n", ""), "\r", "")
-		ua := strings.ReplaceAll(strings.ReplaceAll(r.UserAgent(), "\n", ""), "\r", "")
-		h.logger.Info("deprecated management path used; redirecting to /api/v1/sensors",
-			"method", r.Method, "path", path, "user_agent", ua)
-	})(w, r)
 }

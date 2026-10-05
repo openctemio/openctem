@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/validation"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -443,7 +443,7 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	if covErr != nil {
 		h.logger.Warn("validation coverage query failed; allowing close",
 			"cycle_id", id, "error", covErr)
-	} else if sloErr := app.Enforce(coverage, app.DefaultThresholds); sloErr != nil {
+	} else if sloErr := validation.Enforce(coverage, validation.DefaultThresholds); sloErr != nil {
 		enforce := os.Getenv("CTEM_ENFORCE_COVERAGE_SLO") == "true"
 		if enforce {
 			h.logger.Warn("cycle close blocked by coverage SLO",
@@ -534,7 +534,7 @@ func (h *CTEMCycleHandler) UpdateScopeRefinement(w http.ResponseWriter, r *http.
 func (h *CTEMCycleHandler) computeValidationCoverage(
 	ctx context.Context,
 	tenantID, startDate, endDate string,
-) (app.ValidationCoverage, error) {
+) (validation.ValidationCoverage, error) {
 	return postgres.ValidationCoverageByPriority(ctx, h.db, tenantID, startDate, endDate)
 }
 

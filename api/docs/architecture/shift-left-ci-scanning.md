@@ -4,7 +4,9 @@
 > branch-aware findings → **risk-aware gate** + **PR/MR decoration**. Design:
 > [RFC-008](../rfcs/RFC-008-native-shift-left-ci-scanning.md). Complements
 > [Scan Orchestration](scan-orchestration.md) (platform-run scanners) — this doc
-> covers the **CI-runner** scanning path.
+> covers the **CI-runner** scanning path. How a CI job authenticates (OIDC,
+> no stored key) and gets a central pass/fail verdict:
+> [CI runner identity and the CI gate](ci-runner-identity.md) (RFC-051).
 
 OpenCTEM runs its **own** agent in the customer's CI (no third-party tool, no
 bridge). The agent detects the CI environment, runs scanners on the checked-out
@@ -157,7 +159,7 @@ product decision tracked separately; see `scan-coverage.md`.
 | 6 | Reporting export (PDF/Excel) + weekly digest | Partial (HTML summary exists) |
 | 7 | DX: GitHub Action / GitLab CI recipes | **Already present** — `agent/ci/{github,gitlab}/` |
 
-**`POST /api/v1/agent/ingest/baseline-diff`** (agent API-key auth) — body
+**`POST /api/v2/sensor/fingerprints/baseline-diff`** (sensor key auth; the v1 `/api/v1/agent/ingest/baseline-diff` was retired 2026-10-05) — body
 `{repository, base_branch, fingerprints[]}` → `{new_fingerprints, pre_existing_fingerprints, base_branch_scanned}`.
 A finding already **open on the base branch** is pre-existing tech debt, so the
 agent gates / comments only on `new_fingerprints` (`gate.FilterNewFindings` +

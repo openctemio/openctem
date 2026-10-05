@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -50,25 +52,30 @@ type Handlers struct {
 	APIKeyAuth      *middleware.APIKeyAuthMiddleware
 	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
-	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
-	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
-	UserDashboard    *handler.UserDashboardHandler    // nil if not initialized - per-user customizable dashboards (RFC-021)
-	SavedView        *handler.SavedViewHandler        // nil if not initialized - saved list views (D15, RFC-048)
-	Audit            *handler.AuditHandler            // nil if not initialized (no database)
-	Branch           *handler.BranchHandler           // nil if not initialized (no database)
-	SLA              *handler.SLAHandler              // nil if not initialized (no database)
-	Integration      *handler.IntegrationHandler      // nil if not initialized (no database)
-	DefectDojo       *handler.DefectDojoHandler       // nil if not initialized / no DefectDojo sync
-	AssetGroup       *handler.AssetGroupHandler       // nil if not initialized (no database)
-	Scope            *handler.ScopeHandler            // nil if not initialized (no database)
-	AssetType        *handler.AssetTypeHandler        // nil if not initialized (no database)
-	AttackSurface    *handler.AttackSurfaceHandler    // nil if not initialized (no database)
-	EASM             *handler.EASMHandler             // RFC-036 overview; nil if not initialized
-	EASMSeed         *handler.EASMSeedHandler         // RFC-036 seeds; nil if not initialized
-	Docs             *handler.DocsHandler             // API documentation handler
-	Command          *handler.CommandHandler          // nil if not initialized (no database)
-	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
-	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint sensors
+	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
+	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
+	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
+	SavedView     *handler.SavedViewHandler     // nil if not initialized - saved list views (D15, RFC-048)
+	Audit         *handler.AuditHandler         // nil if not initialized (no database)
+	Branch        *handler.BranchHandler        // nil if not initialized (no database)
+	SLA           *handler.SLAHandler           // nil if not initialized (no database)
+	Integration   *handler.IntegrationHandler   // nil if not initialized (no database)
+	DefectDojo    *handler.DefectDojoHandler    // nil if not initialized / no DefectDojo sync
+	AssetGroup    *handler.AssetGroupHandler    // nil if not initialized (no database)
+	Scope         *handler.ScopeHandler         // nil if not initialized (no database)
+	AssetType     *handler.AssetTypeHandler     // nil if not initialized (no database)
+	AttackSurface *handler.AttackSurfaceHandler // nil if not initialized (no database)
+	EASM          *handler.EASMHandler          // RFC-036 overview; nil if not initialized
+	EASMSeed      *handler.EASMSeedHandler      // RFC-036 seeds; nil if not initialized
+	// EASMVerifiedDomain is tenant self-service domain verification
+	// (research/22 P0-10); nil if not initialized.
+	EASMVerifiedDomain *handler.EASMVerifiedDomainHandler
+	// EASMSettings is attack-surface monitoring settings and run-now
+	// (research/22 P0-11); nil if not initialized.
+	EASMSettings *handler.EASMSettingsHandler
+	Docs         *handler.DocsHandler    // API documentation handler
+	Command      *handler.CommandHandler // nil if not initialized (no database)
+	Ingest       *handler.IngestHandler  // nil if not initialized (no database) - sensor authentication and heartbeat
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
@@ -81,18 +88,22 @@ type Handlers struct {
 	// DataScope enforces the Layer 2 (group) data scope on every by-id asset
 	// and finding route of the token-tenant chain (DataScopeGuard). nil
 	// disables the guard (tests with a minimal handler set).
-	DataScope       middleware.DataScopeAsserter
-	Sensor          *handler.SensorHandler          // nil if not initialized (no database)
-	SensorContent   *handler.SensorContentHandler   // scanner content policy + refresh (RFC-031); nil without a database
-	SensorResults   *handler.SensorResultHandler    // unsolicited results policy + quarantine review (RFC-040); nil without a database
-	ScanZone        *handler.ScanZoneHandler        // nil if not initialized (no database)
-	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
-	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
-	Tool            *handler.ToolHandler            // nil if not initialized (no database)
-	ToolCategory    *handler.ToolCategoryHandler    // nil if not initialized (no database)
-	Capability      *handler.CapabilityHandler      // nil if not initialized (no database)
-	Scan            *handler.ScanHandler            // nil if not initialized (no database)
-	CI              *handler.CIHandler              // nil if not initialized (no database) - CI/CD snippet generator
+	DataScope     middleware.DataScopeAsserter
+	Sensor        *handler.SensorHandler        // nil if not initialized (no database)
+	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
+	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
+	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
+	Pipeline      *handler.PipelineHandler      // nil if not initialized (no database)
+	ScanProfile   *handler.ScanProfileHandler   // nil if not initialized (no database)
+	Tool          *handler.ToolHandler          // nil if not initialized (no database)
+	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
+	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
+	Scan          *handler.ScanHandler          // nil if not initialized (no database)
+	CI            *handler.CIHandler            // nil if not initialized (no database) - CI/CD snippet generator
+	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
+	// without a database.
+	CIAdmin         *handler.CIAdminHandler
+	CIRunner        *handler.CIRunnerHandler
 	ScanSession     *handler.ScanSessionHandler     // nil if not initialized (no database)
 	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
 	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
@@ -273,8 +284,8 @@ func Register(
 	// mounted on every token-tenant chain so revoked permissions / demoted
 	// admins are enforced within the token lifetime (real-time sync). nil
 	// disables it (legacy embedded-JWT-permission behavior).
-	permCache *app.PermissionCacheService,
-	permVersion *app.PermissionVersionService,
+	permCache *accesscontrol.PermissionCacheService,
+	permVersion *accesscontrol.PermissionVersionService,
 ) {
 	// Pick the membership reader: cache when available, repo otherwise.
 	if membershipReader == nil {
@@ -342,7 +353,7 @@ func Register(
 	// Clients that authenticate with a header (Bearer JWT, oct_ API keys,
 	// sensor keys) are not ambient-credential requests — a cross-site page
 	// cannot set Authorization — and pass without a CSRF token. Sensor
-	// (/api/v1/agent/*) and HMAC-verified webhook routes do not use these
+	// (/api/v2/sensor/*) and HMAC-verified webhook routes do not use these
 	// chains at all.
 	csrfProtectionMiddleware = middleware.CSRFOptional(middleware.NewCSRFConfig(cfg.Auth, log))
 
@@ -664,6 +675,12 @@ func Register(
 	if h.EASM != nil {
 		registerEASMRoutes(router, h.EASM, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
+	if h.EASMVerifiedDomain != nil {
+		registerEASMVerifiedDomainRoutes(router, h.EASMVerifiedDomain, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMSettings != nil {
+		registerEASMSettingsRoutes(router, h.EASMSettings, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
 	if h.EASMSeed != nil {
 		registerEASMSeedRoutes(router, h.EASMSeed, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
@@ -673,29 +690,19 @@ func Register(
 		registerCommandRoutes(router, h.Command, authMiddleware, userSync)
 	}
 
-	// Per-tenant rate limiter for the telemetry-events ingest endpoint.
-	// Not generic rate limiting — only this route needs it because an
-	// EDR sensor can legitimately batch thousands of events, but we
-	// still need to prevent a single compromised sensor key from
-	// drowning the correlator. Conservative defaults: 200 rps burst
-	// 400, buckets evicted after 10 m idle.
-	var telemetryRateLimiter *middleware.TelemetryRateLimiter
-	if cfg.RateLimit.Enabled {
-		telemetryRateLimiter = middleware.NewTelemetryRateLimiter(200, 400, 10*time.Minute, log)
-	}
-
-	// Per-tenant limiter for the heavy report-ingest endpoints. Report ingest
-	// is far heavier per request than telemetry (up to 100k findings / 100MB),
-	// so it gets a much lower budget — enough for legitimate CI bursts, low
-	// enough to bound a runaway loop or compromised sensor key.
+	// Per-tenant limiter for the heavy report-ingest endpoints (up to 100k
+	// findings / 100MB per request): a low budget, enough for legitimate CI
+	// bursts, low enough to bound a runaway loop or compromised sensor key.
 	var ingestRateLimiter *middleware.TelemetryRateLimiter
 	if cfg.RateLimit.Enabled {
 		ingestRateLimiter = middleware.NewTelemetryRateLimiter(20, 40, 10*time.Minute, log)
 	}
 
-	// Ingest/Sensor routes (API key authenticated)
-	if h.Ingest != nil && h.Command != nil {
-		registerSensorRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, h.Suppression, h.ModuleGate, telemetryRateLimiter, ingestRateLimiter, log)
+	// CI runs: OIDC exchange, run-token uploads and the gate, administration
+	// (RFC-051).
+	if h.CIAdmin != nil || h.CIRunner != nil {
+		registerCIRoutes(router, h.CIAdmin, h.CIRunner, authMiddleware, userSync,
+			h.ModuleGate.RequireModule(moduledom.ModuleScans), ingestRateLimiter, log)
 	}
 
 	// Sensor protocol v2 results (RFC-026): its own route group and
@@ -708,6 +715,10 @@ func Register(
 	if h.Sensor != nil {
 		registerSensorManagementRoutes(router, h.Sensor, h.SensorContent, h.SensorResults, authMiddleware, userSync)
 	}
+
+	// The fleet: sensors (daemon mode) and CI pipelines (runner mode) in one
+	// read model (RFC-051).
+	registerFleetRoutes(router, h.Sensor, h.CIAdmin, h.ModuleGate, authMiddleware, userSync, log)
 
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {
@@ -802,7 +813,7 @@ func Register(
 
 	// Credential Import routes (tenant from JWT token)
 	if h.CredentialImport != nil {
-		registerCredentialRoutes(router, h.CredentialImport, h.Ingest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCredentials))
+		registerCredentialRoutes(router, h.CredentialImport, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCredentials))
 	}
 
 	// Group routes (Access Control - tenant from JWT token)

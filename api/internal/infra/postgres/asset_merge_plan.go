@@ -60,6 +60,12 @@ var assetMergeRefs = []mergeRef{
 	// A retest's asset follows its finding (RFC-039): the per-asset in-flight
 	// cap counts by asset_id.
 	{table: "finding_retests", column: "asset_id", tenantCol: "tenant_id"},
+	// CI runs and break-glass overrides (RFC-051) follow their repository.
+	{table: "ci_runs", column: "repository_asset_id", tenantCol: "tenant_id"},
+	{table: "ci_gate_overrides", column: "repository_asset_id", tenantCol: "tenant_id"},
+	// A CI pipeline follows its repository (its identity is the provider's
+	// repository id, not the asset).
+	{table: "ci_pipelines", column: "repository_asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
@@ -81,8 +87,6 @@ var assetMergeRefs = []mergeRef{
 	// asset by a grant sees the kept one.
 	{table: "asset_access_grants", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"user_id"}}}},
-	{table: "asset_sources", column: "asset_id", idCol: "id",
-		keys: []mergeKey{{cols: []string{"source_type", "source_id"}}}},
 	{table: "business_service_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"service_id", "dependency_type"}}}},
 	{table: "compensating_control_assets", column: "asset_id", idCol: "ctid",
