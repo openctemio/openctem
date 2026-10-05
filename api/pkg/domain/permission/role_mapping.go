@@ -53,7 +53,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		IntegrationsRead, IntegrationsManage,
 		SCMConnectionsRead, SCMConnectionsWrite, SCMConnectionsDelete,
 		NotificationsRead, NotificationsWrite, NotificationsDelete,
-		WebhooksRead, WebhooksWrite, WebhooksDelete,
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
 		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
 		// Settings
@@ -128,7 +127,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		IntegrationsRead, IntegrationsManage,
 		SCMConnectionsRead, SCMConnectionsWrite, SCMConnectionsDelete,
 		NotificationsRead, NotificationsWrite, NotificationsDelete,
-		WebhooksRead, WebhooksWrite, WebhooksDelete,
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
 		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
 		// Settings (billing read only)
@@ -209,7 +207,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		IntegrationsRead,
 		SCMConnectionsRead, SCMConnectionsWrite,
 		NotificationsRead,
-		WebhooksRead,
 		APIKeysRead,
 		PipelinesRead, PipelinesWrite, PipelinesExecute,
 		// Settings (read only; billing is owner/admin only)
@@ -279,7 +276,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		IntegrationsRead,
 		SCMConnectionsRead,
 		NotificationsRead,
-		WebhooksRead,
 		APIKeysRead,
 		PipelinesRead,
 		// Settings (read only; billing is owner/admin only)
