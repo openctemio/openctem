@@ -107,7 +107,7 @@ applies ownership, exclusions, lifecycle and budgets at dispatch time.**
     following the practice in §4.1:
     - per-source records live in new tenant-scoped `asset_source_records`
       and `service_sources` tables (the old, never-written `asset_sources`
-      was dropped by 001070);
+      was dropped by the `drop_asset_sources` migration);
     - a single-flight correlation job per tenant and zone joins them,
       with deterministic, time-windowed keys and the zone as a hard
       boundary for private addresses;
