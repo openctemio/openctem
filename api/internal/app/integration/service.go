@@ -1843,7 +1843,7 @@ type CreateNotificationIntegrationInput struct {
 	ChannelID          string
 	ChannelName        string
 	EnabledSeverities  []string // Severity levels to notify on (critical, high, medium, low, info, none)
-	EnabledEventTypes  []string // Event types to receive notifications for (security_alert, new_finding, etc.)
+	EnabledEventTypes  []string // Event types to receive notifications for (new_finding, sla_breach, etc.)
 	MessageTemplate    string
 	IncludeDetails     bool
 	MinIntervalMinutes int

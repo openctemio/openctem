@@ -71,6 +71,13 @@ to that rule instead. A finding someone has triaged since is left alone.
 path-only rule such as `test/**` never matches DAST, network or infrastructure
 findings.
 
+**Module toggle:** suppression at ingest follows the organization's
+`suppressions` module. With the module off, whether switched off directly or
+left out of the organization's bundles, new findings land as reported and no
+rule is loaded. Findings suppressed earlier keep their disposition. Turning the
+module back on applies active rules to new findings again. Implementation:
+`FindingProcessor.applySuppressions`, wired with `SetSuppressionModuleGuard`.
+
 ---
 
 ## Create Suppression Rule

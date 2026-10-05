@@ -77,9 +77,7 @@ type EventCategoryInfo struct {
 // added without the UI's map learning about them.
 func AllEventCategories() []EventCategoryInfo {
 	return []EventCategoryInfo{
-		{Category: EventCategorySystem, Label: "System Events"},
 		{Category: EventCategoryAsset, Label: "Asset Events"},
-		{Category: EventCategoryScan, Label: "Scan Events"},
 		{Category: EventCategoryFinding, Label: "Finding Events"},
 		{Category: EventCategoryApproval, Label: "Approval Events"},
 		{Category: EventCategoryWorkflow, Label: "Workflow Events"},
@@ -90,27 +88,16 @@ func AllEventCategories() []EventCategoryInfo {
 
 // Known event types for notification routing.
 // Add new event types here - no database migration required (JSONB array).
+// A type goes into AllEventTypes only together with its producer:
+// tests/unit/event_type_producer_test.go fails on a type nothing emits.
 const (
-	// System events
-	EventTypeSecurityAlert EventType = "security_alert"
-	EventTypeSystemError   EventType = "system_error"
-
 	// Asset events
-	EventTypeNewAsset     EventType = "new_asset"
-	EventTypeAssetChanged EventType = "asset_changed"
-	EventTypeAssetDeleted EventType = "asset_deleted"
-
-	// Scan events
-	EventTypeScanStarted   EventType = "scan_started"
-	EventTypeScanCompleted EventType = "scan_completed"
-	EventTypeScanFailed    EventType = "scan_failed"
+	EventTypeNewAsset EventType = "new_asset"
 
 	// Finding events
-	EventTypeNewFinding       EventType = "new_finding"
-	EventTypeFindingConfirmed EventType = "finding_confirmed"
-	EventTypeFindingTriaged   EventType = "finding_triaged"
-	EventTypeFindingFixed     EventType = "finding_fixed"
-	EventTypeFindingReopened  EventType = "finding_reopened"
+	EventTypeNewFinding      EventType = "new_finding"
+	EventTypeFindingFixed    EventType = "finding_fixed"
+	EventTypeFindingReopened EventType = "finding_reopened"
 	// EventTypeFindingPriorityEscalated fires when an already-classified
 	// finding is re-classified UP (e.g. P3 -> P0 because its CVE was newly
 	// listed in KEV, or a compensating control was removed). Without it a
@@ -146,8 +133,7 @@ const (
 	EventTypeWorkflowNotification EventType = "workflow_notification"
 
 	// Exposure events
-	EventTypeNewExposure      EventType = "new_exposure"
-	EventTypeExposureResolved EventType = "exposure_resolved"
+	EventTypeNewExposure EventType = "new_exposure"
 
 	// EventTypeSensorOffline fires when the sensor-health controller sees a
 	// sensor stop heartbeating (online -> offline). The id keeps the dotted
@@ -155,6 +141,14 @@ const (
 	// what existing subscriptions store (migration 000230 rewrote
 	// agent.offline to it). Emitted once per offline transition, not per tick.
 	EventTypeSensorOffline EventType = "sensor.offline"
+
+	// Retired types. Nothing ever emitted them, so they are not in
+	// AllEventTypes and a channel cannot subscribe to them (settings plan
+	// P0-08). They stay as constants only because the legacy aliases below
+	// map onto them, and subscriptions stored before the change may still
+	// list them; such entries simply never match.
+	EventTypeSecurityAlert EventType = "security_alert"
+	EventTypeScanCompleted EventType = "scan_completed"
 
 	// Legacy event types (for backward compatibility)
 	EventTypeFindings  EventType = "findings"  // Maps to new_finding
@@ -186,24 +180,12 @@ const (
 // Empty RequiredModule means the event type is always available (system events).
 func AllEventTypes() []EventTypeInfo {
 	return []EventTypeInfo{
-		// System events - always available (no module required)
-		{Type: EventTypeSecurityAlert, Category: EventCategorySystem, Label: "Security Alert", Description: "Security-related alerts and warnings", RequiredModule: ""},
-		{Type: EventTypeSystemError, Category: EventCategorySystem, Label: "System Error", Description: "System errors and failures", RequiredModule: ""},
 
 		// Asset events - require 'assets' module
 		{Type: EventTypeNewAsset, Category: EventCategoryAsset, Label: "New Asset", Description: "New asset discovered or added", RequiredModule: ModuleAssets},
-		{Type: EventTypeAssetChanged, Category: EventCategoryAsset, Label: "Asset Changed", Description: "Asset information changed", RequiredModule: ModuleAssets},
-		{Type: EventTypeAssetDeleted, Category: EventCategoryAsset, Label: "Asset Deleted", Description: "Asset removed from inventory", RequiredModule: ModuleAssets},
-
-		// Scan events - require 'scans' module
-		{Type: EventTypeScanStarted, Category: EventCategoryScan, Label: "Scan Started", Description: "Scan job started", RequiredModule: ModuleScans},
-		{Type: EventTypeScanCompleted, Category: EventCategoryScan, Label: "Scan Completed", Description: "Scan job completed successfully", RequiredModule: ModuleScans},
-		{Type: EventTypeScanFailed, Category: EventCategoryScan, Label: "Scan Failed", Description: "Scan job failed", RequiredModule: ModuleScans},
 
 		// Finding events - require 'findings' module
 		{Type: EventTypeNewFinding, Category: EventCategoryFinding, Label: "New Finding", Description: "New security finding detected", RequiredModule: ModuleFindings},
-		{Type: EventTypeFindingConfirmed, Category: EventCategoryFinding, Label: "Confirmed Finding", Description: "Finding confirmed as valid", RequiredModule: ModuleFindings},
-		{Type: EventTypeFindingTriaged, Category: EventCategoryFinding, Label: "Need Triage Finding", Description: "Finding needs triage/review", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingFixed, Category: EventCategoryFinding, Label: "Fixed Finding", Description: "Finding has been remediated", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingReopened, Category: EventCategoryFinding, Label: "Reopened Finding", Description: "Finding reopened after fix", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingPriorityEscalated, Category: EventCategoryFinding, Label: "Priority Escalated", Description: "Finding re-classified to a higher priority (e.g. P3 to P0)", RequiredModule: ModuleFindings},
@@ -226,7 +208,6 @@ func AllEventTypes() []EventTypeInfo {
 
 		// Exposure events - require 'findings' module (part of findings feature)
 		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
-		{Type: EventTypeExposureResolved, Category: EventCategoryExposure, Label: "Exposure Resolved", Description: "Exposure has been resolved", RequiredModule: ModuleFindings},
 
 		// Sensor events - require 'sensors' module
 		{Type: EventTypeSensorOffline, Category: EventCategorySensor, Label: "Sensor Offline", Description: "A sensor stopped sending heartbeats and was marked offline", RequiredModule: ModuleSensors},
@@ -241,7 +222,6 @@ func AllEventTypes() []EventTypeInfo {
 // surprised to learn this reached nobody".
 func DefaultEnabledEventTypes() []EventType {
 	return []EventType{
-		EventTypeSecurityAlert,
 		EventTypeNewFinding,
 		EventTypeNewExposure,
 
