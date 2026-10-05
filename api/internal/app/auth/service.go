@@ -822,7 +822,12 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 	if err != nil {
 		return fmt.Errorf("failed to load tenant for SSO enforcement: %w", err)
 	}
-	if ssoEnforcementDenied(sess.AuthMethodFor(tenantID), role, t.TypedSettings().Security.SSOEnforced) {
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		// Fail closed: an unreadable security section never admits a session.
+		return fmt.Errorf("failed to read SSO enforcement policy: %w", err)
+	}
+	if ssoEnforcementDenied(sess.AuthMethodFor(tenantID), role, sec.SSOEnforced) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
 		// user id; omit the raw role string to keep no user-derived value in the
 		// log entry (CWE-117). The blocked event is fully identified by tenant+user.

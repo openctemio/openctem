@@ -140,7 +140,7 @@ func TestPipelineRun_TargetsPassTheScanGate(t *testing.T) {
 	seedScopeTarget(t, db, tenant, "domain", "*.example.com")
 
 	gate := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
-		scansvc.WithActScope(actScopeChecker(db)))
+		scansvc.WithActScope(actScopeChecker(db)), scansvc.WithAttributionGate(ownershipGate(db)))
 	svc := pipelinesvc.NewService(
 		postgres.NewPipelineTemplateRepository(pg), postgres.NewPipelineStepRepository(pg),
 		postgres.NewPipelineRunRepository(pg), postgres.NewStepRunRepository(pg),
