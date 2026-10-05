@@ -24,11 +24,13 @@ func NewDataScopeRepository(db *DB) *DataScopeRepository {
 }
 
 // HasFullDataRole reports whether the user holds a role with
-// has_full_data_access in the tenant.
+// has_full_data_access in the tenant. Only an ACTIVE member with an ACTIVE
+// account holds anything: a disabled or offboarded member never gets the
+// bypass, whatever roles are still on file (member lifecycle, RFC-050).
 func (r *DataScopeRepository) HasFullDataRole(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
 	var full bool
 	err := r.db.QueryRowContext(ctx,
-		`SELECT EXISTS (
+		`SELECT principal_is_active($1, $2) AND EXISTS (
 			SELECT 1 FROM user_roles ur
 			JOIN roles ro ON ro.id = ur.role_id
 			WHERE ur.tenant_id = $1 AND ur.user_id = $2 AND ro.has_full_data_access = TRUE
