@@ -180,3 +180,22 @@ func TestGetRecentChanges_MergesHistory(t *testing.T) {
 		t.Fatalf("restricted member must see only in-scope additions, got %+v", scoped)
 	}
 }
+
+// research/22 P0-12: every count and the exposed list cover approved assets
+// only, so a rejected or unreviewed name is never shown as exposed surface.
+func TestGetStats_ApprovedOnly(t *testing.T) {
+	var unfiltered int
+	repo := &fakeSurfaceAssets{count: func(f asset.Filter) int64 {
+		if f.Attribution == nil || !f.Attribution.Unrecorded || len(f.Attribution.States) != 3 {
+			unfiltered++
+		}
+		return 1
+	}}
+	svc := NewSurfaceService(repo, nil, logger.NewNop())
+	if _, err := svc.GetStats(context.Background(), shared.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	if unfiltered != 0 {
+		t.Fatalf("%d counts without the approved attribution filter", unfiltered)
+	}
+}
