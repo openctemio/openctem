@@ -87,7 +87,7 @@ payload comes from one builder, `scan.StepCommandPayload`.
   its steps to platform sensors, whatever the template prefers. (Steps after
   the first used to ignore it.)
 
-## Report output-type binding (owner decision G12)
+## 4. Report output-type binding (owner decision G12)
 
 `internal/app/ingest/output_binding.go`. A report bound to a command may
 carry only the asset types its tool is declared to produce or take: the
