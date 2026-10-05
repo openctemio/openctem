@@ -100,7 +100,7 @@ source `owner_ref`, in keyset batches of 5,000 assets:
   stays, so they are matched again if they rejoin);
 - it writes the three counts (copied, kept, skipped) to the database log.
 
-Nothing reads or writes `assets.owner_id` after this change. `000381` (the
+Nothing reads or writes `assets.owner_id` after this change. `001056` (the
 contract step, merged after a release that contains the change, so that a pod
 of the previous release never meets a database without the column) drops the
 column and its two indexes. Its down migration restores the column from the
