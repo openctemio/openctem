@@ -215,7 +215,7 @@ Estimated time: at 1000 rewraps/sec, a tenant with 1M encrypted rows takes ~17 m
 - Key escrow / legal-hold workflows.
 - Multi-region active-active KEK replication.
 
-## 12. Prior art / references
+## 12. References
 
 - AWS KMS envelope-encryption pattern: https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#enveloping
 - HashiCorp Vault Transit: https://developer.hashicorp.com/vault/docs/secrets/transit

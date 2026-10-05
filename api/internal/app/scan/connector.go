@@ -50,11 +50,11 @@ func (s *Service) validateConnectorScanner(ctx context.Context, tenantID shared.
 }
 
 // isConnectorScanner reports whether the scan's scanner is a connector.
-func (s *Service) isConnectorScanner(ctx context.Context, scannerName string) (*tool.Tool, bool) {
+func (s *Service) isConnectorScanner(ctx context.Context, tenantID shared.ID, scannerName string) (*tool.Tool, bool) {
 	if scannerName == "" || s.toolRepo == nil {
 		return nil, false
 	}
-	t, err := s.toolRepo.GetByName(ctx, scannerName)
+	t, err := s.toolRepo.GetByName(ctx, tenantID, scannerName)
 	if err != nil || t == nil {
 		return nil, false
 	}

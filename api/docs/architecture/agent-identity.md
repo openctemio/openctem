@@ -15,7 +15,7 @@ bytes, shown once at issue; see *Credential formats*; older sensors may still
 hold a legacy `rda_` key). This is deliberately **not** a shared account: one
 leaked key revokes/audits independently, unlike a single tenant-wide token. On
 top of that identity the credential is evolving from a *static* secret toward a
-**short-lived, auto-rotating** one — the kubelet / ServiceAccount model — so a
+**short-lived, auto-rotating** one, so a
 leaked key self-revokes at its next renewal instead of living forever.
 
 ## Lifecycle
@@ -163,7 +163,7 @@ characters. Code: `pkg/sensorkey` (`New`, `Valid`, `IsLegacy`,
 - **Legacy `rda_` keys** keep authenticating until the sunset: **90 days after
   RFC-032 enrollment and Ed25519 key-bound identity ship** (this replaces the
   earlier 2027-04-01 date). A sensor moves to `octs_` on its next renewal
-  (`RenewAPIKey`, kubelet-style auto-renew); an admin can also regenerate the
+  (`RenewAPIKey`, the sensor renews its own key before expiry); an admin can also regenerate the
   key. `Sensor.IsLegacyKey()` is true while the sensor's effective key
   (`KeyState`) is `rda_`; the sensor response carries `legacy_key` and the
   Sensors page tags those sensors ("legacy key"). The renewal that moves a
@@ -224,9 +224,8 @@ administrator, not to the vendor.
 
 ## Why not a shared account token
 
-A single tenant-wide (or global) token — the DefectDojo model — is rejected: one
+A single tenant-wide (or global) token is rejected: one
 leak compromises **every** agent, with no per-agent revoke, no per-agent audit,
 and no way to scope one runner differently from another. Per-machine identity +
-short-lived rotating credential is the industry standard (k8s node certs, k8s
-ServiceAccount projected JWTs, SPIFFE SVIDs, GitHub Actions OIDC). OpenCTEM was
-already on that axis; Phases 1a–1b close the "static key that never expires" gap.
+short-lived rotating credential bounds the blast radius of one leak to one
+machine and one renewal window. OpenCTEM was already on that axis; Phases 1a–1b close the "static key that never expires" gap.

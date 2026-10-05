@@ -12,15 +12,12 @@
 | **API Response** | ✅ Complete | DTOs include `depth`, `parent_component_id`, `is_direct` |
 | **Multiple Key Matching** | ✅ Complete | PURL, name@version, name, ID formats |
 
-### 2. Industry Alignment Score
+### 2. Standards Alignment
 
 | Standard | Alignment | Notes |
 |----------|-----------|-------|
 | **CycloneDX 1.5** | ⭐⭐⭐⭐⭐ | Direct component refs, parent tracking |
 | **SPDX 3.0** | ⭐⭐⭐⭐⭐ | Direct relationships, PURL-based |
-| **Dependency-Track** | ⭐⭐⭐⭐⭐ | Parent chains, depth tracking |
-| **GitHub Dep Graph** | ⭐⭐⭐⭐☆ | Depth yes, but single parent only |
-| **Snyk** | ⭐⭐⭐⭐☆ | dependency_path (we only have parent) |
 
 ### 3. Missing Features (Backlog)
 
@@ -297,7 +294,7 @@ FROM main_stats ms
 1. **SQL Injection**: Zero vulnerabilities, all queries parameterized
 2. **IDOR Protection**: Proper tenant isolation with 404 response
 3. **N+1 Prevention**: Single-query JOINs for main operations
-4. **Industry Alignment**: CycloneDX/SPDX/Dependency-Track compatible
+4. **Industry Alignment**: CycloneDX/SPDX compatible
 5. **Schema Design**: Proper normalization with parent tracking
 
 ### Areas for Improvement ⚠️
