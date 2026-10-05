@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 )
@@ -80,16 +80,16 @@ func TestCreateWorkflow_RejectsUnsupportedTypes(t *testing.T) {
 	for _, tt := range unsupportedCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			service, workflowRepo, nodeRepo, _, _ := newTestWorkflowService()
-			nodes := []app.CreateNodeInput{
+			nodes := []workflowsvc.CreateNodeInput{
 				{NodeKey: "trigger_1", NodeType: workflow.NodeTypeTrigger, Config: workflow.NodeConfig{TriggerType: workflow.TriggerTypeManual}},
 			}
 			if tt.cfg.TriggerType != "" {
 				nodes[0].Config = tt.cfg
 			} else {
-				nodes = append(nodes, app.CreateNodeInput{NodeKey: "action_1", NodeType: workflow.NodeTypeAction, Config: tt.cfg})
+				nodes = append(nodes, workflowsvc.CreateNodeInput{NodeKey: "action_1", NodeType: workflow.NodeTypeAction, Config: tt.cfg})
 			}
 
-			_, err := service.CreateWorkflow(context.Background(), app.CreateWorkflowInput{
+			_, err := service.CreateWorkflow(context.Background(), workflowsvc.CreateWorkflowInput{
 				TenantID: shared.NewID(), UserID: shared.NewID(), Name: "wf", Nodes: nodes,
 			})
 			assertUnsupportedErr(t, err, tt.want)
@@ -112,9 +112,9 @@ func TestUpdateWorkflowGraph_RejectsUnsupportedBeforeDeletingGraph(t *testing.T)
 	trig.Config.TriggerType = workflow.TriggerTypeManual
 	_ = nodeRepo.Create(ctx, trig)
 
-	_, err := service.UpdateWorkflowGraph(ctx, app.UpdateWorkflowGraphInput{
+	_, err := service.UpdateWorkflowGraph(ctx, workflowsvc.UpdateWorkflowGraphInput{
 		TenantID: tenantID, UserID: shared.NewID(), WorkflowID: wf.ID,
-		Nodes: []app.CreateNodeInput{
+		Nodes: []workflowsvc.CreateNodeInput{
 			{NodeKey: "trigger_1", NodeType: workflow.NodeTypeTrigger, Config: workflow.NodeConfig{TriggerType: workflow.TriggerTypeSchedule}},
 		},
 	})
@@ -132,7 +132,7 @@ func TestAddAndUpdateNode_RejectUnsupportedTypes(t *testing.T) {
 	wf := createTestWorkflow(tenantID, "nodes")
 	_ = workflowRepo.Create(ctx, wf)
 
-	_, err := service.AddNode(ctx, app.AddNodeInput{
+	_, err := service.AddNode(ctx, workflowsvc.AddNodeInput{
 		TenantID: tenantID, WorkflowID: wf.ID, NodeKey: "a1", NodeType: workflow.NodeTypeAction,
 		Config: workflow.NodeConfig{ActionType: workflow.ActionTypeAssignTeam},
 	})
@@ -146,7 +146,7 @@ func TestAddAndUpdateNode_RejectUnsupportedTypes(t *testing.T) {
 	_ = nodeRepo.Create(ctx, act)
 
 	cfg := workflow.NodeConfig{ActionType: workflow.ActionTypeUpdatePriority}
-	_, err = service.UpdateNode(ctx, app.UpdateNodeInput{
+	_, err = service.UpdateNode(ctx, workflowsvc.UpdateNodeInput{
 		TenantID: tenantID, WorkflowID: wf.ID, NodeID: act.ID, Config: &cfg,
 	})
 	assertUnsupportedErr(t, err, "action:update_priority")
@@ -179,10 +179,10 @@ func TestUpdateWorkflow_CannotActivateUnsupported_ButCanDeactivate(t *testing.T)
 	}
 
 	off, on := false, true
-	if _, err := service.UpdateWorkflow(ctx, app.UpdateWorkflowInput{TenantID: tenantID, WorkflowID: wf.ID, IsActive: &off}); err != nil {
+	if _, err := service.UpdateWorkflow(ctx, workflowsvc.UpdateWorkflowInput{TenantID: tenantID, WorkflowID: wf.ID, IsActive: &off}); err != nil {
 		t.Fatalf("deactivate must be allowed: %v", err)
 	}
-	_, err = service.UpdateWorkflow(ctx, app.UpdateWorkflowInput{TenantID: tenantID, WorkflowID: wf.ID, IsActive: &on})
+	_, err = service.UpdateWorkflow(ctx, workflowsvc.UpdateWorkflowInput{TenantID: tenantID, WorkflowID: wf.ID, IsActive: &on})
 	assertUnsupportedErr(t, err, "action:assign_team")
 	if wf.IsActive {
 		t.Fatal("workflow was activated")
@@ -190,7 +190,7 @@ func TestUpdateWorkflow_CannotActivateUnsupported_ButCanDeactivate(t *testing.T)
 
 	// Renaming without activating still works.
 	name := "legacy renamed"
-	if _, err := service.UpdateWorkflow(ctx, app.UpdateWorkflowInput{TenantID: tenantID, WorkflowID: wf.ID, Name: &name}); err != nil {
+	if _, err := service.UpdateWorkflow(ctx, workflowsvc.UpdateWorkflowInput{TenantID: tenantID, WorkflowID: wf.ID, Name: &name}); err != nil {
 		t.Fatalf("rename must be allowed: %v", err)
 	}
 }
@@ -204,7 +204,7 @@ func TestUpdateWorkflow_ActivateOtherTenantIsNotFound(t *testing.T) {
 	_ = workflowRepo.Create(ctx, wf)
 
 	on := true
-	_, err := service.UpdateWorkflow(ctx, app.UpdateWorkflowInput{TenantID: shared.NewID(), WorkflowID: wf.ID, IsActive: &on})
+	_, err := service.UpdateWorkflow(ctx, workflowsvc.UpdateWorkflowInput{TenantID: shared.NewID(), WorkflowID: wf.ID, IsActive: &on})
 	if !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant activate: want ErrNotFound, got %v", err)
 	}

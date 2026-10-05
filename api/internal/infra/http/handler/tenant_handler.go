@@ -14,6 +14,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -38,7 +39,7 @@ type TenantHandler struct {
 	service         *app.TenantService
 	roleService     *app.RoleService
 	assetService    *app.AssetService
-	moduleService   *app.ModuleService
+	moduleService   *module.ModuleService
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
 	logger          *logger.Logger
@@ -90,7 +91,7 @@ func (h *TenantHandler) SetAssetService(svc *app.AssetService) {
 }
 
 // SetModuleService sets the module service for module management.
-func (h *TenantHandler) SetModuleService(svc *app.ModuleService) {
+func (h *TenantHandler) SetModuleService(svc *module.ModuleService) {
 	h.moduleService = svc
 }
 
@@ -326,8 +327,8 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 // =============================================================================
 
 // buildAuditContext builds an app.AuditContext from the HTTP request.
-func (h *TenantHandler) buildAuditContext(r *http.Request) app.AuditContext {
-	actx := app.AuditContext{
+func (h *TenantHandler) buildAuditContext(r *http.Request) auditsvc.AuditContext {
+	actx := auditsvc.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
@@ -1635,7 +1636,7 @@ func (h *TenantHandler) declineInvitation(w http.ResponseWriter, r *http.Request
 
 	// Delete the invitation (public decline: the token authorizes it; pass the
 	// invitation's own tenant so the scoping check is satisfied).
-	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String(), app.AuditContext{
+	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String(), auditsvc.AuditContext{
 		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
 	}); err != nil {
 		h.handleServiceError(w, err)
@@ -2435,7 +2436,7 @@ func (h *TenantHandler) RecalculateRiskScores(w http.ResponseWriter, r *http.Req
 	recalculateLastRun.Store(tenantKey, time.Now())
 
 	// Audit log the recalculation
-	event := app.NewSuccessEvent(audit.ActionTenantRiskScoresRecalculated, audit.ResourceTypeTenant, tenantKey).
+	event := auditsvc.NewSuccessEvent(audit.ActionTenantRiskScoresRecalculated, audit.ResourceTypeTenant, tenantKey).
 		WithMessage(fmt.Sprintf("Risk scores recalculated for %d assets", updated)).
 		WithMetadata("assets_updated", updated).
 		WithSeverity(audit.SeverityMedium)
@@ -2821,7 +2822,7 @@ func (h *TenantHandler) ApplyModulePreset(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
 }
 
-func toTenantModuleListResponse(config *app.TenantModuleConfigOutput) TenantModuleListResponse {
+func toTenantModuleListResponse(config *module.TenantModuleConfigOutput) TenantModuleListResponse {
 	modules := make([]TenantModuleResponse, 0, len(config.Modules))
 	for _, info := range config.Modules {
 		m := info.Module
