@@ -90,25 +90,13 @@ func (s *Service) gateFor(ctx context.Context, tenantID shared.ID, sensorID *sha
 	if sensorID == nil || len(cmds) == 0 || (s.sensors == nil && s.privatePolicy == nil && s.optIns == nil) {
 		return nil
 	}
-	g := &dispatchGate{}
-	if s.optIns != nil && anyOptIn(cmds) {
-		o, err := s.optIns.SensorOptIns(ctx, tenantID)
-		if err != nil {
-			s.logger.Warn("cannot read the tenant's sensor opt-ins; withholding commands",
-				"tenant_id", tenantID.String(), "error", err)
-			return &dispatchGate{closed: true}
-		}
-		g.opts.OptIns = &o
+	opts, err := s.dispatchOptions(ctx, tenantID, cmds)
+	if err != nil {
+		s.logger.Warn("cannot read the tenant's dispatch settings; withholding commands",
+			"tenant_id", tenantID.String(), "error", err)
+		return &dispatchGate{closed: true}
 	}
-	if s.privatePolicy != nil && anyPrivateTarget(cmds) {
-		required, err := s.privatePolicy.RequiresLocalPolicyForPrivateTargets(ctx, tenantID)
-		if err != nil {
-			s.logger.Warn("cannot read the tenant's private-target policy; withholding commands",
-				"tenant_id", tenantID.String(), "error", err)
-			return &dispatchGate{closed: true}
-		}
-		g.opts.RequireLocalPolicyForPrivate = required
-	}
+	g := &dispatchGate{opts: opts}
 	if s.sensors == nil {
 		// No report to read: only the private-target switch applies, and
 		// no sensor qualifies for it.
@@ -122,6 +110,28 @@ func (s *Service) gateFor(ctx context.Context, tenantID shared.ID, sensorID *sha
 	}
 	g.report = a.LocalPolicy
 	return g
+}
+
+// dispatchOptions reads the tenant settings the pre-check needs for cmds:
+// the opt-ins when a command asks for one, the private-target switch when
+// a command names a private target. An error means "withhold".
+func (s *Service) dispatchOptions(ctx context.Context, tenantID shared.ID, cmds []*commanddom.Command) (sensordom.DispatchOptions, error) {
+	var opts sensordom.DispatchOptions
+	if s.optIns != nil && anyOptIn(cmds) {
+		o, err := s.optIns.SensorOptIns(ctx, tenantID)
+		if err != nil {
+			return opts, err
+		}
+		opts.OptIns = &o
+	}
+	if s.privatePolicy != nil && anyPrivateTarget(cmds) {
+		required, err := s.privatePolicy.RequiresLocalPolicyForPrivateTargets(ctx, tenantID)
+		if err != nil {
+			return opts, err
+		}
+		opts.RequireLocalPolicyForPrivate = required
+	}
+	return opts, nil
 }
 
 // refusal is why the gate withholds c, or nil.

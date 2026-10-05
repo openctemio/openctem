@@ -391,7 +391,7 @@ permVersionService.Increment(ctx, tenantID, userID)
 |-------|-------------|----------------|---------|
 | Role assigned/removed | Clear user cache | Increment version | `RoleService` |
 | Role permissions changed | Clear all users with role | Increment affected users | `RoleService` |
-| Member removed from tenant | Clear user cache | Delete version | `TenantService` |
+| Member disabled / offboarded (RFC-050) | Clear user cache | Delete version (closes sockets) | `TenantService` |
 | Session revoked | Clear all tenants cache | No change | `SessionService` |
 | User suspended | Clear via session revoke | No change | `UserService` |
 
