@@ -94,7 +94,7 @@ type Repository interface {
 type RoleMapping struct {
 	Role string
 	// ConfiguredBy is the user who last set this mapping; nil for a mapping
-	// that predates provenance (migration 000830) or whose user was deleted.
+	// that predates provenance (migration 000911) or whose user was deleted.
 	ConfiguredBy *shared.ID
 	// ConfiguredByOwner is true when ConfiguredBy was the organization's owner
 	// when they set it. Only such an admin mapping may grant or remove the

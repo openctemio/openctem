@@ -66,7 +66,7 @@ Azure AD member-op styles.
 | IdP gets 401 | Token revoked or wrong — check it's active in the tokens table; regenerate if lost (one-time reveal). |
 | New users all land as `member` | Expected unless a group→role mapping applies (API-only, above). |
 | Can't set someone as owner via IdP | By design — `owner` is never SCIM-assignable. |
-| Admin group members are not promoted | The admin mapping was not saved by the owner (or predates migration `000830`). Have the owner `PUT` the mappings again. |
+| Admin group members are not promoted | The admin mapping was not saved by the owner (or predates migration `000911`). Have the owner `PUT` the mappings again. |
 | `403` saving group mappings | Only the owner can add, change or remove a mapping to `admin`. |
 | An administrator was not demoted when removed from the IdP group | By design until the owner configures an admin mapping: SCIM does not demote hand-appointed administrators. |
 | Deprovisioned user still "in" | Deactivation suspends the tenant membership (immediate) but retains the global user record; that's expected. |
