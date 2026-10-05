@@ -13042,6 +13042,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -13170,6 +13172,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -13196,6 +13206,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -14668,6 +14682,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -14796,6 +14812,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -14822,6 +14846,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -15035,6 +15063,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -15163,6 +15193,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -15189,6 +15227,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -15334,6 +15376,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -15462,6 +15506,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -15488,6 +15540,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -15779,6 +15835,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -15907,6 +15965,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -15933,6 +15999,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -26564,6 +26634,80 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/secret-store/{id}/rotate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Rotate credential
+     * @description Replace the secret of a credential in place. Send the data field matching the credential's type. Sources bound to the credential use the new value on their next fetch.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Credential ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description New secret */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.RotateCredentialRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CredentialResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors': {
     parameters: {
       query?: never
@@ -32122,7 +32266,7 @@ export interface paths {
     put?: never
     /**
      * Enable 2FA
-     * @description Confirms the authenticator with a code and turns 2FA on. Signs out every other session. Returns recovery codes, shown once.
+     * @description Confirms the authenticator with a code and turns 2FA on. Needs the current password. Signs out every other session. Returns recovery codes, shown once.
      */
     post: {
       parameters: {
@@ -32131,7 +32275,12 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.MFACodeRequest']
+      /** @description Current password and authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.MFAEnableRequest']
+        }
+      }
       responses: {
         /** @description OK */
         200: {
@@ -32192,7 +32341,12 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.MFACodeRequest']
+      /** @description Authenticator code */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.MFACodeRequest']
+        }
+      }
       responses: {
         /** @description OK */
         200: {
@@ -36377,6 +36531,14 @@ export interface components {
     'internal_infra_http_handler.AssetAttributionResponse': {
       /** @description ActiveChecksAllowed: whether a scan may touch the asset. */
       active_checks_allowed?: boolean
+      /**
+       * @description ActiveChecksBlockedBy says why a scan may not touch the asset when
+       *     active_checks_allowed is false: its state (needs_review, candidate,
+       *     dependency, monitor_only, rejected; rejected also for a name under a
+       *     rejected name), or unattributed: no record, and neither inside a scope
+       *     target nor under a root-domain seed or verified domain.
+       */
+      active_checks_blocked_by?: string
       confidence?: number
       decided_at?: string
       evidence?: components['schemas']['internal_infra_http_handler.AssetAttributionEvidence'][]
@@ -37457,9 +37619,6 @@ export interface components {
       asset_id?: string
       critical_days: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days: number
       info_days: number
@@ -37467,6 +37626,11 @@ export interface components {
       low_days: number
       medium_days: number
       name: string
+      /** @description P0Days..P3Days are optional; an omitted class keeps its default window. */
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       warning_threshold_pct?: number
     }
     'internal_infra_http_handler.CreateScanProfileRequest': {
@@ -38309,6 +38473,15 @@ export interface components {
       by_source?: {
         [key: string]: number
       }
+      /**
+       * @description ByState counts the state lenses of the same filter: open, fixed,
+       *     dispositioned (false positive, accepted, duplicate; never counted as
+       *     fixed) and all. Send state=all with the other filters to label a lens
+       *     switcher.
+       */
+      by_state?: {
+        [key: string]: number
+      }
       by_status?: {
         [key: string]: number
       }
@@ -39045,6 +39218,10 @@ export interface components {
       code: string
       password: string
     }
+    'internal_infra_http_handler.MFAEnableRequest': {
+      code: string
+      password: string
+    }
     'internal_infra_http_handler.MFAEnrollmentConfirmRequest': {
       code: string
       mfa_token: string
@@ -39531,6 +39708,17 @@ export interface components {
       id?: string
       secret_value?: string
     }
+    'internal_infra_http_handler.RotateCredentialRequest': {
+      api_key?: components['schemas']['internal_infra_http_handler.APIKeyDataRequest']
+      aws_role?: components['schemas']['internal_infra_http_handler.AWSRoleDataRequest']
+      azure_service_principal?: components['schemas']['internal_infra_http_handler.AzureServicePrincipalDataRequest']
+      basic_auth?: components['schemas']['internal_infra_http_handler.BasicAuthDataRequest']
+      bearer_token?: components['schemas']['internal_infra_http_handler.BearerTokenDataRequest']
+      gcp_service_account?: components['schemas']['internal_infra_http_handler.GCPServiceAccountDataRequest']
+      github_app?: components['schemas']['internal_infra_http_handler.GitHubAppDataRequest']
+      gitlab_token?: components['schemas']['internal_infra_http_handler.GitLabTokenDataRequest']
+      ssh_key?: components['schemas']['internal_infra_http_handler.SSHKeyDataRequest']
+    }
     'internal_infra_http_handler.RunDispatchResponse': {
       excluded_targets?: number
       resolved_targets?: number
@@ -39705,9 +39893,6 @@ export interface components {
       created_at?: string
       critical_days?: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days?: number
       id?: string
@@ -39717,6 +39902,15 @@ export interface components {
       low_days?: number
       medium_days?: number
       name?: string
+      /**
+       * @description P0Days..P3Days are the remediation windows per CTEM priority class.
+       *     They take precedence over the severity windows for every finding that
+       *     has a priority class.
+       */
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       tenant_id?: string
       updated_at?: string
       warning_threshold_pct?: number
@@ -41058,6 +41252,10 @@ export interface components {
     }
     'internal_infra_http_handler.UpdateCredentialRequest': {
       description?: string
+      /**
+       * Format: date-time
+       * @description ExpiresAt: RFC 3339 timestamp in the future, or null to clear.
+       */
       expires_at?: string
       name?: string
     }
@@ -41162,9 +41360,6 @@ export interface components {
     'internal_infra_http_handler.UpdateSLAPolicyRequest': {
       critical_days?: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days?: number
       info_days?: number
@@ -41173,6 +41368,10 @@ export interface components {
       low_days?: number
       medium_days?: number
       name?: string
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       warning_threshold_pct?: number
     }
     'internal_infra_http_handler.UpdateScanProfileRequest': {
@@ -41465,12 +41664,6 @@ export interface components {
     'internal_infra_http_handler.BulkToolIDsRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.BulkToolIDsRequest']
-      }
-    }
-    /** @description Authenticator code */
-    'internal_infra_http_handler.MFACodeRequest': {
-      content: {
-        'application/json': components['schemas']['internal_infra_http_handler.MFACodeRequest']
       }
     }
   }

@@ -569,7 +569,8 @@ func Register(
 	}
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
-	// Per-IP rate limit runs before auth to throttle junk-token floods.
+	// Per-IP rate limit runs before auth to throttle junk-token floods; the
+	// organization IP allowlist runs after it (mcpMiddlewares).
 	if h.MCP != nil && h.MCPAuth != nil {
 		registerMCPRoutes(router, h.MCP, middleware.RateLimit(&cfg.RateLimit, log), h.MCPAuth)
 	}
@@ -991,7 +992,9 @@ func (a tenantSecurityPolicyAdapter) SecuritySettings(ctx context.Context, tenan
 	if err != nil {
 		return tenant.SecuritySettings{}, err
 	}
-	return t.TypedSettings().Security, nil
+	// Strict: an unreadable security section is an error (the IP allowlist
+	// gate then denies), never the permissive defaults.
+	return t.SecuritySettingsStrict()
 }
 
 // tenantSSOEnforcedAdapter adapts tenant.Repository to
@@ -1011,7 +1014,11 @@ func (a tenantSSOEnforcedAdapter) IsSSOEnforced(ctx context.Context, tenantID st
 	if err != nil {
 		return false, err
 	}
-	return t.TypedSettings().Security.SSOEnforced, nil
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return false, err
+	}
+	return sec.SSOEnforced, nil
 }
 
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.
