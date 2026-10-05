@@ -6,6 +6,7 @@
 > Asset identity *design* belongs to [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md)
 > (PR #878); this page audits the asset dedup that runs **today**.
 > Finding provenance: [ADR-004](decisions/004-finding-provenance.md).
+> Source-native ids, scores, VEX and identity hints (CTIS 1.4): [finding-source-interop.md](finding-source-interop.md).
 
 Every claim marked **proven** was reproduced on a scratch PostgreSQL 17 database
 migrated to `000272`, through the real ingest service

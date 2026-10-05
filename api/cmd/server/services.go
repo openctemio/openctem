@@ -1499,6 +1499,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	})
 	// Source-asserted resolve (Tenable.sc mitigated rows, RFC-047; default dry_run).
 	s.Ingest.SetSourceResolveMode(ingest.ParseSourceResolveMode(cfg.Ingest.SourceResolve))
+	s.Ingest.SetVEXMode(ingest.ParseVEXMode(cfg.Ingest.VEX))
 	// Ingest audit events are tenant-scoped, so they must go through the SAME
 	// audit service instance as every other tenant-scoped event: LogEvent also
 	// extends the per-tenant tamper-evident hash chain, and its chainMu is what

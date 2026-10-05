@@ -2032,6 +2032,12 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 		propCount++
 	}
 
+	// Identity hints a scanner observed (CTIS 1.4), bounded, for display and
+	// correlation; matching reads them in identifiersFor.
+	if h := identityHintProperties(ctisAsset.IdentityHints); h != nil {
+		props["identity_hints"] = h
+	}
+
 	// Add technical details based on asset type
 	if ctisAsset.Technical != nil {
 		if ctisAsset.Technical.Domain != nil {

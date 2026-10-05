@@ -195,18 +195,27 @@ type Output struct {
 	FindingsSourceMitigated int `json:"findings_source_mitigated,omitempty"`
 	// SourceResolveIDs are the findings source-asserted resolve closed (or,
 	// in dry_run, would close); SourceResolveMode is the mode it ran in.
-	SourceResolveIDs   []shared.ID       `json:"-"`
-	SourceResolveMode  SourceResolveMode `json:"-"`
-	FindingsSuppressed int               `json:"findings_suppressed,omitempty"`
-	ComponentsCreated  int               `json:"components_created,omitempty"`
-	ComponentsUpdated  int               `json:"components_updated,omitempty"`
-	DependenciesLinked int               `json:"dependencies_linked,omitempty"`
-	LicensesDiscovered int               `json:"licenses_discovered,omitempty"`
-	LicensesLinked     int               `json:"licenses_linked,omitempty"`
-	CVEsCreated        int               `json:"cves_created,omitempty"`
-	CVEsUpdated        int               `json:"cves_updated,omitempty"`
-	Errors             []string          `json:"errors,omitempty"`
-	Warnings           []string          `json:"warnings,omitempty"`
+	SourceResolveIDs  []shared.ID       `json:"-"`
+	SourceResolveMode SourceResolveMode `json:"-"`
+	// FindingsVEXNotAffected counts the report's findings with a VEX
+	// not_affected statement; FindingsVEXClosed counts the open findings it
+	// closed (enforce), FindingsVEXWouldClose those it would close
+	// (dry_run). VEXIDs and VEXMode feed the audit record.
+	FindingsVEXNotAffected int         `json:"findings_vex_not_affected,omitempty"`
+	FindingsVEXClosed      int         `json:"findings_vex_closed,omitempty"`
+	FindingsVEXWouldClose  int         `json:"findings_vex_would_close,omitempty"`
+	VEXIDs                 []shared.ID `json:"-"`
+	VEXMode                VEXMode     `json:"-"`
+	FindingsSuppressed     int         `json:"findings_suppressed,omitempty"`
+	ComponentsCreated      int         `json:"components_created,omitempty"`
+	ComponentsUpdated      int         `json:"components_updated,omitempty"`
+	DependenciesLinked     int         `json:"dependencies_linked,omitempty"`
+	LicensesDiscovered     int         `json:"licenses_discovered,omitempty"`
+	LicensesLinked         int         `json:"licenses_linked,omitempty"`
+	CVEsCreated            int         `json:"cves_created,omitempty"`
+	CVEsUpdated            int         `json:"cves_updated,omitempty"`
+	Errors                 []string    `json:"errors,omitempty"`
+	Warnings               []string    `json:"warnings,omitempty"`
 
 	// Binding is the authority the report was applied under: command,
 	// unsolicited or trusted (RFC-040 §5.3).
