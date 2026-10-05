@@ -179,7 +179,7 @@ export default function ExceptionsPage() {
   const confirmApprove = async () => {
     if (!selectedRule) return
     try {
-      await triggerApprove()
+      await triggerApprove({ reviewed_updated_at: selectedRule.updated_at })
       toast.success('Suppression rule approved')
       setDetailOpen(false)
       await mutate()

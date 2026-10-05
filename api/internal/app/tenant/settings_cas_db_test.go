@@ -193,7 +193,7 @@ func TestSettingsSections_OtherKeysSurviveASectionSave(t *testing.T) {
 	if err := f.svc.StampAssetLifecycleDryRunCompleted(ctx, f.tenantID); err != nil {
 		t.Fatalf("stamp: %v", err)
 	}
-	if _, err := f.svc.UpdateTenant(ctx, f.tenantID, tenantapp.UpdateTenantInput{Name: strPtr("Renamed Org")}); err != nil {
+	if _, err := f.svc.UpdateTenant(ctx, f.tenantID, tenantapp.UpdateTenantInput{Name: strPtr("Renamed Org")}, noAudit()); err != nil {
 		t.Fatalf("profile save: %v", err)
 	}
 
