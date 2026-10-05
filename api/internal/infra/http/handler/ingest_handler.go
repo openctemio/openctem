@@ -382,6 +382,11 @@ type HeartbeatRequest struct {
 	// digest, summary and kill switch, sent by SDKs that see
 	// "local_policy" on hello. Display data; sanitized before it is stored.
 	LocalPolicy *sensor.LocalPolicyReport `json:"local_policy,omitempty"`
+	// ConfigReport is the config report summary (research/26): digest,
+	// health, fail and warn counts, observed_at, sent by SDKs that see
+	// "config_report" on hello. The digest is the one PUT /config-report
+	// returned. Read leniently (a member of the wrong shape is ignored).
+	ConfigReport json.RawMessage `json:"config_report,omitempty" swaggertype:"object"`
 }
 
 // loadReport returns the heartbeat's load report, nil when it carried none.
@@ -649,18 +654,6 @@ func sensorTenantString(agt *sensor.Sensor) string {
 		return ""
 	}
 	return agt.TenantID.String()
-}
-
-// WorkerFromContext is an alias for SensorFromContext for backward compatibility.
-// Deprecated: Use SensorFromContext instead.
-func WorkerFromContext(ctx context.Context) *sensor.Sensor {
-	return SensorFromContext(ctx)
-}
-
-// SourceFromContext is an alias for SensorFromContext for backward compatibility.
-// Deprecated: Use SensorFromContext instead.
-func SourceFromContext(ctx context.Context) *sensor.Sensor {
-	return SensorFromContext(ctx)
 }
 
 // =============================================================================
