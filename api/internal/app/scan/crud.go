@@ -952,12 +952,23 @@ func (s *Service) DisableScan(ctx context.Context, tenantID, scanID string) (*sc
 // Clone Operations
 // =============================================================================
 
-// CloneScan clones a scan with a new name.
-func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName string) (*scan.Scan, error) {
+// CloneScan clones a scan with a new name. The person cloning becomes the
+// clone's owner (created_by): its scheduled runs act with their scope, never
+// as the system (research 21b H2, RFC-050 W2). Their act scope is checked on
+// the clone's direct targets like on a create.
+func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, actorID string) (*scan.Scan, error) {
 	s.logger.Info("cloning scan", "scan_id", scanID, "new_name", newName)
+
+	actor, err := shared.IDFromString(actorID)
+	if err != nil || actor.IsZero() {
+		return nil, ErrScanActorRequired
+	}
 
 	sc, err := s.GetScan(ctx, tenantID, scanID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.refuseOutOfActScope(ctx, sc.TenantID, &actor, sc.Targets); err != nil {
 		return nil, err
 	}
 
@@ -968,6 +979,7 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName strin
 	}
 
 	clone := sc.Clone(newName)
+	clone.SetCreatedBy(actor)
 
 	if err := s.scanRepo.Create(ctx, clone); err != nil {
 		return nil, err

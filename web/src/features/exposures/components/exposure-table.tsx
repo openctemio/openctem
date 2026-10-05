@@ -25,6 +25,7 @@ import {
   Settings,
   HelpCircle,
 } from 'lucide-react'
+import { EVENT_TYPE_CONFIG } from '@/lib/api/exposure-types'
 import type { ExposureEvent, ExposureEventType, ExposureState } from '@/lib/api/exposure-types'
 
 // Icon mapping for event types
@@ -42,29 +43,10 @@ const eventTypeIcons: Record<string, typeof Network> = {
   other: HelpCircle,
 }
 
-const EVENT_TYPE_CATEGORY = {
-  port_open: 'network',
-  port_closed: 'network',
-  service_detected: 'service',
-  service_changed: 'service',
-  subdomain_discovered: 'domain',
-  subdomain_removed: 'domain',
-  certificate_expiring: 'certificate',
-  certificate_expired: 'certificate',
-  bucket_public: 'cloud',
-  bucket_private: 'cloud',
-  repo_public: 'code',
-  repo_private: 'code',
-  api_exposed: 'api',
-  api_removed: 'api',
-  credential_leaked: 'credential',
-  sensitive_data_exposed: 'data',
-  misconfiguration: 'config',
-  custom: 'other',
-} as const
-
+// One source for an event type's category: EVENT_TYPE_CONFIG.
 function getEventTypeIcon(eventType: ExposureEventType): typeof Network {
-  return eventTypeIcons[EVENT_TYPE_CATEGORY[eventType]] || HelpCircle
+  const category = EVENT_TYPE_CONFIG[eventType]?.category
+  return (category && eventTypeIcons[category as keyof typeof eventTypeIcons]) || HelpCircle
 }
 
 /** Lifecycle state → badge. Only the open ("active") state draws attention. */
@@ -96,6 +78,16 @@ export const EXPOSURE_EVENT_TYPE_LABELS: Record<ExposureEventType, string> = {
   credential_leaked: 'Credential leaked',
   sensitive_data_exposed: 'Sensitive data exposed',
   misconfiguration: 'Misconfiguration',
+  dns_change: 'DNS change',
+  ssl_issue: 'TLS issue',
+  header_missing: 'Security header missing',
+  dangling_cname: 'Dangling CNAME',
+  dangling_ns: 'Dangling delegation',
+  email_security_weak: 'Weak email security',
+  subdomain_takeover: 'Subdomain takeover',
+  identity_mfa_gap: 'MFA gap',
+  identity_stale_principal: 'Stale identity',
+  identity_overprivileged: 'Over-privileged identity',
   custom: 'Custom',
 }
 
