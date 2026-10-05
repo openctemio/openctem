@@ -44,6 +44,22 @@ func (p *FindingProcessor) SetSuppressionChecker(checker SuppressionChecker) {
 	p.suppressionChecker = checker
 }
 
+// ModuleGuard reports the modules a tenant has disabled (explicitly, or by
+// leaving them out of its bundles). Satisfied by *module.ModuleService.
+type ModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// suppressionsModule is the module id of the suppressions feature.
+const suppressionsModule = "suppressions"
+
+// SetSuppressionModuleGuard makes ingest honor the suppressions module
+// toggle: a tenant with the module off gets its findings as reported. Nil
+// (unwired) keeps suppression on, as before.
+func (p *FindingProcessor) SetSuppressionModuleGuard(guard ModuleGuard) {
+	p.suppressionModules = guard
+}
+
 // applySuppressions gives each NEW finding that an active suppression rule
 // matches the rule's disposition (false_positive or accepted, resolution
 // "suppressed") BEFORE it is persisted, so it lands out of the open backlog
@@ -62,6 +78,9 @@ func (p *FindingProcessor) applySuppressions(
 	newFindings []*vulnerability.Finding,
 ) map[int]shared.ID {
 	if p.suppressionChecker == nil || len(newFindings) == 0 {
+		return nil
+	}
+	if p.suppressionModules != nil && p.suppressionModules.TenantDisabledModules(ctx, tenantID.String())[suppressionsModule] {
 		return nil
 	}
 
