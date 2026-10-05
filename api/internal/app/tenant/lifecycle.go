@@ -168,7 +168,7 @@ func (s *TenantService) OffboardMember(ctx context.Context, membershipID string,
 		event = event.WithMetadata("assets_to", plan.AssetsTo.String())
 	}
 	s.logAudit(ctx, actx, event)
-	s.logger.Info("member offboarded", "membership_id", membershipID, "user_id", userID)
+	s.logger.Info("member offboarded", "membership_id", membership.ID().String(), "user_id", userID)
 	return result, nil
 }
 

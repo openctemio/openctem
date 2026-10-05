@@ -1,4 +1,4 @@
--- Reverse of 001013. An offboarded tombstone becomes a suspended membership
+-- Reverse of 001015. An offboarded tombstone becomes a suspended membership
 -- (still no access), and a suspended key becomes revoked: neither state
 -- exists before this migration, and both mappings keep access closed.
 

@@ -36,7 +36,7 @@ published at https://docs.openctem.io (operations/release-notes-*).
   only for an active principal (`principal_is_active` in every refresh
   function), an inactive member gets no full-data bypass, and a background
   job acting for a disabled or offboarded administrator refuses.
-- **Migration 001013** adds the `offboarded` membership status
+- **Migration 001015** adds the `offboarded` membership status
   (`offboarded_at`, `offboarded_by`), the `suspended` API key status,
   `users.erased_at`, the `principal_is_active` and `refresh_access_for_user`
   functions, gates the refresh functions and drops scope rows of members who
