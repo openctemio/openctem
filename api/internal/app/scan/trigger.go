@@ -403,7 +403,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 
 	// A connector scan (RFC-047) is one command for the connector's sensor;
 	// the sensor's zone routing and platform routing below do not apply.
-	if _, connector := s.isConnectorScanner(ctx, sc.ScannerName); connector {
+	if _, connector := s.isConnectorScanner(ctx, sc.TenantID, sc.ScannerName); connector {
 		return s.triggerConnectorScan(ctx, sc, resolved, triggerType, triggeredBy, runContext, retryAttempt, scheduledFor)
 	}
 
@@ -418,7 +418,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		return nil, err // pinned to a deleted zone: fail closed
 	}
 	var plan *zonePlan
-	if len(zones) > 0 && s.toolReachesNetwork(ctx, sc.ScannerName) {
+	if len(zones) > 0 && s.toolReachesNetwork(ctx, sc.TenantID, sc.ScannerName) {
 		if plan, err = s.planZoneDispatch(ctx, sc, zones, resolved.Targets); err != nil {
 			return nil, err
 		}
@@ -1001,7 +1001,7 @@ func (s *Service) calculateInitialPriority(priority command.CommandPriority) int
 func (s *Service) validateToolsAtTriggerTime(ctx context.Context, sc *scan.Scan) error {
 	switch sc.ScanType {
 	case scan.ScanTypeSingle:
-		return s.validateSingleScanTool(ctx, sc.ScannerName)
+		return s.validateSingleScanTool(ctx, sc.TenantID, sc.ScannerName)
 	case scan.ScanTypeWorkflow:
 		return s.validateWorkflowStepTools(ctx, sc)
 	}
@@ -1009,12 +1009,12 @@ func (s *Service) validateToolsAtTriggerTime(ctx context.Context, sc *scan.Scan)
 }
 
 // validateSingleScanTool checks that the scanner tool is available and active.
-func (s *Service) validateSingleScanTool(ctx context.Context, scannerName string) error {
+func (s *Service) validateSingleScanTool(ctx context.Context, tenantID shared.ID, scannerName string) error {
 	if scannerName == "" {
 		return nil
 	}
 
-	tool, err := s.toolRepo.GetByName(ctx, scannerName)
+	tool, err := s.toolRepo.GetByName(ctx, tenantID, scannerName)
 	if err != nil {
 		return shared.NewDomainError(
 			"TOOL_NOT_FOUND",
@@ -1040,7 +1040,7 @@ func (s *Service) validateSingleScanTool(ctx context.Context, scannerName string
 		return ErrConnectorScansUnavailable
 	}
 
-	return nil
+	return s.checkTenantToolEnabled(ctx, tenantID, tool)
 }
 
 // validateWorkflowStepTools validates all tools required by workflow pipeline steps.
@@ -1071,7 +1071,7 @@ func (s *Service) validateWorkflowStepTools(ctx context.Context, sc *scan.Scan) 
 func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step *pipeline.Step) error {
 	switch {
 	case step.Tool != "":
-		tool, err := s.toolRepo.GetByName(ctx, step.Tool)
+		tool, err := s.toolRepo.GetByName(ctx, tenantID, step.Tool)
 		if err != nil {
 			return shared.NewDomainError(
 				"TOOL_NOT_FOUND",
@@ -1100,11 +1100,21 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 				shared.ErrValidation,
 			)
 		}
+		if err := s.checkTenantToolEnabled(ctx, tenantID, tool); err != nil {
+			return err
+		}
 	case len(step.Capabilities) > 0:
 		// The planner's own rule (step_plan.go), so a step that validates
 		// is a step the dispatcher can name a scanner for (F1).
-		if _, err := ResolveStepTool(ctx, s.toolRepo, tenantID, step); err != nil {
+		resolved, err := ResolveStepTool(ctx, s.toolRepo, tenantID, step)
+		if err != nil {
 			return err
+		}
+		// The tenant may have turned the resolved platform tool off.
+		if matchingTool, gerr := s.toolRepo.GetPlatformToolByName(ctx, resolved.Name); gerr == nil && matchingTool != nil {
+			if err := s.checkTenantToolEnabled(ctx, tenantID, matchingTool); err != nil {
+				return err
+			}
 		}
 	default:
 		return shared.NewDomainError(
@@ -1231,7 +1241,7 @@ func (s *Service) filterAssetsForSingleScan(ctx context.Context, sc *scan.Scan) 
 	}
 
 	// Get scanner tool to check supported targets
-	scannerTool, err := s.toolRepo.GetByName(ctx, sc.ScannerName)
+	scannerTool, err := s.toolRepo.GetByName(ctx, sc.TenantID, sc.ScannerName)
 	if err != nil {
 		return nil, fmt.Errorf("get scanner tool: %w", err)
 	}
