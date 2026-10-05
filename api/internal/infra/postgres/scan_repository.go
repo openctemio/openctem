@@ -646,6 +646,24 @@ func (r *ScanRepository) ClaimScheduledRun(ctx context.Context, tenantID, id sha
 	return n == 1, nil
 }
 
+// DeferScheduledRun moves a scheduled scan whose run a freeze window stopped
+// to until: next_run_at changes from from (nil when the schedule had no
+// further occurrence) to until, only if it still holds from and the scan is
+// active. Tenant-scoped.
+func (r *ScanRepository) DeferScheduledRun(ctx context.Context, tenantID, id shared.ID, from *time.Time, until time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE scans
+		SET next_run_at = $3, updated_at = NOW()
+		WHERE id = $1 AND tenant_id = $4 AND status = 'active'
+		  AND next_run_at IS NOT DISTINCT FROM $2`,
+		id.String(), nullTime(from), until, tenantID.String())
+	if err != nil {
+		return false, fmt.Errorf("failed to defer scheduled run for scan %s: %w", id.String(), err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
 // selectQuery returns the base SELECT query.
 // ListOptInScans lists the tenant's scans whose scanner_config asks for
 // out-of-band callbacks (allow_interactsh true, as boolean or string) or
