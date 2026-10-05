@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -155,11 +156,17 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
+	// Every count and list here covers approved assets only (confirmed,
+	// dependency, monitor only, or no record), the same population the
+	// inventory shows by default: a name a person rejected, or one still in
+	// review, is never counted as the organization's exposed surface
+	// (research/22 P0-12).
+	approved, _, _ := attribution.ParseFilter([]string{attribution.FilterApproved})
 
 	// Get total assets count
 	totalAssets, err := s.assetRepo.Count(ctx, asset.Filter{
 		TenantID: &tenantIDStr,
-	}.WithDataScope(scope))
+	}.WithAttribution(approved).WithDataScope(scope))
 	if err != nil {
 		s.logger.Error("failed to count total assets", "error", err)
 		totalAssets = 0
@@ -169,7 +176,7 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	exposedServices, err := s.assetRepo.Count(ctx, asset.Filter{
 		TenantID:  &tenantIDStr,
 		Exposures: []asset.Exposure{asset.ExposurePublic},
-	}.WithDataScope(scope))
+	}.WithAttribution(approved).WithDataScope(scope))
 	if err != nil {
 		s.logger.Error("failed to count exposed services", "error", err)
 		exposedServices = 0
@@ -180,7 +187,7 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 		TenantID:      &tenantIDStr,
 		Exposures:     []asset.Exposure{asset.ExposurePublic},
 		Criticalities: []asset.Criticality{asset.CriticalityCritical, asset.CriticalityHigh},
-	}.WithDataScope(scope))
+	}.WithAttribution(approved).WithDataScope(scope))
 	if err != nil {
 		s.logger.Error("failed to count critical exposures", "error", err)
 		criticalExposures = 0
@@ -193,18 +200,18 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	newAssets := s.countOrZero(ctx, "new assets", asset.Filter{
 		TenantID:     &tenantIDStr,
 		CreatedAfter: &since,
-	}.WithDataScope(scope))
+	}.WithAttribution(approved).WithDataScope(scope))
 	newlyExposed := s.countOrZero(ctx, "newly exposed assets", asset.Filter{
 		TenantID:                      &tenantIDStr,
 		Exposures:                     []asset.Exposure{asset.ExposurePublic},
 		ExposureChangedOrCreatedAfter: &since,
-	}.WithDataScope(scope))
+	}.WithAttribution(approved).WithDataScope(scope))
 	newlyCritical := s.countOrZero(ctx, "newly exposed critical assets", asset.Filter{
 		TenantID:                      &tenantIDStr,
 		Exposures:                     []asset.Exposure{asset.ExposurePublic},
 		Criticalities:                 []asset.Criticality{asset.CriticalityCritical, asset.CriticalityHigh},
 		ExposureChangedOrCreatedAfter: &since,
-	}.WithDataScope(scope))
+	}.WithAttribution(approved).WithDataScope(scope))
 
 	// Get assets with risk score for average calculation
 	avgRiskScore := s.calculateAverageRiskScore(ctx, tenantID)
@@ -213,7 +220,7 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	assetBreakdown := s.getAssetBreakdown(ctx, tenantID)
 
 	// Get exposed services list (limit to 5 for overview)
-	exposedServicesList := s.getExposedServicesList(ctx, tenantIDStr, scope, 5)
+	exposedServicesList := s.getExposedServicesList(ctx, tenantIDStr, scope, approved, 5)
 
 	// Get recent changes (limit to 5 for overview)
 	recentChanges := s.getRecentChanges(ctx, tenantID, scope, 5)
@@ -304,14 +311,14 @@ func foldAssetTypeBreakdown(statsMap map[string]asset.AssetTypeStats) []AssetTyp
 // getExposedServicesList returns the internet-facing (public) assets that
 // most need attention: highest risk score first. It lists the same population
 // the exposed_services count covers and the external surface page shows.
-func (s *SurfaceService) getExposedServicesList(ctx context.Context, tenantID string, scope *shared.DataScope, limit int) []ExposedService {
+func (s *SurfaceService) getExposedServicesList(ctx context.Context, tenantID string, scope *shared.DataScope, approved attribution.StateFilter, limit int) []ExposedService {
 	opts := asset.NewListOptions().WithSort(
 		pagination.NewSortOption(asset.AllowedSortFields()).Parse("-risk_score,-last_seen"),
 	)
 	result, err := s.assetRepo.List(ctx, asset.Filter{
 		TenantID:  &tenantID,
 		Exposures: []asset.Exposure{asset.ExposurePublic},
-	}.WithDataScope(scope), opts, pagination.Pagination{Page: 1, PerPage: limit})
+	}.WithAttribution(approved).WithDataScope(scope), opts, pagination.Pagination{Page: 1, PerPage: limit})
 	if err != nil {
 		s.logger.Error("failed to get exposed services", "error", err)
 		return []ExposedService{}

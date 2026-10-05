@@ -296,6 +296,28 @@ query, so ids of another tenant announce nothing; the throttle counter
 locked for the transaction, which serializes one tenant's alert writes.
 Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_test.go`.
 
+## 4f. Review queue reachable, honest counts (built, P0-12)
+
+- **Reachable:** the Attack surface sidebar row carries the section tabs
+  Overview (`/attack-surface`) and Review (`/attack-surface/review`). The row
+  badge and the Review tab count are the queue's own total for
+  `needs_review` + `candidate` (`GET /easm/candidates?states=needs_review,candidate&per_page=1`,
+  data-scoped like the queue), so the three numbers always agree. The queue's
+  tab is in the URL: `?tab=rejected` opens "Not ours".
+- **Honest counts:** the overview "Needs review" counts `needs_review` and
+  `candidate` (what the queue lists). `GET /attack-surface/stats` (cards,
+  exposed list, trends) and `/attack-surface/external` cover **approved**
+  assets only, so a rejected or unreviewed name is never shown as exposed
+  surface. Top risks already excluded rejected assets.
+- **One definition of internet-facing:** `exposure = public`, on the
+  attack-surface pages and the inventory strip alike (the strip used
+  `is_internet_accessible`, which CT-promoted names do not set).
+- `?attribution=all` is accepted (no filter) next to `approved`,
+  `unconfirmed`, `unrecorded` and the states.
+- Decision E1 (308 `/attack-surface/external` → filtered `/assets`) waits for
+  the inventory's external columns (attribution, last seen, certificate
+  expiry, CDN).
+
 ## 5. Data model (planned)
 
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and
