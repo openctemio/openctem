@@ -136,7 +136,7 @@ mismatch". The design combines Nomad's hash over stable attributes,
 Kubernetes' change-or-slow-resync status, Consul's resync safety net and
 xDS's accepted/rejected answer. CrowdStrike Falcon's sensor reporting is not
 publicly documented (only sensor update policies are), so it is not used.
-Sources are in §12.
+Sources are in §13.
 xDS's accepted/rejected answer. The self-description includes the versions of
 installed content (RFC-031), and it is sent on start and on change,
 rate-limited. Sources are in §11.
@@ -717,7 +717,19 @@ derived checklist), `config_check_catalog_test.go` (contract drift, escaping),
 scoping, migration up/down/up) and `internal/infra/http/routes` (wire,
 dedup, heartbeat action, management read, isolation).
 
-## 12. Sources
+## 12. Tool contracts in the manifest
+
+Tools ported to the tool contract (sdk-go `docs/rfcs/sensor-sdk-v2.md`) add
+`contract: {api_version, digest, version, class, tier, network, consumes,
+produces}` to their `tools[]` entry. The platform validates it whole, stores
+it inside the manifest version (per sensor, per tenant, content-addressed by
+the manifest digest; no cross-tenant table), diffs it, shows it on the
+Manifest tab and uses `produces` to narrow the output-type binding of the
+tool's command-bound reports (it can only narrow). Sensors without contracts
+are unchanged. Details: [architecture/sensors.md](../architecture/sensors.md#tool-contracts),
+[architecture/scan-stages.md §4](../architecture/scan-stages.md#4-report-output-type-binding-owner-decision-g12).
+
+## 13. Sources
 
 - Kubernetes, Node status (capacity, allocatable, node info, heartbeats and
   Lease): https://kubernetes.io/docs/reference/node/node-status/

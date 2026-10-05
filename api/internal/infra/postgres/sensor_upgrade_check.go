@@ -65,7 +65,6 @@ var sensorRenameProbes = []upgradeProbe{
 		     + (SELECT count(*) FROM tenant_modules WHERE module_id = 'agents')`},
 	{area: "data", what: "notification event types agent.* and references to them", query: `
 		SELECT (SELECT count(*) FROM event_types WHERE id LIKE 'agent.%' OR category = 'agents')
-		     + (SELECT count(*) FROM webhooks WHERE event_types::text[] && ARRAY['agent.offline', 'agent.error'])
 		     + (SELECT count(*) FROM integration_notification_extensions
 		        WHERE jsonb_typeof(enabled_event_types) = 'array' AND enabled_event_types ?| ARRAY['agent.offline', 'agent.error'])
 		     + (SELECT count(*) FROM notification_preferences
