@@ -256,7 +256,7 @@ type TargetGate interface {
 // A target gate that implements it (*scan.Service does) is used at every
 // step dispatch.
 type StepTargetFilter interface {
-	FilterStepTargets(ctx context.Context, toolName string, runContext map[string]any) (*scanapp.StepTargets, error)
+	FilterStepTargets(ctx context.Context, tenantID shared.ID, toolName string, runContext map[string]any) (*scanapp.StepTargets, error)
 }
 
 // WithTargetGate wires the target gate. Without it a run started with

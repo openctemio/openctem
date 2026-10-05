@@ -9,7 +9,7 @@ import { getE2EConfig } from '../helpers/env'
  * Regressions this guards:
  *   1. /settings/integrations/saml (and verified-domains) redirected a tenant
  *      owner into the platform admin console's sign-in. SSO moved there
- *      (RFC-022); the page now says so instead.
+ *      (RFC-022); both now redirect to Authentication, which says so.
  *   2. Members and viewers saw an enabled "Generate token" on the SCIM page,
  *      which the API refuses (owner/admin only).
  *
@@ -21,10 +21,10 @@ test('SSO settings explain that the platform administrator configures SSO', asyn
   for (const path of ['/settings/integrations/saml', '/settings/integrations/verified-domains']) {
     await page.goto(path)
     await expect(
-      page.getByText('SSO is configured by your platform administrator'),
+      page.getByText(/SSO is configured by your platform administrator/),
       path
     ).toBeVisible({ timeout: 30_000 })
-    expect(new URL(page.url()).pathname, path).toBe(path)
+    expect(new URL(page.url()).pathname, path).toBe('/settings/authentication')
   }
 })
 

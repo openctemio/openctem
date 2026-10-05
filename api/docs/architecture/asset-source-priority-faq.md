@@ -82,11 +82,11 @@ Permission required: `team:update`. Suitable for Terraform / Ansible pipelines.
 
 Not in v1. The setting is admin-only and set infrequently (at onboarding + occasional reshuffles), so we did not prioritize SDK wrappers. Phase 2 candidate if demand appears.
 
-## Comparisons to other tools
+## Scope of the model
 
-**Q: Is this like Splunk's "index priority" or Qualys's "source trust"?**
+**Q: Does priority affect search ranking or only stored values?**
 
-Similar intent, different scope. Splunk's priority is per-index and affects search ranking, not field-level merge. Qualys has a fixed source order (Qualys scanner always wins over uploaded data) without tenant config. Our model is closer to Splunk CIM's "authoritative source" pattern but operates at the field level during ingest, not at read time.
+Only stored values. Priority decides, field by field and at ingest time, which source's value is written; it is configured per tenant and does not change how results are ranked at read time.
 
 **Q: Why not just use a CMDB as the single source of truth?**
 

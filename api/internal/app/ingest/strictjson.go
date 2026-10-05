@@ -6,8 +6,9 @@ package ingest
 // Go's encoding/json keeps the last of two duplicate member names, replaces
 // invalid UTF-8 and lone surrogate escapes with U+FFFD, and has no depth
 // limit. Two parsers that disagree on those points read two different
-// reports from one body (the parser-differential class Bishop Fox documents),
-// so v2 accepts only I-JSON (RFC 7493): a token-level pre-pass rejects what
+// reports from one body (a JSON parser-differential), so a payload can pass
+// validation in one reading and be stored in another; to close that,
+// v2 accepts only I-JSON (RFC 7493): a token-level pre-pass rejects what
 // encoding/json would silently repair, then the one decoder runs with
 // DisallowUnknownFields. There is no second, schema-engine parser.
 

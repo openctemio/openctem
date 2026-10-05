@@ -2,17 +2,14 @@
 
 ## Executive Summary
 
-This document describes the industry-aligned design for component relationship tracking in OpenCTEM, based on analysis of leading SBOM and dependency management systems.
+This document describes the design for component relationship tracking in OpenCTEM and how it maps onto the CycloneDX and SPDX SBOM standards.
 
-## Industry Comparison
+## Standards mapping
 
-| System | Finding→Component | Parent Tracking | Multiple Parents | Depth Tracking |
+| Model | Finding→Component | Parent Tracking | Multiple Parents | Depth Tracking |
 |--------|-------------------|-----------------|------------------|----------------|
 | **CycloneDX** | Direct (via bom-ref) | Full graph | Yes | Yes |
 | **SPDX 3.0** | Direct relationships | Full graph | Yes | Yes |
-| **Dependency-Track** | Direct (via PURL) | Parent chains | Yes | Yes |
-| **GitHub Dep Graph** | Direct | "Show paths" | Yes | Yes |
-| **Snyk** | Direct | dependency_path | Yes | Yes |
 | **OpenCTEM** | Direct (components.id) | parent_component_id | Single | depth column |
 
 ## Data Model
@@ -68,7 +65,7 @@ Asset ──► asset_components ──────────────► c
 
 ### 1. Direct Finding → Component Link
 
-**Why?** Industry standards (CycloneDX, SPDX, Dependency-Track) all use direct references.
+**Why?** The SBOM standards (CycloneDX, SPDX) use direct references.
 
 **Benefits:**
 - Simpler queries (1 JOIN instead of 2)
@@ -88,7 +85,7 @@ GROUP BY c.id;
 
 ### 2. Parent Component Tracking
 
-**Why?** CycloneDX, GitHub, and Snyk all track "where did this transitive dep come from?"
+**Why?** Remediation needs to answer "where did this transitive dep come from?", and CycloneDX models the same parent relationship.
 
 **Benefits:**
 - Query "lodash is transitive OF express"
@@ -127,7 +124,7 @@ ORDER BY dc.chain_depth;
 
 ### 3. Depth Tracking for Risk Scoring
 
-**Why?** Snyk and GitHub prioritize direct dependencies over deep transitive ones.
+**Why?** A vulnerable direct dependency is usually reachable and fixable by the owner, so it ranks above a deep transitive one.
 
 **Benefits:**
 - Risk scoring: direct deps = higher priority
@@ -327,7 +324,7 @@ if depType == DependencyTypeDirect {
 
 1. **Single Parent Only**: `parent_component_id` only tracks one parent. Cannot represent "lodash pulled in by BOTH express AND webpack" (diamond dependency).
 
-2. **No Full Path Storage**: Unlike Snyk's `dependency_path` array, we only store immediate parent.
+2. **No Full Path Storage**: we only store the immediate parent, not the full dependency path.
 
 ### Future Improvements (If Needed)
 
@@ -348,7 +345,7 @@ CREATE TABLE dependency_edges (
 
 This would enable:
 - Multiple paths to same component
-- Full path display like Snyk
+- Full path display (root to vulnerable package)
 - Complex graph queries
 
 **Current approach is sufficient for 90% of use cases.** Consider this enhancement only if users request "show all paths to vulnerable package" functionality.
@@ -357,6 +354,3 @@ This would enable:
 
 - [CycloneDX Specification](https://cyclonedx.org/specification/overview/)
 - [SPDX 3.0 Standard](https://spdx.dev/learn/overview/)
-- [Dependency-Track Documentation](https://docs.dependencytrack.org/)
-- [GitHub Dependency Graph](https://docs.github.com/code-security/supply-chain-security/understanding-your-software-supply-chain/about-the-dependency-graph)
-- [Snyk Vulnerability Database](https://docs.snyk.io/scan-with-snyk/snyk-open-source/manage-vulnerabilities/snyk-vulnerability-database)

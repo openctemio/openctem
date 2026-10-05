@@ -137,6 +137,7 @@ func (h *SimulationHandler) UpdateSimulation(w http.ResponseWriter, r *http.Requ
 		TargetAssets:       req.TargetAssets,
 		Config:             req.Config,
 		Tags:               req.Tags,
+		ActorID:            middleware.GetUserID(r.Context()),
 	})
 	if err != nil {
 		h.handleError(w, err)
