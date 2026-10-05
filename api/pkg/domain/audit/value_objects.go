@@ -478,6 +478,10 @@ const (
 	// enforcing run closed.
 	ActionIngestSourceResolveDryRun Action = "ingest.source_resolve_dry_run"
 	ActionIngestSourceResolved      Action = "ingest.source_resolved"
+	// VEX not_affected statements (CTIS 1.4): what a dry run would have
+	// closed, and what an enforcing run closed.
+	ActionIngestVEXDryRun  Action = "ingest.vex_dry_run"
+	ActionIngestVEXApplied Action = "ingest.vex_applied"
 
 	// AI Triage actions
 	ActionAITriageRequested       Action = "ai_triage.requested"
@@ -604,6 +608,7 @@ func (a Action) IsValid() bool {
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
 		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
 		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved,
+		ActionIngestVEXDryRun, ActionIngestVEXApplied,
 		ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
 		ActionAITriageBudgetExhausted,
@@ -702,7 +707,8 @@ func (a Action) Category() string {
 		return "rule"
 	case ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
 		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
-		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved:
+		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved,
+		ActionIngestVEXDryRun, ActionIngestVEXApplied:
 		return "ingest"
 	case ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,

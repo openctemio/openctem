@@ -9,6 +9,8 @@
  *   Code location        file, lines, snippet
  *   Context              scanner-supplied impact, likelihood, attack vector
  *   Scanner output       the scanner's proof (plugin output), escaped, with Copy
+ *   Source data          every score with its source, VEX, the source's own
+ *                        record (CTIS 1.4), escaped
  *   Identifiers          CVSS (v2 and v3 vectors), CVE (all of them, related),
  *                        CWE, OWASP, EPSS, VPR as an input, family, patch date
  *   More details         rule, tool, classification, raw scanner metadata
@@ -51,6 +53,7 @@ import type { Activity, FindingDetail } from '../../types'
 import { FINDING_TYPE_CONFIG } from '../../types'
 import { CodeHighlighter } from './code-highlighter'
 import { MetadataViewer } from './source-panels/metadata-viewer'
+import { SourceDataSection } from './source-data-section'
 import { findingTypeSections } from './finding-type-details'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
@@ -138,6 +141,8 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
       )}
 
       {finding.scannerOutput && <ScannerOutputSection output={finding.scannerOutput} />}
+
+      {finding.sourceData && <SourceDataSection data={finding.sourceData} />}
 
       {extraAssets.length > 0 && (
         <DetailSection title="Targets" icon={Server} count={extraAssets.length}>

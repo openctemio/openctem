@@ -1113,10 +1113,65 @@ export interface FindingScannerOutput {
   truncated: boolean
 }
 
+/** One score with where it came from (CTIS 1.4 scores). */
+export interface FindingSourceScore {
+  system: string
+  version?: string
+  vector?: string
+  value?: number
+  label?: string
+  source?: string
+  asOf?: string
+}
+
+/**
+ * What the finding's source knew, as of its latest sighting (CTIS 1.4):
+ * native identity, every score with its source, typed vulnerability ids, the
+ * source's own lifecycle, fix metadata, the latest VEX statement and unmapped
+ * source fields. Every value is producer-supplied: render it as text only.
+ */
+export interface FindingSourceData {
+  native?: {
+    scheme?: string
+    vulnId?: string
+    instanceId?: string
+    family?: string
+    severity?: string
+    status?: string
+    detectionType?: string
+    credentialed?: boolean
+    rawRef?: string
+  }
+  scores: FindingSourceScore[]
+  vulnerabilityIds: { type: string; id: string; source?: string }[]
+  lifecycle?: {
+    firstFound?: string
+    lastFound?: string
+    lastFixed?: string
+    timesFound?: number
+    state?: string
+  }
+  solution?: {
+    type?: string
+    patchPublishedAt?: string
+    advisories: { id?: string; url?: string; source?: string }[]
+  }
+  vex?: {
+    status: string
+    justification?: string
+    statement?: string
+    source?: string
+    asOf?: string
+  }
+  sourceExtra: [string, string][]
+  locationKey?: string
+}
+
 export interface FindingDetail extends Finding {
   activities: Activity[]
   scannerFacts?: FindingScannerFacts
   scannerOutput?: FindingScannerOutput
+  sourceData?: FindingSourceData
   /** The affected package, for SCA / container findings. */
   component?: FindingComponent
   /** The CVE record, when the finding is an instance of one. */
