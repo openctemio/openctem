@@ -825,7 +825,14 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
 
 - **P0-13 honest EASM numbers:** open.
 
-- **P0-6 port and service results surfaced (B6):** open.
+- **P0-6 port and service results surfaced (B6):** shipped (this PR, no
+  migration). A port scan's open ports become `open_port` service assets
+  (through the normal exclusion, attribution and scope rules) with an
+  `exposes` edge from the address and a `port_open` exposure announced
+  through the outbox; the scanner's host name gets `resolves_to` when the
+  tenant has it; a port the next port scan no longer sees is closed
+  (inactive, "disappeared", exposure resolved) and comes back as
+  "recovered".
 
 **When and where.** Implementation is written directly in the monorepo
 (`api/` + `web/`); sdk-go and sensor changes (E2–E5, P3 tools) stay in their
