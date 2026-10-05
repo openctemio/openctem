@@ -9,7 +9,7 @@ send notifications for code that may never merge. Such a finding is
 the run, the branch pages, a filtered findings list) and is left out of the
 exposure views.
 
-Migration `001131_finding_branch_only`. RFC-051 §5 (CI uploads).
+Migration `001132_finding_branch_only`. RFC-051 §5 (CI uploads).
 
 ## Which branches count
 
@@ -35,13 +35,16 @@ a missing row). Feature, hotfix, develop and other branches do not count.
 |---|---|---|
 | A finding is inserted with a branch that does not count | `branch_only = true` | `BEFORE INSERT` trigger `trg_findings_mark_branch_only` |
 | A finding is inserted with no branch (host, cloud, pentest, manual…) or on a counting branch | `branch_only = false` | same trigger |
-| A counting branch sees a branch-only finding (its occurrence there is recorded at ingest) | promoted: `branch_only = false`, `first_detected_at = now`, the SLA deadline keeps its length from now, `sla_status = on_track`; its workflows (notifications, ticket rules) run as for a new finding | `promote_branch_only_findings()` from `FindingProcessor.promoteBranchOnly` |
+| A counting branch sees a branch-only finding (its occurrence there is recorded at ingest) | promoted: `branch_only = false`, the SLA deadline keeps its length measured from now, `sla_status = on_track`; its workflows (notifications, ticket rules) run as for a new finding | `promote_branch_only_findings()` from `FindingProcessor.promoteBranchOnly` |
 | A branch starts to count (made default, protected, retyped to `main`/`release`) | its branch-only findings are promoted (no workflows) | `AFTER UPDATE` trigger on `repository_branches` |
 | No branch still shows a branch-only finding | `not_observed`, resolution `branch_expired`, a `status_changed` activity with reason `branch_only_expired` | `ExpireFeatureBranchFindings` (finding lifecycle job) |
 
 Only the insert sets the mark: a finding that already counts is never hidden
-later, and a branch that stops counting hides nothing. Each branch's own first
-and last sighting stay in `finding_branch_occurrences`.
+later, and a branch that stops counting hides nothing. `first_detected_at`
+keeps the first sighting on any branch: the CI gate decides "new" on the
+default branch from it, so a finding the merge request's gate already judged
+is not new again after the merge. Each branch's own first and last sighting
+stay in `finding_branch_occurrences`.
 
 **Expiry.** An open branch-only finding (`new`, `open`, `confirmed`) expires
 when the finding itself was not seen for the lifecycle job's default expiry
@@ -67,7 +70,8 @@ the finding without a regression flag.
 | Threat model status (findings on the model's assets) | `ListThreatFindings` |
 
 Unchanged on purpose: the CI gate and the run page (they read the run's own
-fingerprints), the branch pages and per-branch counts, a finding opened by
+fingerprints; the gate's findings link adds `branch_only=true` for a run on a
+branch that does not count, so it opens the branch's own findings), the branch pages and per-branch counts, a finding opened by
 id, and the secret-to-credential bridge (a secret pushed to any branch of a
 hosted repository is already exposed).
 
