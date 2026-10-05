@@ -37,12 +37,7 @@ import {
 } from '../api/use-tenant-settings'
 import { useTenantLogo } from '../hooks/use-tenant-logo'
 import { planGeneralSave, planHasChanges } from '../lib/general-save-plan'
-import {
-  VALID_TIMEZONES,
-  VALID_LANGUAGES,
-  VALID_INDUSTRIES,
-  SESSION_TIMEOUT_OPTIONS,
-} from '../types/settings.types'
+import {} from '../types/settings.types'
 import { AccessRestrictionsCard, isIpLockoutError, parseLines } from './access-restrictions-card'
 import { DeleteOrganization } from './delete-organization'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
@@ -519,7 +514,6 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
 
       const result = await updateSecuritySettings({
         mfa_required: securityForm.mfa_required,
-        session_timeout_min: securityForm.session_timeout_min,
         ip_whitelist: ipWhitelist,
         allowed_domains: allowedDomains,
         email_verification_mode: securityForm.email_verification_mode,
@@ -670,29 +664,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
 
                 <Separator />
 
-                <div className="space-y-2">
-                  <Label>Session timeout</Label>
-                  <Select
-                    value={String(securityForm.session_timeout_min)}
-                    onValueChange={(value) =>
-                      setSecurityForm({ ...securityForm, session_timeout_min: Number(value) })
-                    }
-                    disabled={!canManageSecurityAndAPI}
-                  >
-                    <SelectTrigger className="w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SESSION_TIMEOUT_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={String(opt.value)}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Separator />
+                {/* Session timeout is hidden until per-organization session policy is
+                    enforced (owner decision B5); the stored value is not sent. */}
 
                 <div className="space-y-2">
                   <Label>Email verification</Label>
@@ -962,82 +935,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                             disabled={!canUpdateTenant}
                           />
                         </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="industry">Industry</Label>
-                          <Select
-                            value={generalForm.industry}
-                            onValueChange={(value) =>
-                              setGeneralForm({ ...generalForm, industry: value })
-                            }
-                            disabled={!canUpdateTenant}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select industry" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {VALID_INDUSTRIES.map((ind) => (
-                                <SelectItem key={ind.value} value={ind.value}>
-                                  {ind.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
                       </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Localization */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Localization</CardTitle>
-                  <CardDescription>Language and timezone settings</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="timezone">Timezone</Label>
-                      <Select
-                        value={generalForm.timezone}
-                        onValueChange={(value) =>
-                          setGeneralForm({ ...generalForm, timezone: value })
-                        }
-                        disabled={!canUpdateTenant}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {VALID_TIMEZONES.map((tz) => (
-                            <SelectItem key={tz.value} value={tz.value}>
-                              {tz.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="language">Default language</Label>
-                      <Select
-                        value={generalForm.language}
-                        onValueChange={(value) =>
-                          setGeneralForm({ ...generalForm, language: value })
-                        }
-                        disabled={!canUpdateTenant}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {VALID_LANGUAGES.map((lang) => (
-                            <SelectItem key={lang.value} value={lang.value}>
-                              {lang.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
                     </div>
                   </div>
                 </CardContent>

@@ -94,14 +94,6 @@ function validate(form: FormState): string | null {
   if (!Number.isInteger(grace) || grace < MIN_GRACE_DAYS || grace > MAX_GRACE_DAYS) {
     return `Grace period must be between ${MIN_GRACE_DAYS} and ${MAX_GRACE_DAYS} days.`
   }
-  const reactGrace = Number(form.manual_reactivation_grace_days)
-  if (
-    !Number.isInteger(reactGrace) ||
-    reactGrace < MIN_THRESHOLD_DAYS ||
-    reactGrace > MAX_THRESHOLD_DAYS
-  ) {
-    return `Manual reactivation grace must be between ${MIN_THRESHOLD_DAYS} and ${MAX_THRESHOLD_DAYS} days.`
-  }
   return null
 }
 
@@ -240,25 +232,6 @@ export function LifecycleSettingsForm({
               />
               <p className="text-xs text-muted-foreground">
                 Newly discovered assets are immune for this many days.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="reactivation-grace">Manual reactivation grace (days)</Label>
-              <Input
-                id="reactivation-grace"
-                type="number"
-                min={MIN_THRESHOLD_DAYS}
-                max={MAX_THRESHOLD_DAYS}
-                value={form.manual_reactivation_grace_days}
-                onChange={(e) =>
-                  setForm((s) => ({
-                    ...s,
-                    manual_reactivation_grace_days: e.target.value,
-                  }))
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Assets reactivated manually skip the worker for this long.
               </p>
             </div>
           </div>
