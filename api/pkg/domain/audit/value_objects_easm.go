@@ -11,3 +11,19 @@ const ActionScanTargetRefused Action = "scan.target_refused"
 var _ = registerActions("scan", map[Action]Severity{
 	ActionScanTargetRefused: SeverityMedium,
 })
+
+// Tenant self-service domain verification for EASM (research/22 P0-10,
+// decision E6). Audited high: a verified domain auto-confirms names under it.
+const (
+	ActionEASMVerifiedDomainAdded    Action = "easm_verified_domain.added"
+	ActionEASMVerifiedDomainChecked  Action = "easm_verified_domain.checked"
+	ActionEASMVerifiedDomainDeleted  Action = "easm_verified_domain.deleted"
+	ActionEASMVerifiedDomainThrottle Action = "easm_verified_domain.check_refused"
+)
+
+var _ = registerActions("scope", map[Action]Severity{
+	ActionEASMVerifiedDomainAdded:    SeverityHigh,
+	ActionEASMVerifiedDomainChecked:  SeverityHigh,
+	ActionEASMVerifiedDomainDeleted:  SeverityHigh,
+	ActionEASMVerifiedDomainThrottle: SeverityMedium,
+})

@@ -422,8 +422,13 @@ checks run as a sensor job instead.
 | `attestation` | Who asserted ownership, and when |
 
 UI: Scoping › Boundaries gets a **Seeds** tab next to Targets and Exclusions.
-`root_domain` seeds reuse the `verified_domains` DNS TXT flow from SSO. One
-verification serves both.
+`root_domain` seeds reuse the `verified_domains` DNS TXT flow from SSO.
+**Amended by research/22 decision E6 (2026-10-04):** each row has a
+`purpose`. A tenant verifies a domain itself for EASM (`purpose=easm`,
+`/api/v1/easm/verified-domains`); that proves control for attribution but
+never admits SSO JIT or SCIM users. Using a domain for SSO stays a platform
+administrator action (`purpose=sso`, admin console), and an SSO domain also
+counts for EASM.
 
 **Authorization to touch an asset actively:**
 

@@ -216,7 +216,8 @@ describe('settings shell', () => {
   it('every static page in the shell is an item, a sub-page of one, or a known exception', () => {
     // Deliberately not in the rail:
     const EXCEPTIONS = new Set([
-      // "SSO is managed by your platform administrator" landing pages for old links.
+      // Old links: SAML lands on "SSO is managed by your platform administrator";
+      // verified-domains redirects to Scoping > Boundaries > Seeds (EASM verification).
       '/settings/integrations/saml',
       '/settings/integrations/verified-domains',
     ])

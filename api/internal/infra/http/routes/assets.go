@@ -405,6 +405,26 @@ func registerEASMSeedRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerEASMVerifiedDomainRoutes registers tenant self-service domain
+// verification for EASM (research/22 P0-10, decision E6): scope
+// permissions like the seeds, behind the attack_surface module. These rows
+// never admit SSO users; SSO domains stay in the admin console.
+func registerEASMVerifiedDomainRoutes(
+	router Router,
+	h *handler.EASMVerifiedDomainHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/verified-domains", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
+		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
+		r.POST("/{id}/verify", h.Verify, middleware.Require(permission.ScopeWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
+	}, tenantMiddlewares...)
+}
+
 // registerBranchRoutes registers branch management endpoints.
 // Branches are repository-scoped, tenant from JWT token.
 func registerBranchRoutes(

@@ -1,8 +1,8 @@
-import { SsoManagedByPlatform } from '@/features/sso/components/sso-managed-by-platform'
+import { redirect } from 'next/navigation'
 
-// Verified domains belong to SSO setup, configured per organization in the
-// platform admin console (RFC-022). Old links land on an explanation instead
-// of the admin console's sign-in.
-export default function Page() {
-  return <SsoManagedByPlatform title="Verified domains" what="Domain verification for SSO" />
+// Domain verification for attack-surface management lives on each seed in
+// Scoping > Boundaries > Seeds (research/22 P0-10). Domains for SSO sign-in
+// stay with the platform administrator (admin console).
+export default function VerifiedDomainsPage() {
+  redirect('/scope-config?tab=seeds')
 }
