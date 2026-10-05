@@ -43,7 +43,7 @@ func WithOptInPolicy(p OptInPolicy) ServiceOption {
 }
 
 // optInsFor reads the tenant's opt-ins. Without a policy wired every
-// opt-in counts as enabled (the pre-D3 behaviour, for tests that do not
+// opt-in counts as enabled (the pre-D3 behavior, for tests that do not
 // wire it). An error refuses (fail closed).
 func (s *Service) optInsFor(ctx context.Context, tenantID shared.ID) (sensordom.OptIns, error) {
 	if s.optIns == nil {
