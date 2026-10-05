@@ -49,6 +49,7 @@ type SignalInput = Pick<
   | 'isNetworkAccessible'
   | 'assets'
   | 'metadata'
+  | 'scannerFacts'
 >
 
 export function riskSignals(f: SignalInput): RiskSignal[] {
@@ -67,7 +68,11 @@ export function riskSignals(f: SignalInput): RiskSignal[] {
   }
 
   const maturity = adv?.exploitMaturity?.toLowerCase()
-  const scannerExploit = f.metadata?.scanner_exploit_available === true
+  // The finding's own exploit verdict (findings.exploit_available, the
+  // column every list filter and group reads); the metadata key is the
+  // pre-column copy, kept for findings read from older API builds.
+  const scannerExploit =
+    f.scannerFacts?.exploitAvailable === true || f.metadata?.scanner_exploit_available === true
   if (maturity && MATURITY_LABEL[maturity]) {
     out.push({
       key: 'exploit',
