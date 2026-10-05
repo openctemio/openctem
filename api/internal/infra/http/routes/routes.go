@@ -569,7 +569,8 @@ func Register(
 	}
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
-	// Per-IP rate limit runs before auth to throttle junk-token floods.
+	// Per-IP rate limit runs before auth to throttle junk-token floods; the
+	// organization IP allowlist runs after it (mcpMiddlewares).
 	if h.MCP != nil && h.MCPAuth != nil {
 		registerMCPRoutes(router, h.MCP, middleware.RateLimit(&cfg.RateLimit, log), h.MCPAuth)
 	}
