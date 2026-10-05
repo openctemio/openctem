@@ -21,6 +21,14 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ### Security: pentest findings stay with their campaign on the asset page
 
+- `GET /assets/{id}/findings` now applies the findings list's visibility:
+  the data scope and the pentest-membership rule. A pentest finding, whose
+  metadata carries the PoC and steps to reproduce, was listed for anyone who
+  could see the asset (research 21b H5, RFC-050 W4); it is now listed only for
+  members of its campaign (administrators unchanged).
+
+### Security: data scope follows group and rule changes in the same transaction
+
 - `user_accessible_assets` is now kept in step with its sources by database
   triggers, in the writing transaction (migration **001034**, RFC-050 W6):
   group asset assign/unassign, a member leaving a group, a group deactivated,
