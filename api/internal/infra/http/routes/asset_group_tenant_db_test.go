@@ -22,7 +22,7 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -82,7 +82,7 @@ func newAGTHarness(t *testing.T) *agtHarness {
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, log)
-	groupSvc := app.NewAssetGroupService(postgres.NewAssetGroupRepository(db), log)
+	groupSvc := asset.NewAssetGroupService(postgres.NewAssetGroupRepository(db), log)
 	groupSvc.SetDataScope(enforcer)
 
 	router := infrahttp.NewChiRouter()

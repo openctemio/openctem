@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -37,7 +37,7 @@ func (m emailMatcher) FindUserIDByEmail(_ context.Context, _ shared.ID, email st
 	return nil, nil
 }
 
-func newOwnerRefService(t *testing.T, byEmail map[string]shared.ID) (*app.AssetService, *ownerRefSyncRepo) {
+func newOwnerRefService(t *testing.T, byEmail map[string]shared.ID) (*asset.AssetService, *ownerRefSyncRepo) {
 	t.Helper()
 	svc, _ := newTestService()
 	repo := &ownerRefSyncRepo{}
@@ -50,7 +50,7 @@ func TestAssetOwnerRef_CreateSyncsMatchedMember(t *testing.T) {
 	alice := shared.NewID()
 	svc, repo := newOwnerRefService(t, map[string]shared.ID{"alice@example.test": alice})
 
-	a, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	a, err := svc.CreateAsset(context.Background(), asset.CreateAssetInput{
 		TenantID: shared.NewID().String(), Name: "owner-ref-host", Type: "host", Criticality: "high",
 		OwnerRef: "alice@example.test",
 	})
@@ -64,7 +64,7 @@ func TestAssetOwnerRef_CreateSyncsMatchedMember(t *testing.T) {
 
 func TestAssetOwnerRef_CreateWithoutOwnerRefDoesNotSync(t *testing.T) {
 	svc, repo := newOwnerRefService(t, nil)
-	if _, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	if _, err := svc.CreateAsset(context.Background(), asset.CreateAssetInput{
 		TenantID: shared.NewID().String(), Name: "no-owner-ref", Type: "host", Criticality: "high",
 	}); err != nil {
 		t.Fatalf("create: %v", err)
@@ -82,7 +82,7 @@ func TestAssetOwnerRef_UpdateResyncsOnlyOnChange(t *testing.T) {
 	svc, repo := newOwnerRefService(t, map[string]shared.ID{"alice@example.test": alice, "bob@example.test": bob})
 	tenant := shared.NewID().String()
 
-	a, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	a, err := svc.CreateAsset(context.Background(), asset.CreateAssetInput{
 		TenantID: tenant, Name: "owner-ref-update", Type: "host", Criticality: "high", OwnerRef: "alice@example.test",
 	})
 	if err != nil {
@@ -90,7 +90,7 @@ func TestAssetOwnerRef_UpdateResyncsOnlyOnChange(t *testing.T) {
 	}
 	repo.calls = nil
 
-	update := func(in app.UpdateAssetInput) {
+	update := func(in asset.UpdateAssetInput) {
 		t.Helper()
 		if _, err := svc.UpdateAsset(context.Background(), a.ID().String(), tenant, in); err != nil {
 			t.Fatalf("update: %v", err)
@@ -98,21 +98,21 @@ func TestAssetOwnerRef_UpdateResyncsOnlyOnChange(t *testing.T) {
 	}
 
 	desc := "unrelated edit"
-	update(app.UpdateAssetInput{Description: &desc})
+	update(asset.UpdateAssetInput{Description: &desc})
 	same := "alice@example.test"
-	update(app.UpdateAssetInput{OwnerRef: &same})
+	update(asset.UpdateAssetInput{OwnerRef: &same})
 	if len(repo.calls) != 0 {
 		t.Fatalf("unchanged owner_ref synced: %+v", repo.calls)
 	}
 
 	bobRef := "bob@example.test"
-	update(app.UpdateAssetInput{OwnerRef: &bobRef})
+	update(asset.UpdateAssetInput{OwnerRef: &bobRef})
 	if len(repo.calls) != 1 || repo.calls[0].userID == nil || *repo.calls[0].userID != bob {
 		t.Fatalf("after owner_ref → bob: %+v", repo.calls)
 	}
 
 	team := "platform-team"
-	update(app.UpdateAssetInput{OwnerRef: &team})
+	update(asset.UpdateAssetInput{OwnerRef: &team})
 	if len(repo.calls) != 2 || repo.calls[1].userID != nil {
 		t.Fatalf("after owner_ref → a team name: %+v, want a sync with no user", repo.calls)
 	}

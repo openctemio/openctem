@@ -2413,122 +2413,6 @@ definitions:
         description: Vulnerable code pattern
         type: string
     type: object
-  github_com_openctemio_openctem_api_internal_app.CredentialItem:
-    properties:
-      credential_type:
-        type: string
-      details:
-        additionalProperties: {}
-        type: object
-      first_seen_at:
-        type: string
-      has_secret:
-        type: boolean
-      id:
-        type: string
-      identifier:
-        type: string
-      is_revoked:
-        type: boolean
-      is_verified:
-        type: boolean
-      last_seen_at:
-        type: string
-      secret_fingerprint:
-        type: string
-      secret_masked:
-        type: string
-      severity:
-        type: string
-      source:
-        type: string
-      state:
-        type: string
-    type: object
-  github_com_openctemio_openctem_api_internal_app.CredentialListResult:
-    properties:
-      items:
-        items:
-          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'
-        type: array
-      page:
-        type: integer
-      page_size:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
-  github_com_openctemio_openctem_api_internal_app.GetNotificationEventsResult:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.NotificationEventEntry'
-        type: array
-      limit:
-        type: integer
-      offset:
-        type: integer
-      total:
-        type: integer
-    type: object
-  github_com_openctemio_openctem_api_internal_app.IdentityListResult:
-    properties:
-      items:
-        items:
-          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure'
-        type: array
-      page:
-        type: integer
-      page_size:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
-  github_com_openctemio_openctem_api_internal_app.MFAStatus:
-    properties:
-      enabled:
-        type: boolean
-      enabled_at:
-        type: string
-      recovery_codes_remaining:
-        type: integer
-      required_by_organization:
-        description: |-
-          RequiredByOrganization is true when any organization the user belongs
-          to requires 2FA.
-        type: boolean
-      supported:
-        description: Supported is false for federated accounts (2FA is the IdP's job).
-        type: boolean
-    type: object
-  github_com_openctemio_openctem_api_internal_app.ProviderInfo:
-    properties:
-      enabled:
-        type: boolean
-      id:
-        type: string
-      name:
-        type: string
-    type: object
-  github_com_openctemio_openctem_api_internal_app.SessionInfo:
-    properties:
-      created_at:
-        type: string
-      id:
-        type: string
-      ip_address:
-        type: string
-      is_current:
-        type: boolean
-      last_activity_at:
-        type: string
-      user_agent:
-        type: string
-    type: object
   github_com_openctemio_openctem_api_internal_app.TemplateSigningKey:
     properties:
       algorithm:
@@ -2587,6 +2471,47 @@ definitions:
         type: integer
       position:
         type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_auth.MFAStatus:
+    properties:
+      enabled:
+        type: boolean
+      enabled_at:
+        type: string
+      recovery_codes_remaining:
+        type: integer
+      required_by_organization:
+        description: |-
+          RequiredByOrganization is true when any organization the user belongs
+          to requires 2FA.
+        type: boolean
+      supported:
+        description: Supported is false for federated accounts (2FA is the IdP's job).
+        type: boolean
+    type: object
+  github_com_openctemio_openctem_api_internal_app_auth.ProviderInfo:
+    properties:
+      enabled:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_auth.SessionInfo:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      ip_address:
+        type: string
+      is_current:
+        type: boolean
+      last_activity_at:
+        type: string
+      user_agent:
+        type: string
     type: object
   github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord:
     properties:
@@ -2891,6 +2816,34 @@ definitions:
       state:
         type: string
     type: object
+  github_com_openctemio_openctem_api_internal_app_integration.CredentialListResult:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_integration.GetNotificationEventsResult:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.NotificationEventEntry'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
   github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure:
     properties:
       credential_types:
@@ -2920,6 +2873,21 @@ definitions:
           type: integer
         description: count by state
         type: object
+    type: object
+  github_com_openctemio_openctem_api_internal_app_integration.IdentityListResult:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
     type: object
   github_com_openctemio_openctem_api_internal_app_integration.NotificationEventEntry:
     properties:
@@ -11803,7 +11771,7 @@ definitions:
     properties:
       providers:
         items:
-          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.ProviderInfo'
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_auth.ProviderInfo'
         type: array
     type: object
   internal_infra_http_handler.ProvisionedUserInfo:
@@ -14301,7 +14269,7 @@ definitions:
     properties:
       sessions:
         items:
-          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.SessionInfo'
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_auth.SessionInfo'
         type: array
     type: object
   internal_infra_http_handler.SetSyncEnabledRequest:
@@ -21502,7 +21470,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.CredentialListResult'
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.CredentialListResult'
         "401":
           description: Unauthorized
           schema:
@@ -21525,7 +21493,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.CredentialItem'
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'
         "401":
           description: Unauthorized
           schema:
@@ -21559,7 +21527,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.CredentialItem'
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'
         "400":
           description: Bad Request
           schema:
@@ -21593,7 +21561,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.CredentialItem'
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'
         "400":
           description: Bad Request
           schema:
@@ -21620,7 +21588,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.CredentialItem'
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'
         "400":
           description: Bad Request
           schema:
@@ -21648,7 +21616,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.CredentialItem'
+              $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'
             type: array
         "401":
           description: Unauthorized
@@ -21683,7 +21651,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.CredentialItem'
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.CredentialItem'
         "400":
           description: Bad Request
           schema:
@@ -21778,7 +21746,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.IdentityListResult'
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.IdentityListResult'
         "401":
           description: Unauthorized
           schema:
@@ -21811,7 +21779,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.CredentialListResult'
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.CredentialListResult'
         "401":
           description: Unauthorized
           schema:
@@ -28864,7 +28832,7 @@ paths:
         "200":
           description: Notification events with pagination
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.GetNotificationEventsResult'
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_integration.GetNotificationEventsResult'
         "400":
           description: Bad request
           schema:
@@ -37114,7 +37082,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app.MFAStatus'
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_auth.MFAStatus'
         "401":
           description: Unauthorized
           schema:

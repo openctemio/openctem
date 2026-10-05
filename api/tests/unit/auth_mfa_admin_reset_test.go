@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/session"
@@ -68,7 +68,7 @@ func newResetHarness(t *testing.T) *resetHarness {
 	t.Helper()
 	base := newMFAHarness(t)
 	tenants := &resetTenantRepo{mockAuthTenantRepo: newMockAuthTenantRepo()}
-	svc := app.NewAuthService(base.users, base.sessions, newMockAuthRefreshTokenRepo(), tenants, auditsvc.NewAuditService(base.audits, logger.NewNop()), defaultAuthTestConfig(), logger.NewNop())
+	svc := auth.NewAuthService(base.users, base.sessions, newMockAuthRefreshTokenRepo(), tenants, auditsvc.NewAuditService(base.audits, logger.NewNop()), defaultAuthTestConfig(), logger.NewNop())
 	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatalf("cipher: %v", err)
@@ -186,7 +186,7 @@ func TestResetMemberMFA(t *testing.T) {
 		h := newResetHarness(t)
 		ownerID, _ := h.enrolledUser(t, "owner@a.test")
 		ownerM := h.join(t, ownerID, h.orgA, tenant.RoleOwner)
-		if err := h.reset(ownerID, h.orgA, ownerM); !errors.Is(err, app.ErrMFAResetSelf) {
+		if err := h.reset(ownerID, h.orgA, ownerM); !errors.Is(err, auth.ErrMFAResetSelf) {
 			t.Fatalf("want ErrMFAResetSelf, got %v", err)
 		}
 	})
@@ -210,7 +210,7 @@ func TestResetMemberMFA(t *testing.T) {
 		target := h.join(t, uid, h.orgA, tenant.RoleMember)
 		h.join(t, uid, h.orgB, tenant.RoleOwner) // owns organization B
 
-		if err := h.reset(admin, h.orgA, target); !errors.Is(err, app.ErrMFAResetOtherOrganization) {
+		if err := h.reset(admin, h.orgA, target); !errors.Is(err, auth.ErrMFAResetOtherOrganization) {
 			t.Fatalf("want ErrMFAResetOtherOrganization, got %v", err)
 		}
 		if !h.mfaOn(t, uid) {
@@ -219,7 +219,7 @@ func TestResetMemberMFA(t *testing.T) {
 
 		// Holding admin in B is still not enough for B's owner...
 		h.join(t, admin, h.orgB, tenant.RoleAdmin)
-		if err := h.reset(admin, h.orgA, target); !errors.Is(err, app.ErrMFAResetOtherOrganization) {
+		if err := h.reset(admin, h.orgA, target); !errors.Is(err, auth.ErrMFAResetOtherOrganization) {
 			t.Fatalf("admin of B vs owner of B: want ErrMFAResetOtherOrganization, got %v", err)
 		}
 	})
@@ -234,7 +234,7 @@ func TestResetMemberMFA(t *testing.T) {
 		if err := other.Suspend(shared.NewID()); err != nil {
 			t.Fatalf("Suspend: %v", err)
 		}
-		if err := h.reset(admin, h.orgA, target); !errors.Is(err, app.ErrMFAResetOtherOrganization) {
+		if err := h.reset(admin, h.orgA, target); !errors.Is(err, auth.ErrMFAResetOtherOrganization) {
 			t.Fatalf("want ErrMFAResetOtherOrganization, got %v", err)
 		}
 	})
@@ -272,7 +272,7 @@ func TestResetMemberMFA(t *testing.T) {
 		h.join(t, admin, h.orgA, tenant.RoleAdmin)
 		uid := h.seedUser(t, "plain@a.test")
 		target := h.join(t, uid, h.orgA, tenant.RoleMember)
-		if err := h.reset(admin, h.orgA, target); !errors.Is(err, app.ErrMFANotEnabled) {
+		if err := h.reset(admin, h.orgA, target); !errors.Is(err, auth.ErrMFANotEnabled) {
 			t.Fatalf("want ErrMFANotEnabled, got %v", err)
 		}
 	})

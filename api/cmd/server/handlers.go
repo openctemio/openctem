@@ -10,9 +10,12 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
@@ -150,7 +153,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Sensor, log)
 	// Heartbeat doorbell (RFC-023 §9.2a): the heartbeat tells a sensor that
 	// work is waiting and when to ring again. One cheap query per heartbeat.
-	ingestHandler.SetDoorbell(app.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log))
+	ingestHandler.SetDoorbell(sensor.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log))
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
 	ingestHandler.SetHeartbeatObserver(svc.SensorPlatformHealth)
@@ -363,7 +366,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Pentest Campaign Management
 		Pentest: func() *handler.PentestHandler {
 			h := handler.NewPentestHandler(svc.Pentest, repos.User, v, log)
-			h.SetImportService(app.NewFindingImportService(repos.Finding, log))
+			h.SetImportService(finding.NewFindingImportService(repos.Finding, log))
 			return h
 		}(),
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
@@ -581,7 +584,7 @@ func InitLocalAuthHandler(
 // $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
 // edited without rebuilding the frontend.
 func newSensorHandlerWithTemplates(
-	sensorSvc *app.SensorService,
+	sensorSvc *sensor.SensorService,
 	cfg *config.Config,
 	v *validator.Validator,
 	log *logger.Logger,
@@ -592,7 +595,7 @@ func newSensorHandlerWithTemplates(
 	if templatesDir == "" {
 		templatesDir = "configs/sensor-templates"
 	}
-	tmplSvc := app.NewSensorConfigTemplateService(templatesDir, log)
+	tmplSvc := sensor.NewSensorConfigTemplateService(templatesDir, log)
 	h.SetTemplateService(tmplSvc)
 
 	publicAPIURL := cfg.SensorConfig.PublicAPIURL
@@ -661,10 +664,10 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
-func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *compliance.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *auditsvc.AuditService, log *logger.Logger) *handler.AttachmentHandler {
+func newAttachmentHandlerWithAccessCheck(attachSvc *integration.AttachmentService, pentestSvc *compliance.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *auditsvc.AuditService, log *logger.Logger) *handler.AttachmentHandler {
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
-	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
+	h.SetStorageResolver(authapp.NewSettingsStorageResolver(db, enc, log))
 	h.SetAuditService(auditSvc)
 	return h
 }
@@ -688,9 +691,9 @@ func newIOCHandlerWithFindingCheck(deps *HandlerDeps, log *logger.Logger) *handl
 // bound used to be WORKER_HEARTBEAT_TIMEOUT alone (5 min), so the "loaded"
 // advice (120 s) outlasted the controller's 90 s and every sensor that
 // followed it was marked offline once per cycle (RFC-035 B1, decision D2).
-func heartbeatDoorbellConfig(cfg *config.Config) app.DoorbellConfig {
+func heartbeatDoorbellConfig(cfg *config.Config) sensor.DoorbellConfig {
 	sc := cfg.SensorConfig
-	c := app.DefaultDoorbellConfig()
+	c := sensor.DefaultDoorbellConfig()
 	c.IdleInterval = sc.HeartbeatInterval
 	c.BusyInterval = sc.HeartbeatBusyInterval
 	c.LoadedInterval = sc.HeartbeatLoadedInterval

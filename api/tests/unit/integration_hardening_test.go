@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -24,7 +23,7 @@ func TestUpdateIntegration_NewHostNeedsNewCredentials(t *testing.T) {
 	id := created.ID().String()
 
 	attacker := "https://collector.attacker.example"
-	_, err = svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{BaseURL: &attacker})
+	_, err = svc.UpdateIntegration(context.Background(), id, tenantID, integrationapp.UpdateIntegrationInput{BaseURL: &attacker})
 	if !errors.Is(err, integrationapp.ErrCredentialsRequiredForNewHost) || !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("host change without credentials: err = %v, want ErrCredentialsRequiredForNewHost", err)
 	}
@@ -35,12 +34,12 @@ func TestUpdateIntegration_NewHostNeedsNewCredentials(t *testing.T) {
 
 	// Same host, other path: fine without credentials.
 	samePath := "https://defectdojo.example.com/api/v2"
-	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{BaseURL: &samePath}); err != nil {
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, integrationapp.UpdateIntegrationInput{BaseURL: &samePath}); err != nil {
 		t.Fatalf("same-host change: %v", err)
 	}
 	// New host with new credentials: fine.
 	newHost, creds := "https://dd.other.example", "new-key"
-	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{BaseURL: &newHost, Credentials: &creds}); err != nil {
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, integrationapp.UpdateIntegrationInput{BaseURL: &newHost, Credentials: &creds}); err != nil {
 		t.Fatalf("host change with credentials: %v", err)
 	}
 }
@@ -75,7 +74,7 @@ func TestListSCMRepositories_DisabledIsRefused(t *testing.T) {
 	i.SetStatus(integration.StatusDisabled)
 	repo.integrations[i.ID()] = i
 
-	_, err := svc.ListSCMRepositories(context.Background(), app.IntegrationListReposInput{
+	_, err := svc.ListSCMRepositories(context.Background(), integrationapp.IntegrationListReposInput{
 		IntegrationID: i.ID().String(), TenantID: tenantID.String(), Page: 1, PerPage: 30,
 	})
 	if !errors.Is(err, integrationapp.ErrIntegrationDisabled) {

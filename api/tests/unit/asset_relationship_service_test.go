@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -284,7 +284,7 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupMocks  func(*MockRelationshipRepository, *MockAssetRepository)
-		input       app.CreateRelationshipInput
+		input       assetapp.CreateRelationshipInput
 		wantErr     bool
 		errContains string
 	}{
@@ -294,11 +294,11 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 				createRelTestAsset(t, assetRepo, tenantID, "source-server")
 				createRelTestAsset(t, assetRepo, tenantID, "target-server")
 			},
-			input: func() app.CreateRelationshipInput {
+			input: func() assetapp.CreateRelationshipInput {
 				assetRepo := NewMockAssetRepository()
 				src := createRelTestAsset(t, assetRepo, tenantID, "source-server")
 				tgt := createRelTestAsset(t, assetRepo, tenantID, "target-server")
-				return app.CreateRelationshipInput{
+				return assetapp.CreateRelationshipInput{
 					TenantID:      tenantID.String(),
 					SourceAssetID: src.ID().String(),
 					TargetAssetID: tgt.ID().String(),
@@ -312,7 +312,7 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		},
 		{
 			name: "error - invalid tenant ID",
-			input: app.CreateRelationshipInput{
+			input: assetapp.CreateRelationshipInput{
 				TenantID:      "not-a-uuid",
 				SourceAssetID: shared.NewID().String(),
 				TargetAssetID: shared.NewID().String(),
@@ -323,7 +323,7 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		},
 		{
 			name: "error - invalid source asset ID",
-			input: app.CreateRelationshipInput{
+			input: assetapp.CreateRelationshipInput{
 				TenantID:      tenantID.String(),
 				SourceAssetID: "bad-id",
 				TargetAssetID: shared.NewID().String(),
@@ -334,7 +334,7 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		},
 		{
 			name: "error - invalid target asset ID",
-			input: app.CreateRelationshipInput{
+			input: assetapp.CreateRelationshipInput{
 				TenantID:      tenantID.String(),
 				SourceAssetID: shared.NewID().String(),
 				TargetAssetID: "bad-id",
@@ -345,7 +345,7 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		},
 		{
 			name: "error - invalid relationship type",
-			input: app.CreateRelationshipInput{
+			input: assetapp.CreateRelationshipInput{
 				TenantID:      tenantID.String(),
 				SourceAssetID: shared.NewID().String(),
 				TargetAssetID: shared.NewID().String(),
@@ -356,7 +356,7 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		},
 		{
 			name: "error - source asset not found",
-			input: app.CreateRelationshipInput{
+			input: assetapp.CreateRelationshipInput{
 				TenantID:      tenantID.String(),
 				SourceAssetID: shared.NewID().String(),
 				TargetAssetID: shared.NewID().String(),
@@ -414,9 +414,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		src := createRelTestAsset(t, assetRepo, tenantID, "web-app")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "db-server")
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		result, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		result, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -446,10 +446,10 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		src := createRelTestAsset(t, assetRepo, tenantID, "api-service")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "auth-service")
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		weight := 8
-		result, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		result, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:        tenantID.String(),
 			SourceAssetID:   src.ID().String(),
 			TargetAssetID:   tgt.ID().String(),
@@ -490,9 +490,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      "not-a-uuid",
 			SourceAssetID: shared.NewID().String(),
 			TargetAssetID: shared.NewID().String(),
@@ -510,9 +510,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: "bad-uuid",
 			TargetAssetID: shared.NewID().String(),
@@ -530,9 +530,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: shared.NewID().String(),
 			TargetAssetID: "bad-uuid",
@@ -550,9 +550,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: shared.NewID().String(),
 			TargetAssetID: shared.NewID().String(),
@@ -570,9 +570,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: shared.NewID().String(), // does not exist in repo
 			TargetAssetID: shared.NewID().String(),
@@ -592,9 +592,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		log := newRelTestLogger()
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "existing-source")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: shared.NewID().String(), // does not exist
@@ -616,9 +616,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "src-asset")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "tgt-asset")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -639,9 +639,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 
 		// Let create succeed, but GetByID fails
 		relRepo.getByIDErr = fmt.Errorf("fetch error")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -659,9 +659,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "src-conf")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "tgt-conf")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -683,9 +683,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "src-disc")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "tgt-disc")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:        tenantID.String(),
 			SourceAssetID:   src.ID().String(),
 			TargetAssetID:   tgt.ID().String(),
@@ -707,10 +707,10 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "src-wt-low")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "tgt-wt-low")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		weight := 0
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -732,10 +732,10 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "src-wt-high")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "tgt-wt-high")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		weight := 11
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -758,9 +758,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		otherTenant := shared.NewID()
 		src := createRelTestAsset(t, assetRepo, otherTenant, "other-tenant-asset")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "my-asset")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -779,9 +779,9 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 		otherTenant := shared.NewID()
 		src := createRelTestAsset(t, assetRepo, tenantID, "my-source")
 		tgt := createRelTestAsset(t, assetRepo, otherTenant, "other-target")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -841,9 +841,9 @@ func TestAssetRelationshipService_AllRelationshipTypes(t *testing.T) {
 			}
 			src := createRelTestAssetOf(t, assetRepo, tenantID, fmt.Sprintf("src-%s", tc.name), srcRef)
 			tgt := createRelTestAssetOf(t, assetRepo, tenantID, fmt.Sprintf("tgt-%s", tc.name), tgtRef)
-			svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+			svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-			result, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+			result, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 				TenantID:      tenantID.String(),
 				SourceAssetID: src.ID().String(),
 				TargetAssetID: tgt.ID().String(),
@@ -888,7 +888,7 @@ func TestAssetRelationshipService_GetRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, sourceID, targetID, asset.RelTypeDependsOn)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		result, err := svc.GetRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String())
 		if err != nil {
@@ -906,7 +906,7 @@ func TestAssetRelationshipService_GetRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		_, err := svc.GetRelationship(ctx, "bad-uuid", shared.NewID().String())
 		if err == nil {
@@ -921,7 +921,7 @@ func TestAssetRelationshipService_GetRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		_, err := svc.GetRelationship(ctx, tenantID.String(), "bad-uuid")
 		if err == nil {
@@ -936,7 +936,7 @@ func TestAssetRelationshipService_GetRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		_, err := svc.GetRelationship(ctx, tenantID.String(), shared.NewID().String())
 		if err == nil {
@@ -953,7 +953,7 @@ func TestAssetRelationshipService_GetRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(otherTenantID, shared.NewID(), shared.NewID(), asset.RelTypeContains)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		// Try to access with a different tenant ID
 		_, err := svc.GetRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String())
@@ -967,7 +967,7 @@ func TestAssetRelationshipService_GetRelationship(t *testing.T) {
 		relRepo.getByIDErr = fmt.Errorf("database timeout")
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		_, err := svc.GetRelationship(ctx, tenantID.String(), shared.NewID().String())
 		if err == nil {
@@ -992,10 +992,10 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeDependsOn)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		desc := "updated description"
-		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			Description: &desc,
 		})
 		if err != nil {
@@ -1017,10 +1017,10 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeExposes)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		confidence := "high"
-		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			Confidence: &confidence,
 		})
 		if err != nil {
@@ -1039,10 +1039,10 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeRunsOn)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		weight := 9
-		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			ImpactWeight: &weight,
 		})
 		if err != nil {
@@ -1061,9 +1061,9 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeMonitors)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			Tags: []string{"monitoring", "soc"},
 		})
 		if err != nil {
@@ -1082,9 +1082,9 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeProtectedBy)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			MarkVerified: true,
 		})
 		if err != nil {
@@ -1111,12 +1111,12 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeManages)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		desc := "fully updated"
 		conf := "low"
 		weight := 2
-		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			Description:  &desc,
 			Confidence:   &conf,
 			ImpactWeight: &weight,
@@ -1135,9 +1135,9 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.UpdateRelationship(ctx, "bad-uuid", shared.NewID().String(), app.UpdateRelationshipInput{})
+		_, err := svc.UpdateRelationship(ctx, "bad-uuid", shared.NewID().String(), assetapp.UpdateRelationshipInput{})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -1150,9 +1150,9 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		_, err := svc.UpdateRelationship(ctx, tenantID.String(), "bad-uuid", app.UpdateRelationshipInput{})
+		_, err := svc.UpdateRelationship(ctx, tenantID.String(), "bad-uuid", assetapp.UpdateRelationshipInput{})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -1165,10 +1165,10 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		desc := "nope"
-		_, err := svc.UpdateRelationship(ctx, tenantID.String(), shared.NewID().String(), app.UpdateRelationshipInput{
+		_, err := svc.UpdateRelationship(ctx, tenantID.String(), shared.NewID().String(), assetapp.UpdateRelationshipInput{
 			Description: &desc,
 		})
 		if err == nil {
@@ -1184,10 +1184,10 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeContains)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		badConf := "super_duper"
-		_, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		_, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			Confidence: &badConf,
 		})
 		if err == nil {
@@ -1206,10 +1206,10 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeGrantedTo)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		badWeight := 99
-		_, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		_, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			ImpactWeight: &badWeight,
 		})
 		if err == nil {
@@ -1229,10 +1229,10 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		relRepo.AddRelationshipWithAssets(rwa)
 		relRepo.updateErr = fmt.Errorf("write conflict")
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		desc := "will fail"
-		_, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		_, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			Description: &desc,
 		})
 		if err == nil {
@@ -1249,10 +1249,10 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(otherTenant, shared.NewID(), shared.NewID(), asset.RelTypeContains)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		desc := "cross tenant attempt"
-		_, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		_, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			Description: &desc,
 		})
 		if err == nil {
@@ -1277,7 +1277,7 @@ func TestAssetRelationshipService_DeleteRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeDependsOn)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		err := svc.DeleteRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String())
 		if err != nil {
@@ -1292,7 +1292,7 @@ func TestAssetRelationshipService_DeleteRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		err := svc.DeleteRelationship(ctx, "bad-uuid", shared.NewID().String())
 		if err == nil {
@@ -1307,7 +1307,7 @@ func TestAssetRelationshipService_DeleteRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		err := svc.DeleteRelationship(ctx, tenantID.String(), "bad-uuid")
 		if err == nil {
@@ -1322,7 +1322,7 @@ func TestAssetRelationshipService_DeleteRelationship(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		err := svc.DeleteRelationship(ctx, tenantID.String(), shared.NewID().String())
 		if err == nil {
@@ -1335,7 +1335,7 @@ func TestAssetRelationshipService_DeleteRelationship(t *testing.T) {
 		relRepo.deleteErr = fmt.Errorf("constraint violation")
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		err := svc.DeleteRelationship(ctx, tenantID.String(), shared.NewID().String())
 		if err == nil {
@@ -1352,7 +1352,7 @@ func TestAssetRelationshipService_DeleteRelationship(t *testing.T) {
 		rwa := buildRelationshipWithAssets(otherTenant, shared.NewID(), shared.NewID(), asset.RelTypeLoadBalances)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		err := svc.DeleteRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String())
 		if err == nil {
@@ -1382,7 +1382,7 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		relRepo.AddRelationshipWithAssets(rwa1)
 		relRepo.AddRelationshipWithAssets(rwa2)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		results, total, err := svc.ListAssetRelationships(ctx, tenantID.String(), assetID.String(), asset.RelationshipFilter{})
 		if err != nil {
@@ -1404,7 +1404,7 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 		emptyAssetID := createRelTestAsset(t, assetRepo, tenantID, "rel-empty").ID().String()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		results, total, err := svc.ListAssetRelationships(ctx, tenantID.String(), emptyAssetID, asset.RelationshipFilter{})
 		if err != nil {
@@ -1427,7 +1427,7 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, assetID, shared.NewID(), asset.RelTypeRunsOn)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		filter := asset.RelationshipFilter{
 			Types:       []asset.RelationshipType{asset.RelTypeRunsOn},
@@ -1462,7 +1462,7 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		relRepo.listTotal = 1
 
 		preAssetID := createRelTestAsset(t, assetRepo, tenantID, "rel-pre").ID().String()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		results, total, err := svc.ListAssetRelationships(ctx, tenantID.String(), preAssetID, asset.RelationshipFilter{})
 		if err != nil {
@@ -1480,7 +1480,7 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		_, _, err := svc.ListAssetRelationships(ctx, "bad-uuid", shared.NewID().String(), asset.RelationshipFilter{})
 		if err == nil {
@@ -1495,7 +1495,7 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		_, _, err := svc.ListAssetRelationships(ctx, tenantID.String(), "bad-uuid", asset.RelationshipFilter{})
 		if err == nil {
@@ -1511,7 +1511,7 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		relRepo.listErr = fmt.Errorf("query timeout")
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		_, _, err := svc.ListAssetRelationships(ctx, tenantID.String(), shared.NewID().String(), asset.RelationshipFilter{})
 		if err == nil {
@@ -1550,9 +1550,9 @@ func TestAssetRelationshipService_ConfidenceLevels(t *testing.T) {
 
 			src := createRelTestAsset(t, assetRepo, tenantID, fmt.Sprintf("src-conf-%s", tc.name))
 			tgt := createRelTestAsset(t, assetRepo, tenantID, fmt.Sprintf("tgt-conf-%s", tc.name))
-			svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+			svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-			_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+			_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 				TenantID:      tenantID.String(),
 				SourceAssetID: src.ID().String(),
 				TargetAssetID: tgt.ID().String(),
@@ -1595,9 +1595,9 @@ func TestAssetRelationshipService_DiscoveryMethods(t *testing.T) {
 
 			src := createRelTestAsset(t, assetRepo, tenantID, fmt.Sprintf("src-disc-%s", tc.name))
 			tgt := createRelTestAsset(t, assetRepo, tenantID, fmt.Sprintf("tgt-disc-%s", tc.name))
-			svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+			svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-			_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+			_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 				TenantID:        tenantID.String(),
 				SourceAssetID:   src.ID().String(),
 				TargetAssetID:   tgt.ID().String(),
@@ -1644,9 +1644,9 @@ func TestAssetRelationshipService_ImpactWeightBoundaries(t *testing.T) {
 
 			src := createRelTestAsset(t, assetRepo, tenantID, fmt.Sprintf("src-wt-%s", tc.name))
 			tgt := createRelTestAsset(t, assetRepo, tenantID, fmt.Sprintf("tgt-wt-%s", tc.name))
-			svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+			svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-			_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+			_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 				TenantID:      tenantID.String(),
 				SourceAssetID: src.ID().String(),
 				TargetAssetID: tgt.ID().String(),
@@ -1678,9 +1678,9 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "src-nil-tags")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "tgt-nil-tags")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		result, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		result, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -1702,9 +1702,9 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "src-empty-tags")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "tgt-empty-tags")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		result, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		result, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -1726,9 +1726,9 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "src-no-desc")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "tgt-no-desc")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		result, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		result, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -1751,9 +1751,9 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeContains)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{})
+		result, err := svc.UpdateRelationship(ctx, tenantID.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1770,7 +1770,7 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		edgeAssetID := createRelTestAsset(t, assetRepo, tenantID, "rel-edge").ID().String()
 		minWeight := 3
@@ -1830,10 +1830,10 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "src-case")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "tgt-case")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		// Should accept UPPERCASE type and normalize to lowercase
-		result, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		result, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -1854,10 +1854,10 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 
 		src := createRelTestAsset(t, assetRepo, tenantID, "src-ws")
 		tgt := createRelTestAsset(t, assetRepo, tenantID, "tgt-ws")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		// Should trim whitespace
-		result, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		result, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantID.String(),
 			SourceAssetID: src.ID().String(),
 			TargetAssetID: tgt.ID().String(),
@@ -1888,11 +1888,11 @@ func TestAssetRelationshipService_TenantIsolation(t *testing.T) {
 
 		srcA := createRelTestAsset(t, assetRepo, tenantA, "tenant-a-asset")
 		tgtB := createRelTestAsset(t, assetRepo, tenantB, "tenant-b-asset")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		// Source belongs to tenantA, but we query under tenantA
 		// Target belongs to tenantB, so GetByID(tenantA, tgtB) should fail
-		_, err := svc.CreateRelationship(ctx, app.CreateRelationshipInput{
+		_, err := svc.CreateRelationship(ctx, assetapp.CreateRelationshipInput{
 			TenantID:      tenantA.String(),
 			SourceAssetID: srcA.ID().String(),
 			TargetAssetID: tgtB.ID().String(),
@@ -1911,7 +1911,7 @@ func TestAssetRelationshipService_TenantIsolation(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantA, shared.NewID(), shared.NewID(), asset.RelTypeDependsOn)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		_, err := svc.GetRelationship(ctx, tenantB.String(), rwa.Relationship.ID().String())
 		if err == nil {
@@ -1927,10 +1927,10 @@ func TestAssetRelationshipService_TenantIsolation(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantA, shared.NewID(), shared.NewID(), asset.RelTypeContains)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		desc := "hacked"
-		_, err := svc.UpdateRelationship(ctx, tenantB.String(), rwa.Relationship.ID().String(), app.UpdateRelationshipInput{
+		_, err := svc.UpdateRelationship(ctx, tenantB.String(), rwa.Relationship.ID().String(), assetapp.UpdateRelationshipInput{
 			Description: &desc,
 		})
 		if err == nil {
@@ -1946,7 +1946,7 @@ func TestAssetRelationshipService_TenantIsolation(t *testing.T) {
 		rwa := buildRelationshipWithAssets(tenantA, shared.NewID(), shared.NewID(), asset.RelTypeExposes)
 		relRepo.AddRelationshipWithAssets(rwa)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		err := svc.DeleteRelationship(ctx, tenantB.String(), rwa.Relationship.ID().String())
 		if err == nil {
@@ -1973,10 +1973,10 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 		target2 := createRelTestAsset(t, assetRepo, tenantID, "target2")
 		target3 := createRelTestAsset(t, assetRepo, tenantID, "target3")
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
-			[]app.BatchCreateRelationshipInput{
+			[]assetapp.BatchCreateRelationshipInput{
 				{TargetAssetID: target1.ID().String(), Type: "depends_on"},
 				{TargetAssetID: target2.ID().String(), Type: "depends_on"},
 				{TargetAssetID: target3.ID().String(), Type: "depends_on"},
@@ -1988,7 +1988,7 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 			t.Errorf("expected 3 created / 0 dup / 0 err, got %+v", result)
 		}
 		for i, r := range result.Results {
-			if r.Status != app.BatchCreateStatusCreated {
+			if r.Status != assetapp.BatchCreateStatusCreated {
 				t.Errorf("result[%d] status = %s, want created", i, r.Status)
 			}
 			if r.RelationshipID == "" {
@@ -2006,10 +2006,10 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 		target1 := createRelTestAsset(t, assetRepo, tenantID, "target1")
 		target2 := createRelTestAsset(t, assetRepo, tenantID, "target2")
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
-			[]app.BatchCreateRelationshipInput{
+			[]assetapp.BatchCreateRelationshipInput{
 				{TargetAssetID: target1.ID().String(), Type: "depends_on"},
 				{TargetAssetID: shared.NewID().String(), Type: "depends_on"}, // does not exist
 				{TargetAssetID: target2.ID().String(), Type: "depends_on"},
@@ -2020,7 +2020,7 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 		if result.TotalN != 3 || result.CreatedN != 2 || result.ErrorN != 1 {
 			t.Errorf("expected 2 created / 1 err, got %+v", result)
 		}
-		if result.Results[1].Status != app.BatchCreateStatusError {
+		if result.Results[1].Status != assetapp.BatchCreateStatusError {
 			t.Errorf("result[1] status = %s, want error", result.Results[1].Status)
 		}
 	})
@@ -2033,10 +2033,10 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 		source := createRelTestAsset(t, assetRepo, tenantID, "source")
 		target1 := createRelTestAsset(t, assetRepo, tenantID, "target1")
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
-			[]app.BatchCreateRelationshipInput{
+			[]assetapp.BatchCreateRelationshipInput{
 				{TargetAssetID: target1.ID().String(), Type: "this_is_not_a_real_type"},
 			})
 		if err != nil {
@@ -2045,7 +2045,7 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 		if result.ErrorN != 1 || result.CreatedN != 0 {
 			t.Errorf("expected 1 err / 0 created, got %+v", result)
 		}
-		if result.Results[0].Status != app.BatchCreateStatusError {
+		if result.Results[0].Status != assetapp.BatchCreateStatusError {
 			t.Errorf("status = %s, want error", result.Results[0].Status)
 		}
 	})
@@ -2057,10 +2057,10 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 
 		// No source asset in the repo — every item should fail because
 		// the per-batch source validation runs first.
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), shared.NewID().String(),
-			[]app.BatchCreateRelationshipInput{
+			[]assetapp.BatchCreateRelationshipInput{
 				{TargetAssetID: shared.NewID().String(), Type: "depends_on"},
 			})
 		if err == nil {
@@ -2076,10 +2076,10 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		_, err := svc.CreateRelationshipBatch(ctx, "not-a-uuid", shared.NewID().String(),
-			[]app.BatchCreateRelationshipInput{
+			[]assetapp.BatchCreateRelationshipInput{
 				{TargetAssetID: shared.NewID().String(), Type: "depends_on"},
 			})
 		if err == nil {
@@ -2093,7 +2093,7 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 		log := newRelTestLogger()
 
 		source := createRelTestAsset(t, assetRepo, tenantID, "source")
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(), nil)
 		if err != nil {
@@ -2113,10 +2113,10 @@ func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
 		target1 := createRelTestAsset(t, assetRepo, tenantID, "target1")
 		target2 := createRelTestAsset(t, assetRepo, tenantID, "target2")
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
-			[]app.BatchCreateRelationshipInput{
+			[]assetapp.BatchCreateRelationshipInput{
 				{TargetAssetID: target1.ID().String(), Type: "depends_on"},
 				{TargetAssetID: target2.ID().String(), Type: "depends_on"},
 			})
@@ -2154,7 +2154,7 @@ func TestAssetRelationshipService_GetRelationshipTypeUsage(t *testing.T) {
 		relRepo.AddRelationshipWithAssets(rwa2)
 		relRepo.AddRelationshipWithAssets(rwa3)
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		usage, err := svc.GetRelationshipTypeUsage(ctx, tenantID.String())
 		if err != nil {
@@ -2196,7 +2196,7 @@ func TestAssetRelationshipService_GetRelationshipTypeUsage(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		usage, err := svc.GetRelationshipTypeUsage(ctx, tenantID.String())
 		if err != nil {
@@ -2232,7 +2232,7 @@ func TestAssetRelationshipService_GetRelationshipTypeUsage(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		_, err := svc.GetRelationshipTypeUsage(ctx, "not-a-uuid")
 		if err == nil {
@@ -2245,7 +2245,7 @@ func TestAssetRelationshipService_GetRelationshipTypeUsage(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 
-		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+		svc := assetapp.NewAssetRelationshipService(relRepo, assetRepo, log)
 
 		usage, err := svc.GetRelationshipTypeUsage(ctx, tenantID.String())
 		if err != nil {

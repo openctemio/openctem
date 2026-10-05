@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -30,7 +30,7 @@ func TestGetFinding_NeverReturnsTheRawSecret(t *testing.T) {
 	f.SetSecretMaskedValue(raw)
 	f.SetSecretFingerprint(vulnerability.NewSecretFingerprinter([]byte("server-secret")).Fingerprint(tenant, raw))
 
-	svc := app.NewVulnerabilityService(&detailVulnRepo{}, &detailFindingRepo{f: f}, logger.NewNop())
+	svc := finding.NewVulnerabilityService(&detailVulnRepo{}, &detailFindingRepo{f: f}, logger.NewNop())
 	h := NewVulnerabilityHandler(svc, nil, logger.NewNop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/findings/"+f.ID().String(), nil)
 	req.SetPathValue("id", f.ID().String())

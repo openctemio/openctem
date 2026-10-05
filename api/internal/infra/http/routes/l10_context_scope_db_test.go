@@ -21,7 +21,7 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/threatmodel"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -81,7 +81,7 @@ func newL10cHarness(t *testing.T) *l10cHarness {
 	assetRepo := postgres.NewAssetRepository(db)
 	tm := threatmodel.NewService(postgres.NewThreatModelRepository(db), nil, assetRepo, nil, nil, nil, log)
 	tm.SetDataScope(enforcer)
-	bu := app.NewBusinessUnitService(postgres.NewBusinessUnitRepository(db), assetRepo, log)
+	bu := asset.NewBusinessUnitService(postgres.NewBusinessUnitRepository(db), assetRepo, log)
 	bu.SetDataScope(enforcer)
 
 	router := infrahttp.NewChiRouter()

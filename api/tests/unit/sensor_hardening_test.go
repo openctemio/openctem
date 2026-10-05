@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -67,9 +67,9 @@ func TestUpdateHeartbeat_ConcurrentRevokeStaysRevoked(t *testing.T) {
 		stored.Revoke("compromised")
 		stored.SetAPIKey("admin-new-hash", "rda_new0")
 	}
-	svc := app.NewSensorService(repo, nil, logger.NewNop())
+	svc := sensorapp.NewSensorService(repo, nil, logger.NewNop())
 
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorapp.SensorHeartbeatData{
 		Version: "9.9.9", CPUPercent: 10,
 	}); err != nil {
 		t.Fatalf("UpdateHeartbeat: %v", err)
@@ -98,9 +98,9 @@ func TestUpdateHeartbeat_ActiveSensorUpdatesOnlyLivenessColumns(t *testing.T) {
 	a.Health = sensor.SensorHealthOffline
 
 	repo := &copyingSensorRepo{sensorSvcMockRepo: base}
-	svc := app.NewSensorService(repo, nil, logger.NewNop())
+	svc := sensorapp.NewSensorService(repo, nil, logger.NewNop())
 
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorapp.SensorHeartbeatData{
 		Version: "1.2.3", Hostname: "h1", CPUPercent: 50, MemoryPercent: 20,
 	}); err != nil {
 		t.Fatalf("UpdateHeartbeat: %v", err)
@@ -129,12 +129,12 @@ func TestUpdateHeartbeat_ActiveSensorUpdatesOnlyLivenessColumns(t *testing.T) {
 func TestUpdateHeartbeat_RevokedSensorNoConnectAudit(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
-	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
+	svc := sensorapp.NewSensorService(repo, auditSvc, logger.NewNop())
 	a := repo.seedSensor(shared.NewID(), "sensor-1", sensor.SensorTypeWorker)
 	a.Health = sensor.SensorHealthOffline
 	a.Revoke("gone")
 
-	if err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{}); err != nil {
+	if err := svc.UpdateHeartbeat(context.Background(), a.ID, sensorapp.SensorHeartbeatData{}); err != nil {
 		t.Fatalf("UpdateHeartbeat: %v", err)
 	}
 	if auditRepo.createCalls != 0 {
@@ -150,9 +150,9 @@ func TestRenewAPIKey_RevokedDuringRenewIsRejected(t *testing.T) {
 	a.SetAPIKey("old-hash", "rda_old0")
 
 	repo := &revokeOnKeyWriteRepo{sensorSvcMockRepo: base}
-	svc := app.NewSensorService(repo, nil, logger.NewNop())
+	svc := sensorapp.NewSensorService(repo, nil, logger.NewNop())
 
-	if _, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: a}); err == nil {
+	if _, _, err := svc.RenewAPIKey(context.Background(), sensorapp.SensorIdentity{Sensor: a}); err == nil {
 		t.Fatal("expected renewal to fail for a sensor revoked mid-renewal")
 	}
 	stored := base.sensors[a.ID.String()]
@@ -192,13 +192,13 @@ func TestRegenerateAPIKey_RevokesRenewedKeyRows(t *testing.T) {
 	svc.SetAPIKeyRepository(keyRepo)
 	tenantID := shared.NewID()
 
-	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+	out, err := svc.CreateSensor(context.Background(), sensorapp.CreateSensorInput{
 		TenantID: tenantID.String(), Name: "regen-sensor", Type: "runner",
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	renewed, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: out.Sensor})
+	renewed, _, err := svc.RenewAPIKey(context.Background(), sensorapp.SensorIdentity{Sensor: out.Sensor})
 	if err != nil {
 		t.Fatalf("renew: %v", err)
 	}
@@ -228,10 +228,10 @@ func TestRegenerateAPIKey_RevokesRenewedKeyRows(t *testing.T) {
 func TestRenewAPIKey_WritesAuditEvent(t *testing.T) {
 	auditSvc, auditRepo := newTestAuditService()
 	repo := newSensorSvcMockRepo()
-	svc := app.NewSensorService(repo, auditSvc, logger.NewNop())
+	svc := sensorapp.NewSensorService(repo, auditSvc, logger.NewNop())
 	a := repo.seedSensor(shared.NewID(), "sensor-1", sensor.SensorTypeRunner)
 
-	if _, _, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: a}); err != nil {
+	if _, _, err := svc.RenewAPIKey(context.Background(), sensorapp.SensorIdentity{Sensor: a}); err != nil {
 		t.Fatalf("renew: %v", err)
 	}
 	if auditRepo.createCalls != 1 {

@@ -9,7 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
@@ -206,7 +207,7 @@ func run() int {
 	// system default. The SetTenantSMTPResolver seam was never called, so
 	// per-tenant SMTP was silently dead and every tenant fell back to system SMTP.
 	if services.Email != nil {
-		services.Email.SetTenantSMTPResolver(app.NewIntegrationSMTPResolver(repos.Integration, log))
+		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, log))
 	}
 
 	// ==========================================================================
@@ -254,12 +255,12 @@ func run() int {
 	}
 	// Administrator-created accounts. The set-password link is emailed
 	// when SMTP is configured, otherwise returned once to the administrator.
-	var setupMailer app.AccountSetupMailer
+	var setupMailer tenant.AccountSetupMailer
 	if services.Email != nil {
 		setupMailer = services.Email
 	}
 	if services.Role != nil {
-		services.UserProvisioning = app.NewUserProvisioningService(repos.Tenant, repos.User, services.Role, setupMailer, services.Audit, log)
+		services.UserProvisioning = tenant.NewUserProvisioningService(repos.Tenant, repos.User, services.Role, setupMailer, services.Audit, log)
 	}
 
 	// Wire AI triage job enqueuer if service is enabled

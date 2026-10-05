@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -24,11 +24,11 @@ func TestProvisionedUserResponse_ReportsEffectiveRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp := toProvisionedUserResponse(&app.ProvisionedUser{User: u, Membership: m, EffectiveRole: "admin"})
+	resp := toProvisionedUserResponse(&tenant.ProvisionedUser{User: u, Membership: m, EffectiveRole: "admin"})
 	if resp.Role != "admin" {
 		t.Fatalf("role = %q, want admin", resp.Role)
 	}
-	resp = toProvisionedUserResponse(&app.ProvisionedUser{User: u, Membership: m})
+	resp = toProvisionedUserResponse(&tenant.ProvisionedUser{User: u, Membership: m})
 	if resp.Role != "member" {
 		t.Fatalf("without an effective role, role = %q, want the membership label", resp.Role)
 	}

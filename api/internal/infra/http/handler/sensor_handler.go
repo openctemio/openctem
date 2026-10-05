@@ -12,8 +12,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/audit"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
@@ -29,8 +29,8 @@ const sdkVersionUnknown = "unknown"
 
 // SensorHandler handles HTTP requests for sensors.
 type SensorHandler struct {
-	service         *app.SensorService
-	templateService *app.SensorConfigTemplateService
+	service         *sensorapp.SensorService
+	templateService *sensorapp.SensorConfigTemplateService
 	publicAPIURL    string // Public URL sensors will connect to (defaults to API_URL env var)
 	// sensorImage is the image the install snippets run, with its pinned
 	// tag (SENSOR_IMAGE + SENSOR_LATEST_VERSION).
@@ -65,7 +65,7 @@ func (h *SensorHandler) SetZoneLister(z ZoneLister) {
 }
 
 // NewSensorHandler creates a new SensorHandler.
-func NewSensorHandler(service *app.SensorService, v *validator.Validator, log *logger.Logger) *SensorHandler {
+func NewSensorHandler(service *sensorapp.SensorService, v *validator.Validator, log *logger.Logger) *SensorHandler {
 	return &SensorHandler{
 		service:      service,
 		healthPolicy: sensor.DefaultHealthPolicy(),
@@ -108,7 +108,7 @@ func (h *SensorHandler) policyFor(ctx context.Context, tenantID string) sensor.H
 
 // SetTemplateService injects the sensor config template service.
 // Optional dependency — if nil, the config template endpoint returns 503.
-func (h *SensorHandler) SetTemplateService(svc *app.SensorConfigTemplateService) {
+func (h *SensorHandler) SetTemplateService(svc *sensorapp.SensorConfigTemplateService) {
 	h.templateService = svc
 }
 
@@ -469,7 +469,7 @@ func (h *SensorHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	tenantID := middleware.GetTenantID(r.Context())
 
-	input := app.CreateSensorInput{
+	input := sensorapp.CreateSensorInput{
 		TenantID:          tenantID,
 		Name:              req.Name,
 		Type:              req.Type,
@@ -549,7 +549,7 @@ func (h *SensorHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
-	input := app.ListSensorsInput{
+	input := sensorapp.ListSensorsInput{
 		TenantID:      tenantID,
 		Type:          r.URL.Query().Get("type"),
 		Status:        r.URL.Query().Get("status"),
@@ -779,7 +779,7 @@ func (h *SensorHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateSensorInput{
+	input := sensorapp.UpdateSensorInput{
 		TenantID:          tenantID,
 		SensorID:          sensorID,
 		Name:              req.Name,
@@ -1359,14 +1359,14 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 		image = DefaultSensorImage
 	}
 
-	caPEM, caFingerprint, caErr := app.LoadSensorCACertificate(h.caCertFile)
+	caPEM, caFingerprint, caErr := sensorapp.LoadCACertificate(h.caCertFile)
 	if caErr != nil {
 		// Not fatal: the snippets then assume a publicly trusted certificate.
 		h.logger.Warn("sensor CA certificate not usable; install snippets omit it",
 			"path", h.caCertFile, "error", caErr)
 	}
 
-	data := app.SensorTemplateData{
+	data := sensorapp.SensorTemplateData{
 		Sensor:  a,
 		APIKey:  apiKey,
 		BaseURL: baseURL,
@@ -1376,7 +1376,7 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 	if h.zones != nil && a.TenantID != nil {
 		// Best effort: without zones the policy template asks for ranges.
 		if zones, zerr := h.zones.List(r.Context(), *a.TenantID); zerr == nil {
-			data.Policy = app.PolicyFromZones(zones, a.ID)
+			data.Policy = sensorapp.PolicyFromZones(zones, a.ID)
 		} else {
 			h.logger.Warn("scan zones not read for the policy template", "error", logger.SanitizeError(zerr))
 		}

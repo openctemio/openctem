@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -46,7 +46,7 @@ func (h *VulnerabilityHandler) AddFindingDuplicate(w http.ResponseWriter, r *htt
 		return
 	}
 	ctx := r.Context()
-	f, err := h.service.MarkDuplicateOf(ctx, app.MarkDuplicateInput{
+	f, err := h.service.MarkDuplicateOf(ctx, finding.MarkDuplicateInput{
 		TenantID:      middleware.MustGetTenantID(ctx),
 		FindingID:     req.FindingID,
 		DuplicateOfID: r.PathValue("id"),

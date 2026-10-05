@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -47,11 +47,11 @@ func TestFederatedSession_SSOEnforcement_IssuingOrgOnly(t *testing.T) {
 		wantClaim string
 	}
 	cases := []tc{
-		{"org B SAML session -> org A (SSO enforced) refused", session.AuthMethodSAML, "B", "A", "member", true, app.ErrSSORequired, ""},
-		{"org B OIDC session -> org A (SSO enforced) refused", session.AuthMethodSSO, "B", "A", "member", true, app.ErrSSORequired, ""},
+		{"org B SAML session -> org A (SSO enforced) refused", session.AuthMethodSAML, "B", "A", "member", true, auth.ErrSSORequired, ""},
+		{"org B OIDC session -> org A (SSO enforced) refused", session.AuthMethodSSO, "B", "A", "member", true, auth.ErrSSORequired, ""},
 		{"org B SAML session -> org B (SSO enforced) allowed", session.AuthMethodSAML, "B", "B", "member", true, nil, "saml"},
 		{"org A own IdP session -> org A (SSO enforced) allowed", session.AuthMethodSSO, "A", "A", "member", true, nil, "sso"},
-		{"social OAuth session -> org A (SSO enforced) refused", session.AuthMethodSSO, "", "A", "member", true, app.ErrSSORequired, ""},
+		{"social OAuth session -> org A (SSO enforced) refused", session.AuthMethodSSO, "", "A", "member", true, auth.ErrSSORequired, ""},
 		{"social OAuth session -> org A (not enforced) allowed as password", session.AuthMethodSSO, "", "A", "member", false, nil, "password"},
 		{"org B session -> org A (not enforced) allowed as password", session.AuthMethodSAML, "B", "A", "admin", false, nil, "password"},
 		{"org B session -> org A OWNER (break-glass) allowed as password", session.AuthMethodSAML, "B", "A", "owner", true, nil, "password"},
@@ -80,14 +80,14 @@ func TestFederatedSession_SSOEnforcement_IssuingOrgOnly(t *testing.T) {
 				var access string
 				var err error
 				if op == "exchange" {
-					var res *app.ExchangeTokenResult
-					res, err = svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{RefreshToken: rt, TenantID: target})
+					var res *auth.ExchangeTokenResult
+					res, err = svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: rt, TenantID: target})
 					if res != nil {
 						access = res.AccessToken
 					}
 				} else {
-					var res *app.RefreshTokenResult
-					res, err = svc.RefreshToken(context.Background(), app.RefreshTokenInput{RefreshToken: rt, TenantID: target})
+					var res *auth.RefreshTokenResult
+					res, err = svc.RefreshToken(context.Background(), auth.RefreshTokenInput{RefreshToken: rt, TenantID: target})
 					if res != nil {
 						access = res.AccessToken
 					}
@@ -117,7 +117,7 @@ func TestFederatedSession_SSOEnforcement_IssuingOrgOnly(t *testing.T) {
 }
 
 func TestFederatedSession_MFARequirement_IssuingOrgOnly(t *testing.T) {
-	setup := func(t *testing.T, enrolled bool) (*mfaHarness, *tenant.Tenant, *tenant.Tenant, *app.LoginResult) {
+	setup := func(t *testing.T, enrolled bool) (*mfaHarness, *tenant.Tenant, *tenant.Tenant, *auth.LoginResult) {
 		t.Helper()
 		h := newMFAHarness(t)
 		a := newPolicyTenant(t, h.tenants, "mfa-org-a", false)
@@ -132,7 +132,7 @@ func TestFederatedSession_MFARequirement_IssuingOrgOnly(t *testing.T) {
 			h.forgetLastStep(uid)
 			ch := h.login(t, "fed2fa@example.com").MFAChallenge
 			var err error
-			res, err = h.svc.VerifyMFALogin(context.Background(), app.VerifyMFAInput{Token: ch.Token, Code: currentCode(t, secret)})
+			res, err = h.svc.VerifyMFALogin(context.Background(), auth.VerifyMFAInput{Token: ch.Token, Code: currentCode(t, secret)})
 			if err != nil {
 				t.Fatalf("verify: %v", err)
 			}
@@ -151,8 +151,8 @@ func TestFederatedSession_MFARequirement_IssuingOrgOnly(t *testing.T) {
 		for _, enrolled := range []bool{false, true} {
 			h, a, b, res := setup(t, enrolled)
 			federate(h.sessions.sessions[res.SessionID], session.AuthMethodSAML, b.ID())
-			_, err := h.svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: a.ID().String()})
-			if !errors.Is(err, app.ErrMFAEnrollmentRequired) {
+			_, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: a.ID().String()})
+			if !errors.Is(err, auth.ErrMFAEnrollmentRequired) {
 				t.Fatalf("enrolled=%v: want ErrMFAEnrollmentRequired, got %v", enrolled, err)
 			}
 		}
@@ -161,7 +161,7 @@ func TestFederatedSession_MFARequirement_IssuingOrgOnly(t *testing.T) {
 	t.Run("org B SAML session -> org B requiring 2FA: allowed (its IdP owns the factor)", func(t *testing.T) {
 		h, _, b, res := setup(t, false)
 		federate(h.sessions.sessions[res.SessionID], session.AuthMethodSAML, b.ID())
-		if _, err := h.svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: b.ID().String()}); err != nil {
+		if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: b.ID().String()}); err != nil {
 			t.Fatalf("issuing org must admit its own SSO session, got %v", err)
 		}
 	})
@@ -170,8 +170,8 @@ func TestFederatedSession_MFARequirement_IssuingOrgOnly(t *testing.T) {
 		for _, enrolled := range []bool{false, true} {
 			h, a, _, res := setup(t, enrolled)
 			federate(h.sessions.sessions[res.SessionID], session.AuthMethodSSO, shared.ID{})
-			_, err := h.svc.RefreshToken(context.Background(), app.RefreshTokenInput{RefreshToken: res.RefreshToken, TenantID: a.ID().String()})
-			if !errors.Is(err, app.ErrMFAEnrollmentRequired) {
+			_, err := h.svc.RefreshToken(context.Background(), auth.RefreshTokenInput{RefreshToken: res.RefreshToken, TenantID: a.ID().String()})
+			if !errors.Is(err, auth.ErrMFAEnrollmentRequired) {
 				t.Fatalf("enrolled=%v: want ErrMFAEnrollmentRequired, got %v", enrolled, err)
 			}
 		}

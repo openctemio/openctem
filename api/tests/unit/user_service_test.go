@@ -9,7 +9,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
@@ -185,9 +185,9 @@ func (m *mockUserRepo) GetByPasswordResetToken(_ context.Context, _ string) (*us
 // Test Helpers
 // =============================================================================
 
-func newTestUserService(repo *mockUserRepo) *app.UserService {
+func newTestUserService(repo *mockUserRepo) *tenant.UserService {
 	log := logger.NewNop()
-	return app.NewUserService(repo, log)
+	return tenant.NewUserService(repo, log)
 }
 
 // createUserForTest creates a test user and stores it in the mock repo.
@@ -650,7 +650,7 @@ func TestUpdateProfile_Success_AllFields(t *testing.T) {
 	newPhone := "+1234567890"
 	newAvatar := "https://example.com/avatar.png"
 
-	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), app.UpdateProfileInput{
+	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{
 		Name:      &newName,
 		Phone:     &newPhone,
 		AvatarURL: &newAvatar,
@@ -677,7 +677,7 @@ func TestUpdateProfile_Success_PartialUpdate(t *testing.T) {
 
 	// Only update name, leave phone and avatar unchanged
 	newName := "Partial Update"
-	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), app.UpdateProfileInput{
+	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{
 		Name: &newName,
 	})
 	if err != nil {
@@ -699,7 +699,7 @@ func TestUpdateProfile_Success_NoChanges(t *testing.T) {
 	u := createUserForTest(t, repo, "nochange@test.com", "Same Name")
 
 	// Empty input should keep all fields the same
-	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), app.UpdateProfileInput{})
+	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{})
 	if err != nil {
 		t.Fatalf("UpdateProfile failed: %v", err)
 	}
@@ -713,7 +713,7 @@ func TestUpdateProfile_NotFound(t *testing.T) {
 	svc := newTestUserService(repo)
 
 	newName := "Updated"
-	_, err := svc.UpdateProfile(context.Background(), shared.NewID().String(), app.UpdateProfileInput{
+	_, err := svc.UpdateProfile(context.Background(), shared.NewID().String(), tenant.UpdateProfileInput{
 		Name: &newName,
 	})
 	if err == nil {
@@ -729,7 +729,7 @@ func TestUpdateProfile_InvalidID(t *testing.T) {
 	svc := newTestUserService(repo)
 
 	newName := "Updated"
-	_, err := svc.UpdateProfile(context.Background(), "bad-uuid", app.UpdateProfileInput{
+	_, err := svc.UpdateProfile(context.Background(), "bad-uuid", tenant.UpdateProfileInput{
 		Name: &newName,
 	})
 	if err == nil {
@@ -748,7 +748,7 @@ func TestUpdateProfile_RepoUpdateError(t *testing.T) {
 	repo.updateErr = fmt.Errorf("db write failed")
 
 	newName := "Should Fail"
-	_, err := svc.UpdateProfile(context.Background(), u.ID().String(), app.UpdateProfileInput{
+	_, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{
 		Name: &newName,
 	})
 	if err == nil {
@@ -1065,7 +1065,7 @@ func TestUserService_InvalidIDFormats(t *testing.T) {
 			svc := newTestUserService(repo)
 
 			name := "Test"
-			_, err := svc.UpdateProfile(context.Background(), tc.id, app.UpdateProfileInput{Name: &name})
+			_, err := svc.UpdateProfile(context.Background(), tc.id, tenant.UpdateProfileInput{Name: &name})
 			if err == nil {
 				t.Errorf("Expected error for ID '%s'", tc.id)
 			}
@@ -1146,7 +1146,7 @@ func TestUpdateProfile_GetByIDError(t *testing.T) {
 	repo.getByIDErr = fmt.Errorf("db connection lost")
 
 	name := "Should Fail"
-	_, err := svc.UpdateProfile(context.Background(), u.ID().String(), app.UpdateProfileInput{
+	_, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{
 		Name: &name,
 	})
 	if err == nil {

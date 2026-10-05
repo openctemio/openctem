@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assettype"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -201,11 +201,11 @@ func (m *mockCategoryRepository) ListActive(_ context.Context) ([]*assettype.Cat
 // Helper Functions
 // ============================================================================
 
-func newTestAssetTypeService() (*app.AssetTypeService, *mockAssetTypeRepository, *mockCategoryRepository) {
+func newTestAssetTypeService() (*asset.AssetTypeService, *mockAssetTypeRepository, *mockCategoryRepository) {
 	repo := newMockAssetTypeRepository()
 	catRepo := newMockCategoryRepository()
 	log := logger.NewNop()
-	svc := app.NewAssetTypeService(repo, catRepo, log)
+	svc := asset.NewAssetTypeService(repo, catRepo, log)
 	return svc, repo, catRepo
 }
 
