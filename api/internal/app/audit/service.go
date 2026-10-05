@@ -237,8 +237,11 @@ func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limi
 	res := &ChainVerifyResult{
 		TenantID: tenantID.String(),
 	}
-	var prevStored string
-	err := s.walkChain(ctx, tenantID, limit, func(e auditdom.ChainEntry) error {
+	prevStored, err := s.chainStart(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	err = s.walkChain(ctx, tenantID, limit, func(e auditdom.ChainEntry) error {
 		res.Total++
 		// 1. Fetch the original audit_log. If it's gone, flag it — a
 		//    deleted row is a tamper signal (FK ON DELETE RESTRICT
@@ -308,6 +311,20 @@ func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limi
 	return res, nil
 }
 
+// chainStart is the prev_hash a tenant's oldest remaining chain entry links
+// to: the newest retention anchor, or "" when the chain was never pruned.
+func (s *AuditService) chainStart(ctx context.Context, tenantID shared.ID) (string, error) {
+	ar, ok := s.auditRepo.(auditdom.ChainAnchorReader)
+	if !ok {
+		return "", nil
+	}
+	h, err := ar.ChainAnchorHash(ctx, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("read chain anchor: %w", err)
+	}
+	return h, nil
+}
+
 // RebaselineResult is the outcome of a RebaselineChain call.
 type RebaselineResult struct {
 	// RebaselineID identifies the archived record (audit_chain_rebaselines)
@@ -349,8 +366,12 @@ var ErrChainFingerprintMismatch = fmt.Errorf("%w: audit chain changed since it w
 // how many verify, how many are explained by a known hashing defect, and how
 // many are not. The report's fingerprint names the exact chain classified.
 func (s *AuditService) ClassifyChain(ctx context.Context, tenantID shared.ID) (*chainclassify.Report, error) {
-	b := chainclassify.NewBuilder()
-	err := s.walkChain(ctx, tenantID, 0, func(e auditdom.ChainEntry) error {
+	start, err := s.chainStart(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	b := chainclassify.NewBuilderFrom(start)
+	err = s.walkChain(ctx, tenantID, 0, func(e auditdom.ChainEntry) error {
 		log, err := s.chainSource(ctx, tenantID, e)
 		if err != nil || log == nil {
 			b.AddMissing(e.ChainPosition, e.AuditLogID.String(), e.PrevHash, e.Hash)
@@ -461,12 +482,18 @@ func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID,
 		rb.ActorID = &id
 	}
 
+	start, err := s.chainStart(ctx, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
 	var classify *chainclassify.Builder
 	if guard != nil {
-		classify = chainclassify.NewBuilder()
+		classify = chainclassify.NewBuilderFrom(start)
 	}
-	prev := ""
-	err := s.walkChain(ctx, tenantID, 0, func(e auditdom.ChainEntry) error {
+	// A pruned chain is re-signed from its retention anchor, so it still
+	// links to the archived prefix.
+	prev := start
+	err = s.walkChain(ctx, tenantID, 0, func(e auditdom.ChainEntry) error {
 		rb.EntriesTotal++
 		log, err := s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
 		if err != nil || log == nil {
@@ -848,28 +875,6 @@ func (s *AuditService) GetUserActivity(ctx context.Context, tenantID shared.ID, 
 // ============================================
 // RETENTION OPERATIONS
 // ============================================
-
-// CleanupOldLogs removes audit logs older than the retention period.
-// Preserves high and critical severity logs.
-func (s *AuditService) CleanupOldLogs(ctx context.Context, retentionDays int) (int64, error) {
-	if retentionDays < 30 {
-		return 0, fmt.Errorf("%w: retention period must be at least 30 days", shared.ErrValidation)
-	}
-
-	before := time.Now().AddDate(0, 0, -retentionDays)
-	count, err := s.auditRepo.DeleteOlderThan(ctx, before)
-	if err != nil {
-		return 0, err
-	}
-
-	s.logger.Info("audit log cleanup completed",
-		"deleted_count", count,
-		"retention_days", retentionDays,
-		"before", before,
-	)
-
-	return count, nil
-}
 
 // ============================================
 // STATISTICS
