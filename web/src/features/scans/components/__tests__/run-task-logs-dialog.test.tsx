@@ -22,7 +22,7 @@ describe('RunTaskLogsDialog', () => {
         {
           ts: '2026-10-05T10:00:00Z',
           level: 'warn',
-          msg: '<img src=x onerror=alert(1)> evil‮end',
+          msg: '<img src=x onerror=alert(1)> evil\u202eend',
           source: 'nuclei',
           fields: { target: 'https://a.example', n: 3 },
         },
@@ -38,7 +38,7 @@ describe('RunTaskLogsDialog', () => {
     // Markup in a line is text, never an element; a bidi override is shown as an escape.
     expect(items[0].querySelector('img')).toBeNull()
     expect(items[0]).toHaveTextContent('<img src=x onerror=alert(1)>')
-    expect(items[0].textContent).not.toContain('‮')
+    expect(items[0].textContent).not.toContain('\u202e')
     expect(within(items[0]).getByText('warn')).toBeInTheDocument()
     expect(within(items[0]).getByText('nuclei')).toBeInTheDocument()
     expect(within(items[0]).getByText('2 fields')).toBeInTheDocument()

@@ -23,7 +23,7 @@ func TestSensorV2Logs_HolderStoresOnceOthersNotFound(t *testing.T) {
 
 	secret := "octs_" + strings.Repeat("Z", 40)
 	batch := map[string]any{"seq": 0, "lines": []map[string]any{
-		{"ts": "2026-10-05T10:00:00Z", "level": "warn", "msg": "using key " + secret + "‮", "source": "nuclei",
+		{"ts": "2026-10-05T10:00:00Z", "level": "warn", "msg": "using key " + secret + "\u202e", "source": "nuclei",
 			"fields": map[string]any{"target": "https://a.example", "n": 3}},
 		{"ts": "2026-10-05T10:00:01Z", "level": "info", "msg": "done"},
 	}}
@@ -45,7 +45,7 @@ func TestSensorV2Logs_HolderStoresOnceOthersNotFound(t *testing.T) {
 	if rows != 1 || lines != 2 {
 		t.Fatalf("%d rows, %d lines after a replay", rows, lines)
 	}
-	if strings.Contains(stored, secret) || strings.Contains(stored, "‮") {
+	if strings.Contains(stored, secret) || strings.Contains(stored, "\u202e") {
 		t.Fatalf("stored without platform redaction or cleaning: %s", stored)
 	}
 
