@@ -30,6 +30,21 @@ func TestLockForDDL_BacksOffBeforeADeadlock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
+	// The DDL transaction takes LockForDDL's advisory lock BEFORE the writer
+	// locks assets. Other test packages run in parallel and serialise their
+	// DDL on that advisory lock; if the writer held assets first, one of them
+	// could hold the advisory lock while waiting for assets, and this test's
+	// DDL would wait for the advisory lock: nobody moves until the timeout.
+	// Advisory locks stack, so LockForDDL below takes it again without waiting.
+	ddl, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ddl.Rollback() }()
+	if _, err := ddl.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, ddlAdvisoryKey); err != nil {
+		t.Fatal(err)
+	}
+
 	writer, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -38,12 +53,6 @@ func TestLockForDDL_BacksOffBeforeADeadlock(t *testing.T) {
 	if _, err := writer.ExecContext(ctx, `LOCK TABLE assets IN ROW EXCLUSIVE MODE`); err != nil {
 		t.Fatal(err)
 	}
-
-	ddl, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ddl.Rollback() }()
 	var ddlPID int
 	if err := ddl.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&ddlPID); err != nil {
 		t.Fatal(err)
