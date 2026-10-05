@@ -3,6 +3,7 @@ package audit
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -33,7 +34,7 @@ const (
 var secretFieldMarkers = []string{
 	"secret", "password", "passwd", "api_key", "apikey", "private_key",
 	"access_token", "refresh_token", "credential", "token_hash", "bearer",
-	"hec_token", "bot_token", "access_key",
+	"hec_token", "bot_token", "access_key", "authorization", "cookie", "header",
 }
 
 // IsSecretField reports whether a field (last path segment) holds a secret.
@@ -188,6 +189,7 @@ func flattenInto(out map[string]any, prefix string, m map[string]any) {
 func truncateDiffValue(v any) any {
 	switch val := v.(type) {
 	case string:
+		val = stripURLPassword(val)
 		if len(val) > maxDiffStringLen {
 			cut := maxDiffStringLen
 			for cut > 0 && !utf8.RuneStart(val[cut]) {
@@ -216,4 +218,22 @@ func truncateDiffValue(v any) any {
 	default:
 		return val
 	}
+}
+
+// stripURLPassword hides the password of a URL with user info
+// (user info with a password before the host), so a credential embedded in a URL is not
+// recorded either.
+func stripURLPassword(v string) string {
+	if !strings.Contains(v, "://") || !strings.Contains(v, "@") {
+		return v
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.User == nil {
+		return v
+	}
+	if _, has := u.User.Password(); has {
+		u.User = url.UserPassword(u.User.Username(), "xxxxx")
+		return u.String()
+	}
+	return v
 }
