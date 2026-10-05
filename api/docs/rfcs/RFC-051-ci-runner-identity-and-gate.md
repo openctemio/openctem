@@ -57,7 +57,7 @@ Per tenant (`ci_trust_configs`, migration 001077):
 | `rules.refs` | Branches or tags (`main`, `release/*`, `refs/tags/v*`); for a pull request, its source branch |
 | `rules.environments`, `rules.events` | Optional allowlists of the deployment environment and the trigger event |
 | `rules.allow_fork_pull_requests` | Admit `pull_request_target`, `workflow_run` and `external_pull_request_event`, which run fork code with the base repository's identity. Off by default |
-| `rules.require_protected_ref` | GitLab: only protected branches and tags |
+| `rules.require_protected_ref` | Only protected branches and tags. GitLab: the `ref_protected` claim. GitHub tokens carry no such claim: the configuration must list `environments` and the job must run in one of them (environments whose deployment branch rules admit only protected refs); a GitHub configuration with the switch and no environments is refused |
 | `default_branch` | The baseline branch when the platform does not know the repository's default branch yet. A pipeline cannot set it |
 
 A configuration must name at least one owner or repository: there is no "any
@@ -120,7 +120,13 @@ repository asset and reopen findings on it, never another asset; it never
 resolves findings on a source's say-so and never writes the global
 vulnerability catalog; findings carry no sensor id. The stored fingerprints the
 report sighted are recorded for the run (`ci_run_findings`, at most 100,000 per
-run). Uploads use the ingest per-tenant rate limit and concurrency cap.
+run). Uploads use the ingest per-tenant rate limit and concurrency cap. A run
+accepts at most 200 reports (`409` beyond), and a pipeline may start at most
+300 runs an hour (the exchange is refused beyond, audited `pipeline_rate`).
+A secret finding is never stored in clear whatever the runner sends: the
+runner masks it, and the server keeps only a preview of at most four
+characters at each end (`vulnerability.MaskSecretPreview`), redacts the
+snippet and fingerprints the value with a keyed per-tenant HMAC.
 
 `POST /api/v1/ci/runs/{id}/baseline-diff` splits fingerprints into new and
 already open on the default branch, for inline comments on new findings only.
