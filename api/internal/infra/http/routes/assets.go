@@ -259,26 +259,6 @@ func registerScopeRoutes(
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteExclusion, middleware.Require(permission.ScopeDelete))
 	}, tenantMiddlewares...)
-
-	// Scan Schedule routes
-	router.Group("/api/v1/scope/schedules", func(r Router) {
-		// Read operations
-		r.GET("/", h.ListSchedules, middleware.Require(permission.ScopeRead))
-		r.GET("/{id}", h.GetSchedule, middleware.Require(permission.ScopeRead))
-
-		// Write operations
-		r.POST("/", h.CreateSchedule, middleware.Require(permission.ScopeWrite))
-		r.PUT("/{id}", h.UpdateSchedule, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/enable", h.EnableSchedule, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/disable", h.DisableSchedule, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/run", h.RunScheduleNow, middleware.Require(permission.ScopeWrite))
-
-		// Bulk operations
-		r.POST("/bulk/delete", h.BulkDeleteSchedules, middleware.Require(permission.ScopeDelete))
-
-		// Delete operations
-		r.DELETE("/{id}", h.DeleteSchedule, middleware.Require(permission.ScopeDelete))
-	}, tenantMiddlewares...)
 }
 
 // registerAssetTypeRoutes registers asset type management endpoints.
@@ -402,6 +382,27 @@ func registerEASMSeedRoutes(
 		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
 		r.PATCH("/{id}", h.Update, middleware.Require(permission.ScopeWrite))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
+	}, tenantMiddlewares...)
+}
+
+// registerEASMSettingsRoutes registers the tenant's attack-surface monitoring
+// settings and run-now (research/22 P0-11), behind the attack_surface module.
+func registerEASMSettingsRoutes(
+	router Router,
+	h *handler.EASMSettingsHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	// Own sub-paths: registerEASMRoutes already mounts /api/v1/easm, and chi
+	// panics when the same path is mounted twice.
+	router.Group("/api/v1/easm/settings", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
+		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/easm/sweeps", func(r Router) {
+		r.POST("/", h.RunNow, middleware.Require(permission.ScopeWrite))
 	}, tenantMiddlewares...)
 }
 

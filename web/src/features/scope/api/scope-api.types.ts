@@ -10,7 +10,6 @@
 import type {
   ApiResponse,
   Schemas,
-  ScanScheduleResponse,
   ScopeBulkOperationResponse,
   ScopeExclusionResponse,
   ScopeMatchResponse,
@@ -36,7 +35,6 @@ import type {
 
 export type ApiScopeTarget = ScopeTargetResponse
 export type ApiScopeExclusion = ScopeExclusionResponse
-export type ApiScanSchedule = ScanScheduleResponse
 export type ApiScopeStats = ScopeStatsResponse
 export type ApiCheckScopeResponse = ScopeMatchResponse
 export type BulkOperationResponse = ScopeBulkOperationResponse
@@ -45,7 +43,6 @@ export type PaginationLinks = Schemas['internal_infra_http_handler.PaginationLin
 
 export type ApiScopeTargetListResponse = ApiResponse<'/scope/targets', 'get'>
 export type ApiScopeExclusionListResponse = ApiResponse<'/scope/exclusions', 'get'>
-export type ApiScanScheduleListResponse = ApiResponse<'/scope/schedules', 'get'>
 
 /**
  * Input for checking if a value is in scope
@@ -99,44 +96,6 @@ export interface UpdateScopeExclusionInput {
   expires_at?: string
 }
 
-/**
- * Input for creating a scan schedule
- */
-export interface CreateScanScheduleInput {
-  name: string
-  description?: string
-  scan_type: string
-  target_scope?: string
-  target_ids?: string[]
-  target_tags?: string[]
-  scanner_configs?: Record<string, unknown>
-  schedule_type: string
-  cron_expression?: string
-  interval_hours?: number
-  notify_on_completion?: boolean
-  notify_on_findings?: boolean
-  notification_channels?: string[]
-}
-
-/**
- * Input for updating a scan schedule
- */
-export interface UpdateScanScheduleInput {
-  name?: string
-  description?: string
-  target_scope?: string
-  target_ids?: string[]
-  target_tags?: string[]
-  scanner_configs?: Record<string, unknown>
-  schedule_type?: string
-  cron_expression?: string
-  interval_hours?: number
-  enabled?: boolean
-  notify_on_completion?: boolean
-  notify_on_findings?: boolean
-  notification_channels?: string[]
-}
-
 // ============================================
 // Filter Types
 // ============================================
@@ -161,16 +120,6 @@ export interface ScopeExclusionFilters {
   sort_order?: 'asc' | 'desc'
 }
 
-export interface ScanScheduleFilters {
-  scan_type?: string
-  enabled?: boolean
-  search?: string
-  page?: number
-  per_page?: number
-  sort_by?: 'created_at' | 'updated_at' | 'name' | 'next_run_at'
-  sort_order?: 'asc' | 'desc'
-}
-
 // ============================================
 // Bulk Operation Types
 // ============================================
@@ -181,10 +130,6 @@ export interface BulkDeleteTargetsInput {
 
 export interface BulkDeleteExclusionsInput {
   exclusion_ids: string[]
-}
-
-export interface BulkDeleteSchedulesInput {
-  schedule_ids: string[]
 }
 
 export interface BulkUpdateTargetsInput {

@@ -241,8 +241,9 @@ export function LifecycleSettingsForm({
           <div className="space-y-3">
             <Label>Excluded source types</Label>
             <p className="text-xs text-muted-foreground">
-              Assets whose only sources fall into these categories will never be auto-demoted.
-              Manual and imported assets default to excluded.
+              Assets discovered this way are never auto-demoted. The category comes from how the
+              asset was discovered; assets created by hand count as manual. Manual and imported
+              assets default to excluded.
             </p>
             <div className="flex flex-wrap gap-2">
               {KNOWN_SOURCE_TYPES.map((type) => {
