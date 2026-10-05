@@ -22,6 +22,11 @@ You need `scans:ci:write` (owners and administrators).
   request is matched on its source branch.
 - **Environments**, **Events** (optional): require a deployment environment or
   limit trigger events.
+- **Protected branches and tags only**: admits only jobs on a protected ref.
+  GitLab says so in the token (`ref_protected`). GitHub tokens do not, so on
+  GitHub the switch requires **Environments**: list deployment environments
+  whose deployment branch rules admit only protected branches and tags, and
+  run the scan job in one of them.
 - **Admit fork pull requests**: leave off. Events such as
   `pull_request_target` run fork code with your repository's identity.
 - **Default branch**: the baseline used until the platform learns the
@@ -52,7 +57,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: OpenCTEM security scan
-        uses: docker://ghcr.io/openctemio/sensor:latest-ci
+        # A release pinned by digest, never a moving tag (verify it with cosign;
+        # see the GitLab guide's Security notes).
+        uses: docker://ghcr.io/openctemio/sensor:v0.9.1-ci@sha256:97f5512165d2c79240bb01f4cdbc710b85b1517cca95d4015aa39d35c60017e1
         with:
           args: -tools semgrep,betterleaks,trivy -target . -auto-ci -push
         env:
@@ -67,9 +74,11 @@ token from GitHub on `pull_request`; that is intended.
 
 ## 3. GitLab CI
 
+Step-by-step GitLab guide (variables, templates, enforcing the gate, self-managed GitLab, troubleshooting): [Run OpenCTEM security scans in GitLab CI/CD](gitlab-ci.md).
+
 ```yaml
 openctem-security:
-  image: ghcr.io/openctemio/sensor:latest-ci
+  image: ghcr.io/openctemio/sensor:v0.9.1-ci@sha256:97f5512165d2c79240bb01f4cdbc710b85b1517cca95d4015aa39d35c60017e1
   id_tokens:
     OPENCTEM_ID_TOKEN:
       aud: openctem:tenant:<your organization id>
@@ -103,7 +112,10 @@ honored; a scanner that fails to run fails the job. **Warn** mode reports what
 would fail and passes.
 
 When a release cannot wait, **Break-glass** lets one commit pass for a limited
-time with a reason; it is audited, and so is each run it lets through.
+time with a reason; it is audited, and so is each run it lets through. Every
+owner and administrator is notified in-app when it is created and each time
+it is used, and so are channels subscribed to **CI Break-glass**. A burst of
+refused token exchanges raises **CI Token Refusals**.
 
 When the platform cannot be reached, `-fail-on <severity>` makes the sensor
 judge locally instead.

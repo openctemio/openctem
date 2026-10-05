@@ -101,7 +101,7 @@ func newCIRig(t *testing.T) *ciRig {
 	return newCIRigWith(t, cirunapp.Config{WebBaseURL: "https://console.example"})
 }
 
-func newCIRigWith(t *testing.T, cfg cirunapp.Config) *ciRig {
+func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps)) *ciRig {
 	t.Helper()
 	sqldb := setupTestDB(t)
 	t.Cleanup(func() { _ = sqldb.Close() })
@@ -114,11 +114,15 @@ func newCIRigWith(t *testing.T, cfg cirunapp.Config) *ciRig {
 		postgres.NewAuditRepository(db), log)
 	idp := newCIIdP(t)
 	repo := postgres.NewCIRunRepository(db)
-	svc := cirunapp.NewService(cirunapp.Deps{
+	d := cirunapp.Deps{
 		Repo: repo, Verifier: oidc.NewClient(idp.srv.Client(), nil), Assets: postgres.NewAssetRepository(db),
 		Branches: postgres.NewBranchRepository(db), Baseline: postgres.NewFindingRepository(db), Ingester: ing,
 		Units: repo, Audit: auditapp.NewAuditService(postgres.NewAuditRepository(db), log),
-	}, cfg, log)
+	}
+	for _, f := range deps {
+		f(&d)
+	}
+	svc := cirunapp.NewService(d, cfg, log)
 
 	h := handler.NewCIRunnerHandler(svc, log)
 	router := infrahttp.NewChiRouter()
