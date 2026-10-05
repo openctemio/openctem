@@ -107,7 +107,25 @@ time with a reason; it is audited, and so is each run it lets through.
 When the platform cannot be reached, `-fail-on <severity>` makes the sensor
 judge locally instead.
 
-## 5. Moving off API keys
+## 5. Where pipelines show up
+
+Each workflow file of each repository that ran with OIDC appears on the
+**Sensors** page in **Runner** mode, as a CI pipeline (the branch never adds a
+row). Its badge says how it ran, never "offline":
+
+| Badge | Meaning |
+|---|---|
+| Running | a run started less than six hours ago and is not evaluated yet |
+| Fresh | it ran within its expected cadence |
+| Stale | it missed two scheduled cycles, or has been silent for three times its usual interval (7 to 30 days) |
+| Failing | its last default-branch run failed the gate |
+| Degraded | scanners failed in its last run, or its runner is older than the minimum supported version |
+| Archived · Revoked · Never | inactive: idle for 90 days, its trust configuration was disabled or deleted, or only fork runs so far. Hidden unless you show inactive rows; nothing is deleted, and the next run brings it back |
+
+Disabling or deleting a trust configuration revokes its pipelines and stops
+the upload tokens of their running jobs at once.
+
+## 6. Moving off API keys
 
 A runner sensor's API key still works; its responses carry a `Deprecation`
 header and the sensor prints a warning. Once the pipeline runs with OIDC,
@@ -120,4 +138,6 @@ delete the `API_KEY` secret from CI and revoke the runner sensor's key.
 | `The CI token was not accepted` | No trust configuration admits the job, a wrong audience, or a token used twice. Owners and admins see the reason under Settings > Audit log (`ci_run.token_refused`), except for tokens that did not verify |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than the job's repository |
 | Every finding counts as new | The default branch was never scanned: run the pipeline on the default branch once |
+| `The CI token was not accepted` and `pipeline_identity` in the audit log | The token carries no repository/project id or no usable workflow path |
+| `The CI token was not accepted` and `pipeline_cap` in the audit log | The organization has the most CI pipelines it may have; existing pipelines keep running |
 | `401` on upload after a long scan | The 15-minute run token expired; on GitHub the sensor renews it, on GitLab shorten the time between the first upload and the verdict |
