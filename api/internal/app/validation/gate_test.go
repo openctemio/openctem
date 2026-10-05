@@ -67,7 +67,16 @@ func (a tenantAttribution) ActiveCheckBlocked(_ context.Context, tenantID shared
 	return out, nil
 }
 
+// BlockedTargets: typed targets without an asset are not refused here.
+func (a tenantAttribution) BlockedTargets(context.Context, shared.ID, []string) (map[string]attribution.State, error) {
+	return map[string]attribution.State{}, nil
+}
+
 type failingAttribution struct{}
+
+func (failingAttribution) BlockedTargets(context.Context, shared.ID, []string) (map[string]attribution.State, error) {
+	return nil, errors.New("db down")
+}
 
 func (failingAttribution) ActiveCheckBlocked(context.Context, shared.ID, []string) (map[string]attribution.State, error) {
 	return nil, errors.New("db down")

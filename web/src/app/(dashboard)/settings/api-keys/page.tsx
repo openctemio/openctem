@@ -65,8 +65,9 @@ const EXPIRY_OPTIONS = [
   { value: '30', label: '30 days' },
   { value: '90', label: '90 days' },
   { value: '365', label: '1 year' },
-  { value: '0', label: 'Never' },
 ]
+// Every key expires, at most a year after it is created (the API refuses
+// anything else).
 
 function isExpired(k: APIKey): boolean {
   return !!k.expires_at && new Date(k.expires_at).getTime() < Date.now()

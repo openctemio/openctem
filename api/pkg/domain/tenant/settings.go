@@ -1057,21 +1057,13 @@ func (s *Settings) ToMap() map[string]any {
 }
 
 // SettingsFromMap converts map[string]any to Settings.
+//
+// Each section is decoded on its own (SettingsFromMapChecked): a section that
+// cannot be decoded falls back to its default without affecting the others.
+// Enforcement points that must fail closed on a corrupt security section use
+// Tenant.SecuritySettingsStrict instead.
 func SettingsFromMap(m map[string]any) Settings {
-	if len(m) == 0 {
-		return DefaultSettings()
-	}
-	data, _ := json.Marshal(m)
-	var settings Settings
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return DefaultSettings()
-	}
-
-	// Ensure risk_scoring has valid defaults if not present in the map
-	if _, ok := m["risk_scoring"]; !ok {
-		settings.RiskScoring = LegacyRiskScoringSettings()
-	}
-
+	settings, _ := SettingsFromMapChecked(m)
 	return settings
 }
 

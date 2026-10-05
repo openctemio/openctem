@@ -127,6 +127,11 @@ membership created, `active:false` suspends + revokes sessions, uniqueness →
   member; `owner` never assignable. PATCH supports Okta value-arrays + Azure
   `members[value eq "id"]` path filters. Verified end-to-end against real
   Postgres (provision → group → role reconcile → revert).
+  Amended 2026-10-04 (23b S-H1): the admin role is granted or removed only
+  through a mapping the owner configured (owner-only to add, change or remove
+  a mapping to admin; no "admin" name default; provenance in migration
+  `000911`), and mapping saves plus SCIM role changes are audited at High.
+  Details in `docs/architecture/scim-provisioning.md`.
 - **UI** — admin screen to mint/revoke the token + show the SCIM base URL.
   _(deferred)_
 
