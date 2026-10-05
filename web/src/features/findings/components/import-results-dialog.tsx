@@ -106,9 +106,10 @@ export function ImportResultsDialog({ open, onOpenChange, onImported }: ImportRe
         <DialogHeader>
           <DialogTitle>Import results</DialogTitle>
           <DialogDescription>
-            Upload results another tool exported: Nessus, Qualys, CycloneDX, SPDX, OSV, CSAF,
-            OpenVEX or DefectDojo, or a ZIP of them. The format is detected from the file. Findings
-            land only on assets you can change, and an import never resolves other findings.
+            Upload results another tool exported: Nessus, Qualys, SARIF, trivy, grype, semgrep,
+            gitleaks, nuclei, ZAP, vuls, CycloneDX, SPDX, OSV, CSAF, OpenVEX or DefectDojo, or a ZIP
+            of them. The format is detected from the file. Findings land only on assets you can
+            change, and an import never resolves other findings.
           </DialogDescription>
         </DialogHeader>
 

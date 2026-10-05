@@ -36,7 +36,7 @@ func ctisImporterFixtures(t *testing.T) []string {
 	var inputs []string
 	for _, p := range all {
 		b := filepath.Base(p)
-		if strings.HasSuffix(b, ".golden.json") || strings.HasSuffix(b, ".result.json") || strings.HasSuffix(b, ".kb.xml") {
+		if strings.HasSuffix(b, ".golden.json") || strings.HasSuffix(b, ".result.json") || strings.HasSuffix(b, ".kb.xml") || strings.HasSuffix(b, ".options.json") || strings.HasSuffix(b, ".legacy.json") {
 			continue
 		}
 		inputs = append(inputs, p)
