@@ -396,7 +396,7 @@ the billing page in the UI.
 > `scans:ci:write` (trust configurations issue upload credentials) and
 > `scans:ci:override` (break-glass) are admin-only, like the sensor key
 > permissions: owner and admin carry them, no custom role may (the migration
-> `001053` extends the `000945` trigger). Members and viewers have
+> `001058` extends the `000945` trigger). Members and viewers have
 > `scans:ci:read`. Runs and overrides follow the data scope of the repository
 > asset (list: SQL condition; by id, and break-glass on a repository: 404 out of
 > scope). Every change, every token exchange (issued or refused after
