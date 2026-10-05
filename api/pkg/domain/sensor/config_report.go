@@ -280,6 +280,9 @@ func SanitizeConfigReport(raw []byte) (*ConfigReport, []ConfigIgnored, error) {
 // checkJSONDepth refuses a document that is not one JSON value or that
 // nests arrays and objects deeper than limit.
 func checkJSONDepth(raw []byte, limit int) error {
+	if !json.Valid(raw) {
+		return fmt.Errorf("%w: not valid JSON", ErrConfigReportMalformed)
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	depth := 0
 	seen := false

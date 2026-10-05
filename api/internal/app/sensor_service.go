@@ -54,7 +54,6 @@ var (
 // SensorConfigReportView is a sensor setup checklist (research/26).
 type SensorConfigReportView = sensor.ConfigReportView
 
-
 // Selection-mode constants re-exported for legacy callers.
 const (
 	SelectTenantOnly = sensor.SelectTenantOnly

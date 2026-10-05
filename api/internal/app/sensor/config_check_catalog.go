@@ -124,10 +124,10 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 			FixFormatHelm:    "sensor:\n  tools: {{.tool}}",
 		}},
 	{ID: "tool.*.selection", Code: "policy_excluded", Group: "tools", Title: "Scanner {tool} is excluded by the local policy",
-		Why: "The sensor's local policy does not allow {tool}, so the sensor does not offer it. Only the network owner can change the policy on the sensor host.",
+		Why:  "The sensor's local policy does not allow {tool}, so the sensor does not offer it. Only the network owner can change the policy on the sensor host.",
 		Docs: "tool-selection"},
 	{ID: "tool.*.registration", Code: "register_failed", Group: "tools", Title: "Scanner {tool} could not be registered",
-		Why: "The sensor found {tool} but could not register it, so it is not offered. The summary below is the sensor's message.",
+		Why:  "The sensor found {tool} but could not register it, so it is not offered. The summary below is the sensor's message.",
 		Docs: "tool-registration"},
 	{ID: "tools.available", Code: "ok", Group: "tools", Title: "Scanners are available",
 		Why: "The sensor offers {count} scanner(s).", Docs: "tools-available"},
@@ -160,7 +160,7 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 			FixFormatHelm:    "sensor:\n  keyAutoRenew: \"true\"\n  state:\n    persistence:\n      enabled: true",
 		}},
 	{ID: "identity.key_renewal", Code: "start_failed", Group: "identity", Title: "API key renewal did not start",
-		Why: "The sensor could not start key renewal. The summary below is the sensor's message; the key will expire unless it is rotated.",
+		Why:  "The sensor could not start key renewal. The summary below is the sensor's message; the key will expire unless it is rotated.",
 		Docs: "identity-key-renewal"},
 
 	// --- network -------------------------------------------------------------
@@ -197,7 +197,7 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 	{ID: "runtime.command_poller", Code: "running", Group: "runtime", Title: "The sensor takes jobs",
 		Why: "The sensor is polling the platform for jobs.", Docs: "runtime-command-poller"},
 	{ID: "runtime.command_poller", Code: "stopped", Group: "runtime", Title: "The sensor stopped taking jobs",
-		Why: "The loop that fetches jobs from the platform stopped with an error, so the sensor runs nothing. Restart the sensor; the summary below is its message.",
+		Why:  "The loop that fetches jobs from the platform stopped with an error, so the sensor runs nothing. Restart the sensor; the summary below is its message.",
 		Docs: "runtime-command-poller"},
 
 	// --- config --------------------------------------------------------------
@@ -387,6 +387,12 @@ func renderFix(t *template.Template, format string, params map[string]string) (s
 	}
 	data := make(map[string]string, len(params))
 	for k, v := range params {
+		// A shell-quoted value may sit in a comment line, where a line
+		// break would end the comment: refuse control characters (the
+		// sanitizer already does; this does not depend on it).
+		if format == FixFormatEnv && strings.IndexFunc(v, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+			return "", false
+		}
 		data[k] = escape(v)
 	}
 	joinq := func(prefix, key, suffix string) (string, error) {
