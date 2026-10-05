@@ -78,8 +78,6 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		put("integrations.metadata.webhook_secret_encrypted", "jira-hook-secret"))
 	exec(`INSERT INTO integration_scm_extensions (integration_id, webhook_secret_encrypted) VALUES ($1, convert_to($2, 'UTF8'))`,
 		intgID, put("integration_scm_extensions.webhook_secret_encrypted", "scm-hook-secret"))
-	exec(`INSERT INTO webhooks (tenant_id, name, url, secret_encrypted) VALUES ($1, 'hook', 'https://example.com', convert_to($2, 'UTF8'))`,
-		tenantID, put("webhooks.secret_encrypted", "outbound-hook-secret"))
 	exec(`INSERT INTO tenant_identity_providers (tenant_id, provider, display_name, client_id, client_secret_encrypted)
 		VALUES ($1, 'okta', 'Okta', 'cid', $2)`, tenantID, put("tenant_identity_providers.client_secret_encrypted", "org-sso-secret"))
 	exec(`INSERT INTO platform_identity_provider (display_name, issuer, client_id, client_secret_encrypted, redirect_uri,
@@ -151,7 +149,6 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		"integrations.credentials_encrypted":                  `SELECT credentials_encrypted FROM integrations`,
 		"integrations.metadata.webhook_secret_encrypted":      `SELECT metadata->>'webhook_secret_encrypted' FROM integrations`,
 		"integration_scm_extensions.webhook_secret_encrypted": `SELECT convert_from(webhook_secret_encrypted, 'UTF8') FROM integration_scm_extensions`,
-		"webhooks.secret_encrypted":                           `SELECT convert_from(secret_encrypted, 'UTF8') FROM webhooks`,
 		"tenant_identity_providers.client_secret_encrypted":   `SELECT client_secret_encrypted FROM tenant_identity_providers`,
 		"platform_identity_provider.client_secret_encrypted":  `SELECT client_secret_encrypted FROM platform_identity_provider`,
 		"admin_idp_login_states.code_verifier_encrypted":      `SELECT code_verifier_encrypted FROM admin_idp_login_states`,
@@ -262,8 +259,11 @@ func TestRekey_PartialFailureRollsBack(t *testing.T) {
 
 	stranger, _ := crypto.NewCipherFromKey(randomHexKey(t), "")
 	bad, _ := stranger.EncryptString("not ours")
-	if _, err := db.Exec(`INSERT INTO webhooks (tenant_id, name, url, secret_encrypted)
-		SELECT id, 'bad', 'https://example.com', convert_to($1, 'UTF8') FROM tenants WHERE slug = 'rekey'`, bad); err != nil {
+	// A second user whose TOTP secret neither key opens.
+	if _, err := db.Exec(`INSERT INTO users (id, email) VALUES ('55555555-5555-7555-8555-555555555555', 'bad@example.com')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO user_mfa (user_id, secret_encrypted) VALUES ('55555555-5555-7555-8555-555555555555', $1)`, bad); err != nil {
 		t.Fatal(err)
 	}
 
@@ -271,11 +271,14 @@ func TestRekey_PartialFailureRollsBack(t *testing.T) {
 	if !errors.Is(err, ErrFailures) {
 		t.Fatalf("expected ErrFailures, got %v", err)
 	}
-	if rep.Committed || len(rep.Failures) != 1 || rep.Failures[0].Location != "webhooks.secret_encrypted" {
-		t.Fatalf("expected one webhooks failure and no commit, got committed=%v failures=%+v", rep.Committed, rep.Failures)
+	if rep.Committed || len(rep.Failures) != 1 || rep.Failures[0].Location != "user_mfa.secret_encrypted" {
+		t.Fatalf("expected one user_mfa failure and no commit, got committed=%v failures=%+v", rep.Committed, rep.Failures)
 	}
 	// Nothing moved, not even the locations processed before the failure.
-	if _, err := db.Exec(`DELETE FROM webhooks WHERE name = 'bad'`); err != nil {
+	if _, err := db.Exec(`DELETE FROM user_mfa WHERE user_id = '55555555-5555-7555-8555-555555555555'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM users WHERE id = '55555555-5555-7555-8555-555555555555'`); err != nil {
 		t.Fatal(err)
 	}
 	assertAll(t, readAll(t, db, oldKey), want, "after failed apply (still OLD)")
