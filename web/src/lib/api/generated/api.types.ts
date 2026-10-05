@@ -27384,6 +27384,75 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/sensors/{id}/config-report': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Sensor setup checklist
+     * @description The sensor's config report (research/26): the preflight checks it ran on itself, each explained from the platform catalog with fix snippets per install type, and the settings it declares (set or not and where from; never a value). For a sensor that sends no report the checks are derived from its heartbeat (state derived); none before it first connected. 404 for a sensor of another organization.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorConfigReportResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors/{id}/config-templates': {
     parameters: {
       query?: never
@@ -36042,6 +36111,20 @@ export interface components {
        */
       tools_not_installed?: string[]
     }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ConfigCounts': {
+      error?: number
+      fail?: number
+      pass?: number
+      skip?: number
+      warn?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ConfigSetting': {
+      name?: string
+      secret?: boolean
+      set?: boolean
+      source?: string
+      valid?: boolean
+    }
     'github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport': {
       /** @description Digest is "sha256:<hex>" of the policy; "" when absent. */
       digest?: string
@@ -38888,6 +38971,13 @@ export interface components {
       capacity?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity']
       collectors?: string[]
       /**
+       * @description ConfigReport is the config report summary (research/26): digest,
+       *     health, fail and warn counts, observed_at, sent by SDKs that see
+       *     "config_report" on hello. The digest is the one PUT /config-report
+       *     returned. Read leniently (a member of the wrong shape is ignored).
+       */
+      config_report?: Record<string, never>
+      /**
        * @description Content is a slim heartbeat's content freshness (RFC-033 §6.12): a
        *     sensor whose manifest is acknowledged leaves tools out and sends each
        *     tool's content here, with "tool" set. Merged into the stored tools.
@@ -40612,6 +40702,63 @@ export interface components {
       /** @description NextCursor fetches the next (older) page; "" when there is none. */
       next_cursor?: string
     }
+    'internal_infra_http_handler.SensorConfigCheckResponse': {
+      blocks?: string[]
+      code?: string
+      docs_url?: string
+      excerpt?: string
+      /**
+       * @description Fix maps a format (env, compose, helm) to a snippet from the
+       *     platform catalog with the check's values escaped for that format;
+       *     only the formats the catalog has, {} when none.
+       */
+      fix?: {
+        [key: string]: string
+      }
+      /** @enum {string} */
+      group?:
+        | 'platform'
+        | 'identity'
+        | 'policy'
+        | 'tools'
+        | 'content'
+        | 'network'
+        | 'storage'
+        | 'runtime'
+        | 'config'
+        | 'connector'
+      id?: string
+      keys?: string[]
+      known?: boolean
+      observed?: components['schemas']['internal_infra_http_handler.SensorConfigObservedItem'][]
+      /** @enum {string} */
+      severity?: 'info' | 'warning' | 'critical'
+      /** @enum {string} */
+      status?: 'pass' | 'warn' | 'fail' | 'skip' | 'error'
+      summary?: string
+      title?: string
+      why?: string
+    }
+    'internal_infra_http_handler.SensorConfigObservedItem': {
+      label?: string
+      value?: string
+    }
+    'internal_infra_http_handler.SensorConfigReportResponse': {
+      checks?: components['schemas']['internal_infra_http_handler.SensorConfigCheckResponse'][]
+      counts?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ConfigCounts']
+      derived_note?: string
+      /** @enum {string} */
+      health?: 'ok' | 'attention' | 'impaired' | 'blocked' | 'unknown'
+      observed_at?: string
+      received_at?: string
+      /** @enum {string} */
+      runtime_kind?: 'docker' | 'kubernetes' | 'systemd' | 'binary' | 'unknown'
+      settings?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ConfigSetting'][]
+      stale?: boolean
+      /** @enum {string} */
+      state?: 'reported' | 'derived' | 'none'
+      truncated?: boolean
+    }
     'internal_infra_http_handler.SensorConfigTemplatesResponse': {
       /**
        * @description APIKeyIncluded is true when the snippets carry the key passed in
@@ -40806,6 +40953,15 @@ export interface components {
        *     (a tool set here that the sensor does not have); omitted when none.
        */
       capability_mismatch?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.CapabilityMismatch']
+      /**
+       * @description ConfigHealth is the platform's rollup of the sensor's latest config
+       *     report (research/26): ok, attention, impaired or blocked; null when
+       *     it sent none. While the report is stale it is still the last rollup;
+       *     health_reasons then carry config_report_stale. The checklist is
+       *     GET /sensors/{id}/config-report.
+       * @enum {string}
+       */
+      config_health?: 'ok' | 'attention' | 'impaired' | 'blocked'
       /**
        * @description Content is the scanner content the sensor reports (trivy DB, nuclei
        *     templates, semgrep rules; RFC-031), one entry per tool and content,

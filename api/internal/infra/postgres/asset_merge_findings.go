@@ -40,7 +40,6 @@ var findingMergeRefs = []mergeRef{
 	// settleLoserPendingRetest runs first, so the move cannot collide.
 	{table: "finding_retests", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "ai_triage_results", column: "finding_id", tenantCol: "tenant_id"},
-	{table: "deprecated.finding_regression_events", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "iocs", column: "source_finding_id", tenantCol: "tenant_id"},
 	{table: "ioc_matches", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "findings", column: "duplicate_of", tenantCol: "tenant_id"},
