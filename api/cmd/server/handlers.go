@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -144,8 +145,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
 	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
-	// Ingest handler — opt into async mode (RFC-005) when configured. Default
-	// (sync) leaves the handler processing reports in-request as before.
+	// Sensor authentication and the services the protocol v2 control handler
+	// shares.
 	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Sensor, log)
 	// Heartbeat doorbell (RFC-023 §9.2a): the heartbeat tells a sensor that
 	// work is waiting and when to ring again. One cheap query per heartbeat.
@@ -153,12 +154,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
 	ingestHandler.SetHeartbeatObserver(svc.SensorPlatformHealth)
-	// Protocol v2 results discovery on the v1 heartbeat (RFC-026 WP-A7).
-	ingestHandler.SetV2Advertised(cfg.Ingest.V2Results)
-	if cfg.Ingest.AsyncEnabled() && repos.IngestJob != nil {
-		ingestHandler.SetAsyncIngest(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
-		log.Info("async ingest enabled", "max_pending_per_tenant", cfg.Ingest.MaxPendingPerTenant)
-	}
 
 	// Tenant handler with role service and asset service wired.
 	// Exposed as a package-level var so main.go can back-wire the
@@ -322,16 +317,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		DefectDojo: handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Sensors & Commands
-		Command:          commandHandler,
-		Sensor:           sensorHandler,
-		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
-		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
-		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
-		Ingest:           ingestHandler,
-		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, log),
-		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
-		IOC:              newIOCHandlerWithFindingCheck(deps, log),
-		Validation:       validationHandler,
+		Command:         commandHandler,
+		Sensor:          sensorHandler,
+		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
+		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
+		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		Ingest:          ingestHandler,
+		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, log),
+		IOC:             newIOCHandlerWithFindingCheck(deps, log),
+		Validation:      validationHandler,
 		SCIM: func() *handler.SCIMHandler {
 			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
 			h.SetGroupService(svc.SCIMGroups)
@@ -675,18 +669,6 @@ func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pente
 	return h
 }
 
-// newRuntimeTelemetryHandlerWithCorrelator wires the IOC correlator
-// into the runtime-telemetry ingest path. The handler is nil-safe
-// without a correlator, but leaving it nil kills invariant B6 —
-// telemetry is stored but never matched.
-func newRuntimeTelemetryHandlerWithCorrelator(deps *HandlerDeps, svc *Services, log *logger.Logger) *handler.RuntimeTelemetryHandler {
-	h := handler.NewRuntimeTelemetryHandler(deps.DB.DB, log)
-	if svc.IOCCorrelator != nil {
-		h.SetCorrelator(svc.IOCCorrelator)
-	}
-	return h
-}
-
 // newIOCHandlerWithFindingCheck wires the tenant-scoped finding repo
 // into the IOC handler so POST /iocs can verify source_finding_id
 // belongs to the caller. Without this check a client in tenant A
@@ -869,10 +851,15 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		Ingester: svc.Ingest,
 		Units:    repos.CIRun,
 		Audit:    audit,
-	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL}, log)
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: cirun.StatusPolicy{
+		LatestVersion: sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion),
+		MinVersion:    sensordom.NormalizeVersion(cfg.SensorConfig.MinVersion),
+	}}, log)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
 		ds = svc.DataScope
 	}
-	return handler.NewCIAdminHandler(ciSvc, ds, log), handler.NewCIRunnerHandler(ciSvc, log)
+	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
+	admin.SetPipelineService(ciSvc)
+	return admin, handler.NewCIRunnerHandler(ciSvc, log)
 }

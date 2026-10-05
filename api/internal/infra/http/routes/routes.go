@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -70,11 +72,10 @@ type Handlers struct {
 	EASMVerifiedDomain *handler.EASMVerifiedDomainHandler
 	// EASMSettings is attack-surface monitoring settings and run-now
 	// (research/22 P0-11); nil if not initialized.
-	EASMSettings     *handler.EASMSettingsHandler
-	Docs             *handler.DocsHandler             // API documentation handler
-	Command          *handler.CommandHandler          // nil if not initialized (no database)
-	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
-	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint sensors
+	EASMSettings *handler.EASMSettingsHandler
+	Docs         *handler.DocsHandler    // API documentation handler
+	Command      *handler.CommandHandler // nil if not initialized (no database)
+	Ingest       *handler.IngestHandler  // nil if not initialized (no database) - sensor authentication and heartbeat
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
@@ -283,8 +284,8 @@ func Register(
 	// mounted on every token-tenant chain so revoked permissions / demoted
 	// admins are enforced within the token lifetime (real-time sync). nil
 	// disables it (legacy embedded-JWT-permission behavior).
-	permCache *app.PermissionCacheService,
-	permVersion *app.PermissionVersionService,
+	permCache *accesscontrol.PermissionCacheService,
+	permVersion *accesscontrol.PermissionVersionService,
 ) {
 	// Pick the membership reader: cache when available, repo otherwise.
 	if membershipReader == nil {
@@ -352,7 +353,7 @@ func Register(
 	// Clients that authenticate with a header (Bearer JWT, oct_ API keys,
 	// sensor keys) are not ambient-credential requests — a cross-site page
 	// cannot set Authorization — and pass without a CSRF token. Sensor
-	// (/api/v1/agent/*) and HMAC-verified webhook routes do not use these
+	// (/api/v2/sensor/*) and HMAC-verified webhook routes do not use these
 	// chains at all.
 	csrfProtectionMiddleware = middleware.CSRFOptional(middleware.NewCSRFConfig(cfg.Auth, log))
 
@@ -689,29 +690,12 @@ func Register(
 		registerCommandRoutes(router, h.Command, authMiddleware, userSync)
 	}
 
-	// Per-tenant rate limiter for the telemetry-events ingest endpoint.
-	// Not generic rate limiting — only this route needs it because an
-	// EDR sensor can legitimately batch thousands of events, but we
-	// still need to prevent a single compromised sensor key from
-	// drowning the correlator. Conservative defaults: 200 rps burst
-	// 400, buckets evicted after 10 m idle.
-	var telemetryRateLimiter *middleware.TelemetryRateLimiter
-	if cfg.RateLimit.Enabled {
-		telemetryRateLimiter = middleware.NewTelemetryRateLimiter(200, 400, 10*time.Minute, log)
-	}
-
-	// Per-tenant limiter for the heavy report-ingest endpoints. Report ingest
-	// is far heavier per request than telemetry (up to 100k findings / 100MB),
-	// so it gets a much lower budget — enough for legitimate CI bursts, low
-	// enough to bound a runaway loop or compromised sensor key.
+	// Per-tenant limiter for the heavy report-ingest endpoints (up to 100k
+	// findings / 100MB per request): a low budget, enough for legitimate CI
+	// bursts, low enough to bound a runaway loop or compromised sensor key.
 	var ingestRateLimiter *middleware.TelemetryRateLimiter
 	if cfg.RateLimit.Enabled {
 		ingestRateLimiter = middleware.NewTelemetryRateLimiter(20, 40, 10*time.Minute, log)
-	}
-
-	// Ingest/Sensor routes (API key authenticated)
-	if h.Ingest != nil && h.Command != nil {
-		registerSensorRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, h.Suppression, h.ModuleGate, telemetryRateLimiter, ingestRateLimiter, log)
 	}
 
 	// CI runs: OIDC exchange, run-token uploads and the gate, administration
@@ -731,6 +715,10 @@ func Register(
 	if h.Sensor != nil {
 		registerSensorManagementRoutes(router, h.Sensor, h.SensorContent, h.SensorResults, authMiddleware, userSync)
 	}
+
+	// The fleet: sensors (daemon mode) and CI pipelines (runner mode) in one
+	// read model (RFC-051).
+	registerFleetRoutes(router, h.Sensor, h.CIAdmin, h.ModuleGate, authMiddleware, userSync, log)
 
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {
@@ -825,7 +813,7 @@ func Register(
 
 	// Credential Import routes (tenant from JWT token)
 	if h.CredentialImport != nil {
-		registerCredentialRoutes(router, h.CredentialImport, h.Ingest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCredentials))
+		registerCredentialRoutes(router, h.CredentialImport, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCredentials))
 	}
 
 	// Group routes (Access Control - tenant from JWT token)

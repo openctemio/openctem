@@ -45,8 +45,8 @@ Rules:
 - A handler is mounted on one plane. If two realms need the same logic, give
   each its own handler wrapper.
 - **Closed prefixes. Add nothing under them (lint):**
-  - `/api/v1/agent/` (sensor protocol v1)
-  - `/api/v1/agents/` (308 redirects)
+  - `/api/v1/agent/` (sensor protocol v1, retired 2026-10-05; nothing is served)
+  - `/api/v1/agents/` (the old management path, retired 2026-10-05)
   - `/api/v1/tenants/{tenant}/`
   - `/api/v1/users/me/`
   - `/api/v1/webhooks/incoming/`
