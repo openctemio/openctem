@@ -1,10 +1,11 @@
 'use client'
 
 /**
- * CI runners: the pipeline runs that reported results (api RFC-051). Runs are
- * not sensors: they have no fleet row and no heartbeat; each belongs to a
- * repository asset and carries its commit, branch, pull request, pipeline and
- * actor from the CI provider's verified token.
+ * CI runs: the executions of CI pipelines (api RFC-051). A run is not a
+ * sensor row: it has no heartbeat; it belongs to a pipeline (listed on the
+ * Sensors page in runner mode) and a repository asset, and carries its
+ * commit, branch, pull request, pipeline and actor from the CI provider's
+ * verified token. Shown on the Sensors page, runner mode, under Runs.
  */
 
 import { useState } from 'react'
@@ -67,26 +68,42 @@ function RefCell({ run }: { run: CIRun }) {
   )
 }
 
-export function CIRunsView() {
+export interface CIRunsViewProps {
+  /** Inside another page (the Sensors page): no page header of its own. */
+  embedded?: boolean
+  /** A run to open on mount (links from a verdict: /ci-runners/{id}). */
+  initialRunId?: string | null
+  /** Controls placed before the verdict filter (the page's own switches). */
+  toolbarStart?: React.ReactNode
+}
+
+export function CIRunsView({
+  embedded = false,
+  initialRunId = null,
+  toolbarStart,
+}: CIRunsViewProps) {
   const [verdict, setVerdict] = useState<CIVerdictFilter>('')
   const [page, setPage] = useState(1)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(initialRunId)
   const { data, error, isLoading, mutate } = useCIRuns({ verdict, page })
   const runs = data?.data ?? []
   const totalPages = data?.total_pages ?? 1
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="CI runners"
-        description="Pipeline runs that sent results with their CI provider's identity. They are not sensors: no fleet row, no heartbeat. Each run belongs to a repository and is judged by the CI gate."
-      >
-        <Button asChild variant="outline" size="sm">
-          <Link href="/settings/scanning/ci">CI trust and gate</Link>
-        </Button>
-      </PageHeader>
+      {!embedded && (
+        <PageHeader
+          title="CI runs"
+          description="Runs of CI pipelines that sent results with their CI provider's identity. Each run belongs to a pipeline and a repository and is judged by the CI gate."
+        >
+          <Button asChild variant="outline" size="sm">
+            <Link href="/settings/scanning/ci">CI trust and gate</Link>
+          </Button>
+        </PageHeader>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
+        {toolbarStart}
         <Select
           value={verdict || 'all'}
           onValueChange={(v) => {
@@ -206,7 +223,7 @@ export function CIRunsView() {
   )
 }
 
-function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
+export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
   const { data: run, error } = useCIRun(id)
   const v = run?.verdict_detail
   return (

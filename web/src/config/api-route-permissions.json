@@ -515,7 +515,6 @@
 "PUT /api/v1/template-sources/{id}": {"permissions":["scans:sources:write"]},
 "PUT /api/v1/tenant-tools/{toolId}": {"permissions":["scans:tenant_tools:write"]},
 "PUT /api/v1/tenants/{tenant}/settings/asset-lifecycle": {"permissions":["settings:write"],"min_role":"admin"},
-"PUT /api/v1/tenants/{tenant}/settings/asset-source": {"permissions":["settings:write"],"min_role":"admin"},
 "PUT /api/v1/tools/{id}": {"permissions":["scans:tools:write"]},
 "PUT /api/v1/users/me": {},
 "PUT /api/v1/users/me/preferences": {},
