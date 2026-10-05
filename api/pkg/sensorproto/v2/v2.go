@@ -1,9 +1,8 @@
 // Package v2 is the wire vocabulary of sensor protocol v2 results ingest
 // (RFC-026, docs/rfcs/RFC-026-sensor-results-ingest.md).
 //
-// It is the sibling of pkg/sensorproto/legacyv1 and the only place a v2 wire
-// string is defined: paths, media types, header names, problem types, the
-// status resource and the hello document. Handlers, middleware and the ingest
+// It is the only place a v2 wire string is defined: paths, media types,
+// header names, problem types, the status resource and the hello document. Handlers, middleware and the ingest
 // service import these instead of spelling the strings themselves, and the
 // golden files under testdata pin the bytes. Changing a golden file is a
 // protocol change and is reviewed as one.
@@ -85,15 +84,10 @@ const (
 const (
 	// HeaderProtocol is on every v2 response (RFC-026 §3.4).
 	HeaderProtocol = "OpenCTEM-Protocol"
-	// HeaderProtocolAdvert is how a v1 response advertises v2 to a sensor that
-	// announced FeatureResultsV2 (RFC-023 C3). Never sent to anyone else, so
-	// v1 responses are unchanged for deployed sensors.
-	HeaderProtocolAdvert = "X-OpenCTEM-Protocol"
 	// HeaderContentDigest is the RFC 9530 digest of the content as sent.
 	HeaderContentDigest = "Content-Digest"
 	// HeaderSensorFeatures is the request header a sensor lists its optional
-	// features in (comma-separated, case-insensitive). The same header the v1
-	// heartbeat doorbell uses.
+	// features in (comma-separated, case-insensitive).
 	HeaderSensorFeatures = "X-OpenCTEM-Sensor-Features"
 	// HeaderRetryAfter tells a sensor when to poll or retry.
 	HeaderRetryAfter = "Retry-After"
@@ -102,10 +96,6 @@ const (
 	// again since refuses the change. Optional.
 	HeaderLeaseEpoch = "X-OpenCTEM-Lease-Epoch"
 )
-
-// FeatureResultsV2 is the feature a v1 sensor names in HeaderSensorFeatures to
-// learn whether the server speaks v2 results.
-const FeatureResultsV2 = "results-v2"
 
 // StatusRetryAfterSeconds is the poll delay a 202 advises.
 const StatusRetryAfterSeconds = "2"

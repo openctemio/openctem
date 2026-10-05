@@ -123,7 +123,7 @@ or key belongs to. Changes take effect within 30 seconds on every API instance
 | User sessions (REST, WebSocket upgrade) | enforced | the people the policy is for |
 | `oct_` API keys on the tenant REST API | enforced | automation acting as a member |
 | `oct_` API keys on `POST /api/v1/mcp` | enforced | same key, same policy as REST (23b S-H2) |
-| Sensor keys (`/api/v1/agent/*`, `/api/v2/sensor`) | not applied | sensors run in scan zones and customer networks; own enrollment, key and egress controls |
+| Sensor keys (`/api/v2/sensor`) | not applied | sensors run in scan zones and customer networks; own enrollment, key and egress controls |
 | SCIM (`/scim/v2`) | not applied | the caller is the organization's IdP (a SaaS whose egress is not the users' network); gating it would also block deprovisioning. The owner-minted SCIM token is the boundary |
 | Inbound integration webhooks (Jira) | not applied | sent from the vendor's cloud, authenticated by the per-tenant webhook secret |
 | Platform admin console, public routes, platform administrator | not applied | not an organization's members |
