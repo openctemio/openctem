@@ -224,12 +224,12 @@ Deliberately kept, with the reason:
 | Data | Why |
 |---|---|
 | `audit_logs` rows `agent.*` / resource type `agent` | hash-chained history; reads treat both as one family |
-| `admin_audit_logs`, `notification_events`, `webhook_deliveries` | history |
+| `admin_audit_logs`, `notification_events` | history (`webhook_deliveries` was empty and was dropped by 001059) |
 | `asset_state_history.source = 'agent'` | the table is append-only (a trigger rejects UPDATE); returned as `sensor` |
 | `commands.payload.agent_preference` | protocol v1 job content |
 | `sensors.type` values | legacy v1 type values (RFC-023 §9.1 adds role + deployment later) |
 | `user_agent`, `actor_agent` columns | the HTTP User-Agent |
-| `deprecated.*` schema | frozen archive |
+| `deprecated.*` schema | frozen archive; dropped by 001059 (every table was empty) |
 | tenant AI mode `agent`, module `ai_triage.agent` | an LLM agent, not a sensor |
 
 ## 9. Compatibility views

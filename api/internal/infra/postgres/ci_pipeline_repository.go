@@ -1,7 +1,7 @@
 package postgres
 
 // CI pipelines (docs/rfcs/RFC-051-ci-runner-identity-and-gate.md, migration
-// 001069): the logical identity of a CI scanner. Every query is
+// 001077): the logical identity of a CI scanner. Every query is
 // tenant-scoped.
 
 import (

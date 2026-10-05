@@ -19,6 +19,9 @@ const (
 	KeysPath              = "/keys"
 	// ManifestPath is the sensor manifest (RFC-033): PUT registers it.
 	ManifestPath = "/manifest"
+	// ConfigReportPath is the sensor config report (research/26): PUT
+	// stores the sensor's preflight check results.
+	ConfigReportPath = "/config-report"
 
 	// Command transitions, under CommandsPath + "/{command_id}".
 	ClaimAction    = "claim"
@@ -93,6 +96,35 @@ type ManifestIgnored struct {
 // manifest_digest the platform does not have to PUT its manifest (RFC-033
 // §6.4). Sent only to sensors that sent a manifest_digest.
 const ActionSendManifest = "send_manifest"
+
+// ActionSendConfigReport is the heartbeat action asking a sensor whose
+// config_report.digest is not the stored one to PUT its config report.
+// Sent only to sensors that sent a digest, when the platform lists
+// FeatureConfigReport.
+const ActionSendConfigReport = "send_config_report"
+
+// MaxConfigReportBytes caps the body of PUT /config-report (413
+// content-too-large with this limit above it).
+const MaxConfigReportBytes = 65536
+
+// ConfigReportResponse answers PUT /config-report: the digest the platform
+// computed over the report it kept (the sensor echoes it as the
+// heartbeat's config_report.digest), whether it differs from the stored
+// one, and what the sanitizing dropped.
+type ConfigReportResponse struct {
+	ConfigReportDigest string                `json:"config_report_digest"`
+	Changed            bool                  `json:"changed"`
+	Ignored            []ConfigReportIgnored `json:"ignored"`
+}
+
+// ConfigReportIgnored is one report item the platform dropped: where it
+// was, its value (bounded, display only) and why ("unknown-member",
+// "invalid-value", "limit").
+type ConfigReportIgnored struct {
+	Path   string `json:"path"`
+	Value  string `json:"value,omitempty"`
+	Reason string `json:"reason"`
+}
 
 // ActionCancel is the heartbeat action that comes with a non-empty
 // cancel_command_ids: stop those commands and release them (sdk-go acts on
