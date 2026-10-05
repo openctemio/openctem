@@ -107,7 +107,7 @@ func TestTemplate(t *testing.T) {
 }
 
 func TestSanitizeLabelsAndTools(t *testing.T) {
-	if got := SanitizeLabel("  scan\x1b[31m‮  job\n", 100); got != "scan[31m job" {
+	if got := SanitizeLabel("  scan\x1b[31m\u202e  job\n", 100); got != "scan[31m job" {
 		t.Fatalf("SanitizeLabel = %q", got)
 	}
 	if got := SanitizeLabel(strings.Repeat("é", 10), 5); got != "éé" {
