@@ -1482,6 +1482,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.CertMonitor.SetPromotion(s.Ingest, repos.Asset, repos.Attribution)
 		s.CertMonitor.SetTombstones(repos.Attribution)
 	}
+	// Open ports a port scan no longer sees are closed (research/22 P0-6).
+	s.Ingest.SetPortReconciler(postgres.NewEASMPortRepository(&postgres.DB{DB: deps.DB}))
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
@@ -1704,6 +1706,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		pipeline.WithAssetRefChecker(s.DataScope),
 	)
 
+	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
+	// are queued by the pipeline service, like every later step.
+	s.Scan.SetStepQueuer(s.Pipeline)
+
 	// Wire up pipeline deactivator to tool service for cascade deactivation
 	// When a tool is deactivated/deleted, all active pipelines using it will be deactivated
 	s.Tool.SetPipelineDeactivator(s.Pipeline)
@@ -1862,7 +1868,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// service_detected / certificate_* / ssl_issue event types that had no
 	// producer. Post-asset-insert, best-effort; reuses the same exposure repo +
 	// state history + dedupe/reactivate as the secret/misconfig bridge.
-	s.Ingest.SetAssetExposureProjector(exposurebridge.NewAssetBridge(repos.Exposure, repos.ExposureStateHistory, log))
+	// Recon exposures (port_open, service_detected, certificate, TLS) are
+	// announced through the notification outbox like the other EASM ones
+	// (research/22 P0-6 with P0-7).
+	reconDB := &postgres.DB{DB: deps.DB}
+	s.Ingest.SetAssetExposureProjector(exposurebridge.NewAssetBridge(
+		postgres.NewAnnouncingExposureRepository(reconDB, postgres.NewEASMAlerter(reconDB)), repos.ExposureStateHistory, log))
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
 	s.RemediationGroup.SetDataScope(s.DataScope)
 
