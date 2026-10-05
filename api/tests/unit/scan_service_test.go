@@ -11,6 +11,7 @@ import (
 
 	assettyperef "github.com/openctemio/openctem/api/pkg/domain/asset"
 
+	pipelineapp "github.com/openctemio/openctem/api/internal/app/pipeline"
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -913,6 +914,11 @@ func newTestScanService() (*scanservice.Service, *testScanServiceDeps) {
 		log,
 		scanservice.WithAuditService(deps.auditSvc),
 	)
+	// A workflow scan's first steps are queued by the pipeline service, the
+	// one step dispatcher (research/27 P0-2), as in production.
+	svc.SetStepQueuer(pipelineapp.NewService(deps.templateRepo, deps.stepRepo, deps.runRepo,
+		&mockStepRunRepo{}, newMockSensorRepo(), deps.commandRepo, nil, log,
+		pipelineapp.WithToolRepo(deps.toolRepo)))
 
 	return svc, deps
 }

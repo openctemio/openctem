@@ -754,9 +754,10 @@ type SensorConfig struct {
 	// EASMDNSChecksEnabled toggles the daily DNS-only EASM checks (dangling
 	// CNAME/NS, email posture; RFC-036 P1). Passive: the platform's resolver
 	// is asked about the tenant's own names. EASM_DNS_CHECKS_ENABLED, default
-	// false: daily background work across every tenant waits for the scans
-	// P1 work (claim-N with SKIP LOCKED, controller leases, write
-	// amplification); an operator turns it on deliberately until then.
+	// true (research/22 owner decision E3): cheap T0 checks for every tenant
+	// with the attack-surface module; each tenant's run holds a controller
+	// lease, and the per-run name cap and QPS bound the work. Set false to
+	// turn them off platform-wide.
 	EASMDNSChecksEnabled bool
 	// EASMDNSResolver is the recursive resolver (host[:port]) the checks ask.
 	// Empty: the first nameserver of /etc/resolv.conf. EASM_DNS_RESOLVER.
@@ -1175,7 +1176,7 @@ func Load() (*Config, error) {
 			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
 			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
-			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", false),
+			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
 			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
 			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),
 			EASMDNSInterval:             getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),

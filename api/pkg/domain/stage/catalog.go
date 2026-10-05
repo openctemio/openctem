@@ -81,11 +81,11 @@ type Stage struct {
 	Key         Key    `json:"key"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	// Inputs are the asset types the stage may be handed as targets
-	// (registry input names; compare with Accepts, which canonicalizes).
-	Inputs []asset.AssetType `json:"inputs"`
-	// Outputs are the asset types a report of the stage may create.
-	Outputs []asset.AssetType `json:"outputs"`
+	// Inputs are the stored (type, sub_type) pairs the stage may be handed
+	// as targets; an empty SubType matches any sub-type.
+	Inputs []asset.TypeRef `json:"inputs"`
+	// Outputs are the stored pairs a report of the stage may create.
+	Outputs []asset.TypeRef `json:"outputs"`
 	// Relations are the relationship types the stage's outputs carry.
 	Relations []string `json:"relations,omitempty"`
 	// Findings: the stage reports findings.
@@ -119,18 +119,36 @@ const (
 // derived target may be from the run's seeds.
 const MaxHops = 3
 
-// Shared type lists.
+// Stored pairs of catalog v1. Alias type names (http_service, open_port,
+// website, ...) are input-only (RFC-042 §6.3.8): the catalog names the
+// stored pair they resolve to.
 var (
-	dnsNames   = []asset.AssetType{asset.AssetTypeDomain, asset.AssetTypeSubdomain}
-	codeInputs = []asset.AssetType{asset.AssetTypeRepository}
+	tDomain        = asset.TypeRef{Type: asset.AssetTypeDomain}
+	tSubdomain     = asset.TypeRef{Type: asset.AssetTypeSubdomain}
+	tIP            = asset.TypeRef{Type: asset.AssetTypeIPAddress}
+	tHost          = asset.TypeRef{Type: asset.AssetTypeHost}
+	tCertificate   = asset.TypeRef{Type: asset.AssetTypeCertificate}
+	tNetwork       = asset.TypeRef{Type: asset.AssetTypeNetwork}
+	tContainer     = asset.TypeRef{Type: asset.AssetTypeContainer}
+	tHTTPService   = asset.TypeRef{Type: asset.AssetTypeService, SubType: "http"}
+	tOpenPort      = asset.TypeRef{Type: asset.AssetTypeService, SubType: "open_port"}
+	tDiscoveredURL = asset.TypeRef{Type: asset.AssetTypeService, SubType: "discovered_url"}
+	tWebsite       = asset.TypeRef{Type: asset.AssetTypeApplication, SubType: "website"}
+	tAPI           = asset.TypeRef{Type: asset.AssetTypeApplication, SubType: "api"}
+
+	dnsNames   = []asset.TypeRef{tDomain, tSubdomain}
+	codeInputs = []asset.TypeRef{canonical(asset.AssetTypeRepository)}
 )
+
+// canonical is the stored pair of a type name (a core type is itself).
+func canonical(t asset.AssetType) asset.TypeRef { return asset.CanonicalPair(t, "") }
 
 // catalog is catalog v1 (research/27 §6.1). Order is display order.
 var catalog = []Stage{
 	{
 		Key: DiscoverSubdomains, Name: "Subdomain discovery",
 		Description: "Find subdomains of a root domain from passive sources.",
-		Inputs:      []asset.AssetType{asset.AssetTypeDomain},
+		Inputs:      []asset.TypeRef{tDomain},
 		Outputs:     dnsNames,
 		Relations:   []string{"subdomain_of"},
 		Tier:        TierPassive,
@@ -144,7 +162,7 @@ var catalog = []Stage{
 		Key: ResolveDNS, Name: "DNS resolution",
 		Description: "Resolve names to addresses and aliases.",
 		Inputs:      dnsNames,
-		Outputs:     []asset.AssetType{asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeIPAddress},
+		Outputs:     []asset.TypeRef{tDomain, tSubdomain, tIP},
 		Relations:   []string{string(asset.RelTypeResolvesTo), string(asset.RelTypeCnameOf)},
 		Tier:        TierPassive,
 		Implementations: []Implementation{
@@ -156,8 +174,8 @@ var catalog = []Stage{
 	{
 		Key: ScanPorts, Name: "Port scan",
 		Description: "Find open TCP ports (connect scan).",
-		Inputs:      []asset.AssetType{asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeIPAddress, asset.AssetTypeHost},
-		Outputs:     []asset.AssetType{asset.AssetTypeIPAddress, asset.AssetTypeHost, asset.AssetTypeOpenPort},
+		Inputs:      []asset.TypeRef{tDomain, tSubdomain, tIP, tHost},
+		Outputs:     []asset.TypeRef{tIP, tHost, tOpenPort},
 		Relations:   []string{string(asset.RelTypeExposes)},
 		Tier:        TierActive,
 		Implementations: []Implementation{
@@ -169,12 +187,12 @@ var catalog = []Stage{
 	{
 		Key: ProbeHTTP, Name: "HTTP probe",
 		Description: "Probe web services: status, title, technologies, TLS certificate.",
-		Inputs: []asset.AssetType{
-			asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeIPAddress,
-			asset.AssetTypeHost, asset.AssetTypeOpenPort, asset.AssetTypeHTTPService,
+		Inputs: []asset.TypeRef{
+			tDomain, tSubdomain, tIP,
+			tHost, tOpenPort, tHTTPService,
 		},
-		Outputs: []asset.AssetType{
-			asset.AssetTypeHTTPService, asset.AssetTypeCertificate, asset.AssetTypeIPAddress,
+		Outputs: []asset.TypeRef{
+			tHTTPService, tCertificate, tIP,
 		},
 		Relations: []string{"serves_certificate", "hosted_by"},
 		Tier:      TierActive,
@@ -187,8 +205,8 @@ var catalog = []Stage{
 	{
 		Key: CrawlWeb, Name: "Web crawl",
 		Description: "Crawl web services for URLs, staying on the same host.",
-		Inputs:      []asset.AssetType{asset.AssetTypeHTTPService, asset.AssetTypeDiscoveredURL, asset.AssetTypeWebsite},
-		Outputs:     []asset.AssetType{asset.AssetTypeDiscoveredURL},
+		Inputs:      []asset.TypeRef{tHTTPService, tDiscoveredURL, tWebsite},
+		Outputs:     []asset.TypeRef{tDiscoveredURL},
 		Tier:        TierActive,
 		Implementations: []Implementation{
 			{Tool: "katana", Default: true},
@@ -199,10 +217,10 @@ var catalog = []Stage{
 	{
 		Key: VulnTemplates, Name: "Vulnerability templates",
 		Description: "Run non-intrusive vulnerability templates.",
-		Inputs: []asset.AssetType{
-			asset.AssetTypeHTTPService, asset.AssetTypeDiscoveredURL, asset.AssetTypeOpenPort,
-			asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeIPAddress,
-			asset.AssetTypeWebsite, asset.AssetTypeAPI,
+		Inputs: []asset.TypeRef{
+			tHTTPService, tDiscoveredURL, tOpenPort,
+			tDomain, tSubdomain, tIP,
+			tWebsite, tAPI,
 		},
 		Findings: true,
 		Tier:     TierActive,
@@ -214,7 +232,7 @@ var catalog = []Stage{
 	{
 		Key: DASTWeb, Name: "Web application scan",
 		Description: "Dynamic application security testing of a web application.",
-		Inputs:      []asset.AssetType{asset.AssetTypeWebsite, asset.AssetTypeAPI, asset.AssetTypeHTTPService, asset.AssetTypeDiscoveredURL},
+		Inputs:      []asset.TypeRef{tWebsite, tAPI, tHTTPService, tDiscoveredURL},
 		Findings:    true,
 		// An active DAST scan sends attack payloads: intrusive.
 		Tier: TierIntrusive,
@@ -249,7 +267,7 @@ var catalog = []Stage{
 	{
 		Key: SCADeps, Name: "Dependency scan",
 		Description: "Find vulnerable dependencies and build a component inventory.",
-		Inputs:      []asset.AssetType{asset.AssetTypeRepository, asset.AssetTypeContainer},
+		Inputs:      []asset.TypeRef{canonical(asset.AssetTypeRepository), tContainer},
 		Findings:    true, Tier: TierPassive,
 		Implementations: []Implementation{
 			{Tool: "trivy", Default: true},
@@ -274,7 +292,7 @@ var catalog = []Stage{
 	{
 		Key: ContainerImage, Name: "Container image scan",
 		Description: "Find vulnerabilities in a container image.",
-		Inputs:      []asset.AssetType{asset.AssetTypeContainer},
+		Inputs:      []asset.TypeRef{tContainer},
 		Findings:    true, Tier: TierPassive,
 		Implementations: []Implementation{
 			{Tool: "trivy", Default: true},
@@ -286,7 +304,7 @@ var catalog = []Stage{
 	{
 		Key: NetworkVAConnector, Name: "Network vulnerability assessment (connector)",
 		Description: "Run a network vulnerability scan through a connected scanner product.",
-		Inputs:      []asset.AssetType{asset.AssetTypeIPAddress, asset.AssetTypeHost, asset.AssetTypeNetwork},
+		Inputs:      []asset.TypeRef{tIP, tHost, tNetwork},
 		Findings:    true, Tier: TierActive,
 		Implementations: []Implementation{
 			{Tool: "tenable_sc", Default: true},
@@ -381,12 +399,13 @@ func (s Stage) PerParentCap() int {
 	return s.MaxFanout
 }
 
-// typeIn reports whether the stored pair ref is one of types, comparing
-// canonical pairs: "http_service" is stored as service/http.
-func typeIn(ref asset.TypeRef, types []asset.AssetType) bool {
+// typeIn reports whether the pair ref is one of types, comparing canonical
+// pairs: an input name such as "http_service" is the stored service/http.
+// A type with no sub-type matches any sub-type of it.
+func typeIn(ref asset.TypeRef, types []asset.TypeRef) bool {
 	got := asset.CanonicalPair(ref.Type, ref.SubType)
 	for _, t := range types {
-		want := asset.CanonicalPair(t, "")
+		want := asset.CanonicalPair(t.Type, t.SubType)
 		if want.Type != got.Type {
 			continue
 		}
@@ -395,6 +414,15 @@ func typeIn(ref asset.TypeRef, types []asset.AssetType) bool {
 		}
 	}
 	return false
+}
+
+// Label is a pair's label: "type" or "type/sub_type" (the form run
+// contexts and tools.output_types use).
+func Label(ref asset.TypeRef) string {
+	if ref.SubType == "" {
+		return string(ref.Type)
+	}
+	return string(ref.Type) + "/" + ref.SubType
 }
 
 // normalizeTool is the registry spelling of a tool name.
@@ -419,9 +447,9 @@ func OutputTypes(tool string) []string {
 	var out []string
 	for _, s := range ForTool(tool) {
 		for _, t := range s.Outputs {
-			if !seen[string(t)] {
-				seen[string(t)] = true
-				out = append(out, string(t))
+			if l := Label(t); !seen[l] {
+				seen[l] = true
+				out = append(out, l)
 			}
 		}
 	}

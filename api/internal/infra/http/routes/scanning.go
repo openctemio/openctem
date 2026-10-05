@@ -637,6 +637,8 @@ func registerScanRoutes(
 		r.GET("/overview-stats", h.GetOverviewStats, middleware.Require(permission.ScansRead))
 		// License-aware rolling coverage status (RFC-007 Phase 4 observability)
 		r.GET("/coverage", h.CoverageStatus, middleware.Require(permission.ScansRead))
+		// Next occurrences of a schedule (stateless; the wizard and the scan page)
+		r.POST("/schedule-preview", h.PreviewSchedule, middleware.Require(permission.ScansRead))
 		// Quick scan (consolidated from /quick-scan)
 		if triggerRateLimiter != nil {
 			r.POST("/quick", h.QuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.QuickScanMiddleware())
