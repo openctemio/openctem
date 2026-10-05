@@ -11,7 +11,7 @@
 > 001040 `tools.output_types`, `GET /api/v1/scans/stages`) and the one
 > planner (capability → tool at plan time, one payload builder and one step
 > dispatcher; fixes F1 and F2) and the hop router (per-hop gate, stage
-> barrier, provenance in `scan_run_targets`, migrations 001041-001042) are in
+> barrier, provenance in `scan_run_targets`, migrations 001048-001049) are in
 > review; report output-type binding and run-drawer stage lanes follow. State:
 > [architecture/scan-stages.md](../architecture/scan-stages.md).
 > Scope: api + web, with sdk-go and sensor changes where a phase says so.
