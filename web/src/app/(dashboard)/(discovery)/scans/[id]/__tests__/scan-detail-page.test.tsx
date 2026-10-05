@@ -27,6 +27,9 @@ vi.mock('@/lib/api/security-hooks', () => ({
   useAssetGroup: (id: string) => ({ data: id === 'g1' ? { name: 'Internet edge' } : undefined }),
 }))
 vi.mock('@/lib/api/client', () => ({ get: vi.fn(), post: vi.fn(), del: vi.fn() }))
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { id: 'tenant-1' } }),
+}))
 vi.mock('@/features/scans/components/run-detail-sheet', () => ({
   RunDetailSheet: ({ runId }: { runId: string | null }) =>
     runId ? <div data-testid="run-sheet">{runId}</div> : null,
