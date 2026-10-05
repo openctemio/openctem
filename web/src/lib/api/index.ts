@@ -359,18 +359,11 @@ export type {
 export { SEVERITY_CONFIG, STATUS_CONFIG, SOURCE_CONFIG } from './finding-types'
 
 // ============================================
-// AUDIT LOG HOOKS & TYPES
+// AUDIT LOG TYPES
 // ============================================
 
-export {
-  useAuditLogs,
-  useAuditLog,
-  useAuditLogStats,
-  useResourceAuditHistory,
-  useUserAuditActivity,
-  auditLogKeys,
-  invalidateAuditLogsCache,
-} from './audit-hooks'
+// The audit-log hooks live in '@/features/organization' (use-audit-logs.ts),
+// which follows the API's 1-based paging contract.
 
 export type {
   AuditAction,
@@ -379,9 +372,6 @@ export type {
   AuditSeverity,
   AuditChanges,
   AuditLog,
-  AuditLogListResponse,
-  AuditLogListFilters,
-  AuditLogStats,
 } from './audit-types'
 
 export { getActionLabel, getSeverityColor, getResultColor, getActionCategory } from './audit-types'
