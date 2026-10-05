@@ -3,8 +3,9 @@
 /**
  * The Sensors page in runner mode (api RFC-051 §10): CI pipelines, one per
  * workflow file of each repository, and their runs. A pipeline is fresh or
- * stale against its own cadence and never offline; archived, revoked and
- * never-run pipelines are hidden until "Show inactive" (nothing is deleted).
+ * stale against its own cadence and never offline; archived, retired, revoked
+ * and never-run pipelines are hidden until "Show inactive" (nothing is
+ * deleted). The Coverage view lists repositories by capability.
  */
 
 import { useMemo, useState } from 'react'
@@ -40,9 +41,10 @@ import {
 import type { CIPipeline, CIPipelineStatus } from '../types'
 import { GateLabel, PipelineStatusBadge } from './ci-pipeline-cells'
 import { CIPipelineSheet } from './ci-pipeline-sheet'
+import { CICoverageView } from './ci-coverage-view'
 import { CIRunsView } from './ci-runs-view'
 
-type RunnerView = 'pipelines' | 'runs'
+type RunnerView = 'pipelines' | 'runs' | 'coverage'
 
 const QUICK = {
   failing: ['failing'] as CIPipelineStatus[],
@@ -127,7 +129,8 @@ export interface CIPipelinesPanelProps {
 
 export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
   const [viewParam, setView] = useUrlFilter('view', 'pipelines')
-  const view: RunnerView = viewParam === 'runs' ? 'runs' : 'pipelines'
+  const view: RunnerView =
+    viewParam === 'runs' || viewParam === 'coverage' ? viewParam : 'pipelines'
   const [runParam] = useUrlFilter('run', '')
   const [q, setQ] = useUrlFilter('q', '')
   const [statusParam, setStatusParam] = useUrlFilterList('pipeline_status')
@@ -193,7 +196,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
       key: 'inactive',
       label: 'Inactive',
       value: inactive,
-      detail: 'archived, revoked or never ran; hidden, not deleted',
+      detail: 'archived, retired, revoked or never ran; hidden, not deleted',
       onClick: () => setInactiveParam(includeInactive ? '' : '1'),
       active: includeInactive,
     },
@@ -207,9 +210,27 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
       options={[
         { value: 'pipelines', label: 'Pipelines', description: 'One row per workflow file' },
         { value: 'runs', label: 'Runs', description: 'Every run, newest first' },
+        {
+          value: 'coverage',
+          label: 'Coverage',
+          description: 'Repositories by capability: which are not being looked at',
+        },
       ]}
     />
   )
+
+  if (view === 'coverage') {
+    return (
+      <CICoverageView
+        toolbarStart={
+          <>
+            {toolbarStart}
+            {lens}
+          </>
+        }
+      />
+    )
+  }
 
   if (view === 'runs') {
     return (
