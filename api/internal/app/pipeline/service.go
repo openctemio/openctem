@@ -184,12 +184,13 @@ type Service struct {
 	securityValidator SecurityValidator
 	sensorSelector    SensorSelector // Optional: for platform sensor support
 	auditService      AuditService
-	scanDeactivator   ScanDeactivator      // Optional: for cascade scan deactivation
-	scanRunRecorder   ScanRunRecorder      // Optional: records run outcome back onto the scan
-	runCompleted      RunCompletedCallback // Optional: fires scan_completed automation
-	db                TransactionDB        // Optional: for transaction support
-	targetGate        TargetGate           // checks run-context targets; nil refuses runs that carry targets
-	assetRefChecker   AssetRefChecker      // tenant + scope check of a run's asset_id; nil refuses runs that carry one
+	scanDeactivator   ScanDeactivator        // Optional: for cascade scan deactivation
+	scanRunRecorder   ScanRunRecorder        // Optional: records run outcome back onto the scan
+	runCompleted      RunCompletedCallback   // Optional: fires scan_completed automation
+	db                TransactionDB          // Optional: for transaction support
+	targetGate        TargetGate             // checks run-context targets; nil refuses runs that carry targets
+	assetRefChecker   AssetRefChecker        // tenant + scope check of a run's asset_id; nil refuses runs that carry one
+	hops              pipeline.HopRepository // stage chaining (hop_router.go); nil keeps every step on the run's seeds
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)
