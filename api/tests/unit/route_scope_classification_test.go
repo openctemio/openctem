@@ -105,6 +105,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"POST /api/v1/ci/runs/{id}/evaluate":      {classSystem, "CI run token: the run's own verdict (RFC-051)"},
 	"/api/v1/sensors":                         {classConfig, "sensor management"},
 	"/api/v1/scan-zones":                      {classConfig, "scan zones"},
+	"/api/v1/scan-freeze-windows":             {classConfig, "scan freeze windows: tenant dispatch configuration, no asset data"},
 	"/api/v1/scan-profiles":                   {classConfig, "scan profiles"},
 	"/api/v1/scanner-templates":               {classConfig, "scanner templates"},
 	"/api/v1/template-sources":                {classConfig, "template sources"},

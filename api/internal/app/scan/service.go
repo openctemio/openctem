@@ -201,6 +201,7 @@ type Service struct {
 	attributionGate     AttributionGate       // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
 	zones               ZoneDirectory         // optional; nil = zone routing off (RFC-023)
 	zoneResolver        scanzone.Resolver     // resolves hostname targets for zone routing
+	freezeWindows       FreezeWindows         // optional; nil = no trigger-time freeze check (freeze.go)
 	actScope            ActScopeChecker       // optional; nil = act scope not enforced (research/15 L-06)
 	connectorScans      ConnectorScans        // optional; nil = a connector cannot be a scanner (RFC-047)
 	policySensors       AvailableSensorLister // optional; nil = no policy preflight outside zones (policy_preflight.go)

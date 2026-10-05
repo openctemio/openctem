@@ -8472,6 +8472,36 @@ definitions:
     - medium_days
     - name
     type: object
+  internal_infra_http_handler.CreateScanFreezeWindowRequest:
+    properties:
+      days:
+        items:
+          type: integer
+        type: array
+      description:
+        type: string
+      enabled:
+        type: boolean
+      end_time:
+        type: string
+      ends_at:
+        type: string
+      name:
+        type: string
+      recurrence:
+        enum:
+        - once
+        - weekly
+        type: string
+      scan_zone_id:
+        type: string
+      start_time:
+        type: string
+      starts_at:
+        type: string
+      timezone:
+        type: string
+    type: object
   internal_infra_http_handler.CreateScanProfileRequest:
     properties:
       description:
@@ -12899,6 +12929,57 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.ScanFreezeWindowListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanFreezeWindowResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_infra_http_handler.ScanFreezeWindowResponse:
+    properties:
+      active:
+        type: boolean
+      active_until:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      days:
+        items:
+          type: integer
+        type: array
+      description:
+        type: string
+      enabled:
+        type: boolean
+      end_time:
+        type: string
+      ends_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      recurrence:
+        enum:
+        - once
+        - weekly
+        type: string
+      scan_zone_id:
+        type: string
+      start_time:
+        type: string
+      starts_at:
+        type: string
+      timezone:
+        type: string
+      updated_at:
+        type: string
+    type: object
   internal_infra_http_handler.ScanProfileResponse:
     properties:
       created_at:
@@ -14907,6 +14988,11 @@ definitions:
       context:
         additionalProperties: {}
         type: object
+      override_freeze:
+        description: |-
+          OverrideFreeze starts the scan although a scan freeze window is
+          active. Needs scans:freeze:override (403 otherwise); audited.
+        type: boolean
     type: object
   internal_infra_http_handler.TriggerSyncRequest:
     properties:
@@ -15408,6 +15494,34 @@ definitions:
         maximum: 100
         minimum: 0
         type: integer
+    type: object
+  internal_infra_http_handler.UpdateScanFreezeWindowRequest:
+    properties:
+      days:
+        items:
+          type: integer
+        type: array
+      description:
+        type: string
+      enabled:
+        type: boolean
+      end_time:
+        type: string
+      ends_at:
+        type: string
+      name:
+        type: string
+      recurrence:
+        enum:
+        - once
+        - weekly
+        type: string
+      start_time:
+        type: string
+      starts_at:
+        type: string
+      timezone:
+        type: string
     type: object
   internal_infra_http_handler.UpdateScanProfileRequest:
     properties:
@@ -30550,6 +30664,193 @@ paths:
       summary: Get default branch
       tags:
       - Branches
+  /scan-freeze-windows:
+    get:
+      description: The organization's freeze windows, each with whether it is active
+        now. scan_zone_id lists one zone's windows; scope=tenant lists only the windows
+        that freeze the whole organization.
+      parameters:
+      - description: Scan zone ID
+        in: query
+        name: scan_zone_id
+        type: string
+      - description: 'tenant: only organization-wide windows'
+        enum:
+        - tenant
+        in: query
+        name: scope
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanFreezeWindowListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List scan freeze windows
+      tags:
+      - Scan Freeze Windows
+    post:
+      consumes:
+      - application/json
+      description: 'While the window is active, active (T1/T2) scan work of the organization,
+        or of the zone, is not dispatched: scheduled runs are deferred to the window''s
+        end, other triggers are refused (409 SCAN_FREEZE_ACTIVE) unless the caller
+        overrides with scans:freeze:override. Passive work and ingest continue. At
+        most 50 windows per organization.'
+      parameters:
+      - description: Freeze window
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CreateScanFreezeWindowRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanFreezeWindowResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: scan zone not in this organization
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create scan freeze window
+      tags:
+      - Scan Freeze Windows
+  /scan-freeze-windows/{id}:
+    delete:
+      parameters:
+      - description: Freeze window ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete scan freeze window
+      tags:
+      - Scan Freeze Windows
+    get:
+      parameters:
+      - description: Freeze window ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanFreezeWindowResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get scan freeze window
+      tags:
+      - Scan Freeze Windows
+    patch:
+      consumes:
+      - application/json
+      description: Omitted fields are unchanged; the zone cannot change. Disabling
+        a window releases the work it held.
+      parameters:
+      - description: Freeze window ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Changes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateScanFreezeWindowRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanFreezeWindowResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update scan freeze window
+      tags:
+      - Scan Freeze Windows
   /scan-profiles:
     get:
       consumes:
@@ -32407,8 +32708,16 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: override_freeze without scans:freeze:override
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: 'SCAN_FREEZE_ACTIVE: a scan freeze window is active'
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "500":

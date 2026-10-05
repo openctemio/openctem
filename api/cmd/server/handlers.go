@@ -322,6 +322,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
 		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		ScanFreeze:      handler.NewScanFreezeWindowHandler(svc.ScanFreeze, log),
 		Ingest:          ingestHandler,
 		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, log),
 		IOC:             newIOCHandlerWithFindingCheck(deps, log),
