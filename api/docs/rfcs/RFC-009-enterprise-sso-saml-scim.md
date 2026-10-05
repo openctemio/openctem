@@ -130,7 +130,7 @@ membership created, `active:false` suspends + revokes sessions, uniqueness →
   Amended 2026-10-04 (23b S-H1): the admin role is granted or removed only
   through a mapping the owner configured (owner-only to add, change or remove
   a mapping to admin; no "admin" name default; provenance in migration
-  `000830`), and mapping saves plus SCIM role changes are audited at High.
+  `000911`), and mapping saves plus SCIM role changes are audited at High.
   Details in `docs/architecture/scim-provisioning.md`.
 - **UI** — admin screen to mint/revoke the token + show the SCIM base URL.
   _(deferred)_

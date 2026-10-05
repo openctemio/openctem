@@ -101,9 +101,9 @@ whose membership drives a user's **tenant role**:
     (`403` for an administrator; checked against the membership table inside
     the write transaction). Administrators keep managing member/viewer mappings;
   - each mapping records who set it and whether they were the owner
-    (`configured_by`, `configured_by_owner`, migration `000830`). Only an
+    (`configured_by`, `configured_by_owner`, migration `000911`). Only an
     owner-configured admin mapping grants admin. Mappings saved before
-    `000830` are not owner-configured, so an existing admin mapping stops
+    `000911` are not owner-configured, so an existing admin mapping stops
     granting admin until the owner saves it again (nobody is demoted by the
     upgrade);
   - SCIM removes admin from someone only once the owner has configured at least

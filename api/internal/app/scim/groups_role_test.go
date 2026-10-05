@@ -372,7 +372,7 @@ func TestReconcile_AdminRoleNeedsOwnerConfiguredMapping(t *testing.T) {
 
 	t.Run("admin mapping not set by the owner grants nothing", func(t *testing.T) {
 		f := newGroupFixture(t)
-		f.repo.mappings["legacy-admins"] = scimgroup.RoleMapping{Role: "admin"} // pre-000830 row
+		f.repo.mappings["legacy-admins"] = scimgroup.RoleMapping{Role: "admin"} // pre-000911 row
 		u := f.member(tenantdom.RoleMember)
 		f.group("Legacy-Admins", u)
 		if f.roleOf(u) != tenantdom.RoleMember {
