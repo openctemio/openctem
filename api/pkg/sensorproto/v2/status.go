@@ -236,11 +236,16 @@ const (
 	// rule, detail}; a refused routed job is re-queued to another eligible
 	// sensor and the refuser cannot claim it again (research/25 §3.6, D8).
 	FeatureRefusal = "refusal"
+	// FeatureConfigReport: PUT /config-report stores the sensor's preflight
+	// check results and the heartbeat accepts the config_report summary
+	// (research/26). A sensor sends neither to a server that does not list
+	// it. Display and health data only: it never widens dispatch.
+	FeatureConfigReport = "config_report"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCapacity, FeatureRefusal}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCapacity, FeatureRefusal, FeatureConfigReport}
 }
 
 // Deprecation announces a deprecated protocol on hello.
