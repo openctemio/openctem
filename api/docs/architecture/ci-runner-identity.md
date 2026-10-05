@@ -120,5 +120,9 @@ sequenceDiagram
   repository that this pipeline alone reported and nothing saw after its last
   run; findings from people (pentest, manual, bug bounty, red team) are never
   touched. A new sighting reopens a not-observed finding.
+- A run token (`octci_`) authenticates only `/ci/runs/{its id}/{results,
+  baseline-diff,evaluate}`: every session, API-key, console and MCP route
+  refuses it, and the run routes refuse every other credential
+  (`routes/ci_run_token_scope_db_test.go`). Another run's id answers 404.
 - Refusals are uniform to the caller and detailed in the audit log only after
   the token verified.
