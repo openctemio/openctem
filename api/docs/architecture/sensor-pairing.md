@@ -38,17 +38,17 @@ it.
 | Platform pairing key | HKDF-SHA256 of `APP_ENCRYPTION_KEY`, info `openctem/sensor-pairing/platform-key/v1` (Ed25519 seed) |
 | Code storage | HMAC-SHA256 with the sensor-key pepper (`SENSOR_KEY_PEPPER`), never in clear |
 | Repository | `internal/infra/postgres/sensor_pairing_repository.go` (`sensor_pairings`) |
-| Sensor-plane routes | `internal/infra/http/routes/sensor_pairing.go`: `/api/v2/sensor/pairing*`, own group, signed by the pairing key, rate-limited |
-| User-plane routes | `/api/v1/sensor-pairings/*` (`sensors:pair`, `sensors:approve`) |
+| Sensor-plane routes | `internal/infra/http/routes/sensor_pairing.go`: `/api/v2/sensor/pairings*`, own group (documented in `api/openapi/sensor-protocol-v2.yaml`), signed by the pairing key, rate-limited |
+| User-plane routes | `/api/v1/sensor-pairings/*` (`sensors:pair`, `sensors:approve`); `lookup`, `expectations`, `{id}/approve`, `{id}/reject` |
 | Step-up | `AuthService.VerifyStepUp` (`internal/app/auth/stepup.go`): TOTP if enrolled, else password, else a session younger than 10 minutes |
 | Sensor side | `sdk-go/pkg/sensorkit` (`Pair`, identity store, auto-pair), `sensor` (`openctemio-sensor pair`) |
 
 States of a pairing row:
 
 ```
-pending ──reveal──▶ pending (sas set) ──approve──▶ approved ──confirm──▶ completed
+pending ──nonce──▶ pending (sas set) ──approve──▶ approved ──complete──▶ completed
    │                     │                            │
-   └──────expiry─────────┴──────deny───▶ denied       └──10 min──▶ expired (key revoked)
+   └──────expiry────────┴──────reject──▶ denied       └──10 min──▶ expired (key revoked)
 ```
 
 Reverse mode starts as an `expecting` row with a tenant and a code but no

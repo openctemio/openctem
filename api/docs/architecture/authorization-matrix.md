@@ -319,14 +319,15 @@ create's target validator, exclusions, zone routing) in one call.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `POST /api/v2/sensor/pairing` · `POST /pairing/{id}/reveal` · `GET /pairing/{id}` · `POST /pairing/{id}/confirm` | none by bearer key: every request is RFC 9421-signed by the key being paired; per-address and global caps; no tenant until claimed (RFC-052 §4.4) |
-| `POST /api/v1/sensor-pairings/lookup` · `POST /expectations` · `GET /expectations/{id}` · `POST /{id}/deny` | `sensors:pair` |
+| `POST /api/v2/sensor/pairings` · `PUT /pairings/{id}/nonce` · `GET /pairings/{id}` · `POST /pairings/{id}/complete` | none by bearer key: every request is RFC 9421-signed by the key being paired; per-address and global caps; no tenant until claimed (RFC-052 §4.4) |
+| `POST /api/v1/sensor-pairings/lookup` · `POST /expectations` · `GET /expectations/{id}` · `POST /{id}/reject` | `sensors:pair` |
 | `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up re-authentication + `fingerprint_confirmed` |
 | `GET /api/v1/sensors/{id}/grant` · `GET /api/v1/sensor-grant-profiles` · `GET /api/v1/sensors/identity-policy` | `sensors:read` |
 | `PUT /api/v1/sensors/{id}/grant` | `sensors:grant:narrow` when every dimension narrows or stays; `sensors:grant:widen` otherwise (checked in the service against the stored grant) |
 | `POST /api/v1/sensors/{id}/trust` | promote: `sensors:grant:widen`; demote: `sensors:grant:narrow` |
 | `PUT /api/v1/sensors/identity-policy` | require key-bound identity: `sensors:grant:narrow`; allow bearer keys again: `sensors:grant:widen` |
-| `POST /api/v1/sensors/{id}/revoke` · `POST /{id}/keys/{keyId}/revoke` | `sensors:write` or `sensors:revoke` |
+| `GET /api/v1/sensors/{id}/keys` | `sensors:read` |
+| `POST /api/v1/sensors/{id}/revoke` · `POST /{id}/keys/{key_id}/revoke` | `sensors:write` or `sensors:revoke` |
 
 > `sensors:pair`, `sensors:approve`, `sensors:grant:narrow`,
 > `sensors:grant:widen` and `sensors:revoke` are held by owner and admin and
