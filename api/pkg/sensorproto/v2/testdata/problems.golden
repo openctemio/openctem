@@ -70,6 +70,10 @@ Openctem-Protocol: 2
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/sensor/manifest-schema-unsupported","title":"Manifest schema unsupported","status":422,"detail":"The manifest's schema version is not one this server reads; send schema 1.","retryable":false}
+## pairing-not-found
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/sensor/pairing-not-found","title":"Pairing not found","status":404,"detail":"No open pairing request with this id is bound to this key.","retryable":false}
 ## queue-full
 Content-Type: application/problem+json
 Openctem-Protocol: 2
