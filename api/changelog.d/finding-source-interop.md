@@ -8,6 +8,6 @@
 
 - A finding with a VEX `not_affected` statement and a justification is counted and audited (`ingest.vex_dry_run`) by default. With `INGEST_VEX=enforce`, an open, non-human finding of a command-bound report becomes `false_positive` with the justification as its resolution (`ingest.vex_applied`). `off` only stores the statement.
 
-### Security
+### Security: interop data is bounded and tenant-scoped
 
 - Every interop value is bounded before storage and backed by column CHECK constraints; only the finding detail reads it; every read and write is tenant-scoped.
