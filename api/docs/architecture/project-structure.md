@@ -184,7 +184,6 @@ internal/
         ├── asset_group_repository.go
         ├── scope_target_repository.go
         ├── scope_exclusion_repository.go
-        ├── scope_schedule_repository.go
         └── ...             # 15+ repositories
 ```
 

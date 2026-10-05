@@ -21,7 +21,6 @@ import (
 type Service struct {
 	targetRepo    scopedom.TargetRepository
 	exclusionRepo scopedom.ExclusionRepository
-	scheduleRepo  scopedom.ScheduleRepository
 	assetRepo     asset.Repository
 	logger        *logger.Logger
 }
@@ -30,14 +29,12 @@ type Service struct {
 func NewService(
 	targetRepo scopedom.TargetRepository,
 	exclusionRepo scopedom.ExclusionRepository,
-	scheduleRepo scopedom.ScheduleRepository,
 	assetRepo asset.Repository,
 	log *logger.Logger,
 ) *Service {
 	return &Service{
 		targetRepo:    targetRepo,
 		exclusionRepo: exclusionRepo,
-		scheduleRepo:  scheduleRepo,
 		assetRepo:     assetRepo,
 		logger:        log.With("service", "scope"),
 	}
@@ -607,382 +604,6 @@ func (s *Service) ExpireOldExclusions(ctx context.Context) error {
 }
 
 // =============================================================================
-// Schedule Operations
-// =============================================================================
-
-// CreateScheduleInput represents the input for creating a scan schedule.
-type CreateScheduleInput struct {
-	TenantID             string                 `validate:"required,uuid"`
-	Name                 string                 `validate:"required,min=1,max=200"`
-	Description          string                 `validate:"max=1000"`
-	ScanType             string                 `validate:"required"`
-	TargetScope          string                 `validate:"omitempty"`
-	TargetIDs            []string               `validate:"max=100"`
-	TargetTags           []string               `validate:"max=20,dive,max=50"`
-	ScannerConfigs       map[string]interface{} `validate:"omitempty"`
-	ScheduleType         string                 `validate:"required"`
-	CronExpression       string                 `validate:"max=100"`
-	IntervalHours        int                    `validate:"min=0,max=8760"`
-	NotifyOnCompletion   bool
-	NotifyOnFindings     bool
-	NotificationChannels []string `validate:"max=10,dive,max=50"`
-	CreatedBy            string   `validate:"max=200"`
-}
-
-// CreateSchedule creates a new scan schedule.
-func (s *Service) CreateSchedule(ctx context.Context, input CreateScheduleInput) (*scopedom.Schedule, error) {
-	s.logger.Info("creating scan schedule", "name", input.Name, "type", input.ScheduleType)
-
-	tenantID, err := shared.IDFromString(input.TenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-
-	scanType, err := scopedom.ParseScanType(input.ScanType)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
-	}
-
-	scheduleType := scopedom.ScheduleType(input.ScheduleType)
-	if !scheduleType.IsValid() {
-		return nil, fmt.Errorf("%w: invalid schedule type", shared.ErrValidation)
-	}
-
-	schedule, err := scopedom.NewSchedule(tenantID, input.Name, scanType, scheduleType, input.CreatedBy)
-	if err != nil {
-		return nil, err
-	}
-
-	// Apply optional settings
-	if input.Description != "" {
-		schedule.UpdateDescription(input.Description)
-	}
-
-	// Set schedule timing
-	if input.ScheduleType == string(scopedom.ScheduleTypeCron) && input.CronExpression != "" {
-		if err := schedule.SetCronSchedule(input.CronExpression); err != nil {
-			return nil, err
-		}
-	} else if input.ScheduleType == string(scopedom.ScheduleTypeInterval) && input.IntervalHours > 0 {
-		if err := schedule.SetIntervalSchedule(input.IntervalHours); err != nil {
-			return nil, err
-		}
-	}
-
-	// Set target scope
-	if input.TargetScope != "" {
-		targetIDs := make([]shared.ID, 0, len(input.TargetIDs))
-		for _, idStr := range input.TargetIDs {
-			if id, err := shared.IDFromString(idStr); err == nil {
-				targetIDs = append(targetIDs, id)
-			}
-		}
-		schedule.SetTargetScope(scopedom.TargetScope(input.TargetScope), targetIDs, input.TargetTags)
-	}
-
-	// Set scanner configs
-	if input.ScannerConfigs != nil {
-		schedule.UpdateScannerConfigs(input.ScannerConfigs)
-	}
-
-	// Set notifications
-	schedule.UpdateNotifications(input.NotifyOnCompletion, input.NotifyOnFindings, input.NotificationChannels)
-
-	if err := s.scheduleRepo.Create(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to create scan schedule: %w", err)
-	}
-
-	s.logger.Info("scan schedule created", "id", schedule.ID().String(), "name", input.Name)
-	return schedule, nil
-}
-
-// GetSchedule retrieves a scan schedule by tenant ID and ID.
-func (s *Service) GetSchedule(ctx context.Context, tenantID string, scheduleID string) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-	return s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-}
-
-// UpdateScheduleInput represents the input for updating a scan schedule.
-type UpdateScheduleInput struct {
-	Name                 *string                `validate:"omitempty,min=1,max=200"`
-	Description          *string                `validate:"omitempty,max=1000"`
-	TargetScope          *string                `validate:"omitempty"`
-	TargetIDs            []string               `validate:"omitempty,max=100"`
-	TargetTags           []string               `validate:"omitempty,max=20,dive,max=50"`
-	ScannerConfigs       map[string]interface{} `validate:"omitempty"`
-	ScheduleType         *string                `validate:"omitempty"`
-	CronExpression       *string                `validate:"omitempty,max=100"`
-	IntervalHours        *int                   `validate:"omitempty,min=0,max=8760"`
-	NotifyOnCompletion   *bool
-	NotifyOnFindings     *bool
-	NotificationChannels []string `validate:"omitempty,max=10,dive,max=50"`
-}
-
-// UpdateSchedule updates an existing scan schedule.
-func (s *Service) UpdateSchedule(ctx context.Context, scheduleID string, tenantID string, input UpdateScheduleInput) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	if input.Name != nil {
-		schedule.UpdateName(*input.Name)
-	}
-	if input.Description != nil {
-		schedule.UpdateDescription(*input.Description)
-	}
-
-	// Update schedule timing
-	if input.ScheduleType != nil {
-		if *input.ScheduleType == string(scopedom.ScheduleTypeCron) && input.CronExpression != nil {
-			if err := schedule.SetCronSchedule(*input.CronExpression); err != nil {
-				return nil, err
-			}
-		} else if *input.ScheduleType == string(scopedom.ScheduleTypeInterval) && input.IntervalHours != nil {
-			if err := schedule.SetIntervalSchedule(*input.IntervalHours); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	// Update target scope
-	if input.TargetScope != nil {
-		targetIDs := make([]shared.ID, 0, len(input.TargetIDs))
-		for _, idStr := range input.TargetIDs {
-			if id, err := shared.IDFromString(idStr); err == nil {
-				targetIDs = append(targetIDs, id)
-			}
-		}
-		schedule.SetTargetScope(scopedom.TargetScope(*input.TargetScope), targetIDs, input.TargetTags)
-	}
-
-	// Update scanner configs
-	if input.ScannerConfigs != nil {
-		schedule.UpdateScannerConfigs(input.ScannerConfigs)
-	}
-
-	// Update notifications
-	if input.NotifyOnCompletion != nil || input.NotifyOnFindings != nil || input.NotificationChannels != nil {
-		onCompletion := schedule.NotifyOnCompletion()
-		onFindings := schedule.NotifyOnFindings()
-		channels := schedule.NotificationChannels()
-
-		if input.NotifyOnCompletion != nil {
-			onCompletion = *input.NotifyOnCompletion
-		}
-		if input.NotifyOnFindings != nil {
-			onFindings = *input.NotifyOnFindings
-		}
-		if input.NotificationChannels != nil {
-			channels = input.NotificationChannels
-		}
-		schedule.UpdateNotifications(onCompletion, onFindings, channels)
-	}
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to update scan schedule: %w", err)
-	}
-
-	s.logger.Info("scan schedule updated", "id", scheduleID)
-	return schedule, nil
-}
-
-// DeleteSchedule deletes a scan schedule by ID with atomic tenant verification.
-func (s *Service) DeleteSchedule(ctx context.Context, scheduleID string, tenantID string) error {
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return shared.ErrNotFound
-	}
-
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-
-	if err := s.scheduleRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
-		return err
-	}
-
-	s.logger.Info("scan schedule deleted", "id", scheduleID)
-	return nil
-}
-
-// ListSchedulesInput represents the input for listing scan schedules.
-type ListSchedulesInput struct {
-	TenantID      string   `validate:"omitempty,uuid"`
-	ScanTypes     []string `validate:"max=20"`
-	ScheduleTypes []string `validate:"max=3"`
-	Enabled       *bool
-	Search        string `validate:"max=255"`
-	Page          int    `validate:"min=0"`
-	PerPage       int    `validate:"min=0,max=100"`
-}
-
-// ListSchedules retrieves scan schedules with filtering and pagination.
-func (s *Service) ListSchedules(ctx context.Context, input ListSchedulesInput) (pagination.Result[*scopedom.Schedule], error) {
-	filter := scopedom.ScheduleFilter{}
-
-	if input.TenantID != "" {
-		filter.TenantID = &input.TenantID
-	}
-
-	if len(input.ScanTypes) > 0 {
-		types := make([]scopedom.ScanType, 0, len(input.ScanTypes))
-		for _, t := range input.ScanTypes {
-			if parsed, err := scopedom.ParseScanType(t); err == nil {
-				types = append(types, parsed)
-			}
-		}
-		filter.ScanTypes = types
-	}
-
-	if len(input.ScheduleTypes) > 0 {
-		types := make([]scopedom.ScheduleType, 0, len(input.ScheduleTypes))
-		for _, t := range input.ScheduleTypes {
-			types = append(types, scopedom.ScheduleType(t))
-		}
-		filter.ScheduleTypes = types
-	}
-
-	if input.Enabled != nil {
-		filter.Enabled = input.Enabled
-	}
-
-	if input.Search != "" {
-		filter.Search = &input.Search
-	}
-
-	page := pagination.New(input.Page, input.PerPage)
-	return s.scheduleRepo.List(ctx, filter, page)
-}
-
-// ListDueSchedules retrieves all enabled schedules that are due to run.
-func (s *Service) ListDueSchedules(ctx context.Context) ([]*scopedom.Schedule, error) {
-	return s.scheduleRepo.ListDue(ctx)
-}
-
-// EnableSchedule enables a scan schedule.
-func (s *Service) EnableSchedule(ctx context.Context, scheduleID string, tenantID string) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	schedule.Enable()
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to enable scan schedule: %w", err)
-	}
-
-	s.logger.Info("scan schedule enabled", "id", scheduleID)
-	return schedule, nil
-}
-
-// DisableSchedule disables a scan schedule.
-func (s *Service) DisableSchedule(ctx context.Context, scheduleID string, tenantID string) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	schedule.Disable()
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to disable scan schedule: %w", err)
-	}
-
-	s.logger.Info("scan schedule disabled", "id", scheduleID)
-	return schedule, nil
-}
-
-// RunScheduleNow triggers an immediate run of a scan schedule.
-func (s *Service) RunScheduleNow(ctx context.Context, scheduleID string, tenantID string) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Record a run with "running" status
-	schedule.RecordRun("running", nil)
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to run schedule now: %w", err)
-	}
-
-	s.logger.Info("scan schedule triggered manually", "id", scheduleID)
-	return schedule, nil
-}
-
-// RecordScheduleRun records a scan run for a schedule.
-func (s *Service) RecordScheduleRun(ctx context.Context, tenantID string, scheduleID string, status string, nextRunAt *time.Time) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	schedule.RecordRun(status, nextRunAt)
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to record schedule run: %w", err)
-	}
-
-	s.logger.Info("scan schedule run recorded", "id", scheduleID, "status", status)
-	return schedule, nil
-}
-
-// =============================================================================
 // Stats & Coverage Operations
 // =============================================================================
 
@@ -990,7 +611,6 @@ func (s *Service) RecordScheduleRun(ctx context.Context, tenantID string, schedu
 func (s *Service) GetStats(ctx context.Context, tenantID string) (*scopedom.Stats, error) {
 	targetFilter := scopedom.TargetFilter{TenantID: &tenantID}
 	exclusionFilter := scopedom.ExclusionFilter{TenantID: &tenantID}
-	scheduleFilter := scopedom.ScheduleFilter{TenantID: &tenantID}
 
 	totalTargets, err := s.targetRepo.Count(ctx, targetFilter)
 	if err != nil {
@@ -1020,21 +640,6 @@ func (s *Service) GetStats(ctx context.Context, tenantID string) (*scopedom.Stat
 		return nil, fmt.Errorf("failed to count active exclusions: %w", err)
 	}
 
-	totalSchedules, err := s.scheduleRepo.Count(ctx, scheduleFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count schedules: %w", err)
-	}
-
-	enabled := true
-	enabledScheduleFilter := scopedom.ScheduleFilter{
-		TenantID: &tenantID,
-		Enabled:  &enabled,
-	}
-	enabledSchedules, err := s.scheduleRepo.Count(ctx, enabledScheduleFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count enabled schedules: %w", err)
-	}
-
 	// Calculate real coverage: (assets in scope / total assets) * 100
 	coverage, err := s.calculateCoverage(ctx, tenantID)
 	if err != nil {
@@ -1047,8 +652,6 @@ func (s *Service) GetStats(ctx context.Context, tenantID string) (*scopedom.Stat
 		ActiveTargets:    activeTargets,
 		TotalExclusions:  totalExclusions,
 		ActiveExclusions: activeExclusions,
-		TotalSchedules:   totalSchedules,
-		EnabledSchedules: enabledSchedules,
 		Coverage:         coverage,
 	}, nil
 }

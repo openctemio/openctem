@@ -7,14 +7,12 @@
 #   2. Target CRUD + Activate/Deactivate
 #   3. Pattern Overlap Warnings
 #   4. Exclusion CRUD + Approve/Activate/Deactivate
-#   5. Schedule CRUD + Enable/Disable + Cron Validation
-#   6. Run Schedule Now
-#   7. Scope Check
-#   8. Scope Stats
-#   9. Bulk Delete Operations
-#  10. Cross-Tenant IDOR Protection (CRITICAL)
-#  11. Pagination
-#  12. Cleanup + Docker Log Check
+#   5. Scope Check
+#   6. Scope Stats
+#   7. Bulk Delete Operations
+#   8. Cross-Tenant IDOR Protection (CRITICAL)
+#   9. Pagination
+#  10. Cleanup + Docker Log Check
 #
 # Prerequisites:
 #   - API running at localhost:8080 with AUTH_ALLOW_REGISTRATION=true
@@ -69,14 +67,10 @@ TARGET_ID_3=""
 EXCLUSION_ID_1=""
 EXCLUSION_ID_2=""
 EXCLUSION_ID_3=""
-SCHEDULE_ID_1=""
-SCHEDULE_ID_2=""
-SCHEDULE_ID_3=""
 
 # Resource IDs from User B (for cross-tenant)
 TARGET_B=""
 EXCLUSION_B=""
-SCHEDULE_B=""
 
 CRITICAL_FAILURE=0
 BODY=""
@@ -553,202 +547,10 @@ else print_skip "Activate exclusion (no ID)"; fi
 fi
 
 # =============================================================================
-# Section 6: Scan Schedules - CRUD & Lifecycle
+# Section 6: Scope Check & Stats
 # =============================================================================
 
-print_header "Section 6: Scan Schedules - CRUD & Lifecycle"
-
-if ! check_critical "Schedules"; then :; else
-
-# Create Schedule 1 (manual)
-print_test "Create schedule 1 (manual)"
-req_a "POST" "/api/v1/scope/schedules" "{
-    \"name\": \"E2E Manual Schedule ${TIMESTAMP}\",
-    \"description\": \"Manual schedule for E2E testing\",
-    \"scan_type\": \"full\",
-    \"schedule_type\": \"manual\"
-}"
-if assert_status_any "Create schedule 1 (manual)" "201" "200"; then
-    SCHEDULE_ID_1=$(extract_json "$BODY" '.id')
-    print_info "ID: $SCHEDULE_ID_1"
-fi
-
-# Create Schedule 2 (cron)
-print_test "Create schedule 2 (cron)"
-req_a "POST" "/api/v1/scope/schedules" "{
-    \"name\": \"E2E Cron Schedule ${TIMESTAMP}\",
-    \"description\": \"Weekly cron schedule\",
-    \"scan_type\": \"incremental\",
-    \"schedule_type\": \"cron\",
-    \"cron_expression\": \"0 2 * * MON\"
-}"
-if assert_status_any "Create schedule 2 (cron)" "201" "200"; then
-    SCHEDULE_ID_2=$(extract_json "$BODY" '.id')
-    CRON_EXPR=$(extract_json "$BODY" '.cron_expression')
-    print_info "ID: $SCHEDULE_ID_2"
-    print_info "Cron: $CRON_EXPR"
-fi
-
-# Create Schedule 3 (for bulk delete)
-print_test "Create schedule 3 (for bulk delete)"
-req_a "POST" "/api/v1/scope/schedules" "{
-    \"name\": \"E2E Bulk Delete Schedule ${TIMESTAMP}\",
-    \"description\": \"Schedule for bulk delete test\",
-    \"scan_type\": \"targeted\",
-    \"schedule_type\": \"manual\"
-}"
-if assert_status_any "Create schedule 3" "201" "200"; then
-    SCHEDULE_ID_3=$(extract_json "$BODY" '.id')
-    print_info "ID: $SCHEDULE_ID_3"
-fi
-
-# List schedules
-print_test "List schedules"
-req_a "GET" "/api/v1/scope/schedules" ""
-assert_status "200" "List schedules"
-
-# Get schedule
-print_test "Get schedule by ID"
-if has_id "$SCHEDULE_ID_1"; then
-    req_a "GET" "/api/v1/scope/schedules/$SCHEDULE_ID_1" ""
-    assert_status "200" "Get schedule"
-else print_skip "Get schedule (no ID)"; fi
-
-# Update schedule
-print_test "Update schedule"
-if has_id "$SCHEDULE_ID_1"; then
-    req_a "PUT" "/api/v1/scope/schedules/$SCHEDULE_ID_1" "{
-        \"description\": \"Updated manual schedule\"
-    }"
-    assert_status "200" "Update schedule"
-else print_skip "Update schedule (no ID)"; fi
-
-# Disable schedule
-print_test "Disable schedule"
-if has_id "$SCHEDULE_ID_1"; then
-    req_a "POST" "/api/v1/scope/schedules/$SCHEDULE_ID_1/disable" ""
-    if assert_status_any "Disable schedule" "200" "204"; then
-        ENABLED=$(extract_json "$BODY" '.enabled')
-        print_info "Enabled: $ENABLED"
-    fi
-else print_skip "Disable schedule (no ID)"; fi
-
-# Enable schedule
-print_test "Enable schedule"
-if has_id "$SCHEDULE_ID_1"; then
-    req_a "POST" "/api/v1/scope/schedules/$SCHEDULE_ID_1/enable" ""
-    if assert_status_any "Enable schedule" "200" "204"; then
-        ENABLED=$(extract_json "$BODY" '.enabled')
-        print_info "Enabled: $ENABLED"
-    fi
-else print_skip "Enable schedule (no ID)"; fi
-
-fi
-
-# =============================================================================
-# Section 7: Cron Validation
-# =============================================================================
-
-print_header "Section 7: Cron Expression Validation"
-
-if ! check_critical "Cron Validation"; then :; else
-
-print_test "Create schedule with INVALID cron expression"
-req_a "POST" "/api/v1/scope/schedules" "{
-    \"name\": \"Invalid Cron ${TIMESTAMP}\",
-    \"scan_type\": \"full\",
-    \"schedule_type\": \"cron\",
-    \"cron_expression\": \"not-a-cron-expression\"
-}"
-if [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "422" ]; then
-    print_success "Invalid cron rejected (HTTP $HTTP_CODE)"
-    ERROR_MSG=$(extract_json "$BODY" '.message // .error // .detail')
-    print_info "Error: $ERROR_MSG"
-else
-    print_failure "Invalid cron should be rejected" "Got $HTTP_CODE (expected 400/422)"
-fi
-
-print_test "Create schedule with valid complex cron"
-req_a "POST" "/api/v1/scope/schedules" "{
-    \"name\": \"Complex Cron ${TIMESTAMP}\",
-    \"scan_type\": \"full\",
-    \"schedule_type\": \"cron\",
-    \"cron_expression\": \"*/15 9-17 * * 1-5\"
-}"
-if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
-    COMPLEX_CRON_ID=$(extract_json "$BODY" '.id')
-    print_success "Valid complex cron accepted"
-    print_info "ID: $COMPLEX_CRON_ID"
-    # Clean up
-    if has_id "$COMPLEX_CRON_ID"; then
-        req_a "DELETE" "/api/v1/scope/schedules/$COMPLEX_CRON_ID" ""
-    fi
-else
-    print_failure "Valid cron rejected" "Got $HTTP_CODE"
-fi
-
-print_test "Create schedule with empty cron (should fail for cron type)"
-req_a "POST" "/api/v1/scope/schedules" "{
-    \"name\": \"Empty Cron ${TIMESTAMP}\",
-    \"scan_type\": \"full\",
-    \"schedule_type\": \"cron\",
-    \"cron_expression\": \"\"
-}"
-if [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "422" ]; then
-    print_success "Empty cron for cron schedule type rejected"
-else
-    # May be acceptable if empty cron is allowed
-    print_info "Got $HTTP_CODE - empty cron handling may vary"
-    if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
-        EMPTY_CRON_ID=$(extract_json "$BODY" '.id')
-        print_success "Empty cron accepted (may use default)"
-        if has_id "$EMPTY_CRON_ID"; then
-            req_a "DELETE" "/api/v1/scope/schedules/$EMPTY_CRON_ID" ""
-        fi
-    else
-        print_failure "Unexpected response for empty cron" "Got $HTTP_CODE"
-    fi
-fi
-
-fi
-
-# =============================================================================
-# Section 8: Run Schedule Now
-# =============================================================================
-
-print_header "Section 8: Run Schedule Now"
-
-if ! check_critical "Run Now"; then :; else
-
-print_test "Run schedule now"
-if has_id "$SCHEDULE_ID_1"; then
-    req_a "POST" "/api/v1/scope/schedules/$SCHEDULE_ID_1/run" ""
-    if assert_status_any "Run schedule now" "200" "202" "204"; then
-        LAST_RUN=$(extract_json "$BODY" '.last_run_at')
-        LAST_STATUS=$(extract_json "$BODY" '.last_run_status')
-        print_info "Last run at: $LAST_RUN"
-        print_info "Last run status: $LAST_STATUS"
-    fi
-else
-    print_skip "Run now (no schedule ID)"
-fi
-
-print_test "Run non-existent schedule (should 404)"
-FAKE_UUID="00000000-0000-0000-0000-000000000000"
-req_a "POST" "/api/v1/scope/schedules/$FAKE_UUID/run" ""
-if [ "$HTTP_CODE" = "404" ]; then
-    print_success "Non-existent schedule returns 404"
-else
-    print_failure "Non-existent schedule run" "Expected 404, got $HTTP_CODE"
-fi
-
-fi
-
-# =============================================================================
-# Section 9: Scope Check & Stats
-# =============================================================================
-
-print_header "Section 9: Scope Check & Stats"
+print_header "Section 6: Scope Check & Stats"
 
 if ! check_critical "Scope Check"; then :; else
 
@@ -788,19 +590,17 @@ if assert_status "200" "Scope stats"; then
     TOTAL_TARGETS=$(extract_json "$BODY" '.total_targets')
     ACTIVE_TARGETS=$(extract_json "$BODY" '.active_targets')
     TOTAL_EXCLUSIONS=$(extract_json "$BODY" '.total_exclusions')
-    TOTAL_SCHEDULES=$(extract_json "$BODY" '.total_schedules')
     print_info "Targets: $TOTAL_TARGETS (active: $ACTIVE_TARGETS)"
     print_info "Exclusions: $TOTAL_EXCLUSIONS"
-    print_info "Schedules: $TOTAL_SCHEDULES"
 fi
 
 fi
 
 # =============================================================================
-# Section 10: Cross-Tenant IDOR Protection (CRITICAL)
+# Section 7: Cross-Tenant IDOR Protection (CRITICAL)
 # =============================================================================
 
-print_header "Section 10: Cross-Tenant IDOR Protection (CRITICAL SECURITY)"
+print_header "Section 7: Cross-Tenant IDOR Protection (CRITICAL SECURITY)"
 
 if ! has_id "$TOKEN_B"; then
     print_skip "All IDOR tests (User B not available)"
@@ -829,16 +629,6 @@ req_b "POST" "/api/v1/scope/exclusions" "{
 if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
     EXCLUSION_B=$(extract_json "$BODY" '.id')
     print_info "Tenant B exclusion: $EXCLUSION_B"
-fi
-
-req_b "POST" "/api/v1/scope/schedules" "{
-    \"name\": \"Tenant B Schedule ${TIMESTAMP}\",
-    \"scan_type\": \"full\",
-    \"schedule_type\": \"manual\"
-}"
-if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
-    SCHEDULE_B=$(extract_json "$BODY" '.id')
-    print_info "Tenant B schedule: $SCHEDULE_B"
 fi
 
 # --- IDOR: Delete Target ---
@@ -887,29 +677,6 @@ else
     print_skip "IDOR exclusion test (no Tenant B exclusion)"
 fi
 
-# --- IDOR: Delete Schedule ---
-print_section "IDOR: Cross-tenant schedule deletion"
-
-print_test "User A tries to DELETE User B's schedule (MUST FAIL)"
-if has_id "$SCHEDULE_B"; then
-    req_a "DELETE" "/api/v1/scope/schedules/$SCHEDULE_B" ""
-    if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "403" ]; then
-        print_success "IDOR BLOCKED: Cannot delete cross-tenant schedule (HTTP $HTTP_CODE)"
-    else
-        print_failure "IDOR VULNERABILITY: Cross-tenant schedule delete returned $HTTP_CODE"
-    fi
-
-    # Verify schedule still exists
-    req_b "GET" "/api/v1/scope/schedules/$SCHEDULE_B" ""
-    if [ "$HTTP_CODE" = "200" ]; then
-        print_success "Tenant B schedule still exists after IDOR attempt"
-    else
-        print_failure "Tenant B schedule may have been deleted!" "Got $HTTP_CODE"
-    fi
-else
-    print_skip "IDOR schedule test (no Tenant B schedule)"
-fi
-
 # --- IDOR: Get Resources ---
 print_section "IDOR: Cross-tenant read isolation"
 
@@ -952,18 +719,6 @@ else
     print_skip "IDOR approve test (no Tenant B exclusion)"
 fi
 
-print_test "User A tries to RUN User B's schedule (MUST FAIL)"
-if has_id "$SCHEDULE_B"; then
-    req_a "POST" "/api/v1/scope/schedules/$SCHEDULE_B/run" ""
-    if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "403" ]; then
-        print_success "IDOR BLOCKED: Cannot run cross-tenant schedule (HTTP $HTTP_CODE)"
-    else
-        print_failure "IDOR VULNERABILITY: Cross-tenant run returned $HTTP_CODE"
-    fi
-else
-    print_skip "IDOR run test (no Tenant B schedule)"
-fi
-
 # --- IDOR: List isolation ---
 print_section "IDOR: List isolation"
 
@@ -985,10 +740,10 @@ fi
 fi
 
 # =============================================================================
-# Section 11: Bulk Delete Operations
+# Section 8: Bulk Delete Operations
 # =============================================================================
 
-print_header "Section 11: Bulk Delete Operations"
+print_header "Section 8: Bulk Delete Operations"
 
 if ! check_critical "Bulk Delete"; then :; else
 
@@ -1020,27 +775,13 @@ else
     print_skip "Bulk delete exclusions (missing IDs)"
 fi
 
-# Bulk delete schedules
-print_test "Bulk delete schedules"
-if has_id "$SCHEDULE_ID_2" && has_id "$SCHEDULE_ID_3"; then
-    req_a "POST" "/api/v1/scope/schedules/bulk/delete" "{
-        \"schedule_ids\": [\"$SCHEDULE_ID_2\", \"$SCHEDULE_ID_3\"]
-    }"
-    if assert_status_any "Bulk delete schedules" "200" "204"; then
-        AFFECTED=$(extract_json "$BODY" '.affected_count')
-        print_info "Affected: $AFFECTED"
-    fi
-else
-    print_skip "Bulk delete schedules (missing IDs)"
-fi
-
 fi
 
 # =============================================================================
-# Section 12: Pagination
+# Section 9: Pagination
 # =============================================================================
 
-print_header "Section 12: Pagination"
+print_header "Section 9: Pagination"
 
 if ! check_critical "Pagination"; then :; else
 
@@ -1061,20 +802,13 @@ if assert_status "200" "Paginated exclusion list"; then
     print_info "Total exclusions: $TOTAL"
 fi
 
-print_test "List schedules with pagination"
-req_a "GET" "/api/v1/scope/schedules?page=1&per_page=2" ""
-if assert_status "200" "Paginated schedule list"; then
-    TOTAL=$(extract_json "$BODY" '.total // .total_count // empty')
-    print_info "Total schedules: $TOTAL"
-fi
-
 fi
 
 # =============================================================================
-# Section 13: Validation Edge Cases
+# Section 10: Validation Edge Cases
 # =============================================================================
 
-print_header "Section 13: Validation Edge Cases"
+print_header "Section 10: Validation Edge Cases"
 
 if ! check_critical "Validation"; then :; else
 
@@ -1123,17 +857,6 @@ else
     fi
 fi
 
-print_test "Create schedule without name"
-req_a "POST" "/api/v1/scope/schedules" "{
-    \"scan_type\": \"full\",
-    \"schedule_type\": \"manual\"
-}"
-if [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "422" ]; then
-    print_success "Missing name rejected (HTTP $HTTP_CODE)"
-else
-    print_failure "Missing name accepted" "Got $HTTP_CODE (expected 400/422)"
-fi
-
 print_test "Delete with invalid UUID"
 req_a "DELETE" "/api/v1/scope/targets/not-a-uuid" ""
 if [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "422" ]; then
@@ -1145,10 +868,10 @@ fi
 fi
 
 # =============================================================================
-# Section 14: Cleanup
+# Section 11: Cleanup
 # =============================================================================
 
-print_header "Section 14: Cleanup"
+print_header "Section 11: Cleanup"
 
 print_test "Delete remaining User A resources"
 CLEANUP_OK=0
@@ -1163,12 +886,6 @@ fi
 # Delete remaining exclusion
 if has_id "$EXCLUSION_ID_1"; then
     req_a "DELETE" "/api/v1/scope/exclusions/$EXCLUSION_ID_1" ""
-    [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ] && CLEANUP_OK=$((CLEANUP_OK + 1)) || CLEANUP_FAIL=$((CLEANUP_FAIL + 1))
-fi
-
-# Delete remaining schedule
-if has_id "$SCHEDULE_ID_1"; then
-    req_a "DELETE" "/api/v1/scope/schedules/$SCHEDULE_ID_1" ""
     [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ] && CLEANUP_OK=$((CLEANUP_OK + 1)) || CLEANUP_FAIL=$((CLEANUP_FAIL + 1))
 fi
 
@@ -1189,20 +906,16 @@ if has_id "$TOKEN_B"; then
         req_b "DELETE" "/api/v1/scope/exclusions/$EXCLUSION_B" ""
         [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ] && CLEANUP_OK=$((CLEANUP_OK + 1)) || CLEANUP_FAIL=$((CLEANUP_FAIL + 1))
     fi
-    if has_id "$SCHEDULE_B"; then
-        req_b "DELETE" "/api/v1/scope/schedules/$SCHEDULE_B" ""
-        [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ] && CLEANUP_OK=$((CLEANUP_OK + 1)) || CLEANUP_FAIL=$((CLEANUP_FAIL + 1))
-    fi
 
     print_info "Cleanup User B: $CLEANUP_OK deleted, $CLEANUP_FAIL failed"
     [ "$CLEANUP_FAIL" -eq 0 ] && print_success "User B cleanup" || print_failure "User B cleanup" "$CLEANUP_FAIL resources failed"
 fi
 
 # =============================================================================
-# Section 15: Docker Log Check
+# Section 12: Docker Log Check
 # =============================================================================
 
-print_header "Section 15: Docker Log Check"
+print_header "Section 12: Docker Log Check"
 
 print_test "Check Docker logs for panics/fatals"
 if command -v docker &>/dev/null; then
@@ -1250,11 +963,8 @@ echo -e "  ${MAGENTA}Feature Coverage:${NC}"
 echo -e "    - Target CRUD & lifecycle"
 echo -e "    - Pattern overlap warnings"
 echo -e "    - Exclusion CRUD & lifecycle (approve/activate/deactivate)"
-echo -e "    - Schedule CRUD & lifecycle (enable/disable)"
-echo -e "    - Cron expression validation"
-echo -e "    - Run Schedule Now"
 echo -e "    - Scope check & stats"
-echo -e "    - Cross-tenant IDOR protection (delete/read/activate/approve/run)"
+echo -e "    - Cross-tenant IDOR protection (delete/read/activate/approve)"
 echo -e "    - Bulk delete operations"
 echo -e "    - Pagination"
 echo -e "    - Validation edge cases"

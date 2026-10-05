@@ -1748,8 +1748,9 @@ implementation, which honestly reverses 000205.
   `scan_runs`. When nothing has run, the list shows "never run", not 0.
 - **Per-group cadence** creates or updates a scan that targets the group,
   through the existing scan scheduler (`api/internal/app/scan/scheduler.go`).
-  This avoids a second scheduler; the scope-schedules table stays inert
-  (Scoping IA D10).
+  This avoids a second scheduler; the inert scope-schedules feature
+  (Scoping IA D10) has since been removed (migration 001069 drops
+  `scan_schedules`).
 - **Sharing.**
   - Who can see a group is decided by RBAC (`assets:groups:read`) and the
     viewer's data scope.
