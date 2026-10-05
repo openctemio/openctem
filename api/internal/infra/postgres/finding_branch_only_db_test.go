@@ -160,19 +160,19 @@ func TestBranchOnly_PromotedWhenACountingBranchSeesIt(t *testing.T) {
 		t.Fatal("only the finding the default branch saw is promoted")
 	}
 
-	// The exposure, and its SLA clock, start now; the deadline keeps its
-	// 30-day length.
+	// The SLA clock starts now: the deadline keeps its 30-day length from
+	// promotion. first_detected_at keeps the first sighting (10 days ago).
 	var firstDetected, deadline time.Time
 	var slaStatus string
 	if err := f.db.QueryRowContext(ctx, `SELECT first_detected_at, sla_deadline, sla_status FROM findings WHERE id = $1`, id.String()).
 		Scan(&firstDetected, &deadline, &slaStatus); err != nil {
 		t.Fatal(err)
 	}
-	if time.Since(firstDetected) > time.Minute {
-		t.Fatalf("first_detected_at %v, want now", firstDetected)
+	if age := time.Since(firstDetected); age < 9*24*time.Hour {
+		t.Fatalf("first_detected_at moved (%v ago), want the first sighting", age)
 	}
-	if d := deadline.Sub(firstDetected); d < 30*24*time.Hour-time.Minute || d > 30*24*time.Hour+time.Minute {
-		t.Fatalf("SLA length %v, want 30 days from promotion", d)
+	if d := time.Until(deadline); d < 30*24*time.Hour-time.Minute || d > 30*24*time.Hour+time.Minute {
+		t.Fatalf("SLA deadline in %v, want 30 days from promotion", d)
 	}
 	if slaStatus != "on_track" {
 		t.Fatalf("sla_status %s", slaStatus)

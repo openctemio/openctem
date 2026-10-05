@@ -93,7 +93,7 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	})
 	v := &Verdict{RunID: run.ID.String(), GateVerdict: gv, Links: VerdictLinks{
 		Run:      s.webURL("/ci-runners/" + run.ID.String()),
-		Findings: s.webURL("/findings?asset_id=" + run.RepositoryAssetID.String()),
+		Findings: s.webURL(gateFindingsPath(run)),
 	}}
 	detail, err := json.Marshal(v)
 	if err != nil {
@@ -108,6 +108,18 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	s.auditVerdict(ctx, run, in, v)
 	return v, nil
+}
+
+// gateFindingsPath is the findings list the verdict links to: the
+// repository's findings, and for a run on a branch that does not count as
+// exposure (any non-default run is treated so here) its branch-only findings,
+// which the default list leaves out (docs/architecture/branch-only-findings.md).
+func gateFindingsPath(run *cirun.Run) string {
+	p := "/findings?asset_id=" + run.RepositoryAssetID.String()
+	if !run.IsDefaultBranch {
+		p += "&branch_only=true"
+	}
+	return p
 }
 
 // newFindings returns the fingerprints the run introduced, the branch it was
