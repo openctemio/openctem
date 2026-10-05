@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -25,7 +26,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -113,6 +116,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// discovery, JWKS and token request goes through the SSRF-safe client.
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
 	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+
+	// CI runs (RFC-051): OIDC exchange, uploads, the gate, administration.
+	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, log)
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
@@ -348,6 +354,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Capability:      handler.NewCapabilityHandler(svc.Capability, v, log),
 		Scan:            handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
 		CI:              handler.NewCIHandler(svc.Scan, log),
+		CIAdmin:         ciAdmin,
+		CIRunner:        ciRunner,
 		Pipeline:        handler.NewPipelineHandler(svc.Pipeline, v, log),
 
 		// Workflows
@@ -574,7 +582,7 @@ func InitLocalAuthHandler(
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
 // optional config-template service. Templates live in
-// $AGENT_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
+// $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
 // edited without rebuilding the frontend.
 func newSensorHandlerWithTemplates(
 	sensorSvc *app.SensorService,
@@ -833,4 +841,36 @@ func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.Suppressi
 	h := handler.NewSuppressionHandler(svc.Suppression, log)
 	h.SetAuditService(svc.Audit)
 	return h
+}
+
+// newCIHandlers builds the CI run service and its two handlers (RFC-051).
+// The CI providers' discovery and JWKS documents are fetched through the
+// SSRF-safe client: a self-managed GitLab issuer is configured by a tenant.
+func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
+	if repos.CIRun == nil || svc.Ingest == nil {
+		return nil, nil
+	}
+	verifier := oidc.NewClient(httpsec.SafeHTTPClient(10*time.Second), func(raw string) error {
+		_, err := httpsec.ValidateURL(raw)
+		return err
+	})
+	var audit cirunapp.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	ciSvc := cirunapp.NewService(cirunapp.Deps{
+		Repo:     repos.CIRun,
+		Verifier: verifier,
+		Assets:   repos.Asset,
+		Branches: repos.Branch,
+		Baseline: repos.Finding,
+		Ingester: svc.Ingest,
+		Units:    repos.CIRun,
+		Audit:    audit,
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL}, log)
+	var ds handler.DataScopeEnforcer
+	if svc.DataScope != nil {
+		ds = svc.DataScope
+	}
+	return handler.NewCIAdminHandler(ciSvc, ds, log), handler.NewCIRunnerHandler(ciSvc, log)
 }

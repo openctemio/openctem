@@ -696,49 +696,6 @@ export const assetEndpoints = {
 } as const
 
 // ============================================
-// PROJECT ENDPOINTS (Tenant-scoped)
-// @deprecated Use assetEndpoints with type="repository" instead
-// ============================================
-
-/**
- * Project endpoints (tenant-scoped repositories/code projects)
- * @deprecated Use assetEndpoints with type="repository" instead.
- * Projects are now unified under the Asset domain as repository type assets.
- */
-export const projectEndpoints = {
-  /**
-   * List projects in tenant
-   */
-  list: (tenantIdOrSlug: string, filters?: SearchFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.TENANTS}/${tenantIdOrSlug}/projects${queryString}`
-  },
-
-  /**
-   * Get project by ID
-   */
-  get: (tenantIdOrSlug: string, projectId: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/projects/${projectId}`,
-
-  /**
-   * Create project (member+ role)
-   */
-  create: (tenantIdOrSlug: string) => `${API_BASE.TENANTS}/${tenantIdOrSlug}/projects`,
-
-  /**
-   * Update project (member+ role)
-   */
-  update: (tenantIdOrSlug: string, projectId: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/projects/${projectId}`,
-
-  /**
-   * Delete project (admin+ role)
-   */
-  delete: (tenantIdOrSlug: string, projectId: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/projects/${projectId}`,
-} as const
-
-// ============================================
 // COMPONENT ENDPOINTS (Tenant-scoped)
 // ============================================
 
@@ -2181,7 +2138,6 @@ export const endpoints = {
   tenants: tenantEndpoints,
   invitations: invitationEndpoints,
   assets: assetEndpoints,
-  projects: projectEndpoints,
   components: componentEndpoints,
   vulnerabilities: vulnerabilityEndpoints,
   findings: findingEndpoints,
@@ -2218,7 +2174,6 @@ export {
   tenantEndpoints as tenants,
   invitationEndpoints as invitations,
   assetEndpoints as assets,
-  projectEndpoints as projects,
   componentEndpoints as components,
   vulnerabilityEndpoints as vulnerabilities,
   findingEndpoints as findings,
