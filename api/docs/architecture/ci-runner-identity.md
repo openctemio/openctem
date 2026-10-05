@@ -45,7 +45,7 @@ graph TD
 | Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
 | Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
 | Alerts and stale sources (every 15 minutes, one replica) | `internal/app/cirun/alerts.go`, `internal/infra/controller/ci_alerts.go` |
-| Migration | `001077_ci_runner_identity`, `001081_ci_pipelines`, `001082_ci_coverage_alerts` |
+| Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001086_ci_coverage_alerts` |
 
 ## Request chains
 

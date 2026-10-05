@@ -1,4 +1,4 @@
--- Reverses 001082_ci_coverage_alerts.up.sql. Findings closed as "source
+-- Reverses 001086_ci_coverage_alerts.up.sql. Findings closed as "source
 -- retired" stay closed (their resolution says why); reopen them by hand.
 
 DELETE FROM event_types WHERE id IN ('ci.schedule_missed', 'ci.coverage_regression', 'ci.gate_failing', 'ci.runner_outdated');

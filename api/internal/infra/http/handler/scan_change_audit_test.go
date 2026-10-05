@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -90,7 +90,7 @@ func TestScanProfileChangesAreAudited(t *testing.T) {
 	tenantID, userID := shared.NewID(), shared.NewID().String()
 	repo := &auditProfileRepo{byID: map[shared.ID]*scanprofile.ScanProfile{}}
 	auditRepo := &fakeAuditRepo{}
-	h := NewScanProfileHandler(app.NewScanProfileService(repo, logger.NewNop()), validator.New(), logger.NewNop())
+	h := NewScanProfileHandler(scan.NewScanProfileService(repo, logger.NewNop()), validator.New(), logger.NewNop())
 	h.SetAuditService(auditapp.NewAuditService(auditRepo, logger.NewNop()))
 
 	w := httptest.NewRecorder()
