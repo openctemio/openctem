@@ -44,6 +44,27 @@ export function localPolicyView(p?: SensorLocalPolicy | null): LocalPolicyView {
   }
 }
 
+/**
+ * What a sensor without a local policy really allows, and who decides
+ * (api research/25 §2.2). Sensor v0.9.x warns that custom templates and
+ * interactsh "are allowed"; in practice custom templates are refused unless
+ * SENSOR_TEMPLATE_SIGNING_KEYS is set on the host, interactsh runs only when
+ * a job asks for it, and the platform sends neither unless the organization
+ * turned it on. Shown next to the sensor's own warning.
+ */
+export function noLocalPolicyGuidance(): string[] {
+  return [
+    'Custom templates: refused by the sensor unless SENSOR_TEMPLATE_SIGNING_KEYS is set on the host, and sent by the platform only when your organization allows custom templates.',
+    'Out-of-band callbacks (interactsh): used only by a job that asks for them, and the platform sends such jobs only when your organization allows interactsh.',
+    'To decide on the host, install /etc/openctem/sensor-policy.yaml with allow_custom_templates and allow_interactsh (the Install tab renders one with both off).',
+  ]
+}
+
+/** Whether the sensor's warnings include the absent-policy warning. */
+export function hasNoLocalPolicyWarning(p?: SensorLocalPolicy | null): boolean {
+  return (p?.warnings ?? []).some((w) => w.toLowerCase().startsWith('no local policy'))
+}
+
 /** The first 12 hex characters of a "sha256:<hex>" digest. */
 export function shortPolicyDigest(digest?: string): string {
   if (!digest) return ''
