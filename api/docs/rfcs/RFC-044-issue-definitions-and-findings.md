@@ -1,6 +1,9 @@
 # RFC-044 — Issue definitions and findings
 
 > Status: **Accepted** (2026-10-03; owner approved decisions D1–D9 as recommended, §12; #895).
+> P0 shipped (#907, #914, #917, #918, #921). **P1 implemented** (#1101 schema
+> and backfill, migrations 000820–000827; #1102 domain package and
+> repositories; #1103 docs): see §8.1. P2 next.
 > Scope: api (catalog schema, ingest, prioritization, aggregation, routes),
 > web (Issues view, finding identifiers), ctis + sdk-go (identifiers on the
 > wire; separate repos, separate PRs).
@@ -442,6 +445,54 @@ re-classification job for open findings (dry-run first, diff reported).
 
 Rollback: P1–P2 are additive and dual-written; reads switch per surface behind
 a setting until P6.
+
+### 8.1 P1 as implemented
+
+What landed, and where it refines the design above (current state:
+[vulnerability-model.md §9](../architecture/vulnerability-model.md#9-definition-catalog-schema-rfc-044-p1)).
+
+- **Columns** (000820): `tenant_id`, `kind`, `namespace`, `external_id`,
+  `lifecycle`, `merged_into`, `origin`, plus `cvss_version` (§5.1 lists it;
+  the table had none) and `nicknames TEXT[]` (the "nickname field" of P1).
+  Defaults describe today's rows (global CVE), so the deployed code keeps
+  inserting valid rows; a trigger fills `external_id` from `cve_id` for those
+  inserts.
+- **`cve_id`** is nullable and keeps its plain `UNIQUE (cve_id)` constraint
+  instead of a new partial index: NULLs never conflict, so it is already unique
+  over CVE rows only, and `ON CONFLICT (cve_id)` needs no predicate. A CHECK
+  keeps `cve_id` set exactly on CVE rows, global, equal to `external_id`.
+- **Scope key.** Every table that points at a definition references
+  `(id, scope_tenant_id)`, where `scope_tenant_id` is `tenant_id` or the nil
+  UUID for a global row, with a CHECK that the scope is global or the row's own
+  tenant. A foreign key ignores a row with a NULL key column, so `tenant_id`
+  alone could not prove "global or mine". `finding_definitions` carries
+  `definition_scope` for the same reason, and references its finding by
+  `(id, tenant_id)`. `findings.definition_id` must be one of the finding's own
+  links (immediate key: link first, then point). A definition's scope never
+  changes (trigger).
+- **Trust in the schema** (§5.5): a global alias identifier only from
+  `osv`/`ghsa`/`cve_list`, a global relation only from a feed or the rule
+  catalog, a global taxonomy link only from a feed (KEV included) or the rule
+  catalog; a tenant row only from `report` or `tenant`.
+- **Backfill.** `external_id = cve_id`; `origin = kev` when CISA KEV lists the
+  CVE, else `report` (no feed inserts catalog rows, so every other row came from
+  a report or a seed); the non-identifier entries of `aliases` became
+  `nicknames`. Identifier-shaped `aliases` entries were **not** made global
+  identifiers: reports and seeds wrote them, and only the alias feeds may
+  assert a global alias. One primary identifier per definition (and a trigger
+  writes it for every new row, whoever inserts it); `finding_definitions`
+  ord 0 and `findings.definition_id` from `findings.vulnerability_id`. Batched
+  with a commit per batch; `updated_at` unchanged.
+- **Readers.** `VulnerabilityRepository` (the CVE catalog API) serves only
+  global CVE rows, so a tenant definition is never reachable through it. The
+  new `pkg/domain/definition` (kinds, namespace registry, scope, trust rules)
+  and `DefinitionRepository` / `FindingDefinitionRepository` are not called
+  yet.
+- **Finding merge** (RFC-043): `finding_definitions` stays on the tombstone;
+  the survivor keeps its own links.
+- **Gap until P2:** findings stored after P1 get no `finding_definitions` row
+  or `definition_id` (the deployed ingest does not write them). P2 starts with
+  the 000824 backfill again (idempotent) before dual-write takes over.
 
 ## 9. API and UI
 

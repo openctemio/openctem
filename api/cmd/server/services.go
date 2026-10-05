@@ -1583,7 +1583,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
-	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.EASMSeed)
+	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.EASMSeed).
+		WithTakeoverEvidence(repos.EASMDNS)
 
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(
