@@ -1,0 +1,5 @@
+### Security: a ported tool's reports keep only the output types it declares
+
+- A sensor tool ported to the tool contract (sdk-go `docs/rfcs/sensor-sdk-v2.md`) names its contract in the sensor manifest (`tools[].contract`: digest, version, class, tier, network, consumes, produces). The platform validates it whole (an invalid one is dropped and listed as ignored, `invalid-contract`) and stores it inside the sensor's manifest version, per sensor and tenant; nothing is shared across tenants.
+- A command-bound report of such a tool keeps only the assets, findings and dependencies of types the tool declares; the rest follows the tenant's result policy (held in the quarantine with reason `out_of_contract`, or applied with an audit entry in warn mode). A declaration only narrows the scan-stage catalog contract, never widens it. Sensors without contracts are unchanged.
+- The sensor drawer's Manifest tab shows each tool's contract (class, tier, network, consumes, produces, digest) and contract changes in the history. No migration.
