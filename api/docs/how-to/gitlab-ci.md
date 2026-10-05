@@ -80,8 +80,10 @@ sca:         # trivy (dependencies)
   extends: .openctem-sca
 ```
 
-Pin the template to a release tag instead of `main` for reproducible pipelines,
-and review it before including it (it runs in your pipeline).
+Pin the template to a release tag instead of `main`, and review it before
+including it: it runs in your pipeline with your project's identity. The
+template runs each sensor image by digest; see **Security notes** for how
+those digests are checked and updated.
 
 Optional extra jobs from the same template: `.openctem-iac` (trivy config),
 `.openctem-container` (scan the image you just built, default branch),
@@ -93,7 +95,8 @@ Optional extra jobs from the same template: `.openctem-iac` (trivy config),
 openctem-security:
   stage: test
   image:
-    name: ghcr.io/openctemio/sensor:latest-ci
+    # A release pinned by digest, never a moving tag (see Security notes).
+    name: ghcr.io/openctemio/sensor:v0.9.1-ci@sha256:97f5512165d2c79240bb01f4cdbc710b85b1517cca95d4015aa39d35c60017e1
     entrypoint: [""]
   id_tokens:
     OPENCTEM_ID_TOKEN:
@@ -175,6 +178,42 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
   requests** off, or restrict the configuration to protected branches and tags.
 - Disabling or deleting the trust configuration stops new uploads at once,
   including jobs that are running.
+- **Protected refs only.** Turn on **Protected branches and tags only** in the
+  trust configuration so that only pipelines on protected branches and tags
+  (GitLab's `ref_protected` claim) get a token: a developer who can push an
+  unprotected branch cannot then send results as the project.
+- **Least privilege of the run token.** The token the job receives works only
+  for its own run's results, baseline comparison and verdict. It cannot read
+  findings or assets, call any other API, or act on another run; it expires
+  after 15 minutes and is renewed only for the same job.
+- **Budgets.** A run accepts at most 200 reports, and a pipeline may start at
+  most 300 runs an hour; beyond that the exchange is refused and audited.
+- **Secrets in results.** The sensor masks a secret before it leaves the job,
+  and the platform stores only a short masked preview and a keyed fingerprint,
+  never the value, whatever the upload contains.
+- **Pin the image by digest and verify it.** A tag such as `latest-ci` can be
+  moved; a digest cannot. The sensor's images are signed with cosign (keyless,
+  by the sensor repository's release workflow). Check a digest before you pin
+  it (cosign v3):
+
+  ```bash
+  cosign verify ghcr.io/openctemio/sensor@sha256:<digest> \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity-regexp '^https://github\.com/openctemio/sensor/\.github/workflows/docker-publish\.yml@refs/tags/v'
+  ```
+
+  On a new sensor release, the sensor repository's `scripts/pin-ci-images.sh
+  vX.Y.Z` resolves, verifies and re-pins the templates; update a copied job
+  the same way.
+- **Minimum runner version.** A runner older than the platform's minimum
+  supported sensor version is refused (`403 RUNNER_OUTDATED`): update the
+  pinned image.
+- **Enforce the gate.** The template starts in rollout mode (a failing gate
+  does not fail the pipeline). Once findings are triaged, set
+  `allow_failure: false` (step 4) so a failing verdict blocks the merge.
+- **Audit.** Every exchange (admitted or refused, with the reason), upload,
+  verdict and break-glass is in **Settings > Audit log**; administrators are
+  notified of each break-glass and of bursts of refused tokens.
 
 ## Troubleshooting
 
@@ -183,6 +222,7 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 | `The CI token was not accepted` | No trust configuration admits the project or branch, the `aud` differs from the configuration's audience, or the token was used twice. The reason is in **Settings > Audit log** (`ci_run.token_refused`) |
 | `id_tokens` is ignored / `OPENCTEM_ID_TOKEN` is empty | GitLab older than 15.7, or the variable name differs from the one under `id_tokens` |
 | `fatal: detected dubious ownership` | The job lacks the `GIT_CONFIG_*` safe.directory variables shown above |
+| `403 RUNNER_OUTDATED` on the exchange | The pinned sensor image is older than the minimum supported version: re-pin a current release |
 | `401` on upload after a long scan | The 15-minute run token expired: the sensor exchanges the token at the first upload, so keep the upload and the verdict within 15 minutes of each other (split slow scanners into parallel jobs) |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than this project's repository |
 | Every finding is "new" | The default branch was never scanned: see step 5 |

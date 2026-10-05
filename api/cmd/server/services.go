@@ -55,6 +55,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/scan"
+	scanfreezeapp "github.com/openctemio/openctem/api/internal/app/scanfreeze"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	"github.com/openctemio/openctem/api/internal/app/sla"
@@ -554,7 +555,9 @@ type Services struct {
 	// installation has no encryption key to derive the pairing key from.
 	SensorPairing *sensorpairing.Service
 	ScanZone      *scanzoneapp.Service
-	Command       *command.Service
+	// ScanFreeze manages scan freeze windows.
+	ScanFreeze *scanfreezeapp.Service
+	Command    *command.Service
 	// SensorContent is the scanner content policy and refresh (RFC-031).
 	SensorContent *sensorapp.ContentService
 	// TenableSC queues and follows Tenable.sc connector syncs (RFC-047).
@@ -1653,6 +1656,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to from the platform.
 		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
+		// Freeze windows: a scheduled run is deferred to the window's end,
+		// any other trigger refused unless overridden (audited).
+		scan.WithFreezeWindows(repos.ScanFreezeWindow),
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
@@ -1673,6 +1679,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
+	s.ScanFreeze = scanfreezeapp.NewService(repos.ScanFreezeWindow, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
 	// service from here on.
 	probeGate.set(s.Scan)

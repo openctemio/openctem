@@ -125,7 +125,13 @@ vulnerability catalog; findings carry no sensor id. The stored fingerprints the
 report sighted are recorded for the run (`ci_run_findings`, at most 100,000 per
 run). Uploads use the ingest per-tenant rate limit and concurrency cap. Each
 upload is audited (`ci_run.results_uploaded`: finding count, tool label, job;
-never finding content).
+never finding content). A run
+accepts at most 200 reports (`409` beyond), and a pipeline may start at most
+300 runs an hour (the exchange is refused beyond, audited `pipeline_rate`).
+A secret finding is never stored in clear whatever the runner sends: the
+runner masks it, and the server keeps only a preview of at most four
+characters at each end (`vulnerability.MaskSecretPreview`), redacts the
+snippet and fingerprints the value with a keyed per-tenant HMAC.
 
 `POST /api/v1/ci/runs/{id}/baseline-diff` splits fingerprints into new and
 already open on the default branch, for inline comments on new findings only.
@@ -168,7 +174,8 @@ prefix of at least 7 hex characters) of one repository passes until the
 override expires (default 24 hours, at most 7 days) or is revoked. A reason of
 10 to 2000 characters is required. Creating, revoking and every use
 (`ci_gate_override.used`, with the run and the blocking count) are audited at
-high severity.
+high severity. Creating and every use also notify every active owner and
+administrator in-app and the `ci.break_glass` channel event.
 
 ## 7. Runner
 
@@ -379,8 +386,14 @@ per run. The job runs every 15 minutes on one replica.
 | `ci.coverage_regression` | repository | has active pipelines, none fresh | on |
 | `ci.gate_failing` | pipeline | last default-branch verdict failed | opt-in |
 | `ci.runner_outdated` | pipeline | runner below `SENSOR_MIN_VERSION` | on |
+| `ci.token_refusals` | tenant | at least 20 refused token exchanges (verified tokens, so audited) in 30 minutes | on |
 
-Revoked, retired and archived pipelines raise nothing.
+Revoked, retired and archived pipelines raise nothing. The job walks every
+tenant with a pipeline or a trust configuration.
+
+`ci.break_glass` (on by default) is sent when a break-glass is created and each
+time it lets a failing run pass, not through the alert state; the same notice
+goes in-app to every active owner and administrator of the organization.
 
 | Endpoint | Permission |
 |---|---|
