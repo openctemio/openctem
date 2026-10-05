@@ -7459,6 +7459,15 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description RUNNER_OUTDATED: the runner reports a version below the minimum supported one */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Too Many Requests */
         429: {
           headers: {
