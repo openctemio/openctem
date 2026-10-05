@@ -11,6 +11,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ExternalLink, GitBranch, GitPullRequest, Workflow } from 'lucide-react'
 import { PageHeader, EmptyState, ErrorState } from '@/features/shared'
+import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -234,14 +235,13 @@ function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => void })
                 <span className="text-muted-foreground">policy: {v.policy.source}</span>
               )}
               {run.pipeline_url && (
-                <a
+                <SafeExternalLink
                   href={run.pipeline_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  urlOptions={{ allowRelative: false }}
                   className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
                 >
                   Pipeline <ExternalLink className="size-3.5" aria-hidden />
-                </a>
+                </SafeExternalLink>
               )}
             </div>
             <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
