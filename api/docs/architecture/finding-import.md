@@ -18,7 +18,9 @@ CycloneDX (SBOM, VDR, VEX), SPDX, osv-scanner results, CSAF 2.0, OpenVEX and
 DefectDojo Generic Findings JSON. Each importer has a mapping spec, golden
 fixtures and a field-coverage test in the ctis repository
 (`docs/importers/`). The API never branches on the format: it calls
-`importer.Detect`, `importer.Parse` and `importer.OpenZip` only.
+`importer.Detect`, `importer.Parse` and `importer.OpenZip` only, through one entry
+point, `findingimport.Convert` (content sniffing, archive limits, KnowledgeBase
+pairing), which any other caller that accepts exported files reuses.
 
 ## Request
 
