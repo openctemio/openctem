@@ -89,7 +89,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, err
 	}
 	// Nothing the tenant has not authorized for active scanning (RFC-036).
-	if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets); err != nil {
+	if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets, IsTakeoverOnlyProbe(input.ScannerName, input.ScannerConfig)); err != nil {
 		return nil, err
 	}
 
@@ -118,7 +118,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 
 	// Configure schedule
-	if err := s.configureScanSchedule(sc, input); err != nil {
+	if err := configureScanSchedule(sc, input); err != nil {
 		return nil, err
 	}
 
@@ -443,7 +443,7 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 }
 
 // configureScanSchedule validates and sets the scan schedule.
-func (s *Service) configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
+func configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
 	scheduleType := scan.ScheduleType(input.ScheduleType)
 	if scheduleType == "" {
 		scheduleType = scan.ScheduleManual
@@ -955,7 +955,7 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName strin
 
 	// A clone is a new scan of the same targets: the same ownership check
 	// as a create (RFC-036).
-	if err := s.refuseUnownedTargets(ctx, sc.TenantID, "scan_clone", sc.Targets); err != nil {
+	if err := s.refuseUnownedTargets(ctx, sc.TenantID, "scan_clone", sc.Targets, IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig)); err != nil {
 		return nil, err
 	}
 
