@@ -89,7 +89,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, err
 	}
 	// Nothing the tenant has not authorized for active scanning (RFC-036).
-	if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets); err != nil {
+	if err := s.refuseUnownedTargets(ctx, tenantID, "scan_create", validatedTargets, IsTakeoverOnlyProbe(input.ScannerName, input.ScannerConfig)); err != nil {
 		return nil, err
 	}
 
@@ -118,7 +118,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 
 	// Configure schedule
-	if err := s.configureScanSchedule(sc, input); err != nil {
+	if err := configureScanSchedule(sc, input); err != nil {
 		return nil, err
 	}
 
@@ -438,12 +438,16 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 		}
 	}
 
+	if err := s.refuseDisabledOptIns(ctx, sc.TenantID, scannerConfig); err != nil {
+		return err
+	}
+
 	tpj := max(targetsPerJob, 1)
 	return sc.SetSingleScanner(scannerName, scannerConfig, tpj)
 }
 
 // configureScanSchedule validates and sets the scan schedule.
-func (s *Service) configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
+func configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
 	scheduleType := scan.ScheduleType(input.ScheduleType)
 	if scheduleType == "" {
 		scheduleType = scan.ScheduleManual
@@ -723,6 +727,9 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		// A config saved back as it was shown masked keeps the stored
 		// secrets instead of storing the mask (scan.RedactConfigSecrets).
 		cfg := scan.RestoreRedactedConfigSecrets(input.ScannerConfig, sc.ScannerConfig)
+		if err := s.refuseDisabledOptIns(ctx, sc.TenantID, cfg); err != nil {
+			return nil, err
+		}
 		if _, connector := s.isConnectorScanner(ctx, input.ScannerName); connector {
 			if err := s.validateConnectorScanner(ctx, sc.TenantID, cfg); err != nil {
 				return nil, err
@@ -944,22 +951,34 @@ func (s *Service) DisableScan(ctx context.Context, tenantID, scanID string) (*sc
 // Clone Operations
 // =============================================================================
 
-// CloneScan clones a scan with a new name.
-func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName string) (*scan.Scan, error) {
+// CloneScan clones a scan with a new name. The person cloning becomes the
+// clone's owner (created_by): its scheduled runs act with their scope, never
+// as the system (research 21b H2, RFC-050 W2). Their act scope is checked on
+// the clone's direct targets like on a create.
+func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, actorID string) (*scan.Scan, error) {
 	s.logger.Info("cloning scan", "scan_id", scanID, "new_name", newName)
+
+	actor, err := shared.IDFromString(actorID)
+	if err != nil || actor.IsZero() {
+		return nil, ErrScanActorRequired
+	}
 
 	sc, err := s.GetScan(ctx, tenantID, scanID)
 	if err != nil {
 		return nil, err
 	}
+	if err := s.refuseOutOfActScope(ctx, sc.TenantID, &actor, sc.Targets); err != nil {
+		return nil, err
+	}
 
 	// A clone is a new scan of the same targets: the same ownership check
 	// as a create (RFC-036).
-	if err := s.refuseUnownedTargets(ctx, sc.TenantID, "scan_clone", sc.Targets); err != nil {
+	if err := s.refuseUnownedTargets(ctx, sc.TenantID, "scan_clone", sc.Targets, IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig)); err != nil {
 		return nil, err
 	}
 
 	clone := sc.Clone(newName)
+	clone.SetCreatedBy(actor)
 
 	if err := s.scanRepo.Create(ctx, clone); err != nil {
 		return nil, err

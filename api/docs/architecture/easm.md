@@ -75,6 +75,7 @@ API connector already uses (`pkg/httpsec`).
 | Discovery provenance on assets (`discovery_source`, `discovery_tool`, `discovered_at`, `first_seen`, `last_seen`) | Built | `pkg/domain/asset/entity.go` |
 | Exposure fields (`exposure`, `is_internet_accessible`, exposure change timestamps) | Built | ingest `applyCTEMSignals`, `inferAssetExposure` |
 | Relationships `contains` (root → subdomain), `resolves_to` (domain → IP); inferred `exposes`, `runs_on` | Built | `internal/app/ingest/processor_assets.go`, `internal/app/asset/relationship_inference.go` |
+| HTTP probe server fields (research/22 E5): the TLS leaf certificate becomes a `certificate` asset named by its SHA-256 fingerprint (tenant-scoped, deduplicated by name and fingerprint) linked from the service with `serves_certificate` (migration `001026`); the service keeps `favicon_mmh3`, `jarm`, `cdn`, `cdn_type`, `waf`, `hosted_by` and, when the sensor asks httpx for it, `asn`/`asn_org`/`asn_country`. Certificate text is capped on every ingest path (`text_caps.go`); a `related_assets` link becomes an edge only for a known type pair and only when the report may change the source asset (RFC-040 §5.3) | Built (api); sensor + sdk-go + ctis PRs open | `internal/app/ingest/related_assets.go`, `internal/app/ingest/text_caps.go`; ctis `ConvertReconToCTIS`, sensor `internal/recon/httpx` |
 | Identity resolution (strong identifiers, 7-day IP window, conflicts to dedup review) | Built | RFC-001, RFC-028, [asset-identity-resolution.md](asset-identity-resolution.md) |
 | CT monitoring: crt.sh, `subdomain_discovered` + `certificate_expiring` exposures | Built, with two limits (§6) | `internal/app/certmonitor`, [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md) |
 | Certificate assets → `certificate_expiring` / `certificate_expired` / `ssl_issue` exposures; service assets → `port_open` / `service_detected` | Built | `internal/app/exposurebridge/asset_bridge.go` |
@@ -295,6 +296,47 @@ query, so ids of another tenant announce nothing; the throttle counter
 locked for the transaction, which serializes one tenant's alert writes.
 Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_test.go`.
 
+## 4g. Honest numbers (built, P0-13)
+
+- `GET /easm/summary` counts only exposure types something writes today
+  (`EASMExposureTypes`: subdomain_discovered, certificate_expiring/expired,
+  port_open, service_detected, ssl_issue, dangling_cname/ns,
+  email_security_weak, subdomain_takeover). `api_exposed`, `bucket_public`,
+  `header_missing`, `dns_change`, `port_closed`, `service_changed` and
+  `subdomain_removed` return when they get a producer;
+  `TestEASMExposureTypesHaveProducers` fails if a listed type has none.
+- The web labels every exposure type the API declares
+  (`exposure-types-sync.test.ts` reads `pkg/domain/exposure/value_objects.go`).
+- CT: a name seen only as a wildcard (`*.dev.example.com`) is not a
+  discovered subdomain: it names no host and was counted with no asset.
+  Certificate expiry is still reported for it.
+- Seeds: a `root_domain` under one of the tenant's root-domain seeds is
+  refused (it adds nothing).
+- Certificates page: the client-side Validity filter was never applied by the
+  inventory page and is removed; each row shows its expiry, and expiring or
+  expired certificates are listed on Exposures.
+## 4f. Review queue reachable, honest counts (built, P0-12)
+
+- **Reachable:** the Attack surface sidebar row carries the section tabs
+  Overview (`/attack-surface`) and Review (`/attack-surface/review`). The row
+  badge and the Review tab count are the queue's own total for
+  `needs_review` + `candidate` (`GET /easm/candidates?states=needs_review,candidate&per_page=1`,
+  data-scoped like the queue), so the three numbers always agree. The queue's
+  tab is in the URL: `?tab=rejected` opens "Not ours".
+- **Honest counts:** the overview "Needs review" counts `needs_review` and
+  `candidate` (what the queue lists). `GET /attack-surface/stats` (cards,
+  exposed list, trends) and `/attack-surface/external` cover **approved**
+  assets only, so a rejected or unreviewed name is never shown as exposed
+  surface. Top risks already excluded rejected assets.
+- **One definition of internet-facing:** `exposure = public`, on the
+  attack-surface pages and the inventory strip alike (the strip used
+  `is_internet_accessible`, which CT-promoted names do not set).
+- `?attribution=all` is accepted (no filter) next to `approved`,
+  `unconfirmed`, `unrecorded` and the states.
+- Decision E1 (308 `/attack-surface/external` → filtered `/assets`) waits for
+  the inventory's external columns (attribution, last seen, certificate
+  expiry, CDN).
+
 ## 5. Data model (planned)
 
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and
@@ -310,6 +352,23 @@ Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_te
 - **Time.** `first_seen`/`last_seen` per asset and per observation; the CT
   `not_before` and the passive-DNS first-seen give the earliest external
   evidence, which is what MTTD is measured against.
+
+## 5a. After a decision (built, P0-9)
+
+A person's attribution decision (review queue `POST /easm/candidates/decisions`
+or `PUT /assets/{id}/attribution`) is followed by
+`easm.DecisionEffects.AfterDecision`, best effort and only for the assets the
+decision stored (tenant and data scope already checked):
+
+- **Reclassify now** (22c B4): an asset-scoped request on the priority
+  reclassify queue, which is drained every minute, so the P2 cap on findings
+  of unconfirmed assets lifts (or applies) within two minutes instead of the
+  12-hour sweep.
+- **Rejection hygiene** (22c B2): on `rejected`, the name's open CT and
+  DNS-check exposures, and those of every name under it, are resolved with
+  state history; the CT monitor stops writing exposures for rejected and
+  tombstoned names. See
+  [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md#rejected-names-identity-and-linking).
 
 ## 6. Known limits of what is built
 

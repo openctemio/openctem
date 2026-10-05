@@ -410,6 +410,24 @@ lists the exempt ones (approval events, `new_asset`, `sensor.offline`), whose
 severity is a constant chosen by the emitter. The outbox honours that list when
 it matches an entry to a channel.
 
+**Only emitted types are listed** (settings plan P0-08). A type goes into
+`AllEventTypes()` together with its producer, which is code that enqueues or
+sends a notification with that type. `tests/unit/event_type_producer_test.go`
+fails on a listed type nothing emits.
+
+These types had no producer and were removed from the catalog:
+
+- `security_alert`, which was on by default;
+- `system_error`, `asset_changed`, `asset_deleted`;
+- `scan_started`, `scan_completed`, `scan_failed`;
+- `finding_confirmed`, `finding_triaged`, `exposure_resolved`.
+
+The "System Events" and "Scan Events" groups went with them. Every remaining
+type belongs to a module, so a tenant with no optional modules is offered no
+types. If a subscription saved earlier still lists a removed type, that entry
+never matches anything. To bring a type back, add its producer in the same
+change.
+
 ### Sensor events
 
 | Event | Emitted by | When |
@@ -518,6 +536,26 @@ The `notification_history` table has been **removed** in migration `000075_drop_
 - **Cleaner architecture**: Outbox = Queue, Events = Archive
 
 All related code (repository, service methods, API endpoints) has been removed.
+
+### Outbound webhooks `/api/v1/webhooks` (REMOVED)
+
+`/api/v1/webhooks` stored endpoint URLs and signing secrets, but no worker
+ever delivered to them. Nothing was sent, and nothing wrote
+`webhook_deliveries`. Owner decision B9 removed the feature: the routes,
+handler, service, repository and domain package are gone. Migration `001032`
+does three things:
+
+- archives and removes the `integrations:webhooks:*` permissions and their role
+  grants (the down migration restores them);
+- deprecates the `integrations.webhooks` module toggle;
+- keeps the `webhooks` and `webhook_deliveries` tables untouched (no data is
+  destroyed).
+
+For outbound delivery, use a notification channel (Slack, Teams, Telegram,
+email, or a custom webhook channel, all sent through the outbox) or the SIEM
+integration. Inbound webhooks (`/api/v1/webhooks/incoming/*`, HMAC-verified)
+are unaffected. `tests/unit/outbound_webhooks_removed_test.go` keeps the
+permissions and the module toggle from coming back without a sender.
 
 ## Related Documents
 

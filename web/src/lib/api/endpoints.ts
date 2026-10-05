@@ -1101,6 +1101,9 @@ export const sensorEndpoints = {
   manifests: (sensorId: string, limit = 50) =>
     `${API_BASE.SENSORS}/${sensorId}/manifests${buildQueryString({ limit })}`,
 
+  /** The sensor's setup report and its checks (research/26, sensors:read). */
+  configReport: (sensorId: string) => `${API_BASE.SENSORS}/${sensorId}/config-report`,
+
   /** The tenant's scanner content policy (RFC-031): GET, PUT with sensors:write. */
   contentPolicy: () => `${API_BASE.SENSORS}/content-policy`,
 
@@ -1868,6 +1871,11 @@ export const scanEndpoints = {
    * Save an unsaved quick scan as a configuration ("Save as scan")
    */
   save: (scanId: string) => `${API_BASE.SCANS}/${scanId}/save`,
+
+  /**
+   * Next occurrences of a schedule, validated as saving would (stateless)
+   */
+  schedulePreview: () => `${API_BASE.SCANS}/schedule-preview`,
 
   // ============================================
   // BULK OPERATIONS

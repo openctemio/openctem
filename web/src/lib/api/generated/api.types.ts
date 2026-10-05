@@ -24052,6 +24052,166 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scans/schedule-preview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Preview a scan schedule
+     * @description Validates a schedule exactly as saving a scan would (cron or
+     *     RRULE, timezone, the 15-minute minimum) and lists its next
+     *     occurrences in its timezone. Reads and stores nothing.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Schedule */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.SchedulePreviewRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SchedulePreviewResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scans/sensor-opt-in-impact': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Scans affected by the sensor opt-ins
+     * @description The organization's switches for out-of-band callbacks (interactsh) and custom templates in sensor jobs (both off unless an owner enabled them, research/25 D3), and the scans whose scanner_config asks for either (at most 100; truncated says more exist). While a switch is off, those scans run without interactsh or are refused (custom templates).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.OptInImpact']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scans/stages': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List scan stages
+     * @description The scan stage catalog: each capability with the asset types it consumes and produces, its intrusiveness tier and the tools that implement it.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanStageListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/scans/stats': {
     parameters: {
       query?: never
@@ -35088,6 +35248,19 @@ export interface components {
       pending?: number
       rate_pct?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_scan.OptInImpact': {
+      opt_ins?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns']
+      scans?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan'][]
+      /** @description Truncated: more scans are affected than listed. */
+      truncated?: boolean
+    }
+    'github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan': {
+      id?: string
+      name?: string
+      status?: string
+      uses_custom_templates?: boolean
+      uses_interactsh?: boolean
+    }
     'github_com_openctemio_openctem_api_internal_app_scan.PreviewError': {
       code?: string
       message?: string
@@ -35306,6 +35479,7 @@ export interface components {
       | 'contains'
       | 'exposes'
       | 'resolves_to'
+      | 'serves_certificate'
       | 'cname_of'
       | 'depends_on'
       | 'peer_of'
@@ -35706,6 +35880,10 @@ export interface components {
       name?: string
       target_types?: string[]
       version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns': {
+      allow_custom_templates?: boolean
+      allow_interactsh?: boolean
     }
     'github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity': {
       active_jobs?: number
@@ -39028,8 +39206,7 @@ export interface components {
       channel_name?: string
       /**
        * @example [
-       *       "[\"security_alert\"",
-       *       "\"new_finding\"",
+       *       "[\"new_finding\"",
        *       "\"new_exposure\"]"
        *     ]
        */
@@ -39855,6 +40032,35 @@ export interface components {
       status?: string
       tenant_id?: string
     }
+    'internal_infra_http_handler.ScanStageImplementationResponse': {
+      default?: boolean
+      tool?: string
+    }
+    'internal_infra_http_handler.ScanStageListResponse': {
+      /**
+       * @description MaxHops is how many discovery hops a derived target may be from the
+       *     run's seeds.
+       */
+      max_hops?: number
+      stages?: components['schemas']['internal_infra_http_handler.ScanStageResponse'][]
+    }
+    'internal_infra_http_handler.ScanStageResponse': {
+      description?: string
+      findings?: boolean
+      implementations?: components['schemas']['internal_infra_http_handler.ScanStageImplementationResponse'][]
+      /**
+       * @description Inputs and Outputs are stored type labels: "type" or
+       *     "type/sub_type" (service/http is an HTTP service).
+       */
+      inputs?: string[]
+      key?: string
+      max_fanout?: number
+      name?: string
+      outputs?: string[]
+      relations?: string[]
+      /** @enum {string} */
+      tier?: 'T0' | 'T1' | 'T2'
+    }
     'internal_infra_http_handler.ScanStatsResponse': {
       active?: number
       by_scan_type?: {
@@ -39944,6 +40150,23 @@ export interface components {
       updated_at?: string
       validation_error?: string
       version?: string
+    }
+    'internal_infra_http_handler.SchedulePreviewRequest': {
+      /** @description Count is how many occurrences to list, 1-10 (default 5). */
+      count?: number
+      schedule_cron?: string
+      schedule_day?: number
+      schedule_rrule?: string
+      /** @description HH:MM */
+      schedule_time?: string
+      schedule_type?: string
+      timezone?: string
+    }
+    'internal_infra_http_handler.SchedulePreviewResponse': {
+      /** @description Occurrences are RFC 3339 timestamps with the timezone's offset, in order. */
+      occurrences?: string[]
+      /** @description Timezone the schedule is evaluated in (IANA; UTC when none was given). */
+      timezone?: string
     }
     'internal_infra_http_handler.ScopeBulkOperationResponse': {
       affected_count?: number
@@ -40854,6 +41077,11 @@ export interface components {
       }
       name?: string
       output_formats?: string[]
+      /**
+       * @description OutputTypes are the asset types a report of the tool may create
+       *     (scan stage catalog); read-only.
+       */
+      output_types?: string[]
       supported_targets?: string[]
       tags?: string[]
       /** @description nil for platform tools, UUID for custom tools */
