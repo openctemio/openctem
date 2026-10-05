@@ -82,6 +82,8 @@ import {
   type ReleaseChannel,
   type SensorModeFilter,
   type SensorProtocolFilter,
+  SENSOR_POLICY_FILTERS,
+  type SensorPolicyFilter,
 } from '../lib/fleet'
 
 type SensorTypeFilter = 'runner' | 'worker' | 'collector' | 'sensor'
@@ -173,6 +175,7 @@ export function SensorsSection({
   const [versionParam, setVersionParam] = useUrlFilterList('version')
   const [modeParam, setModeParam] = useUrlFilterList('mode')
   const [protocolParam, setProtocolParam] = useUrlFilterList('protocol')
+  const [policyParam, setPolicyParam] = useUrlFilterList('policy')
   // The same name and values as the API's GET /sensors?sdk_version= filter.
   const [sdkVersionParam, setSdkVersionParam] = useUrlFilterList('sdk_version')
   const [attentionParam, setAttentionParam] = useUrlFilter('attention', '')
@@ -207,11 +210,15 @@ export function SensorsSection({
       protocols: protocolParam.filter((p): p is SensorProtocolFilter =>
         (PROTOCOLS as string[]).includes(p)
       ),
+      policies: policyParam.filter((p): p is SensorPolicyFilter =>
+        (SENSOR_POLICY_FILTERS as string[]).includes(p)
+      ),
       sdkVersions: sdkVersionParam.filter(Boolean),
       attention: attentionParam === '1',
     }
   }, [
     protocolParam,
+    policyParam,
     sdkVersionParam,
     roleParam,
     stateParam,
@@ -237,6 +244,7 @@ export function SensorsSection({
       setVersionParam(next.versions)
       setModeParam(next.modes)
       setProtocolParam(next.protocols)
+      setPolicyParam(next.policies)
       setSdkVersionParam(next.sdkVersions)
       setAttentionParam(next.attention ? '1' : '')
     },
@@ -247,6 +255,7 @@ export function SensorsSection({
       setVersionParam,
       setModeParam,
       setProtocolParam,
+      setPolicyParam,
       setSdkVersionParam,
       setAttentionParam,
     ]

@@ -136,6 +136,19 @@ func (s *SeedService) Create(ctx context.Context, tenantID shared.ID, in CreateS
 	if n >= easmseed.MaxPerTenant {
 		return nil, fmt.Errorf("%w: at most %d seeds per organization", shared.ErrValidation, easmseed.MaxPerTenant)
 	}
+	// A root domain under one of the tenant's root-domain seeds adds nothing:
+	// discovery already covers it (research/22 P0-13, 22c B9).
+	if kind == easmseed.KindRootDomain {
+		existing, err := s.store.ListSeeds(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range existing {
+			if e.Kind == easmseed.KindRootDomain && strings.HasSuffix(value, "."+e.Value) {
+				return nil, fmt.Errorf("%w: %s is already covered by the seed %s", shared.ErrValidation, value, e.Value)
+			}
+		}
+	}
 	discovery := true
 	if in.DiscoveryEnabled != nil {
 		discovery = *in.DiscoveryEnabled

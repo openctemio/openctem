@@ -417,7 +417,6 @@ var ModulePermissionMapping = map[string]string{
 	ModuleRoles:                "team:roles:read",
 	ModuleSettings:             "settings:read",
 	ModuleAPIKeys:              "integrations:api_keys:read",
-	ModuleWebhooks:             "integrations:webhooks:read",
 	ModuleNotificationSettings: "integrations:notifications:read",
 
 	// Data modules

@@ -841,7 +841,11 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
   everywhere; `?attribution=all` is accepted. The E1 308 of
   `/attack-surface/external` waits for the inventory's external columns.
 
-- **P0-13 honest EASM numbers:** open.
+- **P0-13 honest EASM numbers:** shipped (this PR, no migration). The
+  summary counts only exposure types something produces; every type the API
+  can emit has a label in the web; wildcard-only CT names are no longer
+  counted as discovered subdomains; a root-domain seed under an existing
+  seed is refused; the dead certificate Validity filter is removed.
 
 - **P0-6 port and service results surfaced (B6):** shipped (this PR, no
   migration). A port scan's open ports become `open_port` service assets

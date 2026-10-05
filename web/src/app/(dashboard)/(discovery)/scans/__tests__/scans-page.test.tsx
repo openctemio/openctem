@@ -35,6 +35,9 @@ vi.mock('@/features/scans/components/scan-config-detail-sheet', () => ({
   ScanConfigDetailSheet: () => null,
 }))
 vi.mock('@/features/scans/components/scan-runs-tab', () => ({ ScanRunsTab: () => null }))
+vi.mock('@/features/sensors/components/sensor-opt-in-banner', () => ({
+  SensorOptInBanner: () => null,
+}))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))
