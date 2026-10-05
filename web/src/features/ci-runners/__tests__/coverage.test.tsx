@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 
 import { CIPipelinesPanel } from '../components/ci-pipelines-panel'
 import { RetirePipelineDialog } from '../components/ci-pipeline-sheet'
-import { coverageURL, validRetireReason } from '../lib/coverage'
+import { coverageExpectationURL, coverageURL, validRetireReason } from '../lib/coverage'
 import { INACTIVE_PIPELINE_STATUSES, PIPELINE_STATUS_META } from '../lib/pipeline'
 
 // ── mocks ──────────────────────────────────────────────────
@@ -127,6 +127,9 @@ describe('coverage lib', () => {
       '/api/v1/ci/coverage?filter=gap&search=api&page=2&per_page=10'
     )
     expect(coverageURL('/api/v1/ci')).toBe('/api/v1/ci/coverage?page=1&per_page=25')
+    expect(coverageExpectationURL('/api/v1/ci', 'a/1')).toBe(
+      '/api/v1/ci/coverage/expectations/a%2F1'
+    )
   })
 
   it('requires a retirement reason of 10 to 2,000 characters', () => {

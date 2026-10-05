@@ -62,6 +62,11 @@ export function coverageURL(base: string, f: CoverageFilters = {}): string {
   return `${base}/coverage?${q.toString()}`
 }
 
+/** PUT/DELETE target marking a repository as expected to be covered. */
+export function coverageExpectationURL(base: string, assetId: string): string {
+  return `${base}/coverage/expectations/${encodeURIComponent(assetId)}`
+}
+
 /** A retirement reason the API accepts (10 to 2,000 characters). */
 export function validRetireReason(reason: string): boolean {
   const n = [...reason.trim()].length
