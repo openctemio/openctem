@@ -102,13 +102,16 @@ func TestCollectDiscoveries_Subdomains(t *testing.T) {
 	future := "2027-01-01T00:00:00"
 	entries := []crtEntry{
 		{CommonName: "example.com", NameValue: "example.com\nwww.example.com", NotAfter: future},
-		{CommonName: "*.API.example.com", NameValue: "*.api.example.com", NotAfter: future}, // wildcard + case
+		{CommonName: "*.API.example.com", NameValue: "*.api.example.com", NotAfter: future}, // wildcard only: no host
+		{CommonName: "Mail.example.com", NameValue: "mail.example.com", NotAfter: future},   // case
 		{CommonName: "shop.example.com", NameValue: "shop.example.com.", NotAfter: future},  // trailing dot
 		{CommonName: "attacker.com", NameValue: "notexample.com", NotAfter: future},         // out of scope
 	}
 	subs := collectDiscoveries("Example.com", entries, now, defaultExpiryWindow, defaultExpiredLookback, 500).subdomains
 
-	want := map[string]bool{"www.example.com": true, "api.example.com": true, "shop.example.com": true}
+	// research/22 P0-13: a wildcard-only name is not a discovered subdomain
+	// (it would be counted with no asset behind it).
+	want := map[string]bool{"www.example.com": true, "mail.example.com": true, "shop.example.com": true}
 	if len(subs) != len(want) {
 		t.Fatalf("want %d subdomains, got %d: %v", len(want), len(subs), subs)
 	}

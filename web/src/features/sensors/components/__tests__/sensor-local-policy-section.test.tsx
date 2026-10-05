@@ -31,7 +31,9 @@ describe('SensorLocalPolicySection', () => {
       />
     )
     expect(screen.getByText('Enforced')).toBeInTheDocument()
-    expect(screen.getByText('abababababab')).toBeInTheDocument()
+    // The full digest, selectable, so it can be compared on the host.
+    expect(screen.getByTestId('local-policy-digest')).toHaveTextContent('sha256:' + 'ab'.repeat(32))
+    expect(screen.queryByTestId('no-policy-guidance')).not.toBeInTheDocument()
     expect(screen.getByText('Targets: 2 allowed, 1 denied')).toBeInTheDocument()
     expect(screen.getByText('Interactsh callbacks: refused')).toBeInTheDocument()
   })
@@ -47,5 +49,24 @@ describe('SensorLocalPolicySection', () => {
       />
     )
     expect(screen.getByText('No local policy')).toBeInTheDocument()
+    // The corrected guidance next to the sensor's warning (research/25 §2.2).
+    const guidance = screen.getByTestId('no-policy-guidance')
+    expect(guidance).toHaveTextContent('SENSOR_TEMPLATE_SIGNING_KEYS')
+    expect(guidance).toHaveTextContent('your organization allows interactsh')
+  })
+
+  it('adds the guidance when the sensor repeats the absent-policy warning', () => {
+    render(
+      <SensorLocalPolicySection
+        sensor={{
+          local_policy: {
+            state: 'enforced',
+            kill_switch: false,
+            warnings: ['no local policy: custom templates ... are allowed'],
+          },
+        }}
+      />
+    )
+    expect(screen.getByTestId('no-policy-guidance')).toBeInTheDocument()
   })
 })
