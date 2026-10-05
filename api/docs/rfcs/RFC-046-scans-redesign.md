@@ -6,6 +6,12 @@
 > and the P1.5 occurrence key `UNIQUE(scan_id, scheduled_for)` (#949; the
 > rrule part of P1.5 is open); P1.3 deadline → `partial` + rollover
 > (migration 000674; trigger type `rollover` waits for P1.4).
+> P2 chaining (research/27 P0, owner decisions G1–G12, 2026-10-05): the stage
+> catalogue with typed inputs and outputs (`pkg/domain/stage`, migration
+> 001040 `tools.output_types`, `GET /api/v1/scans/stages`) is in review;
+> the planner, the hop router with the per-hop gate, report output-type
+> binding and run-drawer stage lanes follow. State:
+> [architecture/scan-stages.md](../architecture/scan-stages.md).
 > Scope: api + web, with sdk-go and sensor changes where a phase says so.
 > Builds on and does not duplicate:
 > [RFC-030](RFC-030-scan-work-distribution.md) (pull, chunks, leases, fair

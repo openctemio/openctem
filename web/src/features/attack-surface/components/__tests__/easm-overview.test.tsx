@@ -80,6 +80,7 @@ describe('EASMOverview', () => {
 
   it('labels exposure types in words', () => {
     expect(exposureTypeLabel('email_security_weak')).toBe('Weak email security')
-    expect(exposureTypeLabel('bucket_public')).toBe('bucket public')
+    expect(exposureTypeLabel('bucket_public')).toBe('Bucket Public')
+    expect(exposureTypeLabel('not_a_type')).toBe('not a type')
   })
 })
