@@ -374,6 +374,59 @@ func (r *ExposureRepository) BulkUpsert(ctx context.Context, events []*exposure.
 		return nil
 	}
 
+	query, args, err := buildExposureBulkUpsert(events)
+	if err != nil {
+		return err
+	}
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to bulk upsert exposure events: %w", err)
+	}
+	return nil
+}
+
+// UpsertedExposure is one row a transactional bulk upsert wrote.
+type UpsertedExposure struct {
+	ID          string
+	TenantID    string
+	Fingerprint string
+	// Inserted is true for a new row, false for a re-sighting.
+	Inserted bool
+}
+
+// BulkUpsertInTx is BulkUpsert inside the caller's transaction, and says
+// which rows were inserted and which were re-sightings, so the caller can
+// act on new rows only in the same transaction (EASM alerts).
+func (r *ExposureRepository) BulkUpsertInTx(ctx context.Context, tx *sql.Tx, events []*exposure.ExposureEvent) ([]UpsertedExposure, error) {
+	if len(events) == 0 {
+		return nil, nil
+	}
+	query, args, err := buildExposureBulkUpsert(events)
+	if err != nil {
+		return nil, err
+	}
+	// xmax = 0 only on a freshly inserted tuple; an ON CONFLICT update locks
+	// the existing row and sets it.
+	rows, err := tx.QueryContext(ctx, query+` RETURNING id, tenant_id, fingerprint, (xmax = 0)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk upsert exposure events: %w", err)
+	}
+	defer rows.Close()
+	out := make([]UpsertedExposure, 0, len(events))
+	for rows.Next() {
+		var u UpsertedExposure
+		if err := rows.Scan(&u.ID, &u.TenantID, &u.Fingerprint, &u.Inserted); err != nil {
+			return nil, fmt.Errorf("scan upserted exposure: %w", err)
+		}
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("upserted exposures: %w", err)
+	}
+	return out, nil
+}
+
+// buildExposureBulkUpsert builds the batch INSERT ... ON CONFLICT statement.
+func buildExposureBulkUpsert(events []*exposure.ExposureEvent) (string, []any, error) {
 	// Fold events that share a fingerprint: the statement below cannot update
 	// one row twice, and a single duplicate used to fail the whole batch.
 	rows := foldExposureBatch(events)
@@ -387,7 +440,7 @@ func (r *ExposureRepository) BulkUpsert(ctx context.Context, events []*exposure.
 		event, last := row.first, row.last
 		details, err := json.Marshal(last.Details())
 		if err != nil {
-			return fmt.Errorf("failed to marshal details for event %d: %w", i, err)
+			return "", nil, fmt.Errorf("failed to marshal details for event %d: %w", i, err)
 		}
 
 		baseIdx := i * numCols
@@ -446,12 +499,7 @@ func (r *ExposureRepository) BulkUpsert(ctx context.Context, events []*exposure.
 			-- severity/scores but keeps the user-set status.
 	`, strings.Join(valueStrings, ", "))
 
-	_, err := r.db.ExecContext(ctx, query, valueArgs...)
-	if err != nil {
-		return fmt.Errorf("failed to bulk upsert exposure events: %w", err)
-	}
-
-	return nil
+	return query, valueArgs, nil
 }
 
 // CountByState returns counts grouped by state for a tenant.
