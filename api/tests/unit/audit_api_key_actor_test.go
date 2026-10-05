@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 )
@@ -16,7 +15,7 @@ func TestAuditService_LogEvent_StampsAPIKey(t *testing.T) {
 	actx := newTestAuditContext()
 	ctx := auditapp.WithAPIKeyActor(context.Background(), "key-123", "oct_abcd")
 
-	event := app.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1").
+	event := auditapp.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1").
 		WithMetadata("api_key_id", "spoofed")
 	if err := svc.LogEvent(ctx, actx, event); err != nil {
 		t.Fatalf("LogEvent: %v", err)
@@ -32,8 +31,7 @@ func TestAuditService_LogEvent_StampsAPIKey(t *testing.T) {
 
 func TestAuditService_LogEvent_SessionHasNoAPIKey(t *testing.T) {
 	svc, repo := newTestAuditService()
-	if err := svc.LogEvent(context.Background(), newTestAuditContext(),
-		app.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1")); err != nil {
+	if err := svc.LogEvent(context.Background(), newTestAuditContext(), auditapp.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1")); err != nil {
 		t.Fatalf("LogEvent: %v", err)
 	}
 	if _, ok := repo.lastCreated.Metadata()["api_key_id"]; ok {
