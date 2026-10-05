@@ -43,6 +43,7 @@ type CIAdminService interface {
 // CIAdminHandler serves /api/v1/ci administration.
 type CIAdminHandler struct {
 	svc       CIAdminService
+	pipelines CIPipelineService
 	dataScope DataScopeEnforcer
 	logger    *logger.Logger
 }
@@ -116,8 +117,15 @@ type CIRunResponse struct {
 	Workflow          string `json:"workflow,omitempty"`
 	PipelineURL       string `json:"pipeline_url,omitempty"`
 	Fork              bool   `json:"fork"`
-	Status            string `json:"status"`
-	Verdict           string `json:"verdict,omitempty"`
+	PipelineID        string `json:"pipeline_id,omitempty"`
+	// SensorVersion is the runner's version; Tools what its reports
+	// declared; ScanFailures what it reported at evaluation. Labels only.
+	SensorVersion string        `json:"sensor_version,omitempty"`
+	Tools         []CIToolLabel `json:"tools"`
+	ScanFailures  *int          `json:"scan_failures,omitempty"`
+	TemplateRef   string        `json:"template_ref,omitempty"`
+	Status        string        `json:"status"`
+	Verdict       string        `json:"verdict,omitempty"`
 	// VerdictDetail is the last verdict with its reasons and links (detail
 	// view only).
 	VerdictDetail *cirunapp.Verdict `json:"verdict_detail,omitempty"`
@@ -136,6 +144,14 @@ func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
 		ReportsCount: r.ReportsCount, FindingsCount: r.FindingsCount, CreatedAt: r.CreatedAt}
 	if r.TrustConfigID != nil {
 		out.TrustConfigID = r.TrustConfigID.String()
+	}
+	if r.PipelineID != nil {
+		out.PipelineID = r.PipelineID.String()
+	}
+	out.SensorVersion, out.ScanFailures, out.TemplateRef = r.SensorVersion, r.ScanFailures, r.TemplateRef
+	out.Tools = make([]CIToolLabel, 0, len(r.Tools))
+	for _, t := range r.Tools {
+		out.Tools = append(out.Tools, CIToolLabel{Name: t.Name, Version: t.Version})
 	}
 	if withDetail && len(r.VerdictDetail) > 0 {
 		var v cirunapp.Verdict
@@ -439,6 +455,7 @@ func (h *CIAdminHandler) DeleteTrustConfig(w http.ResponseWriter, r *http.Reques
 // @Produce      json
 // @Security     BearerAuth
 // @Param        repository_asset_id query string false "Repository asset"
+// @Param        pipeline_id query string false "CI pipeline"
 // @Param        verdict query string false "pass, fail or none"
 // @Param        provider query string false "github or gitlab"
 // @Param        page query int false "Page (default 1)"
@@ -467,6 +484,14 @@ func (h *CIAdminHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.RepositoryAssetID = &id
+	}
+	if v := q.Get("pipeline_id"); v != "" {
+		id, err := shared.IDFromString(v)
+		if err != nil {
+			apierror.BadRequest("pipeline_id must be an id").WriteJSON(w)
+			return
+		}
+		f.PipelineID = &id
 	}
 	f.Page, _ = strconv.Atoi(q.Get("page"))
 	f.PerPage, _ = strconv.Atoi(q.Get("per_page"))

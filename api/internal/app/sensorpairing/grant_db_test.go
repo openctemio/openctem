@@ -65,7 +65,7 @@ func TestPairing_ApprovalCreatesGrant_DB(t *testing.T) {
 	if _, err := f.confirm(s, st.Identity); err != nil {
 		t.Fatal(err)
 	}
-	f.exec(`UPDATE sensor_grants SET trust_level = 'trusted' WHERE sensor_id = $1`, st.Identity.SensorID)
+	f.exec(`UPDATE sensors SET trust_level = 'trusted' WHERE id = $1`, st.Identity.SensorID)
 	second := newSensor(32)
 	f.start(second, "", st.Identity.SensorID)
 	f.reveal(second)

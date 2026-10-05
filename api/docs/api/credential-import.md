@@ -46,13 +46,11 @@ At rest the secret is encrypted with AES-256-GCM under `APP_ENCRYPTION_KEY`
 (`details.secret_value_enc`). Rows stored before this change are sealed by the
 server on start (idempotent), or offline with `go run ./cmd/encrypt-credentials`.
 
-### Agent Routes (API Key Authentication)
+### Sensors
 
-| Method | Endpoint | Description | Module Required |
-|--------|----------|-------------|-----------------|
-| POST | `/api/v1/agent/credentials/ingest` | Ingest credentials from agents | `credentials` |
-
-> **Module Gating:** Agent ingest routes require the tenant to have the corresponding module enabled. If the module is not enabled, the API returns `403 MODULE_NOT_ENABLED`.
+Sensors have no credential ingest route: the protocol v1 route
+`/api/v1/agent/credentials/ingest` was retired with protocol v1 (2026-10-05).
+Import credentials through the administrator routes above.
 
 ---
 
@@ -382,66 +380,6 @@ Authorization: Bearer <access_token>
 
 ---
 
-## Agent Ingest Endpoint
-
-Agents use API key authentication to ingest credentials.
-
-### Request
-
-```http
-POST /api/v1/agent/credentials/ingest
-Content-Type: application/json
-X-API-Key: <agent_api_key>
-```
-
-The request body is the same as the JSON import endpoint.
-
-### Example Agent Integration
-
-```python
-import requests
-
-API_KEY = "your-agent-api-key"
-API_URL = "https://api.openctem.io/api/v1/agent/credentials/ingest"
-
-credentials = {
-    "credentials": [
-        {
-            "identifier": "admin@company.com",
-            "credential_type": "password",
-            "secret_value": "leaked_password_123",  # The actual leaked password
-            "source": {
-                "type": "data_breach",
-                "name": "InternalScanner",
-                "discovered_at": "2024-08-15T10:30:00Z"
-            },
-            "dedup_key": {
-                "breach_name": "CompanyXYZ Breach",
-                "breach_date": "2024-07-01"
-            }
-        }
-    ],
-    "options": {
-        "dedup_strategy": "update_last_seen",
-        "reactivate_resolved": True
-    },
-    "metadata": {
-        "source_tool": "internal_scanner",
-        "batch_id": "scan-2024-08-15"
-    }
-}
-
-response = requests.post(
-    API_URL,
-    json=credentials,
-    headers={"X-API-Key": API_KEY}
-)
-
-result = response.json()
-print(f"Imported: {result['imported']}, Updated: {result['updated']}")
-```
-
----
 
 ## Integration Sources
 
@@ -472,7 +410,6 @@ print(f"Imported: {result['imported']}, Updated: {result['updated']}")
 ## Rate Limits
 
 - Admin endpoints: Standard API rate limits
-- Agent ingest: 100 requests/minute per agent
 - Max credentials per import: 1000
 
 ---

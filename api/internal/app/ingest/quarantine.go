@@ -142,19 +142,6 @@ func OpenCommand(ctx context.Context, commands commandReader, agt *sensor.Sensor
 	return nil, ErrCommandNotFound
 }
 
-// BindCommand resolves the command a v1 report names (X-OpenCTEM-Command-ID)
-// into its binding. An empty id is the unsolicited binding.
-func (s *Service) BindCommand(ctx context.Context, agt *sensor.Sensor, commandID string) (Binding, error) {
-	if commandID == "" {
-		return Binding{}, nil
-	}
-	cmd, err := OpenCommand(ctx, s.commands, agt, commandID, time.Now())
-	if err != nil {
-		return Binding{}, err
-	}
-	return CommandBinding(cmd), nil
-}
-
 // bindingFromCommandID rebuilds the binding of a report the accept side bound
 // to a command (v2 segments are processed later, the command may have
 // finished since). A command that cannot be read keeps the binding but with

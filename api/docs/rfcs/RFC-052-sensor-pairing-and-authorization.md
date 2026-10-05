@@ -283,7 +283,7 @@ One row per sensor in `sensor_grants` (composite foreign key on
 | Dimension | Column | Meaning (NULL = no limit from the grant) |
 |---|---|---|
 | Profile | `profile` | The profile it was created from (label only; the columns are the grant) |
-| Trust | `trust_level` | `new` or `trusted` (SP3 adds `restricted`, `quarantined`) |
+| Trust | `sensors.trust_level` (on the sensor row) | `new` or `trusted` (SP3 adds `restricted`, `quarantined`) |
 | Job types | `job_types` | `scan`, `collect`, `validate`, `connector_sync`, `connector_scan`, … |
 | Zones | `zone_ids` | A zoned command must be in one of these zones |
 | Tools | `tools` | The command's tool must be listed |
@@ -320,11 +320,11 @@ changes for them). It cannot be chosen for a new sensor. The console flags it
 
 | Where | Check |
 |---|---|
-| Poll, claim-N, claim by id (v1 acknowledge, v2 claim) | The Go dispatch gate (`dispatchGate.refusal`, the one place poll, claim and acknowledge all pass) evaluates the effective grant against the command: job type, zone, tool, required capabilities, tier, target network, target scope, credentials. A refused command is not offered on poll, and a claim by id answers like a lost claim (v2 `command-claimed`, v1 `409`) so a deployed sensor drops the command instead of reading a 403 as a lost key; the refusal is audited (`sensor.claim_refused_grant`, or `sensor.credential_refused` for the credentials dimension) with the dimension and recorded on the sensor's timeline. The capability predicate is added to `ClaimForSensor` too (the gap in §3). |
+| Poll, claim-N, claim by id (v1 acknowledge, v2 claim) | The Go dispatch gate (`dispatchGate.refusal`, the one place poll, claim and acknowledge all pass) evaluates the effective grant against the command: job type, zone, tool, required capabilities, tier, target network, target scope, credentials. A refused command is not offered on poll, and a claim by id answers like a lost claim (`command-claimed`) so a deployed sensor drops the command instead of reading a 403 as a lost key; the refusal is audited (`sensor.claim_refused_grant`, or `sensor.credential_refused` for the credentials dimension) with the dimension and recorded on the sensor's timeline. The capability predicate is added to `ClaimForSensor` too (the gap in §3). |
 | Command tier | The stage catalog's tier for the command's tool (lowest stage it implements); custom templates or out-of-band callbacks raise it to T2; an unknown tool is T2 (fail closed); `collect` and `connector_sync` are T0. |
 | Credentials | A command whose `scanner_config`/`config` carries credential-looking values (the existing secret detector) needs `allow_credentials` and trust `trusted`; otherwise it is refused at claim (`sensor.credential_refused`, audited). Sealed credential delivery (RFC-032 Phase 3) will use the same gate. |
 | Results with a job | Unchanged: bound to a command the sensor holds (`ingest.OpenCommand`), same tool. |
-| Results without a job | A sensor whose effective grant has `allow_push_ingest = false` is refused (v2: the segment's items are rejected with item error `push_ingest_not_granted`; v1: `422 PUSH_INGEST_NOT_GRANTED`, not 403, which sensors read as a lost key) before the role and tenant policy are consulted, audited (`sensor.push_refused_grant`); with it, today's path applies (role, tenant `warn`/`quarantine`, limited powers). |
+| Results without a job | A sensor whose effective grant has `allow_push_ingest = false` is refused (the segment's items are rejected with item error `push_ingest_not_granted`, not a 403, which sensors read as a lost key) before the role and tenant policy are consulted, audited (`sensor.push_refused_grant`); with it, today's path applies (role, tenant `warn`/`quarantine`, limited powers). |
 | Remote actions | The heartbeat doorbell rings a gated action only when the grant lists it. |
 | Grant changes | `sensors:grant:narrow` when every dimension is equal or narrower; `sensors:grant:widen` otherwise. A widening is audited at high severity and notifies every administrator; the SP4 hook asks a second approver. Narrowing takes effect on the next request. |
 | Trust | Promote (`new` → `trusted`) needs `sensors:grant:widen`; demote needs `sensors:grant:narrow`. |
@@ -380,8 +380,9 @@ Each line is a test in the implementation PRs.
   created sensor), status, expires_at, approved_by, approved_at, …)`,
   indexed for the caps; rows older than 30 days are purged by the
   housekeeping job (audit keeps the record).
-- `sensor_grants` (§5.1); the migration inserts a `legacy-broad`,
-  `trusted` grant for every existing sensor in one statement.
+- `sensor_grants` (§5.1) and `sensors.trust_level`; the migration inserts a
+  `legacy-broad` grant for every existing sensor in one statement and leaves
+  existing sensors `trusted`; new sensors start `new`.
 - `tenants.sensor_bearer_keys_allowed boolean NOT NULL DEFAULT true`, then
   default changed to `false`: existing organizations keep bearer keys, new
   ones require key-bound identity (D-4).

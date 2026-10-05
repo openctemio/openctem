@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -26,7 +26,7 @@ func TestAddCampaignMember_CrossTenantInjection_Blocked(t *testing.T) {
 	campaignRepo.getByID = nil
 	campaignRepo.getByIDErr = pentest.ErrCampaignNotFound
 
-	_, err := svc.AddCampaignMember(ctx, app.CampaignAddMemberInput{
+	_, err := svc.AddCampaignMember(ctx, compliance.CampaignAddMemberInput{
 		TenantID:   shared.NewID().String(),
 		CampaignID: shared.NewID().String(), // foreign campaign UUID
 		UserID:     shared.NewID().String(),
@@ -172,7 +172,7 @@ func TestRemoveCampaignMember_NonExistentMember(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, leadID, pentest.CampaignRoleLead, nil, time.Now()),
 	}
 
-	_, err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
+	_, err := svc.RemoveCampaignMember(ctx, compliance.CampaignRemoveMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     missingUserID.String(),
@@ -205,7 +205,7 @@ func TestUpdateCampaignMemberRole_PromoteToLead(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, testerID, pentest.CampaignRoleTester, nil, time.Now()),
 	}
 
-	err := svc.UpdateCampaignMemberRole(ctx, app.CampaignUpdateMemberRoleInput{
+	err := svc.UpdateCampaignMemberRole(ctx, compliance.CampaignUpdateMemberRoleInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     testerID.String(),
@@ -236,7 +236,7 @@ func TestUpdateCampaignMemberRole_DowngradeNonLast(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, lead2, pentest.CampaignRoleLead, nil, time.Now()),
 	}
 
-	err := svc.UpdateCampaignMemberRole(ctx, app.CampaignUpdateMemberRoleInput{
+	err := svc.UpdateCampaignMemberRole(ctx, compliance.CampaignUpdateMemberRoleInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     lead1.String(),

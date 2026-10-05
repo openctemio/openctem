@@ -23,7 +23,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // Error codes of the planner.
@@ -142,7 +141,7 @@ func (t StepTool) WithTool(step *pipeline.Step) *pipeline.Step {
 // targets (the type-gated run targets, or the hop router's plan) are at the
 // top level, where sensors read them; the run context goes along without
 // platform bookkeeping (StepRunContext).
-func StepCommandPayload(run *pipeline.Run, step *pipeline.Step, toolName, stepRunID string, pref pipeline.SensorPreference, st *StepTargets) (map[string]any, error) {
+func StepCommandPayload(run *pipeline.Run, step *pipeline.Step, toolName, stepRunID string, st *StepTargets) (map[string]any, error) {
 	toolName = strings.TrimSpace(toolName)
 	if toolName == "" {
 		return nil, shared.NewDomainError(codeNoMatchingTool,
@@ -163,9 +162,6 @@ func StepCommandPayload(run *pipeline.Run, step *pipeline.Step, toolName, stepRu
 		"scanner":                        toolName,
 		"timeout_seconds":                step.TimeoutSeconds,
 		"context":                        StepRunContext(run.Context, st),
-	}
-	if pref != "" {
-		payload[legacyv1.PayloadKeySensorPreference] = string(pref)
 	}
 	if targets, ok := run.Context["targets"]; ok {
 		payload["targets"] = targets

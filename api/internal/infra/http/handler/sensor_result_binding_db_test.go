@@ -1,22 +1,20 @@
 package handler
 
 // Result binding and quarantine (docs/rfcs/RFC-040-platform-sensor-mutual-distrust.md
-// §5.3, owner decision Q6 (a)), end to end: real sensor keys through
-// AuthenticateSource, the v1 ingest route, the ingest service and a migrated
-// database.
+// §5.3, owner decision Q6 (a)): real sensors, the command check every sensor
+// report goes through (ingest.OpenCommand), the ingest service and a migrated
+// database. The protocol v2 wire around it is covered by
+// tests/integration/ingest_v2_binding_test.go.
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/lib/pq"
 	"github.com/openctemio/ctis"
 
@@ -34,12 +32,12 @@ import (
 type bindingRig struct {
 	t       *testing.T
 	db      *sql.DB
-	srv     *httptest.Server
 	svc     *ingest.Service
+	cmds    *postgres.CommandRepository
 	results *postgres.SensorResultRepository
 	tenant  shared.ID
-	keys    map[string]string    // sensor name -> API key
-	ids     map[string]shared.ID // sensor name -> id
+	sensors map[string]*sensordom.Sensor // sensor name -> sensor
+	ids     map[string]shared.ID         // sensor name -> id
 }
 
 // newBindingRig builds a tenant with a worker, a second worker, a CI runner
@@ -71,21 +69,13 @@ func newBindingRig(t *testing.T, mode sensorresult.Mode) *bindingRig {
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
 	results := postgres.NewSensorResultRepository(db)
-	svc.SetCommandReader(postgres.NewCommandRepository(db))
+	cmds := postgres.NewCommandRepository(db)
+	svc.SetCommandReader(cmds)
 	svc.SetResultQuarantine(results, sensorresult.DefaultLimits())
 
-	ih := NewIngestHandler(svc, sensorSvc, log)
-	r := chi.NewRouter()
-	r.Route("/api/v1/agent", func(r chi.Router) {
-		r.Use(ih.AuthenticateSource)
-		r.Post("/ingest", ih.IngestCTIS)
-	})
-	srv := httptest.NewServer(r)
-	t.Cleanup(srv.Close)
-
 	ctx := context.Background()
-	rig := &bindingRig{t: t, db: sqldb, srv: srv, svc: svc, results: results, tenant: shared.NewID(),
-		keys: map[string]string{}, ids: map[string]shared.ID{}}
+	rig := &bindingRig{t: t, db: sqldb, svc: svc, cmds: cmds, results: results, tenant: shared.NewID(),
+		sensors: map[string]*sensordom.Sensor{}, ids: map[string]shared.ID{}}
 	if _, err := sqldb.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
 		rig.tenant.String(), "result binding", "result-binding-"+rig.tenant.String()); err != nil {
 		t.Fatalf("seed tenant: %v", err)
@@ -110,30 +100,50 @@ func newBindingRig(t *testing.T, mode sensorresult.Mode) *bindingRig {
 		if err != nil {
 			t.Fatalf("create sensor %s: %v", s.name, err)
 		}
-		rig.keys[s.name] = out.APIKey
+		rig.sensors[s.name] = out.Sensor
 		rig.ids[s.name] = out.Sensor.ID
 	}
 	return rig
 }
 
-// push sends a CTIS report as the named sensor, bound to commandID when set.
+// push ingests a CTIS report as the named sensor, bound to commandID when set,
+// the way a sensor report is admitted: the command must be open on this
+// sensor (ingest.OpenCommand), then the binding decides what the report may
+// change. It answers the HTTP status and body the sensor would see.
 func (r *bindingRig) push(sensorName string, report *ctis.Report, commandID string) (int, map[string]any) {
 	r.t.Helper()
-	body, _ := json.Marshal(report)
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, r.srv.URL+"/api/v1/agent/ingest", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+r.keys[sensorName])
+	ctx := context.Background()
+	agt := r.sensors[sensorName]
+	var binding ingest.Binding
 	if commandID != "" {
-		req.Header.Set(HeaderCommandID, commandID)
+		cmd, err := ingest.OpenCommand(ctx, r.cmds, agt, commandID, time.Now())
+		if err != nil {
+			return http.StatusNotFound, map[string]any{"code": ingest.CodeCommandNotFound}
+		}
+		binding = ingest.CommandBinding(cmd)
 	}
-	resp, err := r.srv.Client().Do(req)
+	out, err := r.svc.Ingest(ctx, agt, ingest.Input{Report: report, Options: ingest.Options{Binding: binding, Route: "ctis"}})
 	if err != nil {
+		var (
+			de *shared.DomainError
+			qe *ingest.QuarantinedError
+		)
+		switch {
+		case errors.As(err, &qe):
+			return http.StatusUnprocessableEntity, map[string]any{"code": ingest.CodeResultsQuarantined}
+		case errors.Is(err, sensorresult.ErrFull):
+			return http.StatusUnprocessableEntity, map[string]any{"code": "RESULTS_QUARANTINE_FULL"}
+		case errors.As(err, &de) && de.Code == ingest.CodeCommandNotFound:
+			return http.StatusNotFound, map[string]any{"code": de.Code}
+		case errors.As(err, &de) && de.Code == ingest.CodeToolNotPermitted:
+			return http.StatusUnprocessableEntity, map[string]any{"code": de.Code}
+		}
 		r.t.Fatalf("push: %v", err)
 	}
-	defer resp.Body.Close()
-	var out map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&out)
-	return resp.StatusCode, out
+	raw, _ := json.Marshal(out)
+	var body map[string]any
+	_ = json.Unmarshal(raw, &body)
+	return http.StatusCreated, body
 }
 
 // trusted ingests a report server-side (a tenant upload, zero sensor id):

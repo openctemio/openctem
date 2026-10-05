@@ -26,14 +26,18 @@ func NewSensorGrantRepository(db *DB) *SensorGrantRepository {
 
 var _ sensordom.GrantRepository = (*SensorGrantRepository)(nil)
 
-const sensorGrantColumns = `tenant_id, sensor_id, profile, trust_level, job_types, zone_ids, tools, capabilities,
-	tier_ceiling, target_network, target_cidrs, target_domains, allow_credentials, allow_push_ingest,
-	remote_actions, version, updated_by, created_at, updated_at`
+// The trust level lives on the sensor row (sensors.trust_level); a grant is
+// always read joined with its sensor, in the same tenant.
+const sensorGrantColumns = `g.tenant_id, g.sensor_id, g.profile, s.trust_level, g.job_types, g.zone_ids, g.tools,
+	g.capabilities, g.tier_ceiling, g.target_network, g.target_cidrs, g.target_domains, g.allow_credentials,
+	g.allow_push_ingest, g.remote_actions, g.version, g.updated_by, g.created_at, g.updated_at`
+
+const sensorGrantFrom = ` FROM sensor_grants g JOIN sensors s ON s.id = g.sensor_id AND s.tenant_id = g.tenant_id`
 
 // Get returns the grant of a sensor of the tenant.
 func (r *SensorGrantRepository) Get(ctx context.Context, tenantID, sensorID shared.ID) (*sensordom.Grant, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT `+sensorGrantColumns+` FROM sensor_grants
-		WHERE tenant_id = $1 AND sensor_id = $2`, tenantID.String(), sensorID.String())
+	row := r.db.QueryRowContext(ctx, `SELECT `+sensorGrantColumns+sensorGrantFrom+`
+		WHERE g.tenant_id = $1 AND g.sensor_id = $2`, tenantID.String(), sensorID.String())
 	return scanSensorGrant(row)
 }
 
@@ -41,12 +45,17 @@ func (r *SensorGrantRepository) Get(ctx context.Context, tenantID, sensorID shar
 func (r *SensorGrantRepository) Update(ctx context.Context, g *sensordom.Grant) (bool, error) {
 	args := grantArgs(g)
 	args = append(args, g.Version)
-	res, err := r.db.ExecContext(ctx, `UPDATE sensor_grants SET
-		profile = $3, trust_level = $4, job_types = $5, zone_ids = $6, tools = $7, capabilities = $8,
+	// One statement: the grant row (compare-and-swap on the version) and the
+	// sensor's trust level change together or not at all.
+	res, err := r.db.ExecContext(ctx, `WITH g AS (
+		UPDATE sensor_grants SET
+		profile = $3, job_types = $5, zone_ids = $6, tools = $7, capabilities = $8,
 		tier_ceiling = $9, target_network = $10, target_cidrs = $11, target_domains = $12,
 		allow_credentials = $13, allow_push_ingest = $14, remote_actions = $15, updated_by = $16,
 		version = version + 1, updated_at = NOW()
-		WHERE tenant_id = $1 AND sensor_id = $2 AND version = $17`, args...)
+		WHERE tenant_id = $1 AND sensor_id = $2 AND version = $17
+		RETURNING sensor_id, tenant_id)
+		UPDATE sensors s SET trust_level = $4 FROM g WHERE s.id = g.sensor_id AND s.tenant_id = g.tenant_id`, args...)
 	if err != nil {
 		return false, fmt.Errorf("update sensor grant: %w", err)
 	}
@@ -60,13 +69,15 @@ func (r *SensorGrantRepository) Update(ctx context.Context, g *sensordom.Grant) 
 // ReplaceTx writes g inside tx whatever the stored version (inserting it
 // when the row is missing), and bumps the version.
 func (r *SensorGrantRepository) ReplaceTx(ctx context.Context, tx *sql.Tx, g *sensordom.Grant) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO sensor_grants (tenant_id, sensor_id, profile, trust_level,
+	_, err := tx.ExecContext(ctx, `WITH t AS (
+		UPDATE sensors SET trust_level = $4 WHERE tenant_id = $1 AND id = $2 RETURNING id)
+		INSERT INTO sensor_grants (tenant_id, sensor_id, profile,
 		job_types, zone_ids, tools, capabilities, tier_ceiling, target_network, target_cidrs, target_domains,
 		allow_credentials, allow_push_ingest, remote_actions, updated_by)
-		SELECT $1, s.id, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
-		FROM sensors s WHERE s.tenant_id = $1 AND s.id = $2
+		SELECT $1, t.id, $3, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+		FROM t
 		ON CONFLICT (sensor_id) DO UPDATE SET
-		profile = EXCLUDED.profile, trust_level = EXCLUDED.trust_level, job_types = EXCLUDED.job_types,
+		profile = EXCLUDED.profile, job_types = EXCLUDED.job_types,
 		zone_ids = EXCLUDED.zone_ids, tools = EXCLUDED.tools, capabilities = EXCLUDED.capabilities,
 		tier_ceiling = EXCLUDED.tier_ceiling, target_network = EXCLUDED.target_network,
 		target_cidrs = EXCLUDED.target_cidrs, target_domains = EXCLUDED.target_domains,
@@ -216,8 +227,8 @@ func (r *SensorGrantRepository) ZonesInTenant(ctx context.Context, tenantID shar
 // ListSummaries returns the profile and trust level of every sensor of the
 // tenant (the console's list flags: legacy-broad, New), at most limit rows.
 func (r *SensorGrantRepository) ListSummaries(ctx context.Context, tenantID shared.ID, limit int) ([]sensordom.GrantSummary, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT sensor_id, profile, trust_level FROM sensor_grants
-		WHERE tenant_id = $1 ORDER BY sensor_id LIMIT $2`, tenantID.String(), limit)
+	rows, err := r.db.QueryContext(ctx, `SELECT g.sensor_id, g.profile, s.trust_level`+sensorGrantFrom+`
+		WHERE g.tenant_id = $1 ORDER BY g.sensor_id LIMIT $2`, tenantID.String(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("list sensor grants: %w", err)
 	}

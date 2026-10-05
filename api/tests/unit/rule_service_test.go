@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/rule"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -610,7 +611,7 @@ func (m *ruleSvcMockAuditRepo) CountByAction(_ context.Context, _ *shared.ID, _ 
 // ============================================================================
 
 type ruleSvcTestDeps struct {
-	svc             *app.RuleService
+	svc             *accesscontrol.RuleService
 	sourceRepo      *ruleSvcMockSourceRepo
 	ruleRepo        *ruleSvcMockRuleRepo
 	bundleRepo      *ruleSvcMockBundleRepo
@@ -627,9 +628,9 @@ func newRuleSvcTestDeps() *ruleSvcTestDeps {
 	syncHistoryRepo := newRuleSvcMockSyncHistoryRepo()
 	auditRepo := newRuleSvcMockAuditRepo()
 	log := logger.NewNop()
-	auditSvc := app.NewAuditService(auditRepo, log)
+	auditSvc := auditsvc.NewAuditService(auditRepo, log)
 
-	svc := app.NewRuleService(
+	svc := accesscontrol.NewRuleService(
 		sourceRepo,
 		ruleRepo,
 		bundleRepo,
@@ -663,7 +664,7 @@ func TestRuleService_CreateSource_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	source, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	source, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:            tenantID.String(),
 		Name:                "My Git Source",
 		Description:         "Rules from GitHub",
@@ -714,7 +715,7 @@ func TestRuleService_CreateSource_WithToolID(t *testing.T) {
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
 
-	source, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	source, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		ToolID:     toolID.String(),
 		Name:       "Tool-specific source",
@@ -739,7 +740,7 @@ func TestRuleService_CreateSource_WithCredentialsID(t *testing.T) {
 	tenantID := shared.NewID()
 	credID := shared.NewID()
 
-	source, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	source, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:      tenantID.String(),
 		Name:          "Authenticated source",
 		SourceType:    "git",
@@ -762,7 +763,7 @@ func TestRuleService_CreateSource_InvalidTenantID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	_, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   "not-a-uuid",
 		Name:       "Test",
 		SourceType: "git",
@@ -781,7 +782,7 @@ func TestRuleService_CreateSource_InvalidToolID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	_, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   shared.NewID().String(),
 		ToolID:     "bad-uuid",
 		Name:       "Test",
@@ -801,7 +802,7 @@ func TestRuleService_CreateSource_InvalidCredentialsID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	_, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:      shared.NewID().String(),
 		Name:          "Test",
 		SourceType:    "git",
@@ -821,7 +822,7 @@ func TestRuleService_CreateSource_InvalidSourceType(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	_, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   shared.NewID().String(),
 		Name:       "Test",
 		SourceType: "ftp",
@@ -841,7 +842,7 @@ func TestRuleService_CreateSource_RepoError(t *testing.T) {
 	ctx := context.Background()
 	d.sourceRepo.createErr = errors.New("db connection lost")
 
-	_, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	_, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   shared.NewID().String(),
 		Name:       "Test",
 		SourceType: "git",
@@ -859,7 +860,7 @@ func TestRuleService_CreateSource_AllSourceTypes(t *testing.T) {
 			d := newRuleSvcTestDeps()
 			ctx := context.Background()
 
-			source, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+			source, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 				TenantID:   shared.NewID().String(),
 				Name:       "Source " + st,
 				SourceType: st,
@@ -880,7 +881,7 @@ func TestRuleService_CreateSource_DefaultSyncInterval(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	source, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	source, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:            shared.NewID().String(),
 		Name:                "Default interval",
 		SourceType:          "git",
@@ -904,7 +905,7 @@ func TestRuleService_GetSource_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Test Source",
 		SourceType: "git",
@@ -953,7 +954,7 @@ func TestRuleService_GetSourceByTenantAndID_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Test",
 		SourceType: "local",
@@ -975,7 +976,7 @@ func TestRuleService_GetSourceByTenantAndID_WrongTenant(t *testing.T) {
 	tenantID := shared.NewID()
 	otherTenant := shared.NewID()
 
-	created, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Test",
 		SourceType: "git",
@@ -1016,7 +1017,7 @@ func TestRuleService_ListSources_Success(t *testing.T) {
 	tenantID := shared.NewID()
 
 	for i := 0; i < 3; i++ {
-		_, err := d.svc.CreateSource(ctx, app.CreateSourceInput{
+		_, err := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 			TenantID:   tenantID.String(),
 			Name:       "Source",
 			SourceType: "git",
@@ -1027,7 +1028,7 @@ func TestRuleService_ListSources_Success(t *testing.T) {
 		}
 	}
 
-	result, err := d.svc.ListSources(ctx, app.ListSourcesInput{
+	result, err := d.svc.ListSources(ctx, accesscontrol.ListSourcesInput{
 		TenantID: tenantID.String(),
 		Page:     1,
 		PerPage:  10,
@@ -1044,7 +1045,7 @@ func TestRuleService_ListSources_InvalidTenantID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListSources(ctx, app.ListSourcesInput{
+	_, err := d.svc.ListSources(ctx, accesscontrol.ListSourcesInput{
 		TenantID: "invalid",
 	})
 	if !errors.Is(err, shared.ErrValidation) {
@@ -1056,7 +1057,7 @@ func TestRuleService_ListSources_InvalidToolID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListSources(ctx, app.ListSourcesInput{
+	_, err := d.svc.ListSources(ctx, accesscontrol.ListSourcesInput{
 		ToolID: "invalid",
 	})
 	if !errors.Is(err, shared.ErrValidation) {
@@ -1069,7 +1070,7 @@ func TestRuleService_ListSources_WithFilters(t *testing.T) {
 	ctx := context.Background()
 	enabled := true
 
-	result, err := d.svc.ListSources(ctx, app.ListSourcesInput{
+	result, err := d.svc.ListSources(ctx, accesscontrol.ListSourcesInput{
 		SourceType: "git",
 		Enabled:    &enabled,
 		SyncStatus: "pending",
@@ -1093,7 +1094,7 @@ func TestRuleService_UpdateSource_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Original",
 		SourceType: "git",
@@ -1102,7 +1103,7 @@ func TestRuleService_UpdateSource_Success(t *testing.T) {
 	})
 
 	syncEnabled := false
-	updated, err := d.svc.UpdateSource(ctx, app.UpdateSourceInput{
+	updated, err := d.svc.UpdateSource(ctx, accesscontrol.UpdateSourceInput{
 		TenantID:            tenantID.String(),
 		SourceID:            created.ID.String(),
 		Name:                "Updated Name",
@@ -1137,7 +1138,7 @@ func TestRuleService_UpdateSource_EnableDisable(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Test",
 		SourceType: "git",
@@ -1145,7 +1146,7 @@ func TestRuleService_UpdateSource_EnableDisable(t *testing.T) {
 	})
 
 	disabled := false
-	updated, err := d.svc.UpdateSource(ctx, app.UpdateSourceInput{
+	updated, err := d.svc.UpdateSource(ctx, accesscontrol.UpdateSourceInput{
 		TenantID: tenantID.String(),
 		SourceID: created.ID.String(),
 		Enabled:  &disabled,
@@ -1163,7 +1164,7 @@ func TestRuleService_UpdateSource_NotFound(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	_, err := d.svc.UpdateSource(ctx, app.UpdateSourceInput{
+	_, err := d.svc.UpdateSource(ctx, accesscontrol.UpdateSourceInput{
 		TenantID: tenantID.String(),
 		SourceID: shared.NewID().String(),
 		Name:     "Updated",
@@ -1178,14 +1179,14 @@ func TestRuleService_UpdateSource_InvalidCredentialsID(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Test",
 		SourceType: "git",
 		Config:     ruleSvcValidConfig(),
 	})
 
-	_, err := d.svc.UpdateSource(ctx, app.UpdateSourceInput{
+	_, err := d.svc.UpdateSource(ctx, accesscontrol.UpdateSourceInput{
 		TenantID:      tenantID.String(),
 		SourceID:      created.ID.String(),
 		CredentialsID: "not-valid",
@@ -1200,7 +1201,7 @@ func TestRuleService_UpdateSource_WithConfig(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Test",
 		SourceType: "git",
@@ -1208,7 +1209,7 @@ func TestRuleService_UpdateSource_WithConfig(t *testing.T) {
 	})
 
 	newConfig := json.RawMessage(`{"url":"https://new-repo.git","branch":"develop"}`)
-	updated, err := d.svc.UpdateSource(ctx, app.UpdateSourceInput{
+	updated, err := d.svc.UpdateSource(ctx, accesscontrol.UpdateSourceInput{
 		TenantID: tenantID.String(),
 		SourceID: created.ID.String(),
 		Config:   newConfig,
@@ -1228,7 +1229,7 @@ func TestRuleService_DeleteSource_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "To Delete",
 		SourceType: "git",
@@ -1269,7 +1270,7 @@ func TestRuleService_DeleteSource_DeleteRulesError(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Test",
 		SourceType: "git",
@@ -1291,7 +1292,7 @@ func TestRuleService_EnableSource_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Test",
 		SourceType: "git",
@@ -1300,7 +1301,7 @@ func TestRuleService_EnableSource_Success(t *testing.T) {
 
 	// Disable first, then enable
 	disabled := false
-	_, _ = d.svc.UpdateSource(ctx, app.UpdateSourceInput{
+	_, _ = d.svc.UpdateSource(ctx, accesscontrol.UpdateSourceInput{
 		TenantID: tenantID.String(),
 		SourceID: created.ID.String(),
 		Enabled:  &disabled,
@@ -1320,7 +1321,7 @@ func TestRuleService_DisableSource_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	created, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Test",
 		SourceType: "git",
@@ -1407,7 +1408,7 @@ func TestRuleService_ListRules_Success(t *testing.T) {
 		_ = d.ruleRepo.Create(ctx, r)
 	}
 
-	result, err := d.svc.ListRules(ctx, app.ListRulesInput{
+	result, err := d.svc.ListRules(ctx, accesscontrol.ListRulesInput{
 		TenantID: tenantID.String(),
 		Page:     1,
 		PerPage:  10,
@@ -1424,7 +1425,7 @@ func TestRuleService_ListRules_InvalidTenantID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListRules(ctx, app.ListRulesInput{TenantID: "invalid"})
+	_, err := d.svc.ListRules(ctx, accesscontrol.ListRulesInput{TenantID: "invalid"})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
@@ -1434,7 +1435,7 @@ func TestRuleService_ListRules_InvalidToolID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListRules(ctx, app.ListRulesInput{ToolID: "invalid"})
+	_, err := d.svc.ListRules(ctx, accesscontrol.ListRulesInput{ToolID: "invalid"})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
@@ -1444,7 +1445,7 @@ func TestRuleService_ListRules_InvalidSourceID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListRules(ctx, app.ListRulesInput{SourceID: "invalid"})
+	_, err := d.svc.ListRules(ctx, accesscontrol.ListRulesInput{SourceID: "invalid"})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
@@ -1454,7 +1455,7 @@ func TestRuleService_ListRules_WithSeverityFilter(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	result, err := d.svc.ListRules(ctx, app.ListRulesInput{
+	result, err := d.svc.ListRules(ctx, accesscontrol.ListRulesInput{
 		Severity: "critical",
 		Page:     1,
 		PerPage:  10,
@@ -1539,7 +1540,7 @@ func TestRuleService_CreateOverride_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	createdBy := shared.NewID()
 
-	override, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	override, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "java.lang.security.*",
 		IsPattern:   true,
@@ -1573,7 +1574,7 @@ func TestRuleService_CreateOverride_WithSeverityOverride(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	override, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	override, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:         tenantID.String(),
 		RulePattern:      "xss-check",
 		Enabled:          true,
@@ -1594,7 +1595,7 @@ func TestRuleService_CreateOverride_WithToolID(t *testing.T) {
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
 
-	override, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	override, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		ToolID:      toolID.String(),
 		RulePattern: "specific-rule",
@@ -1616,7 +1617,7 @@ func TestRuleService_CreateOverride_WithScope(t *testing.T) {
 	assetGroupID := shared.NewID()
 	scanProfileID := shared.NewID()
 
-	override, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	override, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:      tenantID.String(),
 		RulePattern:   "test-rule",
 		Enabled:       true,
@@ -1641,7 +1642,7 @@ func TestRuleService_CreateOverride_WithExpiration(t *testing.T) {
 	tenantID := shared.NewID()
 	expires := time.Now().Add(24 * time.Hour).Format(time.RFC3339)
 
-	override, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	override, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "temp-disable",
 		Enabled:     false,
@@ -1662,7 +1663,7 @@ func TestRuleService_CreateOverride_InvalidExpiresAt(t *testing.T) {
 	tenantID := shared.NewID()
 	badExpires := "not-a-date"
 
-	_, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	_, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "test",
 		Enabled:     true,
@@ -1681,7 +1682,7 @@ func TestRuleService_CreateOverride_InvalidTenantID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	_, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    "bad",
 		RulePattern: "test",
 		Enabled:     true,
@@ -1695,7 +1696,7 @@ func TestRuleService_CreateOverride_InvalidToolID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	_, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    shared.NewID().String(),
 		ToolID:      "bad",
 		RulePattern: "test",
@@ -1710,7 +1711,7 @@ func TestRuleService_CreateOverride_InvalidCreatedBy(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	_, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    shared.NewID().String(),
 		RulePattern: "test",
 		Enabled:     true,
@@ -1725,7 +1726,7 @@ func TestRuleService_CreateOverride_InvalidAssetGroupID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	_, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:     shared.NewID().String(),
 		RulePattern:  "test",
 		Enabled:      true,
@@ -1740,7 +1741,7 @@ func TestRuleService_CreateOverride_InvalidScanProfileID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	_, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:      shared.NewID().String(),
 		RulePattern:   "test",
 		Enabled:       true,
@@ -1756,7 +1757,7 @@ func TestRuleService_CreateOverride_RepoError(t *testing.T) {
 	ctx := context.Background()
 	d.overrideRepo.createErr = errors.New("db error")
 
-	_, err := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	_, err := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    shared.NewID().String(),
 		RulePattern: "test",
 		Enabled:     true,
@@ -1773,7 +1774,7 @@ func TestRuleService_GetOverride_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	created, _ := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "test-rule",
 		Enabled:     true,
@@ -1806,14 +1807,14 @@ func TestRuleService_ListOverrides_Success(t *testing.T) {
 	tenantID := shared.NewID()
 
 	for i := 0; i < 3; i++ {
-		_, _ = d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+		_, _ = d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 			TenantID:    tenantID.String(),
 			RulePattern: "rule-" + string(rune('a'+i)),
 			Enabled:     true,
 		})
 	}
 
-	result, err := d.svc.ListOverrides(ctx, app.ListOverridesInput{
+	result, err := d.svc.ListOverrides(ctx, accesscontrol.ListOverridesInput{
 		TenantID: tenantID.String(),
 		Page:     1,
 		PerPage:  10,
@@ -1830,7 +1831,7 @@ func TestRuleService_ListOverrides_InvalidTenantID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListOverrides(ctx, app.ListOverridesInput{TenantID: "bad"})
+	_, err := d.svc.ListOverrides(ctx, accesscontrol.ListOverridesInput{TenantID: "bad"})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
@@ -1840,7 +1841,7 @@ func TestRuleService_ListOverrides_InvalidToolID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListOverrides(ctx, app.ListOverridesInput{ToolID: "bad"})
+	_, err := d.svc.ListOverrides(ctx, accesscontrol.ListOverridesInput{ToolID: "bad"})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
@@ -1850,7 +1851,7 @@ func TestRuleService_ListOverrides_InvalidAssetGroupID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListOverrides(ctx, app.ListOverridesInput{AssetGroupID: "bad"})
+	_, err := d.svc.ListOverrides(ctx, accesscontrol.ListOverridesInput{AssetGroupID: "bad"})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
@@ -1860,7 +1861,7 @@ func TestRuleService_ListOverrides_InvalidScanProfileID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListOverrides(ctx, app.ListOverridesInput{ScanProfileID: "bad"})
+	_, err := d.svc.ListOverrides(ctx, accesscontrol.ListOverridesInput{ScanProfileID: "bad"})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
@@ -1873,7 +1874,7 @@ func TestRuleService_UpdateOverride_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	created, _ := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "original-pattern",
 		IsPattern:   false,
@@ -1883,7 +1884,7 @@ func TestRuleService_UpdateOverride_Success(t *testing.T) {
 
 	isPattern := true
 	enabled := false
-	updated, err := d.svc.UpdateOverride(ctx, app.UpdateOverrideInput{
+	updated, err := d.svc.UpdateOverride(ctx, accesscontrol.UpdateOverrideInput{
 		TenantID:         tenantID.String(),
 		OverrideID:       created.ID.String(),
 		RulePattern:      "updated.*",
@@ -1919,13 +1920,13 @@ func TestRuleService_UpdateOverride_WithScope(t *testing.T) {
 	tenantID := shared.NewID()
 	agID := shared.NewID()
 
-	created, _ := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	created, _ := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "test",
 		Enabled:     true,
 	})
 
-	updated, err := d.svc.UpdateOverride(ctx, app.UpdateOverrideInput{
+	updated, err := d.svc.UpdateOverride(ctx, accesscontrol.UpdateOverrideInput{
 		TenantID:     tenantID.String(),
 		OverrideID:   created.ID.String(),
 		AssetGroupID: agID.String(),
@@ -1944,14 +1945,14 @@ func TestRuleService_UpdateOverride_SetExpiration(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	created, _ := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "test",
 		Enabled:     true,
 	})
 
 	expires := time.Now().Add(48 * time.Hour).Format(time.RFC3339)
-	updated, err := d.svc.UpdateOverride(ctx, app.UpdateOverrideInput{
+	updated, err := d.svc.UpdateOverride(ctx, accesscontrol.UpdateOverrideInput{
 		TenantID:   tenantID.String(),
 		OverrideID: created.ID.String(),
 		ExpiresAt:  &expires,
@@ -1971,7 +1972,7 @@ func TestRuleService_UpdateOverride_ClearExpiration(t *testing.T) {
 	tenantID := shared.NewID()
 	initialExpires := time.Now().Add(24 * time.Hour).Format(time.RFC3339)
 
-	created, _ := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	created, _ := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "test",
 		Enabled:     true,
@@ -1979,7 +1980,7 @@ func TestRuleService_UpdateOverride_ClearExpiration(t *testing.T) {
 	})
 
 	emptyExpires := ""
-	updated, err := d.svc.UpdateOverride(ctx, app.UpdateOverrideInput{
+	updated, err := d.svc.UpdateOverride(ctx, accesscontrol.UpdateOverrideInput{
 		TenantID:   tenantID.String(),
 		OverrideID: created.ID.String(),
 		ExpiresAt:  &emptyExpires,
@@ -1998,14 +1999,14 @@ func TestRuleService_UpdateOverride_InvalidExpiresAt(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	created, _ := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "test",
 		Enabled:     true,
 	})
 
 	badExpires := "not-a-date"
-	_, err := d.svc.UpdateOverride(ctx, app.UpdateOverrideInput{
+	_, err := d.svc.UpdateOverride(ctx, accesscontrol.UpdateOverrideInput{
 		TenantID:   tenantID.String(),
 		OverrideID: created.ID.String(),
 		ExpiresAt:  &badExpires,
@@ -2021,13 +2022,13 @@ func TestRuleService_UpdateOverride_InvalidAssetGroupID(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	created, _ := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "test",
 		Enabled:     true,
 	})
 
-	_, err := d.svc.UpdateOverride(ctx, app.UpdateOverrideInput{
+	_, err := d.svc.UpdateOverride(ctx, accesscontrol.UpdateOverrideInput{
 		TenantID:     tenantID.String(),
 		OverrideID:   created.ID.String(),
 		AssetGroupID: "bad-uuid",
@@ -2042,13 +2043,13 @@ func TestRuleService_UpdateOverride_InvalidScanProfileID(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	created, _ := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "test",
 		Enabled:     true,
 	})
 
-	_, err := d.svc.UpdateOverride(ctx, app.UpdateOverrideInput{
+	_, err := d.svc.UpdateOverride(ctx, accesscontrol.UpdateOverrideInput{
 		TenantID:      tenantID.String(),
 		OverrideID:    created.ID.String(),
 		ScanProfileID: "bad-uuid",
@@ -2063,7 +2064,7 @@ func TestRuleService_UpdateOverride_NotFound(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	_, err := d.svc.UpdateOverride(ctx, app.UpdateOverrideInput{
+	_, err := d.svc.UpdateOverride(ctx, accesscontrol.UpdateOverrideInput{
 		TenantID:   tenantID.String(),
 		OverrideID: shared.NewID().String(),
 	})
@@ -2079,7 +2080,7 @@ func TestRuleService_DeleteOverride_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	created, _ := d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	created, _ := d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "to-delete",
 		Enabled:     true,
@@ -2112,7 +2113,7 @@ func TestRuleService_ListActiveOverridesForTool_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
 
-	_, _ = d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	_, _ = d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		ToolID:      toolID.String(),
 		RulePattern: "active-rule",
@@ -2134,7 +2135,7 @@ func TestRuleService_ListActiveOverridesForTool_NilToolID(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	_, _ = d.svc.CreateOverride(ctx, app.CreateOverrideInput{
+	_, _ = d.svc.CreateOverride(ctx, accesscontrol.CreateOverrideInput{
 		TenantID:    tenantID.String(),
 		RulePattern: "global-rule",
 		Enabled:     true,
@@ -2180,7 +2181,7 @@ func TestRuleService_CreateBundle_Success(t *testing.T) {
 	toolID := shared.NewID()
 	sourceID := shared.NewID()
 
-	bundle, err := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	bundle, err := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    tenantID.String(),
 		ToolID:      toolID.String(),
 		SourceIDs:   []string{sourceID.String()},
@@ -2205,7 +2206,7 @@ func TestRuleService_CreateBundle_InvalidTenantID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	_, err := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    "bad",
 		ToolID:      shared.NewID().String(),
 		SourceIDs:   []string{shared.NewID().String()},
@@ -2220,7 +2221,7 @@ func TestRuleService_CreateBundle_InvalidToolID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	_, err := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    shared.NewID().String(),
 		ToolID:      "bad",
 		SourceIDs:   []string{shared.NewID().String()},
@@ -2235,7 +2236,7 @@ func TestRuleService_CreateBundle_InvalidSourceID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	_, err := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    shared.NewID().String(),
 		ToolID:      shared.NewID().String(),
 		SourceIDs:   []string{shared.NewID().String(), "bad-id"},
@@ -2251,7 +2252,7 @@ func TestRuleService_CreateBundle_RepoError(t *testing.T) {
 	ctx := context.Background()
 	d.bundleRepo.createErr = errors.New("disk full")
 
-	_, err := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	_, err := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    shared.NewID().String(),
 		ToolID:      shared.NewID().String(),
 		SourceIDs:   []string{shared.NewID().String()},
@@ -2270,14 +2271,14 @@ func TestRuleService_CompleteBundle_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
 
-	bundle, _ := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	bundle, _ := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    tenantID.String(),
 		ToolID:      toolID.String(),
 		SourceIDs:   []string{shared.NewID().String()},
 		StoragePath: "/bundles/test.tar.gz",
 	})
 
-	completed, err := d.svc.CompleteBundle(ctx, app.CompleteBundleInput{
+	completed, err := d.svc.CompleteBundle(ctx, accesscontrol.CompleteBundleInput{
 		BundleID:    bundle.ID.String(),
 		Version:     "20240115-abcd1234",
 		ContentHash: "abc123def456",
@@ -2316,7 +2317,7 @@ func TestRuleService_CompleteBundle_WithCustomExpiration(t *testing.T) {
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
 
-	bundle, _ := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	bundle, _ := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    tenantID.String(),
 		ToolID:      toolID.String(),
 		SourceIDs:   []string{shared.NewID().String()},
@@ -2324,7 +2325,7 @@ func TestRuleService_CompleteBundle_WithCustomExpiration(t *testing.T) {
 	})
 
 	customExpires := time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339)
-	completed, err := d.svc.CompleteBundle(ctx, app.CompleteBundleInput{
+	completed, err := d.svc.CompleteBundle(ctx, accesscontrol.CompleteBundleInput{
 		BundleID:    bundle.ID.String(),
 		Version:     "v1",
 		ContentHash: "hash",
@@ -2347,7 +2348,7 @@ func TestRuleService_CompleteBundle_InvalidBundleID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CompleteBundle(ctx, app.CompleteBundleInput{
+	_, err := d.svc.CompleteBundle(ctx, accesscontrol.CompleteBundleInput{
 		BundleID:    "bad",
 		Version:     "v1",
 		ContentHash: "hash",
@@ -2361,7 +2362,7 @@ func TestRuleService_CompleteBundle_BundleNotFound(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.CompleteBundle(ctx, app.CompleteBundleInput{
+	_, err := d.svc.CompleteBundle(ctx, accesscontrol.CompleteBundleInput{
 		BundleID:    shared.NewID().String(),
 		Version:     "v1",
 		ContentHash: "hash",
@@ -2377,7 +2378,7 @@ func TestRuleService_CompleteBundle_InvalidExpiresAt(t *testing.T) {
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
 
-	bundle, _ := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	bundle, _ := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    tenantID.String(),
 		ToolID:      toolID.String(),
 		SourceIDs:   []string{shared.NewID().String()},
@@ -2385,7 +2386,7 @@ func TestRuleService_CompleteBundle_InvalidExpiresAt(t *testing.T) {
 	})
 
 	badExpires := "not-a-date"
-	_, err := d.svc.CompleteBundle(ctx, app.CompleteBundleInput{
+	_, err := d.svc.CompleteBundle(ctx, accesscontrol.CompleteBundleInput{
 		BundleID:    bundle.ID.String(),
 		Version:     "v1",
 		ContentHash: "hash",
@@ -2404,7 +2405,7 @@ func TestRuleService_FailBundle_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
 
-	bundle, _ := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	bundle, _ := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    tenantID.String(),
 		ToolID:      toolID.String(),
 		SourceIDs:   []string{shared.NewID().String()},
@@ -2452,13 +2453,13 @@ func TestRuleService_GetLatestBundle_Success(t *testing.T) {
 	toolID := shared.NewID()
 
 	// Create and complete a bundle
-	bundle, _ := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	bundle, _ := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    tenantID.String(),
 		ToolID:      toolID.String(),
 		SourceIDs:   []string{shared.NewID().String()},
 		StoragePath: "/test",
 	})
-	_, _ = d.svc.CompleteBundle(ctx, app.CompleteBundleInput{
+	_, _ = d.svc.CompleteBundle(ctx, accesscontrol.CompleteBundleInput{
 		BundleID:    bundle.ID.String(),
 		Version:     "v1",
 		ContentHash: "hash123",
@@ -2499,7 +2500,7 @@ func TestRuleService_GetBundleByID_Success(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	bundle, _ := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	bundle, _ := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    shared.NewID().String(),
 		ToolID:      shared.NewID().String(),
 		SourceIDs:   []string{shared.NewID().String()},
@@ -2534,7 +2535,7 @@ func TestRuleService_ListBundles_Success(t *testing.T) {
 	toolID := shared.NewID()
 
 	for i := 0; i < 3; i++ {
-		_, _ = d.svc.CreateBundle(ctx, app.CreateBundleInput{
+		_, _ = d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 			TenantID:    tenantID.String(),
 			ToolID:      toolID.String(),
 			SourceIDs:   []string{shared.NewID().String()},
@@ -2542,7 +2543,7 @@ func TestRuleService_ListBundles_Success(t *testing.T) {
 		})
 	}
 
-	bundles, err := d.svc.ListBundles(ctx, app.ListBundlesInput{
+	bundles, err := d.svc.ListBundles(ctx, accesscontrol.ListBundlesInput{
 		TenantID: tenantID.String(),
 		ToolID:   toolID.String(),
 	})
@@ -2558,7 +2559,7 @@ func TestRuleService_ListBundles_InvalidTenantID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListBundles(ctx, app.ListBundlesInput{TenantID: "bad"})
+	_, err := d.svc.ListBundles(ctx, accesscontrol.ListBundlesInput{TenantID: "bad"})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
@@ -2568,7 +2569,7 @@ func TestRuleService_ListBundles_InvalidToolID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	_, err := d.svc.ListBundles(ctx, app.ListBundlesInput{ToolID: "bad"})
+	_, err := d.svc.ListBundles(ctx, accesscontrol.ListBundlesInput{ToolID: "bad"})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
@@ -2578,7 +2579,7 @@ func TestRuleService_ListBundles_WithStatusFilter(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	bundles, err := d.svc.ListBundles(ctx, app.ListBundlesInput{
+	bundles, err := d.svc.ListBundles(ctx, accesscontrol.ListBundlesInput{
 		Status: "building",
 	})
 	if err != nil {
@@ -2593,7 +2594,7 @@ func TestRuleService_DeleteBundle_Success(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	bundle, _ := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	bundle, _ := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    shared.NewID().String(),
 		ToolID:      shared.NewID().String(),
 		SourceIDs:   []string{shared.NewID().String()},
@@ -2644,7 +2645,7 @@ func TestRuleService_BundleLifecycle_BuildingToReady(t *testing.T) {
 	toolID := shared.NewID()
 
 	// Step 1: Create (building)
-	bundle, err := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	bundle, err := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    tenantID.String(),
 		ToolID:      toolID.String(),
 		SourceIDs:   []string{shared.NewID().String()},
@@ -2658,7 +2659,7 @@ func TestRuleService_BundleLifecycle_BuildingToReady(t *testing.T) {
 	}
 
 	// Step 2: Complete (ready)
-	completed, err := d.svc.CompleteBundle(ctx, app.CompleteBundleInput{
+	completed, err := d.svc.CompleteBundle(ctx, accesscontrol.CompleteBundleInput{
 		BundleID:    bundle.ID.String(),
 		Version:     "v1.0",
 		ContentHash: "abcdef1234567890",
@@ -2686,7 +2687,7 @@ func TestRuleService_BundleLifecycle_BuildingToFailed(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	bundle, _ := d.svc.CreateBundle(ctx, app.CreateBundleInput{
+	bundle, _ := d.svc.CreateBundle(ctx, accesscontrol.CreateBundleInput{
 		TenantID:    shared.NewID().String(),
 		ToolID:      shared.NewID().String(),
 		SourceIDs:   []string{shared.NewID().String()},
@@ -2717,14 +2718,14 @@ func TestRuleService_RecordSyncResult_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	source, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	source, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Sync Test",
 		SourceType: "git",
 		Config:     ruleSvcValidConfig(),
 	})
 
-	result := &app.SyncResult{
+	result := &accesscontrol.SyncResult{
 		Status:         rule.SyncStatusSuccess,
 		RulesAdded:     10,
 		RulesUpdated:   5,
@@ -2772,14 +2773,14 @@ func TestRuleService_RecordSyncResult_FailedSync(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	source, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	source, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "Fail Sync",
 		SourceType: "git",
 		Config:     ruleSvcValidConfig(),
 	})
 
-	result := &app.SyncResult{
+	result := &accesscontrol.SyncResult{
 		Status:       rule.SyncStatusFailed,
 		Duration:     500 * time.Millisecond,
 		ErrorMessage: "connection refused",
@@ -2804,7 +2805,7 @@ func TestRuleService_RecordSyncResult_InvalidSourceID(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	err := d.svc.RecordSyncResult(ctx, "bad", &app.SyncResult{
+	err := d.svc.RecordSyncResult(ctx, "bad", &accesscontrol.SyncResult{
 		Status: rule.SyncStatusSuccess,
 	})
 	if !errors.Is(err, shared.ErrValidation) {
@@ -2816,7 +2817,7 @@ func TestRuleService_RecordSyncResult_SourceNotFound(t *testing.T) {
 	d := newRuleSvcTestDeps()
 	ctx := context.Background()
 
-	err := d.svc.RecordSyncResult(ctx, shared.NewID().String(), &app.SyncResult{
+	err := d.svc.RecordSyncResult(ctx, shared.NewID().String(), &accesscontrol.SyncResult{
 		Status: rule.SyncStatusSuccess,
 	})
 	if err == nil {
@@ -2829,7 +2830,7 @@ func TestRuleService_RecordSyncResult_NoContentHashUpdate(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	source, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	source, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "No Hash Update",
 		SourceType: "git",
@@ -2839,7 +2840,7 @@ func TestRuleService_RecordSyncResult_NoContentHashUpdate(t *testing.T) {
 	// Set initial hash
 	d.sourceRepo.sources[source.ID.String()].ContentHash = "original-hash"
 
-	result := &app.SyncResult{
+	result := &accesscontrol.SyncResult{
 		Status:         rule.SyncStatusSuccess,
 		NewContentHash: "", // Empty means no change
 	}
@@ -2904,7 +2905,7 @@ func TestRuleService_GetSyncHistory_Success(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	source, _ := d.svc.CreateSource(ctx, app.CreateSourceInput{
+	source, _ := d.svc.CreateSource(ctx, accesscontrol.CreateSourceInput{
 		TenantID:   tenantID.String(),
 		Name:       "History Test",
 		SourceType: "git",
@@ -2913,7 +2914,7 @@ func TestRuleService_GetSyncHistory_Success(t *testing.T) {
 
 	// Record a few sync results
 	for i := 0; i < 3; i++ {
-		_ = d.svc.RecordSyncResult(ctx, source.ID.String(), &app.SyncResult{
+		_ = d.svc.RecordSyncResult(ctx, source.ID.String(), &accesscontrol.SyncResult{
 			Status:   rule.SyncStatusSuccess,
 			Duration: time.Second,
 		})
@@ -3011,7 +3012,7 @@ func TestRuleService_UpsertRulesFromSync_RepoError(t *testing.T) {
 // ============================================================================
 
 func TestComputeContentHash(t *testing.T) {
-	hash := app.ComputeContentHash([]byte("hello world"))
+	hash := accesscontrol.ComputeContentHash([]byte("hello world"))
 	if hash == "" {
 		t.Fatal("expected non-empty hash")
 	}
@@ -3020,20 +3021,20 @@ func TestComputeContentHash(t *testing.T) {
 	}
 
 	// Same input should produce same hash
-	hash2 := app.ComputeContentHash([]byte("hello world"))
+	hash2 := accesscontrol.ComputeContentHash([]byte("hello world"))
 	if hash != hash2 {
 		t.Error("same input should produce same hash")
 	}
 
 	// Different input should produce different hash
-	hash3 := app.ComputeContentHash([]byte("hello world!"))
+	hash3 := accesscontrol.ComputeContentHash([]byte("hello world!"))
 	if hash == hash3 {
 		t.Error("different input should produce different hash")
 	}
 }
 
 func TestComputeContentHash_EmptyInput(t *testing.T) {
-	hash := app.ComputeContentHash([]byte{})
+	hash := accesscontrol.ComputeContentHash([]byte{})
 	if hash == "" {
 		t.Fatal("expected non-empty hash even for empty input")
 	}
@@ -3044,7 +3045,7 @@ func TestComputeContentHash_EmptyInput(t *testing.T) {
 
 func TestGenerateBundleVersion(t *testing.T) {
 	ts := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
-	version := app.GenerateBundleVersion(ts, "abcdef1234567890")
+	version := accesscontrol.GenerateBundleVersion(ts, "abcdef1234567890")
 
 	expected := "20240115-abcdef12"
 	if version != expected {
@@ -3054,7 +3055,7 @@ func TestGenerateBundleVersion(t *testing.T) {
 
 func TestGenerateBundleVersion_ShortHash(t *testing.T) {
 	ts := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
-	version := app.GenerateBundleVersion(ts, "abc")
+	version := accesscontrol.GenerateBundleVersion(ts, "abc")
 
 	expected := "20240601-abc"
 	if version != expected {
@@ -3064,7 +3065,7 @@ func TestGenerateBundleVersion_ShortHash(t *testing.T) {
 
 func TestGenerateBundleVersion_ExactlyEightCharHash(t *testing.T) {
 	ts := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
-	version := app.GenerateBundleVersion(ts, "12345678")
+	version := accesscontrol.GenerateBundleVersion(ts, "12345678")
 
 	expected := "20241231-12345678"
 	if version != expected {

@@ -38,12 +38,6 @@
       "reason": "Bookmarked /agents URLs redirect permanently to /sensors."
     },
     {
-      "id": "browser-storage-migration",
-      "files": "^src/lib/(__tests__/)?sensor-storage-migration(\\.test)?\\.ts$",
-      "pattern": ".*",
-      "reason": "Migrates browser storage written before the rename (old keys and agents:* values) once, on load."
-    },
-    {
       "id": "formerly-agents",
       "files": ".*",
       "pattern": "[Ff]ormerly (called )?[Aa]gents?",
@@ -69,5 +63,5 @@
     }
   ],
   "excludedPaths": ["^src/lib/api/openapi/", "^src/lib/api/generated/"],
-  "excludedPathsReason": "The vendored OpenAPI spec and the types generated from it are copies of the API's spec, which still documents protocol v1 (/api/v1/agent/*, agent_id) on purpose. They change only by re-vendoring (npm run generate:api-types)."
+  "excludedPathsReason": "The vendored OpenAPI spec and the types generated from it are copies of the API's spec, which may name the user-agent header and historical values. They change only by re-vendoring (npm run generate:api-types)."
 }

@@ -214,7 +214,8 @@ func TestGrant_LegacyBackfillShape_DB(t *testing.T) {
 	sid := f.sensor(tid, nil, nil)
 	// Simulate a sensor that existed before the migration: the backfill
 	// statement's values.
-	f.exec(`UPDATE sensor_grants SET profile = 'legacy-broad', trust_level = 'trusted', job_types = NULL, tier_ceiling = 2,
+	f.exec(`UPDATE sensors SET trust_level = 'trusted' WHERE id = $1`, sid.String())
+	f.exec(`UPDATE sensor_grants SET profile = 'legacy-broad', job_types = NULL, tier_ceiling = 2,
 		allow_credentials = TRUE, allow_push_ingest = TRUE, remote_actions = ARRAY['diagnostics','rotate_key','update']
 		WHERE sensor_id = $1`, sid.String())
 	g, err := f.grants.Get(ctx, tid, sid)

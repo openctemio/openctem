@@ -25,9 +25,6 @@ import (
 //
 // and deprecated_route_requests_total counts the call, so the old path is
 // removed only once nobody uses it. Bodies and status codes do not change.
-//
-// This is the general form of legacyv1.DeprecatedRoute (sensor protocol v1)
-// and legacyv1.RedirectManagement (/api/v1/agents).
 
 // DeprecatedRouteRequests counts calls to deprecated routes by plane, route
 // and kind of caller.
