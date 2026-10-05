@@ -14,6 +14,25 @@ type Service struct {
 	repo      Repository
 	log       *logger.Logger
 	approvers ApproverDirectory
+	assetRefs AssetRefChecker
+}
+
+// AssetRefChecker checks an asset id a caller writes onto a row: a live asset
+// of the tenant that the request's caller may see (datascope.Enforcer
+// AssertAssetRef). Any refusal is shared.ErrNotFound.
+type AssetRefChecker interface {
+	AssertAssetRef(ctx context.Context, tenantID, assetID shared.ID) error
+}
+
+// ErrRuleAssetNotFound is the one answer for a suppression rule's asset that
+// is unknown, deleted, another tenant's or outside the caller's data scope
+// (research 21b M-10, RFC-050 W8).
+var ErrRuleAssetNotFound = fmt.Errorf("%w: asset not found", shared.ErrNotFound)
+
+// SetAssetRefChecker wires the asset check of asset-bound rules. Without it
+// an asset-bound rule is refused (fail closed).
+func (s *Service) SetAssetRefChecker(c AssetRefChecker) {
+	s.assetRefs = c
 }
 
 // ApproverDirectory answers the two questions the four-eyes rule needs
@@ -62,6 +81,15 @@ func (s *Service) CreateRule(ctx context.Context, input CreateRuleInput) (*Rule,
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	// An asset-bound rule auto-closes that asset's findings: the asset must be
+	// one the requester may see, in their own tenant. The column references
+	// assets(id) without the tenant, so this is the only tenant check.
+	if input.AssetID != nil && !input.AssetID.IsZero() {
+		if s.assetRefs == nil || s.assetRefs.AssertAssetRef(ctx, input.TenantID, *input.AssetID) != nil {
+			return nil, ErrRuleAssetNotFound
+		}
 	}
 
 	// Set criteria

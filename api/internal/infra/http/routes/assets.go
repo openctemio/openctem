@@ -259,26 +259,6 @@ func registerScopeRoutes(
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteExclusion, middleware.Require(permission.ScopeDelete))
 	}, tenantMiddlewares...)
-
-	// Scan Schedule routes
-	router.Group("/api/v1/scope/schedules", func(r Router) {
-		// Read operations
-		r.GET("/", h.ListSchedules, middleware.Require(permission.ScopeRead))
-		r.GET("/{id}", h.GetSchedule, middleware.Require(permission.ScopeRead))
-
-		// Write operations
-		r.POST("/", h.CreateSchedule, middleware.Require(permission.ScopeWrite))
-		r.PUT("/{id}", h.UpdateSchedule, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/enable", h.EnableSchedule, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/disable", h.DisableSchedule, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/run", h.RunScheduleNow, middleware.Require(permission.ScopeWrite))
-
-		// Bulk operations
-		r.POST("/bulk/delete", h.BulkDeleteSchedules, middleware.Require(permission.ScopeDelete))
-
-		// Delete operations
-		r.DELETE("/{id}", h.DeleteSchedule, middleware.Require(permission.ScopeDelete))
-	}, tenantMiddlewares...)
 }
 
 // registerAssetTypeRoutes registers asset type management endpoints.
