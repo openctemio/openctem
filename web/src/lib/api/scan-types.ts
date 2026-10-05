@@ -363,10 +363,6 @@ export const SCAN_SESSION_STATUSES = [
 ] as const
 export type ScanSessionStatus = (typeof SCAN_SESSION_STATUSES)[number]
 
-// Alias for backward compatibility
-export const SCAN_RUN_STATUSES = SCAN_SESSION_STATUSES
-export type ScanRunStatus = ScanSessionStatus
-
 export const SCAN_SESSION_STATUS_LABELS: Record<ScanSessionStatus, string> = {
   queued: 'Queued',
   pending: 'Pending',
@@ -376,9 +372,6 @@ export const SCAN_SESSION_STATUS_LABELS: Record<ScanSessionStatus, string> = {
   canceled: 'Canceled',
   timeout: 'Timed Out',
 }
-
-// Alias for backward compatibility
-export const SCAN_RUN_STATUS_LABELS = SCAN_SESSION_STATUS_LABELS
 
 /**
  * Helper functions for status checking
@@ -437,7 +430,7 @@ export interface ScanSession {
   commit_sha?: string
   branch?: string
   base_commit_sha?: string
-  status: ScanRunStatus
+  status: ScanSessionStatus
   error_message?: string
   findings_total: number
   findings_new: number
@@ -454,19 +447,6 @@ export interface ScanSession {
   quality_gate_result?: QualityGateResult
 }
 
-// Alias for backward compatibility
-export type ScanRun = ScanSession
-
-/**
- * Scan Run list filters
- */
-export interface ScanRunListFilters {
-  scan_id?: string
-  status?: ScanRunStatus
-  page?: number
-  per_page?: number
-}
-
 /**
  * Scan Session list response (matches backend pagination)
  */
@@ -477,9 +457,6 @@ export interface ScanSessionListResponse {
   per_page: number
   total_pages: number
 }
-
-// Alias for backward compatibility
-export type ScanRunListResponse = ScanSessionListResponse
 
 // ============================================
 // SMART FILTERING (Asset-Scanner Compatibility)
