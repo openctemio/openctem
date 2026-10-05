@@ -190,6 +190,10 @@ const (
 	// (RFC-040 §5.7, detection A11): the platform asked for something the
 	// owner does not allow.
 	ActionSensorJobRefusedByLocalPolicy Action = "sensor.job_refused_local_policy"
+	// ActionSensorOptInChanged records an organization turning its
+	// interactsh or custom-template switch for sensor jobs on (critical,
+	// alerted) or off (research/25 D3, D9).
+	ActionSensorOptInChanged Action = "sensor.opt_in_changed"
 	// ActionSensorContentRefreshRequested records an administrator asking a
 	// sensor (or the fleet) to refresh its scanner content (RFC-031).
 	ActionSensorContentRefreshRequested Action = "sensor.content_refresh_requested"
@@ -516,7 +520,7 @@ func (a Action) IsValid() bool {
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy, ActionSensorOptInChanged,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
@@ -631,7 +635,7 @@ func (a Action) Category() string {
 	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
 		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
-		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy,
+		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy, ActionSensorOptInChanged,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated:
