@@ -41,7 +41,7 @@ graph TD
 | Repository | `internal/infra/postgres/ci_run_repository.go` |
 | Routes and their chains | `internal/infra/http/routes/ci.go` |
 | Console | `web/src/features/ci-runners` (`/ci-runners`, `/settings/scanning/ci`) |
-| Migration | `001053_ci_runner_identity` |
+| Migration | `001058_ci_runner_identity` |
 
 ## Request chains
 
