@@ -12287,6 +12287,63 @@ definitions:
       tenant_id:
         type: string
     type: object
+  internal_infra_http_handler.ScanStageImplementationResponse:
+    properties:
+      default:
+        type: boolean
+      tool:
+        type: string
+    type: object
+  internal_infra_http_handler.ScanStageListResponse:
+    properties:
+      max_hops:
+        description: |-
+          MaxHops is how many discovery hops a derived target may be from the
+          run's seeds.
+        type: integer
+      stages:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanStageResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.ScanStageResponse:
+    properties:
+      description:
+        type: string
+      findings:
+        type: boolean
+      implementations:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanStageImplementationResponse'
+        type: array
+      inputs:
+        description: |-
+          Inputs and Outputs are stored type labels: "type" or
+          "type/sub_type" (service/http is an HTTP service).
+        items:
+          type: string
+        type: array
+      key:
+        type: string
+      max_fanout:
+        type: integer
+      name:
+        type: string
+      outputs:
+        items:
+          type: string
+        type: array
+      relations:
+        items:
+          type: string
+        type: array
+      tier:
+        enum:
+        - T0
+        - T1
+        - T2
+        type: string
+    type: object
   internal_infra_http_handler.ScanStatsResponse:
     properties:
       active:
@@ -13974,6 +14031,13 @@ definitions:
       name:
         type: string
       output_formats:
+        items:
+          type: string
+        type: array
+      output_types:
+        description: |-
+          OutputTypes are the asset types a report of the tool may create
+          (scan stage catalog); read-only.
         items:
           type: string
         type: array
@@ -31471,6 +31535,23 @@ paths:
       security:
       - BearerAuth: []
       summary: Scans affected by the sensor opt-ins
+      tags:
+      - Scans
+  /scans/stages:
+    get:
+      description: 'The scan stage catalog: each capability with the asset types it
+        consumes and produces, its intrusiveness tier and the tools that implement
+        it.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanStageListResponse'
+      security:
+      - BearerAuth: []
+      summary: List scan stages
       tags:
       - Scans
   /scans/stats:
