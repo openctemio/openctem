@@ -33,7 +33,10 @@ func TestMigration000945_StripsAdminOnlyPermissionsFromCustomRoles(t *testing.T)
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	testdb.LockForDDL(t, ctx, tx, "roles", "role_permissions")
+	// The up and down migrations create and drop a table with foreign keys to
+	// roles and tenants, which locks tenants too: hold it with the others so a
+	// parallel test cannot deadlock against the replay.
+	testdb.LockForDDL(t, ctx, tx, "tenants", "roles", "role_permissions")
 	exec := func(q string, args ...any) {
 		t.Helper()
 		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
