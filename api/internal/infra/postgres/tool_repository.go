@@ -238,7 +238,7 @@ func (r *ToolRepository) ListByCategoryName(ctx context.Context, categoryName st
 		       t.install_method, t.install_cmd, t.update_cmd,
 		       t.version_cmd, t.version_regex, t.current_version, t.latest_version,
 		       t.config_file_path, t.config_schema, t.default_config,
-		       t.capabilities, t.supported_targets, t.output_formats,
+		       t.capabilities, t.supported_targets, t.output_formats, t.output_types,
 		       t.docs_url, t.github_url, t.is_active, t.is_builtin,
 		       t.tags, t.metadata, t.created_by, t.created_at, t.updated_at
 		FROM tools t
@@ -576,7 +576,7 @@ func (r *ToolRepository) selectQuery() string {
 		       install_method, install_cmd, update_cmd,
 		       version_cmd, version_regex, current_version, latest_version,
 		       config_file_path, config_schema, default_config,
-		       capabilities, supported_targets, output_formats,
+		       capabilities, supported_targets, output_formats, output_types,
 		       docs_url, github_url, is_active, is_builtin,
 		       tags, metadata, created_by, created_at, updated_at
 		FROM tools
@@ -674,6 +674,7 @@ func (r *ToolRepository) scanTool(row *sql.Row) (*tool.Tool, error) {
 		capabilities     pq.StringArray
 		supportedTargets pq.StringArray
 		outputFormats    pq.StringArray
+		outputTypes      pq.StringArray
 		tags             pq.StringArray
 		configSchema     []byte
 		defaultConfig    []byte
@@ -714,6 +715,7 @@ func (r *ToolRepository) scanTool(row *sql.Row) (*tool.Tool, error) {
 		&capabilities,
 		&supportedTargets,
 		&outputFormats,
+		&outputTypes,
 		&docsURL,
 		&githubURL,
 		&t.IsActive,
@@ -749,6 +751,7 @@ func (r *ToolRepository) scanTool(row *sql.Row) (*tool.Tool, error) {
 	t.Capabilities = capabilities
 	t.SupportedTargets = supportedTargets
 	t.OutputFormats = outputFormats
+	t.OutputTypes = outputTypes
 	t.Tags = tags
 
 	// Convert nullable strings
@@ -796,6 +799,7 @@ func (r *ToolRepository) scanToolFromRows(rows *sql.Rows) (*tool.Tool, error) {
 		capabilities     pq.StringArray
 		supportedTargets pq.StringArray
 		outputFormats    pq.StringArray
+		outputTypes      pq.StringArray
 		tags             pq.StringArray
 		configSchema     []byte
 		defaultConfig    []byte
@@ -836,6 +840,7 @@ func (r *ToolRepository) scanToolFromRows(rows *sql.Rows) (*tool.Tool, error) {
 		&capabilities,
 		&supportedTargets,
 		&outputFormats,
+		&outputTypes,
 		&docsURL,
 		&githubURL,
 		&t.IsActive,
@@ -868,6 +873,7 @@ func (r *ToolRepository) scanToolFromRows(rows *sql.Rows) (*tool.Tool, error) {
 	t.Capabilities = capabilities
 	t.SupportedTargets = supportedTargets
 	t.OutputFormats = outputFormats
+	t.OutputTypes = outputTypes
 	t.Tags = tags
 
 	// Convert nullable strings

@@ -25,6 +25,30 @@ vi.mock('@/lib/api/sensor-hooks', () => ({
   invalidateSensorsCache: vi.fn(async () => undefined),
   useSensorCommands: () => ({ data: { data: [] }, isLoading: false }),
   useSensorHeartbeatHistory: () => ({ data: undefined }),
+  useSensorConfigReport: () => ({
+    data: {
+      state: 'reported',
+      stale: false,
+      health: 'blocked',
+      truncated: false,
+      counts: { fail: 1 },
+      checks: [
+        {
+          id: 'platform.tls',
+          group: 'platform',
+          status: 'fail',
+          severity: 'critical',
+          code: 'ca_file_unreadable',
+          known: true,
+          title: 'The CA file cannot be read',
+        },
+      ],
+      settings: [],
+    },
+    error: undefined,
+    isLoading: false,
+    mutate: vi.fn(),
+  }),
 }))
 const content = vi.hoisted(() => ({ refreshSensorContent: vi.fn(), refreshFleetContent: vi.fn() }))
 vi.mock('@/lib/api/sensor-content-hooks', () => content)
@@ -482,5 +506,36 @@ describe('SensorDetailSheet', () => {
     // The header button (the protocol problem in the callout offers the same fix).
     await userEvent.click(screen.getAllByRole('button', { name: 'Install command' })[0])
     expect(screen.getByText('snippets for s1')).toBeInTheDocument()
+  })
+
+  it('no Setup & health tab on an API without config health', () => {
+    open()
+    expect(screen.queryByRole('tab', { name: 'Setup & health' })).toBeNull()
+  })
+
+  it('Setup & health is the last tab when the setup is fine', () => {
+    open({ sensor: { ...sensor, config_health: 'ok' } })
+    const tabs = within(screen.getByRole('dialog')).getAllByRole('tab')
+    expect(tabs.map((t) => t.textContent)).toEqual([
+      'Overview',
+      'Jobs',
+      'Manifest',
+      'Config',
+      'Setup & health',
+    ])
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByText('Setup OK')).toBeNull()
+  })
+
+  it('opens on Setup & health, first, when the setup needs someone', () => {
+    open({ sensor: { ...sensor, config_health: 'blocked' } })
+    const tabs = within(screen.getByRole('dialog')).getAllByRole('tab')
+    expect(tabs[0]).toHaveTextContent('Setup & health')
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    expect(document.querySelector('[data-check="platform.tls"]')).toHaveTextContent(
+      'The CA file cannot be read'
+    )
+    // The header tag says so too.
+    expect(screen.getAllByText('Setup blocked').length).toBeGreaterThan(0)
   })
 })

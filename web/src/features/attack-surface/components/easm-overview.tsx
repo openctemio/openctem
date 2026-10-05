@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EASMMonitoringCard } from './easm-monitoring-card'
+import { EVENT_TYPE_CONFIG, type ExposureEventType } from '@/lib/api/exposure-types'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   EmptyState,
@@ -44,7 +45,11 @@ export function toSeverity(s: string | undefined): Severity {
 }
 
 export function exposureTypeLabel(t: string): string {
-  return EXPOSURE_TYPE_LABEL[t] ?? t.replace(/_/g, ' ')
+  return (
+    EXPOSURE_TYPE_LABEL[t] ??
+    EVENT_TYPE_CONFIG[t as ExposureEventType]?.label ??
+    t.replace(/_/g, ' ')
+  )
 }
 
 function Row({

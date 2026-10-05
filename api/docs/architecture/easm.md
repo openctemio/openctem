@@ -75,6 +75,7 @@ API connector already uses (`pkg/httpsec`).
 | Discovery provenance on assets (`discovery_source`, `discovery_tool`, `discovered_at`, `first_seen`, `last_seen`) | Built | `pkg/domain/asset/entity.go` |
 | Exposure fields (`exposure`, `is_internet_accessible`, exposure change timestamps) | Built | ingest `applyCTEMSignals`, `inferAssetExposure` |
 | Relationships `contains` (root → subdomain), `resolves_to` (domain → IP); inferred `exposes`, `runs_on` | Built | `internal/app/ingest/processor_assets.go`, `internal/app/asset/relationship_inference.go` |
+| HTTP probe server fields (research/22 E5): the TLS leaf certificate becomes a `certificate` asset named by its SHA-256 fingerprint (tenant-scoped, deduplicated by name and fingerprint) linked from the service with `serves_certificate` (migration `001026`); the service keeps `favicon_mmh3`, `jarm`, `cdn`, `cdn_type`, `waf`, `hosted_by` and, when the sensor asks httpx for it, `asn`/`asn_org`/`asn_country`. Certificate text is capped on every ingest path (`text_caps.go`); a `related_assets` link becomes an edge only for a known type pair and only when the report may change the source asset (RFC-040 §5.3) | Built (api); sensor + sdk-go + ctis PRs open | `internal/app/ingest/related_assets.go`, `internal/app/ingest/text_caps.go`; ctis `ConvertReconToCTIS`, sensor `internal/recon/httpx` |
 | Identity resolution (strong identifiers, 7-day IP window, conflicts to dedup review) | Built | RFC-001, RFC-028, [asset-identity-resolution.md](asset-identity-resolution.md) |
 | CT monitoring: crt.sh, `subdomain_discovered` + `certificate_expiring` exposures | Built, with two limits (§6) | `internal/app/certmonitor`, [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md) |
 | Certificate assets → `certificate_expiring` / `certificate_expired` / `ssl_issue` exposures; service assets → `port_open` / `service_detected` | Built | `internal/app/exposurebridge/asset_bridge.go` |
@@ -330,6 +331,25 @@ Web: the **Monitoring** card on `/attack-surface` shows the last runs, the
 switches with a privacy note for CT, the cadence, and **Run now** (disabled
 inside the 15-minute window). How-to:
 [easm-monitoring-settings.md](../how-to/easm-monitoring-settings.md).
+## 4g. Honest numbers (built, P0-13)
+
+- `GET /easm/summary` counts only exposure types something writes today
+  (`EASMExposureTypes`: subdomain_discovered, certificate_expiring/expired,
+  port_open, service_detected, ssl_issue, dangling_cname/ns,
+  email_security_weak, subdomain_takeover). `api_exposed`, `bucket_public`,
+  `header_missing`, `dns_change`, `port_closed`, `service_changed` and
+  `subdomain_removed` return when they get a producer;
+  `TestEASMExposureTypesHaveProducers` fails if a listed type has none.
+- The web labels every exposure type the API declares
+  (`exposure-types-sync.test.ts` reads `pkg/domain/exposure/value_objects.go`).
+- CT: a name seen only as a wildcard (`*.dev.example.com`) is not a
+  discovered subdomain: it names no host and was counted with no asset.
+  Certificate expiry is still reported for it.
+- Seeds: a `root_domain` under one of the tenant's root-domain seeds is
+  refused (it adds nothing).
+- Certificates page: the client-side Validity filter was never applied by the
+  inventory page and is removed; each row shows its expiry, and expiring or
+  expired certificates are listed on Exposures.
 ## 4f. Review queue reachable, honest counts (built, P0-12)
 
 - **Reachable:** the Attack surface sidebar row carries the section tabs

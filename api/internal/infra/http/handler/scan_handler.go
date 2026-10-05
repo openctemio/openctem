@@ -872,6 +872,26 @@ func (h *ScanHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// SensorOptInImpact handles GET /api/v1/scans/sensor-opt-in-impact
+// @Summary      Scans affected by the sensor opt-ins
+// @Description  The organization's switches for out-of-band callbacks (interactsh) and custom templates in sensor jobs (both off unless an owner enabled them, research/25 D3), and the scans whose scanner_config asks for either (at most 100; truncated says more exist). While a switch is off, those scans run without interactsh or are refused (custom templates).
+// @Tags         Scans
+// @Produce      json
+// @Success      200  {object}  scansvc.OptInImpact
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scans/sensor-opt-in-impact [get]
+func (h *ScanHandler) SensorOptInImpact(w http.ResponseWriter, r *http.Request) {
+	impact, err := h.service.SensorOptInImpact(r.Context(), middleware.GetTenantID(r.Context()))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(impact)
+}
+
 // CoverageStatus handles GET /api/v1/scans/coverage
 // @Summary      Scan coverage status
 // @Description  License-aware rolling coverage summary for the tenant's scannable
@@ -944,7 +964,7 @@ func (h *ScanHandler) CloneScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.service.CloneScan(r.Context(), tenantID, scanID, req.Name)
+	s, err := h.service.CloneScan(r.Context(), tenantID, scanID, req.Name, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1615,7 +1635,7 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data)
+	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
