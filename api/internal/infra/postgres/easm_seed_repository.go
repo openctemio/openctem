@@ -157,6 +157,28 @@ func (r *EASMSeedRepository) VerifiedDomainNames(ctx context.Context, tenantID s
 	return out, rows.Err()
 }
 
+// RootDomainSeedNames returns every root_domain seed of the tenant, with
+// discovery on or off: a name at or under one is derived from a seed, which
+// the active-scan gate accepts as authorization (RFC-036 §6.3).
+func (r *EASMSeedRepository) RootDomainSeedNames(ctx context.Context, tenantID shared.ID) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT value FROM easm_seeds
+		WHERE tenant_id = $1 AND kind = 'root_domain'
+		ORDER BY value LIMIT $2`, tenantID.String(), easmseed.MaxPerTenant)
+	if err != nil {
+		return nil, fmt.Errorf("list root domain seeds: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // DiscoveryRootDomains returns the tenant's root_domain seeds with discovery
 // on: the names the Certificate Transparency monitor watches for it.
 func (r *EASMSeedRepository) DiscoveryRootDomains(ctx context.Context, tenantID shared.ID) ([]string, error) {

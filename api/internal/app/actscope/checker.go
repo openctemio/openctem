@@ -153,7 +153,7 @@ func (c *Checker) resolveAssets(ctx context.Context, tenantID shared.ID, targets
 	forms := map[string][]string{}
 	names := make([]string, 0, len(targets)*3)
 	for _, t := range targets {
-		f := matchForms(t)
+		f := MatchForms(t)
 		forms[t] = f
 		names = append(names, f...)
 	}
@@ -175,7 +175,7 @@ func (c *Checker) resolveAssets(ctx context.Context, tenantID shared.ID, targets
 // matchesAllowlist reports whether the target (or the host it names) matches
 // an active scope target.
 func matchesAllowlist(allowlist []*scopedom.Target, target string) bool {
-	for _, f := range matchForms(target) {
+	for _, f := range MatchForms(target) {
 		for _, st := range allowlist {
 			if st != nil && st.Matches(f) {
 				return true
@@ -185,9 +185,9 @@ func matchesAllowlist(allowlist []*scopedom.Target, target string) bool {
 	return false
 }
 
-// matchForms is the target as typed, lower-cased, and the host of a URL or
+// MatchForms is the target as typed, lower-cased, and the host of a URL or
 // host:port.
-func matchForms(target string) []string {
+func MatchForms(target string) []string {
 	v := strings.TrimSpace(target)
 	out := []string{v}
 	add := func(s string) {

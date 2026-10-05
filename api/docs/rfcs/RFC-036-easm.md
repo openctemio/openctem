@@ -435,6 +435,19 @@ active_allowed(asset) =
   AND tier(asset) <= tier_ceiling(scope_target or tenant default)
 ```
 
+**As built (2026-10-04, PR_GATE).** One gate (`internal/app/easm/active_gate.go`)
+decides `active_allowed` on every active-scan path: typed targets and
+asset-group members, at scan create, clone, import, quick scan, `POST
+/commands`, every run (manual, scheduled, retry, workflow) and the dispatch
+gate (pipelines, coverage, validation, retests, simulations, connectors).
+An asset is allowed when its record is `confirmed`, or, with no record, when
+it is inside an active scope target or at/under a root-domain seed or verified
+domain (`derived_from_seed`); a rejected name refuses itself and every name
+under it. An internet-facing asset with no record outside all of them is
+`unattributed` and waits for a person. The tier ceiling is not enforced yet
+(sensor side, 22b S7). See
+[architecture/active-probe-gate.md](../architecture/active-probe-gate.md).
+
 | Tier | Touches the target | Default |
 |---|---|---|
 | **T0 passive** | No (third-party data, DNS) | All candidates, dependencies, lookalikes, confirmed |
