@@ -26,6 +26,22 @@ func githubClaims(over map[string]any) Claims {
 	return ParseGitHubClaims(m)
 }
 
+func gitlabClaims(over map[string]any) Claims {
+	m := map[string]any{
+		"iss": "https://gitlab.example.com", "sub": "project_path:grp/proj:ref_type:branch:ref:main", "jti": "j2",
+		"project_path": "grp/proj", "project_id": "7", "ref": "main", "ref_type": "branch", "ref_protected": "false",
+		"sha": "abc1234", "user_login": "dev", "pipeline_id": "123", "pipeline_source": "push",
+	}
+	for k, v := range over {
+		if v == nil {
+			delete(m, k)
+		} else {
+			m[k] = v
+		}
+	}
+	return ParseGitLabClaims(m)
+}
+
 func TestParseGitHubClaims(t *testing.T) {
 	c := githubClaims(nil)
 	if c.Repository != "acme/api" || c.Owner() != "acme" || c.Branch != "main" || c.SHA != "abcdef1234567" ||
@@ -106,6 +122,20 @@ func TestRulesAdmit(t *testing.T) {
 		{"workflow_run refused by default", Rules{Owners: []string{"acme"}}, githubClaims(map[string]any{"event_name": "workflow_run"}), RefuseForkPullRequest},
 		{"fork event when allowed", Rules{Owners: []string{"acme"}, AllowForkPullRequests: true}, githubClaims(map[string]any{"event_name": "pull_request_target"}), ""},
 		{"protected ref required", Rules{Owners: []string{"acme"}, RequireProtectedRef: true}, c, RefuseRefNotProtected},
+		// GitHub: a protected deployment environment is the proof; a
+		// ref_protected claim a token might carry is not read.
+		{"github protected via a listed environment", Rules{Owners: []string{"acme"}, Environments: []string{"prod"}, RequireProtectedRef: true},
+			githubClaims(map[string]any{"environment": "prod"}), ""},
+		{"github ref_protected claim alone is not proof", Rules{Owners: []string{"acme"}, RequireProtectedRef: true},
+			githubClaims(map[string]any{"ref_protected": "true"}), RefuseRefNotProtected},
+		{"gitlab protected ref", Rules{Owners: []string{"grp"}, RequireProtectedRef: true},
+			gitlabClaims(map[string]any{"ref_protected": "true"}), ""},
+		{"gitlab unprotected ref", Rules{Owners: []string{"grp"}, RequireProtectedRef: true},
+			gitlabClaims(map[string]any{"ref_protected": "false"}), RefuseRefNotProtected},
+		{"gitlab external pull request refused by default", Rules{Owners: []string{"grp"}},
+			gitlabClaims(map[string]any{"pipeline_source": "external_pull_request_event"}), RefuseForkPullRequest},
+		{"fork event refused even when the event is listed", Rules{Owners: []string{"acme"}, Events: []string{"pull_request_target"}},
+			githubClaims(map[string]any{"event_name": "pull_request_target"}), RefuseForkPullRequest},
 		{"missing sha", Rules{Owners: []string{"acme"}}, githubClaims(map[string]any{"sha": nil}), RefuseMissingClaims},
 		{"missing jti", Rules{Owners: []string{"acme"}}, githubClaims(map[string]any{"jti": nil}), RefuseMissingClaims},
 	}
@@ -138,18 +168,19 @@ func TestTrustConfigValidate(t *testing.T) {
 		t.Fatalf("defaults = %+v", c)
 	}
 	bad := map[string]func(c *TrustConfig){
-		"no owner or repository":  func(c *TrustConfig) { c.Rules = Rules{Refs: []string{"main"}} },
-		"wildcard owner":          func(c *TrustConfig) { c.Rules = Rules{Repositories: []string{"*/api"}} },
-		"owner with slash":        func(c *TrustConfig) { c.Rules = Rules{Owners: []string{"a/b"}} },
-		"repository without name": func(c *TrustConfig) { c.Rules = Rules{Repositories: []string{"acme"}} },
-		"github foreign issuer":   func(c *TrustConfig) { c.Issuer = "https://evil.example" },
-		"gitlab http issuer":      func(c *TrustConfig) { c.Provider, c.Issuer = ProviderGitLab, "http://gitlab.local" },
-		"gitlab issuer with user": func(c *TrustConfig) { c.Provider, c.Issuer = ProviderGitLab, "https://u:p@gitlab.local" },
-		"unknown provider":        func(c *TrustConfig) { c.Provider = "jenkins" },
-		"audience with space":     func(c *TrustConfig) { c.Audience = "a b" },
-		"empty name":              func(c *TrustConfig) { c.Name = "" },
-		"pattern default branch":  func(c *TrustConfig) { c.DefaultBranch = "ma*" },
-		"bad ref pattern":         func(c *TrustConfig) { c.Rules.Refs = []string{"[unterminated"} },
+		"no owner or repository":                     func(c *TrustConfig) { c.Rules = Rules{Refs: []string{"main"}} },
+		"wildcard owner":                             func(c *TrustConfig) { c.Rules = Rules{Repositories: []string{"*/api"}} },
+		"owner with slash":                           func(c *TrustConfig) { c.Rules = Rules{Owners: []string{"a/b"}} },
+		"repository without name":                    func(c *TrustConfig) { c.Rules = Rules{Repositories: []string{"acme"}} },
+		"github foreign issuer":                      func(c *TrustConfig) { c.Issuer = "https://evil.example" },
+		"gitlab http issuer":                         func(c *TrustConfig) { c.Provider, c.Issuer = ProviderGitLab, "http://gitlab.local" },
+		"gitlab issuer with user":                    func(c *TrustConfig) { c.Provider, c.Issuer = ProviderGitLab, "https://u:p@gitlab.local" },
+		"unknown provider":                           func(c *TrustConfig) { c.Provider = "jenkins" },
+		"audience with space":                        func(c *TrustConfig) { c.Audience = "a b" },
+		"empty name":                                 func(c *TrustConfig) { c.Name = "" },
+		"pattern default branch":                     func(c *TrustConfig) { c.DefaultBranch = "ma*" },
+		"bad ref pattern":                            func(c *TrustConfig) { c.Rules.Refs = []string{"[unterminated"} },
+		"github protected refs without environments": func(c *TrustConfig) { c.Rules.RequireProtectedRef = true },
 	}
 	for name, f := range bad {
 		t.Run(name, func(t *testing.T) {

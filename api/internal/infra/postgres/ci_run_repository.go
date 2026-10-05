@@ -277,6 +277,15 @@ func (r *CIRunRepository) CreateRun(ctx context.Context, run *cirun.Run) error {
 	return err
 }
 
+// CountPipelineRunsSince counts the runs a pipeline started since the time
+// (idx_ci_runs_tenant_pipeline).
+func (r *CIRunRepository) CountPipelineRunsSince(ctx context.Context, tenantID, pipelineID shared.ID, since time.Time) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM ci_runs WHERE tenant_id = $1 AND pipeline_id = $2 AND created_at > $3`,
+		tenantID.String(), pipelineID.String(), since).Scan(&n)
+	return n, err
+}
+
 // GetRun returns one run of the tenant.
 func (r *CIRunRepository) GetRun(ctx context.Context, tenantID, id shared.ID) (*cirun.Run, error) {
 	run, err := scanCIRun(r.db.QueryRowContext(ctx, `SELECT `+ciRunColumns+` FROM ci_runs

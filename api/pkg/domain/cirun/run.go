@@ -22,6 +22,18 @@ const TokenTTL = 15 * time.Minute
 // MaxRunFindings caps the findings one run may record for the gate.
 const MaxRunFindings = 100_000
 
+// MaxRunReports caps the reports one run may upload (each tool sends one or
+// a few; a run sending more is looping or abusing its token).
+const MaxRunReports = 200
+
+// MaxPipelineRunsPerHour caps the runs one pipeline may start in an hour
+// (every job of every pipeline run is a run; matrix builds included, this is
+// far above normal use). Beyond it the exchange is refused and audited.
+const MaxPipelineRunsPerHour = 300
+
+// ErrRunReportCap refuses a report beyond MaxRunReports.
+var ErrRunReportCap = fmt.Errorf("%w: a CI run accepts at most %d reports", shared.ErrConflict, MaxRunReports)
+
 // Run statuses.
 const (
 	StatusRunning   = "running"

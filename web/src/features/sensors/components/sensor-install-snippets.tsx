@@ -95,7 +95,7 @@ function downloadText(content: string, filename: string, type = 'text/plain') {
 }
 
 /** One snippet with Copy (and Download for files). */
-function Snippet({ text, label, file }: { text: string; label: string; file?: string }) {
+export function Snippet({ text, label, file }: { text: string; label: string; file?: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="relative min-w-0 rounded-lg border bg-muted/50">
