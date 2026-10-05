@@ -211,6 +211,14 @@ type Sensor struct {
 	LocalPolicy           *LocalPolicyReport
 	LocalPolicyReportedAt *time.Time
 
+	// The config report (config_report.go): the digest and the platform's
+	// health rollup of the latest report the sensor sent ("" before the
+	// first), and the digest its latest heartbeat echoed ("" when it
+	// echoed none). They differ when the stored report is stale.
+	ConfigReportDigest    string
+	ConfigHealth          string
+	ConfigHeartbeatDigest string
+
 	// Metadata and configuration
 	Labels   map[string]interface{}
 	Config   map[string]interface{}

@@ -27,7 +27,7 @@ These were checked against the code and against the full test suite run as
 
 | Need | Where | Grant |
 |---|---|---|
-| DML on every application table | everywhere | `SELECT, INSERT, UPDATE, DELETE` on all tables in `public` and `deprecated` (migration 000213 moved retired tables there, and the finding merge still rewrites `deprecated.finding_regression_events`) |
+| DML on every application table | everywhere | `SELECT, INSERT, UPDATE, DELETE` on all tables in `public` (the `deprecated` schema that 000213 created was dropped by 001059) |
 | Sequences | `nextval` on serial columns | `USAGE, SELECT, UPDATE` on all sequences |
 | Functions and trigger functions | triggers, `gen_random_uuid()` etc. | `EXECUTE` on all functions |
 | `TRUNCATE epss_scores`, `TRUNCATE kev_catalog` | threat-intel feed refresh (`threatintel_repository.go`) | `TRUNCATE` on those two global tables only |

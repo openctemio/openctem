@@ -69,12 +69,6 @@ type Evidence struct {
 	CorrelationID shared.ID
 }
 
-// Executor is a back-compat accessor for legacy handler code that
-// already referenced the field. Prefer ExecutorKind directly.
-//
-// Deprecated: read ExecutorKind.
-func (e Evidence) Executor() string { return e.ExecutorKind }
-
 // Outcome is the exit status of an execution.
 type Outcome string
 
