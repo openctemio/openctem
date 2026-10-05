@@ -396,6 +396,13 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 	if !(checkDone && reachDone) && outcome == retestdom.OutcomeUnknown {
 		reason = "no sensor result before the deadline"
 	}
+	baseline, err := s.templateBaseline(ctx, rt)
+	if err != nil && (outcome == retestdom.OutcomeFixed || outcome == retestdom.OutcomeStillPresent) {
+		// Fail closed: without the baseline nothing says the re-run used
+		// the template the finding was seen with.
+		outcome, reason = retestdom.OutcomeUnknown, "inconclusive: the finding's template baseline could not be read"
+	}
+	outcome, reason = retestdom.ApplyTemplateDrift(outcome, reason, baseline, check)
 	return s.settle(ctx, rt, outcome, reason)
 }
 
@@ -416,11 +423,11 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 	}
 	switch cmd.Status {
 	case commanddom.CommandStatusCompleted:
-		outcome, summary := commandOutcome(cmd.Result)
+		outcome, summary, digest := commandOutcome(cmd.Result)
 		if outcome == "" {
 			return retestdom.CheckResult{Missing: true}, true
 		}
-		return retestdom.CheckResult{Outcome: outcome, Summary: summary}, true
+		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest}, true
 	case commanddom.CommandStatusFailed, commanddom.CommandStatusExpired, commanddom.CommandStatusCanceled:
 		return retestdom.CheckResult{Missing: true, Summary: cmd.ErrorMessage}, true
 	default:
@@ -432,22 +439,43 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 // SDK poller nests an executor's metadata under "metadata"; a client completing
 // the command directly may put it at the top level. Same rule as the
 // validation completion hook.
-func commandOutcome(raw json.RawMessage) (string, string) {
+func commandOutcome(raw json.RawMessage) (outcome, summary, templateDigest string) {
 	if len(raw) == 0 {
-		return "", ""
+		return "", "", ""
 	}
 	var result struct {
 		validation.ValidateResultPayload
 		Metadata validation.ValidateResultPayload `json:"metadata"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return "", ""
+		return "", "", ""
 	}
 	v := result.ValidateResultPayload
 	if v.Outcome == "" {
 		v = result.Metadata
 	}
-	return v.Outcome, v.Summary
+	// The template the re-run used (sensor#134, research/18 O6); sanitized:
+	// anything that is not a sha256 digest counts as not reported.
+	if d, ok := v.Evidence["template_digest"].(string); ok {
+		templateDigest = vulnerability.SanitizeTemplateDigest(d)
+	}
+	return v.Outcome, v.Summary, templateDigest
+}
+
+// templateBaseline is the template digest recorded at the finding's last
+// sighting ("" when none was recorded, or the finding store records no
+// provenance). A read error is returned: the caller fails closed.
+func (s *Service) templateBaseline(ctx context.Context, rt *retestdom.Retest) (string, error) {
+	store, ok := s.findings.(vulnerability.TemplateProvenanceStore)
+	if !ok {
+		return "", nil
+	}
+	p, err := store.TemplateBaseline(ctx, rt.TenantID, rt.FindingID)
+	if err != nil {
+		s.logger.Warn("retest: cannot read the finding's template baseline", "finding_id", rt.FindingID.String(), "error", err)
+		return "", err
+	}
+	return vulnerability.SanitizeTemplateDigest(p.TemplateDigest), nil
 }
 
 // settle completes the retest: the finding moves per the outcome (decided under
