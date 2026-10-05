@@ -28,6 +28,9 @@ if (process.env.NODE_ENV !== 'test') {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // No `X-Powered-By: Next.js` on every response: it only tells a scanner
+  // which framework (and so which advisories) to try.
+  poweredByHeader: false,
   // The dev-only "N" badge sat over the sidebar's last rows on phones. The
   // local stack runs `next dev`, so it showed there too.
   devIndicators: false,

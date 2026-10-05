@@ -1310,6 +1310,17 @@ and narrows dispatch:
   shown to existing organizations. Enabling a switch never overrides a
   sensor's local policy: the job still goes only to sensors whose own policy
   accepts it.
+- **Console** (web). The fleet table has a Policy column and a "Local policy"
+  facet (`?policy=enforced|absent|paused|unknown`; "absent" + "unknown" is "no
+  local policy"). The detail sheet shows the full reported digest (selectable)
+  and, for a sensor without a policy or one that repeats the absent-policy
+  warning, the corrected guidance: custom templates need
+  `SENSOR_TEMPLATE_SIGNING_KEYS` on the host and an organization opt-in;
+  interactsh runs only when a job asks for it and the organization allows it.
+  Settings → Authentication and security has the two opt-in switches; the
+  Scans page and the settings show a banner listing the scans the switches
+  affect (`GET /scans/sensor-opt-in-impact`). Trigger refusals
+  `SENSOR_POLICY_REFUSED` and `SENSOR_OPT_IN_DISABLED` carry a next-step hint.
 - **Install dialog.** `GET /sensors/{id}/config-templates` returns `policy`, a
   sensor-policy/v1 template (`configs/sensor-templates/policy.tmpl`)
   prefilled with the ranges of the sensor's scan zones (none for a sensor in
