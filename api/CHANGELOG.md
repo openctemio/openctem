@@ -5,6 +5,14 @@ published at https://docs.openctem.io (operations/release-notes-*).
 
 ## Unreleased
 
+### Security: pentest findings stay with their campaign on the asset page
+
+- `GET /assets/{id}/findings` now applies the findings list's visibility:
+  the data scope and the pentest-membership rule. A pentest finding, whose
+  metadata carries the PoC and steps to reproduce, was listed for anyone who
+  could see the asset (research 21b H5, RFC-050 W4); it is now listed only for
+  members of its campaign (administrators unchanged).
+
 ### Security: asset references are tenant-checked in the database (migrations 000920-000922)
 
 - Every table that stores an asset id next to a `tenant_id` (27 columns:
