@@ -76,9 +76,6 @@
 - [Migrations](development/migrations.md) - Database migrations guide
 - [CI/CD](development/ci-cd.md) - GitHub Actions workflows
 
-### Competitive analysis
-- [OASM vs OpenCTEM](competitive/oasm-comparison.md) - Source-level comparison against oasm-platform/open-asm: what we have, what we lack, what is built-but-unwired, and the phased adoption plan with a tracking table
-
 ### Deployment
 - [Safe Deploy & Migrations](deployment/safe-deploy-and-migrations.md) - Canonical safe-deploy sequence, expand-contract rules, schema-check semantics, dirty-migration recovery, rollback
 - [Least-privilege database roles](deployment/database-roles.md) - The API connects as `openctem_app` (DML only), migrations as `openctem_migrator` (schema owner); the bootstrap script, what the API needs at run time, compose/helm variables, and the upgrade runbook

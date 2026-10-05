@@ -661,9 +661,8 @@ Authorization is enforced at the **route layer** in
 ### SSO / identity-federation setup (platform administrator)
 
 SSO **setup** for an organization (SAML, OIDC identity providers, verified
-domains, SSO enforcement) is a platform-administrator operation, modeled on
-Tenable Security Center's system-level Configuration. It lives only under the
-admin realm, `/api/v1/admin/tenants/{tenantId}/sso/*` (next section). The former
+domains, SSO enforcement) is a platform-administrator operation: identity
+federation is system-level configuration, so it lives only under the admin realm, `/api/v1/admin/tenants/{tenantId}/sso/*` (next section). The former
 tenant-context routes `/api/v1/settings/{saml,identity-providers,verified-domains}`
 and the `PLATFORM_ADMIN_EMAILS` flag that guarded them were removed; no tenant
 role, however high, can reach SSO setup. The SSO **login** flow
@@ -995,6 +994,11 @@ results an out-of-scope id is reported exactly like an unknown id.
   and full-data decision — the findings list/search, the asset list and
   `/findings/stats`; their SQL gives the same answer as a resolved scope (no
   scope row, nothing).
+- **Attack simulation targets** follow the scan act-scope rule at create,
+  update and run (`SimulationService.refuseTargetsOutOfActScope`: asset ids via
+  `FilterAssetRefs` + `actscope.Check`; 404 otherwise; 21b H4). Simulation
+  list/get are not scoped yet (RFC-050 W3 remainder).
+
 - **Scheduled scans act as their owner, never as the system** (21b H2/H3):
   clone and import set `created_by` to the actor (act scope checked on the
   direct targets); a scheduled run refuses a scan with no owner and pauses a
@@ -1009,6 +1013,11 @@ results an out-of-scope id is reported exactly like an unknown id.
   21b H1): exposure create, ingest and bulk ingest refuse an exposure with no
   `asset_id` from a restricted caller (400), so the fingerprint upsert cannot
   overwrite an asset-less exposure a restricted member cannot see.
+- **Group-modification cap** (RFC-050 W7, 21b M-4): unassign, ownership
+  update and removing another member from an access group need the caller to
+  hold every asset the group holds (`GroupService.requireWholeGroupInScope`,
+  the same check as adding members under D13); unrestricted callers are not
+  capped and leaving a group oneself is always allowed.
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
@@ -1403,13 +1412,12 @@ Legend: (R) = Read, (W) = Write, (U) = Update, (D) = Delete
 
 The authorization model was reviewed end-to-end (2026-09, `docs/authz-audit.md`)
 and standardized. The following are **decisions**, not accidents — each was made
-deliberately and, where a design choice was involved, benchmarked against
-Tenable.sc's RBAC.
+deliberately.
 
 1. **Allow-only, default-deny, roles only.** A user's effective permissions are
    the *union* of what their roles grant, and roles are the **only** source of
-   permissions. There is no deny-override. This mirrors Tenable.sc, which is
-   purely additive with no deny-override.
+   permissions. There is no deny-override: purely additive grants keep the
+   effective permission set easy to reason about and audit.
 
    Groups (teams) carry **only data scope** (which assets their members see),
    never permissions. Group permission sets and per-group permission overrides
@@ -1446,6 +1454,8 @@ Tenable.sc's RBAC.
    (RFC-050 W22/W23). Until then there is no `expires_at` on any grant, and
    revocation is immediate: disable or offboard the member (RFC-050 member
    lifecycle), or remove the grant/role (`RevokeAllSessions` + version bump).
+5. **No time-limited grants.** There is no `expires_at` on role assignments;
+   revocation is immediate via `RevokeAllSessions` + version bump. → we will **not** build expiring grants (YAGNI).
 
 6. **The module gate is a feature flag, not a security boundary.** It is fail-open
    by design (see "Module-Gate Layer"). Never rely on it to protect data — that is

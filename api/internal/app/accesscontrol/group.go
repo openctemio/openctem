@@ -88,7 +88,7 @@ func WithScopeDelegationCap(e *datascope.Enforcer) GroupServiceOption {
 
 // ErrDelegationExceedsScope: the change would give someone access to assets
 // the caller does not hold.
-var ErrDelegationExceedsScope = fmt.Errorf("%w: the group holds assets outside your own data scope; only someone with access to all of them can add members", shared.ErrForbidden)
+var ErrDelegationExceedsScope = fmt.Errorf("%w: the group holds assets outside your own data scope; only someone with access to all of them can change its members or assets", shared.ErrForbidden)
 
 // ErrSelfMembership: a caller without full data access cannot widen their
 // own scope by joining a group.
@@ -484,7 +484,17 @@ func (s *GroupService) checkMembershipDelegation(ctx context.Context, g *groupdo
 			return ErrSelfMembership
 		}
 	}
-	if s.accessControlRepo == nil {
+	return s.requireWholeGroupInScope(ctx, g)
+}
+
+// requireWholeGroupInScope is the group-modification cap (RFC-050 W7,
+// research 21b M-4): a restricted manager may change a group (its members,
+// its assets, their ownership type) only when every asset the group holds is
+// inside the manager's own scope. Otherwise a BU lead could strip another
+// BU's group of an asset or a member. Unrestricted callers (owner, admin,
+// full-data role, internal calls) are not capped.
+func (s *GroupService) requireWholeGroupInScope(ctx context.Context, g *groupdom.Group) error {
+	if s.delegation == nil || s.accessControlRepo == nil {
 		return nil
 	}
 	held, err := s.accessControlRepo.ListAssetsByGroup(ctx, g.ID())
@@ -688,6 +698,13 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 	g, err := s.groupForTenant(ctx, gid, actx.TenantID)
 	if err != nil {
 		return err
+	}
+	// Leaving a group oneself only narrows one's own scope; removing someone
+	// else is capped to groups wholly inside the caller's scope.
+	if actx.ActorID != userID.String() {
+		if err := s.requireWholeGroupInScope(ctx, g); err != nil {
+			return err
+		}
 	}
 
 	// Check if this would remove the last owner
@@ -900,6 +917,9 @@ func (s *GroupService) UnassignAsset(ctx context.Context, input UnassignAssetInp
 	if err != nil {
 		return err
 	}
+	if err := s.requireWholeGroupInScope(ctx, g); err != nil {
+		return err
+	}
 
 	if err := s.accessControlRepo.DeleteAssetOwner(ctx, assetID, groupID); err != nil {
 		return fmt.Errorf("failed to unassign asset: %w", err)
@@ -953,6 +973,9 @@ func (s *GroupService) UpdateAssetOwnership(ctx context.Context, input UpdateAss
 	// Verify group exists and belongs to caller's tenant
 	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
 	if err != nil {
+		return err
+	}
+	if err := s.requireWholeGroupInScope(ctx, g); err != nil {
 		return err
 	}
 

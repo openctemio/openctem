@@ -1136,6 +1136,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Persist simulation runs (previously the run repo was never wired, so every
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
+	// Simulation targets follow the scan act-scope rule (RFC-050 W3, 21b H4).
+	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope), s.DataScope)
 	// Validation (CTEM Stage-4): sensors POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
