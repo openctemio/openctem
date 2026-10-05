@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -15,7 +15,7 @@ import (
 
 // --- Team management service tests ---
 
-func newTeamTestService(t *testing.T) (*app.PentestService, *teamMockCampaignRepo, *teamMockMemberRepo) {
+func newTeamTestService(t *testing.T) (*compliance.PentestService, *teamMockCampaignRepo, *teamMockMemberRepo) {
 	t.Helper()
 	log := logger.NewNop()
 	campaignRepo := &teamMockCampaignRepo{}
@@ -24,7 +24,7 @@ func newTeamTestService(t *testing.T) (*app.PentestService, *teamMockCampaignRep
 	templateRepo := newMockPentestTemplateRepo()
 	reportRepo := newMockPentestReportRepo()
 
-	svc := app.NewPentestService(campaignRepo, findingRepo, retestRepo, templateRepo, reportRepo, log)
+	svc := compliance.NewPentestService(campaignRepo, findingRepo, retestRepo, templateRepo, reportRepo, log)
 
 	memberRepo := &teamMockMemberRepo{}
 	svc.SetCampaignMemberRepository(memberRepo)
@@ -44,7 +44,7 @@ func TestAddCampaignMember_Success(t *testing.T) {
 	campaign, _ := pentest.NewCampaign(tenantID, "Test Campaign", pentest.CampaignTypeExternal, pentest.CampaignPriorityHigh)
 	campaignRepo.getByID = campaign
 
-	member, err := svc.AddCampaignMember(ctx, app.CampaignAddMemberInput{
+	member, err := svc.AddCampaignMember(ctx, compliance.CampaignAddMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     userID.String(),
@@ -74,7 +74,7 @@ func TestAddCampaignMember_InvalidRole(t *testing.T) {
 	campaign, _ := pentest.NewCampaign(tenantID, "Test", pentest.CampaignTypeExternal, pentest.CampaignPriorityHigh)
 	campaignRepo.getByID = campaign
 
-	_, err := svc.AddCampaignMember(ctx, app.CampaignAddMemberInput{
+	_, err := svc.AddCampaignMember(ctx, compliance.CampaignAddMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: shared.NewID().String(),
 		UserID:     shared.NewID().String(),
@@ -99,7 +99,7 @@ func TestAddCampaignMember_DuplicateReturnsConflict(t *testing.T) {
 	campaignRepo.getByID = campaign
 	memberRepo.createErr = pentest.ErrMemberAlreadyExists
 
-	_, err := svc.AddCampaignMember(ctx, app.CampaignAddMemberInput{
+	_, err := svc.AddCampaignMember(ctx, compliance.CampaignAddMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: shared.NewID().String(),
 		UserID:     shared.NewID().String(),
@@ -130,7 +130,7 @@ func TestRemoveCampaignMember_Success(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, userID, pentest.CampaignRoleTester, nil, time.Now()),
 	}
 
-	_, err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
+	_, err := svc.RemoveCampaignMember(ctx, compliance.CampaignRemoveMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     userID.String(),
@@ -159,7 +159,7 @@ func TestRemoveCampaignMember_LastLeadBlocked(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, shared.NewID(), pentest.CampaignRoleObserver, nil, time.Now()),
 	}
 
-	_, err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
+	_, err := svc.RemoveCampaignMember(ctx, compliance.CampaignRemoveMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     leadID.String(),
@@ -188,7 +188,7 @@ func TestRemoveCampaignMember_LeadSelfRemoveBlocked(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, lead2ID, pentest.CampaignRoleLead, nil, time.Now()),
 	}
 
-	_, err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
+	_, err := svc.RemoveCampaignMember(ctx, compliance.CampaignRemoveMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     leadID.String(),
@@ -217,7 +217,7 @@ func TestUpdateCampaignMemberRole_DemoteLastLeadBlocked(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, shared.NewID(), pentest.CampaignRoleTester, nil, time.Now()),
 	}
 
-	err := svc.UpdateCampaignMemberRole(ctx, app.CampaignUpdateMemberRoleInput{
+	err := svc.UpdateCampaignMemberRole(ctx, compliance.CampaignUpdateMemberRoleInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     leadID.String(),
@@ -247,7 +247,7 @@ func TestUpdateCampaignMemberRole_Success(t *testing.T) {
 	)
 	memberRepo.listByCampaign = []*pentest.CampaignMember{existingMember}
 
-	err := svc.UpdateCampaignMemberRole(ctx, app.CampaignUpdateMemberRoleInput{
+	err := svc.UpdateCampaignMemberRole(ctx, compliance.CampaignUpdateMemberRoleInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     userID.String(),

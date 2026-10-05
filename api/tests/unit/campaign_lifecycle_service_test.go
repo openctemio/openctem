@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -68,7 +68,7 @@ func TestRemoveCampaignMember_LastReviewerNoWarningWithoutInReview(t *testing.T)
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, reviewerID, pentest.CampaignRoleReviewer, nil, time.Now()),
 	}
 
-	warning, err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
+	warning, err := svc.RemoveCampaignMember(ctx, compliance.CampaignRemoveMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     reviewerID.String(),
@@ -101,7 +101,7 @@ func TestRemoveCampaignMember_NonReviewerNoWarning(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, testerID, pentest.CampaignRoleTester, nil, time.Now()),
 	}
 
-	warning, err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
+	warning, err := svc.RemoveCampaignMember(ctx, compliance.CampaignRemoveMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     testerID.String(),

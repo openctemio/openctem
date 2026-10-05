@@ -738,7 +738,7 @@ func TestSensorSelLoadBalancing_CPUBreaksJobLoadTie(t *testing.T) {
 	}
 }
 
-// TestSensorSelLoadBalancing_WeightsChangeSelection pins that the AGENT_LB_*
+// TestSensorSelLoadBalancing_WeightsChangeSelection pins that the SENSOR_LB_*
 // weights are the knob they claim to be: an operator who declares memory the
 // dominant signal must get a different placement decision than one who
 // declares CPU dominant, from identical sensor state.
@@ -780,7 +780,7 @@ func TestSensorSelLoadBalancing_WeightsChangeSelection(t *testing.T) {
 	// Memory dominant → avoid the memory-heavy sensor instead.
 	if got := selectWith(sensor.LoadBalancingWeights{JobLoad: 0.1, Memory: 0.9}); got != "cpu-heavy" {
 		t.Errorf("with memory weighted 0.9 the memory-heavy sensor should lose; selected %q; "+
-			"AGENT_LB_* weights do not affect scheduling", got)
+			"SENSOR_LB_* weights do not affect scheduling", got)
 	}
 }
 
