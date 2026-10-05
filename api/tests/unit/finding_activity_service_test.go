@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -1551,5 +1552,18 @@ func (m *stubFindingRepo) GetByWorkItemURI(_ context.Context, _ shared.ID, _ str
 }
 
 func (m *stubFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
+	return nil
+}
+
+// The services mutate the user they hold before calling these targeted
+// updates, and this mock stores that same pointer, so there is nothing more to
+// write here.
+func (m *findingActUserRepo) RecordFailedLogin(_ context.Context, _ shared.ID, _ int, _ time.Duration) (*time.Time, error) {
+	return nil, nil
+}
+
+func (m *findingActUserRepo) RecordSuccessfulLogin(_ context.Context, _ shared.ID) error { return nil }
+
+func (m *findingActUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ string) error {
 	return nil
 }
