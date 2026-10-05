@@ -14,7 +14,7 @@ or identity recipes.
 
 ## What is stored
 
-Migration `001055_finding_source_interop` adds nullable columns to `findings`,
+Migration `001062_finding_source_interop` adds nullable columns to `findings`,
 written per sighting by fingerprint (`FindingRepository.UpdateInteropBatch`)
 and read only by the finding detail (`GET /api/v1/findings/{id}`, field
 `source_data`):
