@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 
 	"github.com/openctemio/openctem/api/internal/app"
@@ -63,7 +64,7 @@ type Workers struct {
 	JobWorker                 *jobs.Worker
 	SensorHealthChecker       *jobs.SensorHealthChecker
 	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
-	ScanScheduler             *app.ScanScheduler
+	ScanScheduler             *scan.ScanScheduler
 	CommandExpirationChecker  *command.ExpirationChecker
 	OutboxScheduler           *outbox.Scheduler
 	FindingLifecycleScheduler *app.FindingLifecycleScheduler
@@ -162,14 +163,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	// Initialize scan scheduler
-	w.ScanScheduler = app.NewScanScheduler(
+	w.ScanScheduler = scan.NewScanScheduler(
 		repos.Scan,
-		svc.Scan,
-		app.ScanSchedulerConfig{
+		svc.Scan, scan.ScanSchedulerConfig{
 			CheckInterval: time.Minute,
 			BatchSize:     50,
-		},
-		log,
+		}, log,
 	)
 
 	// Initialize command expiration checker
@@ -442,7 +441,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.CertMonitor,
 			repos.Tenant,
 			&controller.CertMonitorControllerConfig{
-				Interval:    cfg.Worker.CertMonitorInterval,
+				Interval:    easmTick(cfg.Worker.CertMonitorInterval),
 				Logger:      log.With("controller", "cert-monitor"),
 				ModuleGuard: svc.Module, // skip tenants without the attack-surface module
 				DNSFollowUp: dnsFollowUp(svc.EASMDNS),
@@ -460,7 +459,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.EASMDNS,
 			repos.Tenant,
 			&controller.EASMDNSControllerConfig{
-				Interval:    cfg.Worker.EASMDNSInterval,
+				Interval:    easmTick(cfg.Worker.EASMDNSInterval),
 				Logger:      log.With("controller", "easm-dns-checks"),
 				ModuleGuard: svc.Module,
 			},
@@ -956,6 +955,13 @@ func (d connectorCoverageDispatcher) DispatchTenableScan(ctx context.Context, in
 	}
 	id, err := d.svc.DispatchCoverageBatch(ctx, in.TenantID, *in.IntegrationID, in.Targets, session)
 	return id, session, err
+}
+
+// easmTick is how often the CT and DNS controllers wake up: hourly (or the
+// interval, when shorter), so a tenant's own interval (6 h and up, P0-11)
+// takes effect; each name is re-queried only once its window has passed.
+func easmTick(interval time.Duration) time.Duration {
+	return min(interval, time.Hour)
 }
 
 // dnsFollowUp returns the DNS checks for the CT controller to run after each

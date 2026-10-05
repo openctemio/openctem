@@ -241,6 +241,11 @@ type Output struct {
 	// it was merged into. Not exposed; v2 derives per-item outcomes from it.
 	AssetMap map[string]shared.ID `json:"-"`
 
+	// SightedFingerprints are the stored fingerprints of the findings this
+	// report sighted (after alias resolution). Not exposed; the CI gate
+	// records them for its run (RFC-051).
+	SightedFingerprints []string `json:"-"`
+
 	// ExcludedAssetRefs are the CTIS asset ids of the report that were not
 	// added because they match a scope exclusion. Their findings are skipped,
 	// never attached to another asset of the report.

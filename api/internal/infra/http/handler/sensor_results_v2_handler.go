@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -22,7 +23,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -60,12 +60,20 @@ func (h *SensorResultsV2Handler) Limits() protov2.Limits { return h.receiver.Lim
 // is the generic problem; the reason is logged.
 func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := extractAPIKey(r)
-		if key == "" {
-			protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
-			return
+		// A signed request (key-bound sensor, RFC-052) is decided by its
+		// signature alone; only an unsigned one may present a bearer key.
+		id, signed, err := authenticateSigned(r, h.sensors, getClientIP(r), time.Now())
+		switch {
+		case err == nil:
+			r = signed
+		case errors.Is(err, errNotSigned):
+			key := extractAPIKey(r)
+			if key == "" {
+				protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
+				return
+			}
+			id, err = h.sensors.AuthenticateIdentityFrom(r.Context(), key, getClientIP(r))
 		}
-		id, err := h.sensors.AuthenticateIdentityFrom(r.Context(), key, getClientIP(r))
 		if err == nil && id.Paused && !isV2HeartbeatRequest(r) && !isV2HelloRequest(r) {
 			err = errSensorPaused
 		}
@@ -215,13 +223,7 @@ func (h *SensorResultsV2Handler) Abandon(w http.ResponseWriter, r *http.Request)
 
 // Hello handles GET /hello: protocol level, features and limits (RFC-023 C3).
 func (h *SensorResultsV2Handler) Hello(w http.ResponseWriter, _ *http.Request) {
-	hello := protov2.NewHello(h.receiver.Limits(), h.features...)
-	if len(h.features) > 0 {
-		hello = hello.WithDeprecation(protov2.DeprecationProtocolV1, protov2.Deprecation{
-			DeprecatedAt: legacyv1.ProtocolDeprecatedAt, SunsetAt: legacyv1.ProtocolSunsetAt,
-		})
-	}
-	h.writeJSON(w, http.StatusOK, hello)
+	h.writeJSON(w, http.StatusOK, protov2.NewHello(h.receiver.Limits(), h.features...))
 }
 
 func (h *SensorResultsV2Handler) writeStatus(w http.ResponseWriter, res *ingest.PutResult) {

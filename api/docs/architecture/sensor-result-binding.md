@@ -48,10 +48,8 @@ Also part of group (C):
 - Validation evidence without the validate command assigned to the sensor
   (`command_id`) is refused with `403 COMMAND_REQUIRED`, unless the tenant
   turns on `allow_advisory_evidence`; it is then stored as advisory.
-- A sensor reads only the ingest jobs it queued
-  (`GET /api/v1/agent/ingest/jobs/{id}`) and the scan sessions it registered
-  (`GET /api/v1/agent/scans/{id}`), and may not update a scan session no
-  sensor registered.
+- A sensor reads only the reports it sent (`GET /api/v2/sensor/results/{report_id}`).
+  The v1 ingest-job and scan-session routes were retired with protocol v1.
 
 ## How a report names its command
 
@@ -59,8 +57,6 @@ Also part of group (C):
 |---|---|---|
 | v2 `PUT /api/v2/sensor/commands/{command_id}/results/{report_id}` | yes, in the path | every sensor on sdk-go ≥ v0.10.0 (sensor ≥ v0.6.0, so all deployed v0.6.x and v0.7.0 sensors) for results produced while running a command (`core.WithCommandID` on the executor context, kept by the outbox) |
 | v2 `PUT /api/v2/sensor/results/{report_id}` | no | sdk-go when the command is no longer open (it re-sends unbound after `command-not-found`), and pushes outside a command |
-| v1 `POST /api/v1/agent/ingest*` with `X-OpenCTEM-Command-ID` | yes (new header) | nobody yet; sdk-go follow-up for its v1 fallback |
-| v1 without the header | no | sdk-go when it fell back to v1 (platform without v2, a platform sensor, `Protocol: v1`), sdk-go < v0.10.0, CI mode (`RemoteHandler`, runner keys), GitHub/GitLab CI uploads, third-party tools |
 
 So scheduled scans, pipeline steps and quick scans run by current sensors are
 bound and apply as before. A v1 report bound with the header is processed

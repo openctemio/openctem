@@ -56,6 +56,7 @@ describe('Discovery > Assets', () => {
     expect(rows.map((r) => r.title)).toEqual([
       'Scans',
       'Sensors',
+      'CI runners',
       'Attack surface',
       'Assets',
       'Exposures',

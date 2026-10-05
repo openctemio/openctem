@@ -369,8 +369,13 @@ checks run as a sensor job instead.
 | `attestation` | Who asserted ownership, and when |
 
 UI: Scoping › Boundaries gets a **Seeds** tab next to Targets and Exclusions.
-`root_domain` seeds reuse the `verified_domains` DNS TXT flow from SSO. One
-verification serves both.
+`root_domain` seeds reuse the `verified_domains` DNS TXT flow from SSO.
+**Amended by research/22 decision E6 (2026-10-04):** each row has a
+`purpose`. A tenant verifies a domain itself for EASM (`purpose=easm`,
+`/api/v1/easm/verified-domains`); that proves control for attribution but
+never admits SSO JIT or SCIM users. Using a domain for SSO stays a platform
+administrator action (`purpose=sso`, admin console), and an SSO domain also
+counts for EASM.
 
 **Authorization to touch an asset actively:**
 
@@ -776,9 +781,19 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
   decision queues an asset-scoped reclassify, drained every minute.
   [easm.md §5a](../architecture/easm.md#5a-after-a-decision-built-p0-9).
 
-- **P0-10 tenant domain verification with a purpose (E6):** open.
+- **P0-10 tenant domain verification with a purpose (E6):** shipped
+  (#1151, migration `001081`). Tenants verify domains themselves through
+  `/api/v1/easm/verified-domains` (scope permissions, 10 checks per hour,
+  audited); each row has a `purpose`, and only `sso` rows (platform admin)
+  admit SSO JIT and SCIM users. Web: Verify on each seed.
+  [easm.md §4d](../architecture/easm.md#4d-verified-domains-built-p0-10).
 
-- **P0-11 EASM settings and run-now:** open.
+- **P0-11 EASM settings and run-now:** shipped (this PR, no migration).
+  `GET/PUT /api/v1/easm/settings` (CT and DNS-check switches, intervals
+  with a 6 h floor; the CT switch is the E8 opt-out) and
+  `POST /api/v1/easm/sweeps` (once per 15 minutes per tenant, audited); a
+  new seed starts a sweep; controllers tick hourly so tenant intervals take
+  effect. [easm.md §4e](../architecture/easm.md#4e-settings-and-run-now-built-p0-11).
 
 - **P0-12 review queue reachable, honest counts (E1):** shipped (this PR,
   no migration). Attack surface has Overview | Review tabs and a sidebar
