@@ -29,12 +29,7 @@ var commandProducers = map[string]string{
 var newCommandCall = regexp.MustCompile(`\b(\w+)\.NewCommand\(`)
 
 func createsCommands(src []byte) bool {
-	for _, m := range newCommandCall.FindAllSubmatch(src, -1) {
-		if string(m[1]) != "legacyv1" {
-			return true
-		}
-	}
-	return false
+	return newCommandCall.Match(src)
 }
 
 func TestEveryCommandProducerIsGated(t *testing.T) {

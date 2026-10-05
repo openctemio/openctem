@@ -43,6 +43,11 @@ import (
 // @name Authorization
 // @description JWT access token, or a tenant oct_ API key (read-only: GET/HEAD on tenant routes, within the key's scopes). Format: "Bearer {token}". An oct_ key may instead be sent as X-API-Key.
 
+// @securityDefinitions.apikey CIRunToken
+// @in header
+// @name Authorization
+// @description CI run upload token from POST /ci/oidc/exchange (RFC-051): "Bearer octci_...", 15 minutes, one run on one repository.
+
 // @externalDocs.description  OpenAPI
 // @externalDocs.url          https://swagger.io/resources/open-api/
 
@@ -78,9 +83,6 @@ func run() int {
 
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
-	for _, d := range cfg.Deprecations {
-		log.Warn("deprecated configuration", "detail", d)
-	}
 
 	// ==========================================================================
 	// Infrastructure

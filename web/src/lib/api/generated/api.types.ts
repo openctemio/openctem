@@ -6801,6 +6801,925 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ci/gate-overrides': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List CI gate break-glass overrides */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Repository asset */
+          repository_asset_id?: string
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIGateOverrideListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Break-glass: let one commit pass the CI gate
+     * @description For one commit of one repository, until it expires (default 24 hours, at most 7 days). Requires a reason. Audited at high severity, and again each time it lets a failing run pass. 404 when the repository is outside the caller's data scope.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Override */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIGateOverrideRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIGateOverrideResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/gate-overrides/{id}/revoke': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Revoke a CI gate break-glass override */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Override ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/gate-policies': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List CI gate policies
+     * @description The organization's, business units' and repositories' gate policies, and the built-in default used when none applies.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIGatePolicyListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Create a CI gate policy
+     * @description One policy per scope (tenant, business_unit or repository). Secrets always fail and accepted risk is always honored. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Policy */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIGatePolicyRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIGatePolicyResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/gate-policies/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Delete a CI gate policy */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Policy ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    /**
+     * Change a CI gate policy
+     * @description The scope cannot change. epss_threshold is replaced (omit it to clear it). Audited.
+     */
+    patch: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Policy ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Changes */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIGatePolicyRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIGatePolicyResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    trace?: never
+  }
+  '/ci/oidc/exchange': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Exchange a CI OIDC token for a run upload token
+     * @description A GitHub Actions or GitLab CI job presents its OIDC token. When one of the organization's CI trust configurations admits it (issuer, audience, repository, ref, environment and event rules; fork pull requests refused by default), the platform creates a CI run on the repository asset and returns a run upload token that expires within 15 minutes. Each OIDC token can be exchanged once. Every refusal answers the same 401.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Tenant and OIDC token */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIExchangeRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIExchangeResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/runs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List CI runs
+     * @description CI pipeline runs (not sensors), newest first, on the repositories the caller may see.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Repository asset */
+          repository_asset_id?: string
+          /** @description pass, fail or none */
+          verdict?: string
+          /** @description github or gitlab */
+          provider?: string
+          /** @description Page (default 1) */
+          page?: number
+          /** @description Per page (default 25, max 100) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-internal_infra_http_handler_CIRunResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/runs/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get a CI run
+     * @description The run with its last verdict (reasons and links). 404 when the repository is outside the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIRunResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/runs/{id}/baseline-diff': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Compare a CI run's fingerprints with the default branch
+     * @description Splits fingerprints into new and already open on the repository's default branch, for inline comments on new findings. The repository and branch are the run's.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Fingerprints */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIBaselineDiffRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/runs/{id}/evaluate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Gate verdict for a CI run
+     * @description Judges the run's findings against the gate policy (repository, else business unit, else organization, else the built-in default): severity threshold, KEV, EPSS, new findings only compared with the default branch by default. Accepted risk, false positives and suppressions are honored; a committed secret always fails; a scan failure fails. An active break-glass for the commit lets a failing run pass (audited). Returns pass or fail with reasons and links.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Runner status */
+      requestBody?: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIEvaluateRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Verdict']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/runs/{id}/results': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Upload a CI run's results
+     * @description A CTIS report from the run. It may name only the run's repository; the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description CTIS report */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CTISIngestRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.IngestResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/trust-configs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List CI trust configurations
+     * @description Which CI pipelines (GitHub Actions, GitLab CI) may exchange their OIDC token for a run upload token.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CITrustConfigListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Create a CI trust configuration
+     * @description Rules must name at least one owner or repository. Fork pull requests are refused unless allow_fork_pull_requests is set. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.CITrustConfigRequest']
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CITrustConfigResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/trust-configs/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a CI trust configuration */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Trust configuration ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CITrustConfigResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Change a CI trust configuration
+     * @description Replaces the configuration (the provider cannot change). Audited with before and after.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Trust configuration ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.CITrustConfigRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CITrustConfigResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    /**
+     * Delete a CI trust configuration
+     * @description Pipelines it admitted can no longer exchange tokens; tokens already issued expire within 15 minutes. Audited.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Trust configuration ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/commands': {
     parameters: {
       query?: never
@@ -31826,6 +32745,1408 @@ export interface paths {
 export type webhooks = Record<string, never>
 export interface components {
   schemas: {
+    'ctis.ASVSInfo': {
+      /** @description Control ID (e.g., "2.1.1") */
+      control_id?: string
+      /** @description Control URL (link to ASVS documentation) */
+      control_url?: string
+      /** @description ASVS level (1, 2, or 3) */
+      level?: number
+      /** @description ASVS section (e.g., "V2: Authentication") */
+      section?: string
+    }
+    'ctis.AccessControlIssue': {
+      /** @description Can be called by */
+      callable_by?: string
+      /** @description Privilege escalation path */
+      escalation_path?: string
+      /** @description Missing modifier */
+      missing_modifier?: string
+      /** @description Missing role check */
+      missing_role_check?: string
+      /** @description Unprotected function */
+      unprotected_function?: string
+    }
+    'ctis.ArtifactLocation': {
+      /** @description Index within the artifacts array */
+      index?: number
+      /** @description URI of the artifact */
+      uri?: string
+      /** @description Base URI ID for resolution */
+      uri_base_id?: string
+    }
+    'ctis.Asset': {
+      /** @description CTEM: Compliance context for the asset */
+      compliance?: components['schemas']['ctis.AssetCompliance']
+      /** @description Confidence score 0-100 (how confident the source is about this asset) */
+      confidence?: number
+      /** @description Asset criticality: critical, high, medium, low, info */
+      criticality?: components['schemas']['ctis.Criticality']
+      /** @description Description */
+      description?: string
+      /** @description When this asset was discovered */
+      discovered_at?: string
+      /** @description Unique identifier for this asset within the report */
+      id?: string
+      /**
+       * @description Stable identifiers of the asset. A platform matches an incoming asset
+       *     to an existing one on these before it falls back to the name or an IP
+       *     address, so a renamed host or repository keeps its history.
+       */
+      identifiers?: components['schemas']['ctis.AssetIdentifiers']
+      /** @description CTEM: Is the asset directly accessible from the internet */
+      is_internet_accessible?: boolean
+      /** @description Human-readable name */
+      name?: string
+      /** @description Custom properties */
+      properties?: components['schemas']['ctis.Properties']
+      /** @description Related assets (by ID within this report) */
+      related_assets?: string[]
+      /** @description CTEM: Services running on this asset */
+      services?: components['schemas']['ctis.ServiceInfo'][]
+      /** @description Tags for categorization */
+      tags?: string[]
+      /** @description Asset-specific technical details */
+      technical?: components['schemas']['ctis.AssetTechnical']
+      /** @description Asset type (required): domain, ip_address, repository, certificate, etc. */
+      type?: components['schemas']['ctis.AssetType']
+      /**
+       * @description Primary value of the asset (required)
+       *     For domain: "example.com"
+       *     For ip_address: "192.168.1.1"
+       *     For repository: "github.com/org/repo"
+       */
+      value?: string
+    }
+    'ctis.AssetCompliance': {
+      /** @description Data classification level: public, internal, confidential, restricted, secret */
+      data_classification?: string
+      /** @description Compliance frameworks this asset is in scope for: PCI-DSS, HIPAA, SOC2, GDPR, ISO27001 */
+      frameworks?: string[]
+      /** @description Asset contains Protected Health Information */
+      phi_exposed?: boolean
+      /** @description Asset contains Personally Identifiable Information */
+      pii_exposed?: boolean
+      /** @description Regulatory owner email/username */
+      regulatory_owner?: string
+    }
+    'ctis.AssetIdentifiers': {
+      /** @description SMBIOS system UUID. */
+      bios_uuid?: string
+      /** @description Cloud instance ID (i-0abc...), VM ID or resource ARN. */
+      cloud_resource_id?: string
+      /**
+       * @description MAC addresses of the host's network interfaces. Receivers ignore
+       *     locally administered, multicast and known shared addresses.
+       */
+      mac_addresses?: string[]
+      /**
+       * @description Host ID read by a sensor on the host: /etc/machine-id on Linux,
+       *     MachineGuid on Windows, IOPlatformUUID on macOS.
+       */
+      machine_id?: string
+      /**
+       * @description Repository ID assigned by the source-code host (the numeric GitHub
+       *     repository ID, the GitLab project ID). It survives renames and
+       *     transfers.
+       */
+      scm_repo_id?: string
+      /** @description Hardware serial number. */
+      serial_number?: string
+    }
+    'ctis.AssetTechnical': {
+      /** @description For certificate assets */
+      certificate?: components['schemas']['ctis.CertificateTechnical']
+      /** @description For cloud assets */
+      cloud?: components['schemas']['ctis.CloudTechnical']
+      /** @description For domain assets */
+      domain?: components['schemas']['ctis.DomainTechnical']
+      /** @description For IP address assets */
+      ip_address?: components['schemas']['ctis.IPAddressTechnical']
+      /** @description For repository assets */
+      repository?: components['schemas']['ctis.RepositoryTechnical']
+      /** @description For service assets */
+      service?: components['schemas']['ctis.ServiceTechnical']
+      /** @description For Web3 assets (smart contracts, wallets, tokens, etc.) */
+      web3?: components['schemas']['ctis.Web3Technical']
+    }
+    /** @enum {string} */
+    'ctis.AssetType':
+      | 'domain'
+      | 'subdomain'
+      | 'ip_address'
+      | 'certificate'
+      | 'website'
+      | 'web_application'
+      | 'api'
+      | 'mobile_app'
+      | 'service'
+      | 'repository'
+      | 'cloud_account'
+      | 'compute'
+      | 'storage'
+      | 'database'
+      | 'serverless'
+      | 'container_registry'
+      | 'host'
+      | 'server'
+      | 'container'
+      | 'kubernetes'
+      | 'kubernetes_cluster'
+      | 'kubernetes_namespace'
+      | 'network'
+      | 'vpc'
+      | 'subnet'
+      | 'load_balancer'
+      | 'firewall'
+      | 'iam_user'
+      | 'iam_role'
+      | 'service_account'
+      | 'http_service'
+      | 'open_port'
+      | 'discovered_url'
+      | 'smart_contract'
+      | 'wallet'
+      | 'nft_collection'
+      | 'defi_protocol'
+      | 'token'
+      | 'blockchain'
+      | 'unclassified'
+    'ctis.Attachment': {
+      /** @description Artifact location */
+      artifact_location?: components['schemas']['ctis.ArtifactLocation']
+      /** @description Description of the attachment */
+      description?: string
+      /** @description Relevant regions within the artifact */
+      regions?: components['schemas']['ctis.FindingLocation'][]
+    }
+    'ctis.AuditReport': {
+      auditor?: string
+      critical_count?: number
+      date?: string
+      high_count?: number
+      low_count?: number
+      medium_count?: number
+      report_url?: string
+      scope?: string
+    }
+    'ctis.BranchInfo': {
+      /** @description Base branch for PR/MR scans (e.g., "main" when scanning a PR targeting main) */
+      base_branch?: string
+      /** @description Commit SHA being scanned */
+      commit_sha?: string
+      /**
+       * @description Whether this is the default branch (main/master)
+       *     Auto-resolve only applies to default branch scans
+       */
+      is_default_branch?: boolean
+      /** @description Branch name (e.g., "main", "feature/xyz", "refs/heads/main") */
+      name?: string
+      /** @description PR/MR number if this is a pull request scan */
+      pull_request_number?: number
+      /** @description PR/MR URL if this is a pull request scan */
+      pull_request_url?: string
+      /** @description Repository URL for context */
+      repository_url?: string
+    }
+    'ctis.BusinessImpact': {
+      /** @description Compliance frameworks impacted: PCI-DSS, HIPAA, SOC2, GDPR, ISO27001 */
+      compliance_impact?: string[]
+      /** @description Data exposure risk: none, low, medium, high, critical */
+      data_exposure_risk?: string
+      /** @description Has potential reputational impact */
+      reputational_impact?: boolean
+    }
+    'ctis.CertificateTechnical': {
+      /** @description Is expired */
+      expired?: boolean
+      /** @description SHA-256 fingerprint */
+      fingerprint?: string
+      /** @description Issuer common name */
+      issuer_cn?: string
+      /** @description Issuer organization */
+      issuer_org?: string
+      /** @description Key algorithm */
+      key_algorithm?: string
+      /** @description Key size in bits */
+      key_size?: number
+      /** @description Valid until */
+      not_after?: string
+      /** @description Valid from */
+      not_before?: string
+      /** @description Subject alternative names */
+      sans?: string[]
+      /** @description Is self-signed */
+      self_signed?: boolean
+      /** @description Serial number */
+      serial_number?: string
+      /** @description Signature algorithm */
+      signature_algorithm?: string
+      /** @description Subject common name */
+      subject_cn?: string
+      /** @description Is wildcard */
+      wildcard?: boolean
+    }
+    'ctis.CloudTechnical': {
+      /** @description Account/project ID */
+      account_id?: string
+      /** @description Resource ARN (AWS) */
+      arn?: string
+      /** @description Cloud provider: aws, gcp, azure */
+      provider?: string
+      /** @description Region */
+      region?: string
+      /** @description Resource ID */
+      resource_id?: string
+      /** @description Resource type: ec2, s3, rds, etc. */
+      resource_type?: string
+      /** @description Resource tags */
+      tags?: {
+        [key: string]: string
+      }
+      /** @description Availability zone */
+      zone?: string
+    }
+    'ctis.ComplianceDetails': {
+      /** @description Control description */
+      control_description?: string
+      /** @description Control ID */
+      control_id?: string
+      /** @description Control name */
+      control_name?: string
+      /** @description Framework: pci-dss, hipaa, soc2, cis, etc. */
+      framework?: string
+      /** @description Framework version */
+      framework_version?: string
+      /** @description Result: pass, fail, manual, not_applicable */
+      result?: string
+    }
+    'ctis.ContainerLayer': {
+      /** @description Layer diff ID */
+      diff_id?: string
+      /** @description Layer digest (e.g., "sha256:abc123...") */
+      digest?: string
+    }
+    'ctis.ContractLibrary': {
+      address?: string
+      name?: string
+    }
+    'ctis.CoreContract': {
+      address?: string
+      name?: string
+      /** @description router, factory, vault, etc. */
+      role?: string
+    }
+    /** @enum {string} */
+    'ctis.Criticality': 'critical' | 'high' | 'medium' | 'low' | 'info'
+    'ctis.DNSRecord': {
+      /** @description Record name */
+      name?: string
+      ttl?: number
+      /** @description A, AAAA, CNAME, MX, TXT, etc. */
+      type?: string
+      /** @description Record value */
+      value?: string
+    }
+    'ctis.DataFlow': {
+      /** @description Call graph path (function names in order) */
+      call_path?: string[]
+      /** @description Flow confidence score (0-100) */
+      confidence?: number
+      /** @description Is cross-file (data flows across multiple files) */
+      cross_file?: boolean
+      /** @description Intermediate variable locations (propagation path) */
+      intermediates?: components['schemas']['ctis.DataFlowLocation'][]
+      /** @description Is interprocedural (crosses function boundaries) */
+      interprocedural?: boolean
+      /** @description Sanitizers applied (functions that clean/escape data) */
+      sanitizers?: components['schemas']['ctis.DataFlowLocation'][]
+      /** @description Taint sink location (where data reaches dangerous function) */
+      sinks?: components['schemas']['ctis.DataFlowLocation'][]
+      /** @description Taint source locations (where untrusted data enters) */
+      sources?: components['schemas']['ctis.DataFlowLocation'][]
+      /** @description Summary of the flow for human readability */
+      summary?: string
+      /** @description Type of taint: user_input, file_read, env_var, network, database */
+      taint_type?: string
+      /**
+       * @description Whether the data is still tainted at the sink
+       *     (false if properly sanitized before reaching sink)
+       */
+      tainted?: boolean
+      /** @description Vulnerability type this flow leads to: sqli, xss, ssrf, command_injection, etc. */
+      vulnerability_type?: string
+    }
+    'ctis.DataFlowLocation': {
+      /** @description For function calls: the function being called */
+      called_function?: string
+      /** @description Class/struct name (if applicable) */
+      class?: string
+      /** @description Column number (1-indexed) */
+      column?: number
+      /** @description Code content at this location */
+      content?: string
+      /** @description End column */
+      end_column?: number
+      /** @description End line (for multi-line spans) */
+      end_line?: number
+      /** @description Function/method name containing this location */
+      function?: string
+      /** @description Step index in the flow (for ordering, 0-indexed) */
+      index?: number
+      /** @description Variable or expression name */
+      label?: string
+      /** @description Line number (1-indexed) */
+      line?: number
+      /** @description Module/namespace */
+      module?: string
+      /** @description Notes for human understanding */
+      notes?: string
+      /** @description The operation performed: assignment, call, return, parameter, concat, etc. */
+      operation?: string
+      /** @description For parameters: the parameter index (0-indexed) */
+      parameter_index?: number
+      /** @description File path */
+      path?: string
+      /** @description Taint state at this location: tainted, sanitized, unknown */
+      taint_state?: string
+      /** @description Transformation applied: encode, decode, escape, hash, encrypt, etc. */
+      transformation?: string
+      /** @description Location type: source, sink, propagator, sanitizer, transform */
+      type?: components['schemas']['ctis.DataFlowLocationType']
+    }
+    /** @enum {string} */
+    'ctis.DataFlowLocationType': 'source' | 'sink' | 'propagator' | 'sanitizer' | 'transform'
+    'ctis.DeFiDetails': {
+      /** @description Audit reports */
+      audit_reports?: components['schemas']['ctis.AuditReport'][]
+      /** @description Is audited */
+      audited?: boolean
+      /** @description Bug bounty platform: immunefi, hackerone, etc. */
+      bug_bounty_platform?: string
+      /** @description Core contracts */
+      core_contracts?: components['schemas']['ctis.CoreContract'][]
+      /** @description Governance token address */
+      governance_token?: string
+      /** @description Has bug bounty */
+      has_bug_bounty?: boolean
+      /** @description Max bug bounty payout */
+      max_bounty_usd?: number
+      /** @description Is paused */
+      paused?: boolean
+      /** @description Protocol name: uniswap, aave, compound, etc. */
+      protocol_name?: string
+      /** @description Protocol type: dex, lending, yield, bridge, derivatives, etc. */
+      protocol_type?: string
+      /** @description Supported chains */
+      supported_chains?: string[]
+      /** @description Timelock duration (for governance) */
+      timelock_duration?: number
+      /** @description Total Value Locked (TVL) in USD */
+      tvl_usd?: number
+      /** @description Protocol version */
+      version?: string
+    }
+    'ctis.Dependency': {
+      /** @description Dependencies (list of IDs or names this component depends on) */
+      depends_on?: string[]
+      /** @description Ecosystem: npm, pypi, maven, gomod, etc. */
+      ecosystem?: string
+      /** @description Unique identifier for this dependency */
+      id?: string
+      /** @description License information */
+      licenses?: string[]
+      /** @description Location in file (deprecated, use Locations) */
+      location?: components['schemas']['ctis.FindingLocation']
+      /** @description All locations where this dependency is defined */
+      locations?: components['schemas']['ctis.DependencyLocation'][]
+      /** @description Package name */
+      name?: string
+      /** @description File path where this dependency is defined */
+      path?: string
+      /** @description Custom properties */
+      properties?: components['schemas']['ctis.Properties']
+      /** @description Package URL (PURL) */
+      purl?: string
+      /** @description Dependency relationship: direct, indirect, root, transit */
+      relationship?: string
+      /** @description Package type: library, framework, application, os */
+      type?: string
+      /** @description Unique identifier from scanner (e.g., Trivy UID) */
+      uid?: string
+      /** @description Package version */
+      version?: string
+    }
+    'ctis.DependencyLocation': {
+      /** @description End column number */
+      end_column?: number
+      /** @description End line number */
+      end_line?: number
+      /** @description File path */
+      path?: string
+      /** @description Start column number */
+      start_column?: number
+      /** @description Start line number */
+      start_line?: number
+    }
+    'ctis.DomainTechnical': {
+      /** @description DNS records */
+      dns_records?: components['schemas']['ctis.DNSRecord'][]
+      /** @description Expiration date */
+      expires_at?: string
+      /** @description Nameservers */
+      nameservers?: string[]
+      /** @description Registration date */
+      registered_at?: string
+      /** @description Registrar information */
+      registrar?: string
+      /** @description WHOIS data */
+      whois?: {
+        [key: string]: string
+      }
+    }
+    'ctis.Finding': {
+      /** @description Reference to asset ID within this report */
+      asset_ref?: string
+      /** @description Asset type (if using AssetValue) */
+      asset_type?: components['schemas']['ctis.AssetType']
+      /** @description Direct asset value (if not using AssetRef) */
+      asset_value?: string
+      /** @description Attachments - relevant artifacts or evidence (SARIF attachments) */
+      attachments?: components['schemas']['ctis.Attachment'][]
+      /** @description Git author who introduced the finding */
+      author?: string
+      /** @description Author email */
+      author_email?: string
+      /**
+       * @description Baseline state - status relative to previous scan (SARIF baselineState)
+       *     Values: new, unchanged, updated, absent
+       */
+      baseline_state?: string
+      /** @description CTEM: Business impact assessment */
+      business_impact?: components['schemas']['ctis.BusinessImpact']
+      /** @description Finding category/class */
+      category?: string
+      /** @description Commit date when the finding was introduced */
+      commit_date?: string
+      /** @description Compliance-specific details */
+      compliance?: components['schemas']['ctis.ComplianceDetails']
+      /** @description Confidence score 0-100 */
+      confidence?: number
+      /** @description Correlation ID - groups logically identical results across runs (SARIF correlationGuid) */
+      correlation_id?: string
+      /** @description Data flow trace for taint analysis (source -> intermediate -> sink) */
+      data_flow?: components['schemas']['ctis.DataFlow']
+      /** @description Detailed description */
+      description?: string
+      /**
+       * @description Evidence is the scanner's raw proof/output for this finding (e.g. a Nessus
+       *     plugin_output, a probe response). Free text; redact secrets before display.
+       */
+      evidence?: string
+      /** @description CTEM: Exposure information */
+      exposure?: components['schemas']['ctis.FindingExposure']
+      /** @description Fingerprint for deduplication */
+      fingerprint?: string
+      /** @description First seen timestamp */
+      first_seen_at?: string
+      /** @description Hosted viewer URI - URI to view in hosted viewer (SARIF hostedViewerUri) */
+      hosted_viewer_uri?: string
+      /** @description Unique identifier for this finding within the report */
+      id?: string
+      /** @description Impact level: critical, high, medium, low (for risk assessment) */
+      impact?: string
+      /**
+       * @description Kind - evaluation state of the finding (SARIF kind)
+       *     Values: not_applicable, pass, fail, review, open, informational
+       */
+      kind?: string
+      /** @description Last seen timestamp */
+      last_seen_at?: string
+      /** @description Likelihood level: high, medium, low (for risk assessment) */
+      likelihood?: string
+      /** @description Location information (for code-based findings) */
+      location?: components['schemas']['ctis.FindingLocation']
+      /**
+       * @description Primary message to display (the main human-readable finding message)
+       *     This is distinct from Title (short) and Description (detailed)
+       *     If not set, Title will be used as the message
+       */
+      message?: string
+      /** @description Misconfiguration-specific details */
+      misconfiguration?: components['schemas']['ctis.MisconfigurationDetails']
+      /**
+       * @description Network location (for network/host findings, e.g. Nessus/Tenable): the
+       *     port/protocol/service the finding was observed on. Distinct from the
+       *     code-centric Location above.
+       */
+      network?: components['schemas']['ctis.NetworkLocation']
+      /** @description Occurrence count - number of times this result was observed (SARIF occurrenceCount) */
+      occurrence_count?: number
+      /** @description Partial fingerprints - contributing identity components (SARIF partialFingerprints) */
+      partial_fingerprints?: {
+        [key: string]: string
+      }
+      /** @description Custom properties */
+      properties?: components['schemas']['ctis.Properties']
+      /** @description Rank - priority/importance score 0-100 (SARIF rank) */
+      rank?: number
+      /** @description References (URLs) */
+      references?: string[]
+      /** @description Related locations - additional locations related to this finding (SARIF relatedLocations) */
+      related_locations?: components['schemas']['ctis.FindingLocation'][]
+      /** @description Remediation guidance */
+      remediation?: components['schemas']['ctis.Remediation']
+      /** @description CTEM: Remediation context */
+      remediation_context?: components['schemas']['ctis.RemediationContext']
+      /** @description Rule/check ID that detected this finding */
+      rule_id?: string
+      /** @description Rule name */
+      rule_name?: string
+      /** @description Secret-specific details */
+      secret?: components['schemas']['ctis.SecretDetails']
+      /** @description Severity (required): critical, high, medium, low, info */
+      severity?: components['schemas']['ctis.Severity']
+      /** @description Stacks - call stacks relevant to the finding (SARIF stacks) */
+      stacks?: components['schemas']['ctis.StackTrace'][]
+      /** @description Finding status: open, resolved, false_positive, accepted_risk, in_progress */
+      status?: components['schemas']['ctis.FindingStatus']
+      /** @description Subcategory: audit, vuln, secure default, etc. */
+      subcategory?: string[]
+      /** @description Suppression information (if finding is suppressed) */
+      suppression?: components['schemas']['ctis.Suppression']
+      /** @description Tags */
+      tags?: string[]
+      /** @description Short title (required) */
+      title?: string
+      /** @description Finding type (required): vulnerability, secret, misconfiguration, compliance */
+      type?: components['schemas']['ctis.FindingType']
+      /** @description Vulnerability-specific details */
+      vulnerability?: components['schemas']['ctis.VulnerabilityDetails']
+      /** @description Vulnerability class(es): SQL Injection, XSS, Command Injection, etc. */
+      vulnerability_class?: string[]
+      /** @description Web3-specific details (smart contract vulnerabilities) */
+      web3?: components['schemas']['ctis.Web3VulnerabilityDetails']
+      /** @description Work item URIs - URIs of associated issues/tickets (SARIF workItemUris) */
+      work_item_uris?: string[]
+    }
+    'ctis.FindingExposure': {
+      /** @description Prerequisites for exploitation: auth_required, mfa_required, local_access, etc. */
+      attack_prerequisites?: string
+      /** @description Is the finding directly reachable from the internet */
+      is_internet_accessible?: boolean
+      /** @description Is the finding reachable from the network */
+      is_network_accessible?: boolean
+      /** @description Exposure vector: network, local, physical, adjacent_net */
+      vector?: string
+    }
+    'ctis.FindingLocation': {
+      /** @description Branch name (for repository findings) */
+      branch?: string
+      /** @description Commit SHA */
+      commit_sha?: string
+      /** @description Context region (surrounding code for better understanding) */
+      context_snippet?: string
+      /** @description Context start line (for context_snippet) */
+      context_start_line?: number
+      /** @description End column */
+      end_column?: number
+      /** @description End line number */
+      end_line?: number
+      /** @description Logical location (function, class, method name) */
+      logical_location?: components['schemas']['ctis.LogicalLocation']
+      /** @description File path */
+      path?: string
+      /** @description Code snippet */
+      snippet?: string
+      /** @description Start column */
+      start_column?: number
+      /** @description Start line number (1-indexed) */
+      start_line?: number
+    }
+    /** @enum {string} */
+    'ctis.FindingStatus':
+      'open' | 'resolved' | 'suppressed' | 'false_positive' | 'accepted_risk' | 'in_progress'
+    /** @enum {string} */
+    'ctis.FindingType': 'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
+    'ctis.FixRegex': {
+      /** @description Number of replacements to make (0 = all) */
+      count?: number
+      /** @description Regular expression pattern to match */
+      regex?: string
+      /** @description Replacement string (may contain capture group references like $1, $2) */
+      replacement?: string
+    }
+    'ctis.FlashLoanIssue': {
+      /** @description Attack steps */
+      attack_steps?: string[]
+      /** @description Attack type: price_manipulation, governance_attack, collateral_theft */
+      attack_type?: string
+      /** @description Potential profit */
+      potential_profit_usd?: number
+      /** @description Flash loan provider: aave, dydx, uniswap, balancer */
+      provider?: string
+      /** @description Required capital for attack */
+      required_capital_usd?: number
+    }
+    'ctis.GasIssue': {
+      /** @description Current gas cost */
+      current_gas?: number
+      /** @description Optimized gas cost */
+      optimized_gas?: number
+      /** @description Gas savings percentage */
+      savings_percent?: number
+      /** @description Optimization suggestion */
+      suggestion?: string
+    }
+    'ctis.Geolocation': {
+      /** @description in meters */
+      accuracy?: number
+      latitude?: number
+      longitude?: number
+    }
+    'ctis.IPAddressTechnical': {
+      /** @description ASN information */
+      asn?: number
+      /** @description ASN organization */
+      asn_org?: string
+      /** @description City */
+      city?: string
+      /** @description Country code */
+      country?: string
+      /** @description Geolocation */
+      geolocation?: components['schemas']['ctis.Geolocation']
+      /** @description Hostname (if resolved) */
+      hostname?: string
+      /** @description Open ports */
+      ports?: components['schemas']['ctis.PortInfo'][]
+      /** @description IP version: 4 or 6 */
+      version?: number
+    }
+    'ctis.LogicalLocation': {
+      /** @description Fully qualified name (e.g., "pkg.MyClass.myMethod") */
+      fully_qualified_name?: string
+      /** @description Kind: function, method, class, module, namespace */
+      kind?: string
+      /** @description Function/method name */
+      name?: string
+      /** @description Parent logical location index (for nested locations) */
+      parent_index?: number
+    }
+    'ctis.MisconfigurationDetails': {
+      /** @description Actual value */
+      actual?: string
+      /** @description Aqua Vulnerability Database ID (e.g., AVD-AWS-0001) */
+      avd_id?: string
+      /** @description Cause description */
+      cause?: string
+      /** @description Expected value */
+      expected?: string
+      /** @description Namespace (e.g., builtin.aws.s3) */
+      namespace?: string
+      /** @description Policy/check ID */
+      policy_id?: string
+      /** @description Policy name */
+      policy_name?: string
+      /** @description Cloud provider (e.g., AWS, GCP, Azure) */
+      provider?: string
+      /** @description Rego query path */
+      query?: string
+      /** @description Resource name */
+      resource_name?: string
+      /** @description Resource type */
+      resource_type?: string
+      /** @description Service (e.g., S3, EC2, IAM) */
+      service?: string
+    }
+    'ctis.NFTCollectionDetails': {
+      /** @description Base URI */
+      base_uri?: string
+      /** @description Creator address */
+      creator?: string
+      /** @description Floor price (in native token) */
+      floor_price?: string
+      /** @description Floor price USD */
+      floor_price_usd?: number
+      /** @description Unique holders */
+      holder_count?: number
+      /** @description Marketplace URLs */
+      marketplaces?: string[]
+      /** @description Max supply */
+      max_supply?: number
+      /** @description Metadata storage: ipfs, arweave, centralized */
+      metadata_storage?: string
+      /** @description Collection name */
+      name?: string
+      /** @description Is revealed */
+      revealed?: boolean
+      /** @description Royalty percentage */
+      royalty_percent?: number
+      /** @description Royalty recipient */
+      royalty_recipient?: string
+      /** @description Token standard: erc721, erc1155 */
+      standard?: string
+      /** @description Collection symbol */
+      symbol?: string
+      /** @description Total supply */
+      total_supply?: number
+      /** @description Total volume (in native token) */
+      total_volume?: string
+      /** @description Total volume USD */
+      total_volume_usd?: number
+    }
+    'ctis.NetworkLocation': {
+      /**
+       * @description Host the finding was observed on (IP or hostname). Optional when the
+       *     finding already references its host asset via AssetRef/AssetValue.
+       */
+      host?: string
+      /** @description Port number (0 = not port-specific / general host finding). */
+      port?: number
+      /** @description Transport protocol: tcp, udp. */
+      protocol?: string
+      /** @description Service / application protocol on the port: https, ssh, smb, mysql, etc. */
+      service?: string
+    }
+    'ctis.OracleManipulationIssue': {
+      /** @description Manipulation method: flash_loan, sandwich, time_manipulation */
+      manipulation_method?: string
+      /** @description Missing checks */
+      missing_checks?: string[]
+      /** @description Oracle address */
+      oracle_address?: string
+      /** @description Oracle type: chainlink, uniswap_twap, custom */
+      oracle_type?: string
+      /** @description Price impact possible */
+      price_impact_percent?: number
+    }
+    'ctis.PortInfo': {
+      banner?: string
+      port?: number
+      /** @description tcp, udp */
+      protocol?: string
+      /** @description http, ssh, etc. */
+      service?: string
+      /** @description open, filtered, closed */
+      state?: string
+      version?: string
+    }
+    'ctis.Properties': {
+      [key: string]: unknown
+    }
+    'ctis.ReentrancyIssue': {
+      /** @description Callback function */
+      callback?: string
+      /** @description Entry point function */
+      entry_point?: string
+      /** @description Vulnerable external call */
+      external_call?: string
+      /** @description Max reentrancy depth possible */
+      max_depth?: number
+      /** @description State variable modified after call */
+      state_modified_after_call?: string
+      /** @description Reentrancy type: cross_function, cross_contract, read_only */
+      type?: string
+    }
+    'ctis.Remediation': {
+      /** @description Auto-fixable */
+      auto_fixable?: boolean
+      /** @description Effort estimate: trivial, low, medium, high */
+      effort?: string
+      /** @description Fix available */
+      fix_available?: boolean
+      /**
+       * @description Suggested fix code - the actual code to replace the vulnerable code
+       *     For SAST tools like Semgrep that provide auto-fix suggestions
+       */
+      fix_code?: string
+      /** @description Regex-based fix pattern (for tools that provide regex replacements) */
+      fix_regex?: components['schemas']['ctis.FixRegex']
+      /** @description Short recommendation */
+      recommendation?: string
+      /** @description Reference URLs */
+      references?: string[]
+      /** @description Detailed fix steps */
+      steps?: string[]
+    }
+    'ctis.RemediationContext': {
+      /** @description Fix complexity: simple, moderate, complex */
+      complexity?: string
+      /** @description Estimated time to fix in minutes */
+      estimated_minutes?: number
+      /** @description Is a remedy (patch/fix) available */
+      remedy_available?: boolean
+      /** @description Remediation type: patch, upgrade, workaround, config_change, mitigate, accept_risk */
+      type?: string
+    }
+    'ctis.Report': {
+      /** @description Schema URL for validation (optional) */
+      $schema?: string
+      /** @description Assets discovered/collected */
+      assets?: components['schemas']['ctis.Asset'][]
+      /** @description Dependencies (SBOM) */
+      dependencies?: components['schemas']['ctis.Dependency'][]
+      /** @description Findings discovered */
+      findings?: components['schemas']['ctis.Finding'][]
+      /** @description Report metadata */
+      metadata?: components['schemas']['ctis.ReportMetadata']
+      /** @description Custom properties */
+      properties?: components['schemas']['ctis.Properties']
+      /** @description Tool information (for collector/scanner reports) */
+      tool?: components['schemas']['ctis.Tool']
+      /** @description Schema version (required) */
+      version?: string
+    }
+    'ctis.ReportMetadata': {
+      /**
+       * @description Branch information for git-based scans
+       *     Used for branch-aware finding lifecycle management
+       */
+      branch?: components['schemas']['ctis.BranchInfo']
+      /**
+       * @description Coverage type: full, incremental, partial
+       *     - full: Complete scan of entire scope (enables auto-resolve)
+       *     - incremental: Diff scan of changed files only (no auto-resolve)
+       *     - partial: Partial scan of specific directories (no auto-resolve)
+       */
+      coverage_type?: string
+      /** @description Duration of the scan/collection in milliseconds (optional) */
+      duration_ms?: number
+      /** @description Unique identifier for this report/scan (recommended) */
+      id?: string
+      /** @description Custom properties */
+      properties?: components['schemas']['ctis.Properties']
+      /** @description Target scope of the scan/collection */
+      scope?: components['schemas']['ctis.Scope']
+      /** @description External reference (job ID, scan ID) */
+      source_ref?: string
+      /** @description Source type: scanner, collector, integration, manual */
+      source_type?: string
+      /** @description Timestamp when the report was generated (required) */
+      timestamp?: string
+    }
+    'ctis.RepositoryTechnical': {
+      /** @description Clone URL */
+      clone_url?: string
+      /** @description Default branch */
+      default_branch?: string
+      /** @description Forks count */
+      forks?: number
+      /** @description Language breakdown */
+      languages?: {
+        [key: string]: number
+      }
+      /** @description Last commit date */
+      last_commit_at?: string
+      /** @description Last commit SHA */
+      last_commit_sha?: string
+      /** @description Repository name */
+      name?: string
+      /** @description Organization/owner */
+      owner?: string
+      /** @description SCM platform: github, gitlab, bitbucket */
+      platform?: string
+      /** @description Stars count */
+      stars?: number
+      /** @description Repository URL */
+      url?: string
+      /** @description Repository visibility: public, private, internal */
+      visibility?: string
+    }
+    'ctis.Scope': {
+      /** @description Excluded targets */
+      excludes?: string[]
+      /** @description Included targets */
+      includes?: string[]
+      /** @description Scope name or identifier */
+      name?: string
+      /** @description Scope type: domain, network, repository, cloud_account */
+      type?: string
+    }
+    'ctis.SecretDetails': {
+      /** @description Secret age (how long since creation, if known) */
+      age_in_days?: number
+      /** @description Commit count where this secret appears */
+      commit_count?: number
+      /** @description Entropy score */
+      entropy?: number
+      /** @description Expiration date (if known) */
+      expires_at?: string
+      /** @description Is the secret in git history only (not in current HEAD) */
+      in_history_only?: boolean
+      /** @description Length of the secret */
+      length?: number
+      /** @description Masked value (first and last few chars) */
+      masked_value?: string
+      /** @description Is revoked */
+      revoked?: boolean
+      /** @description When the secret was revoked */
+      revoked_at?: string
+      /** @description Rotation recommended by date */
+      rotation_due_at?: string
+      /** @description Secret scope/permissions (e.g., "read:org", "repo", "admin") */
+      scopes?: string[]
+      /** @description Secret type: api_key, password, token, certificate, private_key, etc. */
+      secret_type?: string
+      /** @description Service associated with the secret: aws, github, stripe, gcp, azure, etc. */
+      service?: string
+      /** @description Is valid (if verification was performed) */
+      valid?: boolean
+      /** @description Verification timestamp */
+      verified_at?: string
+    }
+    'ctis.ServiceInfo': {
+      /** @description Service banner */
+      banner?: string
+      /** @description Common Platform Enumeration identifier */
+      cpe?: string
+      /** @description Is this service publicly accessible from the internet */
+      is_public?: boolean
+      /** @description Port number */
+      port?: number
+      /** @description Product name: Apache, nginx, OpenSSH, etc. */
+      product?: string
+      /** @description Transport protocol: tcp, udp */
+      protocol?: string
+      /** @description Service type: http, https, ssh, ftp, mysql, postgresql, etc. */
+      service_type?: string
+      /** @description Service state: active, inactive, filtered */
+      state?: string
+      /** @description TLS enabled */
+      tls_enabled?: boolean
+      /** @description TLS version: TLS 1.2, TLS 1.3 */
+      tls_version?: string
+      /** @description Product version */
+      version?: string
+    }
+    'ctis.ServiceTechnical': {
+      /** @description Anonymous access allowed (for FTP, SMB, etc.) */
+      anonymous_access?: boolean
+      /** @description Authentication methods supported (e.g., ["password", "publickey"] for SSH) */
+      auth_methods?: string[]
+      /** @description Authentication required */
+      auth_required?: boolean
+      /** @description Banner/fingerprint */
+      banner?: string
+      /** @description CPE (Common Platform Enumeration) identifier */
+      cpe?: string
+      /** @description Default credentials detected */
+      default_credentials?: boolean
+      /**
+       * @description Service-specific details (protocol-dependent)
+       *     For HTTP: methods, headers, etc.
+       *     For SMTP: EHLO response, supported extensions
+       *     For SSH: supported algorithms, host keys
+       */
+      details?: {
+        [key: string]: unknown
+      }
+      /** @description Extra info */
+      extra_info?: string
+      /** @description Last seen timestamp */
+      last_seen?: string
+      /** @description Service name */
+      name?: string
+      /** @description Port */
+      port?: number
+      /** @description Product name (e.g., "OpenSSH", "nginx", "Apache", "Postfix") */
+      product?: string
+      /** @description Protocol (application-layer): http, https, ssh, smtp, ftp, dns, ldap, smb, rdp, mysql, postgresql, mongodb, redis, etc. */
+      protocol?: string
+      /** @description Response time in milliseconds */
+      response_time_ms?: number
+      /** @description Service state: open, filtered, closed */
+      state?: string
+      /** @description SSL/TLS enabled */
+      tls?: boolean
+      tls_cert_expiry?: string
+      tls_cert_issuer?: string
+      /** @description TLS certificate info (for services with TLS) */
+      tls_cert_subject?: string
+      /** @description TLS version: tls1.0, tls1.1, tls1.2, tls1.3 */
+      tls_version?: string
+      /** @description Transport: tcp, udp */
+      transport?: string
+      /** @description Service version */
+      version?: string
+    }
+    /** @enum {string} */
+    'ctis.Severity': 'critical' | 'high' | 'medium' | 'low' | 'info'
+    'ctis.SmartContractDetails': {
+      /** @description ABI (JSON string or base64 encoded) */
+      abi?: string
+      /** @description Contract address */
+      address?: string
+      /** @description Contract balance (in wei) */
+      balance?: string
+      /** @description Bytecode hash (keccak256) */
+      bytecode_hash?: string
+      /** @description Compiler version */
+      compiler_version?: string
+      /** @description Contract type: erc20, erc721, erc1155, proxy, multisig, defi, custom */
+      contract_type?: string
+      /** @description Deployment timestamp */
+      deployed_at?: string
+      /** @description Deployer address */
+      deployer_address?: string
+      /** @description Deployment block number */
+      deployment_block?: number
+      /** @description Deployment transaction hash */
+      deployment_tx_hash?: string
+      /** @description EVM version */
+      evm_version?: string
+      /** @description Implementation address (for proxy contracts) */
+      implementation_address?: string
+      /** @description Implemented interfaces: ERC20, ERC721, etc. */
+      interfaces?: string[]
+      /** @description Is proxy contract */
+      is_proxy?: boolean
+      /** @description Is upgradeable */
+      is_upgradeable?: boolean
+      /** @description External libraries used */
+      libraries?: components['schemas']['ctis.ContractLibrary'][]
+      /** @description License type: MIT, GPL, UNLICENSED, etc. */
+      license?: string
+      /** @description Contract name */
+      name?: string
+      /** @description Optimization enabled */
+      optimization_enabled?: boolean
+      /** @description Optimization runs */
+      optimization_runs?: number
+      /** @description Owner/admin address */
+      owner_address?: string
+      /** @description Has renounced ownership */
+      ownership_renounced?: boolean
+      /** @description Proxy type: transparent, uups, beacon, diamond */
+      proxy_type?: string
+      /** @description Source code hash */
+      source_code_hash?: string
+      /** @description Source code URL (GitHub, etc.) */
+      source_code_url?: string
+      /** @description Total transactions */
+      tx_count?: number
+      /** @description Is verified on explorer (etherscan, etc.) */
+      verified?: boolean
+    }
+    'ctis.StackFrame': {
+      /** @description Location of this frame */
+      location?: components['schemas']['ctis.FindingLocation']
+      /** @description Module/library name */
+      module?: string
+      /** @description Function parameters */
+      parameters?: string[]
+      /** @description Thread ID */
+      thread_id?: number
+    }
+    'ctis.StackTrace': {
+      /** @description Stack frames from innermost to outermost */
+      frames?: components['schemas']['ctis.StackFrame'][]
+      /** @description Stack description/message */
+      message?: string
+    }
+    'ctis.Suppression': {
+      /** @description When the suppression stops applying. Empty means it does not expire. */
+      expires_at?: string
+      /** @description Justification for suppression */
+      justification?: string
+      /** @description Suppression kind: in_source, external */
+      kind?: string
+      /**
+       * @description Short reason code or phrase, e.g. "false_positive", "test_code",
+       *     "risk_accepted".
+       */
+      reason?: string
+      /** @description Suppression status: accepted, under_review, rejected */
+      status?: string
+      /** @description When the finding was suppressed */
+      suppressed_at?: string
+      /** @description Who suppressed the finding */
+      suppressed_by?: string
+    }
+    'ctis.TokenBalance': {
+      /** @description Balance (raw value) */
+      balance?: string
+      /** @description Balance formatted (human readable) */
+      balance_formatted?: string
+      /** @description Token contract address */
+      contract_address?: string
+      /** @description Token decimals */
+      decimals?: number
+      /** @description Token name */
+      name?: string
+      /** @description Token symbol */
+      symbol?: string
+      /** @description USD value */
+      usd_value?: number
+    }
+    'ctis.TokenDetails': {
+      /** @description Is burnable */
+      burnable?: boolean
+      /** @description Token decimals */
+      decimals?: number
+      /** @description Has blacklist/whitelist */
+      has_blacklist?: boolean
+      /** @description Has transfer fee/tax */
+      has_transfer_fee?: boolean
+      /** @description Holder count */
+      holder_count?: number
+      /** @description Honeypot reason */
+      honeypot_reason?: string
+      /** @description Is honeypot */
+      is_honeypot?: boolean
+      /** @description Liquidity USD */
+      liquidity_usd?: number
+      /** @description Market cap USD */
+      market_cap_usd?: number
+      /** @description Max supply (if applicable) */
+      max_supply?: string
+      /** @description Is mintable */
+      mintable?: boolean
+      /** @description Token name */
+      name?: string
+      /** @description Is pausable */
+      pausable?: boolean
+      /** @description Price USD */
+      price_usd?: number
+      /** @description Token standard: erc20, erc721, erc1155, bep20, spl */
+      standard?: string
+      /** @description Token symbol */
+      symbol?: string
+      /** @description Total supply (raw value) */
+      total_supply?: string
+      /** @description Trading pairs */
+      trading_pairs?: components['schemas']['ctis.TradingPair'][]
+      /** @description Transfer fee percentage */
+      transfer_fee_percent?: number
+    }
+    'ctis.Tool': {
+      /** @description Tool capabilities */
+      capabilities?: string[]
+      /** @description Tool information URL */
+      info_url?: string
+      /** @description Tool name (required) */
+      name?: string
+      /** @description Custom properties */
+      properties?: components['schemas']['ctis.Properties']
+      /** @description Tool vendor/organization */
+      vendor?: string
+      /** @description Tool version (recommended) */
+      version?: string
+    }
+    'ctis.TradingPair': {
+      /** @description DEX name: uniswap, sushiswap, pancakeswap, etc. */
+      dex?: string
+      /** @description Liquidity USD */
+      liquidity_usd?: number
+      /** @description Pair address */
+      pair_address?: string
+      /** @description Quote token symbol (WETH, USDT, etc.) */
+      quote_token?: string
+    }
+    'ctis.VulnDataSource': {
+      /** @description Data source ID (e.g., "nvd", "ghsa", "osv") */
+      id?: string
+      /** @description Data source name */
+      name?: string
+      /** @description Data source URL */
+      url?: string
+    }
+    'ctis.VulnerabilityDetails': {
+      /** @description Advisory URLs */
+      advisories?: string[]
+      /** @description Affected version */
+      affected_version?: string
+      /** @description Affected version range (semver format) */
+      affected_version_range?: string
+      /** @description ASVS (Application Security Verification Standard) compliance info */
+      asvs?: components['schemas']['ctis.ASVSInfo']
+      /** @description Aqua Vulnerability Database ID (e.g., AVD-AWS-0001) */
+      avd_id?: string
+      /** @description Affected CPE */
+      cpe?: string
+      /** @description CVE ID (primary, for single-CVE findings and backward compatibility) */
+      cve_id?: string
+      /**
+       * @description CVE IDs (a finding may map to multiple CVEs — common for network
+       *     vulnerability scanners like Nessus/Tenable that group CVEs per plugin).
+       */
+      cve_ids?: string[]
+      /** @description CVSS score */
+      cvss_score?: number
+      /** @description CVSS data source: nvd, ghsa, redhat, bitnami */
+      cvss_source?: string
+      /** @description CVSS vector */
+      cvss_vector?: string
+      /** @description CVSS version (2.0, 3.0, 3.1, 4.0) */
+      cvss_version?: string
+      /** @description CWE ID (single, for backward compatibility) */
+      cwe_id?: string
+      /** @description CWE IDs (can have multiple) */
+      cwe_ids?: string[]
+      /** @description Data source information (vulnerability database) */
+      data_source?: components['schemas']['ctis.VulnDataSource']
+      /** @description Dependency path for transitive vulnerabilities */
+      dependency_path?: string[]
+      /** @description Ecosystem: npm, pip, maven, cargo, go, nuget, etc. */
+      ecosystem?: string
+      /** @description EPSS percentile */
+      epss_percentile?: number
+      /** @description EPSS score (Exploit Prediction Scoring System) */
+      epss_score?: number
+      /** @description Exploit available */
+      exploit_available?: boolean
+      /** @description Exploit maturity: none, poc, functional, weaponized */
+      exploit_maturity?: string
+      /** @description Fixed version */
+      fixed_version?: string
+      /** @description All available fixed versions */
+      fixed_versions?: string[]
+      /** @description In CISA KEV (Known Exploited Vulnerabilities) */
+      in_cisa_kev?: boolean
+      /** @description Is direct dependency (vs transitive) */
+      is_direct?: boolean
+      /** @description Container layer information (for image scans) */
+      layer?: components['schemas']['ctis.ContainerLayer']
+      /** @description Last modified date */
+      modified_at?: string
+      /** @description OWASP IDs (e.g., "A01:2021", "A03:2021") */
+      owasp_ids?: string[]
+      /** @description Affected package */
+      package?: string
+      /** @description Vulnerability published date */
+      published_at?: string
+      /** @description Package URL (PURL spec) e.g., pkg:npm/lodash@4.17.20 */
+      purl?: string
+      /** @description Severity source (who assigned the severity: nvd, ghsa, redhat, etc.) */
+      severity_source?: string
+      /** @description Vendor-specific severity mapping (vendor -> severity level 1-5) */
+      vendor_severity?: {
+        [key: string]: number
+      }
+      /**
+       * @description VPR (Tenable Vulnerability Priority Rating), 0.0–10.0. Tenable's own
+       *     dynamic priority score, distinct from CVSS/EPSS; carried through so
+       *     prioritisation can use the source scanner's rating when present.
+       */
+      vpr_score?: number
+      /** @description Vulnerability status: affected, fixed, under_investigation, will_not_fix */
+      vuln_status?: string
+    }
+    'ctis.WalletDetails': {
+      /** @description Balance (native token, in wei) */
+      balance?: string
+      /** @description ENS name (if applicable) */
+      ens_name?: string
+      /** @description First transaction timestamp */
+      first_tx_at?: string
+      /** @description Labels (exchange, whale, hacker, etc.) */
+      labels?: string[]
+      /** @description Last transaction timestamp */
+      last_tx_at?: string
+      /** @description NFT count */
+      nft_count?: number
+      /** @description Owner addresses (for multisig) */
+      owners?: string[]
+      /** @description Wallet provider: metamask, ledger, safe, argent, etc. */
+      provider?: string
+      /** @description For multisig: required signatures */
+      required_signatures?: number
+      /** @description Token balances */
+      token_balances?: components['schemas']['ctis.TokenBalance'][]
+      /** @description For multisig: total owners */
+      total_owners?: number
+      /** @description Total transactions */
+      tx_count?: number
+      /** @description Wallet type: eoa, multisig, smart_wallet, mpc */
+      wallet_type?: string
+    }
+    'ctis.Web3POC': {
+      /** @description POC code or script */
+      code?: string
+      /** @description Expected outcome */
+      expected_outcome?: string
+      /** @description Fork block number (for mainnet fork tests) */
+      fork_block_number?: number
+      /** @description Tested on: mainnet_fork, testnet, local */
+      tested_on?: string
+      /** @description POC transaction data */
+      tx_data?: string
+      /** @description POC type: transaction, script, foundry_test, hardhat_test */
+      type?: string
+    }
+    'ctis.Web3Technical': {
+      /** @description Contract/wallet address */
+      address?: string
+      /** @description Blockchain network: ethereum, polygon, bsc, arbitrum, optimism, avalanche, solana, etc. */
+      chain?: string
+      /** @description Chain ID (EVM chains): 1 (mainnet), 137 (polygon), 56 (bsc), etc. */
+      chain_id?: number
+      /** @description For smart contracts */
+      contract?: components['schemas']['ctis.SmartContractDetails']
+      /** @description For DeFi protocols */
+      defi?: components['schemas']['ctis.DeFiDetails']
+      /** @description Network type: mainnet, testnet, devnet */
+      network_type?: string
+      /** @description For NFT collections */
+      nft?: components['schemas']['ctis.NFTCollectionDetails']
+      /** @description For tokens (ERC-20, ERC-721, etc.) */
+      token?: components['schemas']['ctis.TokenDetails']
+      /** @description For wallets */
+      wallet?: components['schemas']['ctis.WalletDetails']
+    }
+    'ctis.Web3VulnerabilityDetails': {
+      /** @description Access control details */
+      access_control?: components['schemas']['ctis.AccessControlIssue']
+      /** @description Affected assets value in USD */
+      affected_value_usd?: number
+      /** @description Attack vector description */
+      attack_vector?: string
+      /** @description Attacker addresses (if known) */
+      attacker_addresses?: string[]
+      /** @description Bytecode offset (if found in bytecode analysis) */
+      bytecode_offset?: number
+      /** @description Chain name */
+      chain?: string
+      /** @description Chain ID */
+      chain_id?: number
+      /** @description Contract address affected */
+      contract_address?: string
+      /** @description Detection confidence: high, medium, low */
+      detection_confidence?: string
+      /** @description Tool that found this: slither, mythril, securify, manticore, etc. */
+      detection_tool?: string
+      /** @description Estimated impact in USD (if quantifiable) */
+      estimated_impact_usd?: number
+      /** @description Is exploitable on mainnet */
+      exploitable_on_mainnet?: boolean
+      /** @description Flash loan attack details */
+      flash_loan?: components['schemas']['ctis.FlashLoanIssue']
+      /** @description Affected function selector (4 bytes) */
+      function_selector?: string
+      /** @description Affected function signature */
+      function_signature?: string
+      /** @description Gas optimization issues (for gas-related findings) */
+      gas_issue?: components['schemas']['ctis.GasIssue']
+      /** @description Is false positive */
+      is_false_positive?: boolean
+      /** @description Oracle manipulation details */
+      oracle_manipulation?: components['schemas']['ctis.OracleManipulationIssue']
+      /** @description Proof of concept (if available) */
+      poc?: components['schemas']['ctis.Web3POC']
+      /** @description Reentrancy details */
+      reentrancy?: components['schemas']['ctis.ReentrancyIssue']
+      /** @description Related transaction hashes (if exploit occurred) */
+      related_tx_hashes?: string[]
+      /** @description SWC Registry ID (e.g., SWC-107 for reentrancy) */
+      swc_id?: string
+      /**
+       * @description Vulnerability class/category (SWC ID or custom)
+       *     Common: reentrancy, overflow, access_control, front_running, etc.
+       */
+      vulnerability_class?: string
+      /** @description Vulnerable code pattern */
+      vulnerable_pattern?: string
+    }
     'github_com_openctemio_openctem_api_internal_app.CredentialItem': {
       credential_type?: string
       details?: {
@@ -31967,6 +34288,27 @@ export interface components {
       logged_at?: string
       offset_ns?: number
       position?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput': {
+      base_branch?: string
+      base_branch_known?: boolean
+      new?: string[]
+      pre_existing?: string[]
+    }
+    'github_com_openctemio_openctem_api_internal_app_cirun.Verdict': {
+      baseline?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView']
+      links?: components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.VerdictLinks']
+      override?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateOverrideView']
+      policy?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GatePolicyView']
+      reasons?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateReason'][]
+      run_id?: string
+      summary?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateSummary']
+      verdict?: string
+      would_fail?: boolean
+    }
+    'github_com_openctemio_openctem_api_internal_app_cirun.VerdictLinks': {
+      findings?: string
+      run?: string
     }
     'github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock': {
       candidate?: number
@@ -32455,6 +34797,86 @@ export interface components {
       before?: {
         [key: string]: unknown
       }
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView': {
+      branch?: string
+      known?: boolean
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.GateOverrideView': {
+      created_by?: string
+      expires_at?: string
+      id?: string
+      reason?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.GatePolicyView': {
+      epss_threshold?: number
+      fail_on_kev?: boolean
+      fail_on_severity?: string
+      mode?: string
+      new_findings_only?: boolean
+      source?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.GateReason': {
+      code?: string
+      file?: string
+      finding_id?: string
+      fingerprint?: string
+      line?: number
+      message?: string
+      rule_id?: string
+      severity?: string
+      title?: string
+      url?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.GateSummary': {
+      accepted?: number
+      blocking?: number
+      evaluated?: number
+      new?: number
+      pre_existing?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.Rules': {
+      /**
+       * @description AllowForkPullRequests admits events that run code from a fork with the
+       *     base repository's identity (pull_request_target, workflow_run,
+       *     external_pull_request_event). Off by default.
+       */
+      allow_fork_pull_requests?: boolean
+      /**
+       * @description Environments, when set, require the job to run in one of these
+       *     deployment environments (the token's environment claim).
+       */
+      environments?: string[]
+      /**
+       * @description Events, when set, are the only trigger events admitted (GitHub
+       *     event_name, GitLab pipeline_source).
+       */
+      events?: string[]
+      /**
+       * @description Owners are GitHub organizations or users (repository_owner) or GitLab
+       *     top-level groups (the first segment of project_path). Exact match,
+       *     case-insensitive.
+       */
+      owners?: string[]
+      /**
+       * @description Refs are the branches or tags a pipeline may run on: "main",
+       *     "release/*", or a full ref ("refs/tags/v*"). Shell-style patterns per
+       *     path segment. Empty admits every ref. For a pull request the branch is
+       *     the pull request's source branch.
+       */
+      refs?: string[]
+      /**
+       * @description Repositories are "owner/name" (GitLab: the full project path). A
+       *     trailing "/*" admits every repository directly under that path and
+       *     "/**" every repository below it.
+       */
+      repositories?: string[]
+      /**
+       * @description RequireProtectedRef admits only pipelines on a protected branch or tag
+       *     (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
+       *     configuration with this set admits nothing).
+       */
+      require_protected_ref?: boolean
     }
     'github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats': {
       cisa_kev_components?: number
@@ -34002,12 +36424,159 @@ export interface components {
       resolution?: string
       status: string
     }
+    'internal_infra_http_handler.CIBaselineDiffRequest': {
+      fingerprints?: string[]
+    }
+    'internal_infra_http_handler.CIEvaluateRequest': {
+      /**
+       * @description ScanFailures counts scanners that failed to run or whose output could
+       *     not be parsed. Any failure fails the gate.
+       */
+      scan_failures?: number
+    }
+    'internal_infra_http_handler.CIExchangeRequest': {
+      /** @description IDToken is the CI provider's OIDC token for the job. */
+      id_token?: string
+      /**
+       * @description RunID, optional, asks for a fresh token for a run this pipeline run
+       *     already holds (same repository, commit and pipeline run; not yet
+       *     evaluated).
+       */
+      run_id?: string
+      /** @description TenantID is the organization whose trust configurations decide. */
+      tenant_id?: string
+    }
+    'internal_infra_http_handler.CIExchangeResponse': {
+      branch?: string
+      commit_sha?: string
+      default_branch?: string
+      expires_at?: string
+      expires_in?: number
+      is_default_branch?: boolean
+      pull_request?: string
+      repository?: string
+      repository_asset_id?: string
+      run_id?: string
+      token?: string
+      token_type?: string
+    }
+    'internal_infra_http_handler.CIGateOverrideListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CIGateOverrideResponse'][]
+    }
+    'internal_infra_http_handler.CIGateOverrideRequest': {
+      commit_sha?: string
+      /** @description ExpiresInHours defaults to 24, at most 168. */
+      expires_in_hours?: number
+      /** @description Reason is required (10 to 2000 characters) and audited. */
+      reason?: string
+      repository_asset_id?: string
+    }
+    'internal_infra_http_handler.CIGateOverrideResponse': {
+      active?: boolean
+      commit_sha?: string
+      created_at?: string
+      created_by?: string
+      expires_at?: string
+      id?: string
+      reason?: string
+      repository_asset_id?: string
+      revoked_at?: string
+    }
+    'internal_infra_http_handler.CIGatePolicyListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CIGatePolicyResponse'][]
+      default?: components['schemas']['internal_infra_http_handler.CIGatePolicyResponse']
+    }
+    'internal_infra_http_handler.CIGatePolicyRequest': {
+      enabled?: boolean
+      epss_threshold?: number
+      fail_on_kev?: boolean
+      fail_on_severity?: string
+      mode?: string
+      new_findings_only?: boolean
+      scope_id?: string
+      scope_type?: string
+    }
+    'internal_infra_http_handler.CIGatePolicyResponse': {
+      created_at?: string
+      enabled?: boolean
+      epss_threshold?: number
+      fail_on_kev?: boolean
+      fail_on_severity?: string
+      id?: string
+      mode?: string
+      new_findings_only?: boolean
+      scope_id?: string
+      scope_type?: string
+      updated_at?: string
+    }
+    'internal_infra_http_handler.CIRunResponse': {
+      actor?: string
+      branch?: string
+      commit_sha?: string
+      created_at?: string
+      default_branch?: string
+      environment?: string
+      evaluated_at?: string
+      event?: string
+      external_run_id?: string
+      findings_count?: number
+      fork?: boolean
+      id?: string
+      is_default_branch?: boolean
+      pipeline_url?: string
+      provider?: string
+      pull_request?: string
+      ref?: string
+      reports_count?: number
+      repository?: string
+      repository_asset_id?: string
+      run_attempt?: string
+      status?: string
+      trust_config_id?: string
+      verdict?: string
+      /**
+       * @description VerdictDetail is the last verdict with its reasons and links (detail
+       *     view only).
+       */
+      verdict_detail?: components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Verdict']
+      workflow?: string
+    }
     'internal_infra_http_handler.CISAKEVResponse': {
       date_added?: string
       due_date?: string
       is_past_due?: boolean
       notes?: string
       ransomware_use?: string
+    }
+    'internal_infra_http_handler.CITrustConfigListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CITrustConfigResponse'][]
+    }
+    'internal_infra_http_handler.CITrustConfigRequest': {
+      /** @description Audience defaults to openctem:tenant:<tenant id>. */
+      audience?: string
+      default_branch?: string
+      enabled?: boolean
+      /**
+       * @description Issuer defaults to the provider's public issuer; a self-managed
+       *     GitLab is its external URL.
+       */
+      issuer?: string
+      name?: string
+      provider?: string
+      rules?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.Rules']
+    }
+    'internal_infra_http_handler.CITrustConfigResponse': {
+      audience?: string
+      created_at?: string
+      default_branch?: string
+      enabled?: boolean
+      id?: string
+      issuer?: string
+      last_used_at?: string
+      name?: string
+      provider?: string
+      rules?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.Rules']
+      updated_at?: string
     }
     'internal_infra_http_handler.CTEMCycleProfilesResponse': {
       data?: components['schemas']['internal_infra_http_handler.AttackerProfileResponse'][]
@@ -34042,6 +36611,9 @@ export interface components {
       id?: string
       included_at?: string
       scope_target_id?: string
+    }
+    'internal_infra_http_handler.CTISIngestRequest': {
+      report?: components['schemas']['ctis.Report']
     }
     'internal_infra_http_handler.CallbackRequest': {
       code?: string
@@ -35456,6 +38028,42 @@ export interface components {
       notify_reactivated?: boolean
       reactivate_resolved?: boolean
     }
+    'internal_infra_http_handler.IngestResponse': {
+      assets_created?: number
+      /**
+       * @description AssetsLimited counts existing assets the report matched but was not
+       *     allowed to change, because no command covering them stood behind it.
+       */
+      assets_limited?: number
+      /**
+       * @description AssetsSkippedExcluded counts new assets not added because they match
+       *     an active scope exclusion; their findings are in findings_skipped.
+       */
+      assets_skipped_excluded?: number
+      assets_updated?: number
+      /**
+       * @description Binding is "command" when the report is bound to a command,
+       *     "unsolicited" otherwise (RFC-040 §5.3).
+       */
+      binding?: string
+      cves_created?: number
+      cves_updated?: number
+      errors?: string[]
+      findings_created?: number
+      findings_skipped?: number
+      findings_updated?: number
+      /**
+       * @description ReopensWithheld counts findings a person had resolved that the report
+       *     saw again but was not allowed to reopen.
+       */
+      reopens_withheld?: number
+      scan_id?: string
+      /**
+       * @description UnsolicitedWarned: the report was applied only because the tenant's
+       *     policy for results without a command is "warn".
+       */
+      unsolicited_warned?: boolean
+    }
     /** @description Integration details including provider info and status */
     'internal_infra_http_handler.IntegrationResponse': {
       /**
@@ -35648,6 +38256,14 @@ export interface components {
     }
     'internal_infra_http_handler.ListResponse-internal_infra_http_handler_AssetGroupResponse': {
       data?: components['schemas']['internal_infra_http_handler.AssetGroupResponse'][]
+      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
+    }
+    'internal_infra_http_handler.ListResponse-internal_infra_http_handler_CIRunResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CIRunResponse'][]
       links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
       page?: number
       per_page?: number
@@ -38297,6 +40913,12 @@ export interface components {
     'internal_infra_http_handler.InvitationTokenRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.InvitationTokenRequest']
+      }
+    }
+    /** @description Trust configuration */
+    'internal_infra_http_handler.CITrustConfigRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.CITrustConfigRequest']
       }
     }
     /** @description Content to refresh */

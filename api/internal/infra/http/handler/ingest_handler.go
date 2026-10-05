@@ -101,7 +101,7 @@ type HeartbeatRequest struct {
 
 	// Disk/network throughput in MB/s. Optional — sensors that omit them leave
 	// the corresponding load-balancing terms at zero. Accepted here so the
-	// AGENT_LB_DISK_IO_WEIGHT / AGENT_LB_NETWORK_WEIGHT knobs have real inputs.
+	// SENSOR_LB_DISK_IO_WEIGHT / SENSOR_LB_NETWORK_WEIGHT knobs have real inputs.
 	DiskReadMBPS  float64 `json:"disk_read_mbps,omitempty"`
 	DiskWriteMBPS float64 `json:"disk_write_mbps,omitempty"`
 	NetworkRxMBPS float64 `json:"network_rx_mbps,omitempty"`
@@ -311,6 +311,13 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 			return
 		}
 		agt := id.Sensor
+		// A CI runner authenticating with a long-lived sensor key: still
+		// accepted, but deprecated in favor of OIDC workload identity
+		// (RFC-051). The headers let the runner warn its pipeline.
+		if agt.Type == sensor.SensorTypeRunner {
+			w.Header().Set("Deprecation", runnerKeyDeprecatedAt)
+			w.Header().Set("Link", `</api/v1/ci/oidc/exchange>; rel="successor-version"`)
+		}
 
 		// Add sensor to context
 		ctx := context.WithValue(r.Context(), sensorContextKey, agt)
@@ -330,6 +337,11 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// runnerKeyDeprecatedAt is the RFC 9745 Deprecation value for CI runners
+// that authenticate with a sensor API key (2026-10-05): CI should use OIDC
+// workload identity (RFC-051).
+const runnerKeyDeprecatedAt = "@1791158400"
 
 // errSensorPaused refuses a disabled sensor.
 var errSensorPaused = errors.New("sensor is disabled")

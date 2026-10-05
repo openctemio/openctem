@@ -180,10 +180,11 @@ no existing dashboard series is lost. Webhook, notification and report/CSV
 payloads carry no agent-named fields; the notification event types above are
 the only outbound ids, and nothing emits them today.
 
-API server environment variables (`AGENT_*` → `SENSOR_*`). The old names keep
-working: the new name is read first, the old one is applied with a startup
-`WARN deprecated configuration` line naming both, and startup fails only when
-both are set to different values.
+API server environment variables (`AGENT_*` → `SENSOR_*`). The old names were
+read with a startup warning during the transition. **Retired 2026-10-05:** they
+are no longer read, and startup refuses to run while one is set (the error names
+the replacement), so an ignored `AGENT_KEY_TTL` cannot silently make sensor keys
+non-expiring.
 
 | Before | After |
 |---|---|
@@ -199,8 +200,8 @@ both are set to different values.
 | `AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS` | `SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS` |
 
 The default template directory moved from `configs/agent-templates` to
-`configs/sensor-templates`; when only the old directory exists (for example a
-mounted configmap) it is used, with a warning.
+`configs/sensor-templates`. The fallback to the old directory was retired on
+2026-10-05 together with the old variable names.
 
 ## 8. Stored values migration 000230 converts
 

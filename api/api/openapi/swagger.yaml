@@ -1,5 +1,2418 @@
 basePath: /api/v1
 definitions:
+  ctis.ASVSInfo:
+    properties:
+      control_id:
+        description: Control ID (e.g., "2.1.1")
+        type: string
+      control_url:
+        description: Control URL (link to ASVS documentation)
+        type: string
+      level:
+        description: ASVS level (1, 2, or 3)
+        type: integer
+      section:
+        description: 'ASVS section (e.g., "V2: Authentication")'
+        type: string
+    type: object
+  ctis.AccessControlIssue:
+    properties:
+      callable_by:
+        description: Can be called by
+        type: string
+      escalation_path:
+        description: Privilege escalation path
+        type: string
+      missing_modifier:
+        description: Missing modifier
+        type: string
+      missing_role_check:
+        description: Missing role check
+        type: string
+      unprotected_function:
+        description: Unprotected function
+        type: string
+    type: object
+  ctis.ArtifactLocation:
+    properties:
+      index:
+        description: Index within the artifacts array
+        type: integer
+      uri:
+        description: URI of the artifact
+        type: string
+      uri_base_id:
+        description: Base URI ID for resolution
+        type: string
+    type: object
+  ctis.Asset:
+    properties:
+      compliance:
+        allOf:
+        - $ref: '#/definitions/ctis.AssetCompliance'
+        description: 'CTEM: Compliance context for the asset'
+      confidence:
+        description: Confidence score 0-100 (how confident the source is about this
+          asset)
+        type: integer
+      criticality:
+        allOf:
+        - $ref: '#/definitions/ctis.Criticality'
+        description: 'Asset criticality: critical, high, medium, low, info'
+      description:
+        description: Description
+        type: string
+      discovered_at:
+        description: When this asset was discovered
+        type: string
+      id:
+        description: Unique identifier for this asset within the report
+        type: string
+      identifiers:
+        allOf:
+        - $ref: '#/definitions/ctis.AssetIdentifiers'
+        description: |-
+          Stable identifiers of the asset. A platform matches an incoming asset
+          to an existing one on these before it falls back to the name or an IP
+          address, so a renamed host or repository keeps its history.
+      is_internet_accessible:
+        description: 'CTEM: Is the asset directly accessible from the internet'
+        type: boolean
+      name:
+        description: Human-readable name
+        type: string
+      properties:
+        allOf:
+        - $ref: '#/definitions/ctis.Properties'
+        description: Custom properties
+      related_assets:
+        description: Related assets (by ID within this report)
+        items:
+          type: string
+        type: array
+      services:
+        description: 'CTEM: Services running on this asset'
+        items:
+          $ref: '#/definitions/ctis.ServiceInfo'
+        type: array
+      tags:
+        description: Tags for categorization
+        items:
+          type: string
+        type: array
+      technical:
+        allOf:
+        - $ref: '#/definitions/ctis.AssetTechnical'
+        description: Asset-specific technical details
+      type:
+        allOf:
+        - $ref: '#/definitions/ctis.AssetType'
+        description: 'Asset type (required): domain, ip_address, repository, certificate,
+          etc.'
+      value:
+        description: |-
+          Primary value of the asset (required)
+          For domain: "example.com"
+          For ip_address: "192.168.1.1"
+          For repository: "github.com/org/repo"
+        type: string
+    type: object
+  ctis.AssetCompliance:
+    properties:
+      data_classification:
+        description: 'Data classification level: public, internal, confidential, restricted,
+          secret'
+        type: string
+      frameworks:
+        description: 'Compliance frameworks this asset is in scope for: PCI-DSS, HIPAA,
+          SOC2, GDPR, ISO27001'
+        items:
+          type: string
+        type: array
+      phi_exposed:
+        description: Asset contains Protected Health Information
+        type: boolean
+      pii_exposed:
+        description: Asset contains Personally Identifiable Information
+        type: boolean
+      regulatory_owner:
+        description: Regulatory owner email/username
+        type: string
+    type: object
+  ctis.AssetIdentifiers:
+    properties:
+      bios_uuid:
+        description: SMBIOS system UUID.
+        type: string
+      cloud_resource_id:
+        description: Cloud instance ID (i-0abc...), VM ID or resource ARN.
+        type: string
+      mac_addresses:
+        description: |-
+          MAC addresses of the host's network interfaces. Receivers ignore
+          locally administered, multicast and known shared addresses.
+        items:
+          type: string
+        type: array
+      machine_id:
+        description: |-
+          Host ID read by a sensor on the host: /etc/machine-id on Linux,
+          MachineGuid on Windows, IOPlatformUUID on macOS.
+        type: string
+      scm_repo_id:
+        description: |-
+          Repository ID assigned by the source-code host (the numeric GitHub
+          repository ID, the GitLab project ID). It survives renames and
+          transfers.
+        type: string
+      serial_number:
+        description: Hardware serial number.
+        type: string
+    type: object
+  ctis.AssetTechnical:
+    properties:
+      certificate:
+        allOf:
+        - $ref: '#/definitions/ctis.CertificateTechnical'
+        description: For certificate assets
+      cloud:
+        allOf:
+        - $ref: '#/definitions/ctis.CloudTechnical'
+        description: For cloud assets
+      domain:
+        allOf:
+        - $ref: '#/definitions/ctis.DomainTechnical'
+        description: For domain assets
+      ip_address:
+        allOf:
+        - $ref: '#/definitions/ctis.IPAddressTechnical'
+        description: For IP address assets
+      repository:
+        allOf:
+        - $ref: '#/definitions/ctis.RepositoryTechnical'
+        description: For repository assets
+      service:
+        allOf:
+        - $ref: '#/definitions/ctis.ServiceTechnical'
+        description: For service assets
+      web3:
+        allOf:
+        - $ref: '#/definitions/ctis.Web3Technical'
+        description: For Web3 assets (smart contracts, wallets, tokens, etc.)
+    type: object
+  ctis.AssetType:
+    enum:
+    - domain
+    - subdomain
+    - ip_address
+    - certificate
+    - website
+    - web_application
+    - api
+    - mobile_app
+    - service
+    - repository
+    - cloud_account
+    - compute
+    - storage
+    - database
+    - serverless
+    - container_registry
+    - host
+    - server
+    - container
+    - kubernetes
+    - kubernetes_cluster
+    - kubernetes_namespace
+    - network
+    - vpc
+    - subnet
+    - load_balancer
+    - firewall
+    - iam_user
+    - iam_role
+    - service_account
+    - http_service
+    - open_port
+    - discovered_url
+    - smart_contract
+    - wallet
+    - nft_collection
+    - defi_protocol
+    - token
+    - blockchain
+    - unclassified
+    type: string
+    x-enum-comments:
+      AssetTypeAPI: API endpoint (REST, GraphQL, gRPC)
+      AssetTypeCloudAccount: AWS Account, GCP Project, Azure Subscription
+      AssetTypeCompute: EC2, GCE, Azure VM
+      AssetTypeContainer: Docker container
+      AssetTypeContainerRegistry: ECR, GCR, ACR
+      AssetTypeDatabase: RDS, Cloud SQL, Cosmos DB
+      AssetTypeDiscoveredURL: URLs/endpoints from Katana
+      AssetTypeFirewall: Firewall / Security Group
+      AssetTypeHTTPService: HTTP/HTTPS services from HTTPX
+      AssetTypeHost: Physical or virtual host
+      AssetTypeIAMRole: IAM role
+      AssetTypeIAMUser: IAM user
+      AssetTypeKubernetes: Kubernetes cluster (generic)
+      AssetTypeKubernetesCluster: Kubernetes cluster
+      AssetTypeKubernetesNamespace: Kubernetes namespace
+      AssetTypeLoadBalancer: Load balancer (ALB, NLB, etc.)
+      AssetTypeMobileApp: Mobile application (iOS, Android)
+      AssetTypeNetwork: Network segment
+      AssetTypeOpenPort: Individual open ports from Naabu
+      AssetTypeServer: Server machine
+      AssetTypeServerless: Lambda, Cloud Functions, Azure Functions
+      AssetTypeService: Network service (SSH, SMTP, FTP, DNS, etc.)
+      AssetTypeServiceAccount: Service account
+      AssetTypeStorage: S3, GCS, Azure Blob
+      AssetTypeSubnet: Network subnet
+      AssetTypeUnclassified: Assets that have not been classified yet
+      AssetTypeVPC: Virtual Private Cloud
+      AssetTypeWebApplication: Web application (SaaS, internal apps)
+      AssetTypeWebsite: Public-facing website
+    x-enum-descriptions:
+    - ""
+    - ""
+    - ""
+    - ""
+    - Public-facing website
+    - Web application (SaaS, internal apps)
+    - API endpoint (REST, GraphQL, gRPC)
+    - Mobile application (iOS, Android)
+    - Network service (SSH, SMTP, FTP, DNS, etc.)
+    - ""
+    - AWS Account, GCP Project, Azure Subscription
+    - EC2, GCE, Azure VM
+    - S3, GCS, Azure Blob
+    - RDS, Cloud SQL, Cosmos DB
+    - Lambda, Cloud Functions, Azure Functions
+    - ECR, GCR, ACR
+    - Physical or virtual host
+    - Server machine
+    - Docker container
+    - Kubernetes cluster (generic)
+    - Kubernetes cluster
+    - Kubernetes namespace
+    - Network segment
+    - Virtual Private Cloud
+    - Network subnet
+    - Load balancer (ALB, NLB, etc.)
+    - Firewall / Security Group
+    - IAM user
+    - IAM role
+    - Service account
+    - HTTP/HTTPS services from HTTPX
+    - Individual open ports from Naabu
+    - URLs/endpoints from Katana
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - Assets that have not been classified yet
+    x-enum-varnames:
+    - AssetTypeDomain
+    - AssetTypeSubdomain
+    - AssetTypeIPAddress
+    - AssetTypeCertificate
+    - AssetTypeWebsite
+    - AssetTypeWebApplication
+    - AssetTypeAPI
+    - AssetTypeMobileApp
+    - AssetTypeService
+    - AssetTypeRepository
+    - AssetTypeCloudAccount
+    - AssetTypeCompute
+    - AssetTypeStorage
+    - AssetTypeDatabase
+    - AssetTypeServerless
+    - AssetTypeContainerRegistry
+    - AssetTypeHost
+    - AssetTypeServer
+    - AssetTypeContainer
+    - AssetTypeKubernetes
+    - AssetTypeKubernetesCluster
+    - AssetTypeKubernetesNamespace
+    - AssetTypeNetwork
+    - AssetTypeVPC
+    - AssetTypeSubnet
+    - AssetTypeLoadBalancer
+    - AssetTypeFirewall
+    - AssetTypeIAMUser
+    - AssetTypeIAMRole
+    - AssetTypeServiceAccount
+    - AssetTypeHTTPService
+    - AssetTypeOpenPort
+    - AssetTypeDiscoveredURL
+    - AssetTypeSmartContract
+    - AssetTypeWallet
+    - AssetTypeNFTCollection
+    - AssetTypeDeFiProtocol
+    - AssetTypeToken
+    - AssetTypeBlockchain
+    - AssetTypeUnclassified
+  ctis.Attachment:
+    properties:
+      artifact_location:
+        allOf:
+        - $ref: '#/definitions/ctis.ArtifactLocation'
+        description: Artifact location
+      description:
+        description: Description of the attachment
+        type: string
+      regions:
+        description: Relevant regions within the artifact
+        items:
+          $ref: '#/definitions/ctis.FindingLocation'
+        type: array
+    type: object
+  ctis.AuditReport:
+    properties:
+      auditor:
+        type: string
+      critical_count:
+        type: integer
+      date:
+        type: string
+      high_count:
+        type: integer
+      low_count:
+        type: integer
+      medium_count:
+        type: integer
+      report_url:
+        type: string
+      scope:
+        type: string
+    type: object
+  ctis.BranchInfo:
+    properties:
+      base_branch:
+        description: Base branch for PR/MR scans (e.g., "main" when scanning a PR
+          targeting main)
+        type: string
+      commit_sha:
+        description: Commit SHA being scanned
+        type: string
+      is_default_branch:
+        description: |-
+          Whether this is the default branch (main/master)
+          Auto-resolve only applies to default branch scans
+        type: boolean
+      name:
+        description: Branch name (e.g., "main", "feature/xyz", "refs/heads/main")
+        type: string
+      pull_request_number:
+        description: PR/MR number if this is a pull request scan
+        type: integer
+      pull_request_url:
+        description: PR/MR URL if this is a pull request scan
+        type: string
+      repository_url:
+        description: Repository URL for context
+        type: string
+    type: object
+  ctis.BusinessImpact:
+    properties:
+      compliance_impact:
+        description: 'Compliance frameworks impacted: PCI-DSS, HIPAA, SOC2, GDPR,
+          ISO27001'
+        items:
+          type: string
+        type: array
+      data_exposure_risk:
+        description: 'Data exposure risk: none, low, medium, high, critical'
+        type: string
+      reputational_impact:
+        description: Has potential reputational impact
+        type: boolean
+    type: object
+  ctis.CertificateTechnical:
+    properties:
+      expired:
+        description: Is expired
+        type: boolean
+      fingerprint:
+        description: SHA-256 fingerprint
+        type: string
+      issuer_cn:
+        description: Issuer common name
+        type: string
+      issuer_org:
+        description: Issuer organization
+        type: string
+      key_algorithm:
+        description: Key algorithm
+        type: string
+      key_size:
+        description: Key size in bits
+        type: integer
+      not_after:
+        description: Valid until
+        type: string
+      not_before:
+        description: Valid from
+        type: string
+      sans:
+        description: Subject alternative names
+        items:
+          type: string
+        type: array
+      self_signed:
+        description: Is self-signed
+        type: boolean
+      serial_number:
+        description: Serial number
+        type: string
+      signature_algorithm:
+        description: Signature algorithm
+        type: string
+      subject_cn:
+        description: Subject common name
+        type: string
+      wildcard:
+        description: Is wildcard
+        type: boolean
+    type: object
+  ctis.CloudTechnical:
+    properties:
+      account_id:
+        description: Account/project ID
+        type: string
+      arn:
+        description: Resource ARN (AWS)
+        type: string
+      provider:
+        description: 'Cloud provider: aws, gcp, azure'
+        type: string
+      region:
+        description: Region
+        type: string
+      resource_id:
+        description: Resource ID
+        type: string
+      resource_type:
+        description: 'Resource type: ec2, s3, rds, etc.'
+        type: string
+      tags:
+        additionalProperties:
+          type: string
+        description: Resource tags
+        type: object
+      zone:
+        description: Availability zone
+        type: string
+    type: object
+  ctis.ComplianceDetails:
+    properties:
+      control_description:
+        description: Control description
+        type: string
+      control_id:
+        description: Control ID
+        type: string
+      control_name:
+        description: Control name
+        type: string
+      framework:
+        description: 'Framework: pci-dss, hipaa, soc2, cis, etc.'
+        type: string
+      framework_version:
+        description: Framework version
+        type: string
+      result:
+        description: 'Result: pass, fail, manual, not_applicable'
+        type: string
+    type: object
+  ctis.ContainerLayer:
+    properties:
+      diff_id:
+        description: Layer diff ID
+        type: string
+      digest:
+        description: Layer digest (e.g., "sha256:abc123...")
+        type: string
+    type: object
+  ctis.ContractLibrary:
+    properties:
+      address:
+        type: string
+      name:
+        type: string
+    type: object
+  ctis.CoreContract:
+    properties:
+      address:
+        type: string
+      name:
+        type: string
+      role:
+        description: router, factory, vault, etc.
+        type: string
+    type: object
+  ctis.Criticality:
+    enum:
+    - critical
+    - high
+    - medium
+    - low
+    - info
+    type: string
+    x-enum-varnames:
+    - CriticalityCritical
+    - CriticalityHigh
+    - CriticalityMedium
+    - CriticalityLow
+    - CriticalityInfo
+  ctis.DNSRecord:
+    properties:
+      name:
+        description: Record name
+        type: string
+      ttl:
+        type: integer
+      type:
+        description: A, AAAA, CNAME, MX, TXT, etc.
+        type: string
+      value:
+        description: Record value
+        type: string
+    type: object
+  ctis.DataFlow:
+    properties:
+      call_path:
+        description: Call graph path (function names in order)
+        items:
+          type: string
+        type: array
+      confidence:
+        description: Flow confidence score (0-100)
+        type: integer
+      cross_file:
+        description: Is cross-file (data flows across multiple files)
+        type: boolean
+      intermediates:
+        description: Intermediate variable locations (propagation path)
+        items:
+          $ref: '#/definitions/ctis.DataFlowLocation'
+        type: array
+      interprocedural:
+        description: Is interprocedural (crosses function boundaries)
+        type: boolean
+      sanitizers:
+        description: Sanitizers applied (functions that clean/escape data)
+        items:
+          $ref: '#/definitions/ctis.DataFlowLocation'
+        type: array
+      sinks:
+        description: Taint sink location (where data reaches dangerous function)
+        items:
+          $ref: '#/definitions/ctis.DataFlowLocation'
+        type: array
+      sources:
+        description: Taint source locations (where untrusted data enters)
+        items:
+          $ref: '#/definitions/ctis.DataFlowLocation'
+        type: array
+      summary:
+        description: Summary of the flow for human readability
+        type: string
+      taint_type:
+        description: 'Type of taint: user_input, file_read, env_var, network, database'
+        type: string
+      tainted:
+        description: |-
+          Whether the data is still tainted at the sink
+          (false if properly sanitized before reaching sink)
+        type: boolean
+      vulnerability_type:
+        description: 'Vulnerability type this flow leads to: sqli, xss, ssrf, command_injection,
+          etc.'
+        type: string
+    type: object
+  ctis.DataFlowLocation:
+    properties:
+      called_function:
+        description: 'For function calls: the function being called'
+        type: string
+      class:
+        description: Class/struct name (if applicable)
+        type: string
+      column:
+        description: Column number (1-indexed)
+        type: integer
+      content:
+        description: Code content at this location
+        type: string
+      end_column:
+        description: End column
+        type: integer
+      end_line:
+        description: End line (for multi-line spans)
+        type: integer
+      function:
+        description: Function/method name containing this location
+        type: string
+      index:
+        description: Step index in the flow (for ordering, 0-indexed)
+        type: integer
+      label:
+        description: Variable or expression name
+        type: string
+      line:
+        description: Line number (1-indexed)
+        type: integer
+      module:
+        description: Module/namespace
+        type: string
+      notes:
+        description: Notes for human understanding
+        type: string
+      operation:
+        description: 'The operation performed: assignment, call, return, parameter,
+          concat, etc.'
+        type: string
+      parameter_index:
+        description: 'For parameters: the parameter index (0-indexed)'
+        type: integer
+      path:
+        description: File path
+        type: string
+      taint_state:
+        description: 'Taint state at this location: tainted, sanitized, unknown'
+        type: string
+      transformation:
+        description: 'Transformation applied: encode, decode, escape, hash, encrypt,
+          etc.'
+        type: string
+      type:
+        allOf:
+        - $ref: '#/definitions/ctis.DataFlowLocationType'
+        description: 'Location type: source, sink, propagator, sanitizer, transform'
+    type: object
+  ctis.DataFlowLocationType:
+    enum:
+    - source
+    - sink
+    - propagator
+    - sanitizer
+    - transform
+    type: string
+    x-enum-varnames:
+    - DataFlowLocationSource
+    - DataFlowLocationSink
+    - DataFlowLocationPropagator
+    - DataFlowLocationSanitizer
+    - DataFlowLocationTransform
+  ctis.DeFiDetails:
+    properties:
+      audit_reports:
+        description: Audit reports
+        items:
+          $ref: '#/definitions/ctis.AuditReport'
+        type: array
+      audited:
+        description: Is audited
+        type: boolean
+      bug_bounty_platform:
+        description: 'Bug bounty platform: immunefi, hackerone, etc.'
+        type: string
+      core_contracts:
+        description: Core contracts
+        items:
+          $ref: '#/definitions/ctis.CoreContract'
+        type: array
+      governance_token:
+        description: Governance token address
+        type: string
+      has_bug_bounty:
+        description: Has bug bounty
+        type: boolean
+      max_bounty_usd:
+        description: Max bug bounty payout
+        type: number
+      paused:
+        description: Is paused
+        type: boolean
+      protocol_name:
+        description: 'Protocol name: uniswap, aave, compound, etc.'
+        type: string
+      protocol_type:
+        description: 'Protocol type: dex, lending, yield, bridge, derivatives, etc.'
+        type: string
+      supported_chains:
+        description: Supported chains
+        items:
+          type: string
+        type: array
+      timelock_duration:
+        description: Timelock duration (for governance)
+        type: integer
+      tvl_usd:
+        description: Total Value Locked (TVL) in USD
+        type: number
+      version:
+        description: Protocol version
+        type: string
+    type: object
+  ctis.Dependency:
+    properties:
+      depends_on:
+        description: Dependencies (list of IDs or names this component depends on)
+        items:
+          type: string
+        type: array
+      ecosystem:
+        description: 'Ecosystem: npm, pypi, maven, gomod, etc.'
+        type: string
+      id:
+        description: Unique identifier for this dependency
+        type: string
+      licenses:
+        description: License information
+        items:
+          type: string
+        type: array
+      location:
+        allOf:
+        - $ref: '#/definitions/ctis.FindingLocation'
+        description: Location in file (deprecated, use Locations)
+      locations:
+        description: All locations where this dependency is defined
+        items:
+          $ref: '#/definitions/ctis.DependencyLocation'
+        type: array
+      name:
+        description: Package name
+        type: string
+      path:
+        description: File path where this dependency is defined
+        type: string
+      properties:
+        allOf:
+        - $ref: '#/definitions/ctis.Properties'
+        description: Custom properties
+      purl:
+        description: Package URL (PURL)
+        type: string
+      relationship:
+        description: 'Dependency relationship: direct, indirect, root, transit'
+        type: string
+      type:
+        description: 'Package type: library, framework, application, os'
+        type: string
+      uid:
+        description: Unique identifier from scanner (e.g., Trivy UID)
+        type: string
+      version:
+        description: Package version
+        type: string
+    type: object
+  ctis.DependencyLocation:
+    properties:
+      end_column:
+        description: End column number
+        type: integer
+      end_line:
+        description: End line number
+        type: integer
+      path:
+        description: File path
+        type: string
+      start_column:
+        description: Start column number
+        type: integer
+      start_line:
+        description: Start line number
+        type: integer
+    type: object
+  ctis.DomainTechnical:
+    properties:
+      dns_records:
+        description: DNS records
+        items:
+          $ref: '#/definitions/ctis.DNSRecord'
+        type: array
+      expires_at:
+        description: Expiration date
+        type: string
+      nameservers:
+        description: Nameservers
+        items:
+          type: string
+        type: array
+      registered_at:
+        description: Registration date
+        type: string
+      registrar:
+        description: Registrar information
+        type: string
+      whois:
+        additionalProperties:
+          type: string
+        description: WHOIS data
+        type: object
+    type: object
+  ctis.Finding:
+    properties:
+      asset_ref:
+        description: Reference to asset ID within this report
+        type: string
+      asset_type:
+        allOf:
+        - $ref: '#/definitions/ctis.AssetType'
+        description: Asset type (if using AssetValue)
+      asset_value:
+        description: Direct asset value (if not using AssetRef)
+        type: string
+      attachments:
+        description: Attachments - relevant artifacts or evidence (SARIF attachments)
+        items:
+          $ref: '#/definitions/ctis.Attachment'
+        type: array
+      author:
+        description: Git author who introduced the finding
+        type: string
+      author_email:
+        description: Author email
+        type: string
+      baseline_state:
+        description: |-
+          Baseline state - status relative to previous scan (SARIF baselineState)
+          Values: new, unchanged, updated, absent
+        type: string
+      business_impact:
+        allOf:
+        - $ref: '#/definitions/ctis.BusinessImpact'
+        description: 'CTEM: Business impact assessment'
+      category:
+        description: Finding category/class
+        type: string
+      commit_date:
+        description: Commit date when the finding was introduced
+        type: string
+      compliance:
+        allOf:
+        - $ref: '#/definitions/ctis.ComplianceDetails'
+        description: Compliance-specific details
+      confidence:
+        description: Confidence score 0-100
+        type: integer
+      correlation_id:
+        description: Correlation ID - groups logically identical results across runs
+          (SARIF correlationGuid)
+        type: string
+      data_flow:
+        allOf:
+        - $ref: '#/definitions/ctis.DataFlow'
+        description: Data flow trace for taint analysis (source -> intermediate ->
+          sink)
+      description:
+        description: Detailed description
+        type: string
+      evidence:
+        description: |-
+          Evidence is the scanner's raw proof/output for this finding (e.g. a Nessus
+          plugin_output, a probe response). Free text; redact secrets before display.
+        type: string
+      exposure:
+        allOf:
+        - $ref: '#/definitions/ctis.FindingExposure'
+        description: 'CTEM: Exposure information'
+      fingerprint:
+        description: Fingerprint for deduplication
+        type: string
+      first_seen_at:
+        description: First seen timestamp
+        type: string
+      hosted_viewer_uri:
+        description: Hosted viewer URI - URI to view in hosted viewer (SARIF hostedViewerUri)
+        type: string
+      id:
+        description: Unique identifier for this finding within the report
+        type: string
+      impact:
+        description: 'Impact level: critical, high, medium, low (for risk assessment)'
+        type: string
+      kind:
+        description: |-
+          Kind - evaluation state of the finding (SARIF kind)
+          Values: not_applicable, pass, fail, review, open, informational
+        type: string
+      last_seen_at:
+        description: Last seen timestamp
+        type: string
+      likelihood:
+        description: 'Likelihood level: high, medium, low (for risk assessment)'
+        type: string
+      location:
+        allOf:
+        - $ref: '#/definitions/ctis.FindingLocation'
+        description: Location information (for code-based findings)
+      message:
+        description: |-
+          Primary message to display (the main human-readable finding message)
+          This is distinct from Title (short) and Description (detailed)
+          If not set, Title will be used as the message
+        type: string
+      misconfiguration:
+        allOf:
+        - $ref: '#/definitions/ctis.MisconfigurationDetails'
+        description: Misconfiguration-specific details
+      network:
+        allOf:
+        - $ref: '#/definitions/ctis.NetworkLocation'
+        description: |-
+          Network location (for network/host findings, e.g. Nessus/Tenable): the
+          port/protocol/service the finding was observed on. Distinct from the
+          code-centric Location above.
+      occurrence_count:
+        description: Occurrence count - number of times this result was observed (SARIF
+          occurrenceCount)
+        type: integer
+      partial_fingerprints:
+        additionalProperties:
+          type: string
+        description: Partial fingerprints - contributing identity components (SARIF
+          partialFingerprints)
+        type: object
+      properties:
+        allOf:
+        - $ref: '#/definitions/ctis.Properties'
+        description: Custom properties
+      rank:
+        description: Rank - priority/importance score 0-100 (SARIF rank)
+        type: number
+      references:
+        description: References (URLs)
+        items:
+          type: string
+        type: array
+      related_locations:
+        description: Related locations - additional locations related to this finding
+          (SARIF relatedLocations)
+        items:
+          $ref: '#/definitions/ctis.FindingLocation'
+        type: array
+      remediation:
+        allOf:
+        - $ref: '#/definitions/ctis.Remediation'
+        description: Remediation guidance
+      remediation_context:
+        allOf:
+        - $ref: '#/definitions/ctis.RemediationContext'
+        description: 'CTEM: Remediation context'
+      rule_id:
+        description: Rule/check ID that detected this finding
+        type: string
+      rule_name:
+        description: Rule name
+        type: string
+      secret:
+        allOf:
+        - $ref: '#/definitions/ctis.SecretDetails'
+        description: Secret-specific details
+      severity:
+        allOf:
+        - $ref: '#/definitions/ctis.Severity'
+        description: 'Severity (required): critical, high, medium, low, info'
+      stacks:
+        description: Stacks - call stacks relevant to the finding (SARIF stacks)
+        items:
+          $ref: '#/definitions/ctis.StackTrace'
+        type: array
+      status:
+        allOf:
+        - $ref: '#/definitions/ctis.FindingStatus'
+        description: 'Finding status: open, resolved, false_positive, accepted_risk,
+          in_progress'
+      subcategory:
+        description: 'Subcategory: audit, vuln, secure default, etc.'
+        items:
+          type: string
+        type: array
+      suppression:
+        allOf:
+        - $ref: '#/definitions/ctis.Suppression'
+        description: Suppression information (if finding is suppressed)
+      tags:
+        description: Tags
+        items:
+          type: string
+        type: array
+      title:
+        description: Short title (required)
+        type: string
+      type:
+        allOf:
+        - $ref: '#/definitions/ctis.FindingType'
+        description: 'Finding type (required): vulnerability, secret, misconfiguration,
+          compliance'
+      vulnerability:
+        allOf:
+        - $ref: '#/definitions/ctis.VulnerabilityDetails'
+        description: Vulnerability-specific details
+      vulnerability_class:
+        description: 'Vulnerability class(es): SQL Injection, XSS, Command Injection,
+          etc.'
+        items:
+          type: string
+        type: array
+      web3:
+        allOf:
+        - $ref: '#/definitions/ctis.Web3VulnerabilityDetails'
+        description: Web3-specific details (smart contract vulnerabilities)
+      work_item_uris:
+        description: Work item URIs - URIs of associated issues/tickets (SARIF workItemUris)
+        items:
+          type: string
+        type: array
+    type: object
+  ctis.FindingExposure:
+    properties:
+      attack_prerequisites:
+        description: 'Prerequisites for exploitation: auth_required, mfa_required,
+          local_access, etc.'
+        type: string
+      is_internet_accessible:
+        description: Is the finding directly reachable from the internet
+        type: boolean
+      is_network_accessible:
+        description: Is the finding reachable from the network
+        type: boolean
+      vector:
+        description: 'Exposure vector: network, local, physical, adjacent_net'
+        type: string
+    type: object
+  ctis.FindingLocation:
+    properties:
+      branch:
+        description: Branch name (for repository findings)
+        type: string
+      commit_sha:
+        description: Commit SHA
+        type: string
+      context_snippet:
+        description: Context region (surrounding code for better understanding)
+        type: string
+      context_start_line:
+        description: Context start line (for context_snippet)
+        type: integer
+      end_column:
+        description: End column
+        type: integer
+      end_line:
+        description: End line number
+        type: integer
+      logical_location:
+        allOf:
+        - $ref: '#/definitions/ctis.LogicalLocation'
+        description: Logical location (function, class, method name)
+      path:
+        description: File path
+        type: string
+      snippet:
+        description: Code snippet
+        type: string
+      start_column:
+        description: Start column
+        type: integer
+      start_line:
+        description: Start line number (1-indexed)
+        type: integer
+    type: object
+  ctis.FindingStatus:
+    enum:
+    - open
+    - resolved
+    - suppressed
+    - false_positive
+    - accepted_risk
+    - in_progress
+    type: string
+    x-enum-varnames:
+    - FindingStatusOpen
+    - FindingStatusResolved
+    - FindingStatusSuppressed
+    - FindingStatusFalsePositive
+    - FindingStatusAcceptedRisk
+    - FindingStatusInProgress
+  ctis.FindingType:
+    enum:
+    - vulnerability
+    - secret
+    - misconfiguration
+    - compliance
+    - web3
+    type: string
+    x-enum-comments:
+      FindingTypeWeb3: Smart contract vulnerabilities
+    x-enum-descriptions:
+    - ""
+    - ""
+    - ""
+    - ""
+    - Smart contract vulnerabilities
+    x-enum-varnames:
+    - FindingTypeVulnerability
+    - FindingTypeSecret
+    - FindingTypeMisconfiguration
+    - FindingTypeCompliance
+    - FindingTypeWeb3
+  ctis.FixRegex:
+    properties:
+      count:
+        description: Number of replacements to make (0 = all)
+        type: integer
+      regex:
+        description: Regular expression pattern to match
+        type: string
+      replacement:
+        description: Replacement string (may contain capture group references like
+          $1, $2)
+        type: string
+    type: object
+  ctis.FlashLoanIssue:
+    properties:
+      attack_steps:
+        description: Attack steps
+        items:
+          type: string
+        type: array
+      attack_type:
+        description: 'Attack type: price_manipulation, governance_attack, collateral_theft'
+        type: string
+      potential_profit_usd:
+        description: Potential profit
+        type: number
+      provider:
+        description: 'Flash loan provider: aave, dydx, uniswap, balancer'
+        type: string
+      required_capital_usd:
+        description: Required capital for attack
+        type: number
+    type: object
+  ctis.GasIssue:
+    properties:
+      current_gas:
+        description: Current gas cost
+        type: integer
+      optimized_gas:
+        description: Optimized gas cost
+        type: integer
+      savings_percent:
+        description: Gas savings percentage
+        type: number
+      suggestion:
+        description: Optimization suggestion
+        type: string
+    type: object
+  ctis.Geolocation:
+    properties:
+      accuracy:
+        description: in meters
+        type: number
+      latitude:
+        type: number
+      longitude:
+        type: number
+    type: object
+  ctis.IPAddressTechnical:
+    properties:
+      asn:
+        description: ASN information
+        type: integer
+      asn_org:
+        description: ASN organization
+        type: string
+      city:
+        description: City
+        type: string
+      country:
+        description: Country code
+        type: string
+      geolocation:
+        allOf:
+        - $ref: '#/definitions/ctis.Geolocation'
+        description: Geolocation
+      hostname:
+        description: Hostname (if resolved)
+        type: string
+      ports:
+        description: Open ports
+        items:
+          $ref: '#/definitions/ctis.PortInfo'
+        type: array
+      version:
+        description: 'IP version: 4 or 6'
+        type: integer
+    type: object
+  ctis.LogicalLocation:
+    properties:
+      fully_qualified_name:
+        description: Fully qualified name (e.g., "pkg.MyClass.myMethod")
+        type: string
+      kind:
+        description: 'Kind: function, method, class, module, namespace'
+        type: string
+      name:
+        description: Function/method name
+        type: string
+      parent_index:
+        description: Parent logical location index (for nested locations)
+        type: integer
+    type: object
+  ctis.MisconfigurationDetails:
+    properties:
+      actual:
+        description: Actual value
+        type: string
+      avd_id:
+        description: Aqua Vulnerability Database ID (e.g., AVD-AWS-0001)
+        type: string
+      cause:
+        description: Cause description
+        type: string
+      expected:
+        description: Expected value
+        type: string
+      namespace:
+        description: Namespace (e.g., builtin.aws.s3)
+        type: string
+      policy_id:
+        description: Policy/check ID
+        type: string
+      policy_name:
+        description: Policy name
+        type: string
+      provider:
+        description: Cloud provider (e.g., AWS, GCP, Azure)
+        type: string
+      query:
+        description: Rego query path
+        type: string
+      resource_name:
+        description: Resource name
+        type: string
+      resource_type:
+        description: Resource type
+        type: string
+      service:
+        description: Service (e.g., S3, EC2, IAM)
+        type: string
+    type: object
+  ctis.NFTCollectionDetails:
+    properties:
+      base_uri:
+        description: Base URI
+        type: string
+      creator:
+        description: Creator address
+        type: string
+      floor_price:
+        description: Floor price (in native token)
+        type: string
+      floor_price_usd:
+        description: Floor price USD
+        type: number
+      holder_count:
+        description: Unique holders
+        type: integer
+      marketplaces:
+        description: Marketplace URLs
+        items:
+          type: string
+        type: array
+      max_supply:
+        description: Max supply
+        type: integer
+      metadata_storage:
+        description: 'Metadata storage: ipfs, arweave, centralized'
+        type: string
+      name:
+        description: Collection name
+        type: string
+      revealed:
+        description: Is revealed
+        type: boolean
+      royalty_percent:
+        description: Royalty percentage
+        type: number
+      royalty_recipient:
+        description: Royalty recipient
+        type: string
+      standard:
+        description: 'Token standard: erc721, erc1155'
+        type: string
+      symbol:
+        description: Collection symbol
+        type: string
+      total_supply:
+        description: Total supply
+        type: integer
+      total_volume:
+        description: Total volume (in native token)
+        type: string
+      total_volume_usd:
+        description: Total volume USD
+        type: number
+    type: object
+  ctis.NetworkLocation:
+    properties:
+      host:
+        description: |-
+          Host the finding was observed on (IP or hostname). Optional when the
+          finding already references its host asset via AssetRef/AssetValue.
+        type: string
+      port:
+        description: Port number (0 = not port-specific / general host finding).
+        type: integer
+      protocol:
+        description: 'Transport protocol: tcp, udp.'
+        type: string
+      service:
+        description: 'Service / application protocol on the port: https, ssh, smb,
+          mysql, etc.'
+        type: string
+    type: object
+  ctis.OracleManipulationIssue:
+    properties:
+      manipulation_method:
+        description: 'Manipulation method: flash_loan, sandwich, time_manipulation'
+        type: string
+      missing_checks:
+        description: Missing checks
+        items:
+          type: string
+        type: array
+      oracle_address:
+        description: Oracle address
+        type: string
+      oracle_type:
+        description: 'Oracle type: chainlink, uniswap_twap, custom'
+        type: string
+      price_impact_percent:
+        description: Price impact possible
+        type: number
+    type: object
+  ctis.PortInfo:
+    properties:
+      banner:
+        type: string
+      port:
+        type: integer
+      protocol:
+        description: tcp, udp
+        type: string
+      service:
+        description: http, ssh, etc.
+        type: string
+      state:
+        description: open, filtered, closed
+        type: string
+      version:
+        type: string
+    type: object
+  ctis.Properties:
+    additionalProperties: {}
+    type: object
+  ctis.ReentrancyIssue:
+    properties:
+      callback:
+        description: Callback function
+        type: string
+      entry_point:
+        description: Entry point function
+        type: string
+      external_call:
+        description: Vulnerable external call
+        type: string
+      max_depth:
+        description: Max reentrancy depth possible
+        type: integer
+      state_modified_after_call:
+        description: State variable modified after call
+        type: string
+      type:
+        description: 'Reentrancy type: cross_function, cross_contract, read_only'
+        type: string
+    type: object
+  ctis.Remediation:
+    properties:
+      auto_fixable:
+        description: Auto-fixable
+        type: boolean
+      effort:
+        description: 'Effort estimate: trivial, low, medium, high'
+        type: string
+      fix_available:
+        description: Fix available
+        type: boolean
+      fix_code:
+        description: |-
+          Suggested fix code - the actual code to replace the vulnerable code
+          For SAST tools like Semgrep that provide auto-fix suggestions
+        type: string
+      fix_regex:
+        allOf:
+        - $ref: '#/definitions/ctis.FixRegex'
+        description: Regex-based fix pattern (for tools that provide regex replacements)
+      recommendation:
+        description: Short recommendation
+        type: string
+      references:
+        description: Reference URLs
+        items:
+          type: string
+        type: array
+      steps:
+        description: Detailed fix steps
+        items:
+          type: string
+        type: array
+    type: object
+  ctis.RemediationContext:
+    properties:
+      complexity:
+        description: 'Fix complexity: simple, moderate, complex'
+        type: string
+      estimated_minutes:
+        description: Estimated time to fix in minutes
+        type: integer
+      remedy_available:
+        description: Is a remedy (patch/fix) available
+        type: boolean
+      type:
+        description: 'Remediation type: patch, upgrade, workaround, config_change,
+          mitigate, accept_risk'
+        type: string
+    type: object
+  ctis.Report:
+    properties:
+      $schema:
+        description: Schema URL for validation (optional)
+        type: string
+      assets:
+        description: Assets discovered/collected
+        items:
+          $ref: '#/definitions/ctis.Asset'
+        type: array
+      dependencies:
+        description: Dependencies (SBOM)
+        items:
+          $ref: '#/definitions/ctis.Dependency'
+        type: array
+      findings:
+        description: Findings discovered
+        items:
+          $ref: '#/definitions/ctis.Finding'
+        type: array
+      metadata:
+        allOf:
+        - $ref: '#/definitions/ctis.ReportMetadata'
+        description: Report metadata
+      properties:
+        allOf:
+        - $ref: '#/definitions/ctis.Properties'
+        description: Custom properties
+      tool:
+        allOf:
+        - $ref: '#/definitions/ctis.Tool'
+        description: Tool information (for collector/scanner reports)
+      version:
+        description: Schema version (required)
+        type: string
+    type: object
+  ctis.ReportMetadata:
+    properties:
+      branch:
+        allOf:
+        - $ref: '#/definitions/ctis.BranchInfo'
+        description: |-
+          Branch information for git-based scans
+          Used for branch-aware finding lifecycle management
+      coverage_type:
+        description: |-
+          Coverage type: full, incremental, partial
+          - full: Complete scan of entire scope (enables auto-resolve)
+          - incremental: Diff scan of changed files only (no auto-resolve)
+          - partial: Partial scan of specific directories (no auto-resolve)
+        type: string
+      duration_ms:
+        description: Duration of the scan/collection in milliseconds (optional)
+        type: integer
+      id:
+        description: Unique identifier for this report/scan (recommended)
+        type: string
+      properties:
+        allOf:
+        - $ref: '#/definitions/ctis.Properties'
+        description: Custom properties
+      scope:
+        allOf:
+        - $ref: '#/definitions/ctis.Scope'
+        description: Target scope of the scan/collection
+      source_ref:
+        description: External reference (job ID, scan ID)
+        type: string
+      source_type:
+        description: 'Source type: scanner, collector, integration, manual'
+        type: string
+      timestamp:
+        description: Timestamp when the report was generated (required)
+        type: string
+    type: object
+  ctis.RepositoryTechnical:
+    properties:
+      clone_url:
+        description: Clone URL
+        type: string
+      default_branch:
+        description: Default branch
+        type: string
+      forks:
+        description: Forks count
+        type: integer
+      languages:
+        additionalProperties:
+          type: integer
+        description: Language breakdown
+        type: object
+      last_commit_at:
+        description: Last commit date
+        type: string
+      last_commit_sha:
+        description: Last commit SHA
+        type: string
+      name:
+        description: Repository name
+        type: string
+      owner:
+        description: Organization/owner
+        type: string
+      platform:
+        description: 'SCM platform: github, gitlab, bitbucket'
+        type: string
+      stars:
+        description: Stars count
+        type: integer
+      url:
+        description: Repository URL
+        type: string
+      visibility:
+        description: 'Repository visibility: public, private, internal'
+        type: string
+    type: object
+  ctis.Scope:
+    properties:
+      excludes:
+        description: Excluded targets
+        items:
+          type: string
+        type: array
+      includes:
+        description: Included targets
+        items:
+          type: string
+        type: array
+      name:
+        description: Scope name or identifier
+        type: string
+      type:
+        description: 'Scope type: domain, network, repository, cloud_account'
+        type: string
+    type: object
+  ctis.SecretDetails:
+    properties:
+      age_in_days:
+        description: Secret age (how long since creation, if known)
+        type: integer
+      commit_count:
+        description: Commit count where this secret appears
+        type: integer
+      entropy:
+        description: Entropy score
+        type: number
+      expires_at:
+        description: Expiration date (if known)
+        type: string
+      in_history_only:
+        description: Is the secret in git history only (not in current HEAD)
+        type: boolean
+      length:
+        description: Length of the secret
+        type: integer
+      masked_value:
+        description: Masked value (first and last few chars)
+        type: string
+      revoked:
+        description: Is revoked
+        type: boolean
+      revoked_at:
+        description: When the secret was revoked
+        type: string
+      rotation_due_at:
+        description: Rotation recommended by date
+        type: string
+      scopes:
+        description: Secret scope/permissions (e.g., "read:org", "repo", "admin")
+        items:
+          type: string
+        type: array
+      secret_type:
+        description: 'Secret type: api_key, password, token, certificate, private_key,
+          etc.'
+        type: string
+      service:
+        description: 'Service associated with the secret: aws, github, stripe, gcp,
+          azure, etc.'
+        type: string
+      valid:
+        description: Is valid (if verification was performed)
+        type: boolean
+      verified_at:
+        description: Verification timestamp
+        type: string
+    type: object
+  ctis.ServiceInfo:
+    properties:
+      banner:
+        description: Service banner
+        type: string
+      cpe:
+        description: Common Platform Enumeration identifier
+        type: string
+      is_public:
+        description: Is this service publicly accessible from the internet
+        type: boolean
+      port:
+        description: Port number
+        type: integer
+      product:
+        description: 'Product name: Apache, nginx, OpenSSH, etc.'
+        type: string
+      protocol:
+        description: 'Transport protocol: tcp, udp'
+        type: string
+      service_type:
+        description: 'Service type: http, https, ssh, ftp, mysql, postgresql, etc.'
+        type: string
+      state:
+        description: 'Service state: active, inactive, filtered'
+        type: string
+      tls_enabled:
+        description: TLS enabled
+        type: boolean
+      tls_version:
+        description: 'TLS version: TLS 1.2, TLS 1.3'
+        type: string
+      version:
+        description: Product version
+        type: string
+    type: object
+  ctis.ServiceTechnical:
+    properties:
+      anonymous_access:
+        description: Anonymous access allowed (for FTP, SMB, etc.)
+        type: boolean
+      auth_methods:
+        description: Authentication methods supported (e.g., ["password", "publickey"]
+          for SSH)
+        items:
+          type: string
+        type: array
+      auth_required:
+        description: Authentication required
+        type: boolean
+      banner:
+        description: Banner/fingerprint
+        type: string
+      cpe:
+        description: CPE (Common Platform Enumeration) identifier
+        type: string
+      default_credentials:
+        description: Default credentials detected
+        type: boolean
+      details:
+        additionalProperties: {}
+        description: |-
+          Service-specific details (protocol-dependent)
+          For HTTP: methods, headers, etc.
+          For SMTP: EHLO response, supported extensions
+          For SSH: supported algorithms, host keys
+        type: object
+      extra_info:
+        description: Extra info
+        type: string
+      last_seen:
+        description: Last seen timestamp
+        type: string
+      name:
+        description: Service name
+        type: string
+      port:
+        description: Port
+        type: integer
+      product:
+        description: Product name (e.g., "OpenSSH", "nginx", "Apache", "Postfix")
+        type: string
+      protocol:
+        description: 'Protocol (application-layer): http, https, ssh, smtp, ftp, dns,
+          ldap, smb, rdp, mysql, postgresql, mongodb, redis, etc.'
+        type: string
+      response_time_ms:
+        description: Response time in milliseconds
+        type: integer
+      state:
+        description: 'Service state: open, filtered, closed'
+        type: string
+      tls:
+        description: SSL/TLS enabled
+        type: boolean
+      tls_cert_expiry:
+        type: string
+      tls_cert_issuer:
+        type: string
+      tls_cert_subject:
+        description: TLS certificate info (for services with TLS)
+        type: string
+      tls_version:
+        description: 'TLS version: tls1.0, tls1.1, tls1.2, tls1.3'
+        type: string
+      transport:
+        description: 'Transport: tcp, udp'
+        type: string
+      version:
+        description: Service version
+        type: string
+    type: object
+  ctis.Severity:
+    enum:
+    - critical
+    - high
+    - medium
+    - low
+    - info
+    type: string
+    x-enum-varnames:
+    - SeverityCritical
+    - SeverityHigh
+    - SeverityMedium
+    - SeverityLow
+    - SeverityInfo
+  ctis.SmartContractDetails:
+    properties:
+      abi:
+        description: ABI (JSON string or base64 encoded)
+        type: string
+      address:
+        description: Contract address
+        type: string
+      balance:
+        description: Contract balance (in wei)
+        type: string
+      bytecode_hash:
+        description: Bytecode hash (keccak256)
+        type: string
+      compiler_version:
+        description: Compiler version
+        type: string
+      contract_type:
+        description: 'Contract type: erc20, erc721, erc1155, proxy, multisig, defi,
+          custom'
+        type: string
+      deployed_at:
+        description: Deployment timestamp
+        type: string
+      deployer_address:
+        description: Deployer address
+        type: string
+      deployment_block:
+        description: Deployment block number
+        type: integer
+      deployment_tx_hash:
+        description: Deployment transaction hash
+        type: string
+      evm_version:
+        description: EVM version
+        type: string
+      implementation_address:
+        description: Implementation address (for proxy contracts)
+        type: string
+      interfaces:
+        description: 'Implemented interfaces: ERC20, ERC721, etc.'
+        items:
+          type: string
+        type: array
+      is_proxy:
+        description: Is proxy contract
+        type: boolean
+      is_upgradeable:
+        description: Is upgradeable
+        type: boolean
+      libraries:
+        description: External libraries used
+        items:
+          $ref: '#/definitions/ctis.ContractLibrary'
+        type: array
+      license:
+        description: 'License type: MIT, GPL, UNLICENSED, etc.'
+        type: string
+      name:
+        description: Contract name
+        type: string
+      optimization_enabled:
+        description: Optimization enabled
+        type: boolean
+      optimization_runs:
+        description: Optimization runs
+        type: integer
+      owner_address:
+        description: Owner/admin address
+        type: string
+      ownership_renounced:
+        description: Has renounced ownership
+        type: boolean
+      proxy_type:
+        description: 'Proxy type: transparent, uups, beacon, diamond'
+        type: string
+      source_code_hash:
+        description: Source code hash
+        type: string
+      source_code_url:
+        description: Source code URL (GitHub, etc.)
+        type: string
+      tx_count:
+        description: Total transactions
+        type: integer
+      verified:
+        description: Is verified on explorer (etherscan, etc.)
+        type: boolean
+    type: object
+  ctis.StackFrame:
+    properties:
+      location:
+        allOf:
+        - $ref: '#/definitions/ctis.FindingLocation'
+        description: Location of this frame
+      module:
+        description: Module/library name
+        type: string
+      parameters:
+        description: Function parameters
+        items:
+          type: string
+        type: array
+      thread_id:
+        description: Thread ID
+        type: integer
+    type: object
+  ctis.StackTrace:
+    properties:
+      frames:
+        description: Stack frames from innermost to outermost
+        items:
+          $ref: '#/definitions/ctis.StackFrame'
+        type: array
+      message:
+        description: Stack description/message
+        type: string
+    type: object
+  ctis.Suppression:
+    properties:
+      expires_at:
+        description: When the suppression stops applying. Empty means it does not
+          expire.
+        type: string
+      justification:
+        description: Justification for suppression
+        type: string
+      kind:
+        description: 'Suppression kind: in_source, external'
+        type: string
+      reason:
+        description: |-
+          Short reason code or phrase, e.g. "false_positive", "test_code",
+          "risk_accepted".
+        type: string
+      status:
+        description: 'Suppression status: accepted, under_review, rejected'
+        type: string
+      suppressed_at:
+        description: When the finding was suppressed
+        type: string
+      suppressed_by:
+        description: Who suppressed the finding
+        type: string
+    type: object
+  ctis.TokenBalance:
+    properties:
+      balance:
+        description: Balance (raw value)
+        type: string
+      balance_formatted:
+        description: Balance formatted (human readable)
+        type: string
+      contract_address:
+        description: Token contract address
+        type: string
+      decimals:
+        description: Token decimals
+        type: integer
+      name:
+        description: Token name
+        type: string
+      symbol:
+        description: Token symbol
+        type: string
+      usd_value:
+        description: USD value
+        type: number
+    type: object
+  ctis.TokenDetails:
+    properties:
+      burnable:
+        description: Is burnable
+        type: boolean
+      decimals:
+        description: Token decimals
+        type: integer
+      has_blacklist:
+        description: Has blacklist/whitelist
+        type: boolean
+      has_transfer_fee:
+        description: Has transfer fee/tax
+        type: boolean
+      holder_count:
+        description: Holder count
+        type: integer
+      honeypot_reason:
+        description: Honeypot reason
+        type: string
+      is_honeypot:
+        description: Is honeypot
+        type: boolean
+      liquidity_usd:
+        description: Liquidity USD
+        type: number
+      market_cap_usd:
+        description: Market cap USD
+        type: number
+      max_supply:
+        description: Max supply (if applicable)
+        type: string
+      mintable:
+        description: Is mintable
+        type: boolean
+      name:
+        description: Token name
+        type: string
+      pausable:
+        description: Is pausable
+        type: boolean
+      price_usd:
+        description: Price USD
+        type: number
+      standard:
+        description: 'Token standard: erc20, erc721, erc1155, bep20, spl'
+        type: string
+      symbol:
+        description: Token symbol
+        type: string
+      total_supply:
+        description: Total supply (raw value)
+        type: string
+      trading_pairs:
+        description: Trading pairs
+        items:
+          $ref: '#/definitions/ctis.TradingPair'
+        type: array
+      transfer_fee_percent:
+        description: Transfer fee percentage
+        type: number
+    type: object
+  ctis.Tool:
+    properties:
+      capabilities:
+        description: Tool capabilities
+        items:
+          type: string
+        type: array
+      info_url:
+        description: Tool information URL
+        type: string
+      name:
+        description: Tool name (required)
+        type: string
+      properties:
+        allOf:
+        - $ref: '#/definitions/ctis.Properties'
+        description: Custom properties
+      vendor:
+        description: Tool vendor/organization
+        type: string
+      version:
+        description: Tool version (recommended)
+        type: string
+    type: object
+  ctis.TradingPair:
+    properties:
+      dex:
+        description: 'DEX name: uniswap, sushiswap, pancakeswap, etc.'
+        type: string
+      liquidity_usd:
+        description: Liquidity USD
+        type: number
+      pair_address:
+        description: Pair address
+        type: string
+      quote_token:
+        description: Quote token symbol (WETH, USDT, etc.)
+        type: string
+    type: object
+  ctis.VulnDataSource:
+    properties:
+      id:
+        description: Data source ID (e.g., "nvd", "ghsa", "osv")
+        type: string
+      name:
+        description: Data source name
+        type: string
+      url:
+        description: Data source URL
+        type: string
+    type: object
+  ctis.VulnerabilityDetails:
+    properties:
+      advisories:
+        description: Advisory URLs
+        items:
+          type: string
+        type: array
+      affected_version:
+        description: Affected version
+        type: string
+      affected_version_range:
+        description: Affected version range (semver format)
+        type: string
+      asvs:
+        allOf:
+        - $ref: '#/definitions/ctis.ASVSInfo'
+        description: ASVS (Application Security Verification Standard) compliance
+          info
+      avd_id:
+        description: Aqua Vulnerability Database ID (e.g., AVD-AWS-0001)
+        type: string
+      cpe:
+        description: Affected CPE
+        type: string
+      cve_id:
+        description: CVE ID (primary, for single-CVE findings and backward compatibility)
+        type: string
+      cve_ids:
+        description: |-
+          CVE IDs (a finding may map to multiple CVEs — common for network
+          vulnerability scanners like Nessus/Tenable that group CVEs per plugin).
+        items:
+          type: string
+        type: array
+      cvss_score:
+        description: CVSS score
+        type: number
+      cvss_source:
+        description: 'CVSS data source: nvd, ghsa, redhat, bitnami'
+        type: string
+      cvss_vector:
+        description: CVSS vector
+        type: string
+      cvss_version:
+        description: CVSS version (2.0, 3.0, 3.1, 4.0)
+        type: string
+      cwe_id:
+        description: CWE ID (single, for backward compatibility)
+        type: string
+      cwe_ids:
+        description: CWE IDs (can have multiple)
+        items:
+          type: string
+        type: array
+      data_source:
+        allOf:
+        - $ref: '#/definitions/ctis.VulnDataSource'
+        description: Data source information (vulnerability database)
+      dependency_path:
+        description: Dependency path for transitive vulnerabilities
+        items:
+          type: string
+        type: array
+      ecosystem:
+        description: 'Ecosystem: npm, pip, maven, cargo, go, nuget, etc.'
+        type: string
+      epss_percentile:
+        description: EPSS percentile
+        type: number
+      epss_score:
+        description: EPSS score (Exploit Prediction Scoring System)
+        type: number
+      exploit_available:
+        description: Exploit available
+        type: boolean
+      exploit_maturity:
+        description: 'Exploit maturity: none, poc, functional, weaponized'
+        type: string
+      fixed_version:
+        description: Fixed version
+        type: string
+      fixed_versions:
+        description: All available fixed versions
+        items:
+          type: string
+        type: array
+      in_cisa_kev:
+        description: In CISA KEV (Known Exploited Vulnerabilities)
+        type: boolean
+      is_direct:
+        description: Is direct dependency (vs transitive)
+        type: boolean
+      layer:
+        allOf:
+        - $ref: '#/definitions/ctis.ContainerLayer'
+        description: Container layer information (for image scans)
+      modified_at:
+        description: Last modified date
+        type: string
+      owasp_ids:
+        description: OWASP IDs (e.g., "A01:2021", "A03:2021")
+        items:
+          type: string
+        type: array
+      package:
+        description: Affected package
+        type: string
+      published_at:
+        description: Vulnerability published date
+        type: string
+      purl:
+        description: Package URL (PURL spec) e.g., pkg:npm/lodash@4.17.20
+        type: string
+      severity_source:
+        description: 'Severity source (who assigned the severity: nvd, ghsa, redhat,
+          etc.)'
+        type: string
+      vendor_severity:
+        additionalProperties:
+          type: integer
+        description: Vendor-specific severity mapping (vendor -> severity level 1-5)
+        type: object
+      vpr_score:
+        description: |-
+          VPR (Tenable Vulnerability Priority Rating), 0.0–10.0. Tenable's own
+          dynamic priority score, distinct from CVSS/EPSS; carried through so
+          prioritisation can use the source scanner's rating when present.
+        type: number
+      vuln_status:
+        description: 'Vulnerability status: affected, fixed, under_investigation,
+          will_not_fix'
+        type: string
+    type: object
+  ctis.WalletDetails:
+    properties:
+      balance:
+        description: Balance (native token, in wei)
+        type: string
+      ens_name:
+        description: ENS name (if applicable)
+        type: string
+      first_tx_at:
+        description: First transaction timestamp
+        type: string
+      labels:
+        description: Labels (exchange, whale, hacker, etc.)
+        items:
+          type: string
+        type: array
+      last_tx_at:
+        description: Last transaction timestamp
+        type: string
+      nft_count:
+        description: NFT count
+        type: integer
+      owners:
+        description: Owner addresses (for multisig)
+        items:
+          type: string
+        type: array
+      provider:
+        description: 'Wallet provider: metamask, ledger, safe, argent, etc.'
+        type: string
+      required_signatures:
+        description: 'For multisig: required signatures'
+        type: integer
+      token_balances:
+        description: Token balances
+        items:
+          $ref: '#/definitions/ctis.TokenBalance'
+        type: array
+      total_owners:
+        description: 'For multisig: total owners'
+        type: integer
+      tx_count:
+        description: Total transactions
+        type: integer
+      wallet_type:
+        description: 'Wallet type: eoa, multisig, smart_wallet, mpc'
+        type: string
+    type: object
+  ctis.Web3POC:
+    properties:
+      code:
+        description: POC code or script
+        type: string
+      expected_outcome:
+        description: Expected outcome
+        type: string
+      fork_block_number:
+        description: Fork block number (for mainnet fork tests)
+        type: integer
+      tested_on:
+        description: 'Tested on: mainnet_fork, testnet, local'
+        type: string
+      tx_data:
+        description: POC transaction data
+        type: string
+      type:
+        description: 'POC type: transaction, script, foundry_test, hardhat_test'
+        type: string
+    type: object
+  ctis.Web3Technical:
+    properties:
+      address:
+        description: Contract/wallet address
+        type: string
+      chain:
+        description: 'Blockchain network: ethereum, polygon, bsc, arbitrum, optimism,
+          avalanche, solana, etc.'
+        type: string
+      chain_id:
+        description: 'Chain ID (EVM chains): 1 (mainnet), 137 (polygon), 56 (bsc),
+          etc.'
+        type: integer
+      contract:
+        allOf:
+        - $ref: '#/definitions/ctis.SmartContractDetails'
+        description: For smart contracts
+      defi:
+        allOf:
+        - $ref: '#/definitions/ctis.DeFiDetails'
+        description: For DeFi protocols
+      network_type:
+        description: 'Network type: mainnet, testnet, devnet'
+        type: string
+      nft:
+        allOf:
+        - $ref: '#/definitions/ctis.NFTCollectionDetails'
+        description: For NFT collections
+      token:
+        allOf:
+        - $ref: '#/definitions/ctis.TokenDetails'
+        description: For tokens (ERC-20, ERC-721, etc.)
+      wallet:
+        allOf:
+        - $ref: '#/definitions/ctis.WalletDetails'
+        description: For wallets
+    type: object
+  ctis.Web3VulnerabilityDetails:
+    properties:
+      access_control:
+        allOf:
+        - $ref: '#/definitions/ctis.AccessControlIssue'
+        description: Access control details
+      affected_value_usd:
+        description: Affected assets value in USD
+        type: number
+      attack_vector:
+        description: Attack vector description
+        type: string
+      attacker_addresses:
+        description: Attacker addresses (if known)
+        items:
+          type: string
+        type: array
+      bytecode_offset:
+        description: Bytecode offset (if found in bytecode analysis)
+        type: integer
+      chain:
+        description: Chain name
+        type: string
+      chain_id:
+        description: Chain ID
+        type: integer
+      contract_address:
+        description: Contract address affected
+        type: string
+      detection_confidence:
+        description: 'Detection confidence: high, medium, low'
+        type: string
+      detection_tool:
+        description: 'Tool that found this: slither, mythril, securify, manticore,
+          etc.'
+        type: string
+      estimated_impact_usd:
+        description: Estimated impact in USD (if quantifiable)
+        type: number
+      exploitable_on_mainnet:
+        description: Is exploitable on mainnet
+        type: boolean
+      flash_loan:
+        allOf:
+        - $ref: '#/definitions/ctis.FlashLoanIssue'
+        description: Flash loan attack details
+      function_selector:
+        description: Affected function selector (4 bytes)
+        type: string
+      function_signature:
+        description: Affected function signature
+        type: string
+      gas_issue:
+        allOf:
+        - $ref: '#/definitions/ctis.GasIssue'
+        description: Gas optimization issues (for gas-related findings)
+      is_false_positive:
+        description: Is false positive
+        type: boolean
+      oracle_manipulation:
+        allOf:
+        - $ref: '#/definitions/ctis.OracleManipulationIssue'
+        description: Oracle manipulation details
+      poc:
+        allOf:
+        - $ref: '#/definitions/ctis.Web3POC'
+        description: Proof of concept (if available)
+      reentrancy:
+        allOf:
+        - $ref: '#/definitions/ctis.ReentrancyIssue'
+        description: Reentrancy details
+      related_tx_hashes:
+        description: Related transaction hashes (if exploit occurred)
+        items:
+          type: string
+        type: array
+      swc_id:
+        description: SWC Registry ID (e.g., SWC-107 for reentrancy)
+        type: string
+      vulnerability_class:
+        description: |-
+          Vulnerability class/category (SWC ID or custom)
+          Common: reentrancy, overflow, access_control, front_running, etc.
+        type: string
+      vulnerable_pattern:
+        description: Vulnerable code pattern
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app.CredentialItem:
     properties:
       credential_type:
@@ -226,6 +2639,51 @@ definitions:
         type: integer
       position:
         type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput:
+    properties:
+      base_branch:
+        type: string
+      base_branch_known:
+        type: boolean
+      new:
+        items:
+          type: string
+        type: array
+      pre_existing:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_internal_app_cirun.Verdict:
+    properties:
+      baseline:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView'
+      links:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.VerdictLinks'
+      override:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.GateOverrideView'
+      policy:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.GatePolicyView'
+      reasons:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.GateReason'
+        type: array
+      run_id:
+        type: string
+      summary:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.GateSummary'
+      verdict:
+        type: string
+      would_fail:
+        type: boolean
+    type: object
+  github_com_openctemio_openctem_api_internal_app_cirun.VerdictLinks:
+    properties:
+      findings:
+        type: string
+      run:
+        type: string
     type: object
   github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock:
     properties:
@@ -1224,6 +3682,129 @@ definitions:
       before:
         additionalProperties: {}
         type: object
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView:
+    properties:
+      branch:
+        type: string
+      known:
+        type: boolean
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.GateOverrideView:
+    properties:
+      created_by:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      reason:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.GatePolicyView:
+    properties:
+      epss_threshold:
+        type: number
+      fail_on_kev:
+        type: boolean
+      fail_on_severity:
+        type: string
+      mode:
+        type: string
+      new_findings_only:
+        type: boolean
+      source:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.GateReason:
+    properties:
+      code:
+        type: string
+      file:
+        type: string
+      finding_id:
+        type: string
+      fingerprint:
+        type: string
+      line:
+        type: integer
+      message:
+        type: string
+      rule_id:
+        type: string
+      severity:
+        type: string
+      title:
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.GateSummary:
+    properties:
+      accepted:
+        type: integer
+      blocking:
+        type: integer
+      evaluated:
+        type: integer
+      new:
+        type: integer
+      pre_existing:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_cirun.Rules:
+    properties:
+      allow_fork_pull_requests:
+        description: |-
+          AllowForkPullRequests admits events that run code from a fork with the
+          base repository's identity (pull_request_target, workflow_run,
+          external_pull_request_event). Off by default.
+        type: boolean
+      environments:
+        description: |-
+          Environments, when set, require the job to run in one of these
+          deployment environments (the token's environment claim).
+        items:
+          type: string
+        type: array
+      events:
+        description: |-
+          Events, when set, are the only trigger events admitted (GitHub
+          event_name, GitLab pipeline_source).
+        items:
+          type: string
+        type: array
+      owners:
+        description: |-
+          Owners are GitHub organizations or users (repository_owner) or GitLab
+          top-level groups (the first segment of project_path). Exact match,
+          case-insensitive.
+        items:
+          type: string
+        type: array
+      refs:
+        description: |-
+          Refs are the branches or tags a pipeline may run on: "main",
+          "release/*", or a full ref ("refs/tags/v*"). Shell-style patterns per
+          path segment. Empty admits every ref. For a pull request the branch is
+          the pull request's source branch.
+        items:
+          type: string
+        type: array
+      repositories:
+        description: |-
+          Repositories are "owner/name" (GitLab: the full project path). A
+          trailing "/*" admits every repository directly under that path and
+          "/**" every repository below it.
+        items:
+          type: string
+        type: array
+      require_protected_ref:
+        description: |-
+          RequireProtectedRef admits only pipelines on a protected branch or tag
+          (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
+          configuration with this set admits nothing).
+        type: boolean
     type: object
   github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats:
     properties:
@@ -4114,6 +6695,216 @@ definitions:
     - finding_ids
     - status
     type: object
+  internal_infra_http_handler.CIBaselineDiffRequest:
+    properties:
+      fingerprints:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.CIEvaluateRequest:
+    properties:
+      scan_failures:
+        description: |-
+          ScanFailures counts scanners that failed to run or whose output could
+          not be parsed. Any failure fails the gate.
+        type: integer
+    type: object
+  internal_infra_http_handler.CIExchangeRequest:
+    properties:
+      id_token:
+        description: IDToken is the CI provider's OIDC token for the job.
+        type: string
+      run_id:
+        description: |-
+          RunID, optional, asks for a fresh token for a run this pipeline run
+          already holds (same repository, commit and pipeline run; not yet
+          evaluated).
+        type: string
+      tenant_id:
+        description: TenantID is the organization whose trust configurations decide.
+        type: string
+    type: object
+  internal_infra_http_handler.CIExchangeResponse:
+    properties:
+      branch:
+        type: string
+      commit_sha:
+        type: string
+      default_branch:
+        type: string
+      expires_at:
+        type: string
+      expires_in:
+        type: integer
+      is_default_branch:
+        type: boolean
+      pull_request:
+        type: string
+      repository:
+        type: string
+      repository_asset_id:
+        type: string
+      run_id:
+        type: string
+      token:
+        type: string
+      token_type:
+        type: string
+    type: object
+  internal_infra_http_handler.CIGateOverrideListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIGateOverrideResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.CIGateOverrideRequest:
+    properties:
+      commit_sha:
+        type: string
+      expires_in_hours:
+        description: ExpiresInHours defaults to 24, at most 168.
+        type: integer
+      reason:
+        description: Reason is required (10 to 2000 characters) and audited.
+        type: string
+      repository_asset_id:
+        type: string
+    type: object
+  internal_infra_http_handler.CIGateOverrideResponse:
+    properties:
+      active:
+        type: boolean
+      commit_sha:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      reason:
+        type: string
+      repository_asset_id:
+        type: string
+      revoked_at:
+        type: string
+    type: object
+  internal_infra_http_handler.CIGatePolicyListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyResponse'
+        type: array
+      default:
+        $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyResponse'
+    type: object
+  internal_infra_http_handler.CIGatePolicyRequest:
+    properties:
+      enabled:
+        type: boolean
+      epss_threshold:
+        type: number
+      fail_on_kev:
+        type: boolean
+      fail_on_severity:
+        type: string
+      mode:
+        type: string
+      new_findings_only:
+        type: boolean
+      scope_id:
+        type: string
+      scope_type:
+        type: string
+    type: object
+  internal_infra_http_handler.CIGatePolicyResponse:
+    properties:
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      epss_threshold:
+        type: number
+      fail_on_kev:
+        type: boolean
+      fail_on_severity:
+        type: string
+      id:
+        type: string
+      mode:
+        type: string
+      new_findings_only:
+        type: boolean
+      scope_id:
+        type: string
+      scope_type:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_infra_http_handler.CIRunResponse:
+    properties:
+      actor:
+        type: string
+      branch:
+        type: string
+      commit_sha:
+        type: string
+      created_at:
+        type: string
+      default_branch:
+        type: string
+      environment:
+        type: string
+      evaluated_at:
+        type: string
+      event:
+        type: string
+      external_run_id:
+        type: string
+      findings_count:
+        type: integer
+      fork:
+        type: boolean
+      id:
+        type: string
+      is_default_branch:
+        type: boolean
+      pipeline_url:
+        type: string
+      provider:
+        type: string
+      pull_request:
+        type: string
+      ref:
+        type: string
+      reports_count:
+        type: integer
+      repository:
+        type: string
+      repository_asset_id:
+        type: string
+      run_attempt:
+        type: string
+      status:
+        type: string
+      trust_config_id:
+        type: string
+      verdict:
+        type: string
+      verdict_detail:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Verdict'
+        description: |-
+          VerdictDetail is the last verdict with its reasons and links (detail
+          view only).
+      workflow:
+        type: string
+    type: object
   internal_infra_http_handler.CISAKEVResponse:
     properties:
       date_added:
@@ -4125,6 +6916,59 @@ definitions:
       notes:
         type: string
       ransomware_use:
+        type: string
+    type: object
+  internal_infra_http_handler.CITrustConfigListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CITrustConfigResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.CITrustConfigRequest:
+    properties:
+      audience:
+        description: Audience defaults to openctem:tenant:<tenant id>.
+        type: string
+      default_branch:
+        type: string
+      enabled:
+        type: boolean
+      issuer:
+        description: |-
+          Issuer defaults to the provider's public issuer; a self-managed
+          GitLab is its external URL.
+        type: string
+      name:
+        type: string
+      provider:
+        type: string
+      rules:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.Rules'
+    type: object
+  internal_infra_http_handler.CITrustConfigResponse:
+    properties:
+      audience:
+        type: string
+      created_at:
+        type: string
+      default_branch:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      issuer:
+        type: string
+      last_used_at:
+        type: string
+      name:
+        type: string
+      provider:
+        type: string
+      rules:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_cirun.Rules'
+      updated_at:
         type: string
     type: object
   internal_infra_http_handler.CTEMCycleProfilesResponse:
@@ -4184,6 +7028,11 @@ definitions:
         type: string
       scope_target_id:
         type: string
+    type: object
+  internal_infra_http_handler.CTISIngestRequest:
+    properties:
+      report:
+        $ref: '#/definitions/ctis.Report'
     type: object
   internal_infra_http_handler.CallbackRequest:
     properties:
@@ -7139,6 +9988,54 @@ definitions:
       reactivate_resolved:
         type: boolean
     type: object
+  internal_infra_http_handler.IngestResponse:
+    properties:
+      assets_created:
+        type: integer
+      assets_limited:
+        description: |-
+          AssetsLimited counts existing assets the report matched but was not
+          allowed to change, because no command covering them stood behind it.
+        type: integer
+      assets_skipped_excluded:
+        description: |-
+          AssetsSkippedExcluded counts new assets not added because they match
+          an active scope exclusion; their findings are in findings_skipped.
+        type: integer
+      assets_updated:
+        type: integer
+      binding:
+        description: |-
+          Binding is "command" when the report is bound to a command,
+          "unsolicited" otherwise (RFC-040 §5.3).
+        type: string
+      cves_created:
+        type: integer
+      cves_updated:
+        type: integer
+      errors:
+        items:
+          type: string
+        type: array
+      findings_created:
+        type: integer
+      findings_skipped:
+        type: integer
+      findings_updated:
+        type: integer
+      reopens_withheld:
+        description: |-
+          ReopensWithheld counts findings a person had resolved that the report
+          saw again but was not allowed to reopen.
+        type: integer
+      scan_id:
+        type: string
+      unsolicited_warned:
+        description: |-
+          UnsolicitedWarned: the report was applied only because the tenant's
+          policy for results without a command is "warn".
+        type: boolean
+    type: object
   internal_infra_http_handler.IntegrationResponse:
     description: Integration details including provider info and status
     properties:
@@ -7454,6 +10351,23 @@ definitions:
       data:
         items:
           $ref: '#/definitions/internal_infra_http_handler.AssetGroupResponse'
+        type: array
+      links:
+        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_infra_http_handler.ListResponse-internal_infra_http_handler_CIRunResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CIRunResponse'
         type: array
       links:
         $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
@@ -16384,6 +19298,551 @@ paths:
       summary: Verify email
       tags:
       - Authentication
+  /ci/gate-overrides:
+    get:
+      parameters:
+      - description: Repository asset
+        in: query
+        name: repository_asset_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIGateOverrideListResponse'
+      security:
+      - BearerAuth: []
+      summary: List CI gate break-glass overrides
+      tags:
+      - CI
+    post:
+      consumes:
+      - application/json
+      description: For one commit of one repository, until it expires (default 24
+        hours, at most 7 days). Requires a reason. Audited at high severity, and again
+        each time it lets a failing run pass. 404 when the repository is outside the
+        caller's data scope.
+      parameters:
+      - description: Override
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIGateOverrideRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIGateOverrideResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: 'Break-glass: let one commit pass the CI gate'
+      tags:
+      - CI
+  /ci/gate-overrides/{id}/revoke:
+    post:
+      parameters:
+      - description: Override ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Revoke a CI gate break-glass override
+      tags:
+      - CI
+  /ci/gate-policies:
+    get:
+      description: The organization's, business units' and repositories' gate policies,
+        and the built-in default used when none applies.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyListResponse'
+      security:
+      - BearerAuth: []
+      summary: List CI gate policies
+      tags:
+      - CI
+    post:
+      consumes:
+      - application/json
+      description: One policy per scope (tenant, business_unit or repository). Secrets
+        always fail and accepted risk is always honored. Audited.
+      parameters:
+      - description: Policy
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create a CI gate policy
+      tags:
+      - CI
+  /ci/gate-policies/{id}:
+    delete:
+      parameters:
+      - description: Policy ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete a CI gate policy
+      tags:
+      - CI
+    patch:
+      consumes:
+      - application/json
+      description: The scope cannot change. epss_threshold is replaced (omit it to
+        clear it). Audited.
+      parameters:
+      - description: Policy ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Changes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIGatePolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change a CI gate policy
+      tags:
+      - CI
+  /ci/oidc/exchange:
+    post:
+      consumes:
+      - application/json
+      description: A GitHub Actions or GitLab CI job presents its OIDC token. When
+        one of the organization's CI trust configurations admits it (issuer, audience,
+        repository, ref, environment and event rules; fork pull requests refused by
+        default), the platform creates a CI run on the repository asset and returns
+        a run upload token that expires within 15 minutes. Each OIDC token can be
+        exchanged once. Every refusal answers the same 401.
+      parameters:
+      - description: Tenant and OIDC token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIExchangeRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIExchangeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      summary: Exchange a CI OIDC token for a run upload token
+      tags:
+      - CI
+  /ci/runs:
+    get:
+      description: CI pipeline runs (not sensors), newest first, on the repositories
+        the caller may see.
+      parameters:
+      - description: Repository asset
+        in: query
+        name: repository_asset_id
+        type: string
+      - description: pass, fail or none
+        in: query
+        name: verdict
+        type: string
+      - description: github or gitlab
+        in: query
+        name: provider
+        type: string
+      - description: Page (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Per page (default 25, max 100)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_CIRunResponse'
+      security:
+      - BearerAuth: []
+      summary: List CI runs
+      tags:
+      - CI
+  /ci/runs/{id}:
+    get:
+      description: The run with its last verdict (reasons and links). 404 when the
+        repository is outside the caller's data scope.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CIRunResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a CI run
+      tags:
+      - CI
+  /ci/runs/{id}/baseline-diff:
+    post:
+      consumes:
+      - application/json
+      description: Splits fingerprints into new and already open on the repository's
+        default branch, for inline comments on new findings. The repository and branch
+        are the run's.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fingerprints
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIBaselineDiffRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - CIRunToken: []
+      summary: Compare a CI run's fingerprints with the default branch
+      tags:
+      - CI
+  /ci/runs/{id}/evaluate:
+    post:
+      consumes:
+      - application/json
+      description: 'Judges the run''s findings against the gate policy (repository,
+        else business unit, else organization, else the built-in default): severity
+        threshold, KEV, EPSS, new findings only compared with the default branch by
+        default. Accepted risk, false positives and suppressions are honored; a committed
+        secret always fails; a scan failure fails. An active break-glass for the commit
+        lets a failing run pass (audited). Returns pass or fail with reasons and links.'
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Runner status
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CIEvaluateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Verdict'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - CIRunToken: []
+      summary: Gate verdict for a CI run
+      tags:
+      - CI
+  /ci/runs/{id}/results:
+    post:
+      consumes:
+      - application/json
+      description: A CTIS report from the run. It may name only the run's repository;
+        the branch, commit and pull request come from the verified OIDC token, not
+        from the report. Findings are recorded for the run's gate verdict.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: CTIS report
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CTISIngestRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.IngestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - CIRunToken: []
+      summary: Upload a CI run's results
+      tags:
+      - CI
+  /ci/trust-configs:
+    get:
+      description: Which CI pipelines (GitHub Actions, GitLab CI) may exchange their
+        OIDC token for a run upload token.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CITrustConfigListResponse'
+      security:
+      - BearerAuth: []
+      summary: List CI trust configurations
+      tags:
+      - CI
+    post:
+      consumes:
+      - application/json
+      description: Rules must name at least one owner or repository. Fork pull requests
+        are refused unless allow_fork_pull_requests is set. Audited.
+      parameters:
+      - description: Trust configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CITrustConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CITrustConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create a CI trust configuration
+      tags:
+      - CI
+  /ci/trust-configs/{id}:
+    delete:
+      description: Pipelines it admitted can no longer exchange tokens; tokens already
+        issued expire within 15 minutes. Audited.
+      parameters:
+      - description: Trust configuration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete a CI trust configuration
+      tags:
+      - CI
+    get:
+      parameters:
+      - description: Trust configuration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CITrustConfigResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a CI trust configuration
+      tags:
+      - CI
+    put:
+      consumes:
+      - application/json
+      description: Replaces the configuration (the provider cannot change). Audited
+        with before and after.
+      parameters:
+      - description: Trust configuration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Trust configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CITrustConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CITrustConfigResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change a CI trust configuration
+      tags:
+      - CI
   /commands:
     get:
       consumes:
@@ -33401,6 +36860,12 @@ securityDefinitions:
     description: 'JWT access token, or a tenant oct_ API key (read-only: GET/HEAD
       on tenant routes, within the key''s scopes). Format: "Bearer {token}". An oct_
       key may instead be sent as X-API-Key.'
+    in: header
+    name: Authorization
+    type: apiKey
+  CIRunToken:
+    description: 'CI run upload token from POST /ci/oidc/exchange (RFC-051): "Bearer
+      octci_...", 15 minutes, one run on one repository.'
     in: header
     name: Authorization
     type: apiKey

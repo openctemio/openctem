@@ -586,7 +586,7 @@ POST /api/v1/invitations/accept-with-refresh   {"token": "..."}
 
 The rename is complete (RFC-023 §9.5, migration 000230): packages, types,
 tables/columns, permissions `sensors:*`, management API `/api/v1/sensors`,
-audit ids `sensor.*`, log field `sensor_id`, env `SENSOR_*` (old `AGENT_*` still read with a warning).
+audit ids `sensor.*`, log field `sensor_id`, env `SENSOR_*` (the old `AGENT_*` names are retired: startup refuses them).
 
 **Rules**
 - Never add an identifier containing "agent" for a sensor concept —
@@ -602,7 +602,6 @@ audit ids `sensor.*`, log field `sensor_id`, env `SENSOR_*` (old `AGENT_*` still
 
 ```
 pkg/domain/sensor/                 # entity, API keys, errors, repository interfaces
-pkg/sensorproto/legacyv1/          # renamed env vars (AGENT_* -> SENSOR_*) only
 pkg/sensorproto/v2/                # protocol v2 results wire (RFC-026): media type, problems, status, hello
 internal/infra/http/routes/sensor_v2.go  # /api/v2/sensor (own sensor-key authenticator + edge chain)
 internal/app/ingest/v2*.go         # v2 accept (receiver), segment semantics, commit + blinding guard, jobs
