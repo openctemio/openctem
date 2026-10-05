@@ -272,6 +272,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	// do not exist yet when the finding is seeded.
 	"findings": func(*schemaSeeder) map[string]any { return map[string]any{"definition_id": nil} },
 	// digest has a format CHECK; manifest and ignored have type CHECKs.
+	// digest and health have CHECKs; report must be an object.
+	"sensor_config_reports": func(*schemaSeeder) map[string]any {
+		return map[string]any{"digest": "sha256:" + strings.Repeat("cd", 32), "health": "ok", "report": "{}"}
+	},
 	"sensor_manifests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"digest": "sha256:" + strings.Repeat("ab", 32), "manifest": "{}", "ignored": "[]"}
 	},

@@ -220,9 +220,9 @@ platform-pinned content downgrade (P3b); no host-hardening defaults (P5a).
 | Gap | Addressed by |
 |---|---|
 | S1, S4c | RFC-040 §5.1 (gateway), §5.4 (worker) |
-| S2a–S2d | RFC-032 P1, P2, P5 (accepted) |
+| S2a–S2d | RFC-032 P1, P2, P5 (accepted); RFC-052 SP1 (pairing: key-bound identity with RFC 9421 signatures, no secret handled by a person) |
 | S2e | RFC-040 §5.2 (revocation reaches queued and leased work) |
-| S3a–S3f | RFC-040 §5.3 (one binding rule; P0 for the cheap parts) |
+| S3a–S3f | RFC-040 §5.3 (one binding rule; P0 for the cheap parts); RFC-052 SP2 (per-sensor grant checked on poll and every claim path, push ingest per grant) |
 | S4a, S4b, S4d, S4e | RFC-040 §5.4 |
 | S5 | RFC-040 §5.5 |
 | P1a, P1b | RFC-023 D9/P5/P6 as specified in RFC-040 §5.6 (separate signer, DSSE, `seq`, nonce) |

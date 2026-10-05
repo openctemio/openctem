@@ -1,5 +1,6 @@
 'use client'
 
+import { PICKER_MEMBER_STATUS } from '@/features/organization/api/use-members'
 import { useState, useMemo } from 'react'
 import {
   Users,
@@ -270,9 +271,11 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
 
   const buildMembersUrl = () => {
     if (!showAddDialog || !tenantSlug) return null
+    // Owner picker: active members only (never a disabled or offboarded person).
     const params = new URLSearchParams({
       include: 'user',
       limit: String(PICKER_PAGE_SIZE),
+      status: PICKER_MEMBER_STATUS,
     })
     if (debouncedSearch.trim()) {
       params.set('search', debouncedSearch.trim())
