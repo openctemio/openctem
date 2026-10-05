@@ -26461,6 +26461,292 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/sensor-pairings/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Approve a sensor pairing
+     * @description Binds the sensor's key to this organization: a new sensor, or the registration being re-paired (its earlier keys revoked). Needs fingerprint_confirmed=true and step-up re-authentication (TOTP, else password, else a sign-in younger than 10 minutes). Audited at high severity; every administrator is notified.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Pairing id */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Approval */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.PairingApproveRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_sensorpairing.View']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensor-pairings/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Reject a sensor pairing request */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Pairing id */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensor-pairings/expectations': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Expect a sensor (reverse pairing)
+     * @description Returns a single-use code (10 minutes) to run as `openctemio-sensor pair <CODE>` on the host.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Expected sensor */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.PairingExpectRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_sensorpairing.View']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensor-pairings/expectations/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get a pairing request of the organization
+     * @description A reverse-mode expectation (once the sensor connected: its SAS fingerprint, host facts and source address), or a request this organization approved or denied.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Pairing id */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_sensorpairing.View']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensor-pairings/lookup': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Look up a pairing code
+     * @description Returns the open pairing request with this code: the SAS fingerprint, key fingerprint, host facts and source address to compare. One 404 for unknown, expired, used and foreign codes.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Code shown by the sensor */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.PairingLookupRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_sensorpairing.View']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors': {
     parameters: {
       query?: never
@@ -27300,6 +27586,105 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/sensors/{id}/keys': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List a sensor's signing keys */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorSigningKeyResponse'][]
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/{id}/keys/{key_id}/revoke': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Revoke one signing key of a sensor
+     * @description Effective on the sensor's next request. The sensor must be re-paired to work again.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+          /** @description Key ID */
+          key_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors/{id}/manifest': {
     parameters: {
       query?: never
@@ -27777,6 +28162,79 @@ export interface paths {
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/identity-policy': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get the sensor identity policy */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorIdentityPolicy']
+          }
+        }
+      }
+    }
+    /**
+     * Set the sensor identity policy
+     * @description Requiring key-bound identity narrows (sensors:grant:narrow); allowing bearer keys again widens (sensors:grant:widen). Audited at high severity.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Policy */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.SensorIdentityPolicy']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorIdentityPolicy']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -35073,6 +35531,10 @@ export interface components {
       offset_ns?: number
       position?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_auth.StepUpProof': {
+      password?: string
+      totp?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord': {
       host?: string
       type?: string
@@ -35419,6 +35881,26 @@ export interface components {
       total_scannable?: number
       /** @description WindowDays is the freshness window the stats were computed against. */
       window_days?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_sensorpairing.View': {
+      code?: string
+      created_at?: string
+      expires_at?: string
+      host_facts?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.PairingHostFacts']
+      id?: string
+      key_fingerprint?: string
+      mode?: string
+      repair_sensor_id?: string
+      repair_sensor_name?: string
+      sas?: string
+      sensor_id?: string
+      source_ip?: string
+      status?: string
+      /**
+       * @description StepUp is what the viewer must present to approve ("totp",
+       *     "password" or "fresh_sign_in").
+       */
+      step_up?: string
     }
     /** @enum {string} */
     'github_com_openctemio_openctem_api_pkg_apierror.Code':
@@ -36078,6 +36560,16 @@ export interface components {
     'github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns': {
       allow_custom_templates?: boolean
       allow_interactsh?: boolean
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.PairingHostFacts': {
+      arch?: string
+      hostname?: string
+      instance_id?: string
+      name?: string
+      os?: string
+      product?: string
+      sdk_version?: string
+      sensor_version?: string
     }
     'github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity': {
       active_jobs?: number
@@ -39861,6 +40353,28 @@ export interface components {
       prev?: string
       self?: string
     }
+    'internal_infra_http_handler.PairingApproveRequest': {
+      /**
+       * @description Code is the code the approver entered (default mode; not needed for
+       *     an expectation of this organization).
+       */
+      code?: string
+      fingerprint_confirmed?: boolean
+      grant_profile?: string
+      name?: string
+      step_up?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.StepUpProof']
+      type?: string
+      zone_ids?: string[]
+    }
+    'internal_infra_http_handler.PairingExpectRequest': {
+      grant_profile?: string
+      name?: string
+      repair_sensor_id?: string
+      zone_ids?: string[]
+    }
+    'internal_infra_http_handler.PairingLookupRequest': {
+      code?: string
+    }
     'internal_infra_http_handler.PermissionsResponse': {
       permissions?: string[]
       version?: number
@@ -40974,6 +41488,13 @@ export interface components {
       buckets?: components['schemas']['internal_infra_http_handler.SensorHeartbeatBucketResponse'][]
       hours?: number
     }
+    'internal_infra_http_handler.SensorIdentityPolicy': {
+      /**
+       * @description BearerKeysAllowed: new sensors may be created with an API key
+       *     (octs_). False: pairing (key-bound identity) only.
+       */
+      bearer_keys_allowed?: boolean
+    }
     'internal_infra_http_handler.SensorLoadResponse': {
       capacity?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity']
       fresh?: boolean
@@ -41285,6 +41806,17 @@ export interface components {
     }
     'internal_infra_http_handler.SensorRevokeRequest': {
       reason?: string
+    }
+    'internal_infra_http_handler.SensorSigningKeyResponse': {
+      activated_at?: string
+      created_at?: string
+      fingerprint?: string
+      id?: string
+      last_used_at?: string
+      last_used_ip?: string
+      revoked_at?: string
+      revoked_reason?: string
+      status?: string
     }
     'internal_infra_http_handler.SensorStatsResponse': {
       active_jobs?: number
