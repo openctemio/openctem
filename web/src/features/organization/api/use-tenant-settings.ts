@@ -14,7 +14,6 @@ import type {
   TenantSettings,
   UpdateGeneralSettingsInput,
   UpdateSecuritySettingsInput,
-  UpdateAPISettingsInput,
   UpdateBrandingSettingsInput,
 } from '../types/settings.types'
 
@@ -188,27 +187,6 @@ export function useUpdateSecuritySettings(tenantIdOrSlug: string | undefined) {
 
   return {
     updateSecuritySettings: trigger,
-    isUpdating: isMutating,
-    error,
-  }
-}
-
-// ============================================
-// UPDATE API SETTINGS
-// ============================================
-
-/**
- * Hook to update API settings
- */
-export function useUpdateAPISettings(tenantIdOrSlug: string | undefined) {
-  const { trigger, isMutating, error } = useSettingsSectionMutation<UpdateAPISettingsInput>(
-    tenantIdOrSlug,
-    tenantIdOrSlug ? tenantEndpoints.updateAPISettings(tenantIdOrSlug) : null,
-    'api'
-  )
-
-  return {
-    updateAPISettings: trigger,
     isUpdating: isMutating,
     error,
   }

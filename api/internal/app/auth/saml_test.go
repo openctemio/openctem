@@ -121,7 +121,7 @@ func TestSAMLUpsertConfig_StoresAndUpdates(t *testing.T) {
 
 	// Update preserves the id (true upsert).
 	p2, err := svc.UpsertConfig(ctx, tenantID, SAMLConfigInput{
-		IDPEntityID: "https://idp2", IDPSSOURL: "https://idp/sso", IDPCertificate: cert, DefaultRole: "admin",
+		IDPEntityID: "https://idp2", IDPSSOURL: "https://idp/sso", IDPCertificate: cert, DefaultRole: "member",
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)
@@ -129,7 +129,7 @@ func TestSAMLUpsertConfig_StoresAndUpdates(t *testing.T) {
 	if p2.ID() != p.ID() {
 		t.Error("upsert should preserve the existing id")
 	}
-	if p2.DefaultRole() != "admin" || p2.IDPEntityID() != "https://idp2" {
+	if p2.DefaultRole() != "member" || p2.IDPEntityID() != "https://idp2" {
 		t.Errorf("update not applied: %+v", p2)
 	}
 }

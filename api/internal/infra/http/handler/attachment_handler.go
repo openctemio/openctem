@@ -486,9 +486,10 @@ func (h *AttachmentHandler) UpdateStorageConfig(w http.ResponseWriter, r *http.R
 
 	existing, err := h.storageResolver.GetTenantStorageConfig(r.Context(), tenantID)
 	if err != nil {
-		h.logger.Error("failed to get storage config", "error", err)
-		apierror.InternalServerError("Failed to save storage config").WriteJSON(w)
-		return
+		// The stored keys cannot be decrypted (key rotation, corruption): the
+		// admin must re-enter them, so the stored config is not reused.
+		h.logger.Warn("stored storage config unreadable; new keys required")
+		existing = nil
 	}
 
 	cfg, err := tenantStorageConfigFromRequest(attachment.StorageConfig{

@@ -1202,7 +1202,7 @@ func TestSSOService_CreateProvider_OwnerRoleRejected(t *testing.T) {
 }
 
 func TestSSOService_CreateProvider_ValidDefaultRoles(t *testing.T) {
-	validRoles := []string{"admin", "member", "viewer", ""}
+	validRoles := []string{"member", "viewer", ""}
 	for _, role := range validRoles {
 		t.Run("role_"+role, func(t *testing.T) {
 			ipRepo := newSSOmockIPRepo()
@@ -1724,7 +1724,7 @@ func TestSSOService_UpdateProvider_AllFields(t *testing.T) {
 	issuer := "https://issuer.example.com"
 	tid := "new-tenant-id"
 	autoProvision := false
-	role := "admin"
+	role := "member"
 	active := false
 
 	result, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
@@ -1765,7 +1765,7 @@ func TestSSOService_UpdateProvider_AllFields(t *testing.T) {
 	if result.AutoProvision() {
 		t.Fatal("expected auto-provision to be false")
 	}
-	if result.DefaultRole() != "admin" {
+	if result.DefaultRole() != "member" {
 		t.Fatalf("unexpected default role: %q", result.DefaultRole())
 	}
 	if result.IsActive() {
@@ -2516,5 +2516,22 @@ func TestSSOService_CompleteFederatedLogin_NewUser_NotAdmitted(t *testing.T) {
 				t.Fatal("no account may be created for a refused login")
 			}
 		})
+	}
+}
+
+// An SSO provider can never auto-provision administrators (owner decision
+// B18): an IdP misconfiguration would otherwise be a takeover path.
+func TestSSOService_CreateProvider_AdminDefaultRoleRefused(t *testing.T) {
+	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
+	_, err := svc.CreateProvider(context.Background(), app.CreateProviderInput{
+		TenantID:     shared.NewID().String(),
+		Provider:     string(identityprovider.ProviderEntraID),
+		DisplayName:  "SSO Provider",
+		ClientID:     "client-123",
+		ClientSecret: "super-secret",
+		DefaultRole:  "admin",
+	})
+	if !errors.Is(err, app.ErrSSOInvalidDefaultRole) {
+		t.Fatalf("admin default role: err = %v, want ErrSSOInvalidDefaultRole", err)
 	}
 }

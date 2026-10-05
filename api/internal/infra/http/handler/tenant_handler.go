@@ -107,15 +107,14 @@ func (h *TenantHandler) SetAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker
 
 // TenantResponse represents a tenant in API responses.
 type TenantResponse struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Slug        string         `json:"slug"`
-	Description string         `json:"description,omitempty"`
-	LogoURL     string         `json:"logo_url,omitempty"`
-	Plan        string         `json:"plan"`
-	Settings    map[string]any `json:"settings,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	Description string    `json:"description,omitempty"`
+	LogoURL     string    `json:"logo_url,omitempty"`
+	Plan        string    `json:"plan"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // TenantWithRoleResponse represents a tenant with the user's role.
@@ -236,8 +235,9 @@ type CreateInvitationRequest struct {
 // =============================================================================
 
 func toTenantResponse(t *tenant.Tenant) TenantResponse {
-	// Any member can read this response; secrets in the settings
-	// (api.webhook_secret, ai.api_key, ...) are write-only.
+	// Any member can read this response, so it carries the profile only:
+	// the security policy (IP allowlist, allowed domains), AI and risk
+	// configuration are read through GET /settings by those allowed to.
 	return TenantResponse{
 		ID:          t.ID().String(),
 		Name:        t.Name(),
@@ -245,7 +245,6 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 		Description: t.Description(),
 		LogoURL:     t.LogoURL(),
 		Plan:        t.Plan().String(),
-		Settings:    tenant.RedactSettings(t.Settings()),
 		CreatedAt:   t.CreatedAt(),
 		UpdatedAt:   t.UpdatedAt(),
 	}
@@ -581,6 +580,9 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Slug:        req.Slug,
 		Description: req.Description,
 		LogoURL:     req.LogoURL,
+		// Renaming the slug is owner-only; the service compares it with the
+		// stored slug, so admins saving name/description are unaffected.
+		CallerIsOwner: middleware.GetTeamRole(r.Context()) == tenant.RoleOwner,
 	}
 
 	t, err := h.service.UpdateTenant(r.Context(), tenantID.String(), input, h.buildAuditContext(r))
@@ -1633,17 +1635,30 @@ func (h *TenantHandler) declineInvitation(w http.ResponseWriter, r *http.Request
 
 // SettingsResponse represents tenant settings in API responses.
 type SettingsResponse struct {
-	General     GeneralSettingsResponse    `json:"general"`
-	Security    SecuritySettingsResponse   `json:"security"`
-	API         APISettingsResponse        `json:"api"`
-	Branding    BrandingSettingsResponse   `json:"branding"`
-	RiskScoring tenant.RiskScoringSettings `json:"risk_scoring"`
-	Pentest     tenant.PentestSettings     `json:"pentest"`
+	General GeneralSettingsResponse `json:"general"`
+	// Security and RiskScoring are returned to owners and admins only
+	// (absent for other roles): the IP allowlist, allowed domains and scoring
+	// formula are reconnaissance material no member workflow needs.
+	Security    *SecuritySettingsResponse   `json:"security,omitempty"`
+	Branding    BrandingSettingsResponse    `json:"branding"`
+	RiskScoring *tenant.RiskScoringSettings `json:"risk_scoring,omitempty"`
+	Pentest     tenant.PentestSettings      `json:"pentest"`
 	// ETags holds the entity tag of each settings section as stored (keys:
 	// general, security, branding, risk_scoring, pentest, ...). Send the
 	// section's tag as If-Match on its PATCH to get 409 SETTINGS_CONFLICT
 	// instead of overwriting a change saved since you read it.
 	ETags map[string]string `json:"etags,omitempty"`
+}
+
+// forRole drops the admin-only sections for callers who are not an owner or
+// admin of the organization.
+func (resp SettingsResponse) forRole(role tenant.Role) SettingsResponse {
+	if role == tenant.RoleOwner || role == tenant.RoleAdmin {
+		return resp
+	}
+	resp.Security = nil
+	resp.RiskScoring = nil
+	return resp
 }
 
 // withSettingsETags returns resp with its per-section ETags set.
@@ -1716,16 +1731,6 @@ type SecuritySettingsResponse struct {
 	CurrentIP string `json:"current_ip,omitempty"`
 }
 
-// APISettingsResponse represents API settings.
-type APISettingsResponse struct {
-	APIKeyEnabled bool     `json:"api_key_enabled"`
-	WebhookURL    string   `json:"webhook_url,omitempty"`
-	WebhookEvents []string `json:"webhook_events"`
-	// WebhookSecretConfigured says whether a signing secret is set; the
-	// secret itself is write-only (PATCH /settings/api).
-	WebhookSecretConfigured bool `json:"webhook_secret_configured"`
-}
-
 // BrandingSettingsResponse represents branding settings.
 type BrandingSettingsResponse struct {
 	PrimaryColor string `json:"primary_color"`
@@ -1734,10 +1739,7 @@ type BrandingSettingsResponse struct {
 }
 
 func toSettingsResponse(s *tenant.Settings) SettingsResponse {
-	webhookEvents := make([]string, len(s.API.WebhookEvents))
-	for i, e := range s.API.WebhookEvents {
-		webhookEvents[i] = string(e)
-	}
+	rs := s.RiskScoring
 
 	return SettingsResponse{
 		General: GeneralSettingsResponse{
@@ -1746,7 +1748,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			Industry: s.General.Industry,
 			Website:  s.General.Website,
 		},
-		Security: SecuritySettingsResponse{
+		Security: &SecuritySettingsResponse{
 			SSOEnforced:           s.Security.SSOEnforced,
 			MFARequired:           s.Security.MFARequired,
 			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
@@ -1755,18 +1757,12 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			EmailVerificationMode: string(s.Security.EmailVerificationMode),
 			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
 		},
-		API: APISettingsResponse{
-			APIKeyEnabled:           s.API.APIKeyEnabled,
-			WebhookURL:              s.API.WebhookURL,
-			WebhookSecretConfigured: s.API.WebhookSecret != "",
-			WebhookEvents:           webhookEvents,
-		},
 		Branding: BrandingSettingsResponse{
 			PrimaryColor: s.Branding.PrimaryColor,
 			LogoDarkURL:  s.Branding.LogoDarkURL,
 			LogoData:     s.Branding.LogoData,
 		},
-		RiskScoring: s.RiskScoring,
+		RiskScoring: &rs,
 		Pentest:     pentestWithDefaults(s.Pentest),
 	}
 }
@@ -1797,8 +1793,11 @@ func (h *TenantHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := withSettingsETags(toSettingsResponse(settings), h.settingsETags(r.Context(), tenantID))
-	resp.Security.CurrentIP = getClientIP(r)
+	resp := withSettingsETags(toSettingsResponse(settings), h.settingsETags(r.Context(), tenantID)).
+		forRole(middleware.GetTeamRole(r.Context()))
+	if resp.Security != nil {
+		resp.Security.CurrentIP = getClientIP(r)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
@@ -1921,61 +1920,10 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	}
 
 	resp := withSettingsETags(toSettingsResponse(settings), etags)
-	resp.Security.CurrentIP = clientIP
+	resp.Security.CurrentIP = clientIP // security PATCH is owner-only
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-// UpdateAPISettingsRequest represents the request to update API settings.
-// Scalar fields are pointers so a partial PATCH only touches what it sends;
-// WebhookEvents keeps its nil-vs-[] meaning (omitted => unchanged, [] => clear).
-type UpdateAPISettingsRequest struct {
-	APIKeyEnabled *bool `json:"api_key_enabled"`
-	// No `url` tag — see note on UpdateGeneralSettingsRequest.Website.
-	// APISettings.Validate checks the URL when non-empty.
-	WebhookURL    *string  `json:"webhook_url"`
-	WebhookSecret *string  `json:"webhook_secret"`
-	WebhookEvents []string `json:"webhook_events"`
-}
-
-// UpdateAPISettings handles PATCH /api/v1/tenants/{tenant}/settings/api
-func (h *TenantHandler) UpdateAPISettings(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-
-	var req UpdateAPISettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := app.UpdateAPISettingsInput{
-		APIKeyEnabled: req.APIKeyEnabled,
-		WebhookURL:    req.WebhookURL,
-		WebhookSecret: req.WebhookSecret,
-		WebhookEvents: req.WebhookEvents,
-	}
-
-	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateAPISettings(settingsWriteCtx(r), tenantID.String(), input, actx)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionAPI)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
 // UpdateBrandingSettingsRequest represents the request to update branding settings.

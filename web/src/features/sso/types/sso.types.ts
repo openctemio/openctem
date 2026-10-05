@@ -124,5 +124,4 @@ export interface SSOCallbackResponse {
 export const SSO_DEFAULT_ROLES = [
   { value: 'viewer', label: 'Viewer' },
   { value: 'member', label: 'Member' },
-  { value: 'admin', label: 'Admin' },
 ] as const
