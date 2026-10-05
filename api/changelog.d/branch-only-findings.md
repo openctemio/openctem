@@ -8,9 +8,11 @@
   workflows (notifications, ticket rules) and regression follow-ups do not run
   for it. The CI gate, the run and the branch pages are unchanged.
 - When a counting branch sees it, or its branch starts to count, the mark is
-  cleared and its exposure starts then: `first_detected_at` moves to that
-  time and the SLA deadline keeps its length from there. Its workflows run
-  then.
+  cleared and its SLA clock starts then (the deadline keeps its length,
+  measured from that time). Its workflows run then. `first_detected_at` keeps
+  the first sighting, so the CI gate's notion of "new" is unchanged.
+- The CI gate's findings link adds `branch_only=true` for a run on a branch
+  that does not count.
 - A branch-only finding no branch still shows (deleted, or merged and no
   longer scanned) becomes `not_observed` (`branch_expired`) through the finding
   lifecycle job, with an activity entry.
