@@ -13,7 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// Scanner output and CVSS vectors (migration 000940, research 24 P0-2).
+// Scanner output and CVSS vectors (migration 000947, research 24 P0-2).
 // They are written and read here only, never by the generic finding SELECT,
 // so the list, the export and every Finding-based path (tickets,
 // notifications) cannot carry the output.
