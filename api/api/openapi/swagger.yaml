@@ -4429,6 +4429,105 @@ definitions:
         description: For cross-account
         type: string
     type: object
+  github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport:
+    properties:
+      api_keys:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      assigned_findings:
+        description: AssignedFindings counts the member's open (not closed) findings.
+        type: integer
+      campaigns:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      direct_grants:
+        description: DirectGrants is the number of per-user asset grants.
+        type: integer
+      groups:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      membership_id:
+        type: string
+      owned_assets:
+        description: OwnedAssets counts the assets the member is a named (user) owner
+          of.
+        type: integer
+      owned_report_schedules:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      owned_scans:
+        description: Owned work that an offboarding must hand to someone else.
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      owned_workflows:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      roles:
+        description: Access sources.
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef'
+        type: array
+      status:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.MemberStatus'
+      user_id:
+        type: string
+      visible_assets:
+        description: |-
+          VisibleAssets is the number of materialized scope rows (0 while the
+          member is disabled: the rows return when re-enabled).
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef:
+    properties:
+      detail:
+        description: |-
+          Detail is a short type-specific note: a key prefix, a campaign role, a
+          schedule type.
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_tenant.MemberStatus:
+    enum:
+    - active
+    - suspended
+    - offboarded
+    type: string
+    x-enum-varnames:
+    - MemberStatusActive
+    - MemberStatusSuspended
+    - MemberStatusOffboarded
+  github_com_openctemio_openctem_api_pkg_domain_tenant.OffboardResult:
+    properties:
+      offboarded_at:
+        type: string
+      reassigned_assets:
+        type: integer
+      reassigned_findings:
+        type: integer
+      reassigned_schedules:
+        type: integer
+      removed_campaigns:
+        type: integer
+      removed_grants:
+        type: integer
+      removed_groups:
+        type: integer
+      report:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport'
+      revoked_keys:
+        type: integer
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_tenant.RetestSettings:
     properties:
       auto_enabled:
@@ -10847,6 +10946,23 @@ definitions:
         type: string
       url:
         type: string
+    type: object
+  internal_infra_http_handler.OffboardMemberRequest:
+    properties:
+      assets_to:
+        description: New owner of the assets the member owns.
+        type: string
+      findings_to:
+        description: New assignee of the member's open findings.
+        type: string
+      schedules_to:
+        description: New owner of the member's scans, report schedules and workflows.
+        example: 01929c4e-0000-7000-8000-000000000001
+        type: string
+      unassign_findings:
+        description: Put the open findings back in the queue instead (when findings_to
+          is empty).
+        type: boolean
     type: object
   internal_infra_http_handler.OpenPortResult:
     properties:
@@ -29109,6 +29225,70 @@ paths:
       summary: Get unread notification count
       tags:
       - notifications
+  /organization/members/{member_id}/access-report:
+    get:
+      description: Everything the member holds in the organization (roles, access
+        groups, API keys, pentest engagements, direct grants, visible assets) and
+        owns (scans, report schedules, workflows, open assigned findings, assets).
+        Drives the offboarding wizard. Owner or administrator.
+      parameters:
+      - description: Membership ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.AccessReport'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Member access report
+      tags:
+      - Tenants
+  /organization/members/{member_id}/erase:
+    post:
+      description: 'Owner only, after offboarding, and only when the person belongs
+        to no other organization: the name becomes "Deleted user #<hash>", the email
+        a non-deliverable placeholder, and credentials, second factor and federated
+        identity are cleared. Rows and foreign keys stay, so history shows the placeholder.'
+      parameters:
+      - description: Membership ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Erase an offboarded member's personal data
+      tags:
+      - Tenants
   /organization/members/{member_id}/mfa:
     delete:
       description: An owner or administrator turns off the second factor of a member
@@ -29146,6 +29326,55 @@ paths:
       security:
       - BearerAuth: []
       summary: Reset a member's two-factor authentication
+      tags:
+      - Tenants
+  /organization/members/{member_id}/offboard:
+    post:
+      consumes:
+      - application/json
+      description: Reassigns the member's owned work (mandatory for every category
+        they own something in) to another active member, revokes their API keys, removes
+        their access groups, grants, engagements, roles and invitations, and keeps
+        the membership as a tombstone so history stays valid. A later invitation starts
+        from zero. 409 reassignment_required lists the categories still without a
+        new owner. Owner or administrator; only the owner offboards an administrator.
+      parameters:
+      - description: Membership ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      - description: Who takes over the member's work
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.OffboardMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.OffboardResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Offboard a member
       tags:
       - Tenants
   /organization/settings/retest:

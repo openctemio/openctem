@@ -267,24 +267,46 @@ func (s *Step) Clone() *Step {
 // ConditionMet reports whether the step's condition allows it to run in run.
 // One implementation for every scheduler (the pipeline service and a scan's
 // workflow trigger); the scan path used to ignore conditions entirely.
-// Expression conditions are not evaluated yet and pass.
+//
+// A condition that cannot be evaluated never passes (research/27 F2): an
+// "expression" condition used to be true whatever it said, so a step meant
+// to run only sometimes always ran. Such a step is skipped with
+// ConditionSkipReason saying why. SetCondition refuses expressions; this
+// covers rows stored before that check and any unknown type.
 func (s *Step) ConditionMet(run *Run) bool {
 	switch s.Condition.Type {
-	case ConditionTypeAlways:
+	case ConditionTypeAlways, "":
 		return true
 	case ConditionTypeNever:
 		return false
 	case ConditionTypeAssetType:
 		assetType, ok := run.Context["asset_type"].(string)
 		return ok && assetType == s.Condition.Value
-	case ConditionTypeExpression:
-		return true
 	case ConditionTypeStepResult:
 		prev := run.GetStepRun(s.Condition.Value)
 		return prev != nil && prev.IsSuccess()
-	default:
-		return true
+	default: // expression (not evaluated) or a type this version does not know
+		return false
 	}
+}
+
+// ConditionUnsupported reports whether the step's condition is one the
+// scheduler cannot evaluate (and so never passes).
+func (s *Step) ConditionUnsupported() bool {
+	switch s.Condition.Type {
+	case ConditionTypeAlways, "", ConditionTypeNever, ConditionTypeAssetType, ConditionTypeStepResult:
+		return false
+	}
+	return true
+}
+
+// ConditionSkipReason is the skip reason of a step whose condition did not
+// pass.
+func (s *Step) ConditionSkipReason() string {
+	if s.ConditionUnsupported() {
+		return fmt.Sprintf("Condition type %q cannot be evaluated; the step never runs. Edit the step to use always, never, asset_type or step_result.", s.Condition.Type)
+	}
+	return "Condition not met"
 }
 
 // BlockedByDependency returns the first dependency of the step that finished
