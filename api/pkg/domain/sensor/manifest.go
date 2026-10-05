@@ -133,6 +133,10 @@ type ManifestTool struct {
 	Capabilities []string          `json:"capabilities,omitempty"`
 	TargetTypes  []string          `json:"target_types,omitempty"`
 	Content      []ManifestContent `json:"content,omitempty"`
+	// Contract is the tool's tool-contract manifest: its digest and the
+	// class, tier, network, consumes and produces it declares. Absent for a
+	// tool not ported to the tool contract.
+	Contract *ToolContract `json:"contract,omitempty"`
 }
 
 // ManifestContent is one piece of a tool's content (RFC-031), without the
@@ -364,6 +368,13 @@ func (m Manifest) Sanitized(rep CapabilityReport, now time.Time) (Manifest, []Ma
 		for _, c := range rt.Content {
 			mt.Content = append(mt.Content, ManifestContent{Name: c.Name, Version: c.Version, Digest: c.Digest, Source: c.Source, Managed: c.Managed})
 		}
+		if t.Contract != nil {
+			if c, why := SanitizeToolContract(t.Contract); c != nil {
+				mt.Contract = c
+			} else {
+				ignore(path+".contract", why, IgnoredInvalidContract)
+			}
+		}
 		out.Tools = append(out.Tools, mt)
 	}
 	for k, c := range m.Capabilities {
@@ -494,10 +505,12 @@ func (a *Sensor) ManifestPolicy() ManifestPolicy {
 // ManifestDiff is what changed between two manifests (RFC-033 §6.12). Content
 // versions are left out: they have their own content_updated events.
 type ManifestDiff struct {
-	ToolsAdded   []string          `json:"tools_added,omitempty"`
-	ToolsRemoved []string          `json:"tools_removed,omitempty"`
-	Versions     []ManifestChange  `json:"versions,omitempty"`
-	Installed    []ManifestChange  `json:"installed,omitempty"`
+	ToolsAdded   []string         `json:"tools_added,omitempty"`
+	ToolsRemoved []string         `json:"tools_removed,omitempty"`
+	Versions     []ManifestChange `json:"versions,omitempty"`
+	Installed    []ManifestChange `json:"installed,omitempty"`
+	// Contracts are tools whose tool-contract digest changed ("" when absent).
+	Contracts    []ManifestChange  `json:"contracts,omitempty"`
 	Capabilities []ManifestCapDiff `json:"capabilities,omitempty"`
 	// SensorWide is the change of the sensor-wide capabilities.
 	SensorWide *ManifestCapDiff `json:"sensor_wide,omitempty"`
@@ -523,7 +536,7 @@ type ManifestCapDiff struct {
 // IsEmpty reports whether nothing worth an event changed.
 func (d ManifestDiff) IsEmpty() bool {
 	return len(d.ToolsAdded) == 0 && len(d.ToolsRemoved) == 0 && len(d.Versions) == 0 &&
-		len(d.Installed) == 0 && len(d.Capabilities) == 0 && d.SensorWide == nil && len(d.Other) == 0
+		len(d.Installed) == 0 && len(d.Contracts) == 0 && len(d.Capabilities) == 0 && d.SensorWide == nil && len(d.Other) == 0
 }
 
 // DiffManifests compares two manifests.
@@ -543,6 +556,9 @@ func DiffManifests(prev, next Manifest) ManifestDiff {
 		}
 		if p.Version != t.Version {
 			d.Versions = append(d.Versions, ManifestChange{Tool: t.Name, From: p.Version, To: t.Version})
+		}
+		if pd, td := contractDigest(p.Contract), contractDigest(t.Contract); pd != td {
+			d.Contracts = append(d.Contracts, ManifestChange{Tool: t.Name, From: pd, To: td})
 		}
 		if p.Installed != t.Installed {
 			d.Installed = append(d.Installed, ManifestChange{Tool: t.Name, From: installedWord(p.Installed), To: installedWord(t.Installed)})
@@ -588,6 +604,9 @@ func (d ManifestDiff) Summary() string {
 	for _, i := range d.Installed {
 		parts = append(parts, fmt.Sprintf("%s %s", i.Tool, i.To))
 	}
+	if n := len(d.Contracts); n > 0 {
+		parts = append(parts, fmt.Sprintf("tool contract of %d changed", n))
+	}
 	if n := len(d.Capabilities); n > 0 || d.SensorWide != nil {
 		if d.SensorWide != nil {
 			n++
@@ -624,6 +643,13 @@ func jsonEqual(a, b any) bool {
 	ra, errA := json.Marshal(a)
 	rb, errB := json.Marshal(b)
 	return errA == nil && errB == nil && bytes.Equal(ra, rb)
+}
+
+func contractDigest(c *ToolContract) string {
+	if c == nil {
+		return ""
+	}
+	return c.Digest
 }
 
 func installedWord(installed bool) string {
