@@ -23,4 +23,15 @@ describe('findings state lens', () => {
       )
     ).toBe('fixed')
   })
+
+  it('sends the branch-only filter to the list and groups requests alike', () => {
+    expect(buildFindingsQuery({ branch_only: true }).get('branch_only')).toBe('true')
+    expect(buildFindingsQuery({}).has('branch_only')).toBe(false)
+    expect(
+      new URL(
+        buildGroupsUrl({ group_by: 'cve_id', branch_only: true }),
+        'http://x'
+      ).searchParams.get('branch_only')
+    ).toBe('true')
+  })
 })
