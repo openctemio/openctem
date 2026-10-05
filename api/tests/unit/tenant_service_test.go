@@ -137,12 +137,25 @@ func (m *mockTenantRepo) GetBySlug(_ context.Context, slug string) (*tenant.Tena
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockTenantRepo) Update(_ context.Context, t *tenant.Tenant) error {
+func (m *mockTenantRepo) UpdateProfile(_ context.Context, t *tenant.Tenant) error {
 	m.updateCalls++
 	if m.updateErr != nil {
 		return m.updateErr
 	}
 	m.tenants[t.ID().String()] = t
+	return nil
+}
+
+// UpdateSettingsSection: GetByID hands out the stored pointer, so the
+// service has already mutated it; the mock only counts and fails on demand.
+func (m *mockTenantRepo) UpdateSettingsSection(_ context.Context, id shared.ID, _ string, _ any, _ bool, _ any) error {
+	m.updateCalls++
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	if _, ok := m.tenants[id.String()]; !ok {
+		return shared.ErrNotFound
+	}
 	return nil
 }
 
@@ -2096,18 +2109,15 @@ func TestTenantSvc_GetTenantSettings_NotFound(t *testing.T) {
 }
 
 // =============================================================================
-// UpdateTenantSettings Tests
+// UpdateAssetIdentitySettings Tests
 // =============================================================================
 
-func TestTenantSvc_UpdateTenantSettings_Success(t *testing.T) {
+func TestTenantSvc_UpdateAssetIdentitySettings_Success(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	settings := tenant.DefaultSettings()
-	settings.General.Timezone = "UTC"
-	settings.General.Language = "en"
-
-	result, err := svc.UpdateTenantSettings(context.Background(), existing.ID().String(), settings, app.AuditContext{})
+	result, err := svc.UpdateAssetIdentitySettings(context.Background(), existing.ID().String(),
+		tenant.AssetIdentitySettings{StaleAssetDays: 14, MaxIPsPerAsset: 5}, app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -2119,30 +2129,30 @@ func TestTenantSvc_UpdateTenantSettings_Success(t *testing.T) {
 	}
 }
 
-func TestTenantSvc_UpdateTenantSettings_InvalidID(t *testing.T) {
+func TestTenantSvc_UpdateAssetIdentitySettings_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	_, err := svc.UpdateTenantSettings(context.Background(), "bad-uuid", tenant.DefaultSettings(), app.AuditContext{})
+	_, err := svc.UpdateAssetIdentitySettings(context.Background(), "bad-uuid", tenant.AssetIdentitySettings{}, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
 }
 
-func TestTenantSvc_UpdateTenantSettings_NotFound(t *testing.T) {
+func TestTenantSvc_UpdateAssetIdentitySettings_NotFound(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	_, err := svc.UpdateTenantSettings(context.Background(), shared.NewID().String(), tenant.DefaultSettings(), app.AuditContext{})
+	_, err := svc.UpdateAssetIdentitySettings(context.Background(), shared.NewID().String(), tenant.AssetIdentitySettings{}, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
 }
 
-func TestTenantSvc_UpdateTenantSettings_RepoError(t *testing.T) {
+func TestTenantSvc_UpdateAssetIdentitySettings_RepoError(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 	repo.updateErr = errors.New("db error")
 
-	_, err := svc.UpdateTenantSettings(context.Background(), existing.ID().String(), tenant.DefaultSettings(), app.AuditContext{})
+	_, err := svc.UpdateAssetIdentitySettings(context.Background(), existing.ID().String(), tenant.AssetIdentitySettings{}, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -2706,8 +2716,8 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 		{"ListPendingInvitations", func() error { _, err := svc.ListPendingInvitations(context.Background(), invalidID); return err }},
 		{"DeleteInvitation", func() error { return svc.DeleteInvitation(context.Background(), invalidID, invalidID) }},
 		{"GetTenantSettings", func() error { _, err := svc.GetTenantSettings(context.Background(), invalidID); return err }},
-		{"UpdateTenantSettings", func() error {
-			_, err := svc.UpdateTenantSettings(context.Background(), invalidID, tenant.DefaultSettings(), app.AuditContext{})
+		{"UpdateAssetIdentitySettings", func() error {
+			_, err := svc.UpdateAssetIdentitySettings(context.Background(), invalidID, tenant.AssetIdentitySettings{}, app.AuditContext{})
 			return err
 		}},
 		{"UpdateGeneralSettings", func() error {

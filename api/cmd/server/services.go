@@ -513,14 +513,16 @@ type Services struct {
 	FindingSourceCache *app.FindingSourceCacheService
 
 	// Vulnerabilities & Exposures
-	Vulnerability    *app.VulnerabilityService
-	FindingActivity  *app.FindingActivityService
-	FindingActions   *app.FindingActionsService
-	SourceAnalytics  *app.SourceAnalyticsService
-	Exposure         *app.ExposureService
-	ThreatIntel      *threat.IntelService
-	CTEMID           *ctemidapp.Service
-	CertMonitor      *certmonitorapp.Service
+	Vulnerability   *app.VulnerabilityService
+	FindingActivity *app.FindingActivityService
+	FindingActions  *app.FindingActionsService
+	SourceAnalytics *app.SourceAnalyticsService
+	Exposure        *app.ExposureService
+	ThreatIntel     *threat.IntelService
+	CTEMID          *ctemidapp.Service
+	CertMonitor     *certmonitorapp.Service
+	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
+	ActiveGate       *easmapp.ActiveGate
 	EASMDNS          *easmdnsapp.Service
 	CredentialImport *app.CredentialImportService
 
@@ -740,8 +742,17 @@ func (a scimMembershipAdapter) ReactivateMember(ctx context.Context, tenantID, m
 }
 
 // UpdateMemberRole satisfies scim.RoleManager for SCIM group → role mapping.
-func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, membershipID shared.ID, role string) error {
-	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, scimAuditContext(tenantID))
+// With an actor (a mapping saved in the console) the change runs as that
+// person, so the owner-only rule for changing an administrator applies and
+// the audit entry names them. Without one (an identity-provider push) it runs
+// as SCIM provisioning and the audit entry carries the SCIM token from the
+// request context.
+func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, membershipID shared.ID, role string, actorID *shared.ID) error {
+	actx := scimAuditContext(tenantID)
+	if actorID != nil {
+		actx = app.AuditContext{TenantID: tenantID.String(), ActorID: actorID.String()}
+	}
+	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, actx)
 	return err
 }
 
@@ -1288,6 +1299,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.SCIMGroups = scim.NewGroupService(
 		repos.ScimGroup, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
+	s.SCIMGroups.SetAuditService(s.Audit)
 	// Outbound Jira ticketing resolves a client per tenant from that tenant's
 	// connected ticketing integration (base URL + decrypted credentials). The
 	// static client stays nil; the resolver is the production path (mirrors the
@@ -1445,7 +1457,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Assets reported for a tenant's own scan commands get tenant_scanned
 	// attribution evidence (RFC-036 O8).
 	if repos.Attribution != nil {
-		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution))
+		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution, repos.EASMSeed))
 	}
 	// A nuclei takeover-template match from a tenant scan confirms an open
 	// dangling_cname as subdomain_takeover (RFC-036 P1).
@@ -1562,6 +1574,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
+	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.EASMSeed)
+
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(
 		repos.Scan,
@@ -1582,7 +1596,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithProfileRepo(repos.ScanProfile),
 		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
 		scan.WithScopeExclusionFilter(s.Scope),
-		scan.WithAttributionGate(repos.Attribution),
+		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
+		// or unrecorded inside a scope target / under a seed; never rejected.
+		scan.WithAttributionGate(s.ActiveGate),
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
 		// Hostnames route by the address they resolve to from the platform.
 		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
