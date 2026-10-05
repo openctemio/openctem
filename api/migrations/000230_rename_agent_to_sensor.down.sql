@@ -97,11 +97,21 @@ UPDATE integration_notification_extensions SET enabled_event_types = (
 WHERE jsonb_typeof(enabled_event_types) = 'array'
   AND enabled_event_types ?| ARRAY['sensor.offline', 'sensor.error'];
 
+-- webhooks is dropped by 001069; the guard keeps a re-run of this migration on a
+-- later schema (TestSensorRenameUpgrade) working. Unchanged where the table exists.
+DO $$
+BEGIN
+    IF to_regclass('public.webhooks') IS NOT NULL THEN
+        EXECUTE $q$
 UPDATE webhooks SET event_types = (
     SELECT array_agg(DISTINCT CASE e WHEN 'sensor.offline' THEN 'agent.offline'
                                      WHEN 'sensor.error'   THEN 'agent.error' ELSE e END)
     FROM unnest(event_types::text[]) AS e)
-WHERE event_types::text[] && ARRAY['sensor.offline', 'sensor.error']::text[];
+WHERE event_types::text[] && ARRAY['sensor.offline', 'sensor.error']::text[]
+        $q$;
+    END IF;
+END
+$$;
 
 UPDATE event_types SET category = 'agents' WHERE category = 'sensors';
 INSERT INTO event_types (id, name, description, category, module_id, default_severity, is_active, metadata, created_at)

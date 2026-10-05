@@ -43,7 +43,9 @@ graph TD
 | Console | `web/src/features/ci-runners` (`/ci-runners`, `/settings/scanning/ci`) |
 | Pipelines: identity, status, fleet rows | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
 | Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
-| Migration | `001072_ci_runner_identity`, `001077_ci_pipelines` |
+| Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
+| Alerts and stale sources (every 15 minutes, one replica) | `internal/app/cirun/alerts.go`, `internal/infra/controller/ci_alerts.go` |
+| Migration | `001077_ci_runner_identity`, `001081_ci_pipelines`, `001082_ci_coverage_alerts` |
 
 ## Request chains
 
@@ -71,7 +73,13 @@ graph TD
   (cascade; moved by asset merge). Holds the run summary the status is
   computed from (last run, fork run, default-branch and pull request
   verdicts, scanner failures, runner version, tools, median and schedule
-  intervals, revocation). `ci_runs.pipeline_id` (composite FK) links each run.
+  intervals, revocation, retirement). `ci_runs.pipeline_id` (composite FK)
+  links each run.
+- `ci_coverage_expectations`: one per `(tenant, repository asset)`, composite
+  FK to the asset (cascade; moved by asset merge); the expected capabilities
+  (empty = all four).
+- `ci_alert_state`: one row per `(tenant, subject, kind)` while the alert's
+  condition holds; the notification is sent when the row is created.
 
 ### Exchange and pipeline flow
 
@@ -105,5 +113,12 @@ sequenceDiagram
   decided server-side.
 - Neither the CI provider's token nor the run token is logged, stored (only the
   run token's SHA-256) or audited.
+- Coverage lists only repositories in the caller's data scope; marking a
+  repository or retiring a pipeline out of scope is a 404. The alert job lists
+  tenants once and every later query is tenant-scoped.
+- Stale marking and retirement touch only open findings on the pipeline's
+  repository that this pipeline alone reported and nothing saw after its last
+  run; findings from people (pentest, manual, bug bounty, red team) are never
+  touched. A new sighting reopens a not-observed finding.
 - Refusals are uniform to the caller and detailed in the audit log only after
   the token verified.

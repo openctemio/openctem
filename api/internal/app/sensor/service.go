@@ -8,6 +8,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -70,6 +71,13 @@ type SensorService struct {
 	// the inline hash — so a renewed key coexists with the one it supersedes. Nil
 	// (the default) keeps the single-inline-key behavior.
 	apiKeyRepo sensordom.APIKeyRepository
+	// signingKeys holds key-bound sensors' public keys (RFC-052); nonces
+	// is the shared store of spent request nonces, memNonces the
+	// per-replica fallback (keybound.go).
+	signingKeys sensordom.SigningKeyRepository
+	nonces      sensordom.NonceStore
+	nonceOnce   sync.Once
+	memNonces   *memoryNonceStore
 	// lbWeights are the load-balancing weights used to recompute a sensor's
 	// load_score on every heartbeat. Defaults to the compiled-in set;
 	// SetLoadBalancingWeights installs the operator's AGENT_LB_* values.
@@ -1196,9 +1204,18 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (str
 		return "", nil, shared.NewDomainError("UNAUTHORIZED", "no authenticated sensor", shared.ErrUnauthorized)
 	}
 
+	// A key-bound sensor has no bearer key and never gets one (RFC-052,
+	// RFC-032 D3): minting one would hand a bearer secret to a sensor that
+	// proved it can sign.
+	if a.KeyBound() || id.KeyBound() {
+		return "", nil, shared.NewDomainError("FORBIDDEN", "key-bound sensors do not use API keys", shared.ErrForbidden)
+	}
 	fresh, err := s.repo.GetByID(ctx, a.ID)
 	if err != nil {
 		return "", nil, err
+	}
+	if fresh.KeyBound() {
+		return "", nil, shared.NewDomainError("FORBIDDEN", "key-bound sensors do not use API keys", shared.ErrForbidden)
 	}
 	if !fresh.Status.CanAuthenticate() {
 		if fresh.Status == sensordom.SensorStatusRevoked {
@@ -1442,6 +1459,10 @@ type SensorIdentity struct {
 	// a key an administrator regenerated meanwhile never matches. Set only
 	// by authentication, only for the inline key.
 	keyHashes []string
+	// signingKeyID and keyThumbprint are the sensor_keys row a signed
+	// request verified with (RFC-052); nil/"" for a bearer key.
+	signingKeyID  *shared.ID
+	keyThumbprint string
 	// presentedLegacy is true when the presented key is a legacy rda_ key.
 	// A renewal from one is the sensor's move to the octs_ format, which the
 	// renewal audit event records. Set only by authentication.
@@ -1528,6 +1549,13 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 			id.presentedLegacy = legacy
 			return id, nil
 		}
+		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
+	}
+
+	// A key-bound sensor signs its requests; no bearer key may stand in for
+	// it (RFC-052). Its stored hash is an unmatchable placeholder, so this
+	// only fires if a row was left inconsistent.
+	if a.KeyBound() {
 		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
 	}
 
@@ -1633,6 +1661,9 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, hashes []string, cl
 
 	a, err := s.repo.GetByID(ctx, key.SensorID)
 	if err != nil {
+		return SensorIdentity{}, shared.ErrUnauthorized
+	}
+	if a.KeyBound() {
 		return SensorIdentity{}, shared.ErrUnauthorized
 	}
 	paused, err := checkSensorStatus(a, allowPaused)
