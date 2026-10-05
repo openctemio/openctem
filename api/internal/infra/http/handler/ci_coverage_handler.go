@@ -224,7 +224,7 @@ func (h *CIAdminHandler) GetCoverage(w http.ResponseWriter, r *http.Request) {
 		Links: NewPaginationLinks(r, in.Page, in.PerPage, pages)}, Summary: sum, Templates: templates, Truncated: out.Truncated})
 }
 
-// SetCoverageExpectation handles PUT /api/v1/ci/coverage/expected/{id}
+// SetCoverageExpectation handles PUT /api/v1/ci/coverage/expectations/{id}
 // @Summary      Expect a repository to be covered
 // @Description  Marks a repository as expected to be scanned (for the listed capabilities, all four when empty), so a capability that is not fresh shows as a gap and "never scanned" is visible. Audited. 404 when the repository is outside the caller's data scope.
 // @Tags         CI
@@ -236,7 +236,7 @@ func (h *CIAdminHandler) GetCoverage(w http.ResponseWriter, r *http.Request) {
 // @Success      200  {object}  CICoverageExpectationResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
-// @Router       /ci/coverage/expected/{id} [put]
+// @Router       /ci/coverage/expectations/{id} [put]
 func (h *CIAdminHandler) SetCoverageExpectation(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenant(w, r)
 	if !ok {
@@ -272,7 +272,7 @@ func (h *CIAdminHandler) SetCoverageExpectation(w http.ResponseWriter, r *http.R
 	ciWriteJSON(w, http.StatusOK, resp)
 }
 
-// DeleteCoverageExpectation handles DELETE /api/v1/ci/coverage/expected/{id}
+// DeleteCoverageExpectation handles DELETE /api/v1/ci/coverage/expectations/{id}
 // @Summary      Stop expecting a repository to be covered
 // @Description  Audited. 404 when the repository is outside the caller's data scope or was not expected.
 // @Tags         CI
@@ -280,7 +280,7 @@ func (h *CIAdminHandler) SetCoverageExpectation(w http.ResponseWriter, r *http.R
 // @Param        id path string true "Repository asset ID"
 // @Success      204
 // @Failure      404  {object}  apierror.Error
-// @Router       /ci/coverage/expected/{id} [delete]
+// @Router       /ci/coverage/expectations/{id} [delete]
 func (h *CIAdminHandler) DeleteCoverageExpectation(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenant(w, r)
 	if !ok {
