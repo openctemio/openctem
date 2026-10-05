@@ -1,6 +1,6 @@
 ### Removed: twelve seeded platform settings nothing read
 
-- Migration 001072 deletes the system-wide rows 000036 seeded into
+- Migration 001075 deletes the system-wide rows 000036 seeded into
   `settings` (registration_enabled, email_verification_required, mfa_enabled,
   password_min_length, session_timeout_hours, max_sessions_per_user,
   api_rate_limit_per_hour, max_file_upload_mb, audit_log_retention_days,
