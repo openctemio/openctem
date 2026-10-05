@@ -74,26 +74,6 @@ func NewActiveGate(records ActiveGateRecords, assets ActiveGateAssets, scope Act
 	return &ActiveGate{records: records, assets: assets, scope: scope, roots: roots}
 }
 
-// activeGatedTypes are the internet-facing stored asset types (after
-// asset.CanonicalPair: http_service and open_port are services, website, api
-// and discovered_url are applications) for which an asset without a record
-// must also be inside a scope target or under a seed. Hosts (vulnerability
-// scanner and agent inventories), code repositories, cloud resources and
-// identities come from the tenant's own connectors and keep the record-only
-// rule.
-var activeGatedTypes = map[asset.AssetType]bool{
-	asset.AssetTypeDomain:      true,
-	asset.AssetTypeSubdomain:   true,
-	asset.AssetTypeIPAddress:   true,
-	asset.AssetTypeCertificate: true,
-	asset.AssetTypeService:     true,
-	asset.AssetTypeApplication: true,
-}
-
-func activeGated(a *asset.Asset) bool {
-	return activeGatedTypes[asset.CanonicalPair(a.Type(), a.SubType()).Type]
-}
-
 // maxGateItems bounds one call (a scan run dispatches at most 10 000).
 const maxGateItems = 20000
 
@@ -260,7 +240,7 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			}
 			continue
 		}
-		if !activeGated(a) || isInternalName(a.Name()) {
+		if !internetFacing(a.Type(), a.SubType()) || isInternalName(a.Name()) {
 			continue
 		}
 		if auth == nil {
