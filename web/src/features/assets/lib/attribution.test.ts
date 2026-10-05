@@ -42,6 +42,24 @@ describe('describeEvidence', () => {
   })
 })
 
+describe('describeEvidence scan rules', () => {
+  const base = {
+    technique: 'subfinder',
+    source: 'sensor:s1',
+    weight: 0.6,
+    first_observed_at: '',
+    last_observed_at: '',
+  }
+  it('tells a scanned target from a name a scan found', () => {
+    expect(describeEvidence({ ...base, rule: 'tenant_scanned' })).toMatch(
+      /^A target your organization scanned/
+    )
+    expect(describeEvidence({ ...base, rule: 'tenant_scan_discovered' })).toMatch(
+      /^Found by a scan/
+    )
+  })
+})
+
 describe('scanStanding', () => {
   it('explains what a scan does', () => {
     expect(scanStanding({ active_checks_allowed: true, state: 'confirmed' })).toMatch(/can reach/)

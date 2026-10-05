@@ -45,8 +45,18 @@ builder.)
 Two related places:
 
 - **Settings → SLA Policies** (`/settings/sla-policies`) is where you **define**
-  SLAs — remediation deadlines per severity, plus a "warning at" threshold.
-  **Create Policy**, edit, or delete.
+  SLAs. The **default policy** applies to every finding:
+  - a finding with a priority class (P0–P3) gets its deadline from the
+    priority window (platform defaults: P0 2 days, P1 5, P2 15, P3 30);
+  - a finding without a class yet uses its severity window;
+  - the finding turns **warning** once the policy's "warning at" percentage of
+    its window has passed, and **overdue** at the deadline;
+  - **Deadline notifications** (on by default) decide whether the warning and
+    the breach are sent to your notification channels; the status changes
+    either way.
+
+  Without a policy the platform defaults apply. Saving a policy changes
+  deadlines computed from then on, not deadlines already set.
 - **Mobilization → SLA Compliance** (`/sla`) is where you **monitor** them — a
   live view of breaches and aging open findings by severity. (This page reports
   status; it doesn't configure SLAs.)

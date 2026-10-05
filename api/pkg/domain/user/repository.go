@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -63,4 +64,19 @@ type Repository interface {
 
 	// GetByPasswordResetToken retrieves a user by password reset token.
 	GetByPasswordResetToken(ctx context.Context, token string) (*User, error)
+
+	// Credential fields are written by these targeted, atomic updates only;
+	// Update never writes them. A whole-row Update from an older snapshot
+	// could otherwise lose concurrent failed-attempt increments or put back
+	// an old password hash (settings audit A-M5).
+
+	// RecordFailedLogin adds one failed attempt and, when the count reaches
+	// maxAttempts, locks the account for lockout. It returns the lock expiry
+	// (nil when the account is not locked).
+	RecordFailedLogin(ctx context.Context, id shared.ID, maxAttempts int, lockout time.Duration) (*time.Time, error)
+	// RecordSuccessfulLogin clears the failed attempts and the lock and sets
+	// last_login_at.
+	RecordSuccessfulLogin(ctx context.Context, id shared.ID) error
+	// UpdatePasswordHash sets the password hash.
+	UpdatePasswordHash(ctx context.Context, id shared.ID, hash string) error
 }
