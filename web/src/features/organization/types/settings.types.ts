@@ -236,9 +236,24 @@ export interface PentestConfigOption {
 }
 
 export interface PentestSettings {
-  campaign_types?: PentestConfigOption[]
-  methodologies?: PentestConfigOption[]
+  campaign_types?: PentestConfigOption[] | null
+  methodologies?: PentestConfigOption[] | null
 }
+
+/** Top-level settings sections, as keyed in TenantSettings.etags. */
+export type SettingsSectionKey =
+  | 'general'
+  | 'security'
+  | 'api'
+  | 'branding'
+  | 'branch'
+  | 'ai'
+  | 'risk_scoring'
+  | 'pentest'
+  | 'asset_identity'
+  | 'asset_source'
+  | 'asset_lifecycle'
+  | 'retest'
 
 export interface TenantSettings {
   general: GeneralSettings
@@ -247,6 +262,11 @@ export interface TenantSettings {
   branding: BrandingSettings
   risk_scoring: RiskScoringSettings
   pentest?: PentestSettings
+  /**
+   * Entity tag of each section as stored. Sent back as If-Match on the
+   * section PATCH so a save never overwrites a change made since the read.
+   */
+  etags?: Partial<Record<SettingsSectionKey, string>>
 }
 
 // ============================================

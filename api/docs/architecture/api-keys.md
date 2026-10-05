@@ -61,6 +61,11 @@ anyone else's key loses a scope as soon as the user loses that permission.
 A key is never an admin: the owner/admin bypass never applies, so a route the
 key has no scope for is `403`.
 
+Every key expires: `expires_in_days` is required, 1 to 365 (settings decision
+B14). Keys minted before this rule without an expiry keep working. A member
+may revoke or delete only their own keys (someone else's key reads as `404`);
+an owner or administrator may revoke or delete any key of the organization.
+
 The key is refused (`401`) when it is unknown, revoked or expired, when its user
 is no longer an active member of the tenant (suspended or removed), when the
 user's account is not active, or when the user's permissions cannot be read.

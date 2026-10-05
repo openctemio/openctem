@@ -227,9 +227,14 @@ type BranchSettings struct {
 }
 
 // PentestSettings holds pentest-related configuration per tenant.
+//
+// A nil list means "never configured" (clients show their built-in
+// defaults); an empty, non-nil list means the organization cleared it on
+// purpose. The fields therefore have no omitempty: with it, a cleared list was
+// dropped on save and came back as the defaults on the next read.
 type PentestSettings struct {
-	CampaignTypes []ConfigOption `json:"campaign_types,omitempty"`
-	Methodologies []ConfigOption `json:"methodologies,omitempty"`
+	CampaignTypes []ConfigOption `json:"campaign_types"`
+	Methodologies []ConfigOption `json:"methodologies"`
 }
 
 // ConfigOption represents a configurable option with value and label.
@@ -1052,21 +1057,13 @@ func (s *Settings) ToMap() map[string]any {
 }
 
 // SettingsFromMap converts map[string]any to Settings.
+//
+// Each section is decoded on its own (SettingsFromMapChecked): a section that
+// cannot be decoded falls back to its default without affecting the others.
+// Enforcement points that must fail closed on a corrupt security section use
+// Tenant.SecuritySettingsStrict instead.
 func SettingsFromMap(m map[string]any) Settings {
-	if len(m) == 0 {
-		return DefaultSettings()
-	}
-	data, _ := json.Marshal(m)
-	var settings Settings
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return DefaultSettings()
-	}
-
-	// Ensure risk_scoring has valid defaults if not present in the map
-	if _, ok := m["risk_scoring"]; !ok {
-		settings.RiskScoring = LegacyRiskScoringSettings()
-	}
-
+	settings, _ := SettingsFromMapChecked(m)
 	return settings
 }
 

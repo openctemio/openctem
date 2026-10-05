@@ -328,6 +328,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SCIMToken: func() *handler.SCIMTokenHandler {
 			h := handler.NewSCIMTokenHandler(svc.SCIMToken, log)
 			h.SetGroupService(svc.SCIMGroups)
+			h.SetAuditService(svc.Audit)
 			return h
 		}(),
 		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
@@ -360,7 +361,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
 
 		// File Attachments (shared across pentest/retest/campaign)
-		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, log),
+		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, svc.Audit, log),
 
 		// Compliance Framework Management
 		Compliance: handler.NewComplianceHandler(svc.Compliance, log),
@@ -388,7 +389,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
 
 		// Suppressions
-		Suppression: handler.NewSuppressionHandler(svc.Suppression, log),
+		Suppression: newSuppressionHandler(svc, log),
 
 		// Access Control
 		Group:          handler.NewGroupHandler(svc.Group, v, log),
@@ -462,6 +463,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// tools and their tenant config, scanner templates) too (RFC-040 §5.11).
 	handlers.Scope.SetAuditService(svc.Audit)
 	handlers.Tool.SetAuditService(svc.Audit)
+	// Configuration changes audited with a before/after diff.
+	handlers.Integration.SetAuditService(svc.Audit)
+	handlers.TemplateSource.SetAuditService(svc.Audit)
+	handlers.SLA.SetAuditService(svc.Audit)
+	handlers.AssignmentRule.SetAuditService(svc.Audit)
+	handlers.ScopeRule.SetAuditService(svc.Audit)
+	handlers.Outbox.SetAuditService(svc.Audit)
+	handlers.PriorityRule.SetAuditService(svc.Audit)
 	// Asset access grants change who sees an asset: audited.
 	handlers.AssetOwner.SetAuditService(svc.Audit)
 	handlers.ScannerTemplate.SetAuditService(svc.Audit)
@@ -639,10 +648,11 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
-func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, log *logger.Logger) *handler.AttachmentHandler {
+func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *app.AuditService, log *logger.Logger) *handler.AttachmentHandler {
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
 	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
+	h.SetAuditService(auditSvc)
 	return h
 }
 
@@ -743,6 +753,9 @@ func newEASMSeedHandler(repos *Repositories, svc *Services, log *logger.Logger) 
 // trail (RFC-036: every human attribution decision is audited).
 func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.AssetAttributionHandler {
 	h := handler.NewAssetAttributionHandler(repos.Attribution, svc.Asset, log)
+	if svc.ActiveGate != nil {
+		h.SetActiveGate(svc.ActiveGate)
+	}
 	if svc.Audit != nil {
 		h.SetAuditService(svc.Audit)
 	}
@@ -761,6 +774,14 @@ func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImpo
 // trail.
 func newReportScheduleHandler(svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
 	h := handler.NewReportScheduleHandler(svc.ReportSchedule, log)
+	h.SetAuditService(svc.Audit)
+	return h
+}
+
+// newSuppressionHandler wires the suppression handler with the tenant audit log
+// (approvals, and self-approvals at Critical severity, are recorded there).
+func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.SuppressionHandler {
+	h := handler.NewSuppressionHandler(svc.Suppression, log)
 	h.SetAuditService(svc.Audit)
 	return h
 }

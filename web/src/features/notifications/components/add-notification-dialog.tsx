@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { enabledEventTypesSchema, enabledSeveritiesSchema } from '../lib/notification-filters'
 import {
   Dialog,
   DialogContent,
@@ -103,9 +104,9 @@ const formSchema = z
     channel_id: z.string().optional(),
     channel_name: z.string().optional(),
     // Severity filters (dynamic JSONB array)
-    enabled_severities: z.array(z.enum(['critical', 'high', 'medium', 'low', 'info', 'none'])),
+    enabled_severities: enabledSeveritiesSchema,
     // Event type filters (dynamic JSONB array)
-    enabled_event_types: z.array(z.string()),
+    enabled_event_types: enabledEventTypesSchema,
     // Advanced settings
     message_template: z.string().max(2000).optional(),
     include_details: z.boolean(),
@@ -661,6 +662,9 @@ export function AddNotificationDialog({
                     )
                   })}
                 </div>
+                {errors.enabled_severities && (
+                  <p className="text-sm text-destructive">{errors.enabled_severities.message}</p>
+                )}
               </div>
 
               <EventTypeSelector
@@ -672,6 +676,10 @@ export function AddNotificationDialog({
                 isLoading={eventTypesLoading}
                 error={eventTypesError}
               />
+
+              {errors.enabled_event_types && (
+                <p className="text-sm text-destructive">{errors.enabled_event_types.message}</p>
+              )}
 
               {/* Advanced Settings */}
               <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>

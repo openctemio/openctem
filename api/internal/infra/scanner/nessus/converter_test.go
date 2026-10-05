@@ -229,3 +229,23 @@ func TestConvert_PatchPublicationDate(t *testing.T) {
 	}
 	t.Fatal("plugin 98765 not converted")
 }
+
+// Both CVSS vectors survive conversion: the CVSS block keeps the v3 score and
+// vector, the properties carry each version for ingest (research 24 P0-2).
+func TestConvert_KeepsBothCVSSVectors(t *testing.T) {
+	rep := convert(t, ConvertOptions{})
+	for _, f := range rep.Findings {
+		if f.RuleID != "98765" {
+			continue
+		}
+		if f.Properties["cvss_v2_vector"] != "AV:N/AC:L/Au:N/C:P/I:N/A:N" ||
+			f.Properties["cvss_v3_vector"] != "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N" {
+			t.Fatalf("vectors: %+v", f.Properties)
+		}
+		if f.Vulnerability.CVSSVector != "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N" {
+			t.Fatalf("primary vector: %q", f.Vulnerability.CVSSVector)
+		}
+		return
+	}
+	t.Fatal("plugin 98765 not converted")
+}

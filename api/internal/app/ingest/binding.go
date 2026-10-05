@@ -204,6 +204,24 @@ func (t coverTarget) coversLocator(host, path string) bool {
 	return false
 }
 
+// namesLocator reports whether the target is this host (and path) itself,
+// or a range that contains this address. A subdomain of a domain target is
+// covered (coversLocator) but not named.
+func (t coverTarget) namesLocator(host, path string) bool {
+	if t.prefix != nil {
+		return t.coversLocator(host, path)
+	}
+	if host == t.host {
+		return t.path == "" || path == t.path
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if tip, err := netip.ParseAddr(t.host); err == nil {
+			return ip.Unmap() == tip.Unmap()
+		}
+	}
+	return false
+}
+
 // alterScope decides which existing assets one ingest may change, and so
 // which human-resolved findings it may reopen. It is filled while the
 // report's assets are processed.
@@ -220,6 +238,47 @@ type alterScope struct {
 	// actor, when set, is the data scope of the person behind an upload
 	// (Options.Actor): it reports whether they may change an existing asset.
 	actor func(shared.ID) bool
+	// seen are the persisted assets this ingest created or updated, by id:
+	// whether it created them and their stored name and type. Attribution
+	// (scan_attribution.go) reads them.
+	seen map[shared.ID]seenAsset
+}
+
+// seenAsset is one asset an ingest wrote.
+type seenAsset struct {
+	created bool
+	name    string
+	typ     asset.TypeRef
+}
+
+// note records an asset this ingest created or updated.
+func (s *alterScope) note(a *asset.Asset, id shared.ID, created bool) {
+	if s == nil || a == nil || id.IsZero() {
+		return
+	}
+	if s.seen == nil {
+		s.seen = map[shared.ID]seenAsset{}
+	}
+	prev, had := s.seen[id]
+	s.seen[id] = seenAsset{created: created || (had && prev.created), name: a.Name(),
+		typ: asset.TypeRef{Type: a.Type(), SubType: a.SubType()}}
+}
+
+// typedTarget reports whether an asset name is one of the bound command's
+// targets itself (the same host, the same repository path, or an address
+// inside a range the tenant listed), not a name found under one: what the
+// tenant typed (research/22 E7).
+func (s *alterScope) typedTarget(name string) bool {
+	if s == nil || len(s.targets) == 0 {
+		return false
+	}
+	host, path := parseLocator(name)
+	for _, t := range s.targets {
+		if t.namesLocator(host, path) {
+			return true
+		}
+	}
+	return false
 }
 
 // withActor limits the scope to the assets the upload's actor may change.
