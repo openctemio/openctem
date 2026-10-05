@@ -64,19 +64,24 @@ func dirSize(dir string) int64 {
 // grows past maxCloneBytes the clone is canceled and ErrRepositoryTooLarge
 // returned.
 func cloneWithSizeCap(ctx context.Context, dir string, clone func(context.Context) (*git.Repository, error)) (*git.Repository, error) {
+	// Read the limits once: the watcher must not touch the package variables
+	// after this call returns (tests change them).
+	limit, poll := maxCloneBytes, cloneSizePoll
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var tooLarge atomic.Bool
 	done := make(chan struct{})
+	stopped := make(chan struct{})
 	go func() {
-		t := time.NewTicker(cloneSizePoll)
+		defer close(stopped)
+		t := time.NewTicker(poll)
 		defer t.Stop()
 		for {
 			select {
 			case <-done:
 				return
 			case <-t.C:
-				if dirSize(dir) > maxCloneBytes {
+				if dirSize(dir) > limit {
 					tooLarge.Store(true)
 					cancel()
 					return
@@ -86,7 +91,8 @@ func cloneWithSizeCap(ctx context.Context, dir string, clone func(context.Contex
 	}()
 	repo, err := clone(cctx)
 	close(done)
-	if tooLarge.Load() || (err == nil && dirSize(dir) > maxCloneBytes) {
+	<-stopped
+	if tooLarge.Load() || (err == nil && dirSize(dir) > limit) {
 		return nil, ErrRepositoryTooLarge
 	}
 	return repo, err
