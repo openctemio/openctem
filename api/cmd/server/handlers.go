@@ -325,6 +325,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScanFreeze:      handler.NewScanFreezeWindowHandler(svc.ScanFreeze, log),
 		Ingest:          ingestHandler,
 		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, log),
+		SensorPairing:   newSensorPairingHandler(svc, log),
 		IOC:             newIOCHandlerWithFindingCheck(deps, log),
 		Validation:      validationHandler,
 		SCIM: func() *handler.SCIMHandler {
@@ -864,4 +865,13 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
 	return admin, handler.NewCIRunnerHandler(ciSvc, log)
+}
+
+// newSensorPairingHandler builds the pairing handler (RFC-052); nil when
+// pairing is disabled.
+func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorPairingHandler {
+	if svc.SensorPairing == nil || svc.Sensor == nil {
+		return nil
+	}
+	return handler.NewSensorPairingHandler(svc.SensorPairing, svc.Sensor, log)
 }

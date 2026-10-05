@@ -100,7 +100,15 @@ func registerSensorManagementRoutes(
 			r.POST("/quarantined-results/{qid}/approve", results.Accept, middleware.Require(permission.SensorsWrite))
 			r.POST("/quarantined-results/{qid}/reject", results.Discard, middleware.Require(permission.SensorsWrite))
 		}
+		// Identity policy (RFC-052 D-4): bearer keys allowed or pairing
+		// only. Requiring key-bound identity narrows, allowing bearer keys
+		// widens (the handler checks which). Before /{id}.
+		r.GET("/identity-policy", h.GetIdentityPolicy, middleware.Require(permission.SensorsRead))
+		r.PUT("/identity-policy", h.SetIdentityPolicy, middleware.RequireAny(permission.SensorsGrantNarrow, permission.SensorsGrantWiden))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead))
+		// Signing keys of key-bound sensors (RFC-052).
+		r.GET("/{id}/keys", h.ListSigningKeys, middleware.Require(permission.SensorsRead))
+		r.POST("/{id}/keys/{key_id}/revoke", h.RevokeSigningKey, middleware.RequireAny(permission.SensorsWrite, permission.SensorsRevoke))
 		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.SensorsRead))
 		// Activity timeline. Audit-log items are added only for callers that
 		// also hold audit:read (the handler checks it).
@@ -129,7 +137,8 @@ func registerSensorManagementRoutes(
 		// Status operations (admin-controlled)
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.SensorsWrite))
 		r.POST("/{id}/deactivate", h.Disable, middleware.Require(permission.SensorsWrite))
-		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.SensorsWrite))
+		// Revoking only narrows: sensors:revoke suffices (RFC-052).
+		r.POST("/{id}/revoke", h.Revoke, middleware.RequireAny(permission.SensorsWrite, permission.SensorsRevoke))
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete))
