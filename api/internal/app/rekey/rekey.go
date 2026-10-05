@@ -8,7 +8,6 @@
 //	  integrations.credentials_encrypted              integration credentials
 //	  integrations.metadata.webhook_secret_encrypted  Jira webhook secret
 //	  integration_scm_extensions.webhook_secret_encrypted (bytea of the text)
-//	  webhooks.secret_encrypted                       outbound webhook secret (bytea of the text)
 //	  tenant_identity_providers.client_secret_encrypted  organization SSO
 //	  platform_identity_provider.client_secret_encrypted platform admin IdP
 //	  admin_idp_login_states.code_verifier_encrypted  in-flight admin IdP logins
@@ -236,7 +235,6 @@ var registry = []location{
 	textCol{table: "integrations", pk: "id", col: "credentials_encrypted"},
 	jsonField{table: "integrations", pk: "id", col: "metadata", path: []string{"webhook_secret_encrypted"}},
 	textCol{table: "integration_scm_extensions", pk: "integration_id", col: "webhook_secret_encrypted", bytea: true},
-	textCol{table: "webhooks", pk: "id", col: "secret_encrypted", bytea: true},
 	textCol{table: "tenant_identity_providers", pk: "id", col: "client_secret_encrypted"},
 	textCol{table: "platform_identity_provider", pk: "id", col: "client_secret_encrypted"},
 	textCol{table: "admin_idp_login_states", pk: "state_hash", col: "code_verifier_encrypted"},
