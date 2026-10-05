@@ -1101,11 +1101,14 @@ trend window takes the same scope). A schedule with no recorded creator, or whos
 longer be resolved (left the organization), is not rendered or sent
 (`failed`).
 
-### Deliberately tenant-wide (counts only, no row data)
+### Tenant-wide aggregates still to scope (counts only, no row data)
 
-These return aggregates over the whole tenant to every holder of the read
-permission. Filtering them would need a scoped variant of each aggregate
-query; none exposes a row, name, title or id of an out-of-scope object.
+These still return aggregates over the whole tenant to every holder of the
+read permission; none exposes a row, name, title or id of an out-of-scope
+object. This is **debt, not a decision**: owner decision D6 (2026-10-04) is
+that aggregates follow the viewer's scope, with org-wide totals only through
+`dashboard:aggregate` and a k ≥ 5 floor. Scoping them is RFC-050 W16;
+`/dashboard/stats` already follows D6.
 
 | Endpoint | Why tenant-wide |
 |---|---|
@@ -1381,9 +1384,13 @@ Tenable.sc's RBAC.
    *product* decision made via seed/migration, never by silently widening a route's
    gate.
 
-5. **No time-limited grants.** There is no `expires_at` on role assignments.
-   Tenable.sc has no expiring grants either; revocation is immediate via
-   `RevokeAllSessions` + version bump. → we will **not** build expiring grants (YAGNI).
+5. **Time-limited access is planned, not yet built.** Owner decision D4
+   (2026-10-04, reversing the 2026-09 AUTHZ-16 "won't build") and A2: `expires_at`
+   plus a reason on direct grants, group memberships and engagements, and expiry
+   on role assignments and guest memberships, checked at read time
+   (RFC-050 W22/W23). Until then there is no `expires_at` on any grant, and
+   revocation is immediate: disable or offboard the member (RFC-050 member
+   lifecycle), or remove the grant/role (`RevokeAllSessions` + version bump).
 
 6. **The module gate is a feature flag, not a security boundary.** It is fail-open
    by design (see "Module-Gate Layer"). Never rely on it to protect data — that is

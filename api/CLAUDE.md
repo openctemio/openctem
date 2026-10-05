@@ -425,7 +425,9 @@ touching any gate. In short:
 - Never treat the frontend perm check as the boundary — backend is the only authority.
 - Never rely on the module gate for security — it is fail-open by design.
 - Never widen a route's gate to "make a role work" — adjust the role's grant via seed/migration.
-- No `expires_at`/time-boxed grants and no permission-set deny-gate (deliberate — see the doc).
+- No permission-set deny-gate (deliberate — see the doc). Expiring access (`expires_at` + reason on
+  grants, group memberships, engagements, role assignments) is **planned** (owner decisions D4/A2,
+  RFC-050 W22/W23); do not add it ad hoc, build it as designed there.
 - Never add a fail-open data-scope mode back ("no scope row means everything", per organization or global): a member with no scope row sees nothing. Don't unify admin/owner oracles without signoff.
 
 ---
