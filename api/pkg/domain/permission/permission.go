@@ -246,11 +246,6 @@ const (
 	NotificationsWrite  Permission = "integrations:notifications:write"
 	NotificationsDelete Permission = "integrations:notifications:delete"
 
-	// Webhook permissions (integrations:webhooks:*)
-	WebhooksRead   Permission = "integrations:webhooks:read"
-	WebhooksWrite  Permission = "integrations:webhooks:write"
-	WebhooksDelete Permission = "integrations:webhooks:delete"
-
 	// API Keys permissions (integrations:api_keys:*)
 	APIKeysRead   Permission = "integrations:api_keys:read"
 	APIKeysWrite  Permission = "integrations:api_keys:write"
@@ -455,7 +450,6 @@ func AllPermissions() []Permission {
 		IntegrationsRead, IntegrationsManage,
 		SCMConnectionsRead, SCMConnectionsWrite, SCMConnectionsDelete,
 		NotificationsRead, NotificationsWrite, NotificationsDelete,
-		WebhooksRead, WebhooksWrite, WebhooksDelete,
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
 		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
 
