@@ -2,6 +2,7 @@ package sensor
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -146,5 +147,28 @@ func TestAccepts_OptIns(t *testing.T) {
 	strict := &LocalPolicyReport{State: LocalPolicyEnforced, Summary: &LocalPolicySummary{TargetsAllow: -1}}
 	if got := Accepts(strict, oast, DispatchOptions{OptIns: &OptIns{AllowInteractsh: true}}); got == nil || got.Layer != RefusalLayerLocal {
 		t.Errorf("enabled but locally refused: %+v", got)
+	}
+}
+
+func TestRefusalOf(t *testing.T) {
+	if RefusalOf(nil, "connection reset") != nil {
+		t.Fatal("an ordinary failure read as a refusal")
+	}
+	got := RefusalOf(nil, "refused by local policy: tools.allow: nuclei is not allowed on this sensor")
+	if got == nil || got.Layer != RefusalLayerLocal || got.Rule != "tools.allow" || got.Detail != "nuclei is not allowed on this sensor" {
+		t.Fatalf("text refusal: %+v", got)
+	}
+	if got.Message() != "refused by local policy: tools.allow: nuclei is not allowed on this sensor" {
+		t.Fatalf("message %q does not keep the prefix", got.Message())
+	}
+	// A structured refusal is sanitized: unknown layer and malformed rule
+	// are not stored as sent, control characters are removed.
+	got = RefusalOf(&DispatchRefusal{Layer: "Root\n", Rule: "rm -rf /", Detail: "x\u202ey\nz"}, "")
+	if got.Layer != "unknown" || got.Rule != "unknown" || strings.ContainsAny(got.Detail, "\n\u202e") {
+		t.Fatalf("sanitized: %+v", got)
+	}
+	got = RefusalOf(&DispatchRefusal{Layer: "managed", Rule: "allow_interactsh"}, "anything")
+	if got.Layer != RefusalLayerManaged || got.Message() != "refused by the managed policy: allow_interactsh" {
+		t.Fatalf("structured: %+v %q", got, got.Message())
 	}
 }

@@ -49,7 +49,21 @@ type MemberStatus string
 const (
 	MemberStatusActive    MemberStatus = "active"
 	MemberStatusSuspended MemberStatus = "suspended"
+	// MemberStatusOffboarded is the tombstone of a member who left: the row
+	// stays so foreign keys and history keep pointing at it, but every access
+	// source (roles, groups, grants, keys, engagements) was stripped. It never
+	// grants anything: every gate admits MemberStatusActive only.
+	MemberStatusOffboarded MemberStatus = "offboarded"
 )
+
+// IsValid reports whether s is a known membership status.
+func (s MemberStatus) IsValid() bool {
+	switch s {
+	case MemberStatusActive, MemberStatusSuspended, MemberStatusOffboarded:
+		return true
+	}
+	return false
+}
 
 // Membership represents a user's membership in a tenant.
 // Note: Role is now stored in the user_roles table, not in tenant_members.
@@ -215,9 +229,21 @@ func (m *Membership) Status() MemberStatus {
 	return m.status
 }
 
-// IsSuspended returns true if the membership is suspended.
+// IsSuspended returns true if the membership is suspended (disabled).
 func (m *Membership) IsSuspended() bool {
 	return m.status == MemberStatusSuspended
+}
+
+// IsOffboarded returns true for the tombstone of a member who left.
+func (m *Membership) IsOffboarded() bool {
+	return m.status == MemberStatusOffboarded
+}
+
+// IsActive returns true only for an active membership. Every access gate
+// must use this positive check, never !IsSuspended(): a status added later
+// (offboarded) must not grant access by default.
+func (m *Membership) IsActive() bool {
+	return m.Status() == MemberStatusActive
 }
 
 // SuspendedAt returns when the membership was suspended (nil if active).
@@ -240,6 +266,9 @@ func (m *Membership) Suspend(by shared.ID) error {
 	if m.IsSuspended() {
 		return fmt.Errorf("%w: membership is already suspended", shared.ErrValidation)
 	}
+	if m.IsOffboarded() {
+		return fmt.Errorf("%w: membership was offboarded", shared.ErrValidation)
+	}
 	now := time.Now().UTC()
 	m.status = MemberStatusSuspended
 	m.suspendedAt = &now
@@ -260,6 +289,41 @@ func (m *Membership) Reactivate() error {
 		return fmt.Errorf("%w: membership is not suspended", shared.ErrValidation)
 	}
 	m.status = MemberStatusActive
+	m.suspendedAt = nil
+	m.suspendedBy = nil
+	return nil
+}
+
+// Offboard turns the membership into a tombstone. Allowed from active or
+// suspended, never for the owner. The caller strips every access source and
+// reassigns owned work in the same transaction.
+func (m *Membership) Offboard() error {
+	if m.IsOwner() {
+		return fmt.Errorf("%w: cannot offboard the tenant owner", shared.ErrValidation)
+	}
+	if m.IsOffboarded() {
+		return fmt.Errorf("%w: membership is already offboarded", shared.ErrValidation)
+	}
+	m.status = MemberStatusOffboarded
+	m.suspendedAt = nil
+	m.suspendedBy = nil
+	return nil
+}
+
+// Rejoin re-activates an offboarded tombstone for a re-invited person with a
+// new role. It starts from zero: the offboarding already stripped every
+// access source, so only the role given here is granted.
+func (m *Membership) Rejoin(role Role, invitedBy *shared.ID) error {
+	if !m.IsOffboarded() {
+		return fmt.Errorf("%w: membership is not offboarded", shared.ErrValidation)
+	}
+	if !role.IsValid() || role == RoleOwner {
+		return fmt.Errorf("%w: invalid role", shared.ErrValidation)
+	}
+	m.status = MemberStatusActive
+	m.role = role
+	m.invitedBy = invitedBy
+	m.joinedAt = time.Now().UTC()
 	m.suspendedAt = nil
 	m.suspendedBy = nil
 	return nil

@@ -46,6 +46,9 @@ type AssetProcessor struct {
 	identityReviewer IdentityReviewer
 	propsValidator   *validator.PropertiesValidator
 	logger           *logger.Logger
+	// ports reads and closes open_port assets (research/22 P0-6; nil = ports
+	// are only ever added).
+	ports PortReconciler
 
 	// assetsDiscoveredCallback receives the assets THIS ingest actually
 	// inserted (nil = disabled). It drives the `asset_discovered` workflow
@@ -344,6 +347,12 @@ func (p *AssetProcessor) processBatch(
 			}
 		}
 	}()
+
+	// Open ports listed on an address become open_port assets that go
+	// through the rules below like any reported asset (research/22 P0-6).
+	if n := expandOpenPorts(report); n > 0 {
+		p.logger.Debug("expanded open ports into port assets", "count", n)
+	}
 
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
@@ -791,6 +800,20 @@ func (p *AssetProcessor) processBatch(
 	if p.relRepo != nil {
 		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered, excl)
 	}
+
+	// Step 9: Ports: address → port edges, host name → address, and ports a
+	// port scan no longer sees are closed (research/22 P0-6).
+	p.surfacePorts(ctx, tenantID, report, existingMap, func(id shared.ID) bool {
+		if scope == nil || scope.all {
+			return true
+		}
+		for ref := range alterRefs {
+			if mid, ok := assetMap[ref]; ok && mid == id {
+				return true
+			}
+		}
+		return false
+	})
 
 	// Step 8: Typed edges from related_assets (service -> the certificate
 	// it served).
