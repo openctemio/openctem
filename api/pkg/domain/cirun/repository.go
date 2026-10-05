@@ -71,6 +71,32 @@ type Repository interface {
 	ActiveOverride(ctx context.Context, tenantID, assetID shared.ID, sha string, now time.Time) (*GateOverride, error)
 
 	PipelineRepository
+	CoverageRepository
+}
+
+// Coverage errors.
+var (
+	ErrExpectationNotFound = fmt.Errorf("%w: coverage expectation not found", shared.ErrNotFound)
+	ErrPipelineRetired     = fmt.Errorf("%w: the CI pipeline is already retired", shared.ErrConflict)
+	ErrRepositoryNotFound  = fmt.Errorf("%w: repository not found", shared.ErrNotFound)
+)
+
+// CoverageRepository persists coverage expectations, alert state and the
+// stale-source finding updates. Every method but PipelineTenantsForPlatform
+// is tenant-scoped.
+type CoverageRepository interface {
+	ListRepositories(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]RepositoryRef, error)
+	CoverageObservations(ctx context.Context, tenantID shared.ID, since time.Time) ([]CoverageObservation, error)
+	ListExpectations(ctx context.Context, tenantID shared.ID) (map[shared.ID]Expectation, error)
+	UpsertExpectation(ctx context.Context, e *Expectation) error
+	DeleteExpectation(ctx context.Context, tenantID, assetID shared.ID) error
+	RepositoryExists(ctx context.Context, tenantID, assetID shared.ID) (bool, error)
+	ListAlertState(ctx context.Context, tenantID shared.ID) ([]AlertState, error)
+	FireAlert(ctx context.Context, tenantID shared.ID, a Alert, at time.Time) (bool, error)
+	ClearAlert(ctx context.Context, tenantID, subjectID shared.ID, kind AlertKind) error
+	PipelineTenantsForPlatform(ctx context.Context) ([]shared.ID, error)
+	MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *Pipeline) ([]shared.ID, error)
+	RetirePipeline(ctx context.Context, tenantID, pipelineID shared.ID, by *shared.ID, reason string, at time.Time) (*Pipeline, []shared.ID, error)
 }
 
 // PipelineCaps bound the pipelines a tenant and a trust configuration may

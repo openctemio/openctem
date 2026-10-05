@@ -210,12 +210,27 @@ export const LEGACY_ORPHAN_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   { source: '/simulation/scenarios', destination: '/attack-simulation', permanent: true },
 ]
 
+/**
+ * The CI runners page became the Sensors page in runner mode (api RFC-051
+ * §10): CI pipelines are listed with the daemons, their runs under Runs. A
+ * verdict links to /ci-runners/{run id}; that link opens the run there.
+ */
+export const LEGACY_CI_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
+  {
+    source: '/ci-runners/:id',
+    destination: '/sensors?mode=runner&view=runs&run=:id',
+    permanent: true,
+  },
+  { source: '/ci-runners', destination: '/sensors?mode=runner', permanent: true },
+]
+
 export const LEGACY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   ...LEGACY_SENSOR_ROUTE_REDIRECTS,
   ...LEGACY_SETTINGS_ROUTE_REDIRECTS,
   ...LEGACY_VALIDATION_ROUTE_REDIRECTS,
   ...LEGACY_DISCOVERY_ROUTE_REDIRECTS,
   ...LEGACY_ORPHAN_ROUTE_REDIRECTS,
+  ...LEGACY_CI_ROUTE_REDIRECTS,
 ]
 
 /**

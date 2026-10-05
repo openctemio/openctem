@@ -15,6 +15,15 @@ const FORMAT_LABELS: Record<string, string> = {
   csaf: 'CSAF',
   openvex: 'OpenVEX',
   defectdojo: 'DefectDojo Generic Findings',
+  sarif: 'SARIF 2.1.0',
+  trivy: 'trivy',
+  grype: 'grype',
+  semgrep: 'semgrep',
+  gitleaks: 'gitleaks',
+  betterleaks: 'betterleaks',
+  nuclei: 'nuclei',
+  zap: 'ZAP',
+  vuls: 'vuls',
 }
 
 /** Human name of a detected format; the raw value when it is not known here. */
