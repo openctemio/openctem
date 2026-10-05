@@ -318,7 +318,27 @@ Redis error), and every change is audited high. Rows are per tenant, so two
 organizations may verify the same domain and neither learns of the other.
 The 12-hour re-check marks a lost record `failed`, and names under it stop
 auto-confirming.
-||||||| 581f55743
+## 4f. Review queue reachable, honest counts (built, P0-12)
+
+- **Reachable:** the Attack surface sidebar row carries the section tabs
+  Overview (`/attack-surface`) and Review (`/attack-surface/review`). The row
+  badge and the Review tab count are the queue's own total for
+  `needs_review` + `candidate` (`GET /easm/candidates?states=needs_review,candidate&per_page=1`,
+  data-scoped like the queue), so the three numbers always agree. The queue's
+  tab is in the URL: `?tab=rejected` opens "Not ours".
+- **Honest counts:** the overview "Needs review" counts `needs_review` and
+  `candidate` (what the queue lists). `GET /attack-surface/stats` (cards,
+  exposed list, trends) and `/attack-surface/external` cover **approved**
+  assets only, so a rejected or unreviewed name is never shown as exposed
+  surface. Top risks already excluded rejected assets.
+- **One definition of internet-facing:** `exposure = public`, on the
+  attack-surface pages and the inventory strip alike (the strip used
+  `is_internet_accessible`, which CT-promoted names do not set).
+- `?attribution=all` is accepted (no filter) next to `approved`,
+  `unconfirmed`, `unrecorded` and the states.
+- Decision E1 (308 `/attack-surface/external` → filtered `/assets`) waits for
+  the inventory's external columns (attribution, last seen, certificate
+  expiry, CDN).
 
 ## 5. Data model (planned)
 
@@ -335,6 +355,23 @@ auto-confirming.
 - **Time.** `first_seen`/`last_seen` per asset and per observation; the CT
   `not_before` and the passive-DNS first-seen give the earliest external
   evidence, which is what MTTD is measured against.
+
+## 5a. After a decision (built, P0-9)
+
+A person's attribution decision (review queue `POST /easm/candidates/decisions`
+or `PUT /assets/{id}/attribution`) is followed by
+`easm.DecisionEffects.AfterDecision`, best effort and only for the assets the
+decision stored (tenant and data scope already checked):
+
+- **Reclassify now** (22c B4): an asset-scoped request on the priority
+  reclassify queue, which is drained every minute, so the P2 cap on findings
+  of unconfirmed assets lifts (or applies) within two minutes instead of the
+  12-hour sweep.
+- **Rejection hygiene** (22c B2): on `rejected`, the name's open CT and
+  DNS-check exposures, and those of every name under it, are resolved with
+  state history; the CT monitor stops writing exposures for rejected and
+  tombstoned names. See
+  [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md#rejected-names-identity-and-linking).
 
 ## 6. Known limits of what is built
 
