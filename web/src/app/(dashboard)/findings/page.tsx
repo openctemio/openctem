@@ -32,6 +32,7 @@ import {
   groupFindingSourcesByCategory,
 } from '@/features/config/api/finding-source-api'
 import { useDebounce } from '@/hooks/use-debounce'
+import { toDisplayText } from '@/lib/untrusted-text'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -49,6 +50,7 @@ import {
   BulkActionBar,
   FilterPanelToggle,
   FilterSheet,
+  TruncatedText,
   SegmentedLens,
   DrillDownBreadcrumb,
 } from '@/features/shared'
@@ -1146,7 +1148,7 @@ function FindingsContent() {
               // The title leads the name, so a screen reader announces which
               // finding the button opens (it used to read "View finding
               // details" on every row).
-              aria-label={`${row.getValue('title')}, view details`}
+              aria-label={`${toDisplayText(row.getValue('title'), 300)}, view details`}
               onClick={() => handleRowClick(row.original)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -1156,7 +1158,10 @@ function FindingsContent() {
               }}
             >
               <div className="flex items-center gap-1.5">
-                <p className="font-medium truncate">{row.getValue('title')}</p>
+                {/* Scanner-supplied text: escaped, isolated, never markup. */}
+                <p dir="auto" className="font-medium truncate [unicode-bidi:isolate]">
+                  {toDisplayText(row.getValue('title'), 500)}
+                </p>
                 {/* KEV — actively exploited; the single most urgent triage signal */}
                 {row.original.isInKev && (
                   <Tooltip>
@@ -1269,12 +1274,11 @@ function FindingsContent() {
             )
           }
           return (
-            <span
-              className="text-muted-foreground block max-w-[200px] truncate font-mono text-sm"
-              title={name}
-            >
-              {name}
-            </span>
+            <TruncatedText
+              value={name}
+              label="Location"
+              className="max-w-[200px] font-mono text-sm text-muted-foreground"
+            />
           )
         },
       },
@@ -1790,7 +1794,9 @@ function FindingsContent() {
     >
       <SeverityBadge severity={f.severity} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
-        <p className="line-clamp-2 text-sm font-medium">{f.title}</p>
+        <p dir="auto" className="line-clamp-2 text-sm font-medium [unicode-bidi:isolate]">
+          {toDisplayText(f.title, 500)}
+        </p>
         {(f.cve || f.scanner) && (
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {f.cve && <span className="font-mono">{f.cve}</span>}

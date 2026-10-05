@@ -72,6 +72,48 @@ function crossSpawn(over: Partial<ApiFinding> = {}): ApiFinding {
 }
 
 describe('toFindingDetail', () => {
+  it('maps the scanner facts, both vectors and the scanner output (research 24 P0-3)', () => {
+    const d = toFindingDetail(
+      crossSpawn({
+        family: 'General',
+        vpr_score: 8.9,
+        cvss_version: '3.x',
+        cve_ids: ['CVE-2024-21538', 'CVE-2024-0001'],
+        patch_published_at: '2024-01-01T00:00:00Z',
+        exploit_available: true,
+        network_port: 443,
+        network_transport: 'tcp',
+        network_service: 'https',
+        cvss_v2_vector: 'AV:N/AC:L/Au:N/C:P/I:N/A:N',
+        cvss_v3_vector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
+        scanner_output: {
+          text: 'raw <b>output</b>',
+          updated_at: '2026-10-01T00:00:00Z',
+          truncated: false,
+        },
+      })
+    )
+    expect(d.scannerFacts).toMatchObject({
+      family: 'General',
+      vprScore: 8.9,
+      cvssVersion: '3.x',
+      cveIds: ['CVE-2024-21538', 'CVE-2024-0001'],
+      exploitAvailable: true,
+      networkPort: 443,
+      cvssV2Vector: 'AV:N/AC:L/Au:N/C:P/I:N/A:N',
+    })
+    expect(d.scannerOutput).toEqual({
+      text: 'raw <b>output</b>',
+      updatedAt: '2026-10-01T00:00:00Z',
+      truncated: false,
+    })
+    // The finding's own exploit verdict (the column) raises the exploitation signal.
+    expect(riskSignals(d).some((s) => s.key === 'exploit' && s.label === 'Public exploit')).toBe(
+      true
+    )
+    expect(toFindingDetail(crossSpawn()).scannerOutput).toBeUndefined()
+  })
+
   it('maps the CTEM signals the old page dropped', () => {
     const f = toFindingDetail(crossSpawn())
     expect(f.priorityClass).toBe('P1')

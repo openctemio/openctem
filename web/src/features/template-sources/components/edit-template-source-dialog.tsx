@@ -142,7 +142,8 @@ export function EditTemplateSourceDialog({
       description: data.description,
       auto_sync_on_scan: data.auto_sync_on_scan,
       cache_ttl_minutes: data.cache_ttl_minutes,
-      credential_id: data.credential_id || undefined,
+      // "" unbinds the credential ("None"); absent would mean unchanged.
+      credential_id: data.credential_id ?? '',
     }
 
     // Add source-specific config based on source type

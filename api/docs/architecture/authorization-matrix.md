@@ -992,6 +992,10 @@ results an out-of-scope id is reported exactly like an unknown id.
   and full-data decision — the findings list/search, the asset list and
   `/findings/stats`; their SQL gives the same answer as a resolved scope (no
   scope row, nothing).
+- **Asset-less exposures are full-data only for writes too** (D11, research
+  21b H1): exposure create, ingest and bulk ingest refuse an exposure with no
+  `asset_id` from a restricted caller (400), so the fingerprint upsert cannot
+  overwrite an asset-less exposure a restricted member cannot see.
 - **Indirect lists:** the resolved scope is pushed into SQL as
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
@@ -1622,3 +1626,16 @@ answer "may they touch *this* row". For that:
 - Never authorize a mutation off the request body's tenant/owner fields — derive the
   principal's tenant from the authenticated context (or, for agents, from the agent
   key), never from client-supplied data.
+
+## Web console: mutating controls follow the route table
+
+The web console shows a mutating control (Save, Delete, Add, Test, Sync) only
+when the caller passes the gate of the API route it calls. The gates come from
+`web/src/config/api-route-permissions.json`, which
+`tests/unit/route_permission_map_test.go` generates from the route source
+(`UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run TestRoutePermissionMapIsCurrent`;
+CI fails when it is stale). Components call `useCanMutate("METHOD /path")`
+(`web/src/lib/permissions/can-mutate.ts`) instead of picking a permission by
+hand, which is how about 15 settings controls drifted from the API (shown and
+then 403, or hidden although allowed). This is UX only; the API gate stays the
+authority.

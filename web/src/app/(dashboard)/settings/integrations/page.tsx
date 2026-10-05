@@ -23,18 +23,24 @@ import { Can, Permission } from '@/lib/permissions'
 import { useSCMConnections } from '@/features/repositories/hooks/use-repositories'
 import type { SCMConnection } from '@/features/repositories/types/repository.types'
 import { useIntegrationsApi } from '@/features/integrations/api'
+import {
+  integrationManageHref,
+  isSiemIntegration,
+} from '@/features/integrations/lib/integration-routing'
 import type {
   Integration,
   IntegrationCategory,
 } from '@/features/integrations/types/integration.types'
 
-// Per-category label + the sub-page that manages it.
-const categoryMeta: Record<IntegrationCategory, { label: string; href: string }> = {
-  scm: { label: 'Source control', href: '/settings/integrations/scm' },
-  security: { label: 'Vulnerability scanners', href: '/settings/integrations/scanners' },
-  ticketing: { label: 'Ticketing', href: '/settings/integrations/ticketing' },
-  cloud: { label: 'Cloud', href: '/settings/integrations' },
-  notification: { label: 'Notification channels', href: '/settings/integrations/notifications' },
+// Per-category label. The page that manages an integration comes from
+// integrationManageHref (SIEM destinations are notification-category rows
+// managed on the SIEM page).
+const categoryLabel: Record<IntegrationCategory, string> = {
+  scm: 'Source control',
+  security: 'Vulnerability scanners',
+  ticketing: 'Ticketing',
+  cloud: 'Cloud',
+  notification: 'Notification channels',
 }
 
 // Status badge for every IntegrationStatus the API can return. Only a problem
@@ -74,7 +80,7 @@ const columns: ColumnDef<Integration>[] = [
   {
     id: 'category',
     header: 'Category',
-    accessorFn: (i) => categoryMeta[i.category]?.label ?? i.category,
+    accessorFn: (i) => (isSiemIntegration(i) ? 'SIEM' : (categoryLabel[i.category] ?? i.category)),
     cell: ({ getValue }) => <Badge variant="outline">{getValue<string>()}</Badge>,
   },
   {
@@ -102,7 +108,7 @@ const columns: ColumnDef<Integration>[] = [
     cell: ({ row }) => (
       <Can permission={Permission.IntegrationsRead} mode="hide">
         <Button variant="ghost" size="sm" asChild>
-          <Link href={categoryMeta[row.original.category]?.href ?? '/settings/integrations'}>
+          <Link href={integrationManageHref(row.original)}>
             Manage
             <ArrowRight className="ms-1 h-4 w-4" />
           </Link>
