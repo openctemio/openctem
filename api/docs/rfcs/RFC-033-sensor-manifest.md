@@ -123,16 +123,15 @@ side notices. A manifest that the platform validates and **answers**
 | **HashiCorp Nomad** | At start the client runs fingerprinters (attributes such as `cpu.numcores`, `driver.docker.version`, `os.name`; drivers with *Detected* / *Healthy*) and calls `Node.Register`. A fingerprint diff (`updateNodeFromFingerprint`, `batchNodeUpdates`) calls `Node.Register` again. `ComputeClass` hashes the node's attributes, meta, class, pool and resources into `v1:<hash>` and **excludes `unique.*`** keys. | `Node.UpdateStatus`, which does not recompute the class. The **server** sets the heartbeat TTL (`HeartbeatTTL` in the response). | Re-register on change (M2). A digest over the stable part only, with unique fields excluded (M1, M3). The server steers the cadence (the doorbell already does). |
 | **GitHub Actions runners** | `config.sh --labels` at registration. Default labels are `self-hosted`, OS and architecture. Labels change later only through the UI or API. | — | Jobs route by labels (`runs-on`). The labels are flat and self-declared, with no versions. A manifest has to carry more than labels. |
 | **Buildkite agent** | `AgentRegisterRequest` {Name, Hostname, OS, Arch, Version, Build, Tags, PID, MachineID, Features}. The response returns an access token and **server-chosen** `PingInterval`, `JobStatusInterval`, `HeartbeatInterval`. | `Heartbeat` {SentAt, ReceivedAt} only. | A registration payload separate from a minimal heartbeat. The server answers registration with what the agent should do. |
-| **Tenable Nessus Agents** | Linked with a key. The agent reports its version, host architecture, the **versions of installed plugins**, OS, interfaces and hostname. | Checks in "on start, after a restart, and whenever metadata is updated (no more than every 10 minutes)". | Send on start and on change, rate-limited. Content versions belong in the self-description (RFC-031). |
 | **Envoy xDS** | — (server → client) | ACK echoes `version_info` and `response_nonce`. A NACK carries `error_detail` and the **previously accepted** version. | The receiver says what it accepted and what it rejected (M4). Each side echoes the other's version, not its own canonical form (M3). |
 | **Consul anti-entropy** | The agent's local state is authoritative, and it notifies the servers on change. | Periodic full sync, 1 min for clusters up to 128 nodes and longer for larger ones, staggered. | A periodic resync guards against a lost change: the digest in every heartbeat does this for free. |
 
 No system we found does exactly "digest in the heartbeat, full re-send on a
 mismatch". The design combines Nomad's hash over stable attributes,
 Kubernetes' change-or-slow-resync status, Consul's resync safety net and
-xDS's accepted/rejected answer. CrowdStrike Falcon's sensor reporting is not
-publicly documented (only sensor update policies are), so it is not used.
-Sources are in §11.
+xDS's accepted/rejected answer. The self-description includes the versions of
+installed content (RFC-031), and it is sent on start and on change,
+rate-limited. Sources are in §11.
 
 ## 5. Trust
 
@@ -546,7 +545,7 @@ heartbeat-derived manifest exists for sensor-docker-01.
   Rejected.
 - **Send the manifest only once, at enrollment.** Tools are installed and
   upgraded, and content changes daily. A one-time registration goes stale.
-  Nomad and Tenable both re-send on change. Rejected.
+  Rejected.
 - **Let the platform poll the sensor for its manifest.** Sensors are
   outbound-only (RFC-023), so there is nothing for the platform to poll.
   Rejected.
@@ -640,8 +639,6 @@ The questions as they were put, with the recommendation:
   `Heartbeat`): https://pkg.go.dev/github.com/buildkite/agent/v4/api
 - Buildkite `agent start` (tags, ping mode):
   https://buildkite.com/docs/agent/v3/cli-start
-- Tenable Vulnerability Management, Agents (linking, check-in, reported
-  metadata): https://docs.tenable.com/vulnerability-management/Content/Settings/Sensors/Agents.htm
 - Envoy xDS protocol (ACK/NACK, `version_info`, `error_detail`):
   https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol
 - Consul anti-entropy: https://developer.hashicorp.com/consul/docs/concept/consistency
