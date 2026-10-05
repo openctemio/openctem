@@ -191,6 +191,8 @@ type Service struct {
 
 	// tombstones lets promotion skip rejected names (nil: no check).
 	tombstones TombstoneChecker
+	// relinker moves stored CT exposures onto their host's asset.
+	relinker ExposureRelinker
 
 	// seeds lists root_domain seeds to watch (nil: none).
 	seeds SeedRootLister
@@ -357,13 +359,13 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 	}
 
 	client := &sweepClient{s: s}
-	var events []*exposuredom.ExposureEvent
+	found := make([]rootFinds, 0, len(due))
 	var promotions []promotion
 	failed, queried, excludedHosts := 0, 0, 0
 	started := s.now()
 	for i, root := range due {
 		if err := ctx.Err(); err != nil {
-			return len(events), err
+			return 0, err
 		}
 		if s.sweepBudget > 0 && s.now().Sub(started) > s.sweepBudget {
 			s.logger.Warn("ct sweep: time budget spent; the remaining domains go first next run",
@@ -374,7 +376,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		// Politeness delay between queries (not before the first one).
 		if i > 0 && s.requestDelay > 0 {
 			if err := s.sleep(ctx, s.requestDelay); err != nil {
-				return len(events), err
+				return 0, err
 			}
 		}
 
@@ -386,7 +388,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		res, err := client.fetch(ctx, root.name)
 		if err != nil {
 			if ctx.Err() != nil {
-				return len(events), ctx.Err()
+				return 0, ctx.Err()
 			}
 			failed++
 			st.ConsecutiveFailures++
@@ -403,7 +405,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		d := collectDiscoveries(root.name, res.entries, attempted, s.expiryWindow, s.expiredLookback, s.maxSubs)
 		d, dropped := withoutExcluded(d, excl)
 		excludedHosts += dropped
-		events = append(events, s.buildEvents(tenantID, root, assetsByName, d)...)
+		found = append(found, rootFinds{root: root, d: d})
 		for _, h := range d.promotable {
 			promotions = append(promotions, promotion{host: h, root: root, source: res.source})
 		}
@@ -417,16 +419,29 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		s.saveState(ctx, tenantID, st)
 	}
 
+	// Promote first, so a new name's exposures link to its own asset.
+	promoted, err := s.promote(ctx, tenantID, promotions)
+	if err != nil {
+		// Exposures are still written; promotion retries on the next run.
+		s.logger.Warn("ct promotion failed", "tenant_id", tenantID.String(), "error", err)
+	}
+
+	own, rejected, err := s.hostAssets(ctx, tenantID, hostsOf(found))
+	if err != nil {
+		return 0, err
+	}
+	var events []*exposuredom.ExposureEvent
+	rejectedHosts := 0
+	for _, f := range found {
+		d, dropped := withoutRejected(f.d, rejected)
+		rejectedHosts += dropped
+		events = append(events, s.buildEvents(tenantID, f.root, assetsByName, own, d)...)
+	}
 	if len(events) > 0 {
 		if err := s.exposureRepo.BulkUpsert(ctx, events); err != nil {
 			return 0, fmt.Errorf("failed to upsert CT exposures: %w", err)
 		}
-	}
-
-	promoted, err := s.promote(ctx, tenantID, promotions)
-	if err != nil {
-		// Exposures are written; promotion retries on the next run.
-		s.logger.Warn("ct promotion failed", "tenant_id", tenantID.String(), "error", err)
+		s.relink(ctx, tenantID, events)
 	}
 
 	s.logger.Info("ct sweep complete",
@@ -435,6 +450,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		"domains_queried", queried,
 		"domains_failed", failed,
 		"hosts_excluded", excludedHosts,
+		"hosts_rejected", rejectedHosts,
 		"exposures", len(events),
 		"assets_promoted", promoted)
 	return len(events), nil
@@ -557,10 +573,41 @@ func nearestAsset(host string, root rootDomain, assetsByName map[string]shared.I
 	return root.assetID
 }
 
+// link ties a CT exposure to the host's own asset, else its nearest domain
+// asset, else the root's, and gives it the asset-independent CT identity.
+func link(ev *exposuredom.ExposureEvent, tenantID shared.ID, host string, root rootDomain, assetsByName, own map[string]shared.ID) {
+	if id, ok := own[host]; ok {
+		ev.SetAssetID(&id)
+	} else if id := nearestAsset(host, root, assetsByName); id != nil {
+		ev.SetAssetID(id)
+	}
+	ev.UseFingerprint(ctFingerprint(tenantID, ev, host))
+}
+
+// relink moves stored CT exposures onto the asset this sweep linked them to
+// (a row first written with no asset, or with the root's). Best effort.
+func (s *Service) relink(ctx context.Context, tenantID shared.ID, events []*exposuredom.ExposureEvent) {
+	if s.relinker == nil {
+		return
+	}
+	links := map[string]shared.ID{}
+	for _, ev := range events {
+		if id := ev.AssetID(); id != nil {
+			links[ev.Fingerprint()] = *id
+		}
+	}
+	if len(links) == 0 {
+		return
+	}
+	if _, err := s.relinker.RelinkExposures(ctx, tenantID, Source, links); err != nil {
+		s.logger.Warn("ct sweep: exposures not relinked", "tenant_id", tenantID.String(), "error", err)
+	}
+}
+
 // buildEvents converts the pure discovery results into ExposureEvents for the
 // given tenant/root. Events that fail construction are skipped (defensive;
 // inputs are already validated).
-func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName map[string]shared.ID, d discoveries) []*exposuredom.ExposureEvent {
+func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName, own map[string]shared.ID, d discoveries) []*exposuredom.ExposureEvent {
 	events := make([]*exposuredom.ExposureEvent, 0, len(d.subdomains)+len(d.expiring)+len(d.expired))
 
 	for _, host := range d.subdomains {
@@ -583,9 +630,7 @@ func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName 
 		ev.UpdateDescription(fmt.Sprintf(
 			"A TLS certificate for %q (under your monitored domain %q) was found in public Certificate Transparency logs. "+
 				"Confirm this host is known and intended to be internet-facing.", host, root.name))
-		if id := nearestAsset(host, root, assetsByName); id != nil {
-			ev.SetAssetID(id)
-		}
+		link(ev, tenantID, host, root, assetsByName, own)
 		events = append(events, ev)
 	}
 
@@ -605,9 +650,7 @@ func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName 
 			"The most recent public TLS certificate for %q expires on %s (%d day(s) away). "+
 				"An expired certificate breaks TLS for this host — renew before it lapses.",
 			ec.Host, ec.NotAfter.Format("2006-01-02"), ec.DaysLeft))
-		if id := nearestAsset(ec.Host, root, assetsByName); id != nil {
-			ev.SetAssetID(id)
-		}
+		link(ev, tenantID, ec.Host, root, assetsByName, own)
 		events = append(events, ev)
 	}
 
@@ -628,9 +671,7 @@ func (s *Service) buildEvents(tenantID shared.ID, root rootDomain, assetsByName 
 				"appears in Certificate Transparency logs. If the host still serves TLS, clients now reject it; "+
 				"if it was retired, remove its DNS records.",
 			ec.Host, ec.NotAfter.Format("2006-01-02"), -ec.DaysLeft))
-		if id := nearestAsset(ec.Host, root, assetsByName); id != nil {
-			ev.SetAssetID(id)
-		}
+		link(ev, tenantID, ec.Host, root, assetsByName, own)
 		events = append(events, ev)
 	}
 
