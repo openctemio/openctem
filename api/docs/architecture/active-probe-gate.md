@@ -37,7 +37,11 @@ For each target, in order:
    Free text that names no asset is checked here only for rejected names;
    whether it matches a scope target is the act-scope check below. The
    caller sees one generic reason; the state that refused the target is
-   logged (`active scan target refused`) with the path.
+   logged (`active scan target refused`) with the path. A request refused as
+   a whole (scan create, clone, import, quick scan, `POST /commands`) is also
+   **audited** as `scan.target_refused` (medium, result `failure`) in the
+   caller's tenant, with the actor, the path, the exact count and up to 50
+   refused targets with the state that refused each.
 4. **Scan-zone routing** (RFC-023): a target no zone covers, a zone without
    sensors, or a pinned sensor outside the target's zone is refused. An
    allowed zoned target returns its zone, and the command is stamped with it
@@ -51,7 +55,7 @@ any lookup error returns an error, and the caller dispatches nothing.
 
 | Entry point | Behavior on a refused target |
 |---|---|
-| Scan create, clone, import (`CreateScan`), quick scan, `POST /commands` | the request is refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, the targets named with the generic reason) |
+| Scan create, clone, import (`CreateScan`), quick scan, `POST /commands` | the request is refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, the targets named with the generic reason) and audited (`scan.target_refused`) |
 | Scan run: manual trigger, schedule, retry controller, workflow trigger | the target (direct or group member) is skipped with a run warning; a run left with nothing is refused (`ALL_TARGETS_UNCONFIRMED`) |
 | `POST /pipelines/runs`, `trigger_pipeline`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
 
