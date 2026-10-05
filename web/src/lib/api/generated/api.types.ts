@@ -36210,6 +36210,12 @@ export interface components {
     'github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestTool': {
       capabilities?: string[]
       content?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestContent'][]
+      /**
+       * @description Contract is the tool's tool-contract manifest: its digest and the
+       *     class, tier, network, consumes and produces it declares. Absent for a
+       *     tool not ported to the tool contract.
+       */
+      contract?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ToolContract']
       installed?: boolean
       kind?: string
       name?: string
@@ -36286,6 +36292,19 @@ export interface components {
       /** @description Kind is "scanner" or "collector"; "" when the sensor did not say. */
       kind?: string
       name?: string
+      version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_sensor.ToolContract': {
+      api_version?: string
+      /** @enum {string} */
+      class?: 'target-scan' | 'connector' | 'parser' | 'enricher'
+      consumes?: string[]
+      digest?: string
+      /** @enum {string} */
+      network?: 'none' | 'targets' | 'egress-proxy' | 'vendor'
+      produces?: string[]
+      /** @enum {string} */
+      tier?: 'T0' | 'T1' | 'T2'
       version?: string
     }
     'github_com_openctemio_openctem_api_pkg_domain_sensor.ToolCost': {

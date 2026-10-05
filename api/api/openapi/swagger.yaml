@@ -4262,6 +4262,13 @@ definitions:
         items:
           $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ManifestContent'
         type: array
+      contract:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.ToolContract'
+        description: |-
+          Contract is the tool's tool-contract manifest: its digest and the
+          class, tier, network, consumes and produces it declares. Absent for a
+          tool not ported to the tool contract.
       installed:
         type: boolean
       kind:
@@ -4379,6 +4386,43 @@ definitions:
           say.
         type: string
       name:
+        type: string
+      version:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.ToolContract:
+    properties:
+      api_version:
+        type: string
+      class:
+        enum:
+        - target-scan
+        - connector
+        - parser
+        - enricher
+        type: string
+      consumes:
+        items:
+          type: string
+        type: array
+      digest:
+        type: string
+      network:
+        enum:
+        - none
+        - targets
+        - egress-proxy
+        - vendor
+        type: string
+      produces:
+        items:
+          type: string
+        type: array
+      tier:
+        enum:
+        - T0
+        - T1
+        - T2
         type: string
       version:
         type: string
