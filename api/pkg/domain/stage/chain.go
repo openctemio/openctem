@@ -12,7 +12,7 @@ import (
 // findings feeds nothing.
 func Feeds(pred, next Stage) bool {
 	for _, out := range pred.Outputs {
-		if next.Accepts(asset.CanonicalPair(out, "")) {
+		if next.Accepts(out) {
 			return true
 		}
 	}
@@ -94,10 +94,10 @@ func validateFrom(id string, st Stage, from []string, earlier map[string]Stage) 
 	return nil
 }
 
-func typeList(ts []asset.AssetType) string {
+func typeList(ts []asset.TypeRef) string {
 	parts := make([]string, len(ts))
 	for i, t := range ts {
-		parts[i] = string(t)
+		parts[i] = Label(t)
 	}
 	return strings.Join(parts, ", ")
 }

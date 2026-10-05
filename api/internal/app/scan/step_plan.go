@@ -11,7 +11,7 @@ package scan
 // "scanner not found: ". The planner now resolves capability -> tool once,
 // with the same rule validation uses, and the payload always names the tool.
 // Owner decision G10: a pinned tool is strict; a capability-only step may
-// run any active implementation of its stage, the catalogue default first.
+// run any active implementation of its stage, the catalog default first.
 
 import (
 	"context"
@@ -39,8 +39,8 @@ type StepTool struct {
 	Name string
 	// Pinned: the step names the tool itself (strict, G10).
 	Pinned bool
-	// Stage is the catalogue stage the step runs; HasStage is false for a
-	// step the catalogue cannot place (a tenant tool), which never chains.
+	// Stage is the catalog stage the step runs; HasStage is false for a
+	// step the catalog cannot place (a tenant tool), which never chains.
 	Stage    stage.Stage
 	HasStage bool
 }
@@ -55,13 +55,13 @@ type StepToolLookup interface {
 //
 //   - a step that names a tool runs that tool (whether it exists and is
 //     active is the caller's strict check, as before);
-//   - a step that names a catalogue capability (a stage key such as
+//   - a step that names a catalog capability (a stage key such as
 //     "scan.ports", or a word that names one stage, such as "portscan") runs
 //     the first active platform implementation of that stage, the default
 //     first; none active is NO_MATCHING_TOOL;
 //   - capabilities that name more than one stage are refused
 //     (STEP_CAPABILITY_AMBIGUOUS), never guessed;
-//   - capabilities the catalogue does not know fall back to the tenant's
+//   - capabilities the catalog does not know fall back to the tenant's
 //     active tool with all of them (platform tools first), as before.
 //
 // A collector or connector is never picked for a capability. The tenant id

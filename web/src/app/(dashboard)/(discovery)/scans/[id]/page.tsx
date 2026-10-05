@@ -71,6 +71,8 @@ import {
 } from '@/lib/api/scan-types'
 import { useAssetGroup } from '@/lib/api/security-hooks'
 import { Can, Permission } from '@/lib/permissions'
+import { SchedulePreview } from '@/features/scans/components/schedule-preview'
+import { schedulePreviewRequestFromConfig } from '@/features/scans/lib/schedule-preview'
 
 const TABS = ['runs', 'configuration', 'details'] as const
 type Tab = (typeof TABS)[number]
@@ -544,6 +546,12 @@ export default function ScanDetailPage() {
                   </DetailField>
                 )}
               </DetailFieldGrid>
+              <div className="mt-4">
+                <SchedulePreview
+                  request={schedulePreviewRequestFromConfig(config)}
+                  paused={config.status !== 'active'}
+                />
+              </div>
             </DetailSection>
             <DetailSection title="Execution">
               <DetailFieldGrid>

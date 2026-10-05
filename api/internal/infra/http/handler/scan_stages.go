@@ -18,9 +18,11 @@ type ScanStageImplementationResponse struct {
 
 // ScanStageResponse is one catalog stage.
 type ScanStageResponse struct {
-	Key             string                            `json:"key"`
-	Name            string                            `json:"name"`
-	Description     string                            `json:"description"`
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Inputs and Outputs are stored type labels: "type" or
+	// "type/sub_type" (service/http is an HTTP service).
 	Inputs          []string                          `json:"inputs"`
 	Outputs         []string                          `json:"outputs"`
 	Relations       []string                          `json:"relations"`
@@ -63,10 +65,10 @@ func scanStageList() ScanStageListResponse {
 			Implementations: make([]ScanStageImplementationResponse, 0, len(s.Implementations)),
 		}
 		for _, t := range s.Inputs {
-			r.Inputs = append(r.Inputs, string(t))
+			r.Inputs = append(r.Inputs, stage.Label(t))
 		}
 		for _, t := range s.Outputs {
-			r.Outputs = append(r.Outputs, string(t))
+			r.Outputs = append(r.Outputs, stage.Label(t))
 		}
 		for _, i := range s.Implementations {
 			r.Implementations = append(r.Implementations, ScanStageImplementationResponse{Tool: i.Tool, Default: i.Default})
