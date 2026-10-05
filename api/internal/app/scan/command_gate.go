@@ -55,6 +55,9 @@ func (s *Service) GateCommandPayload(ctx context.Context, tenantID shared.ID, se
 	if err != nil {
 		return nil, err
 	}
+	if err := s.refuseDisabledOptInPayload(ctx, tenantID, fields); err != nil {
+		return nil, err
+	}
 
 	validated, err := s.validateScanTargets(ctx, CreateScanInput{TenantID: tenantID.String(), Targets: targets})
 	if err != nil {
@@ -82,7 +85,7 @@ func (s *Service) GateCommandPayload(ctx context.Context, tenantID shared.ID, se
 	if err := s.refuseOutOfActScope(ctx, tenantID, nil, checked); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCommandTargetRefused, err)
 	}
-	if err := s.refuseUnownedTargets(ctx, tenantID, "command", checked); err != nil {
+	if err := s.refuseUnownedTargets(ctx, tenantID, "command", checked, false); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCommandTargetRefused, err)
 	}
 

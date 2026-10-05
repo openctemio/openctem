@@ -663,8 +663,7 @@ type Services struct {
 	BusinessUnit *app.BusinessUnitService
 
 	// API Keys & Webhooks
-	APIKey  *apikey.Service
-	Webhook *app.WebhookService
+	APIKey *apikey.Service
 
 	// Jira Bidirectional Sync
 	JiraSync *jira.SyncService
@@ -920,6 +919,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, easmExposures, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
 	s.CertMonitor.SetSeedSource(repos.EASMSeed)
+	// Stored CT exposures follow their host to its own asset (research/22 P0-9).
+	s.CertMonitor.SetRelinker(repos.Exposure)
 	// Excluded names are neither queried nor discovered (RFC-042 F16).
 	s.CertMonitor.SetExclusions(s.Scope)
 	s.CertMonitor.SetStateStore(repos.CTMonitorState)
@@ -1296,7 +1297,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// During an encryption-key rotation, keys hashed under the old key
 	// (APP_ENCRYPTION_KEY_PREVIOUS) keep authenticating.
 	s.APIKey.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
-	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 
 	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.
 	repos.ScimToken.SetKeyPepperID(crypto.PepperID(cfg.Encryption.Key))
@@ -1437,7 +1437,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
 		// from sensors without a policy.
-		command.WithRefusalObserver(s.Sensor), command.WithPrivateTargetPolicy(s.Tenant)}
+		command.WithRefusalObserver(s.Sensor), command.WithPrivateTargetPolicy(s.Tenant),
+		// research/25 D3: interactsh and custom templates leave only when the
+		// organization enabled them (default off).
+		command.WithOptInPolicy(s.Tenant)}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}
@@ -1583,7 +1586,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
-	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.EASMSeed)
+	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.EASMSeed).
+		WithTakeoverEvidence(repos.EASMDNS)
 
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(
@@ -1621,7 +1625,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A batch goes only to a sensor whose reported local policy accepts
 		// it; a trigger no sensor would accept is refused (research/25 §3.6).
 		scan.WithDispatchPolicy(repos.Sensor, s.Tenant),
+		// research/25 D3: interactsh and custom templates only when the
+		// organization enabled them (default off).
+		scan.WithOptInPolicy(s.Tenant),
 	)
+	// A scheduled run acts as the scan owner: refused without one, paused
+	// when the owner is no longer an active member (RFC-050 W2).
+	s.Scan.SetOwnerActivity(repos.AccessControl)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
 	// service from here on.
@@ -1922,6 +1932,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// key suffix in any future Redis payload cache. Bumped on every
 	// toggle / preset apply / reset via notifyModuleChange.
 	s.Module.SetVersionService(app.NewModuleVersionService(deps.RedisClient, log))
+	// Ingest honors the suppressions module toggle: with the module off (or
+	// left out of the tenant's bundles) findings land as reported.
+	s.Ingest.SetSuppressionModuleGuard(s.Module)
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)

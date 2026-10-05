@@ -80,6 +80,10 @@ type FindingProcessor struct {
 	// ingest (prior behavior).
 	suppressionChecker SuppressionChecker
 
+	// suppressionModules, when wired, turns ingest suppression off for a
+	// tenant whose suppressions module is disabled.
+	suppressionModules ModuleGuard
+
 	// secretFingerprinter keys the fingerprint of a reported secret with a
 	// server-held secret. Nil-safe: when unwired, no fingerprint is stored.
 	secretFingerprinter *vulnerability.SecretFingerprinter
@@ -726,6 +730,18 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 	p.storeScannerEvidence(ctx, tenantID, evidence)
+
+	// Step 8: the template content each finding was matched with
+	// (research/18 O6): its new baseline for retests and later scans. A
+	// record of the sighting, like the enrichment above; it never changes a
+	// finding's status, and a baseline only narrows what later proves a fix.
+	sightings := make([]vulnerability.TemplateSighting, 0, len(validFindings))
+	for _, fm := range validFindings {
+		if prov := findingTemplateProvenance(&fm.finding, report.Tool); !prov.Empty() {
+			sightings = append(sightings, vulnerability.TemplateSighting{Fingerprint: fm.fingerprint, Provenance: prov})
+		}
+	}
+	p.recordTemplateSightings(ctx, tenantID, sightings)
 
 	return nil
 }

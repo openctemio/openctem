@@ -1247,7 +1247,7 @@ type NotificationExtensionResponse struct {
 	ChannelID          string   `json:"channel_id,omitempty" example:"C123456"`            // Deprecated: use metadata.chat_id
 	ChannelName        string   `json:"channel_name,omitempty" example:"#security-alerts"` // Deprecated: use metadata.channel_name
 	EnabledSeverities  []string `json:"enabled_severities" example:"[\"critical\",\"high\"]"`
-	EnabledEventTypes  []string `json:"enabled_event_types" example:"[\"security_alert\",\"new_finding\",\"new_exposure\"]"`
+	EnabledEventTypes  []string `json:"enabled_event_types" example:"[\"new_finding\",\"new_exposure\"]"`
 	MessageTemplate    string   `json:"message_template,omitempty"`
 	IncludeDetails     bool     `json:"include_details" example:"true"`
 	MinIntervalMinutes int      `json:"min_interval_minutes" example:"5"`
