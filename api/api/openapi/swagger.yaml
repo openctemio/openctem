@@ -9233,6 +9233,16 @@ definitions:
           format: int64
           type: integer
         type: object
+      by_state:
+        additionalProperties:
+          format: int64
+          type: integer
+        description: |-
+          ByState counts the state lenses of the same filter: open, fixed,
+          dispositioned (false positive, accepted, duplicate; never counted as
+          fixed) and all. Send state=all with the other filters to label a lens
+          switcher.
+        type: object
       by_status:
         additionalProperties:
           format: int64
@@ -22559,6 +22569,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -22862,6 +22881,22 @@ paths:
       - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
         type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
@@ -23984,6 +24019,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -24287,6 +24331,22 @@ paths:
       - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
         type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
@@ -24662,6 +24722,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -24965,6 +25034,22 @@ paths:
       - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
         type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
@@ -25307,6 +25392,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -25610,6 +25704,22 @@ paths:
       - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
         type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
@@ -26005,6 +26115,15 @@ paths:
           type: string
         name: status_not
         type: array
+      - description: state equals
+        enum:
+        - open
+        - fixed
+        - dispositioned
+        - all
+        in: query
+        name: state
+        type: string
       - collectionFormat: csv
         description: 'source: any of (comma list)'
         in: query
@@ -26308,6 +26427,22 @@ paths:
       - description: last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D)
         in: query
         name: last_seen_at_lt
+        type: string
+      - description: resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gte
+        type: string
+      - description: resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lte
+        type: string
+      - description: resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_gt
+        type: string
+      - description: resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D)
+        in: query
+        name: resolved_at_lt
         type: string
       - collectionFormat: csv
         description: 'network port: any of (comma list)'
