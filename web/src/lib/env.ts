@@ -57,11 +57,8 @@ export const env = {
      * WebSocket cannot go through Next.js proxy due to HTTP upgrade requirements.
      * In development: Set to backend URL (e.g., http://localhost:8080)
      * In production: Usually same as app URL if nginx routes /api/v1/ws to backend
-     *
-     * Falls back to NEXT_PUBLIC_SSE_BASE_URL for backward compatibility.
      */
-    wsBaseUrl:
-      getEnvVar('NEXT_PUBLIC_WS_BASE_URL', '') || getEnvVar('NEXT_PUBLIC_SSE_BASE_URL', ''),
+    wsBaseUrl: getEnvVar('NEXT_PUBLIC_WS_BASE_URL', ''),
   },
 
   // Token Storage Configuration
