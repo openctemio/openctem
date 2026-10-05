@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS priority_rule_safety_report (
 );
 
 COMMENT ON TABLE priority_rule_safety_report IS
-    'Priority override rules migration 000915 switched off because their conditions could not be valid (B17). Read-only record for operators.';
+    'Priority override rules migration 000942 switched off because their conditions could not be valid (B17). Read-only record for operators.';
 
 WITH invalid AS (
     SELECT r.id, r.tenant_id, r.name, r.priority_class, r.conditions,
