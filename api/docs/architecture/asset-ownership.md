@@ -100,8 +100,8 @@ source `owner_ref`, in keyset batches of 5,000 assets:
   stays, so they are matched again if they rejoin);
 - it writes the three counts (copied, kept, skipped) to the database log.
 
-Nothing reads or writes `assets.owner_id` after this change. The column and
-its two indexes are dropped by a later contract migration, after a release
-that contains the change, so that a pod of the previous release never meets a
-database without the column (the expand-contract rule of
-`scripts/check-migrations.sh`). Until then its values are frozen.
+Nothing reads or writes `assets.owner_id` after this change. `001056` (the
+contract step, merged after a release that contains the change, so that a pod
+of the previous release never meets a database without the column) drops the
+column and its two indexes. Its down migration restores the column from the
+`owner_ref` rows; the values 000340 skipped are not restored.
