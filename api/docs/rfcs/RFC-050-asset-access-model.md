@@ -116,7 +116,7 @@ Migration `001013_member_lifecycle`.
 | # | Item | Status |
 |---|---|---|
 | W6a | Member lifecycle: disable / offboard / erase (§2) | this RFC's first PR |
-| W6 | Materialisation correctness: group deactivate/delete, scope-rule deactivate/narrow/delete, group asset unassign recompute in the same transaction (database triggers, migration 000971); `ReconcileByAssetGroup` gets the real tenant (H6, M-2, M-3, M-4 refresh part) | in review |
+| W6 | Materialisation correctness: group deactivate/delete, scope-rule deactivate/narrow/delete, group asset unassign recompute in the same transaction (database triggers, migration 001015); `ReconcileByAssetGroup` gets the real tenant (H6, M-2, M-3, M-4 refresh part) | in review |
 | W1 | Exposure upsert never overwrites an out-of-scope or asset-less exposure for a restricted caller (H1) | planned |
 | W2 | Scan actor integrity: clone/import set `CreatedBy`; a nil owner refuses; an inactive owner pauses and notifies (H2, H3) | planned (coordinated with the EASM scan-authorization work) |
 | W4 | Pentest findings and PoC hidden from non-members on `/assets/{id}/findings` (H5) | planned |
