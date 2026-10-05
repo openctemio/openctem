@@ -164,7 +164,8 @@ and runs after scan runs (5-minute debounce) and nightly. It:
 
 1. proposes windowed hostname and IP matches to dedup review (the IP
    window defaults to 3 days);
-2. recomputes preferred fields with RFC-003 source priority;
+2. recomputes preferred fields (RFC-003 source priority was withdrawn; the
+   precedence rule is decided when this job is built);
 3. writes the snapshot used by the rollups.
 
 **The zone boundary.** Private addresses (RFC 1918, ULA, CGNAT) are keyed

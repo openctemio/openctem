@@ -222,6 +222,8 @@ custom roles).
 | R5 | Signed runner image, GitHub Action and GitLab component, SARIF upload | Open |
 | F1 | CI pipelines: identity, JIT creation, caps, revocation, status, fleet read model (section 10, migration 001084) | Implemented |
 | F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Open |
+| F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6, migration 001099) | API implemented; console in the follow-up PR |
+| F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Implemented |
 | F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6) | Open |
 | F4, F5 | Sensor pools; policy timeouts for daemons (section 10.7) | Design only |
 
@@ -336,20 +338,51 @@ out of scope: 404).
 ### 10.6 Coverage and alerts (F3)
 
 Coverage is computed per repository x capability (SAST, SCA, secrets, IaC)
-from any executor: a fresh pipeline whose runs reported the capability, and
-daemon scans where the data allows. An administrator can mark a repository as
-expected to be covered, so "never scanned" shows as a gap. Template drift
-compares the `job_workflow_ref` versions of pipelines running the same
-template.
+from any executor: a pipeline's non-fork default-branch runs through the tools
+they reported, and a daemon sensor's completed scan of the repository. A
+tool's capabilities come from the tool catalog. A pipeline observation is
+fresh while the pipeline is active and runs within its own cadence; a scan
+observation is fresh for 30 days; anything older than 90 days counts as never.
+Gaps (an expected capability that is not fresh) sort first, then uncovered
+repositories, by criticality.
 
-Findings whose only source is a stale or archived pipeline are shown as not
-observed with the reason "source stale"; an administrator can retire a
-pipeline, which closes its sole findings as "source retired" (audited,
-reopenable). Findings another source still observes are untouched.
+An administrator can mark a repository as expected to be covered, for some or
+all capabilities, so "never scanned" shows as a gap. Template drift groups
+active pipelines by reusable workflow (`job_workflow_ref`) and shows the
+versions they run.
 
-Alerts go through the notification outbox, de-duplicated per pipeline:
-scheduled scan missed (two cycles), coverage regression, default branch
-failing the gate (opt-in), runner below the minimum supported version.
+Findings whose only source is a stale or archived pipeline move to not
+observed with the resolution `source_stale`: not fixed, not current. Only
+open findings on the pipeline's repository qualify, that this pipeline's runs
+reported, that no other pipeline reported in 90 days, and that nothing saw
+after the pipeline's last run. Findings from people (pentest, manual, bug
+bounty, red team) are never touched. A new sighting reopens them.
+
+An administrator can retire a pipeline (a reason of 10 to 2,000 characters):
+it is hidden as retired, and the same set of findings closes as resolved with
+the resolution `source_retired`, in one transaction, audited with the finding
+ids (each finding can be reopened). The next verified run of the pipeline
+brings it back.
+
+Alerts go through the notification outbox, once per subject while the
+condition holds (`ci_alert_state`), and again only after it cleared. Never one
+per run. The job runs every 15 minutes on one replica.
+
+| Event type | Subject | Condition | Default |
+|---|---|---|---|
+| `ci.schedule_missed` | pipeline | scheduled and stale (two missed cycles) | on |
+| `ci.coverage_regression` | repository | has active pipelines, none fresh | on |
+| `ci.gate_failing` | pipeline | last default-branch verdict failed | opt-in |
+| `ci.runner_outdated` | pipeline | runner below `SENSOR_MIN_VERSION` | on |
+
+Revoked, retired and archived pipelines raise nothing.
+
+| Endpoint | Permission |
+|---|---|
+| `GET /api/v1/ci/coverage` (`filter=gap\|uncovered\|covered`, `capability` with `state`, `expected`, `criticality`, `search`, paging; summary and template drift) | `scans:ci:read` |
+| `PUT /api/v1/ci/coverage/expectations/{asset_id}` (`capabilities`) | `scans:ci:write` |
+| `DELETE /api/v1/ci/coverage/expectations/{asset_id}` | `scans:ci:write` |
+| `POST /api/v1/ci/pipelines/{id}/retire` (`reason`) | `scans:ci:write` |
 
 ### 10.7 Future work: sensor pools (F4) and policy timeouts (F5)
 

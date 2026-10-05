@@ -871,6 +871,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	}
 	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
 	admin.SetPipelineService(ciSvc)
+	admin.SetCoverageService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
 	// VEX documents a run uploads: stored on the run repository's findings,
 	// never closing any (the run token is not a person with findings:approve).
