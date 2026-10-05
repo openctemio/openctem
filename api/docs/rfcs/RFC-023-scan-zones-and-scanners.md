@@ -20,8 +20,8 @@
 > Lets a tenant admin register the scanners that serve their organization, group
 > their networks into **scan zones** (address ranges → the scanners that may
 > scan them), and have every scan routed to, and enforced by, the right scanner.
-> Modeled on Tenable Security Center's Nessus Scanners + Scan Zones, adapted for
-> a multi-tenant product and hardened beyond it.
+> Built for a multi-tenant product and hardened so that each layer still holds
+> when the one before it fails.
 
 ## 1. Problem
 
@@ -57,42 +57,33 @@ scanner from scanning any address. The 2026-10-01 code review found:
 9. **Overlapping private space within one tenant collapses**: assets are unique
    on `(tenant_id, name)`, so `10.0.0.5` at two sites is one asset.
 
-## 2. What we learn from the field
-
-| | Tenable SC | Tenable VM | Rapid7 InsightVM | Qualys | runZero |
-|---|---|---|---|---|---|
-| Link direction | SC→scanner :8834 (managed) or scanner→SC :8837 (linked) | Scanner→cloud, linking key | Either; reverse uses 60-min secret | Appliance→cloud :443, polls 190 s | Explorer→cloud, stamped token |
-| Routing | Scan zones (ranges→scanners), narrowest first, least busy | Scanner groups with routing targets, narrowest match | Site → engine/pool | Asset group → appliances | Site → explorers |
-| Out-of-zone target | Enforced for linked; **ignored when one zone is selected** | **Skipped, partial results + warning** | Site-scoped | Group-scoped | Must be in task scope |
-| Overlapping IP | Distribution across zones | "Networks" stamped on assets | Site-scoped correlation | "Networks" | Sites |
-| Credentials | In SC, or CyberArk/Vault | Cloud or PAM | Console or CyberArk | **Appliance pulls from vault** | Sent only if task CIDR matches |
-| Health | 16-flag status incl. fingerprint mismatch | Linked/online | Connection status | 4-h heartbeat | Online + approval |
+## 2. Threat evidence
 
 Threat evidence that shapes the design: scanners are high-value pivots (stolen
 scan credentials from compromised targets; a tampered target list redirecting
-credentials to an attacker — Praetorian 2025); unauthenticated update channels
-(Rapid7 CVE-2022-4261/3913); local privilege escalation in scanner agents
-(Nessus Agent CVE-2024-3291/3292).
+credentials to an attacker); unauthenticated update channels in scanner
+products (CVE-2022-4261/3913); local privilege escalation in scanner agents
+(CVE-2024-3291/3292).
 
 ## 3. Decisions
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | **One "Scanners" resource** over everything that executes scans for a tenant: OpenCTEM agents (in-network, outbound-only) and external engines (Nessus Pro, Tenable.sc; OpenVAS/Qualys later) reached through a bridge agent. | Today they live on two pages with two status models. Tenable/Qualys show one list. |
-| D2 | **Outbound-only.** Our scanners always connect out and long-poll; the control plane never opens a connection into a tenant network. External engines are reached by an agent in their zone ("bridge"). A direct control-plane→engine connection is allowed only for internet-reachable/cloud engines. | No inbound path into customer networks; matches Qualys/runZero/Tenable-linked; already decided for RFC-007. |
-| D3 | **Scan zone** = tenant-owned: name, network, address ranges (IP, CIDR, IP ranges), assigned scanners, optional description. Overlapping zones are allowed for redundancy. | The routing primitive every vendor converges on. |
-| D4 | **Routing: narrowest matching zone, then least-busy scanner with capacity**; targets are materialised and batched server-side (`TargetsPerJob`). | Tenable's algorithm; fixes the Targets[0] bug at the root. |
-| D5 | **Out-of-zone targets are skipped with an explicit warning on the run, never sent to "any scanner".** Unlike SC, a selected zone's ranges are **always** enforced. | Fail closed; SC's single-zone bypass is a known pitfall. |
+| D1 | **One "Scanners" resource** over everything that executes scans for a tenant: OpenCTEM agents (in-network, outbound-only) and external engines (Nessus Pro, Tenable.sc; OpenVAS/Qualys later) reached through a bridge agent. | Today they live on two pages with two status models; operators need one list. |
+| D2 | **Outbound-only.** Our scanners always connect out and long-poll; the control plane never opens a connection into a tenant network. External engines are reached by an agent in their zone ("bridge"). A direct control-plane→engine connection is allowed only for internet-reachable/cloud engines. | No inbound path into customer networks; already decided for RFC-007. |
+| D3 | **Scan zone** = tenant-owned: name, network, address ranges (IP, CIDR, IP ranges), assigned scanners, optional description. Overlapping zones are allowed for redundancy. | Address ranges are what network owners already reason in. |
+| D4 | **Routing: narrowest matching zone, then least-busy scanner with capacity**; targets are materialised and batched server-side (`TargetsPerJob`). | The most specific zone owns the target; fixes the Targets[0] bug at the root. |
+| D5 | **Out-of-zone targets are skipped with an explicit warning on the run, never sent to "any scanner".** A selected zone's ranges are **always** enforced, including when only one zone is selected. | Fail closed; a single-zone bypass would send targets to a scanner that must not reach them. |
 | D6 | **Zones are opt-in per tenant.** With no zones, behavior stays as today for public targets. Once a tenant defines a zone, private (RFC 1918 / ULA) targets **require** a zone; public targets and domains use the tenant's **Default zone** (internet-facing scanners). | No surprise breakage; private scanning becomes possible exactly where it is safe. |
 | D7 | **Three independent enforcement layers.** (1) Dispatch pins the job to a zone scanner. (2) The claim query refuses a job whose targets are outside the polling scanner's zones. (3) **The scanner itself refuses** targets outside its allowed ranges, checked on resolved IPs with the resolved IP pinned for the scan. | Each layer survives the failure of the one before; layer 3 survives a compromised control plane only if its ranges do not come solely from that control plane (D8). |
-| D8 | **Scanner allow-list = intersection of (a) zone ranges from a signed job manifest and (b) an optional operator-set local list** (`--allowed-ranges`, like Nessus `nessusd.rules`). The UI shows (b) as "locked by operator". Built-in deny always applies: loopback, link-local/IMDS, `::/128`, multicast, the control plane's own address. | (a) stops path attackers; only (b) stops a fully compromised control plane. Recommended for high-security sites. |
+| D8 | **Scanner allow-list = intersection of (a) zone ranges from a signed job manifest and (b) an optional operator-set local list** (`--allowed-ranges`). The UI shows (b) as "locked by operator". Built-in deny always applies: loopback, link-local/IMDS, `::/128`, multicast, the control plane's own address. | (a) stops path attackers; only (b) stops a fully compromised control plane. Recommended for high-security sites. |
 | D9 | **Signed jobs (Ed25519).** The control plane signs tenant, scanner id, command id, targets, tool, args digest, zone ranges, expiry and nonce, with a signing key held outside the database (KMS / mounted secret). The agent pins the public key at enrollment and checks signature, expiry, replay and allow-list before running. Agent updates/templates follow the same rule. | Turns "anyone who can write the commands table or MITM the link" into "needs the signing key". |
-| D10 | **Enrollment:** single-use token valid ≤60 min, bound to the tenant and optionally a zone → per-scanner key with **default 90-day TTL and auto-renew** (RFC-014 machinery, now on by default); **new scanners are "pending approval"** and get no jobs until a tenant admin approves; revoke takes effect on the next poll. | Rapid7 60-min secret, runZero approve-to-trust; closes "keys never expire". |
-| D11 | **Fixed capability set.** Scanners run typed scan jobs only: no shell, tunnel or free-form command. `extra_args` are allow-listed per tool; target-bearing flags are rejected. | Removes the pivot surface (runZero model). |
-| D12 | **Credential custody tiers.** T1 (default): secrets stay on the scanner/bridge or are pulled by it from the tenant's vault; the control plane never holds them. T2 (opt-in): stored encrypted in the control plane (refused when `APP_ENCRYPTION_KEY` is unset), envelope-encrypted per job to the scanner's key, and **released only when the job's targets lie inside the credential's scope ranges**. | Qualys vault pull + runZero scoped release; matches the RFC-007 trust decision. |
-| D13 | **Health as flags**, not one word: online, busy (+ free capacity), version / upgrade required, auth error, certificate mismatch, fingerprint mismatch (engine UUID changed), plugins/templates out of sync, disabled, pending approval, quarantined. "Update status" runs an on-demand probe. A scanner silent past N heartbeats, or whose fingerprint changed, is quarantined automatically. | SC's 16-flag status is what operators rely on; quarantine is the safe default. |
-| D14 | **Platform layer** (RFC-022 console): shared scanners and zones offered to tenants. They may scan **public** targets only, never receive tenant credentials, and are always labelled "shared". The silent auto-fallback to platform agents is removed: using them is an explicit per-scan or per-tenant choice. | Matches SC's admin-assigned zones without leaking internal targets. |
-| D15 | **Networks for overlapping space** (later phase): every zone belongs to a network (one default network per tenant); asset identity becomes `(tenant, network, address)` for network addresses, and results are stamped with the scanner's network. | Tenable VM / Qualys "networks", runZero "sites"; required for multi-site customers reusing 10/8. |
+| D10 | **Enrollment:** single-use token valid ≤60 min, bound to the tenant and optionally a zone → per-scanner key with **default 90-day TTL and auto-renew** (RFC-014 machinery, now on by default); **new scanners are "pending approval"** and get no jobs until a tenant admin approves; revoke takes effect on the next poll. | Short-lived enrollment secret plus explicit approval before trust; closes "keys never expire". |
+| D11 | **Fixed capability set.** Scanners run typed scan jobs only: no shell, tunnel or free-form command. `extra_args` are allow-listed per tool; target-bearing flags are rejected. | Removes the pivot surface. |
+| D12 | **Credential custody tiers.** T1 (default): secrets stay on the scanner/bridge or are pulled by it from the tenant's vault; the control plane never holds them. T2 (opt-in): stored encrypted in the control plane (refused when `APP_ENCRYPTION_KEY` is unset), envelope-encrypted per job to the scanner's key, and **released only when the job's targets lie inside the credential's scope ranges**. | Vault pull keeps secrets off the control plane; scoped release limits what a mis-routed job can receive; matches the RFC-007 trust decision. |
+| D13 | **Health as flags**, not one word: online, busy (+ free capacity), version / upgrade required, auth error, certificate mismatch, fingerprint mismatch (engine UUID changed), plugins/templates out of sync, disabled, pending approval, quarantined. "Update status" runs an on-demand probe. A scanner silent past N heartbeats, or whose fingerprint changed, is quarantined automatically. | Operators need to see why a scanner is not working, not one word; quarantine is the safe default. |
+| D14 | **Platform layer** (RFC-022 console): shared scanners and zones offered to tenants. They may scan **public** targets only, never receive tenant credentials, and are always labelled "shared". The silent auto-fallback to platform agents is removed: using them is an explicit per-scan or per-tenant choice. | Admin-assigned shared zones without leaking internal targets. |
+| D15 | **Networks for overlapping space** (later phase): every zone belongs to a network (one default network per tenant); asset identity becomes `(tenant, network, address)` for network addresses, and results are stamped with the scanner's network. | Required for multi-site customers reusing 10/8. |
 | D16 | **Permissions:** `scanners:read/write/delete`, `zones:read/write/delete`, `scanners:approve` (tenant owner/admin by default; members read-only). All zone, scanner, approval, key and credential-release events are audited. | Least privilege; a new permission is added in Go, the seed migration and the UI constants together (authorization-matrix rules). |
 | D17 | **Scope stays separate from zones.** Scope = *may* we scan this; zone = *who can reach* it. Exclusions are enforced at dispatch for **every** path and fail closed; an optional tenant setting requires targets to be in scope. | Two questions, one CIDR matcher (`pkg/domain/scope`). |
 
@@ -106,7 +97,7 @@ behaving well, so:
 
 | # | Decision | Why |
 |---|---|---|
-| D18 | **"Sensor" is the umbrella term** (Tenable VM *Settings → Sensors*, Qualys *Sensors*): software running on the customer side that authenticates **to** the platform with its own key and heartbeat. Sensors are classified by **operational role**, as Tenable separates scanners from agents: **Scanner** — network vantage point that assesses *other* hosts, routed by **scan zone** (our in-network runtime in scan mode; external engines such as Nessus/Tenable.sc/OpenVAS behind a scanner acting as bridge). **Agent** — installed on an endpoint, reports only about *its own* host (inventory, local vulnerabilities, telemetry), grouped by **agent group**, never receives network targets. **Collector** — pushes data from systems inside the customer network (SIEM forwarder, CMDB), never receives targets. **Network monitor** — passive (later). **Integration** stays the term for external systems the *platform* calls with credentials (Jira, Slack, Splunk out, GitHub, Wiz API) or that call in via webhook; no software of ours runs for them. Rule: *who runs the code and who holds the identity.* | Today's "Agent" is a Tenable-style **scanner**; keeping that name would mislead anyone who knows Tenable. One registry, approval, key and health model for every role, first- or third-party. |
+| D18 | **"Sensor" is the umbrella term**: software running on the customer side that authenticates **to** the platform with its own key and heartbeat. Sensors are classified by **operational role**: **Scanner** — network vantage point that assesses *other* hosts, routed by **scan zone** (our in-network runtime in scan mode; external engines such as Nessus/Tenable.sc/OpenVAS behind a scanner acting as bridge). **Agent** — installed on an endpoint, reports only about *its own* host (inventory, local vulnerabilities, telemetry), grouped by **agent group**, never receives network targets. **Collector** — pushes data from systems inside the customer network (SIEM forwarder, CMDB), never receives targets. **Network monitor** — passive (later). **Integration** stays the term for external systems the *platform* calls with credentials (Jira, Slack, Splunk out, GitHub, Wiz API) or that call in via webhook; no software of ours runs for them. Rule: *who runs the code and who holds the identity.* | Today's "Agent" is a network **scanner**; keeping that name would mislead, since "agent" means software that reports about its own host. One registry, approval, key and health model for every role, first- or third-party. |
 | D18a | **Roles are capabilities, approved separately.** One runtime built with the SDK may hold several roles (e.g. scanner + collector). Each role is declared, approved and audited on its own and carries its own rules: only the *scanner* role receives network targets and is zone-checked; the *agent* role is bound to its own host identity; the *collector* role can only push its declared data kinds. In the SDK, `core.Scanner` / `core.Collector` / `core.Connector` map to these roles and `core.Agent` is documented as the **sensor runtime** that hosts them. | Flexible for SDK authors without letting one role borrow another's powers. |
 | D18b | **Migration without breakage.** API paths and tables keep the name `agents` (plus a `role` column); every existing agent becomes a **scanner** (what they do today). UI and docs move to the new terms; `/agents` redirects to *Settings → Sensors*. Tabs: **Scanners · Agents · Collectors · Scan zones · Networks**, one "Add sensor" flow (one-time enrollment token → approval). Supersedes the 2026-08 naming decision ("Agent" as the umbrella runtime term). | Correct vocabulary for users, zero API churn for SDK consumers. |
 | D19 | **The rules are protocol, the code is SDK.** Signature/expiry/replay checks, the allow-list on resolved IPs with pinning, the built-in deny list and per-target skip reporting live in `sdk-go` (`platform` poller + a guarded resolver/dialer handed to scanners). A tool implementing `core.Scanner` is only ever called with targets that already passed the guard, and gets a pinned address to use. Our agent is just one consumer of the SDK. | Third-party runners inherit the controls without writing them; one audited implementation. |
@@ -124,10 +115,8 @@ which takes precedence where the two differ.*
 
 Target model for every sensor (first- or third-party), chosen to be the most
 secure option that still works through corporate proxies and for third-party
-developers. Sources: GitHub Actions runner auth, Kubernetes kubelet TLS
-bootstrapping, Tenable sensor linking, Elastic Fleet message signing, Datadog
-Remote Config (TUF), Nuclei template signing (and its CVE-2024-43405 bypass),
-RFC 9421 / 9449 / 9530 / 8705, OWASP API Top 10 2023, NIST SP 800-204/207,
+developers. Sources: Kubernetes kubelet TLS bootstrapping, TUF, Nuclei template signing
+(and its CVE-2024-43405 bypass), RFC 9421 / 9449 / 9530 / 8705, OWASP API Top 10 2023, NIST SP 800-204/207,
 CISA Secure by Design.
 
 | # | Decision |
@@ -137,7 +126,7 @@ CISA Secure by Design.
 | P3 | **Optional mTLS mode** for self-hosted, high-assurance deployments: kubelet-style CSR enrollment, client certificates of ≤24 h renewed at half-life, and a SPIFFE federation hook for organisations already running SPIRE. |
 | P4 | **Automatic key rotation and instant revocation.** The sensor rotates its key every 30 days (the new public key is submitted signed by the old one); revocation and quarantine are checked on every request, not at connect. |
 | P5 | **Jobs are JWS (EdDSA) envelopes** carrying tenant, sensor id, command id, targets, tool, args digest, zone ranges, `iat`/`exp`, nonce and key id. The SDK verifies before parsing anything else and **executes exactly the verified bytes** (the Nuclei CVE-2024-43405 lesson: never verify one representation and run another). |
-| P6 | **Signing keys rotate without re-enrolling the fleet** (avoids Elastic Fleet's forced re-enrolment): an offline **root key** signs a published key set of online job-signing keys with expiries (TUF-style roles); the sensor pins the root public key at enrollment and refreshes the key set on heartbeat. |
+| P6 | **Signing keys rotate without re-enrolling the fleet** (a forced re-enrolment of every sensor is not acceptable): an offline **root key** signs a published key set of online job-signing keys with expiries (TUF-style roles); the sensor pins the root public key at enrollment and refreshes the key set on heartbeat. |
 | P7 | **Content and updates are signed too:** scan templates and checks (code-type templates must be signed), tool bundles and sensor self-updates are delivered with TUF metadata (expiry, rollback and freeze protection). |
 | P8 | **Supply chain for every release** of the SDK, the agent and the images: keyless **Sigstore cosign** signatures, **SLSA Build L3** provenance, a CycloneDX **SBOM**, `-trimpath` reproducible builds, `govulncheck` + `gosec` + lint gates; installers verify signatures before running anything. |
 | P9 | **Push integrity:** the signed request covers the body digest; each report carries an `Idempotency-Key` (retries never duplicate); strict schema validation with size, depth and decompression limits; per-sensor quotas and rate limits; provenance stamped **by the server**; anomalous pushes (volume spikes, out-of-zone or out-of-job assets) are quarantined for review instead of merged. The results contract is [RFC-026](RFC-026-sensor-results-ingest.md): CTIS only, `PUT /api/v2/sensor/results/{report_id}` (the sensor-chosen id in the URL replaces the `Idempotency-Key` header), self-describing segments + commit, `Content-Digest` mandatory from the first v2 release. |
@@ -198,7 +187,7 @@ tenant-scoped.
 
 ## 7. UI (tenant admin)
 
-**Settings → Scanning resources**, in the shape of SC's "Nessus Scanners" page:
+**Settings → Scanning resources**:
 
 - **Scanners** tab: one table of agents and engines — name, type, capabilities,
   status (flag pills: Working, Pending approval, Auth error, …), host, version,

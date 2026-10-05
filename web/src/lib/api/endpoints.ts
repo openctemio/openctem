@@ -426,8 +426,6 @@ export const tenantEndpoints = {
   /**
    * Update API settings
    */
-  updateAPISettings: (tenantIdOrSlug: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/api`,
 
   /**
    * Update branding settings
@@ -1686,6 +1684,11 @@ export const pipelineRunEndpoints = {
    * Cancel a running pipeline
    */
   cancel: (runId: string) => `/api/v1/pipeline-runs/${runId}/cancel`,
+
+  /**
+   * How each stage of a run was planned (counts by reason; research/27).
+   */
+  stages: (runId: string) => `/api/v1/pipeline-runs/${encodeURIComponent(runId)}/stages`,
 
   /**
    * One cursor page of a run's tasks (the run read embeds the first page and

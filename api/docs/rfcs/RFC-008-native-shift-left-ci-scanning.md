@@ -3,13 +3,11 @@
 - **Status**: Phases 1–5 + 7 shipped; Phase 6 (export) partial
 - **Created**: 2026-06-06
 - **Owner**: Platform / Agent
-- **Problem**: We want first-class, **self-contained** shift-left code security in CI/CD — SAST/SCA/secret scanning that runs in the pipeline, decorates PRs/MRs, and gates merges — using **our own agent + platform**, not a third-party tool and not a back-forward bridge. The bar: best-in-class, on top of OpenCTEM's multi-tenant + risk-prioritization advantages.
-
-> **Decision context.** We studied califio **code-secure** (an ASPM/DevSecOps tool: .NET API + Angular UI, single-org, thin Go scanner wrappers → `/api/ci/*` + CI-TOKEN, PR/MR inline comments, severity gate). We will **not** depend on it or bridge to it. We adopt the *good ideas* into our own agent.
+- **Problem**: We want first-class, **self-contained** shift-left code security in CI/CD — SAST/SCA/secret scanning that runs in the pipeline, decorates PRs/MRs, and gates merges — using **our own agent + platform**, with no dependency on or bridge to a separate CI security server. It builds on OpenCTEM's multi-tenancy and risk prioritization.
 
 ---
 
-## 0. Grounding — we are already a peer (and ahead in places)
+## 0. Grounding — what already exists
 
 An audit of our agent (2026-06) corrected an earlier mis-assessment. Our agent + `sdk-go` **already implement the shift-left pipeline**:
 
@@ -25,27 +23,27 @@ An audit of our agent (2026-06) corrected an earlier mis-assessment. Our agent +
 | **Idempotent PR comments + sticky summary** | `sdk-go/pkg/{gitenv,handler}` | ✅ **Phase 4 (sdk-go #33/#34)** |
 | CI gate + per-finding suppressions | `agent/internal/gate` | ✅ |
 | **Risk-aware gate** (block CISA-KEV / exploit-available below threshold) | `agent/internal/gate` | ✅ **Phase 1, agent #27** |
-| Scanners: semgrep, gitleaks, trivy, codeql, nuclei, recon | `sdk-go/pkg/scanners` | ✅ (more than code-secure) |
-| Multi-tenant, prioritization (EPSS/KEV/VPR), transactional outbox, tenant-scoped tokens | api | ✅ (code-secure has none of these) |
+| Scanners: semgrep, gitleaks, trivy, codeql, nuclei, recon | `sdk-go/pkg/scanners` | ✅ |
+| Multi-tenant, prioritization (EPSS/KEV/VPR), transactional outbox, tenant-scoped tokens | api | ✅ |
 
-**Conclusion:** the work is *audit → polish to best-in-class*, not rebuild. The gaps are behavioral maturity, not missing architecture.
+**Conclusion:** the work is *audit → polish*, not rebuild. The gaps are behavioral maturity, not missing architecture.
 
-## 1. What code-secure does better today (the learnables)
+## 1. Gaps to close
 
-1. **MR new-vs-target suppression** — on a PR scan they pull the **target branch's** findings and treat them as "known", so the PR only flags findings genuinely **new vs target** (not pre-existing tech debt). Big PR-noise reduction. *✅ Now shipped — see Phase 3.*
-2. **Per-branch occurrence lifecycle on non-default branches** — they mark per-scan status `Fixed` even on feature branches (without touching the canonical status). Our auto-resolve runs **only** on the default branch, so a feature-branch occurrence never transitions to `auto_fixed`.
-3. **Reading the per-branch data** — they use per-scan status everywhere (views, gate, comments). Our occurrences are *written but not read yet* (mig 000173 is additive).
-4. **Comment idempotency is absent in both** — re-running a PR re-posts duplicate comments. *✅ Now shipped (Phase 4) — and we went beyond with a sticky PR summary.*
+1. **MR new-vs-target suppression** — on a PR scan, pull the **target branch's** findings and treat them as "known", so the PR only flags findings genuinely **new vs target** (not pre-existing tech debt). Big PR-noise reduction. *✅ Now shipped — see Phase 3.*
+2. **Per-branch occurrence lifecycle on non-default branches** — mark per-scan status `Fixed` even on feature branches (without touching the canonical status). Our auto-resolve runs **only** on the default branch, so a feature-branch occurrence never transitions to `auto_fixed`.
+3. **Reading the per-branch data** — use per-scan status everywhere (views, gate, comments). Our occurrences are *written but not read yet* (mig 000173 is additive).
+4. **Comment idempotency** — re-running a PR re-posted duplicate comments. *✅ Now shipped (Phase 4), plus a sticky PR summary.*
 5. **Reporting export** (PDF/Excel) + weekly digest + role-based routing (validator/developer) — platform-side; we have report *schedules* but not export depth.
 
-## 2. What we will NOT copy (we already beat it)
+## 2. Design rules we keep
 
-- Single-org model → we are strictly **multi-tenant** (`WHERE tenant_id`).
-- Global, never-expiring CI tokens → we use **tenant-scoped** keys.
-- Severity-only gate → we gate by **real risk** (EPSS/KEV/VPR) — already shipped.
-- Fire-and-forget alerts → we use the **transactional outbox** (+ dead-letter alert).
-- Rule-only mute → we keep **per-finding suppression**.
-- Per-repo finding `Identity` → we keep **branch-independent fingerprint identity** (cross-branch + cross-repo correlation).
+- Strictly **multi-tenant** (`WHERE tenant_id`), never a single-org model.
+- **Tenant-scoped** CI keys, never global, never-expiring tokens.
+- The gate uses **real risk** (EPSS/KEV/VPR), not severity alone — already shipped.
+- Alerts go through the **transactional outbox** (+ dead-letter alert), never fire-and-forget.
+- **Per-finding suppression**, not only rule-level mutes.
+- **Branch-independent fingerprint identity** (cross-branch + cross-repo correlation), not a per-repo finding identity.
 
 ## 3. Plan — phases
 
@@ -71,7 +69,7 @@ Server computes, for a PR/MR scan, which findings are **new vs the base branch**
 
 ### Phase 4 — PR comment idempotency + provider parity ✅ SHIPPED (sdk-go #33, #34)
 - Idempotency via a hidden marker (`<!-- openctem-finding:<key> -->`, key = fingerprint else `rule:path:line`): `gitenv.ExistingFindingMarkers()` lists prior comments, the handler skips already-commented findings on re-run. GitHub (PR review comments) + GitLab (MR discussions) confirmed.
-- **Beyond code-secure:** a single sticky PR/MR summary comment (`gitenv.UpsertSummaryComment` + `SummaryMarker`) updated in place each run — severity table, or a clean state.
+- **Sticky summary:** a single sticky PR/MR summary comment (`gitenv.UpsertSummaryComment` + `SummaryMarker`) updated in place each run — severity table, or a clean state.
 
 ### Phase 5 — Per-branch read surface ✅ SHIPPED (pre-existing)
 - Findings API already supports `branch_id` / `branch_status` filters + `occurrence_count`, reading the mig 000173 occurrence data.
@@ -90,9 +88,9 @@ Server computes, for a PR/MR scan, which findings are **new vs the base branch**
 - **Scope creep** → phases independent and individually mergeable.
 
 ## 5. Non-goals
-- Re-implementing code-secure's server, or any bridge to it.
+- A separate CI security server, or a bridge to one.
 - Changing finding identity (stays fingerprint-based).
-- New scanners (we already have more than they do).
+- New scanners (the existing set covers SAST, SCA and secrets).
 
 ## 6. Cross-references
 - Branch model: `finding_branch_occurrences` (mig 000173); ingest `internal/app/ingest/processor_findings.go` (occurrence write) + `service.go` (default-branch + full-coverage auto-resolve gate).
