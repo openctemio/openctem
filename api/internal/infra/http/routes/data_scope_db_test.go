@@ -11,8 +11,8 @@ package routes
 // tenant) and as members with no scope row, who see nothing: there is no
 // "see everything" mode for them, whatever the organization's legacy
 // members_without_group_see value says (owner decision D2, research doc 15
-// L-04). The harness tenant is deliberately stored as 'everything' to prove
-// the value is ignored.
+// L-04). Migration 000910 made 'everything' impossible to store; that the
+// value is not read is pinned by the SQL builder tests.
 
 import (
 	"bytes"
@@ -142,6 +142,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
 	vulnSvc.SetAccessControlRepository(accessRepo)
+	vulnSvc.SetAssigneeChecker(accessRepo)
 	vulnSvc.SetDataScope(enforcer)
 	vulnSvc.SetAssetRepository(assetRepo)
 	vulnSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
@@ -225,9 +226,7 @@ func (h *dsHarness) seed() {
 	h.exposureA, h.exposureB, h.group = shared.NewID(), shared.NewID(), shared.NewID()
 	t := h.tenant.String()
 
-	// An organization that existed before the "nothing" default, still stored
-	// as 'everything': the value must change nothing.
-	h.exec(`INSERT INTO tenants (id, name, slug, members_without_group_see) VALUES ($1, $2, $2, 'everything')`, t, "ds-"+t)
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, t, "ds-"+t)
 	h.t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = h.db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, t)
@@ -538,16 +537,11 @@ func TestDataScope_IndirectLists_FilterForScopedMemberOnly(t *testing.T) {
 
 // --- Members without a scope row see nothing ---------------------------------
 
-// The harness tenant is stored as the retired 'everything': a member with no
-// scope row still sees nothing on every list, by-id read (404, never 403),
-// count, search and export, while the owner and a full-data role see the
-// whole tenant.
+// A member with no scope row sees nothing on every list, by-id read (404,
+// never 403), count, search and export, while the owner and a full-data role
+// see the whole tenant.
 func TestDataScope_ScopelessMember_SeesNothingEverywhere(t *testing.T) {
 	h := newDSHarness(t)
-	var stored string
-	if err := h.db.QueryRow(`SELECT members_without_group_see FROM tenants WHERE id = $1`, h.tenant.String()).Scan(&stored); err != nil || stored != "everything" {
-		t.Fatalf("harness tenant must carry the legacy value: %q (%v)", stored, err)
-	}
 	a, b := h.assetA.String(), h.assetB.String()
 	fa, fb := h.findingA.String(), h.findingB.String()
 	byID := []string{
@@ -651,8 +645,7 @@ func TestDataScope_PushRecipientsAndFindingChannels(t *testing.T) {
 		t.Errorf("push for FB: memberA=%v memberFree=%v (want false) owner=%v memberFull=%v (want true)",
 			rb[h.memberA], rb[h.memberFree], rb[h.owner], rb[h.memberFull])
 	}
-	// A member with no scope row gets no finding push, even in an
-	// organization still stored as 'everything'.
+	// A member with no scope row gets no finding push.
 	if ra := recipients(h.findingA); !ra[h.memberA] || ra[h.memberFree] || ra[h.memberStrict] {
 		t.Errorf("push for FA: memberA=%v (want true) memberFree=%v memberStrict=%v (want false)",
 			ra[h.memberA], ra[h.memberFree], ra[h.memberStrict])

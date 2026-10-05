@@ -60,6 +60,17 @@ Unlike in-code ignore files, platform-controlled suppression rules:
 - `rejected` - Denied, not active
 - `expired` - Was approved but past expiration date
 
+**When a rule stops applying** (it expires, or it is deleted), the suppression
+is lifted in the same transaction: every finding the rule hid that is still in
+the suppression's disposition (`false_positive` or `accepted` with resolution
+`suppressed`) goes back to `new`, with a `reopened` activity. If another active
+rule of the organization matches the finding, it stays suppressed and is linked
+to that rule instead. A finding someone has triaged since is left alone.
+
+**Matching:** a `path_pattern` only matches findings that have a file path. A
+path-only rule such as `test/**` never matches DAST, network or infrastructure
+findings.
+
 ---
 
 ## Create Suppression Rule
@@ -212,8 +223,25 @@ Approves a pending suppression rule, making it active.
 
 ```http
 POST /api/v1/suppressions/{id}/approve
+Content-Type: application/json
 Authorization: Bearer <access_token>
 ```
+
+```json
+{ "reviewed_updated_at": "2026-10-04T10:00:00.123456Z" }
+```
+
+`reviewed_updated_at` is required: the rule's `updated_at` exactly as you
+loaded it. If the rule was edited since (for example broadened by its
+requester), the approval is refused with `409` and must be repeated on the
+current version.
+
+**Four eyes** (owner decision B16): the requester cannot approve their own rule
+while the organization has at least two people who can approve (owners,
+admins, holders of `findings:suppressions:approve`): `403`. In an organization
+with a single eligible approver, that person may approve their own rule only if
+they are the owner; the approval is recorded in the audit log as
+`suppression_rule.self_approved` at Critical severity.
 
 ### Response
 

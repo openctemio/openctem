@@ -8,6 +8,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -62,6 +63,9 @@ func (s *SecretStoreService) CreateCredential(ctx context.Context, input CreateC
 
 	// Validate data matches type
 	if err := s.validateCredentialData(input.CredentialType, input.Data); err != nil {
+		return nil, err
+	}
+	if err := validateExpiry(input.ExpiresAt); err != nil {
 		return nil, err
 	}
 
@@ -155,17 +159,37 @@ func (s *SecretStoreService) ListCredentials(ctx context.Context, input ListCred
 	}, nil
 }
 
-// UpdateCredentialInput contains input for updating a secretstore.
+// OptionalTime is a PATCH-style time field: Set=false leaves the stored value
+// as it is, Set with a nil Value clears it, Set with a Value replaces it.
+type OptionalTime struct {
+	Set   bool
+	Value *time.Time
+}
+
+// UpdateCredentialInput contains input for updating a credential's metadata.
+// Every field is optional: an absent field is left unchanged (it used to be
+// wiped, so a member editing the name silently removed an expiry). The secret
+// itself changes only through RotateCredential.
 type UpdateCredentialInput struct {
 	TenantID     shared.ID
 	CredentialID string
-	Name         string
-	Description  string
-	Data         any // One of the credential data types (nil to keep existing)
-	ExpiresAt    *time.Time
+	ActorID      shared.ID
+	Name         *string
+	Description  *string
+	ExpiresAt    OptionalTime
 }
 
-// UpdateCredential updates a credential in the secret store.
+// validateExpiry refuses an expiry in the past: it would make the credential
+// unusable the moment it is saved.
+func validateExpiry(t *time.Time) error {
+	if t != nil && !t.After(time.Now()) {
+		return shared.NewDomainError("VALIDATION", "expires_at must be in the future", shared.ErrValidation)
+	}
+	return nil
+}
+
+// UpdateCredential updates a credential's metadata (name, description,
+// expiry), leaving absent fields unchanged.
 func (s *SecretStoreService) UpdateCredential(ctx context.Context, input UpdateCredentialInput) (*secretstore.Credential, error) {
 	id, err := shared.IDFromString(input.CredentialID)
 	if err != nil {
@@ -177,26 +201,28 @@ func (s *SecretStoreService) UpdateCredential(ctx context.Context, input UpdateC
 		return nil, err
 	}
 
-	// Update fields
-	if input.Name != "" {
-		cred.Name = input.Name
+	changed := make([]string, 0, 3)
+	if input.Name != nil {
+		if *input.Name == "" {
+			return nil, shared.NewDomainError("VALIDATION", "name cannot be empty", shared.ErrValidation)
+		}
+		if *input.Name != cred.Name {
+			cred.Name = *input.Name
+			changed = append(changed, "name")
+		}
 	}
-	cred.Description = input.Description
-	cred.ExpiresAt = input.ExpiresAt
-	cred.UpdatedAt = time.Now()
-
-	// Update encrypted data if provided
-	if input.Data != nil {
-		if err := s.validateCredentialData(cred.CredentialType, input.Data); err != nil {
+	if input.Description != nil && *input.Description != cred.Description {
+		cred.Description = *input.Description
+		changed = append(changed, "description")
+	}
+	if input.ExpiresAt.Set {
+		if err := validateExpiry(input.ExpiresAt.Value); err != nil {
 			return nil, err
 		}
-
-		encryptedData, err := s.encryptor.EncryptJSON(input.Data)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt credential data: %w", err)
-		}
-		cred.EncryptedData = encryptedData
+		cred.ExpiresAt = input.ExpiresAt.Value
+		changed = append(changed, "expires_at")
 	}
+	cred.UpdatedAt = time.Now()
 
 	if err := s.repo.Update(ctx, cred); err != nil {
 		return nil, err
@@ -207,18 +233,35 @@ func (s *SecretStoreService) UpdateCredential(ctx context.Context, input UpdateC
 		"name", cred.Name,
 	)
 
-	// Audit update
-	actx := auditapp.AuditContext{
-		TenantID: input.TenantID.String(),
-		// ActorID would need to be passed in input
+	event := auditapp.NewSuccessEvent(auditdom.ActionCredentialUpdated, auditdom.ResourceTypeToken, cred.ID.String()).
+		WithResourceName(cred.Name).
+		WithMessage(fmt.Sprintf("Credential '%s' updated", cred.Name)).
+		WithMetadata("changed_fields", changed)
+	if input.ExpiresAt.Set {
+		if input.ExpiresAt.Value == nil {
+			event = event.WithMetadata("expires_at", nil)
+		} else {
+			event = event.WithMetadata("expires_at", input.ExpiresAt.Value.UTC().Format(time.RFC3339))
+		}
 	}
-	_ = s.auditService.LogCredentialUpdated(ctx, actx, cred.ID.String(), cred.Name)
+	s.logAudit(ctx, input.TenantID, input.ActorID, event)
 
 	return cred, nil
 }
 
-// RotateCredential rotates a credential with new data.
-func (s *SecretStoreService) RotateCredential(ctx context.Context, tenantID shared.ID, credentialID string, newData any) (*secretstore.Credential, error) {
+// RotateCredentialInput replaces a credential's secret value.
+type RotateCredentialInput struct {
+	TenantID     shared.ID
+	CredentialID string
+	ActorID      shared.ID
+	Data         any // one of the credential data types, matching the stored type
+}
+
+// RotateCredential replaces the secret of a credential in place (the type
+// stays; key_version and last_rotated_at advance). Sources bound to it use the
+// new value on their next fetch.
+func (s *SecretStoreService) RotateCredential(ctx context.Context, input RotateCredentialInput) (*secretstore.Credential, error) {
+	tenantID, credentialID, newData := input.TenantID, input.CredentialID, input.Data
 	id, err := shared.IDFromString(credentialID)
 	if err != nil {
 		return nil, shared.NewDomainError("VALIDATION", "invalid credential ID", shared.ErrValidation)
@@ -253,13 +296,45 @@ func (s *SecretStoreService) RotateCredential(ctx context.Context, tenantID shar
 		"key_version", cred.KeyVersion,
 	)
 
-	// Audit rotation (treat as update)
-	actx := auditapp.AuditContext{
-		TenantID: tenantID.String(),
-	}
-	_ = s.auditService.LogCredentialUpdated(ctx, actx, cred.ID.String(), cred.Name)
+	event := auditapp.NewSuccessEvent(auditdom.ActionCredentialUpdated, auditdom.ResourceTypeToken, cred.ID.String()).
+		WithResourceName(cred.Name).
+		WithMessage(fmt.Sprintf("Credential '%s' rotated (secret replaced)", cred.Name)).
+		WithMetadata("rotated", true).
+		WithMetadata("key_version", cred.KeyVersion).
+		WithSeverity(auditdom.SeverityHigh)
+	s.logAudit(ctx, tenantID, input.ActorID, event)
 
 	return cred, nil
+}
+
+// logAudit records an event with the acting user (or a system actor named in
+// the metadata when there is none). Audit is best-effort here: the change has
+// already been committed.
+func (s *SecretStoreService) logAudit(ctx context.Context, tenantID, actorID shared.ID, event auditapp.AuditEvent) {
+	if s.auditService == nil {
+		return
+	}
+	actx := auditapp.AuditContext{TenantID: tenantID.String()}
+	if !actorID.IsZero() {
+		actx.ActorID = actorID.String()
+	} else {
+		event = event.WithMetadata("system_actor", "secret-store")
+	}
+	if err := s.auditService.LogEvent(ctx, actx, event); err != nil {
+		s.logger.Warn("failed to audit secret store change", "error", err)
+	}
+}
+
+// actorFromContext is the authenticated user of the request, when there is one
+// (a template sync started by a person carries them; a scheduled sync does
+// not).
+func actorFromContext(ctx context.Context) shared.ID {
+	if s, ok := ctx.Value(logger.ContextKeyUserID).(string); ok {
+		if id, err := shared.IDFromString(s); err == nil {
+			return id
+		}
+	}
+	return shared.ID{}
 }
 
 // DeleteCredential deletes a credential from the secret store.
@@ -276,11 +351,10 @@ func (s *SecretStoreService) DeleteCredential(ctx context.Context, tenantID shar
 
 	s.logger.Info("credential deleted", "id", credentialID)
 
-	// Audit deletion
-	actx := auditapp.AuditContext{
-		TenantID: tenantID.String(),
-	}
-	_ = s.auditService.LogCredentialDeleted(ctx, actx, credentialID)
+	event := auditapp.NewSuccessEvent(auditdom.ActionCredentialDeleted, auditdom.ResourceTypeToken, credentialID).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Credential %s deleted", credentialID))
+	s.logAudit(ctx, tenantID, actorFromContext(ctx), event)
 
 	return nil
 }
@@ -335,11 +409,17 @@ func (s *SecretStoreService) DecryptCredentialData(ctx context.Context, tenantID
 	// Update last used (with tenant validation)
 	_ = s.repo.UpdateLastUsedByTenantAndID(ctx, tenantID, id)
 
-	// Audit access (CRITICAL)
-	actx := auditapp.AuditContext{
-		TenantID: tenantID.String(),
+	// Audit access (high sensitivity): the person who started the sync, or a
+	// named system actor for a scheduled one.
+	event := auditapp.NewSuccessEvent(auditdom.ActionCredentialAccessed, auditdom.ResourceTypeToken, credentialID).
+		WithResourceName(cred.Name).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Credential '%s' decrypted/accessed", cred.Name))
+	actor := actorFromContext(ctx)
+	if actor.IsZero() {
+		event = event.WithMetadata("system_actor", "template-sync")
 	}
-	_ = s.auditService.LogCredentialAccessed(ctx, actx, credentialID, cred.Name)
+	s.logAudit(ctx, tenantID, actor, event)
 
 	return data, nil
 }

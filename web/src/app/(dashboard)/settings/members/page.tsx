@@ -81,9 +81,12 @@ import {
   ShieldOff,
 } from 'lucide-react'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useUrlPagination } from '@/hooks/use-url-pagination'
+import { useDebounce } from '@/hooks/use-debounce'
 import { useTenant } from '@/context/tenant-provider'
 import {
   useMembers,
+  useMemberStats,
   useInvitations,
   type MemberWithUser,
   type MemberRole,
@@ -140,6 +143,8 @@ type StatusFilter = 'all' | 'active' | 'suspended'
 type RoleFilter = 'all' | MemberRole
 
 // Static config
+const MEMBER_PAGE_SIZES = [10, 20, 50, 100]
+
 const statusFilters: { value: StatusFilter; label: string }[] = [
   { value: 'all', label: 'All statuses' },
   { value: 'active', label: 'Active' },
@@ -352,11 +357,14 @@ function EditUserRolesDialog({
   open,
   onOpenChange,
   onSuccess,
+  canGrantAdmin = false,
 }: {
   member: MemberWithUser | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess?: () => void
+  /** Only the owner may make someone an administrator (settings decision B2). */
+  canGrantAdmin?: boolean
 }) {
   // Only fetch data when dialog is actually open (avoid unnecessary API calls)
   const {
@@ -414,6 +422,7 @@ function EditUserRolesDialog({
 
         <div className="py-4">
           <RoleChecklist
+            canGrantAdmin={canGrantAdmin}
             roles={allRoles}
             selected={selectedRoleIds}
             onChange={setSelectedRoleIds}
@@ -459,14 +468,55 @@ export default function UsersPage() {
   const currentUser = useUser()
   const caller = { isOwner: isOwner(), userId: currentUser?.id }
 
+  // Search and filters live in the URL so a filtered member list can be linked to.
+  const [searchQuery, setSearchQueryParam] = useUrlFilter('q', '')
+  const [statusParam, setStatusParam] = useUrlFilter('status', 'all')
+  const [roleParam, setRoleParam] = useUrlFilter('role', 'all')
+  const statusFilter: StatusFilter = statusFilters.some((f) => f.value === statusParam)
+    ? (statusParam as StatusFilter)
+    : 'all'
+  const roleFilter: RoleFilter = roleFilters.some((f) => f.value === roleParam)
+    ? (roleParam as RoleFilter)
+    : 'all'
+  const debouncedSearch = useDebounce(searchQuery.trim(), 300)
+
+  // Paged, searched and filtered on the server. The list used to load one
+  // capped page (100) and filter it in the browser, so every member past the
+  // cap was unreachable (23a B20).
+  const { pagination, setPagination, resetPage, offset, limit } = useUrlPagination(
+    MEMBER_PAGE_SIZES,
+    20
+  )
+  const setSearchQuery = (v: string) => {
+    setSearchQueryParam(v)
+    resetPage()
+  }
+  const setStatusFilter = (v: string) => {
+    setStatusParam(v)
+    resetPage()
+  }
+  const setRoleFilter = (v: string) => {
+    setRoleParam(v)
+    resetPage()
+  }
+
   // API Hooks - includeRoles: true to get RBAC roles in single API call (avoids N+1)
   const {
     members,
+    total: membersTotal,
     isLoading: membersLoading,
     isError: membersError,
     mutate: mutateMembers,
-  } = useMembers(tenantSlug, { includeRoles: true })
-  // Note: Stats are calculated from members/invitations data to avoid extra API call
+  } = useMembers(tenantSlug, {
+    includeRoles: true,
+    search: debouncedSearch || undefined,
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    role: roleFilter === 'all' ? undefined : roleFilter,
+    limit,
+    offset,
+  })
+  // Organization-wide counts for the metric strip (not just this page).
+  const { stats: memberStats, mutate: mutateMemberStats } = useMemberStats(tenantSlug)
 
   // Build roles map from members data for O(1) lookup in table cells
   const memberRolesMap = useMemo(() => {
@@ -530,16 +580,6 @@ export default function UsersPage() {
       }
     }
   }, [pendingRolesEdit, selectedMember])
-  // Search and filters live in the URL so a filtered member list can be linked to.
-  const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
-  const [statusParam, setStatusFilter] = useUrlFilter('status', 'all')
-  const [roleParam, setRoleFilter] = useUrlFilter('role', 'all')
-  const statusFilter: StatusFilter = statusFilters.some((f) => f.value === statusParam)
-    ? (statusParam as StatusFilter)
-    : 'all'
-  const roleFilter: RoleFilter = roleFilters.some((f) => f.value === roleParam)
-    ? (roleParam as RoleFilter)
-    : 'all'
   // Role names for the pending-invitations table (only fetched when there are any).
   const { roles: availableRolesForInvite } = useRoles({ skip: invitations.length === 0 })
 
@@ -547,45 +587,18 @@ export default function UsersPage() {
   const refreshData = useCallback(() => {
     if (tenantSlug) {
       mutateMembers()
+      mutateMemberStats()
       mutateInvitations()
     }
-  }, [tenantSlug, mutateMembers, mutateInvitations])
-
-  // Filter data
-  const filteredData = useMemo(() => {
-    let data = [...members]
-
-    if (statusFilter !== 'all') {
-      data = data.filter((member) => member.status === statusFilter)
-    }
-
-    if (roleFilter !== 'all') {
-      data = data.filter((member) => member.role === roleFilter)
-    }
-
-    const q = searchQuery.trim().toLowerCase()
-    if (q) {
-      data = data.filter(
-        (member) =>
-          member.name?.toLowerCase().includes(q) ||
-          member.email?.toLowerCase().includes(q) ||
-          member.rbac_roles?.some((r) => r.name.toLowerCase().includes(q))
-      )
-    }
-
-    return data
-  }, [members, statusFilter, roleFilter, searchQuery])
+  }, [tenantSlug, mutateMembers, mutateMemberStats, mutateInvitations])
 
   // Status counts from members (for the metric strip). Pending invitations are
   // listed in their own section below the table.
-  const statusCounts: Record<StatusFilter, number> = useMemo(
-    () => ({
-      all: members.length,
-      active: members.filter((m) => m.status === 'active').length,
-      suspended: members.filter((m) => m.status === 'suspended').length,
-    }),
-    [members]
-  )
+  const statusCounts: Record<StatusFilter, number> = useMemo(() => {
+    const all = memberStats?.total_members ?? 0
+    const active = memberStats?.active_members ?? 0
+    return { all, active, suspended: Math.max(0, all - active) }
+  }, [memberStats])
 
   // Table columns. The select-checkbox column was removed alongside the
   // bulk-actions dropdown — there's nothing to do with selected rows now.
@@ -1104,8 +1117,14 @@ export default function UsersPage() {
                 */
                 <DataTable
                   columns={columns}
-                  data={filteredData}
+                  data={members}
                   getRowId={(m) => m.id}
+                  manualPagination
+                  rowCount={membersTotal}
+                  pagination={pagination}
+                  onPaginationChange={setPagination}
+                  pageSizeOptions={MEMBER_PAGE_SIZES}
+                  paginationNoun="users"
                   showSearch={false}
                   showColumnToggle={false}
                   toolbarStart={toolbarStart}
@@ -1223,6 +1242,7 @@ export default function UsersPage() {
         open={inviteDialogOpen}
         onOpenChange={setInviteDialogOpen}
         onInvited={refreshData}
+        canGrantAdmin={caller.isOwner}
       />
 
       <AddUserDialog
@@ -1230,6 +1250,7 @@ export default function UsersPage() {
         open={addUserOpen}
         onOpenChange={setAddUserOpen}
         onCreated={refreshData}
+        canGrantAdmin={caller.isOwner}
       />
 
       <SetupLinkDialog
@@ -1253,6 +1274,7 @@ export default function UsersPage() {
             if (!open) setEditRolesMember(null)
           }}
           onSuccess={refreshData}
+          canGrantAdmin={caller.isOwner}
         />
       )}
 

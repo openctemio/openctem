@@ -174,7 +174,8 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
     try {
       await updateGroup({
         name: editForm.name,
-        description: editForm.description || undefined,
+        // "" clears the description (absent would mean unchanged).
+        description: editForm.description.trim(),
       })
       toast.success('Team updated successfully')
       setIsEditing(false)
