@@ -1535,6 +1535,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	// Open ports a port scan no longer sees are closed (research/22 P0-6).
 	s.Ingest.SetPortReconciler(postgres.NewEASMPortRepository(&postgres.DB{DB: deps.DB}))
+	// A tool ported to the tool contract declares what it produces in its
+	// sensor's manifest; that narrows what its reports may carry.
+	s.Ingest.SetToolContractSource(repos.Sensor)
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url

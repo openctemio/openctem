@@ -1,4 +1,4 @@
--- Reverts 001076: sensors go back to the gates they had before per-sensor
+-- Reverts 001079: sensors go back to the gates they had before per-sensor
 -- grants (poll, zone, tool, capability, local policy).
 SET lock_timeout = '5s';
 
