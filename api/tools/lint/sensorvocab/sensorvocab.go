@@ -35,6 +35,7 @@ var AllowedIdents = map[string]string{
 	"AIModeAgent":                        "AI triage mode backed by a self-hosted LLM agent",
 	"ModuleAITriageAgent":                "module for that AI agent mode",
 	"TestAITriage_GetAIConfig_AgentMode": "tests that AI agent mode",
+	"ScannerAgentID":                     "a third-party scanner's own endpoint agent id (CTIS identity_hints.agent_id), not a sensor",
 }
 
 // The HTTP User-Agent is not a sensor.
