@@ -24,7 +24,7 @@ func (r *FindingRepository) SourceBreakdown(ctx context.Context, tenantID shared
 				WHERE status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
 			)                                            AS open
 		FROM findings
-		WHERE tenant_id = $1 AND source != 'pentest'
+		WHERE tenant_id = $1 AND source != 'pentest' AND NOT branch_only
 		GROUP BY source, tool_name
 		ORDER BY total DESC, tool_name ASC
 	`
