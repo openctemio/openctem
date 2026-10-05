@@ -1625,6 +1625,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
 		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
 		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),
+		// An organization's "disabled" switch on a tool stops it at trigger time.
+		scan.WithTenantToolConfigs(repos.TenantToolConfig),
 		// A batch goes only to a sensor whose reported local policy accepts
 		// it; a trigger no sensor would accept is refused (research/25 §3.6).
 		scan.WithDispatchPolicy(repos.Sensor, s.Tenant),

@@ -421,6 +421,17 @@ the billing page in the UI.
 > - Every successful bind is audited as `template_source.credential_attached`
 >   (severity high) with the credential id/name and the destination host.
 >
+> **No credentials in the source configuration, https only.** The git, HTTP and
+> S3 configuration is stored as plain JSON and returned to anyone with
+> `scans:sources:read`, and the templates it fetches run on sensors. Create and
+> edit therefore refuse plain `http://` (git and HTTP sources), a URL with a
+> password or token (`https://user:token@host/...`), and HTTP headers that carry
+> a credential (`Authorization`, `Cookie`, `*token*`, `*key*`, `*secret*`,
+> `*auth*`): bind a credential instead. Rows stored before this rule keep
+> syncing and are masked in responses (URL password, credential header values).
+> Downloads stop at 50 MB (HTTP) and clones at 200 MB on disk or 20,000 files
+> (git), so a source cannot fill the API server's disk.
+>
 > The secret store has no per-credential host allowlist; the binding check
 > above is the control. Sources bound before this check existed keep their
 > credential until they are next re-pointed.
