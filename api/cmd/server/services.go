@@ -1425,6 +1425,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Multi-key store for rotation overlap (RFC-014 Phase 3). Additive: auth
 	// still accepts the inline key; renewal under a TTL issues overlapping keys.
 	s.Sensor.SetAPIKeyRepository(repos.SensorAPIKey)
+	// Key-bound sensors (RFC-052): public keys and the shared nonce store
+	// of signed requests.
+	s.Sensor.SetSigningKeyRepository(repos.SensorSigningKey)
+	if deps.RedisClient != nil {
+		s.Sensor.SetNonceStore(redis.NewSensorNonceStore(deps.RedisClient))
+	}
 	// Operator-tunable load-balancing weights (AGENT_LB_*). Applied to the
 	// load_score recomputed on every heartbeat.
 	s.Sensor.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
