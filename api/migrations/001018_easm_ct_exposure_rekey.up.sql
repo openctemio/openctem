@@ -11,14 +11,14 @@
 -- duplicates and keep a unique placeholder fingerprint.
 --
 -- The previous fingerprint, state and resolution of every touched row are
--- kept in easm_ct_rekey_000982 so the down migration restores them.
+-- kept in easm_ct_rekey_001018 so the down migration restores them.
 --
 -- The fingerprint below is byte-for-byte what exposure.Fingerprint computes
 -- in Go for these rows (json.Marshal of a map sorts keys; CT values are
 -- plain ASCII host names); internal/infra/postgres/easm_ct_rekey_db_test.go
 -- checks it.
 
-CREATE TABLE IF NOT EXISTS easm_ct_rekey_000982 (
+CREATE TABLE IF NOT EXISTS easm_ct_rekey_001018 (
     id                   UUID PRIMARY KEY,
     old_fingerprint      VARCHAR(64) NOT NULL,
     old_state            TEXT        NOT NULL,
@@ -48,7 +48,7 @@ FROM (
 ) x
 WHERE fingerprint <> new_fp OR rn > 1;
 
-INSERT INTO easm_ct_rekey_000982 (id, old_fingerprint, old_state, old_resolved_at, old_resolution_notes)
+INSERT INTO easm_ct_rekey_001018 (id, old_fingerprint, old_state, old_resolved_at, old_resolution_notes)
 SELECT id, fingerprint, state, resolved_at, resolution_notes FROM ct_rekey
 ON CONFLICT (id) DO NOTHING;
 

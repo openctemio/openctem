@@ -12,19 +12,19 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 )
 
-// Migration 000982 (research/22 P0-9, 22c B2) re-keys CT exposures to the
+// Migration 001018 (research/22 P0-9, 22c B2) re-keys CT exposures to the
 // asset-independent identity the CT monitor now writes, resolves the
 // duplicates it collapses, and leaves other sources and other tenants'
 // rows alone. Its SQL fingerprint must equal exposure.Fingerprint. The down
 // migration restores every touched row. Replayed down -> up -> down -> up
 // inside a rolled-back transaction as the migrator.
-func TestMigration000982_RekeysCTExposures(t *testing.T) {
+func TestMigration001018_RekeysCTExposures(t *testing.T) {
 	ctx := context.Background()
-	up, err := os.ReadFile("../../migrations/000982_easm_ct_exposure_rekey.up.sql")
+	up, err := os.ReadFile("../../migrations/001018_easm_ct_exposure_rekey.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	down, err := os.ReadFile("../../migrations/000982_easm_ct_exposure_rekey.down.sql")
+	down, err := os.ReadFile("../../migrations/001018_easm_ct_exposure_rekey.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
