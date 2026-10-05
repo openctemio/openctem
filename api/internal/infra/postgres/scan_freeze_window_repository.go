@@ -1,7 +1,7 @@
 package postgres
 
 // Scan freeze windows (docs/architecture/scan-zones.md, "Freeze windows";
-// migration 001110). Whether a window is active is one SQL expression,
+// migration 001115). Whether a window is active is one SQL expression,
 // freezeActiveSQL, used both by the repository (the trigger, the scheduler
 // and the API) and by the command claim predicate (freezeHoldPredicate), so
 // what the API reports and what dispatch enforces cannot drift apart.
