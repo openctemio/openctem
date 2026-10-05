@@ -261,16 +261,9 @@ func httpDataScopeCaller(ctx context.Context) datascope.Caller {
 }
 
 // membershipAdminLookup decides admin status outside a request (WebSocket
-// subscriptions, cross-tenant dashboards) the way the access token does:
-// the team role (GetMembership reads v_user_effective_role) is owner or admin.
+// subscriptions, background jobs); see datascope.MembershipAdminLookup.
 func membershipAdminLookup(tenants tenant.Repository) datascope.AdminLookup {
-	return func(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
-		m, err := tenants.GetMembership(ctx, userID, tenantID)
-		if err != nil {
-			return false, err
-		}
-		return m.IsOwner() || m.IsAdmin(), nil
-	}
+	return datascope.MembershipAdminLookup(tenants)
 }
 
 // moduleBundleStore adapts the tenant repository to module.BundleStore, storing
@@ -738,6 +731,12 @@ func (a scimMembershipAdapter) SuspendMember(ctx context.Context, tenantID, memb
 
 func (a scimMembershipAdapter) ReactivateMember(ctx context.Context, tenantID, membershipID shared.ID) error {
 	return a.svc.ReactivateMember(ctx, membershipID.String(), scimAuditContext(tenantID))
+}
+
+// OffboardMember is SCIM delete: offboard, or disable when the member owns
+// work that an administrator must hand to someone first.
+func (a scimMembershipAdapter) OffboardMember(ctx context.Context, tenantID, membershipID shared.ID) error {
+	return a.svc.DeprovisionMember(ctx, membershipID.String(), scimAuditContext(tenantID))
 }
 
 // UpdateMemberRole satisfies scim.RoleManager for SCIM group → role mapping.
@@ -2141,6 +2140,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// when the tenant has no usable SSO login path. main.go rebuilds s.Tenant, so
 	// this is re-applied there too.
 	s.Tenant.SetSSOPathChecker(s.SSO)
+
+	// Member lifecycle (RFC-050): disable / re-enable / offboard / erase run
+	// in one transaction each; administrators are told in-app when a disable
+	// pauses schedules or a deprovisioned member still owns work.
+	s.Tenant.SetLifecycleRepository(repos.MemberLifecycle)
+	s.Tenant.SetLifecycleNotifier(s.Notification)
 }
 
 // InitEmailServices initializes email-related services.
