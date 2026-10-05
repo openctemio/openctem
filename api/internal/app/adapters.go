@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -18,18 +19,18 @@ import (
 
 // scanAuditServiceAdapter adapts AuditService to scan.AuditService interface.
 type scanAuditServiceAdapter struct {
-	svc *AuditService
+	svc *auditsvc.AuditService
 }
 
 // NewScanAuditServiceAdapter creates an adapter for the scan package's AuditService interface.
-func NewScanAuditServiceAdapter(svc *AuditService) scan.AuditService {
+func NewScanAuditServiceAdapter(svc *auditsvc.AuditService) scan.AuditService {
 	return &scanAuditServiceAdapter{svc: svc}
 }
 
 // LogEvent implements scan.AuditService.
 func (a *scanAuditServiceAdapter) LogEvent(ctx context.Context, actx scan.AuditContext, event scan.AuditEvent) error {
 	// Convert scan.AuditEvent to app.AuditEvent
-	appEvent := AuditEvent{
+	appEvent := auditsvc.AuditEvent{
 		Action:       event.Action,
 		ResourceType: event.ResourceType,
 		ResourceID:   event.ResourceID,
@@ -49,7 +50,7 @@ func (a *scanAuditServiceAdapter) LogEvent(ctx context.Context, actx scan.AuditC
 	}
 
 	// Convert scan.AuditContext to app.AuditContext
-	appCtx := AuditContext{
+	appCtx := auditsvc.AuditContext{
 		TenantID: actx.TenantID,
 		ActorID:  actx.ActorID,
 	}
@@ -59,18 +60,18 @@ func (a *scanAuditServiceAdapter) LogEvent(ctx context.Context, actx scan.AuditC
 
 // pipelineAuditServiceAdapter adapts AuditService to pipeline.AuditService interface.
 type pipelineAuditServiceAdapter struct {
-	svc *AuditService
+	svc *auditsvc.AuditService
 }
 
 // NewPipelineAuditServiceAdapter creates an adapter for the pipeline package's AuditService interface.
-func NewPipelineAuditServiceAdapter(svc *AuditService) pipeline.AuditService {
+func NewPipelineAuditServiceAdapter(svc *auditsvc.AuditService) pipeline.AuditService {
 	return &pipelineAuditServiceAdapter{svc: svc}
 }
 
 // LogEvent implements pipeline.AuditService.
 func (a *pipelineAuditServiceAdapter) LogEvent(ctx context.Context, actx pipeline.AuditContext, event pipeline.AuditEvent) error {
 	// Convert pipeline.AuditEvent to app.AuditEvent
-	appEvent := AuditEvent{
+	appEvent := auditsvc.AuditEvent{
 		Action:       event.Action,
 		ResourceType: event.ResourceType,
 		ResourceID:   event.ResourceID,
@@ -90,7 +91,7 @@ func (a *pipelineAuditServiceAdapter) LogEvent(ctx context.Context, actx pipelin
 	}
 
 	// Convert pipeline.AuditContext to app.AuditContext
-	appCtx := AuditContext{
+	appCtx := auditsvc.AuditContext{
 		TenantID: actx.TenantID,
 		ActorID:  actx.ActorID,
 	}
