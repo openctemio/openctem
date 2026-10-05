@@ -41,8 +41,17 @@ type AssetAttributionHandler struct {
 	attribution AttributionReader
 	assets      ScopedAssetGetter
 	audit       AttributionAuditor
+	activeGate  ActiveScanGate
 	logger      *logger.Logger
 }
+
+// ActiveScanGate is the active-scan ownership gate (*easm.ActiveGate).
+type ActiveScanGate interface {
+	ActiveCheckBlocked(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.State, error)
+}
+
+// SetActiveGate makes active_checks_allowed answer with the gate scans use.
+func (h *AssetAttributionHandler) SetActiveGate(g ActiveScanGate) { h.activeGate = g }
 
 // SetAuditService records decisions in the audit log.
 func (h *AssetAttributionHandler) SetAuditService(a AttributionAuditor) { h.audit = a }
@@ -64,9 +73,15 @@ type AssetAttributionResponse struct {
 	// HumanDecided: a person set the state; automation will not change it.
 	HumanDecided bool `json:"human_decided"`
 	// ActiveChecksAllowed: whether a scan may touch the asset.
-	ActiveChecksAllowed bool                       `json:"active_checks_allowed"`
-	DecidedAt           *time.Time                 `json:"decided_at,omitempty"`
-	Evidence            []AssetAttributionEvidence `json:"evidence"`
+	ActiveChecksAllowed bool `json:"active_checks_allowed"`
+	// ActiveChecksBlockedBy says why a scan may not touch the asset when
+	// active_checks_allowed is false: its state (needs_review, candidate,
+	// dependency, monitor_only, rejected; rejected also for a name under a
+	// rejected name), or unattributed: no record, and neither inside a scope
+	// target nor under a root-domain seed or verified domain.
+	ActiveChecksBlockedBy string                     `json:"active_checks_blocked_by,omitempty"`
+	DecidedAt             *time.Time                 `json:"decided_at,omitempty"`
+	Evidence              []AssetAttributionEvidence `json:"evidence"`
 }
 
 // AssetAttributionEvidence is one reason.
@@ -123,8 +138,28 @@ func (h *AssetAttributionHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := toAssetAttributionResponse(view, found)
+	h.applyActiveGate(ctx, tenantID, assetID, &resp)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// applyActiveGate answers active_checks_allowed with the gate scans use, so
+// the page says what a scan will do. A failed lookup reports not allowed.
+func (h *AssetAttributionHandler) applyActiveGate(ctx context.Context, tenantID shared.ID, assetID string, resp *AssetAttributionResponse) {
+	if h.activeGate == nil {
+		return
+	}
+	blocked, err := h.activeGate.ActiveCheckBlocked(ctx, tenantID, []string{assetID})
+	if err != nil {
+		h.logger.Warn("active-scan gate lookup failed", "error", logger.SanitizeError(err))
+		resp.ActiveChecksAllowed = false
+		return
+	}
+	state, no := blocked[assetID]
+	resp.ActiveChecksAllowed = !no
+	if no {
+		resp.ActiveChecksBlockedBy = string(state)
+	}
 }
 
 // AssetAttributionDecisionRequest is a person's decision.
@@ -221,7 +256,9 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toAssetAttributionResponse(view, found))
+	resp := toAssetAttributionResponse(view, found)
+	h.applyActiveGate(ctx, tenantID, assetID, &resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func toAssetAttributionResponse(view *postgres.AttributionView, found bool) AssetAttributionResponse {

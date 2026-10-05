@@ -255,7 +255,7 @@ func (r *FindingRepository) groupByCVE(
 			(ARRAY['critical','high','medium','low','info'])[MIN(`+cveSeverityRank+`)] as severity,
 			COALESCE(MAX(f.cvss_score), MAX(v.cvss_score)),
 			COALESCE(MAX(f.epss_score), MAX(v.epss_score)),
-			(COALESCE(BOOL_OR(v.exploit_available), false) OR COALESCE(BOOL_OR(f.metadata->>'scanner_exploit_available' = 'true'), false)),
+			COALESCE(BOOL_OR(`+vulnerability.FindingExploitAvailableSQL("f")+`), false),
 			(COALESCE(BOOL_OR(f.is_in_kev), false) OR BOOL_OR(v.cisa_kev_date_added IS NOT NULL)) as cisa_kev,
 			%s
 		FROM findings f

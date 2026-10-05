@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scimtoken"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -36,6 +37,9 @@ func SCIMAuth(authn SCIMTokenAuthenticator) func(http.Handler) http.Handler {
 				return
 			}
 			ctx := context.WithValue(r.Context(), scimTenantCtxKey, tok.TenantID())
+			// Every audit entry the request writes (member added, suspended,
+			// role changed) names the token that did it.
+			ctx = auditapp.WithSCIMTokenActor(ctx, tok.ID().String(), tok.Prefix())
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
