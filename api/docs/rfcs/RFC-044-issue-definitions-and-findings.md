@@ -13,9 +13,9 @@
 >
 > Current state with evidence and live numbers:
 > [architecture/vulnerability-model.md](../architecture/vulnerability-model.md).
-> Industry research: `research/11-vuln-vs-finding-taxonomy.md` (OSV schema,
-> GitHub Advisory Database, Tenable findings, DefectDojo's 2026-07 vulnerability
-> registry, OCSF finding classes).
+> Research: `research/11-vuln-vs-finding-taxonomy.md` (OSV schema, GitHub
+> Advisory Database, the finding shape of the scanners we ingest, OCSF finding
+> classes).
 >
 > Builds on and must stay consistent with:
 > - [RFC-043](RFC-043-deduplication-and-identity.md) (PR #892) — finding identity, fingerprints, and the
@@ -34,12 +34,12 @@
 
 ## 1. Answer in short
 
-Every platform the research checked separates the **definition** of an issue (a
-catalog entry: what it is, how bad it is in general, how to fix it) from the
-**finding** (one occurrence on an asset or code location). None uses CVE as the
-key: Tenable keys a finding on asset + plugin + port + protocol and a plugin
+The design separates the **definition** of an issue (a catalog entry: what it
+is, how bad it is in general, how to fix it) from the **finding** (one
+occurrence on an asset or code location), and CVE is not the key: a Tenable
+finding we ingest is keyed on asset + plugin + port + protocol and a plugin
 maps to zero, one or many CVEs; GitHub and OSV issue their own ids and treat
-CVE as an alias; DefectDojo moved in July 2026 to a registry of *any* identifier
+CVE as an alias. The catalog is therefore a registry of *any* identifier
 string, linked to findings through an ordered join where position 0 is the
 primary id. OCSF splits findings into classes by kind (Vulnerability 2002,
 Compliance 2003, Detection 2004, Data Security 2006, AppSec Posture 2007) and
@@ -259,7 +259,7 @@ cannot merge two global definitions or rename one.
 A Go table (`pkg/domain/definition/namespace.go`) with, per namespace: the id
 pattern and normalizer (upper-case CVE, GHSA lower-case body per GitHub), the
 default kind, display prefix, reference URL template, and whether it is
-global-capable. Detection from prefix follows DefectDojo/OSV
+global-capable. Detection from prefix follows the OSV convention
 (`<DB>-<ENTRYID>`); a scanner rule never relies on prefix guessing — ingest
 knows the tool and sets the namespace. Unknown advisory prefixes go to
 `OSV:<prefix>`; unknown tools to `CUSTOM:<tool>` (tenant scope).
@@ -348,8 +348,8 @@ external id), `exploit_evidence` and `secret_valid`. Every class reason names
 the evidence ("Verified live AWS key on internet-facing asset").
 
 KEV and EPSS lookups move from `findings.cve_id` to the CVE identifiers of the
-finding's definitions (primary + additional + alias), taking the worst value —
-the DefectDojo "worst-value projection" and RFC-043's alias cluster.
+finding's definitions (primary + additional + alias), taking the worst value
+over RFC-043's alias cluster.
 
 ## 7. Aggregation
 
@@ -568,13 +568,9 @@ Web:
 `research/11-vuln-vs-finding-taxonomy.md` (2026-10-03, adversarially verified,
 24 of 25 claims confirmed). Primary sources: OSV schema (ids, `x_` local
 prefix, `aliases`/`upstream`/`related` semantics), GitHub Advisory Database
-(GHSA independent of CVE; malware advisories), Tenable findings (asset + plugin
-+ port + protocol), DefectDojo `dojo/vulnerability/models.py` and
-`dojo/finding/models.py` (global registry of any id, ordered
-finding↔vulnerability join with order 0 primary, EPSS/KEV cached on the
-registry, `vuln_id_from_tool` as grouping key; merged 2026-07-29/30), OCSF
-1.3–1.9 finding classes and the `vulnerability` object (CWE-only and
-advisory-only entries). Caveats carried from the research: Qualys, Rapid7,
-Snyk and Wiz models were not verified; the misconfiguration → Compliance
-Finding mapping passed 2–1; the CVE lifecycle states and the per-kind
-prioritization model (§6) are design choices, not vendor facts.
+(GHSA independent of CVE; malware advisories), the finding shape of the
+network scanners we ingest (asset + plugin + port + protocol), OCSF 1.3–1.9
+finding classes and the `vulnerability` object (CWE-only and advisory-only
+entries). Caveats carried from the research: the misconfiguration →
+Compliance Finding mapping passed 2–1; the CVE lifecycle states and the
+per-kind prioritization model (§6) are design choices, not external facts.

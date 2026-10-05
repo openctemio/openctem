@@ -1027,6 +1027,19 @@ results an out-of-scope id is reported exactly like an unknown id.
   `ErrInactivePrincipal` for a disabled or offboarded member, so a background
   job acting for them (scheduled scan, report) refuses instead of running
   with a bypass the person no longer holds.
+- **The scope follows its sources in the same transaction** (migration
+  001051, RFC-050 W6). Database triggers keep `user_accessible_assets` in
+  step whatever code path writes: a group asset row inserted or deleted
+  (`asset_owners_scope_sync`), a member leaving a group
+  (`group_members_scope_sync`), a group deactivated or re-activated
+  (`groups_active_scope_sync`, recomputes every member), a group deleted (its
+  asset rows go first, `groups_delete_scope_sync`), a scope rule deleted or
+  deactivated (its auto-assigned rows go, instead of `ON DELETE SET NULL`
+  orphaning them). A user keeps an asset another active group or a direct
+  grant still gives. Narrowing a rule reconciles the whole group (stale
+  auto-assignments removed), and an asset-group change reconciles the rules
+  of that tenant (it used to look them up with a zero tenant id). Before,
+  deactivating a group never removed the access it granted (21b H6/L-12).
 
 ### Member lifecycle (disable, offboard, erase)
 

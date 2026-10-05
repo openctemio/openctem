@@ -24,7 +24,6 @@ type (
 	EmailJobEnqueuer            = tenant.EmailJobEnqueuer
 	MemberStatusEmailNotifier   = tenant.MemberStatusEmailNotifier
 	TeamInvitationJobPayload    = tenant.TeamInvitationJobPayload
-	UpdateAPISettingsInput      = tenant.UpdateAPISettingsInput
 	UpdateBranchSettingsInput   = tenant.UpdateBranchSettingsInput
 	UpdateBrandingSettingsInput = tenant.UpdateBrandingSettingsInput
 	UpdateGeneralSettingsInput  = tenant.UpdateGeneralSettingsInput
