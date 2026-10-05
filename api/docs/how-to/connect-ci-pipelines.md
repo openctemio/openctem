@@ -141,7 +141,7 @@ the upload tokens of their running jobs at once.
 
 CI jobs authenticate only with their OIDC identity. The former `runner` sensor
 type (a sensor API key stored in CI) was removed: such sensors and their keys
-were deleted on upgrade (migration `001114`) and new ones cannot be created.
+were deleted on upgrade (migration `001121`) and new ones cannot be created.
 Delete any `API_KEY` secret left in your CI settings.
 
 ## Troubleshooting
