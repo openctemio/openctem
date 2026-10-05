@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -18,13 +18,13 @@ import (
 
 // WorkflowHandler handles HTTP requests for workflows.
 type WorkflowHandler struct {
-	service   *app.WorkflowService
+	service   *workflowsvc.WorkflowService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewWorkflowHandler creates a new WorkflowHandler.
-func NewWorkflowHandler(service *app.WorkflowService, v *validator.Validator, log *logger.Logger) *WorkflowHandler {
+func NewWorkflowHandler(service *workflowsvc.WorkflowService, v *validator.Validator, log *logger.Logger) *WorkflowHandler {
 	return &WorkflowHandler{
 		service:   service,
 		validator: v,
@@ -226,9 +226,9 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Convert nodes
-	nodes := make([]app.CreateNodeInput, len(req.Nodes))
+	nodes := make([]workflowsvc.CreateNodeInput, len(req.Nodes))
 	for i, n := range req.Nodes {
-		nodes[i] = app.CreateNodeInput{
+		nodes[i] = workflowsvc.CreateNodeInput{
 			NodeKey:     n.NodeKey,
 			NodeType:    workflow.NodeType(n.NodeType),
 			Name:        n.Name,
@@ -244,9 +244,9 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Convert edges
-	edges := make([]app.CreateEdgeInput, len(req.Edges))
+	edges := make([]workflowsvc.CreateEdgeInput, len(req.Edges))
 	for i, e := range req.Edges {
-		edges[i] = app.CreateEdgeInput{
+		edges[i] = workflowsvc.CreateEdgeInput{
 			SourceNodeKey: e.SourceNodeKey,
 			TargetNodeKey: e.TargetNodeKey,
 			SourceHandle:  e.SourceHandle,
@@ -254,7 +254,7 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	input := app.CreateWorkflowInput{
+	input := workflowsvc.CreateWorkflowInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		Name:        req.Name,
@@ -318,7 +318,7 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 		isActive = &active
 	}
 
-	input := app.ListWorkflowsInput{
+	input := workflowsvc.ListWorkflowsInput{
 		TenantID: tenantUUID,
 		IsActive: isActive,
 		Tags:     parseQueryArray(r.URL.Query().Get("tags")),
@@ -389,7 +389,7 @@ func (h *WorkflowHandler) UpdateWorkflow(w http.ResponseWriter, r *http.Request)
 
 	userUUID, _ := shared.IDFromString(userID)
 
-	input := app.UpdateWorkflowInput{
+	input := workflowsvc.UpdateWorkflowInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -489,9 +489,9 @@ func (h *WorkflowHandler) UpdateWorkflowGraph(w http.ResponseWriter, r *http.Req
 	}
 
 	// Convert nodes
-	nodes := make([]app.CreateNodeInput, len(req.Nodes))
+	nodes := make([]workflowsvc.CreateNodeInput, len(req.Nodes))
 	for i, n := range req.Nodes {
-		nodes[i] = app.CreateNodeInput{
+		nodes[i] = workflowsvc.CreateNodeInput{
 			NodeKey:     n.NodeKey,
 			NodeType:    workflow.NodeType(n.NodeType),
 			Name:        n.Name,
@@ -507,9 +507,9 @@ func (h *WorkflowHandler) UpdateWorkflowGraph(w http.ResponseWriter, r *http.Req
 	}
 
 	// Convert edges
-	edges := make([]app.CreateEdgeInput, len(req.Edges))
+	edges := make([]workflowsvc.CreateEdgeInput, len(req.Edges))
 	for i, e := range req.Edges {
-		edges[i] = app.CreateEdgeInput{
+		edges[i] = workflowsvc.CreateEdgeInput{
 			SourceNodeKey: e.SourceNodeKey,
 			TargetNodeKey: e.TargetNodeKey,
 			SourceHandle:  e.SourceHandle,
@@ -517,7 +517,7 @@ func (h *WorkflowHandler) UpdateWorkflowGraph(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	input := app.UpdateWorkflowGraphInput{
+	input := workflowsvc.UpdateWorkflowGraphInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -576,7 +576,7 @@ func (h *WorkflowHandler) AddNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.AddNodeInput{
+	input := workflowsvc.AddNodeInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -655,7 +655,7 @@ func (h *WorkflowHandler) UpdateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateNodeInput{
+	input := workflowsvc.UpdateNodeInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -747,7 +747,7 @@ func (h *WorkflowHandler) AddEdge(w http.ResponseWriter, r *http.Request) {
 
 	userUUID, _ := shared.IDFromString(userID)
 
-	input := app.AddEdgeInput{
+	input := workflowsvc.AddEdgeInput{
 		TenantID:      tenantUUID,
 		UserID:        userUUID,
 		WorkflowID:    workflowUUID,
@@ -838,7 +838,7 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 		triggerType = workflow.TriggerType(req.TriggerType)
 	}
 
-	input := app.TriggerWorkflowInput{
+	input := workflowsvc.TriggerWorkflowInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -894,7 +894,7 @@ func (h *WorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.ListWorkflowRunsInput{
+	input := workflowsvc.ListWorkflowRunsInput{
 		TenantID: tenantUUID,
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
 		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/aitriage"
 )
 
 // EmailEnqueuerAdapter wraps the job Client to implement app.EmailJobEnqueuer.
@@ -88,4 +89,4 @@ func (a *AITriageEnqueuerAdapter) EnqueueAITriage(ctx context.Context, resultID,
 }
 
 // Ensure adapter implements the interface
-var _ app.AITriageJobEnqueuer = (*AITriageEnqueuerAdapter)(nil)
+var _ aitriage.AITriageJobEnqueuer = (*AITriageEnqueuerAdapter)(nil)
