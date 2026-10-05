@@ -13206,6 +13206,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -14842,6 +14846,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -15219,6 +15227,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -15528,6 +15540,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -15983,6 +15999,10 @@ export interface paths {
           asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
           /** @description asset criticality: none of (comma list) */
           asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          /** @description asset owner id: any of (comma list) */
+          asset_owner_id?: string[]
+          /** @description asset owner id is unset (true) or set (false) */
+          asset_owner_id_null?: boolean
           /** @description exploit available equals */
           exploit_available?: boolean
           /** @description created at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
@@ -26399,6 +26419,80 @@ export interface paths {
         }
       }
     }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/secret-store/{id}/rotate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Rotate credential
+     * @description Replace the secret of a credential in place. Send the data field matching the credential's type. Sources bound to the credential use the new value on their next fetch.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Credential ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description New secret */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.RotateCredentialRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CredentialResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
     options?: never
     head?: never
     patch?: never
@@ -37874,6 +37968,10 @@ export interface components {
       /** @description Every CVE the scanner named, primary first */
       cve_ids?: string[]
       cvss_score?: number
+      /** @description Detail only (GET /findings/{id}), never in lists or exports (research 24 P0-2). */
+      cvss_v2_vector?: string
+      /** @description CVSS v3.x vector the scanner reported */
+      cvss_v3_vector?: string
       cvss_vector?: string
       /** @description Version of cvss_score (2.0, 3.x, 3.1, 4.0) */
       cvss_version?: string
@@ -37972,6 +38070,8 @@ export interface components {
       rule_id?: string
       rule_name?: string
       scan_id?: string
+      /** @description The scanner's proof (plugin output); untrusted plain text */
+      scanner_output?: components['schemas']['internal_infra_http_handler.ScannerOutputResponse']
       secret_age_in_days?: number
       secret_commit_count?: number
       secret_entropy?: number
@@ -39342,6 +39442,17 @@ export interface components {
       id?: string
       secret_value?: string
     }
+    'internal_infra_http_handler.RotateCredentialRequest': {
+      api_key?: components['schemas']['internal_infra_http_handler.APIKeyDataRequest']
+      aws_role?: components['schemas']['internal_infra_http_handler.AWSRoleDataRequest']
+      azure_service_principal?: components['schemas']['internal_infra_http_handler.AzureServicePrincipalDataRequest']
+      basic_auth?: components['schemas']['internal_infra_http_handler.BasicAuthDataRequest']
+      bearer_token?: components['schemas']['internal_infra_http_handler.BearerTokenDataRequest']
+      gcp_service_account?: components['schemas']['internal_infra_http_handler.GCPServiceAccountDataRequest']
+      github_app?: components['schemas']['internal_infra_http_handler.GitHubAppDataRequest']
+      gitlab_token?: components['schemas']['internal_infra_http_handler.GitLabTokenDataRequest']
+      ssh_key?: components['schemas']['internal_infra_http_handler.SSHKeyDataRequest']
+    }
     'internal_infra_http_handler.RunDispatchResponse': {
       excluded_targets?: number
       resolved_targets?: number
@@ -39806,6 +39917,13 @@ export interface components {
       ranges?: string[]
       sensor_ids?: string[]
       tenant_id?: string
+      updated_at?: string
+    }
+    'internal_infra_http_handler.ScannerOutputResponse': {
+      text?: string
+      /** @description Cut at 64 KiB */
+      truncated?: boolean
+      /** @description When the latest sighting wrote it */
       updated_at?: string
     }
     'internal_infra_http_handler.ScannerTemplateResponse': {
@@ -40875,6 +40993,10 @@ export interface components {
     }
     'internal_infra_http_handler.UpdateCredentialRequest': {
       description?: string
+      /**
+       * Format: date-time
+       * @description ExpiresAt: RFC 3339 timestamp in the future, or null to clear.
+       */
       expires_at?: string
       name?: string
     }

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
@@ -54,7 +56,8 @@ type CampaignFindingResolver interface {
 // the remediation key repository + group resolver at the composition root.
 type CampaignKeyResolver interface {
 	// CountByKey returns (total, resolved) findings sharing the remediation key.
-	CountByKey(ctx context.Context, tenantID shared.ID, key string) (total, resolved int64, err error)
+	// A non-nil scope counts only findings on the scope's assets.
+	CountByKey(ctx context.Context, tenantID shared.ID, key string, scope *shared.DataScope) (total, resolved int64, err error)
 	// ResolveGroupByKey bulk-resolves the OPEN findings under the key, reusing
 	// the same guarded bulk-status path as the standalone group resolve.
 	ResolveGroupByKey(ctx context.Context, tenantID string, key string, in CampaignResolveInput) (resolvedCount int, err error)
@@ -71,6 +74,7 @@ type CampaignResolveInput struct {
 
 // RemediationCampaignService manages remediation campaigns.
 type RemediationCampaignService struct {
+	dataScope   *datascope.Enforcer // Layer 2: a restricted reader's progress counts (nil = unrestricted)
 	repo        remediation.CampaignRepository
 	finding     FindingCounter                       // nil → progress stays zero
 	resolver    CampaignFindingResolver              // nil → resolve action disabled
@@ -176,6 +180,73 @@ func (s *RemediationCampaignService) SetAuditLogger(a CampaignAuditLogger) {
 // avoid an import cycle at the composition root.
 func (s *RemediationCampaignService) SetFindingCounter(c FindingCounter) {
 	s.finding = c
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer: a restricted reader
+// sees campaign progress over their own in-scope findings (ApplyViewerScope).
+func (s *RemediationCampaignService) SetDataScope(e *datascope.Enforcer) {
+	s.dataScope = e
+}
+
+// ApplyViewerScope replaces the campaign's finding and resolved counts, in
+// memory only, with the ones over the caller's in-scope findings when the
+// caller is restricted (research 24 §5.1, gap L-18). The stored counts stay
+// organization-wide: auto-complete and the controller read those, and a
+// restricted read never persists its view. Unrestricted callers are left
+// unchanged. Errors fail closed (zero counts) rather than show the
+// organization's numbers.
+func (s *RemediationCampaignService) ApplyViewerScope(ctx context.Context, campaign *remediation.Campaign) {
+	if s.dataScope == nil || campaign == nil {
+		return
+	}
+	scope, err := s.dataScope.Resolve(ctx, campaign.TenantID())
+	if err != nil {
+		s.logger.Warn("campaign viewer scope failed", "id", campaign.ID().String(), "error", err)
+		campaign.UpdateProgress(0, 0)
+		return
+	}
+	if scope == nil {
+		return
+	}
+	total, resolved, err := s.scopedProgress(ctx, campaign, scope)
+	if err != nil {
+		s.logger.Warn("campaign scoped progress failed", "id", campaign.ID().String(), "error", err)
+		total, resolved = 0, 0
+	}
+	campaign.UpdateProgress(int(total), int(resolved))
+}
+
+// scopedProgress counts the campaign's findings and closed findings on the
+// scope's assets, with the same rules as recomputeProgress.
+func (s *RemediationCampaignService) scopedProgress(ctx context.Context, campaign *remediation.Campaign, scope *shared.DataScope) (int64, int64, error) {
+	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
+		if s.keyResolver == nil {
+			return 0, 0, nil
+		}
+		return s.keyResolver.CountByKey(ctx, campaign.TenantID(), key, scope)
+	}
+	if s.finding == nil {
+		return 0, 0, nil
+	}
+	base := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
+	if !findingFilterHasScope(base) {
+		return 0, 0, nil
+	}
+	uid := scope.UserID
+	base.DataScopeUserID = &uid
+	totalFilter := base
+	totalFilter.Statuses = nil
+	total, err := s.finding.Count(ctx, totalFilter)
+	if err != nil {
+		return 0, 0, err
+	}
+	resolvedFilter := base
+	resolvedFilter.Statuses = vulnerability.ClosedFindingStatuses()
+	resolved, err := s.finding.Count(ctx, resolvedFilter)
+	if err != nil {
+		return 0, 0, err
+	}
+	return total, resolved, nil
 }
 
 // SetFindingResolver wires the bulk resolver that makes ResolveCampaignFindings
@@ -763,7 +834,7 @@ func (s *RemediationCampaignService) recomputeProgress(ctx context.Context, camp
 		if s.keyResolver == nil {
 			return false, nil
 		}
-		total, resolved, err := s.keyResolver.CountByKey(ctx, campaign.TenantID(), key)
+		total, resolved, err := s.keyResolver.CountByKey(ctx, campaign.TenantID(), key, nil)
 		if err != nil {
 			return false, fmt.Errorf("count campaign findings by key: %w", err)
 		}

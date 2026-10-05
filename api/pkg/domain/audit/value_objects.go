@@ -304,6 +304,11 @@ const (
 	ActionScopeExclusionApproved    Action = "scope_exclusion.approved"
 	ActionScopeExclusionRejected    Action = "scope_exclusion.rejected"
 
+	// Suppression rule approvals. A self-approval (the owner approving their
+	// own rule because nobody else can, owner decision B16) is Critical.
+	ActionSuppressionRuleApproved     Action = "suppression_rule.approved"
+	ActionSuppressionRuleSelfApproved Action = "suppression_rule.self_approved"
+
 	// Report schedule actions: a schedule mails organization posture to its
 	// recipients (members or the allowed domains, D12).
 	ActionReportScheduleCreated   Action = "report_schedule.created"
@@ -536,6 +541,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
@@ -577,7 +583,7 @@ func (a Action) IsValid() bool {
 		ActionAuditChainRebaselined:
 		return true
 	}
-	return false
+	return isConfigAction(a) || isRegisteredAction(a)
 }
 
 // Category returns the category of the action (e.g., "user", "tenant").
@@ -649,6 +655,8 @@ func (a Action) Category() string {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted:
 		return "scope"
+	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved:
+		return "suppression"
 	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
 		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
@@ -681,6 +689,9 @@ func (a Action) Category() string {
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionSCIMGroupMappingsUpdated:
 		return "sso"
+	}
+	if c, ok := registeredCategory(a); ok {
+		return c
 	}
 	return "unknown"
 }
@@ -742,10 +753,12 @@ const (
 	ResourceTypeSCIMGroupMapping ResourceType = "scim_group_mapping"
 	// ResourceTypeAuditChain is a tenant's audit hash-chain; the resource id
 	// of a rebaseline event is the rebaseline (archive) id.
-	ResourceTypeAuditChain      ResourceType = "audit_chain"
-	ResourceTypeTemplateSource  ResourceType = "template_source"
-	ResourceTypeScopeTarget     ResourceType = "scope_target"
-	ResourceTypeScopeExclusion  ResourceType = "scope_exclusion"
+	ResourceTypeAuditChain     ResourceType = "audit_chain"
+	ResourceTypeTemplateSource ResourceType = "template_source"
+	ResourceTypeScopeTarget    ResourceType = "scope_target"
+	ResourceTypeScopeExclusion ResourceType = "scope_exclusion"
+	// ResourceTypeSuppressionRule is a finding suppression rule.
+	ResourceTypeSuppressionRule ResourceType = "suppression_rule"
 	ResourceTypeScannerTemplate ResourceType = "scanner_template"
 	ResourceTypeIntegration     ResourceType = "integration"
 	ResourceTypeReportSchedule  ResourceType = "report_schedule"
@@ -774,11 +787,11 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeSCIMGroupMapping,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
-		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeScannerTemplate, ResourceTypeIntegration,
+		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
 		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
 		return true
 	}
-	return false
+	return isConfigResourceType(r)
 }
 
 // Result represents the outcome of an action.
@@ -836,7 +849,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthFailed, ActionPermissionDenied,
 		ActionSensorRevoked, ActionSensorDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
-		ActionAuditChainRebaselined:
+		ActionAuditChainRebaselined, ActionSuppressionRuleSelfApproved:
 		return SeverityCritical
 
 	// High - privilege changes and pipeline failures
@@ -890,6 +903,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeTargetUpdated, ActionScopeTargetDeleted, ActionScopeTargetDeactivated,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionSuppressionRuleApproved,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
@@ -900,6 +914,9 @@ func SeverityForAction(a Action) Severity {
 
 	// Low - regular operations (including sensor.updated, sensor.connected, sensor.disconnected)
 	default:
+		if sev, ok := registeredSeverity(a); ok {
+			return sev
+		}
 		return SeverityLow
 	}
 }
