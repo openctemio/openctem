@@ -227,6 +227,8 @@ func registerPipelineRoutes(
 		r.GET("/{id}", h.GetRun, middleware.Require(permission.PipelinesRead))
 		// A run's tasks, paged by cursor (the run read embeds the first page).
 		r.GET("/{id}/tasks", h.ListRunTasks, middleware.Require(permission.PipelinesRead))
+		// One task's log lines, as its sensor sent them (RFC-029 §4.4.1).
+		r.GET("/{id}/tasks/{task_id}/logs", h.GetRunTaskLogs, middleware.Require(permission.PipelinesRead))
 		// How each stage of the run was planned (counts by reason).
 		r.GET("/{id}/stages", h.ListRunStages, middleware.Require(permission.PipelinesRead))
 
