@@ -801,6 +801,32 @@ Effort is engineer-weeks across all repos.
 | P2 | In progress: seeds (#1041: `easm_seeds`, `root_domain` watched by the CT monitor). Open: candidates and tombstones, CIDR/ASN/organization seeds with RDAP/RIPEstat/PTR collectors, noisy-OR learning, rule precision. |
 | P3–P6 | Not started (no `easm_observations`). |
 
+**research/22 P0 (EASM maturity plan, owner decisions E1–E13, 2026-10-04).**
+One entry per item; the sensor items (P0-1 to P0-4) live in the sensor and
+sdk-go repositories, P0-5 with the scan-engine work (research/27).
+
+- **P0-7 EASM alerts through the notification outbox:** shipped (this PR,
+  migration `000980`). The CT monitor, the DNS checks and takeover
+  confirmation write exposures through one writer that announces inserted
+  and reopened rows as `new_exposure` in the same transaction: immediate for
+  medium or higher on approved assets, a daily digest otherwise, never for
+  rejected or deleted assets, 30 immediate alerts per tenant per hour.
+  [easm.md §4c](../architecture/easm.md#4c-alerts-built-p0-7).
+
+- **P0-8 DNS checks on by default, takeover on dependency names (E3, E13):** open.
+
+- **P0-9 rejection hygiene and reclassify on decision (B2, B4):** open.
+
+- **P0-10 tenant domain verification with a purpose (E6):** open.
+
+- **P0-11 EASM settings and run-now:** open.
+
+- **P0-12 review queue reachable, honest counts (E1):** open.
+
+- **P0-13 honest EASM numbers:** open.
+
+- **P0-6 port and service results surfaced (B6):** open.
+
 **When and where.** Implementation is written directly in the monorepo
 (`api/` + `web/`); sdk-go and sensor changes (E2–E5, P3 tools) stay in their
 own repositories. P2 may start: P1's attribution tables shipped (migration
