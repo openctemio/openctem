@@ -113,7 +113,6 @@ scan_coverage_state
 scan_profiles
 scan_run_stage_plans
 scan_run_targets
-scan_schedules
 scan_sessions
 scan_step_outputs
 scan_zone_sensors
@@ -125,6 +124,7 @@ scim_groups
 scim_tokens
 scope_exclusions
 scope_targets
+sensor_config_reports
 sensor_content_policies
 sensor_events
 sensor_heartbeat_history

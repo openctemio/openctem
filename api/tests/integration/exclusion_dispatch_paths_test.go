@@ -41,7 +41,7 @@ func seedApprovedExclusion(t *testing.T, db *sql.DB, tenant shared.ID, typ, patt
 func scopeService(db *sql.DB) *scopesvc.Service {
 	pg := &postgres.DB{DB: db}
 	return scopesvc.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg),
-		nil, postgres.NewAssetRepository(pg), logger.NewNop())
+		postgres.NewAssetRepository(pg), logger.NewNop())
 }
 
 func TestIngest_ExcludedAssetsAreNotAdded(t *testing.T) {

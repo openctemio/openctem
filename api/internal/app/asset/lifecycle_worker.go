@@ -429,10 +429,16 @@ const maxTransitionsPerRun = 50_000
 //     fall back to created_at to avoid NULL-comparison pitfalls.
 //   - Grace period on discovered_at (COALESCE with created_at again
 //     for legacy rows with no discovery record).
-//   - EXISTS asset_sources with non-excluded type — protects assets
-//     that only have manual/import sources from quiet demotion.
-//     Also protects assets with zero asset_sources rows (unknown
-//     provenance is safest to leave alone).
+//   - Provenance from assets.discovery_source, which ingest writes when it
+//     creates an asset (see assetProvenanceSQL). An asset is skipped when
+//     its provenance category or its raw discovery_source is excluded.
+//     Assets with no discovery_source were created by hand or through the
+//     API, so they count as "manual" and are left alone by default.
+//
+// The clock is assets.last_seen, which only ingest and integrations move forward
+// (Asset.MarkSeen, the ingest upsert's GREATEST(last_seen, ...)). Before,
+// the provenance check read asset_sources, a table nothing wrote, so the
+// worker never demoted an asset ingest had created.
 const lifecycleCandidateClauses = `
 	WHERE tenant_id = $1
 	  AND deleted_at IS NULL
@@ -442,9 +448,25 @@ const lifecycleCandidateClauses = `
 	  AND COALESCE(discovered_at, created_at) < NOW() - make_interval(days => $3)
 	  AND GREATEST(COALESCE(last_seen, created_at), updated_at)
 	      < NOW() - make_interval(days => $2)
-	  AND EXISTS (
-	      SELECT 1 FROM asset_sources s
-	      WHERE s.asset_id = assets.id
-	        AND NOT (s.source_type::text = ANY($4::text[]))
-	  )
+	  AND NOT (` + assetProvenanceSQL + ` = ANY($4::text[]))
+	  AND NOT (COALESCE(NULLIF(discovery_source, ''), 'manual') = ANY($4::text[]))
 `
+
+// assetProvenanceSQL maps assets.discovery_source to the provenance
+// categories the tenant setting excluded_source_types offers
+// (integration, collector, scanner, manual, import):
+//
+//   - no value or "manual": created by a person (UI, API, bulk create);
+//   - "import" and the file importers ("nessus", "kubernetes"): import;
+//   - "integration" and the cloud / SCM connectors: integration;
+//   - anything else ingest writes ("sensor", "dns", "cert_transparency",
+//     scanner-reported sources ...): scanner.
+//
+// "collector" has no discovery_source of its own; excluding it changes
+// nothing until ingest records one.
+const assetProvenanceSQL = `(CASE
+		WHEN COALESCE(discovery_source, '') IN ('', 'manual') THEN 'manual'
+		WHEN discovery_source IN ('import', 'nessus', 'kubernetes') THEN 'import'
+		WHEN discovery_source IN ('integration', 'aws', 'gcp', 'azure', 'git-host') THEN 'integration'
+		ELSE 'scanner'
+	END)`

@@ -115,7 +115,7 @@ func (fx *fixture) service() *retestapp.Service {
 func (fx *fixture) gate() *scanapp.Service {
 	log := logger.NewNop()
 	scope := scopeapp.NewService(postgres.NewScopeTargetRepository(fx.pg), postgres.NewScopeExclusionRepository(fx.pg),
-		nil, postgres.NewAssetRepository(fx.pg), log)
+		postgres.NewAssetRepository(fx.pg), log)
 	return scanapp.NewTargetGate(scope, easmapp.NewActiveGate(postgres.NewAttributionRepository(fx.pg), postgres.NewAssetRepository(fx.pg), scope, postgres.NewEASMSeedRepository(fx.pg)), postgres.NewScanZoneRepository(fx.pg), nil, log)
 }
 

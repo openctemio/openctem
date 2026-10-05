@@ -72,6 +72,9 @@ const (
 	ProblemManifestInvalid           ProblemType = "manifest-invalid"
 	ProblemManifestSchemaUnsupported ProblemType = "manifest-schema-unsupported"
 	ProblemManifestNotFound          ProblemType = "manifest-not-found"
+
+	// Config report (ProblemTypeBaseSensor).
+	ProblemConfigReportInvalid ProblemType = "config-report-invalid"
 )
 
 type problemDef struct {
@@ -134,6 +137,8 @@ var problemDefs = map[ProblemType]problemDef{
 	ProblemManifestInvalid:           {http.StatusUnprocessableEntity, "Manifest invalid", "The manifest is not a JSON object with a schema member of the documented shape.", false, ProblemTypeBaseSensor},
 	ProblemManifestNotFound:          {http.StatusNotFound, "Manifest not found", "This sensor has no registered manifest; PUT it first.", false, ProblemTypeBaseSensor},
 	ProblemManifestSchemaUnsupported: {http.StatusUnprocessableEntity, "Manifest schema unsupported", "The manifest's schema version is not one this server reads; send schema 1.", false, ProblemTypeBaseSensor},
+
+	ProblemConfigReportInvalid: {http.StatusUnprocessableEntity, "Config report invalid", "The config report is not a JSON object with schema 1 and a checks array.", false, ProblemTypeBaseSensor},
 }
 
 // ProblemTypes returns every defined problem type, for tests and docs.
