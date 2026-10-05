@@ -328,6 +328,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SCIMToken: func() *handler.SCIMTokenHandler {
 			h := handler.NewSCIMTokenHandler(svc.SCIMToken, log)
 			h.SetGroupService(svc.SCIMGroups)
+			h.SetAuditService(svc.Audit)
 			return h
 		}(),
 		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
@@ -360,7 +361,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
 
 		// File Attachments (shared across pentest/retest/campaign)
-		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, log),
+		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, svc.Audit, log),
 
 		// Compliance Framework Management
 		Compliance: handler.NewComplianceHandler(svc.Compliance, log),
@@ -639,10 +640,11 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
-func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, log *logger.Logger) *handler.AttachmentHandler {
+func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *app.AuditService, log *logger.Logger) *handler.AttachmentHandler {
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
 	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
+	h.SetAuditService(auditSvc)
 	return h
 }
 
