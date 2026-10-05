@@ -42,7 +42,7 @@ CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs 
 
 ## 3. Trust configurations
 
-Per tenant (`ci_trust_configs`, migration 001058):
+Per tenant (`ci_trust_configs`, migration 001063):
 
 | Field | Meaning |
 |---|---|
