@@ -150,7 +150,7 @@ func TestScanOwnershipGate(t *testing.T) {
 
 	t.Run("import", func(t *testing.T) {
 		data := []byte(`{"name":"imported ` + shared.NewID().String() + `","scan_type":"single","scanner_name":"nuclei","targets":["www.scoped.example.com"]}`)
-		_, err := svc.ImportConfig(ctx, tenantA, data)
+		_, err := svc.ImportConfig(ctx, tenantA, data, shared.NewID().String())
 		refused(t, err, "import")
 	})
 
@@ -177,7 +177,7 @@ func TestScanOwnershipGate(t *testing.T) {
 		if got := lastCommandTargets(t, db, tenantA); !slices.Equal(got, []string{"app.scoped.example.com"}) {
 			t.Fatalf("command targets = %v, the rejected name must be skipped", got)
 		}
-		_, err = svc.CloneScan(ctx, tenantA.String(), id.String(), "clone "+shared.NewID().String())
+		_, err = svc.CloneScan(ctx, tenantA.String(), id.String(), "clone "+shared.NewID().String(), shared.NewID().String())
 		refused(t, err, "clone")
 
 		only, err := create("other.scoped.example.com")

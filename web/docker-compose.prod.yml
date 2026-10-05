@@ -152,7 +152,15 @@ services:
     networks:
       - app-network
 
-    # Security hardening
+    # Security hardening. Read-only root filesystem: the standalone server
+    # writes only to /tmp and .next/cache (see web/Dockerfile). No Linux
+    # capabilities: it binds 3000 as the non-root nextjs user.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache:uid=1001,gid=1001
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
 

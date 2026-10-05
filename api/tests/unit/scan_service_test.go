@@ -1941,9 +1941,15 @@ func TestScanService_CloneScan_Success(t *testing.T) {
 
 	original := createTestScanInRepo(deps, tenantID, "Original Scan", scan.ScanTypeSingle)
 
-	clone, err := svc.CloneScan(context.Background(), tenantID.String(), original.ID.String(), "Cloned Scan")
+	actor := shared.NewID()
+	clone, err := svc.CloneScan(context.Background(), tenantID.String(), original.ID.String(), "Cloned Scan", actor.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
+	}
+	// The person cloning owns the clone: its schedule never runs as the
+	// system (research 21b H2).
+	if clone.CreatedBy == nil || *clone.CreatedBy != actor {
+		t.Errorf("clone owner = %v, want the actor %s", clone.CreatedBy, actor)
 	}
 	if clone.Name != "Cloned Scan" {
 		t.Errorf("expected name 'Cloned Scan', got %q", clone.Name)
@@ -1956,11 +1962,20 @@ func TestScanService_CloneScan_Success(t *testing.T) {
 	}
 }
 
+func TestScanService_CloneScan_RequiresActor(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	original := createTestScanInRepo(deps, tenantID, "Original Scan", scan.ScanTypeSingle)
+	if _, err := svc.CloneScan(context.Background(), tenantID.String(), original.ID.String(), "Clone", ""); err == nil {
+		t.Fatal("a clone without an acting user must be refused (it would have no owner)")
+	}
+}
+
 func TestScanService_CloneScan_NotFound(t *testing.T) {
 	svc, _ := newTestScanService()
 	tenantID := shared.NewID()
 
-	_, err := svc.CloneScan(context.Background(), tenantID.String(), shared.NewID().String(), "Clone")
+	_, err := svc.CloneScan(context.Background(), tenantID.String(), shared.NewID().String(), "Clone", shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for cloning non-existent scan")
 	}
@@ -2398,6 +2413,7 @@ func TestScanService_TriggerScan_RecordsTriggerType(t *testing.T) {
 	tenantID := shared.NewID()
 	deps.toolRepo.addTool("nuclei", true)
 	s := createTestScanInRepo(deps, tenantID, "Trigger type", scan.ScanTypeSingle)
+	s.SetCreatedBy(shared.NewID()) // a scheduled run needs an owner
 
 	run, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
 		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
@@ -2496,5 +2512,67 @@ func TestScanService_ListScans_Sort(t *testing.T) {
 	}
 	if deps.scanRepo.lastListFilter.TenantID != nil {
 		t.Fatal("an invalid sort still queried the repository")
+	}
+}
+
+type fakeOwnerActivity struct{ active bool }
+
+func (f fakeOwnerActivity) IsActiveTenantMember(context.Context, shared.ID, shared.ID) (bool, error) {
+	return f.active, nil
+}
+
+// A scheduled run acts as the scan's owner. With no owner it would act as the
+// unrestricted system, so it is refused (research 21b H2/H3, RFC-050 SP-3).
+// A manual trigger by a person is unaffected.
+func TestScanService_TriggerScan_ScheduledRunWithoutOwnerRefused(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	s := createTestScanInRepo(deps, tenantID, "Ownerless", scan.ScanTypeSingle)
+
+	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
+	})
+	if !errors.Is(err, scanservice.ErrScanHasNoOwner) {
+		t.Fatalf("scheduled run of an ownerless scan: err = %v, want ErrScanHasNoOwner", err)
+	}
+	if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggeredBy: shared.NewID().String(),
+	}); err != nil {
+		t.Fatalf("a manual trigger by a person must still work: %v", err)
+	}
+}
+
+// A scheduled run whose owner is disabled or left pauses the scan and is
+// refused; it never runs on behalf of a person who no longer has access.
+func TestScanService_TriggerScan_ScheduledRunWithInactiveOwnerPauses(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	s := createTestScanInRepo(deps, tenantID, "Leaver's scan", scan.ScanTypeSingle)
+	s.SetCreatedBy(shared.NewID())
+	svc.SetOwnerActivity(fakeOwnerActivity{active: false})
+
+	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
+	})
+	if !errors.Is(err, scanservice.ErrScanOwnerInactive) {
+		t.Fatalf("err = %v, want ErrScanOwnerInactive", err)
+	}
+	got, gerr := svc.GetScan(context.Background(), tenantID.String(), s.ID.String())
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	if got.Status != scan.StatusPaused {
+		t.Errorf("scan status = %s, want paused", got.Status)
+	}
+
+	svc.SetOwnerActivity(fakeOwnerActivity{active: true})
+	s2 := createTestScanInRepo(deps, tenantID, "Active owner", scan.ScanTypeSingle)
+	s2.SetCreatedBy(shared.NewID())
+	if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s2.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
+	}); err != nil {
+		t.Fatalf("scheduled run with an active owner: %v", err)
 	}
 }
