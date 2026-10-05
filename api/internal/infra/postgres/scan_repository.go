@@ -647,6 +647,34 @@ func (r *ScanRepository) ClaimScheduledRun(ctx context.Context, tenantID, id sha
 }
 
 // selectQuery returns the base SELECT query.
+// ListOptInScans lists the tenant's scans whose scanner_config asks for
+// out-of-band callbacks (allow_interactsh true, as boolean or string) or
+// names custom templates, newest first, at most limit (research/25 D3
+// banner). Tenant-scoped.
+func (r *ScanRepository) ListOptInScans(ctx context.Context, tenantID shared.ID, limit int) ([]*scan.Scan, error) {
+	query := r.selectQuery() + `
+		WHERE tenant_id = $1
+		  AND (lower(scanner_config->>'allow_interactsh') = 'true'
+		       OR (jsonb_typeof(scanner_config->'custom_template_ids') = 'array'
+		           AND jsonb_array_length(scanner_config->'custom_template_ids') > 0))
+		ORDER BY created_at DESC
+		LIMIT $2`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list opt-in scans: %w", err)
+	}
+	defer rows.Close()
+	var out []*scan.Scan
+	for rows.Next() {
+		s, err := r.scanFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func (r *ScanRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, name, description,
