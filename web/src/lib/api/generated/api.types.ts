@@ -39910,6 +39910,10 @@ export interface components {
       description?: string
       findings?: boolean
       implementations?: components['schemas']['internal_infra_http_handler.ScanStageImplementationResponse'][]
+      /**
+       * @description Inputs and Outputs are stored type labels: "type" or
+       *     "type/sub_type" (service/http is an HTTP service).
+       */
       inputs?: string[]
       key?: string
       max_fanout?: number
