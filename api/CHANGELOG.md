@@ -36,6 +36,10 @@ published at https://docs.openctem.io (operations/release-notes-*).
   finding and finding-group SQL has no `NOT EXISTS … OR` bypass left.
 - Real-time finding/asset pushes now also reach full-data roles, and no
   longer reach members without a scope row.
+- **Migration 000910** stores `nothing` for every organization and adds a
+  CHECK so `everything` can no longer be stored (its down migration relaxes
+  the CHECK without flipping data back). The column is dropped in a later
+  release.
 - **Removed endpoints:** `GET`/`PATCH /api/v1/tenants/{tenant}/settings/data-scope`
   and `GET /api/v1/organization/settings/data-scope/impact` (404 now). The web
   console's "see everything" banner and the "Members without a team" settings
