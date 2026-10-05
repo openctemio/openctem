@@ -176,7 +176,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		}
 	}
 
-	blocked, err := s.blockedCandidates(ctx, sc.TenantID, candidates, names, memberIDs, excluded)
+	blocked, err := s.blockedCandidates(ctx, sc.TenantID, candidates, names, memberIDs, excluded, IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig))
 	if err != nil {
 		return nil, err
 	}

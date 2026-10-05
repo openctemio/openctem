@@ -46,6 +46,29 @@ func (s *ExposureService) SetDataScope(e *datascope.Enforcer) { s.dataScope = e 
 // outside the caller's data scope, so the response is no existence oracle.
 var ErrExposureAssetNotFound = fmt.Errorf("%w: asset not found", shared.ErrNotFound)
 
+// ErrExposureAssetRequired is returned when a member whose data scope is
+// restricted writes an exposure with no asset. An asset-less exposure is in
+// nobody's asset scope (owner decision D11: full-data roles only), so a
+// restricted member may neither create one nor, through the fingerprint
+// upsert, overwrite an existing one's severity, title or details (research
+// 21b H1, RFC-050 W1).
+var ErrExposureAssetRequired = fmt.Errorf("%w: asset_id is required", shared.ErrValidation)
+
+// requireAssetForRestricted refuses an asset-less exposure write from a
+// restricted caller. Unrestricted callers (administrators, full-data roles,
+// sensors and internal jobs) may still write asset-less exposures. A scope
+// lookup error refuses (fail closed).
+func (s *ExposureService) requireAssetForRestricted(ctx context.Context, tenantID shared.ID) error {
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return ErrExposureAssetRequired
+	}
+	if scope != nil {
+		return ErrExposureAssetRequired
+	}
+	return nil
+}
+
 // assertAssetRef checks an asset id a caller asks to write onto an exposure:
 // a live asset of the tenant (checked for unrestricted and internal callers
 // too) that the caller may see. exposure_events.asset_id references
@@ -187,6 +210,8 @@ func (s *ExposureService) CreateExposure(ctx context.Context, input CreateExposu
 			return nil, err
 		}
 		event.SetAssetID(&id)
+	} else if err := s.requireAssetForRestricted(ctx, tenantID); err != nil {
+		return nil, err
 	}
 
 	// Use transactional outbox pattern if outbox.Service is configured
@@ -280,6 +305,8 @@ func (s *ExposureService) IngestExposure(ctx context.Context, input CreateExposu
 			return nil, err
 		}
 		event.SetAssetID(&id)
+	} else if err := s.requireAssetForRestricted(ctx, tenantID); err != nil {
+		return nil, err
 	}
 
 	// Use upsert for deduplication
@@ -337,6 +364,17 @@ func (s *ExposureService) BulkIngestExposuresReport(ctx context.Context, inputs 
 	if err != nil {
 		return BulkIngestResult{}, err
 	}
+	// Asset-less items need an unrestricted caller (D11, H1), resolved once
+	// per tenant.
+	assetlessAllowed := map[shared.ID]bool{}
+	allowAssetless := func(tid shared.ID) bool {
+		ok, seen := assetlessAllowed[tid]
+		if !seen {
+			ok = s.requireAssetForRestricted(ctx, tid) == nil
+			assetlessAllowed[tid] = ok
+		}
+		return ok
+	}
 
 	// First pass: validate and create event objects
 	for i, input := range inputs {
@@ -384,6 +422,9 @@ func (s *ExposureService) BulkIngestExposuresReport(ctx context.Context, inputs 
 				continue
 			}
 			event.SetAssetID(&id)
+		} else if !allowAssetless(tenantID) {
+			failures = append(failures, IngestItemError{Index: i, Reason: "asset_id is required"})
+			continue
 		}
 
 		events = append(events, event)
