@@ -6,6 +6,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -29,6 +30,24 @@ func configAuditContext(r *http.Request) auditapp.AuditContext {
 		actx.TenantID = tid.String()
 	}
 	return actx
+}
+
+// configAuditor is embedded by handlers whose configuration changes are
+// audited: it supplies SetAuditService and the record helper.
+type configAuditor struct {
+	audit *auditapp.AuditService
+}
+
+// SetAuditService wires the audit log.
+func (c *configAuditor) SetAuditService(a *auditapp.AuditService) { c.audit = a }
+
+func (c *configAuditor) recordChange(r *http.Request, log *logger.Logger, action auditdom.Action, rtype auditdom.ResourceType,
+	id, name string, before, after any, severity auditdom.Severity, message string) {
+	recordConfigAudit(r.Context(), c.audit, log, configAuditContext(r),
+		auditapp.NewChangeEvent(action, rtype, id, before, after).
+			WithResourceName(name).
+			WithSeverity(severity).
+			WithMessage(message))
 }
 
 // recordConfigAudit writes a configuration-change event. A nil service is a
