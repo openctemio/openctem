@@ -19,6 +19,8 @@ import (
 
 type fakeCIService struct {
 	CIAdminService
+	imported  []*ctis.Report
+	ctisPath  int
 	run       *cirun.Run
 	exchanged string
 	created   bool
@@ -37,7 +39,17 @@ func (f *fakeCIService) Authenticate(_ context.Context, token string) (*cirun.Ru
 }
 
 func (f *fakeCIService) UploadReport(context.Context, *cirun.Run, *ctis.Report) (*ingest.Output, error) {
+	f.ctisPath++
 	return &ingest.Output{}, nil
+}
+
+func (f *fakeCIService) UploadImported(_ context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, int, error) {
+	dropped, err := cirunapp.ScopeImported(report, run)
+	if err != nil {
+		return nil, dropped, err
+	}
+	f.imported = append(f.imported, report)
+	return &ingest.Output{FindingsCreated: len(report.Findings)}, dropped, nil
 }
 
 func (f *fakeCIService) BaselineDiff(context.Context, *cirun.Run, []string) (*cirunapp.BaselineDiffOutput, error) {

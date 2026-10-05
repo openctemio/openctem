@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/importer"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -30,6 +32,7 @@ type CIRunService interface {
 	Exchange(ctx context.Context, in cirunapp.ExchangeInput) (*cirunapp.ExchangeOutput, error)
 	Authenticate(ctx context.Context, token string) (*cirun.Run, error)
 	UploadReport(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, error)
+	UploadImported(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, int, error)
 	BaselineDiff(ctx context.Context, run *cirun.Run, fingerprints []string) (*cirunapp.BaselineDiffOutput, error)
 	Evaluate(ctx context.Context, run *cirun.Run, in cirunapp.EvaluateInput) (*cirunapp.Verdict, error)
 }
@@ -38,7 +41,18 @@ type CIRunService interface {
 type CIRunnerHandler struct {
 	svc    CIRunService
 	logger *logger.Logger
+	// vex applies the VEX statements of an uploaded VEX document; nil
+	// refuses VEX documents.
+	vex CIVEXApplier
 }
+
+// CIVEXApplier applies converted VEX statements (findingimport.Service).
+type CIVEXApplier interface {
+	ApplyVEXStatements(ctx context.Context, req findingimport.Request, stmts []importer.VEXStatement) (*findingimport.VEXSummary, error)
+}
+
+// SetVEXApplier wires VEX documents uploaded by a run.
+func (h *CIRunnerHandler) SetVEXApplier(v CIVEXApplier) { h.vex = v }
 
 // NewCIRunnerHandler creates the handler.
 func NewCIRunnerHandler(svc CIRunService, log *logger.Logger) *CIRunnerHandler {
@@ -159,7 +173,7 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 
 // UploadResults handles POST /api/v1/ci/runs/{id}/results
 // @Summary      Upload a CI run's results
-// @Description  A CTIS report from the run. It may name only the run's repository; the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict.
+// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict.
 // @Tags         CI
 // @Accept       json
 // @Produce      json
@@ -181,6 +195,10 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		apierror.BadRequest("Failed to read request body").WriteJSON(w)
+		return
+	}
+	if isToolExport(body) {
+		h.uploadExport(w, r, run, body)
 		return
 	}
 	report, ok := decodeCTISReport(body)
@@ -319,4 +337,155 @@ func (h *CIRunnerHandler) writeErr(w http.ResponseWriter, what string, err error
 		h.logger.Error(what+" failed", "error", logger.SanitizeError(err))
 		apierror.InternalServerError(what + " failed").WriteJSON(w)
 	}
+}
+
+// isToolExport reports whether a run's upload is a file a tool wrote rather
+// than a CTIS report: an archive, or a format the importers detect. A JSON
+// document that is a CTIS report (it has "version" or "report") stays on the
+// CTIS path even when a detector would also accept it.
+func isToolExport(body []byte) bool {
+	head := body
+	if len(head) > importer.SniffLen {
+		head = head[:importer.SniffLen]
+	}
+	if importer.IsZip(head) {
+		return true
+	}
+	if _, ok := importer.Detect(head); !ok {
+		return false
+	}
+	var top map[string]json.RawMessage
+	if json.Unmarshal(body, &top) == nil {
+		if _, ok := top["version"]; ok {
+			return false
+		}
+		if _, ok := top["report"]; ok {
+			return false
+		}
+	}
+	return true
+}
+
+// CIExportResponse is the result of a run's uploaded tool export.
+type CIExportResponse struct {
+	IngestResponse
+	// Files of the upload with their format (a ZIP has several).
+	Files []CIExportFile `json:"files"`
+	// FindingsDroppedOutOfScope counts findings the file filed on an asset
+	// other than the run's repository; they were not ingested.
+	FindingsDroppedOutOfScope int `json:"findings_dropped_out_of_scope"`
+	// VEXStored counts findings of the run's repository a VEX statement was
+	// stored on (a run never closes findings).
+	VEXStored int `json:"vex_stored,omitempty"`
+}
+
+// CIExportFile is one converted file of a run's upload.
+type CIExportFile struct {
+	Name   string           `json:"name"`
+	Format string           `json:"format,omitempty"`
+	Error  *ImportFileError `json:"error,omitempty"`
+}
+
+// onlyAsset is the data scope of a run: its repository asset only.
+type onlyAsset shared.ID
+
+func (o onlyAsset) AssetsInScope(_ context.Context, ids []shared.ID) ([]shared.ID, error) {
+	out := make([]shared.ID, 0, 1)
+	for _, id := range ids {
+		if id == shared.ID(o) {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// uploadExport converts a run's tool export through findingimport.Convert
+// (the same content sniffing, limits and archive checks as the import
+// endpoint) and ingests each converted report for the run.
+func (h *CIRunnerHandler) uploadExport(w http.ResponseWriter, r *http.Request, run *cirun.Run, body []byte) {
+	resp := CIExportResponse{Files: []CIExportFile{}}
+	total := &ingest.Output{}
+	var firstErr error
+	var refusedFile *findingimport.FileError
+	_, refused := findingimport.Convert(r.Context(), findingimport.Upload{
+		Name: "results", Body: bytes.NewReader(body), ReportIDPrefix: run.ID.String(),
+	}, func(c findingimport.Converted) {
+		f := CIExportFile{Name: c.Name}
+		if c.Error != nil {
+			f.Error = &ImportFileError{Kind: c.Error.Kind, Message: c.Error.Message, Line: c.Error.Line, Column: c.Error.Column}
+			if refusedFile == nil {
+				refusedFile = c.Error
+			}
+			resp.Files = append(resp.Files, f)
+			return
+		}
+		f.Format = string(c.Result.Format)
+		resp.Files = append(resp.Files, f)
+		if firstErr != nil {
+			return
+		}
+		rep := c.Result.Report
+		if len(rep.Findings) > 0 || len(rep.Dependencies) > 0 {
+			out, dropped, err := h.svc.UploadImported(r.Context(), run, rep)
+			resp.FindingsDroppedOutOfScope += dropped
+			if err != nil {
+				firstErr = err
+				return
+			}
+			addOutput(total, out)
+		}
+		if len(c.Result.VEX) > 0 {
+			if h.vex == nil {
+				return
+			}
+			sum, err := h.vex.ApplyVEXStatements(r.Context(), findingimport.Request{
+				TenantID: run.TenantID, Actor: onlyAsset(run.RepositoryAssetID), SessionID: run.ID.String(),
+			}, c.Result.VEX)
+			if err != nil {
+				firstErr = err
+				return
+			}
+			resp.VEXStored += sum.Stored
+		}
+	})
+	if refused != nil {
+		status := http.StatusBadRequest
+		if refused.Kind == findingimport.KindTooLarge {
+			status = http.StatusRequestEntityTooLarge
+		}
+		apierror.New(status, "UNREADABLE_RESULTS", refused.Message).WriteJSON(w)
+		return
+	}
+	if firstErr != nil {
+		h.writeErr(w, "upload CI results", firstErr)
+		return
+	}
+	if len(resp.Files) == 1 && refusedFile != nil {
+		status := http.StatusBadRequest
+		if refusedFile.Kind == findingimport.KindTooLarge {
+			status = http.StatusRequestEntityTooLarge
+		}
+		apierror.New(status, "UNREADABLE_RESULTS", refusedFile.Message).WithDetails(resp.Files[0]).WriteJSON(w)
+		return
+	}
+	total.ReportID = run.ID.String()
+	resp.IngestResponse = newIngestResponse(total)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// addOutput sums the counts of one converted file's ingest.
+func addOutput(t, o *ingest.Output) {
+	if o == nil {
+		return
+	}
+	t.AssetsCreated += o.AssetsCreated
+	t.AssetsUpdated += o.AssetsUpdated
+	t.FindingsCreated += o.FindingsCreated
+	t.FindingsUpdated += o.FindingsUpdated
+	t.FindingsSkipped += o.FindingsSkipped
+	t.CVEsCreated += o.CVEsCreated
+	t.CVEsUpdated += o.CVEsUpdated
+	t.Errors = append(t.Errors, o.Errors...)
 }

@@ -336,6 +336,13 @@ var (
 	protectedSources = map[string]bool{"pentest": true, "manual": true, "bug_bounty": true, "red_team": true}
 )
 
+// ApplyVEXStatements applies the statements of a converted VEX document
+// with the rights of req (Actor limits the findings it may touch). Another
+// caller that converts files itself (a CI run's upload) uses it.
+func (s *Service) ApplyVEXStatements(ctx context.Context, req Request, stmts []importer.VEXStatement) (*VEXSummary, error) {
+	return s.applyVEX(ctx, req, stmts)
+}
+
 // applyVEX matches each statement against the tenant's findings within the
 // uploader's scope and, outside a preview, stores it on them; a not_affected
 // statement closes them only under INGEST_VEX=enforce and only for an

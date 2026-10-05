@@ -20856,9 +20856,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: A CTIS report from the run. It may name only the run's repository;
-        the branch, commit and pull request come from the verified OIDC token, not
-        from the report. Findings are recorded for the run's gate verdict.
+      description: A CTIS report from the run, or a file a tool wrote in a format
+        the importers read (SARIF, an SBOM, OSV results, ...; detected from the content,
+        a ZIP of them too). It may name only the run's repository (an exported file's
+        findings on any other asset are dropped and counted); the branch, commit and
+        pull request come from the verified OIDC token, not from the report. Findings
+        are recorded for the run's gate verdict.
       parameters:
       - description: Run ID
         in: path
