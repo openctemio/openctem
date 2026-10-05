@@ -87,6 +87,7 @@ import {
   Copy,
   Link2,
   Plus,
+  FileUp,
   AlertCircle,
   Loader2,
   Route,
@@ -141,6 +142,8 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { csrfFetch } from '@/lib/api/client'
 import { usePermissions } from '@/context/permission-provider'
+import { useCanMutate } from '@/lib/permissions/can-mutate'
+import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
@@ -447,6 +450,8 @@ function FindingsContent() {
   const [findingToDelete, setFindingToDelete] = useState<Finding | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const canImport = useCanMutate('POST /api/v1/findings/import')
   const [statusParam, setStatusParam] = useUrlFilterList('status')
   // Multiple sources at once: "everything from code scanning" is one question,
   // and it spans sast and secret. Comma-separated, matching what the API takes.
@@ -1921,6 +1926,12 @@ function FindingsContent() {
               <span className="hidden sm:inline">Approvals</span>
             </Link>
           </Button>
+          {canImport && (
+            <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)}>
+              <FileUp className="h-4 w-4 sm:me-2" />
+              <span className="hidden sm:inline">Import results</span>
+            </Button>
+          )}
           {hasPermission('findings:write') && (
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4 sm:me-2" />
@@ -2185,6 +2196,16 @@ function FindingsContent() {
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         onSuccess={() => {
+          mutateFindings()
+          mutateStats()
+        }}
+      />
+
+      {/* Import results from other tools */}
+      <ImportResultsDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onImported={() => {
           mutateFindings()
           mutateStats()
         }}

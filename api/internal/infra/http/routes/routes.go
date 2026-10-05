@@ -175,6 +175,9 @@ type Handlers struct {
 	// Asset Import (Nessus, K8s, CSV)
 	AssetImport *handler.AssetImportHandler // nil if not initialized
 
+	// Finding import (exports of other tools, VEX documents)
+	FindingImport *handler.FindingImportHandler // nil if not initialized
+
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
 
@@ -423,6 +426,9 @@ func Register(
 	}
 	if h.AssetImport != nil {
 		registerAssetImportRoutes(router, h.AssetImport, authMiddleware, userSync)
+	}
+	if h.FindingImport != nil {
+		registerFindingImportRoutes(router, h.FindingImport, authMiddleware, userSync)
 	}
 
 	// Asset Owner routes (tenant from JWT token) - nested under assets
