@@ -159,3 +159,84 @@ func TestExposureEventTypes_MatchTheCheckConstraint(t *testing.T) {
 		}
 	}
 }
+
+// 22c B3: the email check takes root-domain seeds and verified domains with
+// no domain asset by name, never another tenant's, never a rejected
+// (tombstoned) name, and drops the name once a domain asset covers it.
+func TestEASMDNSRepository_EmailNameTargets(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	r := NewEASMDNSRepository(&DB{DB: sqlDB})
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	other := seedTestTenant(ctx, t, sqlDB)
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := sqlDB.ExecContext(ctx, q, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed := func(tn shared.ID, v string, on bool) {
+		exec(`INSERT INTO easm_seeds (id, tenant_id, kind, value, discovery_enabled) VALUES ($1, $2, 'root_domain', $3, $4)`,
+			shared.NewID().String(), tn.String(), v, on)
+	}
+	seed(tenant, "seeded.example", true)
+	seed(tenant, "paused.example", false)
+	seed(tenant, "covered.example", true)
+	seed(tenant, "rejected.example", true)
+	seed(other, "theirs.example", true)
+	exec(`INSERT INTO verified_domains (id, tenant_id, domain, verification_token, status) VALUES ($1, $2, 'verified.example', 'x', 'verified')`,
+		shared.NewID().String(), tenant.String())
+	exec(`INSERT INTO verified_domains (id, tenant_id, domain, verification_token, status) VALUES ($1, $2, 'pending.example', 'x', 'pending')`,
+		shared.NewID().String(), tenant.String())
+	exec(`INSERT INTO easm_tombstones (tenant_id, name) VALUES ($1, 'rejected.example')`, tenant.String())
+	covered := seedNamedAsset(ctx, t, r, tenant, "covered.example", "domain", "active")
+
+	now := time.Now().UTC()
+	names := func() map[string]shared.ID {
+		t.Helper()
+		due, err := r.DueTargets(ctx, tenant, easmdns.KindEmail, now, 50)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]shared.ID{}
+		for _, d := range due {
+			out[d.Name] = d.AssetID
+		}
+		return out
+	}
+	got := names()
+	want := map[string]bool{"seeded.example": true, "verified.example": true, "covered.example": true}
+	if len(got) != len(want) {
+		t.Fatalf("email targets = %v", got)
+	}
+	for n := range want {
+		if _, ok := got[n]; !ok {
+			t.Fatalf("missing %s in %v", n, got)
+		}
+	}
+	if got["covered.example"] != covered || !got["seeded.example"].IsZero() {
+		t.Fatalf("asset/name targets mixed up: %v", got)
+	}
+
+	// A checked name is not due again until the window passes.
+	if err := r.SaveNameState(ctx, tenant, "seeded.example", easmdns.KindEmail, easmdns.OutcomeOK, "", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SaveState(ctx, tenant, shared.ID{}, easmdns.KindEmail, easmdns.OutcomeOK, "", now); err == nil {
+		t.Fatal("SaveState without an asset must refuse")
+	}
+	due, _ := r.DueTargets(ctx, tenant, easmdns.KindEmail, now.Add(-time.Hour), 50)
+	for _, d := range due {
+		if d.Name == "seeded.example" {
+			t.Fatal("checked name is due again")
+		}
+	}
+	// The dangling check never takes name targets; another tenant sees only its own.
+	if dang, _ := r.DueTargets(ctx, tenant, easmdns.KindDangling, now, 50); len(dang) != 1 {
+		t.Fatalf("dangling targets = %+v", dang)
+	}
+	theirs, _ := r.DueTargets(ctx, other, easmdns.KindEmail, now, 50)
+	if len(theirs) != 1 || theirs[0].Name != "theirs.example" {
+		t.Fatalf("tenant B email targets = %+v", theirs)
+	}
+}
