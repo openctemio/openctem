@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -197,7 +198,7 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 		apierror.BadRequest("Failed to read request body").WriteJSON(w)
 		return
 	}
-	if isToolExport(body) {
+	if isToolExport(body, r.Header.Get("Content-Type")) {
 		h.uploadExport(w, r, run, body)
 		return
 	}
@@ -343,7 +344,10 @@ func (h *CIRunnerHandler) writeErr(w http.ResponseWriter, what string, err error
 // than a CTIS report: an archive, or a format the importers detect. A JSON
 // document that is a CTIS report (it has "version" or "report") stays on the
 // CTIS path even when a detector would also accept it.
-func isToolExport(body []byte) bool {
+func isToolExport(body []byte, contentType string) bool {
+	if mt, _, _ := mime.ParseMediaType(contentType); mt == "application/sarif+json" {
+		return true
+	}
 	head := body
 	if len(head) > importer.SniffLen {
 		head = head[:importer.SniffLen]
@@ -354,12 +358,18 @@ func isToolExport(body []byte) bool {
 	if _, ok := importer.Detect(head); !ok {
 		return false
 	}
+	// A CTIS report (bare or as {"report": ...}) has a version and a
+	// metadata object; tool formats that also have a "version" (SARIF,
+	// semgrep, trivy) have no metadata object, or carry SARIF runs.
 	var top map[string]json.RawMessage
 	if json.Unmarshal(body, &top) == nil {
-		if _, ok := top["version"]; ok {
+		if _, ok := top["report"]; ok {
 			return false
 		}
-		if _, ok := top["report"]; ok {
+		_, version := top["version"]
+		md, metadata := top["metadata"]
+		_, runs := top["runs"]
+		if version && metadata && !runs && len(bytes.TrimSpace(md)) > 0 && bytes.TrimSpace(md)[0] == '{' {
 			return false
 		}
 	}
@@ -409,6 +419,9 @@ func (h *CIRunnerHandler) uploadExport(w http.ResponseWriter, r *http.Request, r
 	var refusedFile *findingimport.FileError
 	_, refused := findingimport.Convert(r.Context(), findingimport.Upload{
 		Name: "results", Body: bytes.NewReader(body), ReportIDPrefix: run.ID.String(),
+		// Code reports are filed on the run's repository, whatever the file
+		// names; ScopeImported then drops anything still elsewhere.
+		Repository: run.Repository, Branch: run.Branch, CommitSHA: run.CommitSHA,
 	}, func(c findingimport.Converted) {
 		f := CIExportFile{Name: c.Name}
 		if c.Error != nil {

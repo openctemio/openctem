@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -86,6 +89,8 @@ func TestCIExport_HostileInputRefused(t *testing.T) {
 		"xxe":           []byte(`<?xml version="1.0"?><!DOCTYPE NessusClientData_v2 [<!ENTITY x SYSTEM "file:///etc/passwd">]><NessusClientData_v2>&x;</NessusClientData_v2>`),
 		"deep":          []byte(`{"findings": ` + strings.Repeat("[", 5000) + strings.Repeat("]", 5000) + `}`),
 		"zip traversal": zbuf.Bytes(),
+		"deep sarif":    []byte(`{"version": "2.1.0", "runs": ` + strings.Repeat("[", 5000) + strings.Repeat("]", 5000) + `}`),
+		"old sarif":     []byte(`{"version": "2.0.0", "$schema": "https://json.schemastore.org/sarif-2.0.0.json", "runs": []}`),
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -96,6 +101,66 @@ func TestCIExport_HostileInputRefused(t *testing.T) {
 			}
 			if len(svc.imported) != 0 || svc.ctisPath != 0 || strings.Contains(w.Body.String(), "root:") {
 				t.Fatal("a refused upload was ingested or echoed")
+			}
+		})
+	}
+}
+
+// ctisImporterFixtures is the testdata of the pinned ctis importer.
+func ctisImporterFixtures(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis").Output()
+	if err != nil {
+		t.Skipf("ctis module dir: %v", err)
+	}
+	return filepath.Join(strings.TrimSpace(string(out)), "testdata", "importers")
+}
+
+// SARIF from CodeQL, semgrep and trivy, semgrep and trivy JSON and a
+// gitleaks report: every finding lands on the run's repository, none is
+// dropped, and the branch and commit are the run's. codeql-provenance names
+// another repository in versionControlProvenance; the run's wins.
+func TestCIExport_CodeScannerFormatsLandOnTheRunRepository(t *testing.T) {
+	root := ctisImporterFixtures(t)
+	for _, fx := range []string{
+		"sarif/codeql.sarif", "sarif/codeql-provenance.sarif.json", "sarif/semgrep.sarif", "sarif/trivy.sarif",
+		"semgrep/semgrep.json", "trivy/fs.json", "gitleaks/leaks.json",
+	} {
+		t.Run(fx, func(t *testing.T) {
+			body, err := os.ReadFile(filepath.Join(root, fx))
+			if err != nil {
+				t.Fatal(err)
+			}
+			svc := &fakeCIService{}
+			run := exportRun()
+			w := postRunResults(t, NewCIRunnerHandler(svc, logger.NewNop()), run, body)
+			if w.Code != http.StatusCreated {
+				t.Fatalf("status %d: %s", w.Code, w.Body.String())
+			}
+			var resp CIExportResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.FindingsDroppedOutOfScope != 0 || svc.ctisPath != 0 {
+				t.Fatalf("dropped %d, ctis path %d: %s", resp.FindingsDroppedOutOfScope, svc.ctisPath, w.Body.String())
+			}
+			findings := 0
+			for _, rep := range svc.imported {
+				findings += len(rep.Findings)
+				if len(rep.Assets) != 1 || rep.Assets[0].Value != run.Repository {
+					t.Fatalf("assets %+v", rep.Assets)
+				}
+				if b := rep.Metadata.Branch; b == nil || b.CommitSHA != run.CommitSHA || b.Name != run.Branch {
+					t.Fatalf("branch not the run's: %+v", b)
+				}
+				for _, f := range rep.Findings {
+					if f.AssetRef != rep.Assets[0].ID {
+						t.Fatalf("finding %q not on the run's repository", f.Title)
+					}
+				}
+			}
+			if findings == 0 {
+				t.Fatal("no finding ingested")
 			}
 		})
 	}
