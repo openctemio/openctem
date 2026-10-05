@@ -100,6 +100,14 @@ services:
       openctem:
         ipv4_address: ${OPENCTEM_NET_PREFIX:-172.30.80}.11
     restart: unless-stopped
+    # Read-only root filesystem: the standalone server writes only to /tmp and
+    # .next/cache (see web/Dockerfile). No Linux capabilities needed.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache:uid=1001,gid=1001
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
