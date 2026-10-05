@@ -21,6 +21,11 @@ You need `scans:ci:write` (owners and administrators).
   request is matched on its source branch.
 - **Environments**, **Events** (optional): require a deployment environment or
   limit trigger events.
+- **Protected branches and tags only**: admits only jobs on a protected ref.
+  GitLab says so in the token (`ref_protected`). GitHub tokens do not, so on
+  GitHub the switch requires **Environments**: list deployment environments
+  whose deployment branch rules admit only protected branches and tags, and
+  run the scan job in one of them.
 - **Admit fork pull requests**: leave off. Events such as
   `pull_request_target` run fork code with your repository's identity.
 - **Default branch**: the baseline used until the platform learns the
@@ -65,6 +70,8 @@ sensor falls back to `API_KEY` if one is set. Pull requests from forks get no
 token from GitHub on `pull_request`; that is intended.
 
 ## 3. GitLab CI
+
+Step-by-step GitLab guide (variables, templates, enforcing the gate, self-managed GitLab, troubleshooting): [Run OpenCTEM security scans in GitLab CI/CD](gitlab-ci.md).
 
 ```yaml
 openctem-security:
