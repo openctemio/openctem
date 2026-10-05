@@ -1008,7 +1008,7 @@ results an out-of-scope id is reported exactly like an unknown id.
   `asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $u AND tenant_id = $t)`
   (index `(user_id, asset_id)`), built once in `postgres.dataScopeCond`.
 - **Only an active principal has scope** (member lifecycle, RFC-050,
-  migration 001027). `user_accessible_assets` holds rows only for an ACTIVE
+  migration 001033). `user_accessible_assets` holds rows only for an ACTIVE
   membership of an ACTIVE account: every refresh function is gated by
   `principal_is_active(tenant, user)`, a disable drops the rows in its
   transaction and a re-enable recomputes them (`refresh_access_for_user`)
