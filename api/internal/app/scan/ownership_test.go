@@ -26,7 +26,7 @@ func TestRefuseUnownedTargets(t *testing.T) {
 	tenant := shared.NewID()
 
 	err := svc.refuseUnownedTargets(context.Background(), tenant, "quick_scan",
-		[]string{"ok.example.com", "www.rejected.com", "dev.review.com", "manual.net"})
+		[]string{"ok.example.com", "www.rejected.com", "dev.review.com", "manual.net"}, false)
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code != "TARGET_OUT_OF_SCOPE" || !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("err = %v, want TARGET_OUT_OF_SCOPE", err)
@@ -42,11 +42,11 @@ func TestRefuseUnownedTargets(t *testing.T) {
 			t.Fatalf("refusal says %q: %s", leak, msg)
 		}
 	}
-	if err := svc.refuseUnownedTargets(context.Background(), tenant, "quick_scan", []string{"ok.example.com"}); err != nil {
+	if err := svc.refuseUnownedTargets(context.Background(), tenant, "quick_scan", []string{"ok.example.com"}, false); err != nil {
 		t.Fatalf("allowed target refused: %v", err)
 	}
 	svc.attributionGate = &stubGate{err: errors.New("db down")}
-	if err := svc.refuseUnownedTargets(context.Background(), tenant, "quick_scan", []string{"ok.example.com"}); err == nil {
+	if err := svc.refuseUnownedTargets(context.Background(), tenant, "quick_scan", []string{"ok.example.com"}, false); err == nil {
 		t.Fatal("a failed ownership check must refuse")
 	}
 }
@@ -141,7 +141,7 @@ func TestRefuseUnownedTargets_Audited(t *testing.T) {
 	tenant := shared.NewID()
 	ctx := WithAuditActor(context.Background(), "actor-1")
 
-	if err := svc.refuseUnownedTargets(ctx, tenant, "quick_scan", []string{"ok.example.com"}); err != nil {
+	if err := svc.refuseUnownedTargets(ctx, tenant, "quick_scan", []string{"ok.example.com"}, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(rec.events) != 0 {
@@ -149,7 +149,7 @@ func TestRefuseUnownedTargets_Audited(t *testing.T) {
 	}
 
 	if err := svc.refuseUnownedTargets(ctx, tenant, "quick_scan",
-		[]string{"ok.example.com", "www.rejected.com", "dev.review.com"}); err == nil {
+		[]string{"ok.example.com", "www.rejected.com", "dev.review.com"}, false); err == nil {
 		t.Fatal("refused targets passed")
 	}
 	if len(rec.events) != 1 {
@@ -178,7 +178,7 @@ func TestRefuseUnownedTargets_Audited(t *testing.T) {
 	}
 
 	svc.attributionGate = &stubGate{err: errors.New("db down")}
-	_ = svc.refuseUnownedTargets(ctx, tenant, "quick_scan", []string{"ok.example.com"})
+	_ = svc.refuseUnownedTargets(ctx, tenant, "quick_scan", []string{"ok.example.com"}, false)
 	if len(rec.events) != 1 {
 		t.Fatal("a failed check is not a refusal by ownership and is not audited as one")
 	}
@@ -195,7 +195,7 @@ func TestRefuseUnownedTargets_AuditBounded(t *testing.T) {
 	}
 	rec := &recordingAudit{}
 	svc := &Service{attributionGate: &stubGate{blockedTyped: blocked}, logger: logger.NewNop(), auditService: rec}
-	_ = svc.refuseUnownedTargets(context.Background(), shared.NewID(), "scan_create", targets)
+	_ = svc.refuseUnownedTargets(context.Background(), shared.NewID(), "scan_create", targets, false)
 	e := rec.events[0]
 	if e.Metadata["refused_count"] != 120 {
 		t.Fatalf("count = %v", e.Metadata["refused_count"])

@@ -37,6 +37,11 @@ func (m *memStore) SaveState(_ context.Context, _, assetID shared.ID, kind, outc
 	return nil
 }
 
+func (m *memStore) SaveNameState(_ context.Context, _ shared.ID, name, kind, outcome, _ string, _ time.Time) error {
+	m.states["name:"+name+"|"+kind] = outcome
+	return nil
+}
+
 func (m *memStore) BulkUpsert(_ context.Context, evs []*exposuredom.ExposureEvent) error {
 	for _, e := range evs {
 		if _, ok := m.state[e.Fingerprint()]; !ok {
@@ -217,5 +222,47 @@ func TestMonitor_TenantSwitch(t *testing.T) {
 	}
 	if res, err := svc.MonitorEmail(context.Background(), on); err != nil || res.Checked != 1 {
 		t.Fatalf("tenant with the checks on: %+v %v", res, err)
+	}
+}
+
+// 22c B3: a root-domain seed with no domain asset is checked by name; the
+// exposure is linked to no asset and the state is saved by name. Once the
+// domain asset exists, its check clears the unlinked exposure.
+func TestMonitorEmail_NameTargetThenAsset(t *testing.T) {
+	tenant := shared.NewID()
+	seed := Target{Name: "acme.com"}
+	store := newMemStore(seed)
+	svc, _ := serviceWith(t, map[string]dnstest.Entry{"acme.com": {MX: []string{"mx.acme.com"}}}, store)
+
+	res, err := svc.MonitorEmail(context.Background(), tenant)
+	if err != nil || res.Found != 1 {
+		t.Fatalf("seed run: %+v %v", res, err)
+	}
+	if store.states["name:acme.com|email"] != "email_security_weak" {
+		t.Fatalf("name state = %v", store.states)
+	}
+	var unlinked string
+	for fp, e := range store.exposure {
+		if e.AssetID() != nil {
+			t.Fatalf("seed exposure linked to %v", e.AssetID())
+		}
+		unlinked = fp
+	}
+
+	store.targets = []Target{{AssetID: shared.NewID(), Name: "acme.com"}}
+	if _, err := svc.MonitorEmail(context.Background(), tenant); err != nil {
+		t.Fatal(err)
+	}
+	if store.state[unlinked] != "auto-resolved" {
+		t.Fatalf("unlinked seed exposure not cleared by the asset check: %q", store.state[unlinked])
+	}
+	linked := 0
+	for fp, e := range store.exposure {
+		if e.AssetID() != nil && store.state[fp] == "active" {
+			linked++
+		}
+	}
+	if linked != 1 {
+		t.Fatalf("linked active exposures = %d, want 1", linked)
 	}
 }

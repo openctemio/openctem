@@ -61,6 +61,9 @@ type Target struct {
 type Store interface {
 	DueTargets(ctx context.Context, tenantID shared.ID, kind string, checkedBefore time.Time, limit int) ([]Target, error)
 	SaveState(ctx context.Context, tenantID, assetID shared.ID, kind, outcome, lastErr string, at time.Time) error
+	// SaveNameState records the outcome for a name target (a root-domain
+	// seed or verified domain with no domain asset; email check only).
+	SaveNameState(ctx context.Context, tenantID shared.ID, name, kind, outcome, lastErr string, at time.Time) error
 	ResolveAuto(ctx context.Context, tenantID shared.ID, source string, fingerprints []string, note string) (int, error)
 	ReopenAuto(ctx context.Context, tenantID shared.ID, source string, fingerprints []string, note string) (int, error)
 	TryLockTenant(ctx context.Context, tenantID shared.ID, kind string) (func(), bool, error)
@@ -177,7 +180,13 @@ func (s *Service) run(ctx context.Context, tenantID shared.ID, kind string, chec
 			}
 			clearFPs = append(clearFPs, clear...)
 		}
-		if err := s.store.SaveState(ctx, tenantID, t.AssetID, kind, outcome, errText, s.now()); err != nil {
+		var saveErr error
+		if t.AssetID.IsZero() {
+			saveErr = s.store.SaveNameState(ctx, tenantID, t.Name, kind, outcome, errText, s.now())
+		} else {
+			saveErr = s.store.SaveState(ctx, tenantID, t.AssetID, kind, outcome, errText, s.now())
+		}
+		if err := saveErr; err != nil {
 			s.logger.Warn("easm dns: failed to save state", "tenant_id", tenantID.String(), "error", err)
 		}
 	}
