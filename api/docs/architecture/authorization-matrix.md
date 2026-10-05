@@ -299,7 +299,7 @@ create's target validator, exclusions, zone routing) in one call.
 | `DELETE /api/v1/scan-freeze-windows/{id}` | `sensors:zones:delete` |
 | `POST /api/v1/scans/{id}/trigger` with `override_freeze: true` | `scans:execute` **and** `scans:freeze:override` (checked in the handler; 403 otherwise) |
 
-> `scans:freeze:override` is seeded by migration `001110` for owner and admin
+> `scans:freeze:override` is seeded by migration `001115` for owner and admin
 > and may be put on custom roles. Object level: every query carries
 > `tenant_id`; a zone window's zone is the same tenant's by the composite
 > foreign key `(tenant_id, scan_zone_id)`. Enforcement is the claim
