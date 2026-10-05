@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -227,7 +228,7 @@ func (h *AuditHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Tags         Audit Logs
 // @Produce      json
 // @Security     BearerAuth
-// @Param        page          query     int     false  "Page number"
+// @Param        page          query     int     false  "Page number (1-based; 0 or missing means 1)"
 // @Param        per_page      query     int     false  "Items per page"  default(20)
 // @Param        actor_id      query     string  false  "Filter by actor ID"
 // @Param        action        query     string  false  "Filter by action"
@@ -342,18 +343,7 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 		data[i] = toAuditLogResponse(log)
 	}
 
-	totalPages := int(result.Total) / input.PerPage
-	if int(result.Total)%input.PerPage > 0 {
-		totalPages++
-	}
-
-	response := AuditLogListResponse{
-		Data:       data,
-		Total:      result.Total,
-		Page:       input.Page,
-		PerPage:    input.PerPage,
-		TotalPages: totalPages,
-	}
+	response := newAuditLogListResponse(data, result.Total, input.Page, input.PerPage)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -413,7 +403,7 @@ func (h *AuditHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Param        type      path      string  true   "Resource type"
 // @Param        id        path      string  true   "Resource ID"
-// @Param        page      query     int     false  "Page number"
+// @Param        page      query     int     false  "Page number (1-based; 0 or missing means 1)"
 // @Param        per_page  query     int     false  "Items per page"  default(20)
 // @Success      200  {object}  AuditLogListResponse
 // @Failure      400  {object}  map[string]string
@@ -436,7 +426,7 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 
 	// Parse pagination
 	query := r.URL.Query()
-	page := 0
+	page := 1
 	perPage := 20
 
 	if p := query.Get("page"); p != "" {
@@ -465,18 +455,7 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 		data[i] = toAuditLogResponse(log)
 	}
 
-	totalPages := int(result.Total) / perPage
-	if int(result.Total)%perPage > 0 {
-		totalPages++
-	}
-
-	response := AuditLogListResponse{
-		Data:       data,
-		Total:      result.Total,
-		Page:       page,
-		PerPage:    perPage,
-		TotalPages: totalPages,
-	}
+	response := newAuditLogListResponse(data, result.Total, page, perPage)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -490,7 +469,7 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id        path      string  true   "User ID"
-// @Param        page      query     int     false  "Page number"
+// @Param        page      query     int     false  "Page number (1-based; 0 or missing means 1)"
 // @Param        per_page  query     int     false  "Items per page"  default(20)
 // @Success      200  {object}  AuditLogListResponse
 // @Failure      400  {object}  map[string]string
@@ -512,7 +491,7 @@ func (h *AuditHandler) GetUserActivity(w http.ResponseWriter, r *http.Request) {
 
 	// Parse pagination
 	query := r.URL.Query()
-	page := 0
+	page := 1
 	perPage := 20
 
 	if p := query.Get("page"); p != "" {
@@ -541,22 +520,31 @@ func (h *AuditHandler) GetUserActivity(w http.ResponseWriter, r *http.Request) {
 		data[i] = toAuditLogResponse(log)
 	}
 
-	totalPages := int(result.Total) / perPage
-	if int(result.Total)%perPage > 0 {
-		totalPages++
-	}
-
-	response := AuditLogListResponse{
-		Data:       data,
-		Total:      result.Total,
-		Page:       page,
-		PerPage:    perPage,
-		TotalPages: totalPages,
-	}
+	response := newAuditLogListResponse(data, result.Total, page, perPage)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// newAuditLogListResponse builds a list response that reports the page the
+// query actually used. Pages are 1-based on the wire: pagination.New clamps a
+// missing or zero page to 1 and per_page to [1,100], and the response echoes
+// those values, not the raw query, so a client that trusts "page" cannot
+// drift off by one.
+func newAuditLogListResponse(data []AuditLogResponse, total int64, page, perPage int) AuditLogListResponse {
+	p := pagination.New(page, perPage)
+	totalPages := int(total) / p.PerPage
+	if int(total)%p.PerPage > 0 {
+		totalPages++
+	}
+	return AuditLogListResponse{
+		Data:       data,
+		Total:      total,
+		Page:       p.Page,
+		PerPage:    p.PerPage,
+		TotalPages: totalPages,
+	}
 }
 
 // GetStats handles GET /api/v1/audit-logs/stats
