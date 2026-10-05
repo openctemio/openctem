@@ -36192,6 +36192,14 @@ export interface components {
     'internal_infra_http_handler.AssetAttributionResponse': {
       /** @description ActiveChecksAllowed: whether a scan may touch the asset. */
       active_checks_allowed?: boolean
+      /**
+       * @description ActiveChecksBlockedBy says why a scan may not touch the asset when
+       *     active_checks_allowed is false: its state (needs_review, candidate,
+       *     dependency, monitor_only, rejected; rejected also for a name under a
+       *     rejected name), or unattributed: no record, and neither inside a scope
+       *     target nor under a root-domain seed or verified domain.
+       */
+      active_checks_blocked_by?: string
       confidence?: number
       decided_at?: string
       evidence?: components['schemas']['internal_infra_http_handler.AssetAttributionEvidence'][]

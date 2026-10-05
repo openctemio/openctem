@@ -183,6 +183,9 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), input.Targets); err != nil {
 		return nil, err
 	}
+	if err := s.refuseUnownedTargets(ctx, tenantID, "quick_scan", input.Targets); err != nil {
+		return nil, err
+	}
 
 	// Determine scan type
 	scanType := scan.ScanTypeSingle
