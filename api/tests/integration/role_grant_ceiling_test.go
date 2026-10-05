@@ -10,10 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
-
-	"github.com/openctemio/openctem/api/internal/app"
-
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -92,13 +90,13 @@ func TestRoleGrantCeiling_AdminSelfEscalationRefused(t *testing.T) {
 		}
 	}
 	forbidden("SetUserRoles admin -> [owner]", svc.SetUserRoles(ctx,
-		accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: admin, RoleIDs: []string{ownerRole}}, admin, app.AuditContext{}))
+		accesscontrol.SetUserRolesInput{TenantID: tenantID, UserID: admin, RoleIDs: []string{ownerRole}}, admin, audit.AuditContext{}))
 	forbidden("AssignRole admin + owner", svc.AssignRole(ctx,
-		accesscontrol.AssignRoleInput{TenantID: tenantID, UserID: admin, RoleID: ownerRole}, admin, app.AuditContext{}))
+		accesscontrol.AssignRoleInput{TenantID: tenantID, UserID: admin, RoleID: ownerRole}, admin, audit.AuditContext{}))
 	_, err = svc.BulkAssignRoleToUsers(ctx,
-		accesscontrol.BulkAssignRoleToUsersInput{TenantID: tenantID, RoleID: ownerRole, UserIDs: []string{admin, viewer}}, admin, app.AuditContext{})
+		accesscontrol.BulkAssignRoleToUsersInput{TenantID: tenantID, RoleID: ownerRole, UserIDs: []string{admin, viewer}}, admin, audit.AuditContext{})
 	forbidden("BulkAssign owner", err)
-	forbidden("RemoveRole owner from the owner", svc.RemoveRole(ctx, tenantID, owner, ownerRole, app.AuditContext{ActorID: admin}))
+	forbidden("RemoveRole owner from the owner", svc.RemoveRole(ctx, tenantID, owner, ownerRole, audit.AuditContext{ActorID: admin}))
 
 	if got := rolesOf(admin); !slices.Equal(got, []string{"admin"}) {
 		t.Fatalf("admin's roles changed: %v", got)
@@ -108,7 +106,7 @@ func TestRoleGrantCeiling_AdminSelfEscalationRefused(t *testing.T) {
 	}
 
 	// The owner may grant the owner role.
-	if err := svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tenantID, UserID: viewer, RoleID: ownerRole}, owner, app.AuditContext{}); err != nil {
+	if err := svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tenantID, UserID: viewer, RoleID: ownerRole}, owner, audit.AuditContext{}); err != nil {
 		t.Fatalf("owner grants owner: %v", err)
 	}
 	if got := rolesOf(viewer); !slices.Contains(got, "owner") {

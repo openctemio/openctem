@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -258,7 +259,7 @@ func newSecretTestService(t *testing.T) (*app.SecretStoreService, *secretMockRep
 	repo := newSecretMockRepo()
 	auditRepo := newSecretMockAuditRepo()
 	log := logger.NewNop()
-	auditSvc := app.NewAuditService(auditRepo, log)
+	auditSvc := auditsvc.NewAuditService(auditRepo, log)
 
 	svc, err := app.NewSecretStoreService(repo, secretTestKey, auditSvc, log)
 	if err != nil {
@@ -292,7 +293,7 @@ func TestSecretNewService_InvalidKey(t *testing.T) {
 	repo := newSecretMockRepo()
 	auditRepo := newSecretMockAuditRepo()
 	log := logger.NewNop()
-	auditSvc := app.NewAuditService(auditRepo, log)
+	auditSvc := auditsvc.NewAuditService(auditRepo, log)
 
 	_, err := app.NewSecretStoreService(repo, []byte("short"), auditSvc, log)
 	if err == nil {

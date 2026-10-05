@@ -7,7 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
+	capabilitysvc "github.com/openctemio/openctem/api/internal/app/capability"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/capability"
@@ -18,13 +19,13 @@ import (
 
 // CapabilityHandler handles HTTP requests for capabilities.
 type CapabilityHandler struct {
-	service   *app.CapabilityService
+	service   *capabilitysvc.CapabilityService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewCapabilityHandler creates a new CapabilityHandler.
-func NewCapabilityHandler(service *app.CapabilityService, v *validator.Validator, log *logger.Logger) *CapabilityHandler {
+func NewCapabilityHandler(service *capabilitysvc.CapabilityService, v *validator.Validator, log *logger.Logger) *CapabilityHandler {
 	return &CapabilityHandler{
 		service:   service,
 		validator: v,
@@ -133,7 +134,7 @@ func (h *CapabilityHandler) ListCapabilities(w http.ResponseWriter, r *http.Requ
 		category = &c
 	}
 
-	result, err := h.service.ListCapabilities(r.Context(), app.ListCapabilitiesInput{
+	result, err := h.service.ListCapabilities(r.Context(), capabilitysvc.ListCapabilitiesInput{
 		TenantID:  tenantID,
 		IsBuiltin: isBuiltin,
 		Category:  category,
@@ -331,7 +332,7 @@ func (h *CapabilityHandler) CreateCustomCapability(w http.ResponseWriter, r *htt
 		return
 	}
 
-	c, err := h.service.CreateCapability(r.Context(), app.CreateCapabilityInput{
+	c, err := h.service.CreateCapability(r.Context(), capabilitysvc.CreateCapabilityInput{
 		TenantID:     tenantID,
 		CreatedBy:    userID,
 		Name:         req.Name,
@@ -369,7 +370,7 @@ func (h *CapabilityHandler) UpdateCustomCapability(w http.ResponseWriter, r *htt
 		return
 	}
 
-	c, err := h.service.UpdateCapability(r.Context(), app.UpdateCapabilityInput{
+	c, err := h.service.UpdateCapability(r.Context(), capabilitysvc.UpdateCapabilityInput{
 		TenantID:     tenantID,
 		ID:           capabilityID,
 		DisplayName:  req.DisplayName,
@@ -395,7 +396,7 @@ func (h *CapabilityHandler) DeleteCustomCapability(w http.ResponseWriter, r *htt
 	capabilityID := chi.URLParam(r, "id")
 	force := r.URL.Query().Get("force") == queryParamTrue
 
-	if err := h.service.DeleteCapability(r.Context(), app.DeleteCapabilityInput{
+	if err := h.service.DeleteCapability(r.Context(), capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenantID,
 		CapabilityID: capabilityID,
 		Force:        force,
@@ -413,8 +414,8 @@ func (h *CapabilityHandler) DeleteCustomCapability(w http.ResponseWriter, r *htt
 // =============================================================================
 
 // buildAuditContext builds an AuditContext from the HTTP request.
-func (h *CapabilityHandler) buildAuditContext(r *http.Request) app.AuditContext {
-	actx := app.AuditContext{
+func (h *CapabilityHandler) buildAuditContext(r *http.Request) audit.AuditContext {
+	actx := audit.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
