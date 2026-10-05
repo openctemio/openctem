@@ -253,7 +253,7 @@ keep *both* the deploy and the rollback boringly safe.
 
 ---
 
-## Asset tenant foreign keys (migrations 000810-000812)
+## Asset tenant foreign keys (migrations 000920-000922)
 
 Every column that references `assets(id)` from a table with a `tenant_id` also
 has a composite foreign key `(tenant_id, <asset column>) → assets(tenant_id, id)`,
@@ -262,17 +262,17 @@ whatever code writes it (research doc 21b, C1/C3/C4 backstop).
 
 | Migration | What it does | Lock |
 |---|---|---|
-| `000810` | `CREATE UNIQUE INDEX CONCURRENTLY uq_assets_tenant_id_id ON assets (tenant_id, id)` | none on writes |
-| `000811` | Pre-flight, then 27 composite keys `NOT VALID` | brief `SHARE ROW EXCLUSIVE`, no table scan |
-| `000812` | `VALIDATE CONSTRAINT` on each key | `SHARE UPDATE EXCLUSIVE` (reads and writes continue) |
+| `000920` | `CREATE UNIQUE INDEX CONCURRENTLY uq_assets_tenant_id_id ON assets (tenant_id, id)` | none on writes |
+| `000921` | Pre-flight, then 27 composite keys `NOT VALID` | brief `SHARE ROW EXCLUSIVE`, no table scan |
+| `000922` | `VALIDATE CONSTRAINT` on each key | `SHARE UPDATE EXCLUSIVE` (reads and writes continue) |
 
 The single-column keys stay. Each composite key repeats its table's `ON DELETE`
 action; `SET NULL` clears only the asset column (`ON DELETE SET NULL (asset_id)`),
 never `tenant_id`.
 
-### When 000811 refuses to run
+### When 000921 refuses to run
 
-`000811` first counts, per column, rows whose asset belongs to another
+`000921` first counts, per column, rows whose asset belongs to another
 organization. If any exist it stops with:
 
 ```
@@ -280,7 +280,7 @@ cross-tenant asset references found, migration not applied: findings.asset_id: 2
 ```
 
 Nothing is changed (the file is one transaction), but `golang-migrate` marks
-version 811 dirty. Existing cross-tenant rows are another organization's data
+version 921 dirty. Existing cross-tenant rows are another organization's data
 pointing at an asset, so they are never deleted automatically: decide row by
 row with the owner of each organization.
 
@@ -297,10 +297,10 @@ row with the owner of each organization.
    `pipeline_runs`, `scan_sessions`, `finding_retests`,
    `runtime_telemetry_events`), or delete the row if it is junk. Keep the
    listing output with the change ticket.
-3. `migrate force 810`, then `migrate up` again.
+3. `migrate force 920`, then `migrate up` again.
 
 The read-only pre-flight for every column, to run before deploying:
-`api/migrations/000811_asset_ref_tenant_fks.up.sql` (the `DO $preflight$`
+`api/migrations/000921_asset_ref_tenant_fks.up.sql` (the `DO $preflight$`
 block) or the query below.
 
 ```sql

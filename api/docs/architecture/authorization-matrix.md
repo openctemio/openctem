@@ -1081,7 +1081,7 @@ research doc 21b, C1/C3/C4). Used by:
 - `POST /pipelines/{id}/runs` (`asset_id`, which is copied into every step
   command; a workflow trigger with no user gets the tenant check).
 
-**Database backstop** (migrations 000810-000812): every column that references
+**Database backstop** (migrations 000920-000922): every column that references
 `assets(id)` from a table with a `tenant_id` also has a composite foreign key
 `(tenant_id, <asset column>) → assets(tenant_id, id)`, so a cross-tenant
 reference is refused by the database whatever code writes it, including

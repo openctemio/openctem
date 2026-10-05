@@ -19,7 +19,7 @@
 --
 -- NOT VALID: adding the constraints checks new and updated rows only and
 -- does not scan the tables, so the brief lock is taken and released at
--- once. 000812 validates the existing rows in its own transaction, under a
+-- once. 000922 validates the existing rows in its own transaction, under a
 -- lock that does not block writes. The single-column foreign keys stay: the
 -- composite ones add the tenant to them, with the same ON DELETE action
 -- (SET NULL clears only the asset column, never tenant_id).
