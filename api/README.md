@@ -28,7 +28,7 @@ Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Bui
 ### Scanning
 - 30+ scanner integrations via Agent SDK (Nuclei, Trivy, Semgrep, Betterleaks, Nmap, etc.)
 - Pipeline-based scan orchestration with multi-step workflows
-- Platform agents with K8s-inspired lifecycle management
+- Platform agents with lease-based lifecycle management
 - Bootstrap token authentication for agent self-registration
 
 ### Access Control
