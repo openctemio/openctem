@@ -93,6 +93,9 @@ var assetMergeRefs = []mergeRef{
 		keys: []mergeKey{{cols: []string{"control_id"}}}},
 	{table: "scan_coverage_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// One expectation per repository: the kept repository keeps its own.
+	{table: "ci_coverage_expectations", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	// The kept asset takes the merged assets' identifiers, so later reports
 	// carrying them land on it. A strong identifier is unique per tenant and
 	// so is never on both.
