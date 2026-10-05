@@ -11762,6 +11762,100 @@ export interface paths {
     }
     trace?: never
   }
+  '/easm/settings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Attack-surface monitoring settings
+     * @description Whether the Certificate Transparency monitor and the DNS-only checks run for the organization, their cadence (platform floor 6 h), and when each last ran.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMSettingsResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Change attack-surface monitoring settings
+     * @description Turn the Certificate Transparency monitor (sends the organization's domain names to crt.sh and Cert Spotter) or the DNS-only checks off or on, and set their interval in hours: 0 for the platform default, otherwise 6 to 168. Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMSettingsUpdateRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMSettingsResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/easm/summary': {
     parameters: {
       query?: never
@@ -11813,6 +11907,54 @@ export interface paths {
     }
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/sweeps': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Run discovery and DNS checks now
+     * @description Starts the Certificate Transparency monitor and then the DNS-only checks for the organization in the background (each only if it is on). At most once per 15 minutes per organization (429 with Retry-After). Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Accepted */
+        202: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SweepTicket']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     delete?: never
     options?: never
     head?: never
@@ -34884,6 +35026,12 @@ export interface components {
       exposed_services?: number
       total?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.SweepTicket': {
+      ct_included?: boolean
+      dns_included?: boolean
+      next_run_now_at?: string
+      started_at?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_easm.TypeCount': {
       count?: number
       type?: string
@@ -37679,6 +37827,40 @@ export interface components {
     'internal_infra_http_handler.EASMSeedUpdateRequest': {
       discovery_enabled?: boolean
       label?: string
+    }
+    'internal_infra_http_handler.EASMSettingsResponse': {
+      /**
+       * @description CTAvailable / DNSAvailable: false when the operator turned the part
+       *     off for the whole platform; the switch then has no effect.
+       */
+      ct_available?: boolean
+      /** @description Effective cadence, platform defaults and floors. */
+      ct_effective_interval_hours?: number
+      /**
+       * @description CTEnabled: the Certificate Transparency monitor runs for the
+       *     organization (its domain names are sent to crt.sh and Cert Spotter).
+       */
+      ct_enabled?: boolean
+      /** @description CTIntervalHours / DNSIntervalHours: 0 = the platform default. */
+      ct_interval_hours?: number
+      dns_available?: boolean
+      /** @description DNSChecksEnabled: dangling CNAME/NS, lame delegation and email posture. */
+      dns_checks_enabled?: boolean
+      dns_effective_interval_hours?: number
+      dns_interval_hours?: number
+      /** @description Freshness. */
+      last_ct_sweep_at?: string
+      last_dns_check_at?: string
+      max_interval_hours?: number
+      min_interval_hours?: number
+      run_now_available_at?: string
+    }
+    'internal_infra_http_handler.EASMSettingsUpdateRequest': {
+      ct_enabled?: boolean
+      /** @description 0 = platform default; otherwise 6..168. */
+      ct_interval_hours?: number
+      dns_checks_enabled?: boolean
+      dns_interval_hours?: number
     }
     'internal_infra_http_handler.EmbeddedCategoryResponse': {
       color?: string
