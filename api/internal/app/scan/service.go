@@ -206,6 +206,7 @@ type Service struct {
 	policySensors       AvailableSensorLister // optional; nil = no policy preflight outside zones (policy_preflight.go)
 	privatePolicy       PrivateTargetPolicy   // optional; nil = the private-target switch is not read at trigger
 	optIns              OptInPolicy           // optional; nil = every sensor opt-in counts as enabled (opt_ins.go)
+	stepQueuer          StepQueuer            // the pipeline service's step dispatcher; nil refuses workflow scans
 	logger              *logger.Logger
 }
 

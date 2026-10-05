@@ -92,6 +92,12 @@ func (m *memberStore) ReactivateMember(_ context.Context, _, membershipID shared
 	}
 	return errors.New("not found")
 }
+func (m *memberStore) OffboardMember(_ context.Context, _, membershipID shared.ID) error {
+	if mem := m.find(membershipID); mem != nil {
+		return mem.Offboard()
+	}
+	return errors.New("not found")
+}
 
 func newProvisioning() (*ProvisioningService, *fakeUserStore, *memberStore) {
 	users := newFakeUserStore()
@@ -190,6 +196,54 @@ func TestProvision_Reactivate(t *testing.T) {
 	}
 	if members.byUser[uid].IsSuspended() {
 		t.Error("membership should no longer be suspended")
+	}
+}
+
+// SCIM DELETE offboards; the tombstone is then invisible to SCIM (Get and
+// SetActive answer not found), and re-provisioning the same person creates a
+// fresh membership (re-join from zero) instead of reviving the old one.
+func TestProvision_Deprovision_OffboardsAndReprovisionStartsFresh(t *testing.T) {
+	svc, users, members := newProvisioning()
+	tenantID := shared.NewID()
+	uid := seedActiveMember(t, users, members, tenantID, "leaver@example.com")
+	oldID := members.byUser[uid].ID()
+
+	if err := svc.Deprovision(context.Background(), tenantID, uid); err != nil {
+		t.Fatalf("deprovision: %v", err)
+	}
+	if !members.byUser[uid].IsOffboarded() {
+		t.Fatal("membership should be offboarded")
+	}
+	if _, err := svc.Get(context.Background(), tenantID, uid); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("Get of an offboarded member: want not found, got %v", err)
+	}
+	if _, err := svc.SetActive(context.Background(), tenantID, uid, true); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("SetActive(true) must not revive a tombstone, got %v", err)
+	}
+	if err := svc.Deprovision(context.Background(), tenantID, uid); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("second deprovision: want not found, got %v", err)
+	}
+
+	// The account exists, so re-attaching it follows the newcomer rule: the
+	// organization must own the email domain (else it must invite).
+	if _, _, err := svc.CreateOrActivate(context.Background(), tenantID, ProvisionInput{
+		UserName: "leaver@example.com", Active: true,
+	}); !errors.Is(err, ErrExistingAccountNeedsInvite) {
+		t.Fatalf("re-provision without a verified domain: want ErrExistingAccountNeedsInvite, got %v", err)
+	}
+	svc.SetDomainVerifier(staticVerifier{"example.com": true})
+	_, created, err := svc.CreateOrActivate(context.Background(), tenantID, ProvisionInput{
+		UserName: "leaver@example.com", Active: true,
+	})
+	if err != nil {
+		t.Fatalf("re-provision: %v", err)
+	}
+	if !created {
+		t.Error("re-provisioning an offboarded person must report created=true")
+	}
+	m := members.byUser[uid]
+	if !m.IsActive() || m.ID() == oldID {
+		t.Errorf("re-provision should add a fresh active membership (active=%v, sameID=%v)", m.IsActive(), m.ID() == oldID)
 	}
 }
 
