@@ -2579,12 +2579,7 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      /** @description CTIS report */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.CTISIngestRequest']
-        }
-      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.CTISIngestRequest']
       responses: {
         /** @description Created */
         201: {
@@ -8351,6 +8346,920 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ci/gate-overrides': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List CI gate break-glass overrides */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Repository asset */
+          repository_asset_id?: string
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIGateOverrideListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Break-glass: let one commit pass the CI gate
+     * @description For one commit of one repository, until it expires (default 24 hours, at most 7 days). Requires a reason. Audited at high severity, and again each time it lets a failing run pass. 404 when the repository is outside the caller's data scope.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Override */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIGateOverrideRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIGateOverrideResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/gate-overrides/{id}/revoke': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Revoke a CI gate break-glass override */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Override ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/gate-policies': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List CI gate policies
+     * @description The organization's, business units' and repositories' gate policies, and the built-in default used when none applies.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIGatePolicyListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Create a CI gate policy
+     * @description One policy per scope (tenant, business_unit or repository). Secrets always fail and accepted risk is always honored. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Policy */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIGatePolicyRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIGatePolicyResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/gate-policies/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Delete a CI gate policy */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Policy ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    /**
+     * Change a CI gate policy
+     * @description The scope cannot change. epss_threshold is replaced (omit it to clear it). Audited.
+     */
+    patch: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Policy ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Changes */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIGatePolicyRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIGatePolicyResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    trace?: never
+  }
+  '/ci/oidc/exchange': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Exchange a CI OIDC token for a run upload token
+     * @description A GitHub Actions or GitLab CI job presents its OIDC token. When one of the organization's CI trust configurations admits it (issuer, audience, repository, ref, environment and event rules; fork pull requests refused by default), the platform creates a CI run on the repository asset and returns a run upload token that expires within 15 minutes. Each OIDC token can be exchanged once. Every refusal answers the same 401.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Tenant and OIDC token */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIExchangeRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIExchangeResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/runs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List CI runs
+     * @description CI pipeline runs (not sensors), newest first, on the repositories the caller may see.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Repository asset */
+          repository_asset_id?: string
+          /** @description pass, fail or none */
+          verdict?: string
+          /** @description github or gitlab */
+          provider?: string
+          /** @description Page (default 1) */
+          page?: number
+          /** @description Per page (default 25, max 100) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-internal_infra_http_handler_CIRunResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/runs/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get a CI run
+     * @description The run with its last verdict (reasons and links). 404 when the repository is outside the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIRunResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/runs/{id}/baseline-diff': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Compare a CI run's fingerprints with the default branch
+     * @description Splits fingerprints into new and already open on the repository's default branch, for inline comments on new findings. The repository and branch are the run's.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Fingerprints */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIBaselineDiffRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/runs/{id}/evaluate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Gate verdict for a CI run
+     * @description Judges the run's findings against the gate policy (repository, else business unit, else organization, else the built-in default): severity threshold, KEV, EPSS, new findings only compared with the default branch by default. Accepted risk, false positives and suppressions are honored; a committed secret always fails; a scan failure fails. An active break-glass for the commit lets a failing run pass (audited). Returns pass or fail with reasons and links.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Runner status */
+      requestBody?: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CIEvaluateRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Verdict']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/runs/{id}/results': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Upload a CI run's results
+     * @description A CTIS report from the run. It may name only the run's repository; the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.CTISIngestRequest']
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.IngestResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/trust-configs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List CI trust configurations
+     * @description Which CI pipelines (GitHub Actions, GitLab CI) may exchange their OIDC token for a run upload token.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CITrustConfigListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Create a CI trust configuration
+     * @description Rules must name at least one owner or repository. Fork pull requests are refused unless allow_fork_pull_requests is set. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.CITrustConfigRequest']
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CITrustConfigResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/trust-configs/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a CI trust configuration */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Trust configuration ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CITrustConfigResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Change a CI trust configuration
+     * @description Replaces the configuration (the provider cannot change). Audited with before and after.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Trust configuration ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.CITrustConfigRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CITrustConfigResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    /**
+     * Delete a CI trust configuration
+     * @description Pipelines it admitted can no longer exchange tokens; tokens already issued expire within 15 minutes. Audited.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Trust configuration ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/commands': {
     parameters: {
       query?: never
@@ -11942,209 +12851,6 @@ export interface paths {
           }
           content: {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SweepTicket']
-          }
-        }
-        /** @description Too Many Requests */
-        429: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/easm/verified-domains': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * List the organization's verified domains
-     * @description Domains the organization proved it controls with a DNS TXT record. Names under a verified domain are attributed with the strong rule fqdn_under_verified_root. Rows a platform administrator set up for SSO are listed read-only (managed=true).
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomainList']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    /**
-     * Add a domain to verify for EASM
-     * @description Returns the DNS TXT record to publish. The domain is verified for EASM only: it never admits SSO users (SSO domains are set up by a platform administrator). Public suffixes and shared consumer domains are refused. Audited.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description Domain */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomainCreateRequest']
-        }
-      }
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomain']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Conflict */
-        409: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/easm/verified-domains/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    /**
-     * Remove a domain the organization verified for EASM
-     * @description Names under it stop auto-confirming. SSO domains cannot be removed here. Audited.
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Verified domain ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/easm/verified-domains/{id}/verify': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Check a domain's TXT record now
-     * @description Looks up the TXT record and marks the domain verified when the exact token is present. At most 10 checks per organization per hour (429 with Retry-After). Audited.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Verified domain ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomain']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Too Many Requests */
@@ -35123,10 +35829,26 @@ export interface components {
       offset_ns?: number
       position?: number
     }
-    'github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord': {
-      host?: string
-      type?: string
-      value?: string
+    'github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput': {
+      base_branch?: string
+      base_branch_known?: boolean
+      new?: string[]
+      pre_existing?: string[]
+    }
+    'github_com_openctemio_openctem_api_internal_app_cirun.Verdict': {
+      baseline?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView']
+      links?: components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.VerdictLinks']
+      override?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateOverrideView']
+      policy?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GatePolicyView']
+      reasons?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateReason'][]
+      run_id?: string
+      summary?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateSummary']
+      verdict?: string
+      would_fail?: boolean
+    }
+    'github_com_openctemio_openctem_api_internal_app_cirun.VerdictLinks': {
+      findings?: string
+      run?: string
     }
     'github_com_openctemio_openctem_api_internal_app_easm.AttributionBlock': {
       candidate?: number
@@ -35626,6 +36348,86 @@ export interface components {
       before?: {
         [key: string]: unknown
       }
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView': {
+      branch?: string
+      known?: boolean
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.GateOverrideView': {
+      created_by?: string
+      expires_at?: string
+      id?: string
+      reason?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.GatePolicyView': {
+      epss_threshold?: number
+      fail_on_kev?: boolean
+      fail_on_severity?: string
+      mode?: string
+      new_findings_only?: boolean
+      source?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.GateReason': {
+      code?: string
+      file?: string
+      finding_id?: string
+      fingerprint?: string
+      line?: number
+      message?: string
+      rule_id?: string
+      severity?: string
+      title?: string
+      url?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.GateSummary': {
+      accepted?: number
+      blocking?: number
+      evaluated?: number
+      new?: number
+      pre_existing?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_cirun.Rules': {
+      /**
+       * @description AllowForkPullRequests admits events that run code from a fork with the
+       *     base repository's identity (pull_request_target, workflow_run,
+       *     external_pull_request_event). Off by default.
+       */
+      allow_fork_pull_requests?: boolean
+      /**
+       * @description Environments, when set, require the job to run in one of these
+       *     deployment environments (the token's environment claim).
+       */
+      environments?: string[]
+      /**
+       * @description Events, when set, are the only trigger events admitted (GitHub
+       *     event_name, GitLab pipeline_source).
+       */
+      events?: string[]
+      /**
+       * @description Owners are GitHub organizations or users (repository_owner) or GitLab
+       *     top-level groups (the first segment of project_path). Exact match,
+       *     case-insensitive.
+       */
+      owners?: string[]
+      /**
+       * @description Refs are the branches or tags a pipeline may run on: "main",
+       *     "release/*", or a full ref ("refs/tags/v*"). Shell-style patterns per
+       *     path segment. Empty admits every ref. For a pull request the branch is
+       *     the pull request's source branch.
+       */
+      refs?: string[]
+      /**
+       * @description Repositories are "owner/name" (GitLab: the full project path). A
+       *     trailing "/*" admits every repository directly under that path and
+       *     "/**" every repository below it.
+       */
+      repositories?: string[]
+      /**
+       * @description RequireProtectedRef admits only pipelines on a protected branch or tag
+       *     (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
+       *     configuration with this set admits nothing).
+       */
+      require_protected_ref?: boolean
     }
     'github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats': {
       cisa_kev_components?: number
@@ -37252,12 +38054,159 @@ export interface components {
       resolution?: string
       status: string
     }
+    'internal_infra_http_handler.CIBaselineDiffRequest': {
+      fingerprints?: string[]
+    }
+    'internal_infra_http_handler.CIEvaluateRequest': {
+      /**
+       * @description ScanFailures counts scanners that failed to run or whose output could
+       *     not be parsed. Any failure fails the gate.
+       */
+      scan_failures?: number
+    }
+    'internal_infra_http_handler.CIExchangeRequest': {
+      /** @description IDToken is the CI provider's OIDC token for the job. */
+      id_token?: string
+      /**
+       * @description RunID, optional, asks for a fresh token for a run this pipeline run
+       *     already holds (same repository, commit and pipeline run; not yet
+       *     evaluated).
+       */
+      run_id?: string
+      /** @description TenantID is the organization whose trust configurations decide. */
+      tenant_id?: string
+    }
+    'internal_infra_http_handler.CIExchangeResponse': {
+      branch?: string
+      commit_sha?: string
+      default_branch?: string
+      expires_at?: string
+      expires_in?: number
+      is_default_branch?: boolean
+      pull_request?: string
+      repository?: string
+      repository_asset_id?: string
+      run_id?: string
+      token?: string
+      token_type?: string
+    }
+    'internal_infra_http_handler.CIGateOverrideListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CIGateOverrideResponse'][]
+    }
+    'internal_infra_http_handler.CIGateOverrideRequest': {
+      commit_sha?: string
+      /** @description ExpiresInHours defaults to 24, at most 168. */
+      expires_in_hours?: number
+      /** @description Reason is required (10 to 2000 characters) and audited. */
+      reason?: string
+      repository_asset_id?: string
+    }
+    'internal_infra_http_handler.CIGateOverrideResponse': {
+      active?: boolean
+      commit_sha?: string
+      created_at?: string
+      created_by?: string
+      expires_at?: string
+      id?: string
+      reason?: string
+      repository_asset_id?: string
+      revoked_at?: string
+    }
+    'internal_infra_http_handler.CIGatePolicyListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CIGatePolicyResponse'][]
+      default?: components['schemas']['internal_infra_http_handler.CIGatePolicyResponse']
+    }
+    'internal_infra_http_handler.CIGatePolicyRequest': {
+      enabled?: boolean
+      epss_threshold?: number
+      fail_on_kev?: boolean
+      fail_on_severity?: string
+      mode?: string
+      new_findings_only?: boolean
+      scope_id?: string
+      scope_type?: string
+    }
+    'internal_infra_http_handler.CIGatePolicyResponse': {
+      created_at?: string
+      enabled?: boolean
+      epss_threshold?: number
+      fail_on_kev?: boolean
+      fail_on_severity?: string
+      id?: string
+      mode?: string
+      new_findings_only?: boolean
+      scope_id?: string
+      scope_type?: string
+      updated_at?: string
+    }
+    'internal_infra_http_handler.CIRunResponse': {
+      actor?: string
+      branch?: string
+      commit_sha?: string
+      created_at?: string
+      default_branch?: string
+      environment?: string
+      evaluated_at?: string
+      event?: string
+      external_run_id?: string
+      findings_count?: number
+      fork?: boolean
+      id?: string
+      is_default_branch?: boolean
+      pipeline_url?: string
+      provider?: string
+      pull_request?: string
+      ref?: string
+      reports_count?: number
+      repository?: string
+      repository_asset_id?: string
+      run_attempt?: string
+      status?: string
+      trust_config_id?: string
+      verdict?: string
+      /**
+       * @description VerdictDetail is the last verdict with its reasons and links (detail
+       *     view only).
+       */
+      verdict_detail?: components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Verdict']
+      workflow?: string
+    }
     'internal_infra_http_handler.CISAKEVResponse': {
       date_added?: string
       due_date?: string
       is_past_due?: boolean
       notes?: string
       ransomware_use?: string
+    }
+    'internal_infra_http_handler.CITrustConfigListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CITrustConfigResponse'][]
+    }
+    'internal_infra_http_handler.CITrustConfigRequest': {
+      /** @description Audience defaults to openctem:tenant:<tenant id>. */
+      audience?: string
+      default_branch?: string
+      enabled?: boolean
+      /**
+       * @description Issuer defaults to the provider's public issuer; a self-managed
+       *     GitLab is its external URL.
+       */
+      issuer?: string
+      name?: string
+      provider?: string
+      rules?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.Rules']
+    }
+    'internal_infra_http_handler.CITrustConfigResponse': {
+      audience?: string
+      created_at?: string
+      default_branch?: string
+      enabled?: boolean
+      id?: string
+      issuer?: string
+      last_used_at?: string
+      name?: string
+      provider?: string
+      rules?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.Rules']
+      updated_at?: string
     }
     'internal_infra_http_handler.CTEMCycleProfilesResponse': {
       data?: components['schemas']['internal_infra_http_handler.AttackerProfileResponse'][]
@@ -38089,36 +39038,6 @@ export interface components {
       dns_checks_enabled?: boolean
       dns_interval_hours?: number
     }
-    'internal_infra_http_handler.EASMVerifiedDomain': {
-      created_at?: string
-      domain?: string
-      id?: string
-      /** @description Instructions is the TXT record to publish (easm rows only). */
-      instructions?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord']
-      last_checked_at?: string
-      /**
-       * @description Managed is true for an sso row: the organization cannot re-check or
-       *     delete it here.
-       */
-      managed?: boolean
-      /**
-       * @description Purpose: easm (added by the organization, attribution only) or sso
-       *     (set up by a platform administrator; admits SSO users, read-only here).
-       */
-      purpose?: string
-      /**
-       * @description Status: pending (TXT not seen yet), verified, or failed (it was
-       *     verified and the record is gone; names under it stop auto-confirming).
-       */
-      status?: string
-      verified_at?: string
-    }
-    'internal_infra_http_handler.EASMVerifiedDomainCreateRequest': {
-      domain?: string
-    }
-    'internal_infra_http_handler.EASMVerifiedDomainList': {
-      data?: components['schemas']['internal_infra_http_handler.EASMVerifiedDomain'][]
-    }
     'internal_infra_http_handler.EmbeddedCategoryResponse': {
       color?: string
       /** @description 'SAST', 'DAST', etc. */
@@ -38823,7 +39742,7 @@ export interface components {
       /**
        * @description Disk/network throughput in MB/s. Optional — sensors that omit them leave
        *     the corresponding load-balancing terms at zero. Accepted here so the
-       *     AGENT_LB_DISK_IO_WEIGHT / AGENT_LB_NETWORK_WEIGHT knobs have real inputs.
+       *     SENSOR_LB_DISK_IO_WEIGHT / SENSOR_LB_NETWORK_WEIGHT knobs have real inputs.
        */
       disk_read_mbps?: number
       disk_write_mbps?: number
@@ -39153,6 +40072,14 @@ export interface components {
     }
     'internal_infra_http_handler.ListResponse-internal_infra_http_handler_AssetGroupResponse': {
       data?: components['schemas']['internal_infra_http_handler.AssetGroupResponse'][]
+      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
+    }
+    'internal_infra_http_handler.ListResponse-internal_infra_http_handler_CIRunResponse': {
+      data?: components['schemas']['internal_infra_http_handler.CIRunResponse'][]
       links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
       page?: number
       per_page?: number
@@ -41899,6 +42826,12 @@ export interface components {
         'application/json': components['schemas']['internal_infra_http_handler.InvitationTokenRequest']
       }
     }
+    /** @description Trust configuration */
+    'internal_infra_http_handler.CITrustConfigRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.CITrustConfigRequest']
+      }
+    }
     /** @description Content to refresh */
     'internal_infra_http_handler.RefreshContentRequest': {
       content: {
@@ -41909,6 +42842,12 @@ export interface components {
     'internal_infra_http_handler.CreateToolRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.CreateToolRequest']
+      }
+    }
+    /** @description CTIS report */
+    'internal_infra_http_handler.CTISIngestRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.CTISIngestRequest']
       }
     }
     /** @description Tool IDs */
