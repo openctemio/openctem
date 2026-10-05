@@ -476,6 +476,15 @@ compose file):
 - **Tools** `SENSOR_TOOLS` from the sensor's tools; names other than
   `[a-z0-9_-]` are dropped. The name becomes a slug.
 
+## Pairing, key-bound identity and grants (RFC-052)
+
+A sensor can join without any key being copied: it pairs with a code and a
+fingerprint an administrator compares, and then signs every request with its
+own Ed25519 key (RFC 9421). Every sensor has a grant (zones, job types, tools,
+tier, targets, credentials, push ingest, remote actions) checked on poll,
+claim and results. Code map, events and status:
+[sensor-pairing.md](sensor-pairing.md).
+
 ## Key use and cloned identities
 
 RFC-032 Phase 0 (`docs/rfcs/RFC-032-sensor-enrollment-and-identity.md`
