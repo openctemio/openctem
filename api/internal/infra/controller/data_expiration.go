@@ -2,9 +2,10 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -16,10 +17,14 @@ type DataExpirationControllerConfig struct {
 	// Default: 1 hour.
 	Interval time.Duration
 
-	// AuditRetentionDays is how long to keep audit logs.
-	// Logs older than this will be deleted.
-	// Default: 365 days (1 year).
+	// AuditRetentionDays is how long audit logs stay online. Older entries
+	// are archived and pruned from the front of each hash chain. Values
+	// below 365 are raised to 365 (audit.MinAuditRetentionDays).
 	AuditRetentionDays int
+
+	// AuditArchiveDir receives the gzip JSONL archive of pruned entries.
+	// Empty: nothing is pruned (logged once).
+	AuditArchiveDir string
 
 	// Logger for logging.
 	Logger *logger.Logger
@@ -36,16 +41,23 @@ type DataExpirationControllerConfig struct {
 type DataExpirationController struct {
 	suppressionRepo suppression.Repository
 	exclusionRepo   scope.ExclusionRepository
-	auditRepo       audit.Repository
+	auditPruner     AuditChainPruner
 	config          *DataExpirationControllerConfig
 	logger          *logger.Logger
+	warnedNoArchive bool
+}
+
+// AuditChainPruner archives and prunes audit chain entries past retention
+// (*auditapp.AuditService).
+type AuditChainPruner interface {
+	PruneExpiredChains(ctx context.Context, cfg auditapp.RetentionConfig) (auditapp.RetentionResult, error)
 }
 
 // NewDataExpirationController creates a new DataExpirationController.
 func NewDataExpirationController(
 	suppressionRepo suppression.Repository,
 	exclusionRepo scope.ExclusionRepository,
-	auditRepo audit.Repository,
+	auditPruner AuditChainPruner,
 	config *DataExpirationControllerConfig,
 ) *DataExpirationController {
 	if config == nil {
@@ -54,9 +66,7 @@ func NewDataExpirationController(
 	if config.Interval == 0 {
 		config.Interval = 1 * time.Hour
 	}
-	if config.AuditRetentionDays == 0 {
-		config.AuditRetentionDays = 365
-	}
+	config.AuditRetentionDays = auditapp.EffectiveRetentionDays(config.AuditRetentionDays)
 	if config.Logger == nil {
 		config.Logger = logger.NewNop()
 	}
@@ -64,7 +74,7 @@ func NewDataExpirationController(
 	return &DataExpirationController{
 		suppressionRepo: suppressionRepo,
 		exclusionRepo:   exclusionRepo,
-		auditRepo:       auditRepo,
+		auditPruner:     auditPruner,
 		config:          config,
 		logger:          config.Logger,
 	}
@@ -100,20 +110,29 @@ func (c *DataExpirationController) Reconcile(ctx context.Context) (int, error) {
 		// Continue with other tasks
 	}
 
-	// Step 3: Clean up old audit logs
-	cutoff := time.Now().AddDate(0, 0, -c.config.AuditRetentionDays)
-	deletedLogs, err := c.auditRepo.DeleteOlderThan(ctx, cutoff)
-	if err != nil {
-		c.logger.Error("failed to delete old audit logs",
-			"error", err,
-			"cutoff", cutoff,
-		)
-	} else if deletedLogs > 0 {
-		c.logger.Info("deleted old audit logs",
-			"count", deletedLogs,
-			"retention_days", c.config.AuditRetentionDays,
-		)
-		totalProcessed += int(deletedLogs)
+	// Step 3: Audit retention. Archive and prune the oldest prefix of each
+	// hash chain past the retention window (deleting rows in place broke the
+	// chain's foreign key and failed every run).
+	if c.auditPruner != nil {
+		res, err := c.auditPruner.PruneExpiredChains(ctx, auditapp.RetentionConfig{
+			RetentionDays: c.config.AuditRetentionDays,
+			ArchiveDir:    c.config.AuditArchiveDir,
+		})
+		switch {
+		case errors.Is(err, auditapp.ErrNoAuditArchiveDir):
+			if !c.warnedNoArchive {
+				c.logger.Warn("audit retention is off: set AUDIT_ARCHIVE_DIR to archive and prune audit logs older than the retention window",
+					"retention_days", c.config.AuditRetentionDays)
+				c.warnedNoArchive = true
+			}
+		case err != nil:
+			c.logger.Error("audit retention failed", "error", err)
+		case res.Pruned > 0:
+			c.logger.Info("audit retention pruned chains",
+				"chains", res.Chains, "pruned", res.Pruned, "archives", len(res.Archives),
+				"retention_days", c.config.AuditRetentionDays)
+			totalProcessed += res.Pruned
+		}
 	}
 
 	return totalProcessed, nil

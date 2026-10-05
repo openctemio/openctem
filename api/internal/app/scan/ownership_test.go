@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -113,5 +114,93 @@ func TestGateCommandPayload_Ownership(t *testing.T) {
 	ok, _ := json.Marshal(map[string]any{"scanner": "nuclei", "targets": []string{"ok.example.com"}})
 	if _, err := svc.GateCommandPayload(context.Background(), shared.NewID(), nil, ok); err != nil {
 		t.Fatalf("allowed command refused: %v", err)
+	}
+}
+
+type recordingAudit struct {
+	events []AuditEvent
+	ctxs   []AuditContext
+}
+
+func (r *recordingAudit) LogEvent(_ context.Context, actx AuditContext, e AuditEvent) error {
+	r.events = append(r.events, e)
+	r.ctxs = append(r.ctxs, actx)
+	return nil
+}
+
+// research/22 §4.0: a refused request is audited in the caller's tenant,
+// with the refusing state per target (the caller's error stays generic).
+// An allowed request and a failed check write nothing.
+func TestRefuseUnownedTargets_Audited(t *testing.T) {
+	gate := &stubGate{blockedTyped: map[string]attribution.State{
+		"www.rejected.com": attribution.StateRejected,
+		"dev.review.com":   attribution.StateNeedsReview,
+	}}
+	rec := &recordingAudit{}
+	svc := &Service{attributionGate: gate, logger: logger.NewNop(), auditService: rec}
+	tenant := shared.NewID()
+	ctx := WithAuditActor(context.Background(), "actor-1")
+
+	if err := svc.refuseUnownedTargets(ctx, tenant, "quick_scan", []string{"ok.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.events) != 0 {
+		t.Fatalf("allowed request audited: %+v", rec.events)
+	}
+
+	if err := svc.refuseUnownedTargets(ctx, tenant, "quick_scan",
+		[]string{"ok.example.com", "www.rejected.com", "dev.review.com"}); err == nil {
+		t.Fatal("refused targets passed")
+	}
+	if len(rec.events) != 1 {
+		t.Fatalf("events = %d, want 1", len(rec.events))
+	}
+	e := rec.events[0]
+	if e.Action != audit.ActionScanTargetRefused || e.Success || e.ResourceType != audit.ResourceTypeScan {
+		t.Fatalf("event = %+v", e)
+	}
+	if rec.ctxs[0].TenantID != tenant.String() || rec.ctxs[0].ActorID != "actor-1" {
+		t.Fatalf("audit context = %+v", rec.ctxs[0])
+	}
+	if e.Metadata["path"] != "quick_scan" || e.Metadata["refused_count"] != 2 {
+		t.Fatalf("metadata = %+v", e.Metadata)
+	}
+	listed, _ := e.Metadata["refused"].([]map[string]string)
+	want := []map[string]string{
+		{"target": "dev.review.com", "attribution": "needs_review"},
+		{"target": "www.rejected.com", "attribution": "rejected"},
+	}
+	if !reflect.DeepEqual(listed, want) {
+		t.Fatalf("refused = %v, want %v", listed, want)
+	}
+	if !audit.ActionScanTargetRefused.IsValid() || audit.SeverityForAction(audit.ActionScanTargetRefused) != audit.SeverityMedium {
+		t.Fatal("scan.target_refused must be a valid, medium-severity action")
+	}
+
+	svc.attributionGate = &stubGate{err: errors.New("db down")}
+	_ = svc.refuseUnownedTargets(ctx, tenant, "quick_scan", []string{"ok.example.com"})
+	if len(rec.events) != 1 {
+		t.Fatal("a failed check is not a refusal by ownership and is not audited as one")
+	}
+}
+
+// The audit entry lists at most maxAuditedRefusals targets; the count is exact.
+func TestRefuseUnownedTargets_AuditBounded(t *testing.T) {
+	blocked := map[string]attribution.State{}
+	targets := make([]string, 0, 120)
+	for i := range 120 {
+		name := "h" + strings.Repeat("x", i%7) + "-" + string(rune('a'+i%26)) + shared.NewID().String()[:8] + ".example.com"
+		blocked[name] = attribution.StateUnattributed
+		targets = append(targets, name)
+	}
+	rec := &recordingAudit{}
+	svc := &Service{attributionGate: &stubGate{blockedTyped: blocked}, logger: logger.NewNop(), auditService: rec}
+	_ = svc.refuseUnownedTargets(context.Background(), shared.NewID(), "scan_create", targets)
+	e := rec.events[0]
+	if e.Metadata["refused_count"] != 120 {
+		t.Fatalf("count = %v", e.Metadata["refused_count"])
+	}
+	if listed, _ := e.Metadata["refused"].([]map[string]string); len(listed) != maxAuditedRefusals {
+		t.Fatalf("listed = %d, want %d", len(listed), maxAuditedRefusals)
 	}
 }
