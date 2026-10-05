@@ -11800,6 +11800,57 @@ definitions:
           was settled at its deadline; the next scheduled run plans them first.
         type: integer
     type: object
+  internal_infra_http_handler.RunStageListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunStageResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.RunStageResponse:
+    properties:
+      chained:
+        description: 'Chained: the stage took targets an earlier stage produced.'
+        type: boolean
+      inputs:
+        description: |-
+          Inputs is how many targets were considered (seeds plus outputs of the
+          types the stage takes); Planned how many were handed to the stage.
+        type: integer
+      max_hop:
+        description: |-
+          MaxHop is the furthest discovery hop from a seed among planned
+          targets.
+        type: integer
+      planned:
+        type: integer
+      planned_at:
+        type: string
+      skipped:
+        additionalProperties:
+          type: integer
+        description: |-
+          Skipped counts the targets left out, by reason: excluded,
+          unconfirmed, refused, other_zone, hop_limit, over_cap, duplicate,
+          invalid, incompatible_type.
+        type: object
+      stage:
+        description: |-
+          Stage is the catalog capability ("" when the catalog cannot place
+          the step).
+        type: string
+      stage_key:
+        description: StageKey is the step key of the stage in the run's template.
+        type: string
+      tier:
+        enum:
+        - T0
+        - T1
+        - T2
+        type: string
+      tool:
+        type: string
+    type: object
   internal_infra_http_handler.RunTaskPageResponse:
     properties:
       data:
@@ -29459,6 +29510,29 @@ paths:
       summary: Update auto-retest settings
       tags:
       - Tenants
+  /pipeline-runs/{id}/stages:
+    get:
+      description: 'How each stage of the run was planned: inputs, planned targets
+        and skipped targets by reason (counts only). A run of another organization
+        is not found.'
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.RunStageListResponse'
+      security:
+      - BearerAuth: []
+      summary: List a run's stage plans
+      tags:
+      - Pipelines
   /pipeline-runs/{id}/tasks:
     get:
       description: One page of the run's tasks (one dispatched command each) in dispatch

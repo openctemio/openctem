@@ -7,7 +7,7 @@
 > - Phase 2 is designed in §6.12 and in implementation.
 > - Config report (§11, research/26 "sensor config doctor" P0, owner
 >   decisions F1–F14 adopted as recommended 2026-10-05): API implemented
->   (migration 001050, `PUT /api/v2/sensor/config-report`, heartbeat
+>   (migration 001054, `PUT /api/v2/sensor/config-report`, heartbeat
 >   `config_report` + `send_config_report`, `GET /api/v1/sensors/{id}/config-report`);
 >   sdk-go, sensor and web companions built in parallel.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
@@ -661,7 +661,7 @@ of the sanitized report with `observed_at` emptied, so re-running the same
 checks does not change it) and its own health; it never trusts the sensor's
 `config_health`.
 
-**Storage** (migration 001050). `sensor_config_reports` keeps the latest
+**Storage** (migration 001054). `sensor_config_reports` keeps the latest
 report per sensor (primary key `sensor_id`, `tenant_id NOT NULL`, digest,
 health, fail/warn counts, `report jsonb`, `observed_at`, `received_at`).
 `sensors.config_report_digest` and `config_health` point at it. The same
