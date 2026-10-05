@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -48,9 +48,9 @@ func auditSnapshot(v any, omit ...string) map[string]any {
 // auditResourceChange records one change with its before and after
 // snapshots (either may be nil: nothing before a create, nothing after a
 // delete). The change has already happened: a failure is logged.
-func auditResourceChange(svc *app.AuditService, log *logger.Logger, r *http.Request,
+func auditResourceChange(svc *auditsvc.AuditService, log *logger.Logger, r *http.Request,
 	action audit.Action, rt audit.ResourceType, id, name string, before, after map[string]any) {
-	event := app.NewSuccessEvent(action, rt, id).WithResourceName(name)
+	event := auditsvc.NewSuccessEvent(action, rt, id).WithResourceName(name)
 	if before != nil || after != nil {
 		changes := audit.NewChanges()
 		changes.Before, changes.After = before, after

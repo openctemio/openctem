@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -30,8 +30,8 @@ func wfHandlerNewLogger() *logger.Logger {
 }
 
 // wfHandlerNewActionInput builds a minimal ActionInput for tests.
-func wfHandlerNewActionInput(config map[string]any, triggerData map[string]any) *app.ActionInput {
-	return &app.ActionInput{
+func wfHandlerNewActionInput(config map[string]any, triggerData map[string]any) *workflowsvc.ActionInput {
+	return &workflowsvc.ActionInput{
 		TenantID:     shared.NewID(),
 		WorkflowID:   shared.NewID(),
 		RunID:        shared.NewID(),
@@ -44,8 +44,8 @@ func wfHandlerNewActionInput(config map[string]any, triggerData map[string]any) 
 
 // wfHandlerNewTestHandler creates an HTTPRequestHandler with SSRF disabled for unit testing.
 // NEVER use this in production code.
-func wfHandlerNewTestHandler() *app.HTTPRequestHandler {
-	h := app.NewHTTPRequestHandler(wfHandlerNewLogger())
+func wfHandlerNewTestHandler() *workflowsvc.HTTPRequestHandler {
+	h := workflowsvc.NewHTTPRequestHandler(wfHandlerNewLogger())
 	h.SetClient(&http.Client{})
 	h.AllowLocalhostForTesting()
 	return h
@@ -56,7 +56,7 @@ func wfHandlerNewTestHandler() *app.HTTPRequestHandler {
 // =============================================================================
 
 func TestWfHandlerConditionEvaluatorSimpleEquality(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"severity": "critical",
@@ -73,7 +73,7 @@ func TestWfHandlerConditionEvaluatorSimpleEquality(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorNotEqual(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"severity": "high",
@@ -90,7 +90,7 @@ func TestWfHandlerConditionEvaluatorNotEqual(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorNotEqualFalse(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"severity": "low",
@@ -107,7 +107,7 @@ func TestWfHandlerConditionEvaluatorNotEqualFalse(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorNumericGreaterThanTrue(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"cvss": 8.5,
@@ -124,7 +124,7 @@ func TestWfHandlerConditionEvaluatorNumericGreaterThanTrue(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorNumericGreaterThanFalse(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"cvss": 5.0,
@@ -141,7 +141,7 @@ func TestWfHandlerConditionEvaluatorNumericGreaterThanFalse(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorNumericLessThanTrue(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"cvss": 2.0,
@@ -158,7 +158,7 @@ func TestWfHandlerConditionEvaluatorNumericLessThanTrue(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorNumericLessThanFalse(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"cvss": 9.9,
@@ -175,7 +175,7 @@ func TestWfHandlerConditionEvaluatorNumericLessThanFalse(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorGreaterOrEqual(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 
 	tests := []struct {
 		name  string
@@ -206,7 +206,7 @@ func TestWfHandlerConditionEvaluatorGreaterOrEqual(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorLessOrEqual(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 
 	tests := []struct {
 		name  string
@@ -237,7 +237,7 @@ func TestWfHandlerConditionEvaluatorLessOrEqual(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorBooleanComparison(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 
 	t.Run("confirmed true matches", func(t *testing.T) {
 		data := map[string]any{
@@ -271,7 +271,7 @@ func TestWfHandlerConditionEvaluatorBooleanComparison(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorNestedPath(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"finding": map[string]any{
@@ -290,7 +290,7 @@ func TestWfHandlerConditionEvaluatorNestedPath(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorDeepNesting(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"a": map[string]any{
 			"b": map[string]any{
@@ -311,7 +311,7 @@ func TestWfHandlerConditionEvaluatorDeepNesting(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorNonExistentPathReturnsFalse(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"severity": "high",
@@ -330,7 +330,7 @@ func TestWfHandlerConditionEvaluatorNonExistentPathReturnsFalse(t *testing.T) {
 
 func TestWfHandlerConditionEvaluatorEmptyExpressionReturnsTrue(t *testing.T) {
 	// Per source: empty expression → true (no condition = always passes)
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 
 	result, err := e.Evaluate(context.Background(), "", map[string]any{})
 	if err != nil {
@@ -342,7 +342,7 @@ func TestWfHandlerConditionEvaluatorEmptyExpressionReturnsTrue(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorExpressionTooLong(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	// Build expression longer than 500 chars
 	longExpr := strings.Repeat("a", 501)
 
@@ -358,7 +358,7 @@ func TestWfHandlerConditionEvaluatorExpressionTooLong(t *testing.T) {
 func TestWfHandlerConditionEvaluatorNoOperatorEvaluatesAsPath(t *testing.T) {
 	// Expressions with no known operator fall through to boolean path resolution.
 	// A path that resolves to a non-empty string returns true.
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"active": "yes",
@@ -376,7 +376,7 @@ func TestWfHandlerConditionEvaluatorNoOperatorEvaluatesAsPath(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorNilPathReturnsFalse(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{}
 
 	// Path "trigger.missing" resolves to nil → false
@@ -390,7 +390,7 @@ func TestWfHandlerConditionEvaluatorNilPathReturnsFalse(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorStringContains(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"title": "SQL Injection found in login endpoint",
@@ -407,7 +407,7 @@ func TestWfHandlerConditionEvaluatorStringContains(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorStringContainsFalse(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"title": "XSS vulnerability",
@@ -424,7 +424,7 @@ func TestWfHandlerConditionEvaluatorStringContainsFalse(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorCaseSensitivity(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"severity": "Critical", // Capital C
@@ -451,7 +451,7 @@ func TestWfHandlerConditionEvaluatorCaseSensitivity(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorMapDataType(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"metadata": map[string]any{
@@ -470,7 +470,7 @@ func TestWfHandlerConditionEvaluatorMapDataType(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorNilDataDoesNotPanic(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -489,7 +489,7 @@ func TestWfHandlerConditionEvaluatorNilDataDoesNotPanic(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorBooleanLiteralTrue(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 
 	result, err := e.Evaluate(context.Background(), "true", map[string]any{})
 	if err != nil {
@@ -501,7 +501,7 @@ func TestWfHandlerConditionEvaluatorBooleanLiteralTrue(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorBooleanLiteralFalse(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 
 	result, err := e.Evaluate(context.Background(), "false", map[string]any{})
 	if err != nil {
@@ -513,7 +513,7 @@ func TestWfHandlerConditionEvaluatorBooleanLiteralFalse(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorInOperator(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"severity": "critical",
@@ -530,7 +530,7 @@ func TestWfHandlerConditionEvaluatorInOperator(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorInOperatorFalse(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"severity": "low",
@@ -547,7 +547,7 @@ func TestWfHandlerConditionEvaluatorInOperatorFalse(t *testing.T) {
 }
 
 func TestWfHandlerConditionEvaluatorIntValue(t *testing.T) {
-	e := &app.DefaultConditionEvaluator{}
+	e := &workflowsvc.DefaultConditionEvaluator{}
 	data := map[string]any{
 		"trigger": map[string]any{
 			"count": 10, // int (not float64)
@@ -629,7 +629,7 @@ func TestWfHandlerHTTPRequestValidPOST(t *testing.T) {
 }
 
 func TestWfHandlerHTTPRequestBlockedSchemeFile(t *testing.T) {
-	h := app.NewHTTPRequestHandler(wfHandlerNewLogger())
+	h := workflowsvc.NewHTTPRequestHandler(wfHandlerNewLogger())
 
 	input := wfHandlerNewActionInput(map[string]any{
 		"url":    "file:///etc/passwd",
@@ -646,7 +646,7 @@ func TestWfHandlerHTTPRequestBlockedSchemeFile(t *testing.T) {
 }
 
 func TestWfHandlerHTTPRequestBlockedSchemeFTP(t *testing.T) {
-	h := app.NewHTTPRequestHandler(wfHandlerNewLogger())
+	h := workflowsvc.NewHTTPRequestHandler(wfHandlerNewLogger())
 
 	input := wfHandlerNewActionInput(map[string]any{
 		"url":    "ftp://example.com/file.txt",
@@ -663,7 +663,7 @@ func TestWfHandlerHTTPRequestBlockedSchemeFTP(t *testing.T) {
 }
 
 func TestWfHandlerHTTPRequestBlockedLoopbackIP(t *testing.T) {
-	h := app.NewHTTPRequestHandler(wfHandlerNewLogger())
+	h := workflowsvc.NewHTTPRequestHandler(wfHandlerNewLogger())
 
 	input := wfHandlerNewActionInput(map[string]any{
 		"url":    "http://127.0.0.1/admin",
@@ -681,7 +681,7 @@ func TestWfHandlerHTTPRequestBlockedLoopbackIP(t *testing.T) {
 
 func TestWfHandlerHTTPRequestBlockedLinkLocalIP(t *testing.T) {
 	// 169.254.x.x is the link-local / cloud metadata range
-	h := app.NewHTTPRequestHandler(wfHandlerNewLogger())
+	h := workflowsvc.NewHTTPRequestHandler(wfHandlerNewLogger())
 
 	input := wfHandlerNewActionInput(map[string]any{
 		"url":    "http://169.254.169.254/latest/meta-data/",
@@ -698,7 +698,7 @@ func TestWfHandlerHTTPRequestBlockedLinkLocalIP(t *testing.T) {
 }
 
 func TestWfHandlerHTTPRequestBlockedPrivateIP10(t *testing.T) {
-	h := app.NewHTTPRequestHandler(wfHandlerNewLogger())
+	h := workflowsvc.NewHTTPRequestHandler(wfHandlerNewLogger())
 
 	input := wfHandlerNewActionInput(map[string]any{
 		"url":    "http://10.0.0.1/internal",
@@ -715,7 +715,7 @@ func TestWfHandlerHTTPRequestBlockedPrivateIP10(t *testing.T) {
 }
 
 func TestWfHandlerHTTPRequestMissingURL(t *testing.T) {
-	h := app.NewHTTPRequestHandler(wfHandlerNewLogger())
+	h := workflowsvc.NewHTTPRequestHandler(wfHandlerNewLogger())
 
 	input := wfHandlerNewActionInput(map[string]any{
 		"method": "GET",
@@ -997,7 +997,7 @@ func TestWfHandlerSafeInterpolateRunID(t *testing.T) {
 	defer ts.Close()
 
 	h := wfHandlerNewTestHandler()
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:   shared.NewID(),
 		WorkflowID: shared.NewID(),
 		RunID:      runID,
@@ -1031,7 +1031,7 @@ func TestWfHandlerSafeInterpolateWorkflowID(t *testing.T) {
 	defer ts.Close()
 
 	h := wfHandlerNewTestHandler()
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:   shared.NewID(),
 		WorkflowID: workflowID,
 		RunID:      shared.NewID(),
@@ -1090,7 +1090,7 @@ func TestWfHandlerSafeInterpolateMultipleReplacements(t *testing.T) {
 	defer ts.Close()
 
 	h := wfHandlerNewTestHandler()
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:   tenantID,
 		WorkflowID: workflowID,
 		RunID:      shared.NewID(),
@@ -1127,7 +1127,7 @@ func TestWfHandlerSafeInterpolateBodyString(t *testing.T) {
 
 	runID := shared.NewID()
 	h := wfHandlerNewTestHandler()
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:   shared.NewID(),
 		WorkflowID: shared.NewID(),
 		RunID:      runID,
@@ -1165,7 +1165,7 @@ func TestWfHandlerSanitizeNodeKeyStripsNewlines(t *testing.T) {
 
 	h := wfHandlerNewTestHandler()
 	// NodeKey with newline injection attempt
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:   shared.NewID(),
 		WorkflowID: shared.NewID(),
 		RunID:      shared.NewID(),
@@ -1204,7 +1204,7 @@ func TestWfHandlerSanitizeNodeKeyTruncatesLongStrings(t *testing.T) {
 	h := wfHandlerNewTestHandler()
 	// NodeKey longer than 100 chars — all safe alphanumeric chars
 	longKey := strings.Repeat("a", 150)
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:   shared.NewID(),
 		WorkflowID: shared.NewID(),
 		RunID:      shared.NewID(),
@@ -1237,7 +1237,7 @@ func TestWfHandlerSanitizeNodeKeyShortStringUnchanged(t *testing.T) {
 	defer ts.Close()
 
 	h := wfHandlerNewTestHandler()
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:   shared.NewID(),
 		WorkflowID: shared.NewID(),
 		RunID:      shared.NewID(),
@@ -1270,7 +1270,7 @@ func TestWfHandlerSanitizeNodeKeySpecialCharsReplaced(t *testing.T) {
 
 	h := wfHandlerNewTestHandler()
 	// NodeKey with special characters — each should be replaced with underscore
-	input := &app.ActionInput{
+	input := &workflowsvc.ActionInput{
 		TenantID:   shared.NewID(),
 		WorkflowID: shared.NewID(),
 		RunID:      shared.NewID(),

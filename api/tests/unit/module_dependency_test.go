@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -27,8 +27,7 @@ func TestUpdateTenantModules_BlockerReturnsToggleError(t *testing.T) {
 	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(),
 		[]moduledom.TenantModuleUpdate{
 			{ModuleID: "findings", IsEnabled: false},
-		},
-		app.AuditContext{ActorID: validActorID()},
+		}, audit.AuditContext{ActorID: validActorID()},
 	)
 	if err == nil {
 		t.Fatal("expected error; got nil")
@@ -74,8 +73,7 @@ func TestUpdateTenantModules_MissingHardDepReturnsToggleError(t *testing.T) {
 	_, err := svc.UpdateTenantModules(context.Background(), tid,
 		[]moduledom.TenantModuleUpdate{
 			{ModuleID: "ai_triage", IsEnabled: true},
-		},
-		app.AuditContext{ActorID: validActorID()},
+		}, audit.AuditContext{ActorID: validActorID()},
 	)
 	if err == nil {
 		t.Fatal("expected error when enabling ai_triage with findings disabled")
@@ -115,8 +113,7 @@ func TestUpdateTenantModules_SoftWarningSurfaced(t *testing.T) {
 	out, err := svc.UpdateTenantModules(context.Background(), validTenantID(),
 		[]moduledom.TenantModuleUpdate{
 			{ModuleID: "threat_intel", IsEnabled: false},
-		},
-		app.AuditContext{ActorID: validActorID()},
+		}, audit.AuditContext{ActorID: validActorID()},
 	)
 	if err != nil {
 		t.Fatalf("expected success (soft dep is a warning, not blocker); got %v", err)
@@ -173,8 +170,7 @@ func TestUpdateTenantModules_CoreCannotBeDisabled(t *testing.T) {
 	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(),
 		[]moduledom.TenantModuleUpdate{
 			{ModuleID: "findings", IsEnabled: false},
-		},
-		app.AuditContext{ActorID: validActorID()},
+		}, audit.AuditContext{ActorID: validActorID()},
 	)
 	if err == nil {
 		t.Fatal("core module disable should be rejected")

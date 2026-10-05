@@ -12,7 +12,6 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // Environment constants
@@ -22,10 +21,6 @@ const (
 
 // Config holds all application configuration.
 type Config struct {
-	// Deprecations are startup warnings about configuration given under a
-	// pre-sensor name (see legacyv1.RenamedEnv). The server logs each one.
-	Deprecations []string
-
 	App          AppConfig
 	Server       ServerConfig
 	GRPC         GRPCConfig
@@ -821,7 +816,7 @@ type LoadBalancingConfig struct {
 	MaxNetworkThroughputMBPS float64
 }
 
-// Weights converts the operator-facing AGENT_LB_* settings into the domain
+// Weights converts the operator-facing SENSOR_LB_* settings into the domain
 // weight set consumed by Sensor.ComputeLoadScoreWithWeights and the sensor
 // selector. This is the seam that makes those environment variables
 // observable in scheduling behavior.
@@ -967,13 +962,11 @@ func defaultLogFormat(appEnv string) string {
 }
 
 func Load() (*Config, error) {
-	deprecations, err := resolveRenamedEnv(os.LookupEnv, os.Setenv)
-	if err != nil {
+	if err := rejectRetiredEnv(os.LookupEnv); err != nil {
 		return nil, err
 	}
 
 	cfg := &Config{
-		Deprecations: deprecations,
 		App: AppConfig{
 			Name:  getEnv("APP_NAME", "openctem"),
 			Env:   getEnv("APP_ENV", "development"),
@@ -981,7 +974,7 @@ func Load() (*Config, error) {
 			URL:   getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
-			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.ConfigTemplatesDir),
+			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
 			KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
@@ -1792,48 +1785,38 @@ func defaultCookieSecure(appEnv string) bool {
 	return appEnv != "development"
 }
 
-// resolveRenamedEnv lets the pre-sensor environment variable names keep
-// working: when only the old name is set its value is copied to the new name
-// (and a deprecation warning returned); when both are set to different values
-// startup fails with a message naming both, rather than silently picking one.
-func resolveRenamedEnv(lookup func(string) (string, bool), set func(string, string) error) ([]string, error) {
-	var warnings []string
-	for _, r := range legacyv1.RenamedEnv {
-		oldVal, hasOld := lookup(r.Old)
-		if !hasOld {
-			continue
-		}
-		newVal, hasNew := lookup(r.New)
-		switch {
-		case !hasNew:
-			if err := set(r.New, oldVal); err != nil {
-				return nil, fmt.Errorf("apply %s from deprecated %s: %w", r.New, r.Old, err)
-			}
-			warnings = append(warnings, fmt.Sprintf("%s is deprecated; rename it to %s (value applied)", r.Old, r.New))
-		case newVal != oldVal:
-			return nil, fmt.Errorf("both %s and its deprecated name %s are set, to different values; remove %s", r.New, r.Old, r.Old)
-		default:
-			warnings = append(warnings, fmt.Sprintf("%s is deprecated and duplicates %s; remove it", r.Old, r.New))
-		}
-	}
+// DefaultSensorConfigTemplatesDir is SENSOR_CONFIG_TEMPLATES_DIR when unset.
+const DefaultSensorConfigTemplatesDir = "configs/sensor-templates"
 
-	// The default template directory moved; keep an installation's custom
-	// templates mounted at the old default path working.
-	if _, explicit := lookup("SENSOR_CONFIG_TEMPLATES_DIR"); !explicit {
-		if !dirExists(legacyv1.ConfigTemplatesDir) && dirExists(legacyv1.LegacyConfigTemplatesDir) {
-			if err := set("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.LegacyConfigTemplatesDir); err != nil {
-				return nil, err
-			}
-			warnings = append(warnings, fmt.Sprintf("sensor config templates loaded from the deprecated directory %s; move them to %s",
-				legacyv1.LegacyConfigTemplatesDir, legacyv1.ConfigTemplatesDir))
-		}
-	}
-	return warnings, nil
+// retiredEnv lists the pre-sensor environment variable names. They are no
+// longer read. Startup refuses to run while one is set: silently ignoring,
+// say, AGENT_KEY_TTL would turn short-lived sensor keys back into
+// non-expiring ones without the operator noticing.
+var retiredEnv = []struct{ Old, New string }{
+	{"AGENT_CONFIG_TEMPLATES_DIR", "SENSOR_CONFIG_TEMPLATES_DIR"},
+	{"AGENT_PUBLIC_API_URL", "SENSOR_PUBLIC_API_URL"},
+	{"AGENT_KEY_TTL", "SENSOR_KEY_TTL"},
+	{"AGENT_LB_JOB_WEIGHT", "SENSOR_LB_JOB_WEIGHT"},
+	{"AGENT_LB_CPU_WEIGHT", "SENSOR_LB_CPU_WEIGHT"},
+	{"AGENT_LB_MEMORY_WEIGHT", "SENSOR_LB_MEMORY_WEIGHT"},
+	{"AGENT_LB_DISK_IO_WEIGHT", "SENSOR_LB_DISK_IO_WEIGHT"},
+	{"AGENT_LB_NETWORK_WEIGHT", "SENSOR_LB_NETWORK_WEIGHT"},
+	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS"},
+	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS"},
 }
 
-func dirExists(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && st.IsDir()
+// rejectRetiredEnv fails when any retired name is set, naming its replacement.
+func rejectRetiredEnv(lookup func(string) (string, bool)) error {
+	var bad []string
+	for _, r := range retiredEnv {
+		if _, ok := lookup(r.Old); ok {
+			bad = append(bad, fmt.Sprintf("%s (rename it to %s)", r.Old, r.New))
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("retired environment variables are set and no longer read: %s", strings.Join(bad, ", "))
+	}
+	return nil
 }
 
 // sensorVersionSetting reads a SENSOR_*_VERSION value: "none" or "off" means
