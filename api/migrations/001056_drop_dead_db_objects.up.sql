@@ -1,3 +1,4 @@
+-- expand-contract-ok: contract step; no released code reads these objects. One exception: the previous release's asset merge also rewrites deprecated.finding_regression_events (always empty), so an asset merge run by an old pod during the rollout window fails and can be retried.
 -- Drop database objects that nothing reads or writes (legacy cleanup, wave 1).
 --
 -- Every object below was checked on a restore of production data migrated to
