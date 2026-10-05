@@ -84,7 +84,6 @@ tool_repository.go:ToolRepository.BulkUpdateVersions:tools  D-11 baseline: add t
 tool_repository.go:ToolRepository.Delete:tools  D-11 baseline: add the tenant predicate
 tool_repository.go:ToolRepository.GetByID:tools  D-11 baseline: add the tenant predicate
 tool_repository.go:ToolRepository.Update:tools  D-11 baseline: add the tenant predicate
-webhook_repository.go:WebhookRepository.Update:webhooks  D-11 baseline: add the tenant predicate
 workflow_repository.go:WorkflowRepository.Delete:workflows  D-11 baseline: add the tenant predicate
 workflow_repository.go:WorkflowRepository.GetByID:workflows  D-11 baseline: add the tenant predicate
 workflow_repository.go:WorkflowRepository.Update:workflows  D-11 baseline: add the tenant predicate
