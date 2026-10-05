@@ -38474,7 +38474,7 @@ export interface components {
       name: string
       tools?: string[]
       /** @enum {string} */
-      type: 'runner' | 'worker' | 'collector' | 'sensor'
+      type: 'worker' | 'collector' | 'sensor'
     }
     'internal_infra_http_handler.CreateSensorResponse': {
       api_key?: string

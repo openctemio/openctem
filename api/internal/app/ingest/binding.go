@@ -93,11 +93,11 @@ func (b Binding) String() string {
 }
 
 // unsolicitedRoles are the sensor roles whose job is to push results nobody
-// asked for: collectors and CI runners. Their unsolicited reports are applied
-// (with the unsolicited limits) whatever the tenant's mode.
+// asked for: collectors. Their unsolicited reports are applied (with the
+// unsolicited limits) whatever the tenant's mode. CI runs are not sensors and
+// never reach this gate (they use the ci_run binding).
 var unsolicitedRoles = map[sensor.SensorType]bool{
 	sensor.SensorTypeCollector: true,
-	sensor.SensorTypeRunner:    true,
 }
 
 // RoleMayPushUnsolicited reports whether a sensor of type t may push results

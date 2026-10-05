@@ -177,7 +177,7 @@ func TestTemplates_NoKeyNoCA(t *testing.T) {
 func TestTemplates_OneShotRunner(t *testing.T) {
 	for _, dir := range templateSources {
 		data := fullData(t)
-		data.Sensor.Type, data.Sensor.ExecutionMode = sensordom.SensorTypeRunner, sensordom.ExecutionModeStandalone
+		data.Sensor.Type, data.Sensor.ExecutionMode = sensordom.SensorTypeWorker, sensordom.ExecutionModeStandalone
 		data.Sensor.Tools = []string{"semgrep"}
 		d := render(t, dir, data).Docker
 		bashSyntaxOK(t, dir+" runner docker", d)

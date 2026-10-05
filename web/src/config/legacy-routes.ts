@@ -222,6 +222,9 @@ export const LEGACY_CI_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
     permanent: true,
   },
   { source: '/ci-runners', destination: '/sensors?mode=runner', permanent: true },
+  // The runner sensor type (a sensor API key used from CI) was removed: CI
+  // pipelines use OIDC and are listed in runner mode.
+  { source: '/runners', destination: '/sensors?mode=runner', permanent: true },
 ]
 
 export const LEGACY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [

@@ -66,7 +66,7 @@ const fleet = () => {
     sensor({ name: 'branch-hn-01', last_seen_at: ago(12 * 3600), version: 'v0.3.0' }),
     sensor({
       name: 'ci-runner',
-      type: 'runner',
+      type: 'worker',
       execution_mode: 'standalone',
       last_seen_at: ago(3 * 3600),
     }),

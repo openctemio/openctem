@@ -11,16 +11,18 @@ import (
 )
 
 // SensorType represents the type of sensor.
-// The platform supports 4 main component types:
-//   - runner: CI/CD one-shot scans (execution_mode: standalone)
+// The platform supports 3 component types:
 //   - worker: Server-controlled daemon (execution_mode: daemon)
 //   - collector: Data collection sensor (execution_mode: daemon)
 //   - sensor: External Attack Surface Monitoring (EASM)
+//
+// CI pipelines are not sensors: they authenticate with their CI provider's
+// OIDC identity (RFC-051). The former "runner" type, a sensor key used from
+// CI, was removed (migration 001114).
 type SensorType string
 
 const (
 	// Primary types
-	SensorTypeRunner    SensorType = "runner"    // CI/CD one-shot scans
 	SensorTypeWorker    SensorType = "worker"    // Server-controlled daemon
 	SensorTypeCollector SensorType = "collector" // Data collection sensor
 	SensorTypeEASM      SensorType = "sensor"    // EASM sensor
@@ -29,15 +31,10 @@ const (
 // IsValid checks if the sensor type is valid.
 func (t SensorType) IsValid() bool {
 	switch t {
-	case SensorTypeRunner, SensorTypeWorker, SensorTypeCollector, SensorTypeEASM:
+	case SensorTypeWorker, SensorTypeCollector, SensorTypeEASM:
 		return true
 	}
 	return false
-}
-
-// IsRunner checks if this is a runner type (one-shot CI/CD).
-func (t SensorType) IsRunner() bool {
-	return t == SensorTypeRunner
 }
 
 // IsWorker checks if this is a worker type (server-controlled daemon).
@@ -58,8 +55,6 @@ func (t SensorType) IsSensor() bool {
 // DefaultExecutionMode returns the default execution mode for this sensor type.
 func (t SensorType) DefaultExecutionMode() ExecutionMode {
 	switch t {
-	case SensorTypeRunner:
-		return ExecutionModeStandalone
 	case SensorTypeWorker, SensorTypeCollector, SensorTypeEASM:
 		return ExecutionModeDaemon
 	default:
@@ -722,9 +717,10 @@ func (a *Sensor) IsDaemon() bool {
 	return a.ExecutionMode == ExecutionModeDaemon || a.Type.IsWorker() || a.Type.IsCollector()
 }
 
-// IsOneShot checks if the sensor is a one-shot runner (CI/CD).
+// IsOneShot checks if the sensor runs one scan per start (execution mode
+// standalone) instead of polling for commands.
 func (a *Sensor) IsOneShot() bool {
-	return a.ExecutionMode == ExecutionModeStandalone || a.Type.IsRunner()
+	return a.ExecutionMode == ExecutionModeStandalone
 }
 
 // SetMaxConcurrentJobs sets the maximum number of concurrent jobs.

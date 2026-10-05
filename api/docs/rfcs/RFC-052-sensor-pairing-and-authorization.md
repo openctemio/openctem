@@ -91,7 +91,7 @@ Secure defaults (owner, 2026-10-05):
   capabilities** (`ClaimForSensor` has no capability predicate), so a sensor
   can claim a `validate:nuclei` command that poll would never have offered it.
 - Results are bound to commands the sensor holds (`ingest.OpenCommand`);
-  unsolicited reports are admitted by sensor role (collector, runner) and the
+  unsolicited reports are admitted by sensor role (collector) and the
   tenant's result policy (`warn` / `quarantine`). There is no per-sensor
   switch.
 - No platform-held credential is delivered to sensors, but `scanner_config` is

@@ -134,7 +134,7 @@ describe('sensorHealthChecks', () => {
     const ci = byKey(
       sensorHealthChecks(
         sensor({
-          type: 'runner',
+          type: 'worker',
           execution_mode: 'standalone',
           last_seen_at: ago(3 * 3600),
           outbox: null,

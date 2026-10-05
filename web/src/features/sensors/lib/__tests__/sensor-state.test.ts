@@ -67,18 +67,18 @@ describe('sensorState', () => {
       ['outbox warning while heartbeating', { outbox_warning: true }, 'degraded'],
       [
         'a CI runner between runs is idle, not offline',
-        { type: 'runner', execution_mode: 'standalone', last_seen_at: ago(3 * 3600) },
+        { type: 'worker', execution_mode: 'standalone', last_seen_at: ago(3 * 3600) },
         'idle',
       ],
       [
         'a CI runner during a run',
-        { type: 'runner', execution_mode: 'standalone', last_seen_at: ago(20) },
+        { type: 'worker', execution_mode: 'standalone', last_seen_at: ago(20) },
         'online',
       ],
       [
         'a CI runner that never ran',
         {
-          type: 'runner',
+          type: 'worker',
           execution_mode: 'standalone',
           last_seen_at: undefined,
           health: 'unknown',
@@ -126,9 +126,8 @@ describe('sensorState', () => {
 })
 
 describe('isOneShotSensor / canTakeJobs', () => {
-  it('a standalone or runner sensor is one-shot', () => {
+  it('a standalone sensor is one-shot', () => {
     expect(isOneShotSensor(sensor({ execution_mode: 'standalone' }))).toBe(true)
-    expect(isOneShotSensor(sensor({ type: 'runner' }))).toBe(true)
     expect(isOneShotSensor(sensor())).toBe(false)
   })
   it('late sensors still take jobs; stale ones do not', () => {
@@ -146,7 +145,7 @@ describe('isOneShotSensor / canTakeJobs', () => {
     expect(canTakeJobs(sensor({ status: 'disabled' }), NOW)).toBe(false)
     expect(
       canTakeJobs(
-        sensor({ type: 'runner', execution_mode: 'standalone', last_seen_at: ago(5) }),
+        sensor({ type: 'worker', execution_mode: 'standalone', last_seen_at: ago(5) }),
         NOW
       )
     ).toBe(false)
