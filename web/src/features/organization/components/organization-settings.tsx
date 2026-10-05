@@ -42,6 +42,7 @@ import { AccessRestrictionsCard, isIpLockoutError, parseLines } from './access-r
 import { DeleteOrganization } from './delete-organization'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
 import { SensorOptInSwitches } from '@/features/sensors/components/sensor-opt-in-switches'
+import { SensorIdentityPolicySwitch } from '@/features/sensors/components/sensor-identity-policy-switch'
 import { safeImageSrc } from '@/lib/safe-href'
 
 const STORAGE_FORM_ID = 'storage-config-form'
@@ -679,6 +680,11 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                   onChange={(next) => setSecurityForm({ ...securityForm, ...next })}
                   disabled={!canManageSecurityAndAPI}
                 />
+
+                <Separator />
+
+                {/* Saved on its own route at once (RFC-052 D-4), not with this form. */}
+                <SensorIdentityPolicySwitch />
 
                 <Separator />
 

@@ -24,11 +24,13 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
+import { isFreezeRefusal } from '@/features/scan-freeze'
 import { triggerErrorHint } from '@/features/scan-zones'
 import { get, post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
+import { Permission, useHasPermission } from '@/lib/permissions'
 import type { PipelineRun } from '@/lib/api/scan-types'
 import { formatScanDate } from '../lib/format'
 import { isRunInProgress, runTaskProgress } from '../lib/run-display'
@@ -98,23 +100,38 @@ export interface UseScanTriggerOptions {
 export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions = {}) {
   const busy = useSyncExternalStore(subscribe, getSnapshot, () => '')
   const [pending, setPending] = useState<{ scan: TriggerableScan; run: PipelineRun } | null>(null)
+  // A trigger refused by an active scan freeze window, offered to override
+  // to members holding scans:freeze:override (the API checks it again and
+  // audits the override).
+  const [frozen, setFrozen] = useState<{ scan: TriggerableScan; message: string } | null>(null)
+  const canOverrideFreeze = useHasPermission(Permission.ScanFreezeOverride)
 
   const fire = useCallback(
-    async (scan: TriggerableScan) => {
+    async (scan: TriggerableScan, overrideFreeze = false) => {
       try {
-        await post(scanEndpoints.trigger(scan.id), {})
-        toast.success(`Scan "${scan.name}" triggered`)
+        await post(scanEndpoints.trigger(scan.id), overrideFreeze ? { override_freeze: true } : {})
+        toast.success(
+          overrideFreeze
+            ? `Scan "${scan.name}" started despite the freeze window`
+            : `Scan "${scan.name}" triggered`
+        )
         onTriggered?.(scan)
         await invalidateScanConfigsCache()
       } catch (error) {
+        if (!overrideFreeze && canOverrideFreeze && isFreezeRefusal(error)) {
+          // Stays in flight until the user answers.
+          setFrozen({ scan, message: getErrorMessage(error, 'A scan freeze window is active') })
+          return
+        }
         toast.error(getErrorMessage(error, `Failed to trigger scan "${scan.name}"`), {
-          description: triggerErrorHint(error),
+          description: isFreezeRefusal(error)
+            ? 'Active scans are not started during a freeze window. Wait until it ends, or ask an owner or administrator to start it.'
+            : triggerErrorHint(error),
         })
-      } finally {
-        setInFlight(scan.id, false)
       }
+      setInFlight(scan.id, false)
     },
-    [onTriggered]
+    [onTriggered, canOverrideFreeze]
   )
 
   const trigger = useCallback(
@@ -139,53 +156,91 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
     setPending(null)
   }, [pending])
 
+  const dismissFrozen = useCallback(() => {
+    if (frozen) setInFlight(frozen.scan.id, false)
+    setFrozen(null)
+  }, [frozen])
+
   const progress = pending ? runTaskProgress(pending.run.task_summary) : null
   const started = pending?.run.started_at || pending?.run.created_at
 
-  const dialog = (
+  const freezeDialog = (
     <ConfirmDialog
-      open={!!pending}
+      open={!!frozen}
       onOpenChange={(open) => {
-        if (!open) dismiss()
+        if (!open) dismissFrozen()
       }}
-      title="A run is already in progress"
+      title="A scan freeze window is active"
       desc={
-        pending ? (
-          <div className="space-y-2">
+        frozen ? (
+          <div className="space-y-2" data-testid="freeze-override-dialog">
+            <p>{frozen.message}</p>
             <p>
-              <span className="font-medium text-foreground">{pending.scan.name}</span> has a run
-              that is {pending.run.status === 'pending' ? 'waiting to start' : 'still running'}
-              {started ? ` (started ${formatScanDate(started)})` : ''}
-              {progress ? `, ${progress.label}` : ''}.
+              Start <span className="font-medium text-foreground">{frozen.scan.name}</span> anyway?
+              The override is recorded in the audit log with your name.
             </p>
-            <p>
-              Another run scans the same targets again; the sensor runs them one after the other.
-            </p>
-            {onViewRun && (
-              <Button
-                variant="link"
-                className="h-auto p-0"
-                onClick={() => {
-                  const runId = pending.run.id
-                  dismiss()
-                  onViewRun(runId)
-                }}
-              >
-                View the running run
-              </Button>
-            )}
           </div>
         ) : (
           ''
         )
       }
-      confirmText="Start another run"
+      confirmText="Start anyway"
+      destructive
       handleConfirm={() => {
-        const p = pending
-        setPending(null)
-        if (p) void fire(p.scan)
+        const f = frozen
+        setFrozen(null)
+        if (f) void fire(f.scan, true)
       }}
     />
+  )
+
+  const dialog = (
+    <>
+      <ConfirmDialog
+        open={!!pending}
+        onOpenChange={(open) => {
+          if (!open) dismiss()
+        }}
+        title="A run is already in progress"
+        desc={
+          pending ? (
+            <div className="space-y-2">
+              <p>
+                <span className="font-medium text-foreground">{pending.scan.name}</span> has a run
+                that is {pending.run.status === 'pending' ? 'waiting to start' : 'still running'}
+                {started ? ` (started ${formatScanDate(started)})` : ''}
+                {progress ? `, ${progress.label}` : ''}.
+              </p>
+              <p>
+                Another run scans the same targets again; the sensor runs them one after the other.
+              </p>
+              {onViewRun && (
+                <Button
+                  variant="link"
+                  className="h-auto p-0"
+                  onClick={() => {
+                    const runId = pending.run.id
+                    dismiss()
+                    onViewRun(runId)
+                  }}
+                >
+                  View the running run
+                </Button>
+              )}
+            </div>
+          ) : (
+            ''
+          )
+        }
+        confirmText="Start another run"
+        handleConfirm={() => {
+          const p = pending
+          setPending(null)
+          if (p) void fire(p.scan)
+        }}
+      />
+      {freezeDialog}
+    </>
   )
 
   return { trigger, isTriggering, dialog }

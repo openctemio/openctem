@@ -6678,6 +6678,118 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/auth/step-up': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Step-up re-authentication state
+     * @description method is totp (an authenticator code), password, or fresh_sign_in (an SSO account without an authenticator: sign in again). valid_until is set while the session is inside its window.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.StepUpState']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Step-up re-authentication
+     * @description Verifies a current authenticator code (accounts with two-factor authentication; recovery codes are not accepted) or the password (other local accounts) and lets this session perform sensitive actions for 10 minutes. The window belongs to this session only and is extended only by another successful step-up. Failures count towards the account lockout. SSO accounts without an authenticator get STEP_UP_UNAVAILABLE and sign in again instead.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Authenticator code or password */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.StepUpRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.StepUpResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/auth/token': {
     parameters: {
       query?: never
@@ -7340,6 +7452,15 @@ export interface paths {
         }
         /** @description Unauthorized */
         401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description RUNNER_OUTDATED: the runner reports a version below the minimum supported one */
+        403: {
           headers: {
             [name: string]: unknown
           }
@@ -20753,6 +20874,322 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scan-freeze-windows': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List scan freeze windows
+     * @description The organization's freeze windows, each with whether it is active now. scan_zone_id lists one zone's windows; scope=tenant lists only the windows that freeze the whole organization.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Scan zone ID */
+          scan_zone_id?: string
+          /** @description tenant: only organization-wide windows */
+          scope?: 'tenant'
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Create scan freeze window
+     * @description While the window is active, active (T1/T2) scan work of the organization, or of the zone, is not dispatched: scheduled runs are deferred to the window's end, other triggers are refused (409 SCAN_FREEZE_ACTIVE) unless the caller overrides with scans:freeze:override. Passive work and ingest continue. At most 50 windows per organization.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Freeze window */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CreateScanFreezeWindowRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description scan zone not in this organization */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scan-freeze-windows/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get scan freeze window */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Freeze window ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    /** Delete scan freeze window */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Freeze window ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    /**
+     * Update scan freeze window
+     * @description Omitted fields are unchanged; the zone cannot change. Disabling a window releases the work it held.
+     */
+    patch: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Freeze window ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Changes */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateScanFreezeWindowRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    trace?: never
+  }
   '/scan-profiles': {
     parameters: {
       query?: never
@@ -24029,8 +24466,26 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description override_freeze without scans:freeze:override */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Not Found */
         404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description SCAN_FREEZE_ACTIVE: a scan freeze window is active */
+        409: {
           headers: {
             [name: string]: unknown
           }
@@ -35292,9 +35747,19 @@ export interface components {
       last_activity_at?: string
       user_agent?: string
     }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod':
+      'totp' | 'password' | 'fresh_sign_in' | ''
     'github_com_openctemio_openctem_api_internal_app_auth.StepUpProof': {
       password?: string
       totp?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_auth.StepUpState': {
+      method?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod']
+      /** @description ValidUntil is when the current window closes; nil when it is closed. */
+      valid_until?: string
+      /** @description WindowSeconds is the length of a window opened by a step-up. */
+      window_seconds?: number
     }
     'github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord': {
       host?: string
@@ -35971,9 +36436,10 @@ export interface components {
        */
       repositories?: string[]
       /**
-       * @description RequireProtectedRef admits only pipelines on a protected branch or tag
-       *     (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
-       *     configuration with this set admits nothing).
+       * @description RequireProtectedRef admits only pipelines on a protected branch or tag.
+       *     GitLab: the token's ref_protected claim. GitHub tokens carry no such
+       *     claim: the job must run in one of Environments (required with this
+       *     switch), whose deployment branch rules admit only protected refs.
        */
       require_protected_ref?: boolean
     }
@@ -38366,6 +38832,20 @@ export interface components {
       p3_days?: number
       warning_threshold_pct?: number
     }
+    'internal_infra_http_handler.CreateScanFreezeWindowRequest': {
+      days?: number[]
+      description?: string
+      enabled?: boolean
+      end_time?: string
+      ends_at?: string
+      name?: string
+      /** @enum {string} */
+      recurrence?: 'once' | 'weekly'
+      scan_zone_id?: string
+      start_time?: string
+      starts_at?: string
+      timezone?: string
+    }
     'internal_infra_http_handler.CreateScanProfileRequest': {
       description?: string
       /** @enum {string} */
@@ -40739,6 +41219,30 @@ export interface components {
       total_runs?: number
       updated_at?: string
     }
+    'internal_infra_http_handler.ScanFreezeWindowListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse'][]
+      total?: number
+    }
+    'internal_infra_http_handler.ScanFreezeWindowResponse': {
+      active?: boolean
+      active_until?: string
+      created_at?: string
+      created_by?: string
+      days?: number[]
+      description?: string
+      enabled?: boolean
+      end_time?: string
+      ends_at?: string
+      id?: string
+      name?: string
+      /** @enum {string} */
+      recurrence?: 'once' | 'weekly'
+      scan_zone_id?: string
+      start_time?: string
+      starts_at?: string
+      timezone?: string
+      updated_at?: string
+    }
     'internal_infra_http_handler.ScanProfileResponse': {
       created_at?: string
       created_by?: string
@@ -41673,6 +42177,14 @@ export interface components {
       step_id?: string
       step_key?: string
     }
+    'internal_infra_http_handler.StepUpRequest': {
+      password?: string
+      totp?: string
+    }
+    'internal_infra_http_handler.StepUpResponse': {
+      valid_until?: string
+      window_seconds?: number
+    }
     'internal_infra_http_handler.SyncResponse': {
       message?: string
       success?: boolean
@@ -41943,6 +42455,11 @@ export interface components {
       context?: {
         [key: string]: unknown
       }
+      /**
+       * @description OverrideFreeze starts the scan although a scan freeze window is
+       *     active. Needs scans:freeze:override (403 otherwise); audited.
+       */
+      override_freeze?: boolean
     }
     'internal_infra_http_handler.TriggerSyncRequest': {
       /** @description empty or "all" for all sources */
@@ -42164,6 +42681,19 @@ export interface components {
       p2_days?: number
       p3_days?: number
       warning_threshold_pct?: number
+    }
+    'internal_infra_http_handler.UpdateScanFreezeWindowRequest': {
+      days?: number[]
+      description?: string
+      enabled?: boolean
+      end_time?: string
+      ends_at?: string
+      name?: string
+      /** @enum {string} */
+      recurrence?: 'once' | 'weekly'
+      start_time?: string
+      starts_at?: string
+      timezone?: string
     }
     'internal_infra_http_handler.UpdateScanProfileRequest': {
       description?: string

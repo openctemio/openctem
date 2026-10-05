@@ -129,10 +129,22 @@ func (r Rules) Admit(c Claims) *Refusal {
 	if len(r.Events) > 0 && !slices.Contains(r.Events, c.Event) {
 		return refuse(RefuseEvent, "event %q is not listed", c.Event)
 	}
-	if r.RequireProtectedRef && !c.RefProtected {
+	if r.RequireProtectedRef && !r.protectedRef(c) {
 		return refuse(RefuseRefNotProtected, "ref %q is not protected", c.Ref)
 	}
 	return nil
+}
+
+// protectedRef reports whether the job runs on a protected ref. GitLab says
+// so in the token (ref_protected). A GitHub token carries no such claim: the
+// proof is a deployment environment the configuration lists, whose
+// deployment branch rules admit only protected branches and tags (Validate
+// requires the list when the switch is on).
+func (r Rules) protectedRef(c Claims) bool {
+	if c.Provider == ProviderGitHub {
+		return c.Environment != "" && slices.Contains(r.Environments, c.Environment)
+	}
+	return c.RefProtected
 }
 
 // repoMatch matches "owner/name", "owner/*" (one level) and "owner/**"

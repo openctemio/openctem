@@ -77,7 +77,9 @@ type probeView struct {
 	Admin      bool     `json:"admin"`
 }
 
-func newKeyRESTHarness(t *testing.T) *keyRESTHarness {
+// newKeyRESTHarness builds the harness; extra adds handlers to the real
+// registration (for example the CI routes).
+func newKeyRESTHarness(t *testing.T, extra ...func(*Handlers)) *keyRESTHarness {
 	t.Helper()
 	dbURL := testdb.URL()
 	if dbURL == "" {
@@ -124,14 +126,18 @@ func newKeyRESTHarness(t *testing.T) *keyRESTHarness {
 
 	router := infrahttp.NewChiRouter()
 	keyAuth := middleware.NewAPIKeyAuth(keys, log)
-	Register(router, Handlers{
+	handlers := Handlers{
 		APIKey:     handler.NewAPIKeyHandler(keys, validator.New(), log),
 		APIKeyAuth: keyAuth,
 		// The real MCP mount, as cmd/server wires it (one authenticator for
 		// REST and MCP). No data services: the tests only call initialize.
 		MCP:     handler.NewMCPHandler(nil, nil, nil, nil, nil, nil, nil, log),
 		MCPAuth: keyAuth.Handler,
-	}, cfg, log, authCfg, tenantRepo, userSvc, nil, nil, nil)
+	}
+	for _, f := range extra {
+		f(&handlers)
+	}
+	Register(router, handlers, cfg, log, authCfg, tenantRepo, userSvc, nil, nil, nil)
 
 	// A tenant data route on the real token-tenant chain.
 	jwtAuth := middleware.UnifiedAuth(middleware.UnifiedAuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen, Logger: log})
