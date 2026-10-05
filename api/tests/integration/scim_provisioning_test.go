@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -21,21 +22,20 @@ type scimMemberMgr struct{ svc *app.TenantService }
 
 func (a scimMemberMgr) AddMember(ctx context.Context, tenantID, userID shared.ID, role string) error {
 	_, err := a.svc.AddMember(ctx, tenantID.String(),
-		app.AddMemberInput{UserID: userID, Role: role}, shared.ID{},
-		app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
+		app.AddMemberInput{UserID: userID, Role: role}, shared.ID{}, audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
 	return err
 }
 
 func (a scimMemberMgr) SuspendMember(ctx context.Context, tenantID, membershipID shared.ID) error {
-	return a.svc.SuspendMember(ctx, membershipID.String(), app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
+	return a.svc.SuspendMember(ctx, membershipID.String(), audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
 }
 
 func (a scimMemberMgr) ReactivateMember(ctx context.Context, tenantID, membershipID shared.ID) error {
-	return a.svc.ReactivateMember(ctx, membershipID.String(), app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
+	return a.svc.ReactivateMember(ctx, membershipID.String(), audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
 }
 
 func (a scimMemberMgr) OffboardMember(ctx context.Context, tenantID, membershipID shared.ID) error {
-	return a.svc.DeprovisionMember(ctx, membershipID.String(), app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
+	return a.svc.DeprovisionMember(ctx, membershipID.String(), audit.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
 }
 
 // TestSCIMProvisioning_RoundTrip_RealDB exercises the SCIM provisioning path
