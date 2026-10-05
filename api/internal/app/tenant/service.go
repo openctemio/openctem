@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -1574,6 +1575,10 @@ type UpdateSecuritySettingsInput struct {
 	// RequireSensorLocalPolicyForPrivateTargets: see
 	// tenantdom.SecuritySettings.
 	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
+	// AllowSensorInteractsh, AllowSensorCustomTemplates: see
+	// tenantdom.SecuritySettings (research/25 D3).
+	AllowSensorInteractsh      *bool `json:"allow_sensor_interactsh"`
+	AllowSensorCustomTemplates *bool `json:"allow_sensor_custom_templates"`
 	// RequesterIP is the client IP of the tenant user saving the settings, as
 	// the API sees it (trusted-proxy aware). When set, an IP allowlist that
 	// would exclude it is refused (lockout guard). Empty for the platform
@@ -1590,6 +1595,18 @@ func (s *TenantService) RequiresLocalPolicyForPrivateTargets(ctx context.Context
 		return false, err
 	}
 	return t.TypedSettings().Security.RequireSensorLocalPolicyForPrivateTargets, nil
+}
+
+// SensorOptIns returns the tenant's interactsh and custom-template switches
+// for sensor jobs (research/25 D3; both off unless an owner enabled them).
+// It implements command.OptInPolicy and scan.OptInPolicy.
+func (s *TenantService) SensorOptIns(ctx context.Context, tenantID shared.ID) (sensordom.OptIns, error) {
+	t, err := s.repo.GetByID(ctx, tenantID)
+	if err != nil {
+		return sensordom.OptIns{}, err
+	}
+	sec := t.TypedSettings().Security
+	return sensordom.OptIns{AllowInteractsh: sec.AllowSensorInteractsh, AllowCustomTemplates: sec.AllowSensorCustomTemplates}, nil
 }
 
 // ErrIPAllowlistExcludesRequester is returned when saving an IP allowlist that
@@ -1624,6 +1641,12 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.RequireSensorLocalPolicyForPrivateTargets != nil {
 			security.RequireSensorLocalPolicyForPrivateTargets = *input.RequireSensorLocalPolicyForPrivateTargets
+		}
+		if input.AllowSensorInteractsh != nil {
+			security.AllowSensorInteractsh = *input.AllowSensorInteractsh
+		}
+		if input.AllowSensorCustomTemplates != nil {
+			security.AllowSensorCustomTemplates = *input.AllowSensorCustomTemplates
 		}
 
 		// Can't-enable guard: refuse to turn sso_enforced ON unless the tenant has a
@@ -1671,9 +1694,39 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		WithSeverity(securityChangeSeverity(before, t.TypedSettings().Security)).
 		WithMessage("Security settings updated")
 	s.logAudit(ctx, actx, event)
+	after := t.TypedSettings().Security
+	s.auditSensorOptIn(ctx, actx, "allow_sensor_interactsh", before.AllowSensorInteractsh, after.AllowSensorInteractsh)
+	s.auditSensorOptIn(ctx, actx, "allow_sensor_custom_templates", before.AllowSensorCustomTemplates, after.AllowSensorCustomTemplates)
 
 	result := t.TypedSettings()
 	return &result, nil
+}
+
+// AlertSensorOptInEnabled is the alert name logged when an organization
+// turns a sensor opt-in on (research/25 D9).
+const AlertSensorOptInEnabled = "sensor_opt_in_enabled"
+
+// auditSensorOptIn records a change of a sensor opt-in switch (research/25
+// D9). Turning one on widens what the platform sends to sensors: it is
+// audited at critical severity and alerted (a WARN line with alert=…, which
+// the log pipeline forwards). Turning one off is audited at medium.
+func (s *TenantService) auditSensorOptIn(ctx context.Context, actx auditapp.AuditContext, key string, from, to bool) {
+	if from == to {
+		return
+	}
+	severity, verb := audit.SeverityMedium, "disabled"
+	if to {
+		severity, verb = audit.SeverityCritical, "enabled"
+		s.logger.Warn("organization enabled a sensor opt-in", "alert", AlertSensorOptInEnabled,
+			"tenant_id", actx.TenantID, "setting", key, "actor_id", actx.ActorID)
+	}
+	event := auditapp.NewSuccessEvent(audit.ActionSensorOptInChanged, audit.ResourceTypeTenant, actx.TenantID).
+		WithSeverity(severity).
+		WithMessage(fmt.Sprintf("Sensor opt-in %s %s", key, verb)).
+		WithMetadata("setting", key).
+		WithMetadata("from", from).
+		WithMetadata("to", to)
+	s.logAudit(ctx, actx, event)
 }
 
 // UpdateAPISettingsInput is a partial-update payload. Scalars are pointers

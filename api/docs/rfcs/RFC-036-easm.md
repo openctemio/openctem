@@ -796,7 +796,7 @@ Effort is engineer-weeks across all repos.
 
 | Phase | Status |
 |---|---|
-| P0 | Shipped on the api/web side: E1 CT rotation and retries (#811, migration `000266`), `certificate_expired` for the newest certificate only, E7 presets with shipped tools only (#815, `000270`), E8/E9 honest numbers and real trends (#829), E11 (#724); CT names promoted to assets and the scan attribution gate (#839). Open: E10 (automatic external/shadow scope). E2–E5 are tracked in sdk-go and the sensor. |
+| P0 | Shipped on the api/web side: E1 CT rotation and retries (#811, migration `000266`), `certificate_expired` for the newest certificate only, E7 presets with shipped tools only (#815, `000270`), E8/E9 honest numbers and real trends (#829), E11 (#724); CT names promoted to assets and the scan attribution gate (#839). Open: E10 (automatic external/shadow scope). E2–E4 are tracked in sdk-go and the sensor. E5 (httpx certificate, favicon, JARM, ASN, CDN): api ingest of the certificate asset and `serves_certificate` shipped (migration `001026`); the ctis converter, sdk-go `LiveHost` and sensor defaults (`-tls-grab -favicon -jarm -cdn`, same-host redirects, same-host crawl, rate limit honoured) are open PRs in those repositories. |
 | P1 | Shipped: dangling CNAME/NS and email posture checks (#852, `000325`; on by default since research/22 P0-8, `EASM_DNS_CHECKS_ENABLED`) and the lame-delegation check (#1012); attribution side tables and evidence, CT promotion and `GET /api/v1/easm/summary` (#839, `000324`); tenant-scan evidence `tenant_scanned` (#1004); the asset Ownership section (#856); the EASM overview cards on `/attack-surface` (#857); the review queue with bulk decisions and the asset-list attribution filter (#994 API, #1023 web: `/attack-surface/review`, inventory shows approved assets by default; [easm.md §4b](../architecture/easm.md)); findings on unconfirmed assets capped at P2 (#1009); takeover confirmation: a nuclei takeover-template match from a tenant scan on an open `dangling_cname` raises `subdomain_takeover` (high) (#1018, `000485`). Open: sensor-side C17 (dnsx resolver fallback, sensor repository). |
 | P2 | In progress: seeds (#1041: `easm_seeds`, `root_domain` watched by the CT monitor). Open: candidates and tombstones, CIDR/ASN/organization seeds with RDAP/RIPEstat/PTR collectors, noisy-OR learning, rule precision. |
 | P3–P6 | Not started (no `easm_observations`). |
@@ -846,7 +846,11 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
   everywhere; `?attribution=all` is accepted. The E1 308 of
   `/attack-surface/external` waits for the inventory's external columns.
 
-- **P0-13 honest EASM numbers:** open.
+- **P0-13 honest EASM numbers:** shipped (this PR, no migration). The
+  summary counts only exposure types something produces; every type the API
+  can emit has a label in the web; wildcard-only CT names are no longer
+  counted as discovered subdomains; a root-domain seed under an existing
+  seed is refused; the dead certificate Validity filter is removed.
 
 - **P0-6 port and service results surfaced (B6):** open.
 

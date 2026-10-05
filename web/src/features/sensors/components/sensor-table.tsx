@@ -35,7 +35,8 @@ import { toolsInstalledNotAllowed } from '../lib/sensor-edit'
 import { worstContentState } from '../lib/content'
 import { normalizeSensorVersion } from '../lib/sensor-version'
 import { sensorState, SENSOR_STATES, type FleetThresholds } from '../lib/sensor-state'
-import type { ReleaseChannel } from '../lib/fleet'
+import { sensorPolicyOf, type ReleaseChannel } from '../lib/fleet'
+import { SensorLocalPolicyBadge } from './sensor-local-policy-section'
 
 interface SensorTableProps {
   sensors: Sensor[]
@@ -208,6 +209,13 @@ export function SensorTable({
             notAllowed={toolsInstalledNotAllowed(row.original)}
           />
         ),
+      },
+      {
+        id: 'policy',
+        meta: { label: 'Local policy' },
+        accessorFn: (a) => sensorPolicyOf(a),
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Policy" />,
+        cell: ({ row }) => <SensorLocalPolicyBadge sensor={row.original} />,
       },
       {
         id: 'content',

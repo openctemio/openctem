@@ -3024,6 +3024,31 @@ definitions:
       rate_pct:
         type: number
     type: object
+  github_com_openctemio_openctem_api_internal_app_scan.OptInImpact:
+    properties:
+      opt_ins:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns'
+      scans:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan'
+        type: array
+      truncated:
+        description: 'Truncated: more scans are affected than listed.'
+        type: boolean
+    type: object
+  github_com_openctemio_openctem_api_internal_app_scan.OptInImpactScan:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+      uses_custom_templates:
+        type: boolean
+      uses_interactsh:
+        type: boolean
+    type: object
   github_com_openctemio_openctem_api_internal_app_scan.PreviewError:
     properties:
       code:
@@ -3500,6 +3525,7 @@ definitions:
     - contains
     - exposes
     - resolves_to
+    - serves_certificate
     - cname_of
     - depends_on
     - peer_of
@@ -3520,6 +3546,7 @@ definitions:
     - RelTypeContains
     - RelTypeExposes
     - RelTypeResolvesTo
+    - RelTypeServesCertificate
     - RelTypeCnameOf
     - RelTypeDependsOn
     - RelTypePeerOf
@@ -4232,6 +4259,13 @@ definitions:
         type: array
       version:
         type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns:
+    properties:
+      allow_custom_templates:
+        type: boolean
+      allow_interactsh:
+        type: boolean
     type: object
   github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity:
     properties:
@@ -12316,6 +12350,63 @@ definitions:
       tenant_id:
         type: string
     type: object
+  internal_infra_http_handler.ScanStageImplementationResponse:
+    properties:
+      default:
+        type: boolean
+      tool:
+        type: string
+    type: object
+  internal_infra_http_handler.ScanStageListResponse:
+    properties:
+      max_hops:
+        description: |-
+          MaxHops is how many discovery hops a derived target may be from the
+          run's seeds.
+        type: integer
+      stages:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanStageResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.ScanStageResponse:
+    properties:
+      description:
+        type: string
+      findings:
+        type: boolean
+      implementations:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanStageImplementationResponse'
+        type: array
+      inputs:
+        description: |-
+          Inputs and Outputs are stored type labels: "type" or
+          "type/sub_type" (service/http is an HTTP service).
+        items:
+          type: string
+        type: array
+      key:
+        type: string
+      max_fanout:
+        type: integer
+      name:
+        type: string
+      outputs:
+        items:
+          type: string
+        type: array
+      relations:
+        items:
+          type: string
+        type: array
+      tier:
+        enum:
+        - T0
+        - T1
+        - T2
+        type: string
+    type: object
   internal_infra_http_handler.ScanStatsResponse:
     properties:
       active:
@@ -14003,6 +14094,13 @@ definitions:
       name:
         type: string
       output_formats:
+        items:
+          type: string
+        type: array
+      output_types:
+        description: |-
+          OutputTypes are the asset types a report of the tool may create
+          (scan stage catalog); read-only.
         items:
           type: string
         type: array
@@ -31549,6 +31647,50 @@ paths:
       security:
       - BearerAuth: []
       summary: Preview a scan schedule
+      tags:
+      - Scans
+  /scans/sensor-opt-in-impact:
+    get:
+      description: The organization's switches for out-of-band callbacks (interactsh)
+        and custom templates in sensor jobs (both off unless an owner enabled them,
+        research/25 D3), and the scans whose scanner_config asks for either (at most
+        100; truncated says more exist). While a switch is off, those scans run without
+        interactsh or are refused (custom templates).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.OptInImpact'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Scans affected by the sensor opt-ins
+      tags:
+      - Scans
+  /scans/stages:
+    get:
+      description: 'The scan stage catalog: each capability with the asset types it
+        consumes and produces, its intrusiveness tier and the tools that implement
+        it.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanStageListResponse'
+      security:
+      - BearerAuth: []
+      summary: List scan stages
       tags:
       - Scans
   /scans/stats:
