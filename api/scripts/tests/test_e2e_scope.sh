@@ -4,7 +4,7 @@
 # =============================================================================
 # Tests scope lifecycle:
 #   Register -> Login -> Create Team -> Scope Stats -> Target CRUD
-#   -> Activate/Deactivate -> Scope Check -> Exclusions -> Schedules
+#   -> Activate/Deactivate -> Scope Check -> Exclusions
 #   -> Docker Log Check
 #
 # Prerequisites:
@@ -41,7 +41,6 @@ ACCESS_TOKEN=""
 TENANT_ID=""
 TARGET_ID=""
 EXCLUSION_ID=""
-SCHEDULE_ID=""
 CRITICAL_FAILURE=0
 
 BODY=""
@@ -264,48 +263,9 @@ fi
 fi
 
 # =============================================================================
-# Section 7: Scan Schedules
+# Section 7: Delete Target
 # =============================================================================
-print_header "Section 7: Scan Schedules"
-
-if ! check_critical "Schedules"; then :; else
-
-print_test "Create schedule"
-do_request "POST" "/api/v1/scope/schedules" "{
-    \"name\": \"E2E Schedule ${TIMESTAMP}\",
-    \"description\": \"E2E test schedule\",
-    \"scan_type\": \"full\",
-    \"schedule_type\": \"manual\"
-}" "Authorization: Bearer $ACCESS_TOKEN"
-print_info "Status: $HTTP_CODE"
-
-if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
-    SCHEDULE_ID=$(extract_json "$BODY" '.id')
-    print_info "Schedule ID: $SCHEDULE_ID"
-    print_success "Schedule created"
-else
-    print_info "Response: $(echo "$BODY" | head -c 200)"
-    print_failure "Create schedule" "Got $HTTP_CODE"
-fi
-
-print_test "List schedules"
-do_request "GET" "/api/v1/scope/schedules" "" "Authorization: Bearer $ACCESS_TOKEN"
-[ "$HTTP_CODE" = "200" ] && print_success "Schedules listed" || print_failure "List schedules" "Got $HTTP_CODE"
-
-print_test "Disable schedule"
-if [ -n "$SCHEDULE_ID" ] && [ "$SCHEDULE_ID" != "null" ]; then
-    do_request "POST" "/api/v1/scope/schedules/$SCHEDULE_ID/disable" "" "Authorization: Bearer $ACCESS_TOKEN"
-    [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ] && print_success "Schedule disabled" || print_failure "Disable schedule" "Got $HTTP_CODE"
-else
-    print_skip "Disable schedule (no ID)"
-fi
-
-fi
-
-# =============================================================================
-# Section 8: Delete Target
-# =============================================================================
-print_header "Section 8: Delete Target"
+print_header "Section 7: Delete Target"
 
 if ! check_critical "Delete Target"; then :; else
 print_test "Delete target"
@@ -320,7 +280,7 @@ fi
 # =============================================================================
 # Docker Log Check
 # =============================================================================
-print_header "Section 9: Docker Log Check"
+print_header "Section 8: Docker Log Check"
 
 print_test "Check Docker logs"
 if command -v docker &>/dev/null; then

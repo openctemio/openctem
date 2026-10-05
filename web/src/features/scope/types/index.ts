@@ -36,18 +36,6 @@ export type ScopeTargetType =
 
 export type ScopeTargetStatus = 'active' | 'inactive'
 
-export type ScanType =
-  | 'vulnerability'
-  | 'port_scan'
-  | 'pentest'
-  | 'credential'
-  | 'secret_scan'
-  | 'compliance'
-  | 'configuration'
-
-export type ScanFrequency =
-  'hourly' | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'continuous' | 'on_commit' | 'on_demand'
-
 /**
  * Scope Target - defines what should be scanned
  */
@@ -80,30 +68,6 @@ export interface ScopeExclusion {
   approvedBy?: string
   addedAt: string
   addedBy: string
-}
-
-/**
- * Scan Schedule - defines when and how to scan
- */
-export interface ScanSchedule {
-  id: string
-  name: string
-  type: ScanType
-  targetPatterns: string[] // References to ScopeTarget patterns
-  frequency: ScanFrequency
-  schedule?: {
-    time?: string // "02:00"
-    dayOfWeek?: number // 0-6 (Sunday-Saturday)
-    dayOfMonth?: number // 1-31
-  }
-  lastRun: string | null
-  nextRun: string | null
-  status: 'active' | 'paused' | 'error'
-  notifications?: {
-    onComplete?: boolean
-    onFinding?: boolean
-    channels?: string[]
-  }
 }
 
 /**
