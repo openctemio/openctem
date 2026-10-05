@@ -201,6 +201,20 @@ const MaxReleaseReasonBytes = 200
 // FailRequest is the body of POST /commands/{id}/fail.
 type FailRequest struct {
 	ErrorMessage string `json:"error_message"`
+	// Refusal, when set, says the sensor refused the job under a policy
+	// (research/25 §3.6, feature "refusal"): the platform re-queues routed
+	// work to another eligible sensor and excludes this one. Optional:
+	// without it a reason starting "refused by local policy: " counts too.
+	Refusal *Refusal `json:"refusal,omitempty"`
+}
+
+// Refusal is a structured policy refusal: the layer (builtin, local,
+// managed, scope, platform_tool_gate), the rule ("tools.allow",
+// "allow_interactsh", ...) and a short detail.
+type Refusal struct {
+	Layer  string `json:"layer"`
+	Rule   string `json:"rule"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // FingerprintsCheckRequest is the body of POST /fingerprints/check.

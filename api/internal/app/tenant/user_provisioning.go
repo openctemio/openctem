@@ -285,7 +285,7 @@ func (s *UserProvisioningService) ReissueSetupLink(ctx context.Context, tenantID
 	if err != nil {
 		return nil, err
 	}
-	if membership.IsSuspended() {
+	if !membership.IsActive() {
 		return nil, ErrNotPendingSetup
 	}
 	u, err := s.users.GetByID(ctx, userID)
@@ -345,7 +345,7 @@ func (s *UserProvisioningService) authorizeSetupLinkCaller(ctx context.Context, 
 		}
 		return fmt.Errorf("look up caller membership: %w", err)
 	}
-	if caller.IsSuspended() || !isOwnerOrAdmin(caller.Role()) {
+	if !caller.IsActive() || !isOwnerOrAdmin(caller.Role()) {
 		return ErrSetupLinkForbidden
 	}
 	if isOwnerOrAdmin(target.Role()) && caller.Role() != tenantdom.RoleOwner {

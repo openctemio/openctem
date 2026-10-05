@@ -79,16 +79,16 @@ func TestSensorConfigReportStore_TenantScoped(t *testing.T) {
 	}
 }
 
-// Migration 001043 is additive and reversible on populated tables:
+// Migration 001050 is additive and reversible on populated tables:
 // replayed up -> down -> up in a rolled-back transaction with a sensor and
 // its report in place.
 func TestSensorConfigReportsMigration_UpDownUp(t *testing.T) {
 	ctx := context.Background()
-	up, err := os.ReadFile("../../../migrations/001043_sensor_config_reports.up.sql")
+	up, err := os.ReadFile("../../../migrations/001050_sensor_config_reports.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	down, err := os.ReadFile("../../../migrations/001043_sensor_config_reports.down.sql")
+	down, err := os.ReadFile("../../../migrations/001050_sensor_config_reports.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,8 +106,8 @@ func TestSensorConfigReportsMigration_UpDownUp(t *testing.T) {
 		}
 	}
 	tenant, sensorID := shared.NewID(), shared.NewID()
-	must(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'mig1043', $2)`, tenant.String(), "mig1043-"+tenant.String())
-	must(`INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status) VALUES ($1, $2, 'mig1043', $3, 'p', 'active')`,
+	must(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'mig1050', $2)`, tenant.String(), "mig1050-"+tenant.String())
+	must(`INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status) VALUES ($1, $2, 'mig1050', $3, 'p', 'active')`,
 		sensorID.String(), tenant.String(), "h-"+sensorID.String())
 	digest := "sha256:" + strings.Repeat("a", 64)
 	must(`UPDATE sensors SET config_report_digest = $2, config_health = 'ok' WHERE id = $1`, sensorID.String(), digest)

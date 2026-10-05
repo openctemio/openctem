@@ -1220,6 +1220,24 @@ and narrows dispatch:
   `job_refused_local_policy` job event (identical rules fold within the event
   window) and, once per folded burst, the audit action
   `sensor.job_refused_local_policy` (severity high).
+- **Structured refusal and re-queue** (research/25 §3.6, D8; migration
+  001046). Hello feature `refusal`: v2 `POST /commands/{id}/fail` accepts
+  `refusal: {layer, rule, detail}` (layer from a closed set: `builtin`,
+  `local`, `managed`, `scope`, `platform_tool_gate`; sanitized like the
+  report). Without it a reason starting `refused by local policy: ` still
+  counts (older SDKs, protocol v1). For **routed work** (a scan command with a
+  `pipeline_run_id`, the work the platform chose a sensor for; the rule the
+  lease and release paths use) the command is re-queued instead of failed:
+  pending, unpinned, zone kept, one more dispatch attempt, the refusal
+  appended to `commands.refusals` and the sensor to `commands.refused_by`,
+  which the poll, claim, claim-by-id and doorbell predicates exclude. It is
+  re-queued only while another sensor that could claim it (same tenant,
+  dispatchable, same zone, the tool) has a report that `sensor.Accepts` the
+  job; otherwise, or at the third refusal (`command.MaxRefusals`), it fails
+  with the aggregated reasons, the last refusal first so its prefix stays
+  parseable. A re-queued command fires no pipeline failure. Commands a person
+  addressed to one sensor fail as before. A sensor that retries the same fail
+  after the re-queue gets a 409 (the command is no longer its own).
 - **Tenant switch.** Security settings
   `require_sensor_local_policy_for_private_targets` (default off, owner
   decision Q3 (a)). On, a sensor that does not enforce a policy (absent,
@@ -1330,7 +1348,7 @@ platform returned; a different digest gets the action `send_config_report`.
   sets, typed and re-validated params, depth ≤ 6, ≤ 200 checks, bounded
   plain text, unknown members dropped and listed in `ignored`. Settings keep
   name, set, source, secret and valid only; a value is never stored.
-- **Stored** (migration 001043): the latest report per sensor in
+- **Stored** (migration 001050): the latest report per sensor in
   `sensor_config_reports` (tenant-scoped), `sensors.config_report_digest` and
   `config_health` (the platform's rollup: ok, attention, impaired, blocked),
   and `sensors.config_heartbeat_digest`, written by every heartbeat. The two

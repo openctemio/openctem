@@ -80,7 +80,7 @@ func (h *SensorControlV2Handler) Features() []string {
 		out = append(out, protov2.FeatureLocalPolicy)
 	}
 	if h.commands != nil {
-		out = append(out, protov2.FeatureCapacity)
+		out = append(out, protov2.FeatureCapacity, protov2.FeatureRefusal)
 	}
 	if h.ingest != nil && h.ingest.sensorService.SupportsConfigReports() {
 		out = append(out, protov2.FeatureConfigReport)
@@ -576,6 +576,9 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		in.ErrorMessage = req.ErrorMessage
+		if req.Refusal != nil {
+			in.Refusal = &sensor.DispatchRefusal{Layer: req.Refusal.Layer, Rule: req.Refusal.Rule, Detail: req.Refusal.Detail}
+		}
 	default:
 		var ignored struct{}
 		if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &ignored) {
@@ -599,7 +602,10 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			h.commands.triggerSimulationFinalize(res.Command)
 			h.commands.triggerCoverageAutoResolve(res.Command)
 		case command.TransitionFail:
-			h.commands.triggerPipelineFailed(r.Context(), res.Command, in.ErrorMessage)
+			// A refused job re-queued to another sensor has not failed.
+			if res.Command.Status == commanddom.CommandStatusFailed {
+				h.commands.triggerPipelineFailed(r.Context(), res.Command, res.Command.ErrorMessage)
+			}
 		}
 	}
 	writeV2JSON(w, http.StatusOK, toV2Command(res.Command))
