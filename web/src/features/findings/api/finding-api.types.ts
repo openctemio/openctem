@@ -507,6 +507,8 @@ export interface FindingApiFilters {
   view?: string
   /** Scanner rule families (Nessus / Tenable.sc plugin family). Sent as `family`. */
   families?: string[]
+  /** The state lens: open | fixed | dispositioned | all (research 24, C2). Sent as `state`. */
+  state?: 'open' | 'fixed' | 'dispositioned' | 'all'
   /** Sort spec, e.g. 'priority_class,severity,-created_at'. */
   sort?: string
   page?: number
@@ -528,4 +530,6 @@ export interface FindingStatsResponse {
   kev_open?: number
   epss_high_open?: number
   sla_breached?: number
+  /** The state lens counts of the same filter: open, fixed, dispositioned, all. */
+  by_state?: Partial<Record<'open' | 'fixed' | 'dispositioned' | 'all', number>>
 }
