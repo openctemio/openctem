@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -13,7 +13,7 @@ import (
 // AITriageRecoveryJob periodically recovers stuck AI triage jobs.
 // Jobs are considered stuck if they've been in pending/processing state for too long.
 type AITriageRecoveryJob struct {
-	triageService *app.AITriageService
+	triageService *aitriage.AITriageService
 	config        *config.AITriageConfig
 	logger        *logger.Logger
 	stopCh        chan struct{}
@@ -23,7 +23,7 @@ type AITriageRecoveryJob struct {
 
 // NewAITriageRecoveryJob creates a new AITriageRecoveryJob.
 func NewAITriageRecoveryJob(
-	triageService *app.AITriageService,
+	triageService *aitriage.AITriageService,
 	cfg *config.AITriageConfig,
 	log *logger.Logger,
 ) *AITriageRecoveryJob {
@@ -101,7 +101,7 @@ func (j *AITriageRecoveryJob) recoverStuckJobs(stuckDuration time.Duration) {
 		batchSize = 50 // Default
 	}
 
-	output, err := j.triageService.RecoverStuckJobs(ctx, app.RecoverStuckJobsInput{
+	output, err := j.triageService.RecoverStuckJobs(ctx, aitriage.RecoverStuckJobsInput{
 		StuckDuration: stuckDuration,
 		Limit:         batchSize,
 	})

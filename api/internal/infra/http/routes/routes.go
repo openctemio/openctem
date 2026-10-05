@@ -50,21 +50,24 @@ type Handlers struct {
 	APIKeyAuth      *middleware.APIKeyAuthMiddleware
 	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
-	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
-	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
-	UserDashboard    *handler.UserDashboardHandler    // nil if not initialized - per-user customizable dashboards (RFC-021)
-	SavedView        *handler.SavedViewHandler        // nil if not initialized - saved list views (D15, RFC-048)
-	Audit            *handler.AuditHandler            // nil if not initialized (no database)
-	Branch           *handler.BranchHandler           // nil if not initialized (no database)
-	SLA              *handler.SLAHandler              // nil if not initialized (no database)
-	Integration      *handler.IntegrationHandler      // nil if not initialized (no database)
-	DefectDojo       *handler.DefectDojoHandler       // nil if not initialized / no DefectDojo sync
-	AssetGroup       *handler.AssetGroupHandler       // nil if not initialized (no database)
-	Scope            *handler.ScopeHandler            // nil if not initialized (no database)
-	AssetType        *handler.AssetTypeHandler        // nil if not initialized (no database)
-	AttackSurface    *handler.AttackSurfaceHandler    // nil if not initialized (no database)
-	EASM             *handler.EASMHandler             // RFC-036 overview; nil if not initialized
-	EASMSeed         *handler.EASMSeedHandler         // RFC-036 seeds; nil if not initialized
+	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
+	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
+	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
+	SavedView     *handler.SavedViewHandler     // nil if not initialized - saved list views (D15, RFC-048)
+	Audit         *handler.AuditHandler         // nil if not initialized (no database)
+	Branch        *handler.BranchHandler        // nil if not initialized (no database)
+	SLA           *handler.SLAHandler           // nil if not initialized (no database)
+	Integration   *handler.IntegrationHandler   // nil if not initialized (no database)
+	DefectDojo    *handler.DefectDojoHandler    // nil if not initialized / no DefectDojo sync
+	AssetGroup    *handler.AssetGroupHandler    // nil if not initialized (no database)
+	Scope         *handler.ScopeHandler         // nil if not initialized (no database)
+	AssetType     *handler.AssetTypeHandler     // nil if not initialized (no database)
+	AttackSurface *handler.AttackSurfaceHandler // nil if not initialized (no database)
+	EASM          *handler.EASMHandler          // RFC-036 overview; nil if not initialized
+	EASMSeed      *handler.EASMSeedHandler      // RFC-036 seeds; nil if not initialized
+	// EASMSettings is attack-surface monitoring settings and run-now
+	// (research/22 P0-11); nil if not initialized.
+	EASMSettings     *handler.EASMSettingsHandler
 	Docs             *handler.DocsHandler             // API documentation handler
 	Command          *handler.CommandHandler          // nil if not initialized (no database)
 	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
@@ -81,18 +84,22 @@ type Handlers struct {
 	// DataScope enforces the Layer 2 (group) data scope on every by-id asset
 	// and finding route of the token-tenant chain (DataScopeGuard). nil
 	// disables the guard (tests with a minimal handler set).
-	DataScope       middleware.DataScopeAsserter
-	Sensor          *handler.SensorHandler          // nil if not initialized (no database)
-	SensorContent   *handler.SensorContentHandler   // scanner content policy + refresh (RFC-031); nil without a database
-	SensorResults   *handler.SensorResultHandler    // unsolicited results policy + quarantine review (RFC-040); nil without a database
-	ScanZone        *handler.ScanZoneHandler        // nil if not initialized (no database)
-	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
-	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
-	Tool            *handler.ToolHandler            // nil if not initialized (no database)
-	ToolCategory    *handler.ToolCategoryHandler    // nil if not initialized (no database)
-	Capability      *handler.CapabilityHandler      // nil if not initialized (no database)
-	Scan            *handler.ScanHandler            // nil if not initialized (no database)
-	CI              *handler.CIHandler              // nil if not initialized (no database) - CI/CD snippet generator
+	DataScope     middleware.DataScopeAsserter
+	Sensor        *handler.SensorHandler        // nil if not initialized (no database)
+	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
+	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
+	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
+	Pipeline      *handler.PipelineHandler      // nil if not initialized (no database)
+	ScanProfile   *handler.ScanProfileHandler   // nil if not initialized (no database)
+	Tool          *handler.ToolHandler          // nil if not initialized (no database)
+	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
+	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
+	Scan          *handler.ScanHandler          // nil if not initialized (no database)
+	CI            *handler.CIHandler            // nil if not initialized (no database) - CI/CD snippet generator
+	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
+	// without a database.
+	CIAdmin         *handler.CIAdminHandler
+	CIRunner        *handler.CIRunnerHandler
 	ScanSession     *handler.ScanSessionHandler     // nil if not initialized (no database)
 	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
 	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
@@ -670,6 +677,9 @@ func Register(
 	if h.EASM != nil {
 		registerEASMRoutes(router, h.EASM, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
+	if h.EASMSettings != nil {
+		registerEASMSettingsRoutes(router, h.EASMSettings, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
 	if h.EASMSeed != nil {
 		registerEASMSeedRoutes(router, h.EASMSeed, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
@@ -702,6 +712,13 @@ func Register(
 	// Ingest/Sensor routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
 		registerSensorRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, h.Suppression, h.ModuleGate, telemetryRateLimiter, ingestRateLimiter, log)
+	}
+
+	// CI runs: OIDC exchange, run-token uploads and the gate, administration
+	// (RFC-051).
+	if h.CIAdmin != nil || h.CIRunner != nil {
+		registerCIRoutes(router, h.CIAdmin, h.CIRunner, authMiddleware, userSync,
+			h.ModuleGate.RequireModule(moduledom.ModuleScans), ingestRateLimiter, log)
 	}
 
 	// Sensor protocol v2 results (RFC-026): its own route group and

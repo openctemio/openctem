@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/exposure"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -41,7 +41,7 @@ func TestRemediationCampaignProgress_FollowsTheViewer_DB(t *testing.T) {
 		}
 		return m.IsOwner() || m.IsAdmin(), nil
 	})
-	svc := app.NewRemediationCampaignService(postgres.NewRemediationCampaignRepository(db), log)
+	svc := exposure.NewRemediationCampaignService(postgres.NewRemediationCampaignRepository(db), log)
 	svc.SetFindingCounter(postgres.NewFindingRepository(db))
 	svc.SetDataScope(enforcer)
 	router := infrahttp.NewChiRouter()

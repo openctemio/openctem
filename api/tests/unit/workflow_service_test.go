@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -448,7 +448,7 @@ func (m *MockNodeRunRepository) GetPendingByDependencies(ctx context.Context, wo
 // Test Helper Functions
 // =============================================================================
 
-func newTestWorkflowService() (*app.WorkflowService, *MockWorkflowRepository, *MockNodeRepository, *MockEdgeRepository, *MockRunRepository) {
+func newTestWorkflowService() (*workflowsvc.WorkflowService, *MockWorkflowRepository, *MockNodeRepository, *MockEdgeRepository, *MockRunRepository) {
 	workflowRepo := NewMockWorkflowRepository()
 	nodeRepo := NewMockNodeRepository()
 	edgeRepo := NewMockEdgeRepository()
@@ -456,7 +456,7 @@ func newTestWorkflowService() (*app.WorkflowService, *MockWorkflowRepository, *M
 	nodeRunRepo := NewMockNodeRunRepository()
 	log := logger.NewNop()
 
-	service := app.NewWorkflowService(
+	service := workflowsvc.NewWorkflowService(
 		workflowRepo,
 		nodeRepo,
 		edgeRepo,
@@ -483,13 +483,13 @@ func TestCreateWorkflow_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	input := app.CreateWorkflowInput{
+	input := workflowsvc.CreateWorkflowInput{
 		TenantID:    tenantID,
 		UserID:      userID,
 		Name:        "Test Workflow",
 		Description: "A test workflow",
 		Tags:        []string{"test", "automation"},
-		Nodes: []app.CreateNodeInput{
+		Nodes: []workflowsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
 				NodeType: workflow.NodeTypeTrigger,
@@ -504,7 +504,7 @@ func TestCreateWorkflow_Success(t *testing.T) {
 				Name:     "Send Notification",
 			},
 		},
-		Edges: []app.CreateEdgeInput{
+		Edges: []workflowsvc.CreateEdgeInput{
 			{
 				SourceNodeKey: "trigger_1",
 				TargetNodeKey: "action_1",
@@ -552,10 +552,10 @@ func TestCreateWorkflow_EmptyName(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	input := app.CreateWorkflowInput{
+	input := workflowsvc.CreateWorkflowInput{
 		TenantID: tenantID,
 		Name:     "",
-		Nodes: []app.CreateNodeInput{
+		Nodes: []workflowsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
 				NodeType: workflow.NodeTypeTrigger,
@@ -599,12 +599,12 @@ func TestUpdateWorkflowGraph_Success(t *testing.T) {
 
 	// Update with new graph
 	newName := "Updated Workflow"
-	input := app.UpdateWorkflowGraphInput{
+	input := workflowsvc.UpdateWorkflowGraphInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: initialWf.ID,
 		Name:       &newName,
-		Nodes: []app.CreateNodeInput{
+		Nodes: []workflowsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_new",
 				NodeType: workflow.NodeTypeTrigger,
@@ -624,7 +624,7 @@ func TestUpdateWorkflowGraph_Success(t *testing.T) {
 				Name:     "New Action",
 			},
 		},
-		Edges: []app.CreateEdgeInput{
+		Edges: []workflowsvc.CreateEdgeInput{
 			{
 				SourceNodeKey: "trigger_new",
 				TargetNodeKey: "condition_1",
@@ -677,11 +677,11 @@ func TestUpdateWorkflowGraph_WithActiveRuns(t *testing.T) {
 	// Set active runs
 	runRepo.SetActiveCount(2)
 
-	input := app.UpdateWorkflowGraphInput{
+	input := workflowsvc.UpdateWorkflowGraphInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: wf.ID,
-		Nodes: []app.CreateNodeInput{
+		Nodes: []workflowsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
 				NodeType: workflow.NodeTypeTrigger,
@@ -713,11 +713,11 @@ func TestUpdateWorkflowGraph_WorkflowNotFound(t *testing.T) {
 	userID := shared.NewID()
 	nonExistentID := shared.NewID()
 
-	input := app.UpdateWorkflowGraphInput{
+	input := workflowsvc.UpdateWorkflowGraphInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: nonExistentID,
-		Nodes: []app.CreateNodeInput{
+		Nodes: []workflowsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
 				NodeType: workflow.NodeTypeTrigger,
@@ -751,12 +751,12 @@ func TestUpdateWorkflowGraph_PreservesMetadataWhenNotProvided(t *testing.T) {
 	runRepo.SetActiveCount(0)
 
 	// Update only graph, not metadata
-	input := app.UpdateWorkflowGraphInput{
+	input := workflowsvc.UpdateWorkflowGraphInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: wf.ID,
 		// Name, Description, Tags not provided
-		Nodes: []app.CreateNodeInput{
+		Nodes: []workflowsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
 				NodeType: workflow.NodeTypeTrigger,
@@ -862,7 +862,7 @@ func TestUpdateWorkflow_Success(t *testing.T) {
 
 	newName := "Updated Name"
 	newDesc := "Updated Description"
-	input := app.UpdateWorkflowInput{
+	input := workflowsvc.UpdateWorkflowInput{
 		TenantID:    tenantID,
 		UserID:      userID,
 		WorkflowID:  wf.ID,
@@ -901,7 +901,7 @@ func TestUpdateWorkflow_ActivateDeactivate(t *testing.T) {
 
 	// Deactivate
 	inactive := false
-	input := app.UpdateWorkflowInput{
+	input := workflowsvc.UpdateWorkflowInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: wf.ID,
@@ -941,10 +941,10 @@ func TestCreateWorkflow_ValidationError_InvalidNodeType(t *testing.T) {
 	tenantID := shared.NewID()
 
 	// Workflow with a trigger node but graph validation fails (no trigger node key)
-	input := app.CreateWorkflowInput{
+	input := workflowsvc.CreateWorkflowInput{
 		TenantID: tenantID,
 		Name:     "Bad Graph Workflow",
-		Nodes: []app.CreateNodeInput{
+		Nodes: []workflowsvc.CreateNodeInput{
 			{
 				NodeKey:  "action_1",
 				NodeType: workflow.NodeTypeAction,
@@ -965,10 +965,10 @@ func TestCreateWorkflow_DuplicateNodeKeys(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	input := app.CreateWorkflowInput{
+	input := workflowsvc.CreateWorkflowInput{
 		TenantID: tenantID,
 		Name:     "Duplicate Keys",
-		Nodes: []app.CreateNodeInput{
+		Nodes: []workflowsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
 				NodeType: workflow.NodeTypeTrigger,
@@ -996,10 +996,10 @@ func TestCreateWorkflow_RepoError(t *testing.T) {
 
 	workflowRepo.createErr = errors.New("database connection refused")
 
-	input := app.CreateWorkflowInput{
+	input := workflowsvc.CreateWorkflowInput{
 		TenantID: tenantID,
 		Name:     "Fail Workflow",
-		Nodes: []app.CreateNodeInput{
+		Nodes: []workflowsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
 				NodeType: workflow.NodeTypeTrigger,
@@ -1085,7 +1085,7 @@ func TestUpdateWorkflow_NotFound(t *testing.T) {
 	userID := shared.NewID()
 
 	newName := "Updated"
-	input := app.UpdateWorkflowInput{
+	input := workflowsvc.UpdateWorkflowInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: shared.NewID(), // does not exist
@@ -1140,7 +1140,7 @@ func TestListWorkflows_WithFilters(t *testing.T) {
 	workflowRepo.Create(ctx, wf3)
 
 	// List for tenantID only
-	result, err := service.ListWorkflows(ctx, app.ListWorkflowsInput{
+	result, err := service.ListWorkflows(ctx, workflowsvc.ListWorkflowsInput{
 		TenantID: tenantID,
 		Page:     1,
 		PerPage:  10,
@@ -1165,7 +1165,7 @@ func TestListWorkflows_Pagination(t *testing.T) {
 	}
 
 	// Page defaults
-	result, err := service.ListWorkflows(ctx, app.ListWorkflowsInput{
+	result, err := service.ListWorkflows(ctx, workflowsvc.ListWorkflowsInput{
 		TenantID: tenantID,
 	})
 	if err != nil {
@@ -1187,7 +1187,7 @@ func TestListWorkflows_EmptyResult(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	result, err := service.ListWorkflows(ctx, app.ListWorkflowsInput{
+	result, err := service.ListWorkflows(ctx, workflowsvc.ListWorkflowsInput{
 		TenantID: tenantID,
 		Page:     1,
 		PerPage:  10,
@@ -1223,7 +1223,7 @@ func TestTriggerWorkflow_Success(t *testing.T) {
 	wf.Nodes = append(wf.Nodes, triggerNode)
 	workflowRepo.Update(ctx, wf)
 
-	input := app.TriggerWorkflowInput{
+	input := workflowsvc.TriggerWorkflowInput{
 		TenantID:    tenantID,
 		UserID:      userID,
 		WorkflowID:  wf.ID,
@@ -1258,7 +1258,7 @@ func TestTriggerWorkflow_InactiveWorkflow(t *testing.T) {
 	wf.Deactivate()
 	workflowRepo.Create(ctx, wf)
 
-	input := app.TriggerWorkflowInput{
+	input := workflowsvc.TriggerWorkflowInput{
 		TenantID:    tenantID,
 		UserID:      userID,
 		WorkflowID:  wf.ID,
@@ -1285,7 +1285,7 @@ func TestTriggerWorkflow_WorkflowNotFound(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	input := app.TriggerWorkflowInput{
+	input := workflowsvc.TriggerWorkflowInput{
 		TenantID:    tenantID,
 		UserID:      userID,
 		WorkflowID:  shared.NewID(), // does not exist
@@ -1312,7 +1312,7 @@ func TestTriggerWorkflow_WrongTenant(t *testing.T) {
 	wf.Activate()
 	workflowRepo.Create(ctx, wf)
 
-	input := app.TriggerWorkflowInput{
+	input := workflowsvc.TriggerWorkflowInput{
 		TenantID:    otherTenantID, // wrong tenant
 		UserID:      userID,
 		WorkflowID:  wf.ID,

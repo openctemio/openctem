@@ -104,8 +104,20 @@ what makes chained outputs trustworthy.
 - **Warn mode** (existing tenants, as set by #889): the report is applied
   whole; the tenant audit log records what was out of contract.
 - An unclassified type is out of every contract. A tool the catalog does not
-  know (a tenant's custom tool) has no contract and is not checked;
-  unsolicited reports keep their own gate.
+  know (a tenant's custom tool) has no catalog contract; unsolicited reports
+  keep their own gate.
+- **Declared produces.** A tool ported to the tool contract (sdk-go
+  `docs/rfcs/sensor-sdk-v2.md`) declares what it produces (`asset:<type>`,
+  `finding:<type>`, `dependency`) in its sensor's current manifest
+  (`tools[].contract`, see [sensors.md](sensors.md#tool-contracts)). That
+  declaration narrows the binding further: an asset, a finding or a
+  dependency of an undeclared type is out of contract too, also for a tool
+  the catalog does not know, and also in a report without assets. It never
+  widens: when the catalog knows the tool, an asset must pass both. The
+  declaration is read from the manifest of the sensor that submitted the
+  report, under that sensor's tenant, so another tenant's sensor never
+  contributes one. A sensor without contracts, or a manifest that cannot be
+  read, leaves the catalog contract as the only rule.
 - Every case writes a `sensor.results_quarantined` audit entry (reason,
   tool, counts, type labels) and a metric.
 

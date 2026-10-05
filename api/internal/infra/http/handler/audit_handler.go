@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -19,13 +19,13 @@ import (
 
 // AuditHandler handles audit log-related HTTP requests.
 type AuditHandler struct {
-	service   *app.AuditService
+	service   *auditsvc.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewAuditHandler creates a new audit handler.
-func NewAuditHandler(svc *app.AuditService, v *validator.Validator, log *logger.Logger) *AuditHandler {
+func NewAuditHandler(svc *auditsvc.AuditService, v *validator.Validator, log *logger.Logger) *AuditHandler {
 	return &AuditHandler{
 		service:   svc,
 		validator: v,
@@ -93,7 +93,7 @@ func (h *AuditHandler) RebaselineChain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actx := app.AuditContext{
+	actx := auditsvc.AuditContext{
 		TenantID:   tenantIDStr,
 		ActorID:    middleware.GetUserID(r.Context()),
 		ActorEmail: auditActorEmail(r.Context()),
@@ -254,7 +254,7 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	query := r.URL.Query()
 
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		TenantID: tenantID,
 	}
 
@@ -573,7 +573,7 @@ func (h *AuditHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get recent logs for stats
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		TenantID: tenantID,
 		Page:     0,
 		PerPage:  100,

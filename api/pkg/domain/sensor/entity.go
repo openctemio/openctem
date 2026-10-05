@@ -172,6 +172,11 @@ type Sensor struct {
 	// a person or a policy (responses, health, dispatch) must use KeyState.
 	APIKeyHash      string
 	InlineKeyPrefix string
+	// AuthKind is how the sensor authenticates: a bearer key (the fields
+	// above) or its own Ed25519 key with signed requests (RFC-052, key-bound;
+	// sensor_keys). A key-bound sensor has no bearer key: APIKeyHash holds
+	// an unmatchable placeholder (KeyBoundHashPlaceholder).
+	AuthKind AuthKind
 	// InlineKeyExpiresAt is when the inline key stops authenticating.
 	// nil = never expires (the default for created/admin-regenerated keys and
 	// every row predating RFC-014 Phase 1b).
@@ -545,7 +550,7 @@ func (a *Sensor) UpdateExtendedMetrics(metrics ExtendedMetrics) {
 
 // UpdateExtendedMetricsWithWeights is UpdateExtendedMetrics with an explicit
 // weight set, so the persisted LoadScore reflects the deployment's
-// AGENT_LB_* configuration rather than the compiled-in defaults.
+// SENSOR_LB_* configuration rather than the compiled-in defaults.
 func (a *Sensor) UpdateExtendedMetricsWithWeights(metrics ExtendedMetrics, weights LoadBalancingWeights) {
 	a.CPUPercent = metrics.CPUPercent
 	a.MemoryPercent = metrics.MemoryPercent
@@ -580,7 +585,7 @@ const (
 )
 
 // LoadBalancingWeights defines the weights for load score computation.
-// These weights are operator-configurable via the AGENT_LB_* environment
+// These weights are operator-configurable via the SENSOR_LB_* environment
 // variables; config.LoadBalancingConfig.Weights() converts them.
 type LoadBalancingWeights struct {
 	JobLoad float64 // Weight for job load factor (default: 0.30)

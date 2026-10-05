@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	exposuresvc "github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -275,16 +275,16 @@ func (m *mockStateHistoryRepo) GetLatest(_ context.Context, exposureEventID shar
 // Test Helper
 // =============================================================================
 
-func newExposureTestService() (*app.ExposureService, *mockExposureRepo, *mockStateHistoryRepo) {
+func newExposureTestService() (*exposuresvc.ExposureService, *mockExposureRepo, *mockStateHistoryRepo) {
 	repo := newMockExposureRepo()
 	historyRepo := newMockStateHistoryRepo()
 	log := logger.NewNop()
-	svc := app.NewExposureService(repo, historyRepo, log)
+	svc := exposuresvc.NewExposureService(repo, historyRepo, log)
 	return svc, repo, historyRepo
 }
 
-func validCreateExposureInput(tenantID string) app.CreateExposureInput {
-	return app.CreateExposureInput{
+func validCreateExposureInput(tenantID string) exposuresvc.CreateExposureInput {
+	return exposuresvc.CreateExposureInput{
 		TenantID:    tenantID,
 		EventType:   "port_open",
 		Severity:    "high",
@@ -296,7 +296,7 @@ func validCreateExposureInput(tenantID string) app.CreateExposureInput {
 }
 
 // createTestExposureEvent creates an exposure event via the service and returns it.
-func createTestExposureEvent(t *testing.T, svc *app.ExposureService, tenantID string) *exposure.ExposureEvent {
+func createTestExposureEvent(t *testing.T, svc *exposuresvc.ExposureService, tenantID string) *exposure.ExposureEvent {
 	t.Helper()
 	input := validCreateExposureInput(tenantID)
 	event, err := svc.CreateExposure(context.Background(), input)
@@ -314,7 +314,7 @@ func TestExposureService_CreateExposure_Success(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
 	tenantID := shared.NewID()
 
-	input := app.CreateExposureInput{
+	input := exposuresvc.CreateExposureInput{
 		TenantID:    tenantID.String(),
 		EventType:   "port_open",
 		Severity:    "critical",
@@ -604,7 +604,7 @@ func TestExposureService_ListExposures_Success(t *testing.T) {
 		}
 	}
 
-	result, err := svc.ListExposures(context.Background(), app.ListExposuresInput{
+	result, err := svc.ListExposures(context.Background(), exposuresvc.ListExposuresInput{
 		TenantID: tenantID.String(),
 		Page:     1,
 		PerPage:  20,
@@ -631,7 +631,7 @@ func TestExposureService_ListExposures_WithFilters(t *testing.T) {
 		t.Fatalf("failed to create exposure: %v", err)
 	}
 
-	listInput := app.ListExposuresInput{
+	listInput := exposuresvc.ListExposuresInput{
 		TenantID:   tenantID.String(),
 		EventTypes: []string{"port_open"},
 		Severities: []string{"high"},
@@ -658,7 +658,7 @@ func TestExposureService_ListExposures_WithTimeFilters(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
 	tenantID := shared.NewID()
 
-	listInput := app.ListExposuresInput{
+	listInput := exposuresvc.ListExposuresInput{
 		TenantID:        tenantID.String(),
 		FirstSeenAfter:  1000,
 		FirstSeenBefore: 2000,
@@ -682,7 +682,7 @@ func TestExposureService_ListExposures_EmptyResult(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 	tenantID := shared.NewID()
 
-	result, err := svc.ListExposures(context.Background(), app.ListExposuresInput{
+	result, err := svc.ListExposures(context.Background(), exposuresvc.ListExposuresInput{
 		TenantID: tenantID.String(),
 		Page:     1,
 		PerPage:  20,
@@ -704,7 +704,7 @@ func TestExposureService_ListExposures_InvalidFilterValues(t *testing.T) {
 	// dropping every value in a dimension left it unapplied and returned ALL
 	// exposures (fail-open). Each invalid dimension should yield a validation
 	// error rather than "here's everything".
-	cases := []app.ListExposuresInput{
+	cases := []exposuresvc.ListExposuresInput{
 		{TenantID: tenantID.String(), EventTypes: []string{"invalid_type"}, Page: 1, PerPage: 20},
 		{TenantID: tenantID.String(), Severities: []string{"ultra_high"}, Page: 1, PerPage: 20},
 		{TenantID: tenantID.String(), States: []string{"nonexistent_state"}, Page: 1, PerPage: 20},
@@ -723,7 +723,7 @@ func TestExposureService_ListExposures_InvalidFilterValues(t *testing.T) {
 func TestExposureService_ListExposures_BlankTenantRejected(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
 
-	_, err := svc.ListExposures(context.Background(), app.ListExposuresInput{
+	_, err := svc.ListExposures(context.Background(), exposuresvc.ListExposuresInput{
 		TenantID: "",
 		Page:     1,
 		PerPage:  20,
@@ -744,7 +744,7 @@ func TestExposureService_ListExposures_RepoError(t *testing.T) {
 
 	repo.listErr = fmt.Errorf("database error")
 
-	_, err := svc.ListExposures(context.Background(), app.ListExposuresInput{
+	_, err := svc.ListExposures(context.Background(), exposuresvc.ListExposuresInput{
 		TenantID: shared.NewID().String(),
 		Page:     1,
 		PerPage:  20,
@@ -759,7 +759,7 @@ func TestExposureService_ListExposures_WithAssetID(t *testing.T) {
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
 
-	listInput := app.ListExposuresInput{
+	listInput := exposuresvc.ListExposuresInput{
 		TenantID: tenantID.String(),
 		AssetID:  assetID.String(),
 		Page:     1,
@@ -902,7 +902,7 @@ func TestExposureService_BulkIngestExposures_Success(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
 	tenantID := shared.NewID()
 
-	inputs := make([]app.CreateExposureInput, 5)
+	inputs := make([]exposuresvc.CreateExposureInput, 5)
 	for i := 0; i < 5; i++ {
 		inputs[i] = validCreateExposureInput(tenantID.String())
 		inputs[i].Title = fmt.Sprintf("Exposure %d", i)
@@ -924,7 +924,7 @@ func TestExposureService_BulkIngestExposures_Success(t *testing.T) {
 func TestExposureService_BulkIngestExposures_EmptyInput(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
 
-	events, err := svc.BulkIngestExposures(context.Background(), []app.CreateExposureInput{})
+	events, err := svc.BulkIngestExposures(context.Background(), []exposuresvc.CreateExposureInput{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -941,7 +941,7 @@ func TestExposureService_BulkIngestExposures_MixedValidation(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
 	tenantID := shared.NewID()
 
-	inputs := []app.CreateExposureInput{
+	inputs := []exposuresvc.CreateExposureInput{
 		validCreateExposureInput(tenantID.String()),
 		{TenantID: "not-a-uuid", EventType: "port_open", Severity: "high", Title: "Bad Tenant", Source: "test"},
 		validCreateExposureInput(tenantID.String()),
@@ -968,7 +968,7 @@ func TestExposureService_BulkIngestExposures_MixedValidation(t *testing.T) {
 func TestExposureService_BulkIngestExposures_AllInvalid(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
 
-	inputs := []app.CreateExposureInput{
+	inputs := []exposuresvc.CreateExposureInput{
 		{TenantID: "not-a-uuid", EventType: "port_open", Severity: "high", Title: "Bad 1", Source: "test"},
 		{TenantID: "not-a-uuid", EventType: "port_open", Severity: "high", Title: "Bad 2", Source: "test"},
 	}
@@ -993,7 +993,7 @@ func TestExposureService_BulkIngestExposures_RepoError(t *testing.T) {
 
 	repo.bulkUpsertErr = fmt.Errorf("bulk insert failed")
 
-	inputs := []app.CreateExposureInput{
+	inputs := []exposuresvc.CreateExposureInput{
 		validCreateExposureInput(tenantID.String()),
 	}
 
@@ -1007,7 +1007,7 @@ func TestExposureService_BulkIngestExposuresReport_ReportsFailures(t *testing.T)
 	svc, repo, _ := newExposureTestService()
 	tenantID := shared.NewID()
 
-	inputs := []app.CreateExposureInput{
+	inputs := []exposuresvc.CreateExposureInput{
 		validCreateExposureInput(tenantID.String()),                                                             // index 0 — valid
 		{TenantID: tenantID.String(), EventType: "bogus", Severity: "high", Title: "Bad Type", Source: "test"},  // index 1 — invalid event type
 		{TenantID: tenantID.String(), EventType: "port_open", Severity: "bogus", Title: "Bad Sev", Source: "t"}, // index 2 — invalid severity
@@ -1042,7 +1042,7 @@ func TestExposureService_BulkIngestExposuresReport_ReportsFailures(t *testing.T)
 func TestExposureService_BulkIngestExposuresReport_EmptyHasNoFailures(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 
-	res, err := svc.BulkIngestExposuresReport(context.Background(), []app.CreateExposureInput{})
+	res, err := svc.BulkIngestExposuresReport(context.Background(), []exposuresvc.CreateExposureInput{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1059,7 +1059,7 @@ func TestExposureService_BulkIngestExposures_WithInvalidAssetID(t *testing.T) {
 	invalidAssetInput := validCreateExposureInput(tenantID.String())
 	invalidAssetInput.AssetID = "not-a-uuid"
 
-	inputs := []app.CreateExposureInput{validInput, invalidAssetInput}
+	inputs := []exposuresvc.CreateExposureInput{validInput, invalidAssetInput}
 
 	events, err := svc.BulkIngestExposures(context.Background(), inputs)
 	if err != nil {
@@ -1088,10 +1088,10 @@ func TestExposureService_AssetRefRefused(t *testing.T) {
 			svc.SetDataScope(tenantAssetEnforcer(owners))
 			in := validCreateExposureInput(tenantA.String())
 			in.AssetID = assetID.String()
-			if _, err := svc.CreateExposure(context.Background(), in); !errors.Is(err, app.ErrExposureAssetNotFound) {
+			if _, err := svc.CreateExposure(context.Background(), in); !errors.Is(err, exposuresvc.ErrExposureAssetNotFound) {
 				t.Fatalf("err = %v, want ErrExposureAssetNotFound", err)
 			}
-			if _, err := svc.IngestExposure(context.Background(), in); !errors.Is(err, app.ErrExposureAssetNotFound) {
+			if _, err := svc.IngestExposure(context.Background(), in); !errors.Is(err, exposuresvc.ErrExposureAssetNotFound) {
 				t.Fatalf("ingest err = %v, want ErrExposureAssetNotFound", err)
 			}
 			if repo.createCalls != 0 || repo.upsertCalls != 0 {
@@ -1104,7 +1104,7 @@ func TestExposureService_AssetRefRefused(t *testing.T) {
 		svc, repo, _ := newExposureTestService()
 		in := validCreateExposureInput(tenantA.String())
 		in.AssetID = own.String()
-		if _, err := svc.CreateExposure(context.Background(), in); !errors.Is(err, app.ErrExposureAssetNotFound) {
+		if _, err := svc.CreateExposure(context.Background(), in); !errors.Is(err, exposuresvc.ErrExposureAssetNotFound) {
 			t.Fatalf("err = %v, want ErrExposureAssetNotFound", err)
 		}
 		if repo.createCalls != 0 {
@@ -1115,7 +1115,7 @@ func TestExposureService_AssetRefRefused(t *testing.T) {
 	t.Run("bulk", func(t *testing.T) {
 		svc, _, _ := newExposureTestService()
 		svc.SetDataScope(tenantAssetEnforcer(owners))
-		mk := func(asset shared.ID, title string) app.CreateExposureInput {
+		mk := func(asset shared.ID, title string) exposuresvc.CreateExposureInput {
 			in := validCreateExposureInput(tenantA.String())
 			in.Title = title
 			if !asset.IsZero() {
@@ -1123,7 +1123,7 @@ func TestExposureService_AssetRefRefused(t *testing.T) {
 			}
 			return in
 		}
-		res, err := svc.BulkIngestExposuresReport(context.Background(), []app.CreateExposureInput{
+		res, err := svc.BulkIngestExposuresReport(context.Background(), []exposuresvc.CreateExposureInput{
 			mk(own, "own"), mk(foreign, "foreign"), mk(shared.NewID(), "unknown"), mk(shared.ID{}, "asset-less"),
 		})
 		if err != nil {
@@ -1507,15 +1507,15 @@ func TestExposureService_ReactivateExposure_WithEmptyUserID(t *testing.T) {
 func TestExposureService_StateTransitions(t *testing.T) {
 	tests := []struct {
 		name       string
-		setup      func(svc *app.ExposureService, tenantID, eventID, userID string) error
-		transition func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error)
+		setup      func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) error
+		transition func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error)
 		wantState  exposure.State
 		wantErr    bool
 	}{
 		{
 			name:  "active to resolved",
 			setup: nil,
-			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+			transition: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
 				return svc.ResolveExposure(context.Background(), tenantID, eventID, userID, "resolved")
 			},
 			wantState: exposure.StateResolved,
@@ -1524,7 +1524,7 @@ func TestExposureService_StateTransitions(t *testing.T) {
 		{
 			name:  "active to accepted",
 			setup: nil,
-			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+			transition: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
 				return svc.AcceptExposure(context.Background(), tenantID, eventID, userID, "accepted risk")
 			},
 			wantState: exposure.StateAccepted,
@@ -1533,7 +1533,7 @@ func TestExposureService_StateTransitions(t *testing.T) {
 		{
 			name:  "active to false_positive",
 			setup: nil,
-			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+			transition: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
 				return svc.MarkFalsePositive(context.Background(), tenantID, eventID, userID, "false positive")
 			},
 			wantState: exposure.StateFalsePositive,
@@ -1541,11 +1541,11 @@ func TestExposureService_StateTransitions(t *testing.T) {
 		},
 		{
 			name: "resolved to active (reactivate)",
-			setup: func(svc *app.ExposureService, tenantID, eventID, userID string) error {
+			setup: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) error {
 				_, err := svc.ResolveExposure(context.Background(), tenantID, eventID, userID, "")
 				return err
 			},
-			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+			transition: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
 				return svc.ReactivateExposure(context.Background(), tenantID, eventID, userID)
 			},
 			wantState: exposure.StateActive,
@@ -1553,11 +1553,11 @@ func TestExposureService_StateTransitions(t *testing.T) {
 		},
 		{
 			name: "accepted to active (reactivate)",
-			setup: func(svc *app.ExposureService, tenantID, eventID, userID string) error {
+			setup: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) error {
 				_, err := svc.AcceptExposure(context.Background(), tenantID, eventID, userID, "")
 				return err
 			},
-			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+			transition: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
 				return svc.ReactivateExposure(context.Background(), tenantID, eventID, userID)
 			},
 			wantState: exposure.StateActive,
@@ -1565,11 +1565,11 @@ func TestExposureService_StateTransitions(t *testing.T) {
 		},
 		{
 			name: "accepted to resolved",
-			setup: func(svc *app.ExposureService, tenantID, eventID, userID string) error {
+			setup: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) error {
 				_, err := svc.AcceptExposure(context.Background(), tenantID, eventID, userID, "")
 				return err
 			},
-			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+			transition: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
 				return svc.ResolveExposure(context.Background(), tenantID, eventID, userID, "now resolved")
 			},
 			wantState: exposure.StateResolved,
@@ -1577,11 +1577,11 @@ func TestExposureService_StateTransitions(t *testing.T) {
 		},
 		{
 			name: "false_positive to active (reactivate)",
-			setup: func(svc *app.ExposureService, tenantID, eventID, userID string) error {
+			setup: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) error {
 				_, err := svc.MarkFalsePositive(context.Background(), tenantID, eventID, userID, "")
 				return err
 			},
-			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+			transition: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
 				return svc.ReactivateExposure(context.Background(), tenantID, eventID, userID)
 			},
 			wantState: exposure.StateActive,
@@ -1589,11 +1589,11 @@ func TestExposureService_StateTransitions(t *testing.T) {
 		},
 		{
 			name: "resolved cannot resolve again",
-			setup: func(svc *app.ExposureService, tenantID, eventID, userID string) error {
+			setup: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) error {
 				_, err := svc.ResolveExposure(context.Background(), tenantID, eventID, userID, "")
 				return err
 			},
-			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+			transition: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
 				return svc.ResolveExposure(context.Background(), tenantID, eventID, userID, "again")
 			},
 			wantErr: true,
@@ -1601,7 +1601,7 @@ func TestExposureService_StateTransitions(t *testing.T) {
 		{
 			name:  "active cannot reactivate",
 			setup: nil,
-			transition: func(svc *app.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
+			transition: func(svc *exposuresvc.ExposureService, tenantID, eventID, userID string) (*exposure.ExposureEvent, error) {
 				return svc.ReactivateExposure(context.Background(), tenantID, eventID, userID)
 			},
 			wantErr: true,
@@ -2006,7 +2006,7 @@ func TestExposureService_CrossTenantIsolation_List(t *testing.T) {
 	}
 
 	// List for tenant A
-	resultA, err := svc.ListExposures(context.Background(), app.ListExposuresInput{
+	resultA, err := svc.ListExposures(context.Background(), exposuresvc.ListExposuresInput{
 		TenantID: tenantA.String(),
 		Page:     1,
 		PerPage:  20,
@@ -2019,7 +2019,7 @@ func TestExposureService_CrossTenantIsolation_List(t *testing.T) {
 	}
 
 	// List for tenant B
-	resultB, err := svc.ListExposures(context.Background(), app.ListExposuresInput{
+	resultB, err := svc.ListExposures(context.Background(), exposuresvc.ListExposuresInput{
 		TenantID: tenantB.String(),
 		Page:     1,
 		PerPage:  20,
