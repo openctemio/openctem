@@ -14,7 +14,6 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -84,7 +83,7 @@ func TestSimulationTargets_ActScope_DB(t *testing.T) {
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, logger.NewNop())
-	svc := app.NewSimulationService(postgres.NewSimulationRepository(db), postgres.NewControlTestRepository(db), logger.NewNop())
+	svc := compliance.NewSimulationService(postgres.NewSimulationRepository(db), postgres.NewControlTestRepository(db), logger.NewNop())
 	svc.SetActScope(actscope.New(enforcer, postgres.NewAssetRepository(db), noScopeTargets{}), enforcer)
 
 	as := func(user string, isAdmin bool) context.Context {
@@ -92,7 +91,7 @@ func TestSimulationTargets_ActScope_DB(t *testing.T) {
 		return context.WithValue(c, middleware.IsAdminKey, isAdmin)
 	}
 	create := func(user string, isAdmin bool, target string) (string, error) {
-		sim, err := svc.CreateSimulation(as(user, isAdmin), app.CreateSimulationInput{
+		sim, err := svc.CreateSimulation(as(user, isAdmin), compliance.CreateSimulationInput{
 			TenantID: tenantA, Name: "sim " + shared.NewID().String(), SimulationType: "atomic",
 			MitreTechniqueID: "T1046", TargetAssets: []string{target}, ActorID: user,
 		})
@@ -119,7 +118,7 @@ func TestSimulationTargets_ActScope_DB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restricted member, in-scope asset: %v", err)
 	}
-	if _, err := svc.UpdateSimulation(as(scoped, false), app.UpdateSimulationInput{
+	if _, err := svc.UpdateSimulation(as(scoped, false), compliance.UpdateSimulationInput{
 		TenantID: tenantA, SimulationID: simID, Name: "moved", TargetAssets: []string{outScope}, ActorID: scoped,
 	}); !errors.Is(err, compliance.ErrSimulationTargetNotFound) {
 		t.Errorf("update to an out-of-scope target: err = %v, want refused", err)

@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -86,7 +86,7 @@ func TestAuditHandler_PagesAreOneBased(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(c.name+tc.query, func(t *testing.T) {
 				repo := &pagingAuditRepo{}
-				h := NewAuditHandler(app.NewAuditService(repo, logger.NewNop()), nil, logger.NewNop())
+				h := NewAuditHandler(audit.NewAuditService(repo, logger.NewNop()), nil, logger.NewNop())
 				req := httptest.NewRequest(http.MethodGet, c.target+tc.query, nil)
 				ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
 				ctx = context.WithValue(ctx, middleware.UserIDKey, userID)

@@ -12120,7 +12120,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app.ProgramMetrics']
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_module.ProgramMetrics']
           }
         }
         /** @description Bad Request */
@@ -35737,53 +35737,6 @@ export interface components {
       /** @description Supported is false for federated accounts (2FA is the IdP's job). */
       supported?: boolean
     }
-    'github_com_openctemio_openctem_api_internal_app.ProgramMetrics': {
-      /**
-       * @description MTTDInternetFacing — mean time to detect new internet-facing assets.
-       *
-       *     Population: non-archived assets whose first_seen falls in the window and
-       *     that are internet-facing now (exposure = 'public' OR
-       *     is_internet_accessible).
-       *
-       *     Clock start: assets.first_seen (the asset entered the inventory).
-       *     Clock stop: the EARLIEST of these per-asset signals that it was known to
-       *     be internet-facing or exposed —
-       *       - assets.exposure_changed_at, when the current exposure is 'public'
-       *         (stamped when the exposure level was classified);
-       *       - asset_state_history rows of change_type exposure_changed /
-       *         internet_exposure_changed whose new_value is 'public' / 'true';
-       *       - the asset's first exposure event (exposure_events.first_seen_at);
-       *       - the asset's first finding (findings.first_detected_at).
-       *     A stop before first_seen counts as 0 h (known at discovery). Assets with
-       *     no stop signal at all are not averaged; they are counted in Unmeasured.
-       *
-       *     Caveat: exposure_changed_at holds the LAST exposure change, so an asset
-       *     that flapped public → private → public is measured to the later flip
-       *     unless an earlier history row / exposure / finding exists.
-       */
-      mttd_internet_facing?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.DurationMetric']
-      /**
-       * @description MTTRValidated — mean time to remediate VALIDATED exposures only.
-       *
-       *     Population: findings with at least one validation_evidence row of
-       *     outcome 'detected' (the validation re-check reproduced the exposure —
-       *     "still exploitable", RFC-011.2 VerdictReproducible), now in status
-       *     resolved / verified, with resolved_at in the window.
-       *
-       *     Clock start: the first 'detected' validation_evidence.created_at.
-       *     Clock stop: findings.resolved_at. Findings resolved before they were
-       *     validated are excluded (the fix did not follow the validation).
-       *     false_positive / accepted / validated_fixed are not remediation and are
-       *     excluded.
-       */
-      mttr_validated?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.DurationMetric']
-      /**
-       * @description OwnerAcceptance — share of assignments the assignee acted on within the
-       *     SLA window. See OwnerAcceptanceMetric.
-       */
-      owner_acceptance?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.OwnerAcceptanceMetric']
-      period_days?: number
-    }
     'github_com_openctemio_openctem_api_internal_app.ProviderInfo': {
       enabled?: boolean
       id?: string
@@ -36056,6 +36009,53 @@ export interface components {
       missed?: number
       pending?: number
       rate_pct?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_module.ProgramMetrics': {
+      /**
+       * @description MTTDInternetFacing — mean time to detect new internet-facing assets.
+       *
+       *     Population: non-archived assets whose first_seen falls in the window and
+       *     that are internet-facing now (exposure = 'public' OR
+       *     is_internet_accessible).
+       *
+       *     Clock start: assets.first_seen (the asset entered the inventory).
+       *     Clock stop: the EARLIEST of these per-asset signals that it was known to
+       *     be internet-facing or exposed —
+       *       - assets.exposure_changed_at, when the current exposure is 'public'
+       *         (stamped when the exposure level was classified);
+       *       - asset_state_history rows of change_type exposure_changed /
+       *         internet_exposure_changed whose new_value is 'public' / 'true';
+       *       - the asset's first exposure event (exposure_events.first_seen_at);
+       *       - the asset's first finding (findings.first_detected_at).
+       *     A stop before first_seen counts as 0 h (known at discovery). Assets with
+       *     no stop signal at all are not averaged; they are counted in Unmeasured.
+       *
+       *     Caveat: exposure_changed_at holds the LAST exposure change, so an asset
+       *     that flapped public → private → public is measured to the later flip
+       *     unless an earlier history row / exposure / finding exists.
+       */
+      mttd_internet_facing?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.DurationMetric']
+      /**
+       * @description MTTRValidated — mean time to remediate VALIDATED exposures only.
+       *
+       *     Population: findings with at least one validation_evidence row of
+       *     outcome 'detected' (the validation re-check reproduced the exposure —
+       *     "still exploitable", RFC-011.2 VerdictReproducible), now in status
+       *     resolved / verified, with resolved_at in the window.
+       *
+       *     Clock start: the first 'detected' validation_evidence.created_at.
+       *     Clock stop: findings.resolved_at. Findings resolved before they were
+       *     validated are excluded (the fix did not follow the validation).
+       *     false_positive / accepted / validated_fixed are not remediation and are
+       *     excluded.
+       */
+      mttr_validated?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.DurationMetric']
+      /**
+       * @description OwnerAcceptance — share of assignments the assignee acted on within the
+       *     SLA window. See OwnerAcceptanceMetric.
+       */
+      owner_acceptance?: components['schemas']['github_com_openctemio_openctem_api_internal_app_module.OwnerAcceptanceMetric']
+      period_days?: number
     }
     'github_com_openctemio_openctem_api_internal_app_scan.OptInImpact': {
       opt_ins?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.OptIns']
