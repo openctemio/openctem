@@ -301,13 +301,13 @@ Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_te
 A tenant member with `scope:write` verifies a domain with the DNS TXT flow
 (`/api/v1/easm/verified-domains`; how-to:
 [verify-a-domain-for-easm.md](../how-to/verify-a-domain-for-easm.md)). Each
-`verified_domains` row has a `purpose` (migration `001053`, owner decision
+`verified_domains` row has a `purpose` (migration `001060`, owner decision
 E6):
 
 | Purpose | Set up by | EASM (verified root, gate, CT) | SSO JIT and SCIM admission |
 |---|---|---|---|
 | `easm` | the organization (tenant route) | yes | **no** |
-| `sso` | a platform administrator (admin console); every row from before 001053 | yes | yes |
+| `sso` | a platform administrator (admin console); every row from before 001060 | yes | yes |
 
 `domainverify.Service.IsVerifiedDomain` (the SSO and SCIM gate) answers true
 only for a verified `sso` row. An administrator adding a domain the
