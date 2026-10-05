@@ -76,6 +76,29 @@ that are not confirmed, so nothing found passively under an unverified
 domain is touched by a sensor until a person confirms it (`PUT
 /api/v1/assets/{id}/attribution`, audited).
 
+## Rejected names, identity and linking
+
+Since research/22 P0-9 (bug 22c B2):
+
+- **Promotion runs first**, then the exposures are built, so a CT exposure
+  links to **the host's own asset** when one exists (a promoted or older
+  subdomain asset), else to its nearest domain asset, else to the root's.
+  Stored rows linked elsewhere (or to nothing, from a seed-only period) are
+  moved onto that asset (`ExposureRepository.RelinkExposures`, tenant's own
+  assets only).
+- **Identity does not depend on the link.** A CT exposure's fingerprint is
+  tenant, type, title and host (`certmonitor.ctFingerprint`), so linking or
+  relinking never creates a second row. Migration `001018` re-keyed the
+  stored rows and resolved the duplicates it collapsed (reversible: the old
+  fingerprints and states are kept in `easm_ct_rekey_001018`).
+- **Rejected names stay quiet.** A host that is rejected (an asset whose
+  attribution is `rejected`, or a live tombstone), or that sits under one,
+  produces no CT exposure (`hosts_rejected` in the sweep log). When a person
+  rejects a name (review queue or `PUT /assets/{id}/attribution`), its open
+  CT and DNS-check exposures and those of names under it are resolved with
+  the note "marked not ours (rejected)". Un-rejecting does not reopen them;
+  the next sweeps raise what is still true.
+
 ## Sources, retries and fallback
 
 | Step | Behaviour |

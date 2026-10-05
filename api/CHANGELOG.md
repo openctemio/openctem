@@ -14,6 +14,14 @@ published at https://docs.openctem.io (operations/release-notes-*).
   with `groups:write`) could strip another BU's group of an asset or a member
   (research 21b M-4, RFC-050 W7). Adding members already had this cap (D13).
 
+### Security: pentest findings stay with their campaign on the asset page
+
+- `GET /assets/{id}/findings` now applies the findings list's visibility:
+  the data scope and the pentest-membership rule. A pentest finding, whose
+  metadata carries the PoC and steps to reproduce, was listed for anyone who
+  could see the asset (research 21b H5, RFC-050 W4); it is now listed only for
+  members of its campaign (administrators unchanged).
+
 ### Security: a restricted member cannot write asset-less exposures
 
 - `POST /exposures`, `POST /exposures/ingest` and the bulk ingest refuse an

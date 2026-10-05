@@ -118,7 +118,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 
 	// Configure schedule
-	if err := s.configureScanSchedule(sc, input); err != nil {
+	if err := configureScanSchedule(sc, input); err != nil {
 		return nil, err
 	}
 
@@ -443,7 +443,7 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 }
 
 // configureScanSchedule validates and sets the scan schedule.
-func (s *Service) configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
+func configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
 	scheduleType := scan.ScheduleType(input.ScheduleType)
 	if scheduleType == "" {
 		scheduleType = scan.ScheduleManual
