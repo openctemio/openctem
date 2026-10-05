@@ -87,8 +87,6 @@ var assetMergeRefs = []mergeRef{
 	// asset by a grant sees the kept one.
 	{table: "asset_access_grants", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"user_id"}}}},
-	{table: "asset_sources", column: "asset_id", idCol: "id",
-		keys: []mergeKey{{cols: []string{"source_type", "source_id"}}}},
 	{table: "business_service_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"service_id", "dependency_type"}}}},
 	{table: "compensating_control_assets", column: "asset_id", idCol: "ctid",
