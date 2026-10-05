@@ -343,7 +343,7 @@ func (s *RuleService) UpdateRule(ctx context.Context, tenantID, ruleID string, i
 		if err != nil {
 			s.logger.Warn("reconciliation after update failed", "rule_id", rule.ID().String(), "error", err)
 		} else {
-			s.logger.Info("scope rule updated and reconciled", "rule_id", ruleID,
+			s.logger.Info("scope rule updated and reconciled", "rule_id", rule.ID().String(),
 				"assets_added", rr.AssetsAdded, "assets_removed", rr.AssetsRemoved)
 		}
 	}
