@@ -2,7 +2,7 @@ package postgres
 
 // Scan stage chaining storage (research/27 P0-3, docs/architecture/scan-stages.md):
 // scan_step_outputs, scan_run_stage_plans and scan_run_targets (migration
-// 001022). Every statement is scoped to the tenant it is given; the
+// 001042). Every statement is scoped to the tenant it is given; the
 // composite foreign keys refuse a row that points across tenants.
 
 import (

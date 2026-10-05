@@ -90,7 +90,7 @@ payload comes from one builder, `scan.StepCommandPayload`.
 ## 3. The hop router: chaining with a gate at every hop
 
 `internal/app/pipeline/hop_router.go`; tables `scan_step_outputs`,
-`scan_run_stage_plans`, `scan_run_targets` (migrations 001021, 001022).
+`scan_run_stage_plans`, `scan_run_targets` (migrations 001041, 001042).
 
 - **E6.** A step used to receive the run's seeds whatever came before it. Now,
   when a step's direct predecessors produce asset types its stage takes (and
