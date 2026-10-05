@@ -39092,8 +39092,7 @@ export interface components {
       channel_name?: string
       /**
        * @example [
-       *       "[\"security_alert\"",
-       *       "\"new_finding\"",
+       *       "[\"new_finding\"",
        *       "\"new_exposure\"]"
        *     ]
        */

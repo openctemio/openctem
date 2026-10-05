@@ -10686,8 +10686,7 @@ definitions:
         type: string
       enabled_event_types:
         example:
-        - '["security_alert"'
-        - '"new_finding"'
+        - '["new_finding"'
         - '"new_exposure"]'
         items:
           type: string
