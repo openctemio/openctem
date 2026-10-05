@@ -62,6 +62,10 @@ type CIExchangeRequest struct {
 	TenantID string `json:"tenant_id"`
 	// IDToken is the CI provider's OIDC token for the job.
 	IDToken string `json:"id_token"`
+	// RunID, optional, asks for a fresh token for a run this pipeline run
+	// already holds (same repository, commit and pipeline run; not yet
+	// evaluated).
+	RunID string `json:"run_id,omitempty"`
 }
 
 // CIExchangeResponse is a run and its upload token (shown once).
@@ -103,7 +107,7 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := h.svc.Exchange(r.Context(), cirunapp.ExchangeInput{TenantID: req.TenantID, IDToken: req.IDToken,
-		ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
+		RunID: req.RunID, ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
 	if err != nil {
 		if errors.Is(err, cirunapp.ErrExchangeRefused) {
 			apierror.Unauthorized("The CI token was not accepted").WriteJSON(w)

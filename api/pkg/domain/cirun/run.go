@@ -32,6 +32,8 @@ const (
 const (
 	VerdictPass = "pass"
 	VerdictFail = "fail"
+	// VerdictNone filters runs that have no verdict yet.
+	VerdictNone = "none"
 )
 
 // Run is one CI pipeline run that exchanged its OIDC token. It is attached

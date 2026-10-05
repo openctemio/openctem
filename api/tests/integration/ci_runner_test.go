@@ -322,6 +322,28 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		t.Fatalf("token for another run: %d", resp.StatusCode)
 	}
 
+	// A long job gets a fresh token for the same run; the old one stops.
+	resp, cont := r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
+		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha2, nil), "run_id": prRun})
+	if resp.StatusCode != http.StatusCreated || cont["run_id"] != prRun || cont["token"] == prToken {
+		t.Fatalf("continuation: %d %v", resp.StatusCode, cont)
+	}
+	if resp, _ := r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("replaced token still works: %d", resp.StatusCode)
+	}
+	prToken = cont["token"].(string)
+	// Another commit, or another pipeline run, cannot take the run over.
+	resp, _ = r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
+		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha1, nil), "run_id": prRun})
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("continuation by another commit: %d", resp.StatusCode)
+	}
+	resp, _ = r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
+		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha2, map[string]any{"pipeline_id": "2002"}), "run_id": prRun})
+	if resp.StatusCode != http.StatusUnauthorized || r.auditCount(r.tenant, "ci_run.token_refused", "run_mismatch") != 2 {
+		t.Fatalf("continuation by another pipeline run: %d", resp.StatusCode)
+	}
+
 	// The feature branch reports the old medium and a new high: the new
 	// high fails (new findings only); the old medium is pre-existing.
 	high := ciFinding("SQL injection", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 42)
@@ -329,7 +351,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		t.Fatalf("feature upload: %d %v", resp.StatusCode, out)
 	}
 	resp, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil)
-	if v["verdict"] != "fail" || !hasReason(v, cirun.ReasonSeverity) {
+	if resp.StatusCode != http.StatusOK || v["verdict"] != "fail" || !hasReason(v, cirun.ReasonSeverity) {
 		t.Fatalf("feature verdict: %v", v)
 	}
 	sum, _ := v["summary"].(map[string]any)

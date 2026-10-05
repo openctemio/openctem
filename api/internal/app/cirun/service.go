@@ -144,11 +144,20 @@ func (s *Service) logAudit(ctx context.Context, tenantID shared.ID, a Actor, ev 
 
 // ExchangeInput is a CI job's exchange request.
 type ExchangeInput struct {
-	TenantID  string
-	IDToken   string
+	TenantID string
+	IDToken  string
+	// RunID, when set, asks for a fresh token for a run this pipeline
+	// already holds (a long job whose token expired). It is honored only for
+	// the same repository, commit and pipeline run, before the run was
+	// evaluated and within MaxRunContinuation of its start.
+	RunID     string
 	ClientIP  string
 	UserAgent string
 }
+
+// MaxRunContinuation bounds how long after its start a run can get a fresh
+// token.
+const MaxRunContinuation = 6 * time.Hour
 
 // ExchangeOutput is a run and its upload token. The token is returned once
 // and never stored.
@@ -202,7 +211,16 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		return nil, ErrExchangeRefused
 	}
 
-	out, err := s.createRun(ctx, tenantID, cfg, claims)
+	var out *ExchangeOutput
+	if strings.TrimSpace(in.RunID) != "" {
+		out, err = s.continueRun(ctx, tenantID, cfg, claims, in.RunID)
+		if errors.Is(err, ErrExchangeRefused) {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "run_mismatch",
+				Detail: "the token does not belong to the run it asked to continue"}})
+		}
+	} else {
+		out, err = s.createRun(ctx, tenantID, cfg, claims)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -313,6 +331,39 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 	if err := s.repo.CreateRun(ctx, run); err != nil {
 		return nil, fmt.Errorf("create run: %w", err)
 	}
+	return &ExchangeOutput{Run: run, Token: token, ExpiresAt: expires}, nil
+}
+
+// continueRun issues a fresh token for an existing run of the same pipeline
+// run: same tenant, repository, commit and CI run id, not yet evaluated and
+// recent. Anything else is ErrExchangeRefused.
+func (s *Service) continueRun(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims, rawRunID string) (*ExchangeOutput, error) {
+	runID, err := shared.IDFromString(strings.TrimSpace(rawRunID))
+	if err != nil {
+		return nil, ErrExchangeRefused
+	}
+	run, err := s.repo.GetRun(ctx, tenantID, runID)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil, ErrExchangeRefused
+		}
+		return nil, fmt.Errorf("load run: %w", err)
+	}
+	now := s.now().UTC()
+	if run.Repository != asset.NormalizeName(cirun.CanonicalRepository(cfg.Provider, cfg.Issuer, c.Repository), asset.AssetTypeRepository, "") ||
+		run.CommitSHA != c.SHA || run.ExternalRunID == "" || run.ExternalRunID != c.RunID || run.Issuer != cfg.Issuer ||
+		run.Status != cirun.StatusRunning || now.Sub(run.CreatedAt) > MaxRunContinuation {
+		return nil, ErrExchangeRefused
+	}
+	token, hash, err := cirun.NewToken()
+	if err != nil {
+		return nil, err
+	}
+	expires := now.Add(cirun.TokenTTL)
+	if err := s.repo.RotateRunToken(ctx, tenantID, run.ID, hash, expires); err != nil {
+		return nil, fmt.Errorf("rotate run token: %w", err)
+	}
+	run.TokenHash, run.TokenExpiresAt = hash, &expires
 	return &ExchangeOutput{Run: run, Token: token, ExpiresAt: expires}, nil
 }
 

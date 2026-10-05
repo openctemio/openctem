@@ -41,6 +41,9 @@ type Repository interface {
 	// GetRunByTokenHash returns the run whose unexpired upload token hashes
 	// to hash. Not tenant-scoped: the token is the credential.
 	GetRunByTokenHash(ctx context.Context, hash []byte, now time.Time) (*Run, error)
+	// RotateRunToken replaces a running run's upload token (the old one
+	// stops working).
+	RotateRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, expiresAt time.Time) error
 	ListRuns(ctx context.Context, tenantID shared.ID, f RunFilter) ([]Run, int, error)
 	// RecordRunReport adds the fingerprints a report sighted (capped at
 	// MaxRunFindings per run) and counts the report.
