@@ -234,6 +234,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		h := strings.Repeat("ab", 32)
 		return map[string]any{"old_hash": h, "old_prev_hash": "", "new_hash": h, "new_prev_hash": ""}
 	},
+	// filename_sha256 has a lower-case hex CHECK.
+	"finding_imports": func(*schemaSeeder) map[string]any {
+		return map[string]any{"filename_sha256": strings.Repeat("ab", 32)}
+	},
 	// fingerprint has a NOT LIKE CHECK; its literal is the excluded pattern.
 	"finding_fingerprints": func(s *schemaSeeder) map[string]any { return map[string]any{"fingerprint": s.uniq()} },
 	// target_version has a range CHECK.
