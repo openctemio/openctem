@@ -13,7 +13,7 @@ password or TOTP; SSO users re-authenticate at their identity provider).
 
 - **Recent authentication** of a session = the later of its sign-in
   (`sessions.created_at`) and its last successful step-up
-  (`sessions.step_up_at`, migration `001110`).
+  (`sessions.step_up_at`, migration `001116`).
 - A sensitive route accepts the request while recent authentication is less
   than **10 minutes** old (`authapp.StepUpWindow`). The window is fixed from
   the moment of proof; using it does not extend it.
