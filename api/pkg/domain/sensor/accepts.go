@@ -161,12 +161,40 @@ func portSetting(v any) string {
 	return ""
 }
 
+// OptIns are the tenant's platform-side switches for the two job features
+// a sensor without a local policy allows by default (research/25 D3): the
+// platform sends a job that turns out-of-band callbacks on, or that carries
+// custom templates, only when the tenant enabled it. Both default to off
+// for every tenant; turning one on is an administrator action, audited and
+// alerted (D9).
+type OptIns struct {
+	AllowInteractsh      bool `json:"allow_interactsh"`
+	AllowCustomTemplates bool `json:"allow_custom_templates"`
+}
+
+// Refusal returns the managed-layer refusal of a job these opt-ins do not
+// allow, or nil.
+func (o OptIns) Refusal(job Job) *DispatchRefusal {
+	if job.Interactsh && !o.AllowInteractsh {
+		return &DispatchRefusal{Layer: RefusalLayerManaged, Rule: RuleAllowInteractsh,
+			Detail: "the organization does not send jobs with out-of-band callbacks (interactsh); an owner can enable them in the security settings"}
+	}
+	if job.CustomTemplates > 0 && !o.AllowCustomTemplates {
+		return &DispatchRefusal{Layer: RefusalLayerManaged, Rule: RuleAllowCustomTemplates,
+			Detail: "the organization does not send custom templates to sensors; an owner can enable them in the security settings"}
+	}
+	return nil
+}
+
 // DispatchOptions are the tenant's platform-side settings the pre-check
 // applies on top of the sensor's report.
 type DispatchOptions struct {
 	// RequireLocalPolicyForPrivate keeps jobs with private targets away
 	// from sensors without an enforced local policy (RFC-040 Q3 (a)).
 	RequireLocalPolicyForPrivate bool
+	// OptIns, when set, are the tenant's interactsh and custom-template
+	// switches (D3). nil: not evaluated by this caller.
+	OptIns *OptIns
 }
 
 // Accepts reports whether a sensor whose last local-policy report is r may
@@ -183,6 +211,11 @@ func Accepts(r *LocalPolicyReport, job Job, opts DispatchOptions) *DispatchRefus
 	if r != nil && r.KillSwitch {
 		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RuleKillSwitch,
 			Detail: "the sensor owner engaged the local kill switch; the sensor runs no job"}
+	}
+	if opts.OptIns != nil {
+		if ref := opts.OptIns.Refusal(job); ref != nil {
+			return ref
+		}
 	}
 	if job.Private && opts.RequireLocalPolicyForPrivate && !r.Enforced() {
 		return &DispatchRefusal{Layer: RefusalLayerManaged, Rule: RulePrivateNeedsLocalPlcy,
