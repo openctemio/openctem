@@ -107,7 +107,7 @@ offboarding is audited with the missing categories.
 | `POST /api/v1/tenants/{t}/members/{id}/erase` | team owner (and the service re-checks the owner) |
 | `GET /api/v1/tenants/{t}/members?status=active\|suspended\|offboarded\|all` | `members:read`; default leaves tombstones out |
 
-Migration `001015_member_lifecycle`.
+Migration `001027_member_lifecycle`.
 
 ## 3. Plan
 
