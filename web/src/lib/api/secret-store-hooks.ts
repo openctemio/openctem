@@ -18,6 +18,7 @@ import type {
   SecretStoreCredential,
   SecretStoreCredentialListFilters,
   SecretStoreCredentialListResponse,
+  RotateSecretStoreCredentialRequest,
   UpdateSecretStoreCredentialRequest,
 } from './secret-store-types'
 
@@ -54,6 +55,11 @@ export const secretStoreEndpoints = {
    * Update credential
    */
   update: (credentialId: string) => `${SECRET_STORE_BASE}/${credentialId}`,
+
+  /**
+   * Replace the secret of a credential
+   */
+  rotate: (credentialId: string) => `${SECRET_STORE_BASE}/${credentialId}/rotate`,
 
   /**
    * Delete credential
@@ -174,6 +180,20 @@ export function useUpdateSecretStoreCredential(credentialId: string) {
     currentTenant && credentialId ? secretStoreEndpoints.update(credentialId) : null,
     async (url: string, { arg }: { arg: UpdateSecretStoreCredentialRequest }) => {
       return put<SecretStoreCredential>(url, arg)
+    }
+  )
+}
+
+/**
+ * Replace the secret of a secret store credential (rotation)
+ */
+export function useRotateSecretStoreCredential(credentialId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && credentialId ? secretStoreEndpoints.rotate(credentialId) : null,
+    async (url: string, { arg }: { arg: RotateSecretStoreCredentialRequest }) => {
+      return post<SecretStoreCredential>(url, arg)
     }
   )
 }

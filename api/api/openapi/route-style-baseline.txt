@@ -157,6 +157,7 @@ R4 GET /api/v1/vulnerabilities/cve/{cveId}/affected-assets
 R4 PATCH /api/v1/admin/threat-intel/sync/{source}
 R4 PATCH /api/v1/threat-intel/sync/{source}
 R4 POST /api/v1/notification-outbox/{id}/retry
+R4 POST /api/v1/secret-store/{id}/rotate
 R4 PUT /api/v1/secret-store/{id}
 R5 DELETE /api/v1/assets/{id}/lifecycle/snooze
 R5 DELETE /api/v1/findings/{id}/link-ticket

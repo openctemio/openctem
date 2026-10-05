@@ -303,8 +303,21 @@ create's target validator, exclusions, zone routing) in one call.
 > owner and admin only; migration `000246` removed `sensors:write` from the
 > member role (viewer never had it). Members and viewers keep `sensors:read`.
 > Scan-zone sensor assignment (`sensors:zones:write`) hands out no key and was
-> already owner/admin only (`000231`). A custom role carries `sensors:write`
-> only if an owner or administrator gave it one.
+> already owner/admin only (`000231`).
+>
+> **No custom role may carry them** (settings decision B1, 2026-10-04):
+> `sensors:write`, `sensors:delete`, `sensors:commands:delete`,
+> `sensors:zones:write` and `sensors:zones:delete` are admin-only
+> (`pkg/domain/permission/admin_only.go`). The role service refuses them on
+> create and update, whoever edits the role (400), and a trigger on
+> `role_permissions` refuses a row that would put one on a custom role
+> (migration `000945`, which also stripped them from existing custom roles and
+> kept the report in `role_permissions_admin_only_stripped`). Custom roles
+> keep the read permissions and `sensors:commands:write`.
+>
+> **Revoking a sensor goes through `POST /{id}/revoke` only**: `PUT /{id}`
+> with `status: revoked` returns 400, so every revocation carries a reason and
+> the Critical `sensor.revoked` audit event.
 
 #### Audit log (`/api/v1/audit-logs`)
 
@@ -377,7 +390,15 @@ the billing page in the UI.
 | `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
 | `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
-| Secret store `GET` / `POST`,`PUT` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` / `:delete` |
+
+> **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
+> leaves absent fields unchanged (`description: ""` clears it, `expires_at: null`
+> clears the expiry; `expires_at` is RFC 3339 and must be in the future). The
+> secret is replaced only by `POST /secret-store/{id}/rotate` (same credential
+> type; `key_version` and `last_rotated_at` advance). Update, rotate (High),
+> delete (High) and decrypt (High) are audited with the acting user, or a named
+> system actor for a scheduled template sync. All lookups are by tenant and id.
 
 > **A stored credential goes only where someone entitled to it pointed it.**
 > A sync decrypts the source's `credential_id` and sends it to the source's
@@ -488,6 +509,18 @@ These routes require the tenant ID in the URL path and use database-based member
 > (no human actor) is not a peer and keeps its own rules: it grants or removes
 > admin only through a mapping the owner configured, and the role changes a
 > mapping save causes run as the person who saved it.
+>
+> **Only the owner makes someone an administrator** (settings decision B2,
+> 2026-10-04). Adding a member as `admin`, changing a member's role to
+> `admin`, inviting someone or creating a user with the system admin role, and
+> granting the system admin role on the RBAC paths (assign, set, bulk) all need
+> the caller to be the owner; anyone else gets 403
+> (`TenantService.authorizeAdminPromotion`,
+> `RoleService.authorizeAdminPromotion`). An administrator who edits their own
+> role set may keep the admin role they hold. Step-up re-authentication for
+> this action is planned with the step-up primitive (settings plan P1-01).
+> A membership role change is one transaction (label and system role
+> together).
 >
 > **Granting roles** (invitations and created users) is anti-escalation checked:
 > a caller who is not an organization admin may grant only roles whose

@@ -6,7 +6,20 @@ import { formatEpssScore } from '@/lib/epss'
 import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useUrlParams, useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
+import {
+  useUrlParams,
+  useUrlFilter,
+  useUrlFilterList,
+  pushUrlSearch,
+  replaceUrlSearch,
+} from '@/hooks/use-url-param'
+import {
+  buildDrillDownSearch,
+  buildGroupedSearch,
+  drillOrigin,
+  drillValue,
+  removeFilterParam,
+} from '@/features/findings/lib/drilldown'
 import {
   useFindingSourcesApi,
   groupFindingSourcesByCategory,
@@ -29,6 +42,7 @@ import {
   BulkActionBar,
   FilterPanelToggle,
   FilterSheet,
+  DrillDownBreadcrumb,
 } from '@/features/shared'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -538,15 +552,21 @@ function FindingsContent() {
       (k) => !['view', 'group', 'page', 'per_page', 'tab', 'density'].includes(k)
     )
 
-  const [, setAssetParam] = useUrlFilter('asset_id', '')
-  // A scan run's "View all findings" (scan-session-detail-sheet).
-  const [, setScanParam] = useUrlFilter('scan_id', '')
+  // asset_id and scan_id (a scan run's "View all findings") are read above.
   // A CVE group's "View": the list narrowed to that CVE (search does not match
   // the CVE id, so it cannot stand in for this).
-  const [cveParam, setCveParam] = useUrlFilter('cve_id', '')
+  const [cveParam] = useUrlFilter('cve_id', '')
   // A rule group's "View": the list narrowed to that scanner rule (nuclei
   // template, semgrep rule, misconfiguration check, secret rule).
-  const [ruleParam, setRuleParam] = useUrlFilter('rule_id', '')
+  const [ruleParam] = useUrlFilter('rule_id', '')
+  // The other group dimensions' drill-down filters (research 24 P0-1): every
+  // group row's View opens the list narrowed to it.
+  const [familyParam] = useUrlFilter('family', '')
+  const [findingTypeParam] = useUrlFilter('finding_type', '')
+  const [componentParam] = useUrlFilter('component_id', '')
+  const [ownerParam] = useUrlFilter('asset_owner_id', '')
+  const [ownerNullParam] = useUrlFilter('asset_owner_id_null', '')
+  const ownerUnassigned = ownerNullParam === 'true'
   // Bumped after a change, so the grouped view reloads its groups and rows.
   const [groupsReloadKey, setGroupsReloadKey] = useState(0)
   const [autoAssignOpen, setAutoAssignOpen] = useState(false)
@@ -644,6 +664,11 @@ function FindingsContent() {
     if (scanIdFilter) filters.scan_id = scanIdFilter
     if (cveParam) filters.cve_ids = [cveParam]
     if (ruleParam) filters.rule_id = ruleParam
+    if (familyParam) filters.families = [familyParam]
+    if (findingTypeParam) filters.finding_types = [findingTypeParam]
+    if (componentParam) filters.component_id = componentParam
+    if (ownerParam) filters.asset_owner_id = ownerParam
+    if (ownerUnassigned) filters.asset_owner_unassigned = true
     if (severities.length > 0) filters.severities = severities
     if (savedId) filters.view = savedId
     if (statuses.length > 0) {
@@ -674,6 +699,11 @@ function FindingsContent() {
     scanIdFilter,
     cveParam,
     ruleParam,
+    familyParam,
+    findingTypeParam,
+    componentParam,
+    ownerParam,
+    ownerUnassigned,
     severities,
     statuses,
     sourceFilter,
@@ -714,6 +744,11 @@ function FindingsContent() {
     scanIdFilter,
     cveParam,
     ruleParam,
+    familyParam,
+    findingTypeParam,
+    componentParam,
+    ownerParam,
+    ownerNullParam,
     groupParam,
     viewParam,
     severities.join(),
@@ -1661,17 +1696,18 @@ function FindingsContent() {
   // Filters that arrive from elsewhere (an asset, a scan run, a CVE or rule
   // group) are context, not facets: always shown, inline in the toolbar so they
   // never add a row above the table. Each chip removes only its own parameter.
-  const removeContextParam = (param: string) => {
-    if (param === 'asset_id') setAssetParam('')
-    else if (param === 'scan_id') setScanParam('')
-    else if (param === 'cve_id') setCveParam('')
-    else if (param === 'rule_id') setRuleParam('')
-  }
+  const removeContextParam = (param: string) =>
+    replaceUrlSearch(removeFilterParam(new URLSearchParams(window.location.search), param))
   const contextFilterValues = {
     assetId: assetIdFilter,
     scanId: scanIdFilter,
     cveId: cveParam,
     ruleId: ruleParam,
+    family: familyParam,
+    findingType: findingTypeParam,
+    componentId: componentParam,
+    ownerId: ownerParam,
+    ownerUnassigned,
   }
   const contextFilterOn = hasFindingContextFilters(contextFilterValues)
   const contextChips = (
@@ -1743,26 +1779,20 @@ function FindingsContent() {
 
   const listOnlyNote = listOnlyFilterOn && (
     <span className="text-xs text-muted-foreground">
-      Search, priority, KEV, SLA, asset, scan, CVE and rule filters apply to the ungrouped list.
+      Search, priority, KEV, SLA and the asset, scan, CVE, rule, family, type, component and owner
+      filters apply to the ungrouped list.
     </span>
   )
 
-  // "View" on a group opens the list filtered to it, where the dimension maps
-  // to a list filter. Other dimensions get no View button (not a dead one).
-  const viewableGroup =
-    groupBy === 'cve_id' ||
-    groupBy === 'rule_id' ||
-    groupBy === 'severity' ||
-    groupBy === 'source' ||
-    groupBy === 'asset_id'
+  // "View" on a group opens the list filtered to it, for every dimension
+  // (research 24 P0-1). It is a push, not a replace: Back returns to the
+  // grouped view with its filters, and the other filters are kept.
+  const viewableGroup = groupBy !== null
   const viewGroup = (group: FindingGroup) => {
-    const key = group.group_key
-    setGroupParam('')
-    if (groupBy === 'cve_id') setCveParam(key)
-    else if (groupBy === 'rule_id') setRuleParam(key)
-    else if (groupBy === 'severity') setSeverityParam([key])
-    else if (groupBy === 'source') setSourceFilter([key])
-    else if (groupBy === 'asset_id') setAssetParam(key)
+    if (!groupBy) return
+    pushUrlSearch(
+      buildDrillDownSearch(new URLSearchParams(window.location.search), groupBy, group.group_key)
+    )
   }
 
   // Mark fixed works on a CVE's or an asset's in-progress findings (the
@@ -1820,10 +1850,30 @@ function FindingsContent() {
     reloadKey: groupsReloadKey,
   }
 
+  // Breadcrumb of a drill-down, rebuilt from the URL: Findings › By rule › X.
+  const drillDim = drillOrigin(searchParams, GROUP_BY_DIMENSIONS)
+  const drillBreadcrumb = drillDim ? (
+    <DrillDownBreadcrumb
+      className="mt-1"
+      steps={[
+        {
+          label: 'Findings',
+          onSelect: () => router.push('/findings'),
+        },
+        {
+          label: `By ${GROUP_BY_LABELS[drillDim].toLowerCase()}`,
+          onSelect: () => pushUrlSearch(buildGroupedSearch(searchParams, drillDim)),
+        },
+      ]}
+      value={drillValue(searchParams, drillDim)}
+      mono={drillDim === 'cve_id' || drillDim === 'rule_id'}
+    />
+  ) : undefined
+
   return (
     <>
       <Main>
-        <PageHeader title="Findings">
+        <PageHeader title="Findings" description={drillBreadcrumb}>
           <Button variant="outline" size="sm" asChild>
             <Link href="/findings/approvals">
               <ClipboardList className="h-4 w-4 sm:me-2" />
