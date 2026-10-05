@@ -276,6 +276,12 @@ func (s *Service) SetSuppressionChecker(checker SuppressionChecker) {
 	s.findingProcessor.SetSuppressionChecker(checker)
 }
 
+// SetSuppressionModuleGuard makes ingest suppression honor the tenant's
+// suppressions module toggle (off = findings land as reported).
+func (s *Service) SetSuppressionModuleGuard(guard ModuleGuard) {
+	s.findingProcessor.SetSuppressionModuleGuard(guard)
+}
+
 // SetAssetExposureProjector wires the post-insert recon-asset → exposure-store
 // projector so open ports, exposed services and weak/expiring TLS certificates
 // surface continuously in the Exposure Register (CTEM Discovery). Nil-safe:

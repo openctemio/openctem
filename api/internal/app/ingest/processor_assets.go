@@ -801,7 +801,7 @@ func (p *AssetProcessor) processBatch(
 		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered, excl)
 	}
 
-	// Step 8: Ports: address → port edges, host name → address, and ports a
+	// Step 9: Ports: address → port edges, host name → address, and ports a
 	// port scan no longer sees are closed (research/22 P0-6).
 	p.surfacePorts(ctx, tenantID, report, existingMap, func(id shared.ID) bool {
 		if scope == nil || scope.all {
@@ -814,6 +814,12 @@ func (p *AssetProcessor) processBatch(
 		}
 		return false
 	})
+
+	// Step 8: Typed edges from related_assets (service -> the certificate
+	// it served).
+	if p.relRepo != nil {
+		p.createRelatedAssetRelationships(ctx, tenantID, report, assetMap, alterRefs)
+	}
 
 	// What this ingest wrote, for attribution (scan_attribution.go): every
 	// asset it created (report assets, root domains, resolved addresses) and
