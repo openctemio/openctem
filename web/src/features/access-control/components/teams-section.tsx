@@ -37,7 +37,7 @@ import {
 } from '@/features/access-control'
 import { GroupDetailSheet } from '@/features/access-control/components/group-detail-sheet'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('en-US', {
@@ -135,7 +135,7 @@ export function TeamsSection({ header }: SectionProps) {
               {
                 label: 'Edit team',
                 icon: Pencil,
-                permission: Permission.GroupsWrite,
+                route: 'PUT /api/v1/groups/{groupId}',
                 onClick: () => setSelectedGroupId(group.id),
               },
               {
@@ -143,7 +143,8 @@ export function TeamsSection({ header }: SectionProps) {
                 icon: Trash2,
                 destructive: true,
                 separatorBefore: true,
-                permission: Permission.GroupsDelete,
+                // Owner only on the API (RequireOwner), so admins do not see it.
+                route: 'DELETE /api/v1/groups/{groupId}',
                 onClick: () => {
                   setGroupToDelete(group)
                   setDeleteDialogOpen(true)
@@ -203,7 +204,7 @@ export function TeamsSection({ header }: SectionProps) {
     <>
       {header(
         <>
-          <Can permission={Permission.GroupsWrite} mode="disable">
+          <Can route="POST /api/v1/groups" mode="disable">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
               Create team
@@ -250,7 +251,7 @@ export function TeamsSection({ header }: SectionProps) {
                 title="No teams yet"
                 description="Create a team to group users and scope their access to assets."
                 action={
-                  <Can permission={Permission.GroupsWrite}>
+                  <Can route="POST /api/v1/groups">
                     <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
                       Create team

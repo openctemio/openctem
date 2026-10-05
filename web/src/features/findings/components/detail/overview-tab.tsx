@@ -8,7 +8,9 @@
  *   <type sections>      package / credential / resource / endpoint / control
  *   Code location        file, lines, snippet
  *   Context              scanner-supplied impact, likelihood, attack vector
- *   Identifiers          CVSS + vector, CVE, CWE, OWASP, EPSS, published
+ *   Scanner output       the scanner's proof (plugin output), escaped, with Copy
+ *   Identifiers          CVSS (v2 and v3 vectors), CVE (all of them, related),
+ *                        CWE, OWASP, EPSS, VPR as an input, family, patch date
  *   More details         rule, tool, classification, raw scanner metadata
  *
  * Status, owner, SLA and asset live in the properties rail; priority and its
@@ -27,6 +29,7 @@ import {
   FileCode2,
   FileText,
   Fingerprint,
+  Terminal,
   Server,
   ShieldAlert,
 } from 'lucide-react'
@@ -40,6 +43,8 @@ import {
   DetailSections,
 } from '@/features/shared/components/detail-sheet'
 import { copyToClipboard } from '@/lib/clipboard'
+import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
+import { useRelatedCVEs } from '../../api/use-finding-groups'
 import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import type { Activity, FindingDetail } from '../../types'
@@ -131,6 +136,8 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
       {(finding.filePath || finding.snippet || finding.contextSnippet) && (
         <CodeLocationSection finding={finding} />
       )}
+
+      {finding.scannerOutput && <ScannerOutputSection output={finding.scannerOutput} />}
 
       {extraAssets.length > 0 && (
         <DetailSection title="Targets" icon={Server} count={extraAssets.length}>
@@ -253,23 +260,95 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
   )
 }
 
+const CVE_RE = /^CVE-\d{4}-\d{4,}$/
+
+/** A CVE id as an NVD link, or as text when it is not a well-formed CVE id. */
+function CveLink({ id }: { id: string }) {
+  if (!CVE_RE.test(id)) return <Mono>{id}</Mono>
+  return (
+    <a
+      href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(id)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 font-mono text-[13px] text-primary hover:underline"
+    >
+      {id}
+      <ExternalLink className="h-3 w-3" aria-hidden />
+    </a>
+  )
+}
+
+function formatDay(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+/**
+ * The scanner's output (Nessus plugin output, a tool's proof). Attacker-
+ * influenced: shown through UntrustedTextBlock (escaped, never markup), with
+ * when the latest sighting wrote it. Collapsed by default.
+ */
+function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['scannerOutput']> }) {
+  return (
+    <DetailSection title="Scanner output" icon={Terminal}>
+      <p className="text-xs text-muted-foreground">
+        What the scanner printed as its proof
+        {output.updatedAt && <> · from the sighting of {formatDay(output.updatedAt)}</>}
+        {output.truncated && <> · cut at 64 KiB</>}. Shown as plain text.
+      </p>
+      <DetailDisclosure summary="Show output">
+        <UntrustedTextBlock className="mt-2" text={output.text} label="Scanner output" />
+      </DetailDisclosure>
+    </DetailSection>
+  )
+}
+
 function IdentifiersSection({ finding }: { finding: FindingDetail }) {
   const adv = finding.advisory
+  const sf = finding.scannerFacts
   const cweNum = finding.cwe?.replace(/^CWE-/i, '')
+  const allCves = Array.from(
+    new Set([...(finding.cve ? [finding.cve] : []), ...(sf?.cveIds ?? [])])
+  )
+  const primaryCve = finding.cve && CVE_RE.test(finding.cve) ? finding.cve : null
+  const { data: related } = useRelatedCVEs(primaryCve)
+  const relatedCves = (related?.related_cves ?? []).filter((r) => !allCves.includes(r.cve_id))
+  const v3 =
+    sf?.cvssV3Vector || (finding.cvssVector?.startsWith('CVSS:3') ? finding.cvssVector : undefined)
+  const v2 =
+    sf?.cvssV2Vector ||
+    (finding.cvssVector && !finding.cvssVector.startsWith('CVSS:') ? finding.cvssVector : undefined)
+  const otherVector = finding.cvssVector && finding.cvssVector !== v3 && finding.cvssVector !== v2
+  const port = sf?.networkPort
+    ? `${sf.networkPort}${sf.networkTransport ? `/${sf.networkTransport}` : ''}${sf.networkService ? ` · ${sf.networkService}` : ''}`
+    : sf?.networkService
   const show =
     finding.cvss !== undefined ||
     finding.cvssVector ||
     finding.cve ||
     finding.cwe ||
     finding.owasp ||
-    finding.epssScore !== undefined
+    finding.epssScore !== undefined ||
+    !!sf?.family ||
+    sf?.vprScore !== undefined ||
+    !!sf?.cvssV2Vector ||
+    !!sf?.cvssV3Vector ||
+    !!port
   if (!show) return null
   return (
     <DetailSection title="Identifiers and scores" icon={Fingerprint}>
       <DetailFieldGrid>
         <DetailField label="CVSS">
           {finding.cvss !== undefined ? (
-            <span className="tabular-nums">{finding.cvss.toFixed(1)}</span>
+            <span className="tabular-nums">
+              {finding.cvss.toFixed(1)}
+              {sf?.cvssVersion && (
+                <span className="text-muted-foreground"> · v{sf.cvssVersion}</span>
+              )}
+            </span>
           ) : null}
         </DetailField>
         <DetailField label="EPSS">
@@ -285,20 +364,55 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
             </span>
           ) : null}
         </DetailField>
-        <DetailField label="CVSS vector" full>
-          {finding.cvssVector ? <Mono>{finding.cvssVector}</Mono> : null}
-        </DetailField>
-        <DetailField label="CVE">
-          {finding.cve ? (
-            <a
-              href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(finding.cve)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-mono text-[13px] text-primary hover:underline"
+        <DetailField label="Tenable VPR (input)">
+          {sf?.vprScore !== undefined ? (
+            <span
+              className="tabular-nums"
+              title="Shown for reference; not used for the P0–P3 priority"
             >
-              {finding.cve}
-              <ExternalLink className="h-3 w-3" aria-hidden />
-            </a>
+              {sf.vprScore.toFixed(1)}
+              <span className="text-muted-foreground"> · not used for priority</span>
+            </span>
+          ) : null}
+        </DetailField>
+        <DetailField label="Family">{sf?.family}</DetailField>
+        <DetailField label="CVSS v3 vector" full>
+          {v3 ? <Mono>{v3}</Mono> : null}
+        </DetailField>
+        <DetailField label="CVSS v2 vector" full>
+          {v2 ? <Mono>{v2}</Mono> : null}
+        </DetailField>
+        <DetailField label="CVSS vector" full>
+          {otherVector ? <Mono>{finding.cvssVector}</Mono> : null}
+        </DetailField>
+        <DetailField label="Port">{port ? <Mono>{port}</Mono> : null}</DetailField>
+        <DetailField label="Patch published">
+          {sf?.patchPublishedAt ? formatDay(sf.patchPublishedAt) : null}
+        </DetailField>
+        <DetailField
+          label={allCves.length > 1 ? `CVEs (${allCves.length})` : 'CVE'}
+          full={allCves.length > 1}
+        >
+          {allCves.length > 0 ? (
+            <span className="flex flex-wrap gap-x-3 gap-y-1" data-testid="finding-cves">
+              {allCves.map((id) => (
+                <CveLink key={id} id={id} />
+              ))}
+            </span>
+          ) : null}
+        </DetailField>
+        <DetailField label="Related CVEs (same assets)" full>
+          {relatedCves.length > 0 ? (
+            <span className="flex flex-wrap gap-x-3 gap-y-1" data-testid="finding-related-cves">
+              {relatedCves.slice(0, 12).map((r) => (
+                <CveLink key={r.cve_id} id={r.cve_id} />
+              ))}
+              {relatedCves.length > 12 && (
+                <span className="text-xs text-muted-foreground">
+                  +{relatedCves.length - 12} more
+                </span>
+              )}
+            </span>
           ) : null}
         </DetailField>
         <DetailField label="CWE">

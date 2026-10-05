@@ -29,7 +29,7 @@ import {
 } from '@/features/shared'
 import type { Severity } from '@/features/shared/types'
 import { RefreshButton } from '@/components/list-page-parts'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import {
   useNotificationIntegrationsApi,
   useNotificationEventsApi,
@@ -237,7 +237,7 @@ function HistoryContent() {
         {loadingIntegrations ? (
           <Skeleton className="h-9 w-[220px]" />
         ) : integrations.length === 0 ? (
-          <Can permission={Permission.NotificationsWrite}>
+          <Can route="POST /api/v1/integrations/notifications">
             <Button
               variant="outline"
               size="sm"

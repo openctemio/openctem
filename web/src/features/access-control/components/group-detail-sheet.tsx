@@ -50,6 +50,7 @@ import {
 } from '@/features/shared'
 import { useMembers } from '@/features/organization'
 import { useTenant } from '@/context/tenant-provider'
+import { useCanMutate } from '@/lib/permissions'
 
 import {
   MembersTab,
@@ -109,6 +110,14 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
   // UI State
   const [activeTab, setActiveTab] = useState<GroupTab>('overview')
   const [isEditing, setIsEditing] = useState(false)
+  // Each control follows the API gate of the route it calls, so a viewer
+  // sees a read-only sheet instead of controls that answer 403.
+  const canEditGroup = useCanMutate('PUT /api/v1/groups/{groupId}')
+  const canAddMember = useCanMutate('POST /api/v1/groups/{groupId}/members')
+  const canRemoveMember = useCanMutate('DELETE /api/v1/groups/{groupId}/members/{userId}')
+  const canAddAsset = useCanMutate('POST /api/v1/groups/{groupId}/assets')
+  const canBulkAddAssets = useCanMutate('POST /api/v1/groups/{groupId}/assets/bulk')
+  const canRemoveAsset = useCanMutate('DELETE /api/v1/groups/{groupId}/assets/{assetId}')
   const [editForm, setEditForm] = useState({ name: '', description: '' })
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false)
   const [addAssetDialogOpen, setAddAssetDialogOpen] = useState(false)
@@ -362,12 +371,12 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
                       Cancel
                     </Button>
                   </>
-                ) : (
+                ) : canEditGroup ? (
                   <Button size="sm" onClick={handleStartEdit}>
                     <Pencil className="h-4 w-4" />
                     Edit
                   </Button>
-                )
+                ) : undefined
               ) : undefined
             }
             menu={menu}
@@ -446,8 +455,12 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
                 limit={PAGE_SIZE}
                 offset={membersOffset}
                 onPageChange={setMembersOffset}
-                onAddMember={() => setAddMemberDialogOpen(true)}
-                onRemoveMember={(userId, name) => setMemberToRemove({ userId, name })}
+                onAddMember={canAddMember ? () => setAddMemberDialogOpen(true) : undefined}
+                onRemoveMember={
+                  canRemoveMember
+                    ? (userId, name) => setMemberToRemove({ userId, name })
+                    : undefined
+                }
               />
             )}
 
@@ -459,9 +472,13 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
                 limit={PAGE_SIZE}
                 offset={assetsOffset}
                 onPageChange={setAssetsOffset}
-                onAddAsset={() => setAddAssetDialogOpen(true)}
-                onBulkAddAssets={() => setBulkAddAssetsDialogOpen(true)}
-                onRemoveAsset={(id, name) => setAssetToRemove({ id, name })}
+                onAddAsset={canAddAsset ? () => setAddAssetDialogOpen(true) : undefined}
+                onBulkAddAssets={
+                  canBulkAddAssets ? () => setBulkAddAssetsDialogOpen(true) : undefined
+                }
+                onRemoveAsset={
+                  canRemoveAsset ? (id, name) => setAssetToRemove({ id, name }) : undefined
+                }
               />
             )}
 

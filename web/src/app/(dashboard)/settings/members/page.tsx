@@ -113,7 +113,7 @@ const MemberRolesContext = createContext<MemberRolesMap>(new Map())
 import { fetcherWithOptions } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
 import { useUser } from '@/stores/auth-store'
 import { MemberMfaBadge } from '@/features/organization/components/member-mfa-badge'
 
@@ -299,7 +299,7 @@ function UserRolesDetailCard({
       <div className="flex items-center justify-between mb-3">
         <h4 className="text-sm font-medium">Assigned roles</h4>
         {onManageRoles && (
-          <Can permission={Permission.RolesWrite}>
+          <Can route="PUT /api/v1/users/{userId}/roles">
             <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onManageRoles}>
               <Pencil className="me-1 h-3 w-3" />
               Manage
@@ -464,7 +464,7 @@ export default function UsersPage() {
   // anyone else); their rows show the actions disabled, with the reason.
   const { isOwner, can, isAtLeast } = usePermissions()
   // Same gate as the old <Can permission={MembersManage} minRole="admin">.
-  const canManageMembers = can(Permission.MembersManage) && isAtLeast('admin')
+  const canManageMembers = useCanMutate('PATCH /api/v1/tenants/{tenant}/members/{userId}')
   const currentUser = useUser()
   const caller = { isOwner: isOwner(), userId: currentUser?.id }
 
@@ -701,13 +701,13 @@ export default function UsersPage() {
                 </>
               )}
               {!isOwnerRow && locked && (
-                <Can permission={Permission.MembersManage} minRole="admin">
+                <Can route="PATCH /api/v1/tenants/{tenant}/members/{userId}">
                   <PeerAdminLockedItems mfaEnabled={member.mfa_status === 'enabled'} />
                 </Can>
               )}
               {!isOwnerRow && !locked && (
                 <>
-                  <Can permission={Permission.RolesAssign}>
+                  <Can route="PUT /api/v1/users/{userId}/roles">
                     <DropdownMenuItem
                       onClick={() => {
                         setEditRolesMember(member)
@@ -718,7 +718,7 @@ export default function UsersPage() {
                       Change roles
                     </DropdownMenuItem>
                   </Can>
-                  <Can permission={Permission.MembersManage} minRole="admin">
+                  <Can route="PATCH /api/v1/tenants/{tenant}/members/{userId}">
                     {member.pending_setup && (
                       <DropdownMenuItem
                         onSelect={(e) => {
@@ -972,12 +972,18 @@ export default function UsersPage() {
       cell: ({ row }) => (
         <DataTableRowActions
           actions={[
-            { label: 'Resend email', icon: Send, onClick: () => resendInvite(row.original) },
+            {
+              label: 'Resend email',
+              icon: Send,
+              route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend',
+              onClick: () => resendInvite(row.original),
+            },
             {
               label: 'Cancel invitation',
               icon: Trash2,
               destructive: true,
               separatorBefore: true,
+              route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}',
               onClick: () => cancelInvite(row.original),
             },
           ]}
@@ -1036,13 +1042,13 @@ export default function UsersPage() {
         >
           {/* Accounts are created by owners/admins (no self-registration);
               inviting someone who already has an account stays available. */}
-          <Can permission={Permission.MembersInvite} minRole="admin" mode="disable">
+          <Can route="POST /api/v1/tenants/{tenant}/invitations" mode="disable">
             <Button size="sm" variant="outline" onClick={() => setInviteDialogOpen(true)}>
               <Send className="me-2 h-4 w-4" />
               Invite user
             </Button>
           </Can>
-          <Can permission={Permission.MembersManage} minRole="admin" mode="disable">
+          <Can route="POST /api/v1/tenants/{tenant}/users" mode="disable">
             <Button size="sm" onClick={() => setAddUserOpen(true)}>
               <UserPlus className="me-2 h-4 w-4" />
               Add user
