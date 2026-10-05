@@ -32575,7 +32575,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['internal_infra_http_handler.UserResponse']
+            'application/json': components['schemas']['internal_infra_http_handler.PreferencesDTO']
           }
         }
         /** @description Bad Request */

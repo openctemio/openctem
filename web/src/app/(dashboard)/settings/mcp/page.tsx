@@ -171,7 +171,7 @@ export default function MCPConnectPage() {
         title="AI access (MCP)"
         description="Connect Claude (Desktop, Code, or any MCP client) to this tenant's CTEM data — read-only."
       >
-        <Can permission={Permission.ApiKeysWrite}>
+        <Can route="POST /api/v1/api-keys">
           <Button size="sm" onClick={() => setDialogOpen(true)}>
             <KeyRound className="me-2 h-4 w-4" />
             Generate connection key
