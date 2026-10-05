@@ -782,7 +782,7 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
   [easm.md §5a](../architecture/easm.md#5a-after-a-decision-built-p0-9).
 
 - **P0-10 tenant domain verification with a purpose (E6):** shipped
-  (#1151, migration `001076`). Tenants verify domains themselves through
+  (#1151, migration `001081`). Tenants verify domains themselves through
   `/api/v1/easm/verified-domains` (scope permissions, 10 checks per hour,
   audited); each row has a `purpose`, and only `sso` rows (platform admin)
   admit SSO JIT and SCIM users. Web: Verify on each seed.
