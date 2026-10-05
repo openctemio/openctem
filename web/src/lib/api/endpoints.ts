@@ -410,8 +410,6 @@ export const tenantEndpoints = {
   /**
    * Update API settings
    */
-  updateAPISettings: (tenantIdOrSlug: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/api`,
 
   /**
    * Update branding settings

@@ -20,7 +20,6 @@ import (
 type Settings struct {
 	General        GeneralSettings        `json:"general"`
 	Security       SecuritySettings       `json:"security"`
-	API            APISettings            `json:"api"`
 	Branding       BrandingSettings       `json:"branding"`
 	Branch         BranchSettings         `json:"branch"`
 	AI             AISettings             `json:"ai"`
@@ -341,54 +340,6 @@ func (m EmailVerificationMode) IsValid() bool {
 	switch m {
 	case EmailVerificationAuto, EmailVerificationAlways, EmailVerificationNever, "":
 		return true
-	}
-	return false
-}
-
-// APISettings contains API and webhook configuration.
-type APISettings struct {
-	APIKeyEnabled bool           `json:"api_key_enabled"` // Enable API key access
-	WebhookURL    string         `json:"webhook_url"`     // Webhook endpoint URL
-	WebhookSecret string         `json:"webhook_secret"`  // Webhook signing secret
-	WebhookEvents []WebhookEvent `json:"webhook_events"`  // Events to send to webhook
-}
-
-// WebhookEvent represents a webhook event type.
-type WebhookEvent string
-
-const (
-	WebhookEventFindingCreated  WebhookEvent = "finding.created"
-	WebhookEventFindingResolved WebhookEvent = "finding.resolved"
-	WebhookEventFindingUpdated  WebhookEvent = "finding.updated"
-	WebhookEventScanCompleted   WebhookEvent = "scan.completed"
-	WebhookEventScanFailed      WebhookEvent = "scan.failed"
-	WebhookEventAssetDiscovered WebhookEvent = "asset.discovered"
-	WebhookEventAssetUpdated    WebhookEvent = "asset.updated"
-	WebhookEventMemberJoined    WebhookEvent = "member.joined"
-	WebhookEventMemberRemoved   WebhookEvent = "member.removed"
-)
-
-// ValidWebhookEvents returns all valid webhook events.
-func ValidWebhookEvents() []WebhookEvent {
-	return []WebhookEvent{
-		WebhookEventFindingCreated,
-		WebhookEventFindingResolved,
-		WebhookEventFindingUpdated,
-		WebhookEventScanCompleted,
-		WebhookEventScanFailed,
-		WebhookEventAssetDiscovered,
-		WebhookEventAssetUpdated,
-		WebhookEventMemberJoined,
-		WebhookEventMemberRemoved,
-	}
-}
-
-// IsValid checks if the webhook event is valid.
-func (e WebhookEvent) IsValid() bool {
-	for _, v := range ValidWebhookEvents() {
-		if e == v {
-			return true
-		}
 	}
 	return false
 }
@@ -815,12 +766,6 @@ func DefaultSettings() Settings {
 			AllowedDomains:        []string{},
 			EmailVerificationMode: EmailVerificationAuto, // Smart: require iff SMTP configured
 		},
-		API: APISettings{
-			APIKeyEnabled: false,
-			WebhookURL:    "",
-			WebhookSecret: "",
-			WebhookEvents: []WebhookEvent{},
-		},
 		Branding: BrandingSettings{
 			PrimaryColor: "#3B82F6", // Blue
 			LogoDarkURL:  "",
@@ -867,9 +812,6 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.Security.Validate(); err != nil {
 		return fmt.Errorf("security settings: %w", err)
-	}
-	if err := s.API.Validate(); err != nil {
-		return fmt.Errorf("api settings: %w", err)
 	}
 	if err := s.Branding.Validate(); err != nil {
 		return fmt.Errorf("branding settings: %w", err)
@@ -947,23 +889,6 @@ func (s *SecuritySettings) Validate() error {
 	for _, domain := range s.AllowedDomains {
 		if !isValidDomain(domain) {
 			return fmt.Errorf("%w: invalid domain: %s", shared.ErrValidation, domain)
-		}
-	}
-	return nil
-}
-
-// Validate validates API settings.
-func (s *APISettings) Validate() error {
-	// Validate webhook URL
-	if s.WebhookURL != "" {
-		if _, err := url.ParseRequestURI(s.WebhookURL); err != nil {
-			return fmt.Errorf("%w: invalid webhook URL", shared.ErrValidation)
-		}
-	}
-	// Validate webhook events
-	for _, event := range s.WebhookEvents {
-		if !event.IsValid() {
-			return fmt.Errorf("%w: invalid webhook event: %s", shared.ErrValidation, event)
 		}
 	}
 	return nil
@@ -1218,16 +1143,6 @@ func (t *Tenant) UpdateSecuritySettings(security SecuritySettings) error {
 	}
 	settings := t.TypedSettings()
 	settings.Security = security
-	return t.UpdateSettings(settings)
-}
-
-// UpdateAPISettings updates only the API settings.
-func (t *Tenant) UpdateAPISettings(api APISettings) error {
-	if err := api.Validate(); err != nil {
-		return err
-	}
-	settings := t.TypedSettings()
-	settings.API = api
 	return t.UpdateSettings(settings)
 }
 
