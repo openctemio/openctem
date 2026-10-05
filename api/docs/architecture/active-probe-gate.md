@@ -23,7 +23,14 @@ For each target, in order:
    - the inventory asset behind it (`DispatchTargetsInput.Assets`, or a typed
      target that names an asset as typed, lower-cased, or by the host of a
      URL or `host:port`) has an attribution record other than `confirmed`
-     (`needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`);
+     (`needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`).
+     **Takeover exception** (research/22 E13, `internal/app/easm/takeover_gate.go`):
+     a `dependency` asset is admitted to a scan that runs only the nuclei
+     `takeover` templates (scanner nuclei, `tags` exactly `takeover`, no
+     other template selection; `scan.IsTakeoverOnlyProbe`) while the DNS
+     check has an open `dangling_cname` on that asset in the same tenant.
+     It applies to scan create, clone, quick scan and scan runs; `POST
+     /commands` and the dispatch gate keep the plain rule;
    - the name, or any parent domain of it, is one the tenant rejected (a
      rejected asset or a live rejection tombstone), unless a person
      confirmed this very asset. This covers a rejected name that was deleted

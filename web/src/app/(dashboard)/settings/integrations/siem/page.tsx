@@ -21,12 +21,13 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { toast } from 'sonner'
 import { csrfFetch } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import {
   useNotificationIntegrationsApi,
   useCreateNotificationIntegrationApi,
   invalidateNotificationIntegrationsCache,
 } from '@/features/integrations'
+import { siemIntegrationsOnly } from '@/features/integrations/lib/integration-routing'
 import type { Integration } from '@/features/integrations'
 import {
   DataTable,
@@ -56,10 +57,7 @@ export default function SIEMIntegrationPage() {
   const { data, error, isLoading, mutate } = useNotificationIntegrationsApi()
   const { trigger: createIntegration, isMutating: creating } = useCreateNotificationIntegrationApi()
 
-  const splunkIntegrations = useMemo(
-    () => (data?.data ?? []).filter((i) => i.provider === 'splunk'),
-    [data]
-  )
+  const splunkIntegrations = useMemo(() => siemIntegrationsOnly(data?.data ?? []), [data])
 
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', hecUrl: '', token: '', index: '', sourcetype: '' })
@@ -177,7 +175,7 @@ export default function SIEMIntegrationPage() {
               icon: Send,
               onClick: () => void handleTest(row.original),
               disabled: testingId === row.original.id,
-              permission: Permission.IntegrationsManage,
+              route: 'PUT /api/v1/integrations/{id}',
             },
             {
               label: 'Delete',
@@ -185,7 +183,7 @@ export default function SIEMIntegrationPage() {
               onClick: () => setDeleteTarget(row.original),
               destructive: true,
               separatorBefore: true,
-              permission: Permission.IntegrationsManage,
+              route: 'PUT /api/v1/integrations/{id}',
             },
           ]}
         />
@@ -204,7 +202,7 @@ export default function SIEMIntegrationPage() {
         title="SIEM"
         description="Forward findings, exposures, scans and SLA breaches to Splunk through the HTTP Event Collector (HEC)."
       >
-        <Can permission={Permission.IntegrationsManage}>
+        <Can route="PUT /api/v1/integrations/{id}">
           <Button size="sm" onClick={() => setShowForm(true)}>
             <Plus className="me-2 h-4 w-4" />
             Add Splunk HEC
@@ -226,7 +224,7 @@ export default function SIEMIntegrationPage() {
             title="No SIEM integrations yet"
             description="Add a Splunk HTTP Event Collector to start forwarding security events to your SIEM."
             action={
-              <Can permission={Permission.IntegrationsManage}>
+              <Can route="PUT /api/v1/integrations/{id}">
                 <Button size="sm" onClick={() => setShowForm(true)}>
                   <Plus className="me-2 h-4 w-4" />
                   Add Splunk HEC

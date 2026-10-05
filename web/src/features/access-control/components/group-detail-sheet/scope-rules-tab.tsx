@@ -48,7 +48,6 @@ import type {
 } from '@/features/access-control/types'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can } from '@/lib/permissions'
-import { Permission } from '@/lib/permissions/constants'
 import { useGroupChannel } from '@/hooks/use-websocket'
 import type { ScopeChangeEventData } from '@/lib/websocket/types'
 import { ScopeRuleDialog } from './scope-rule-dialog'
@@ -188,7 +187,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
       <div className="flex items-center justify-between mb-4">
         <h4 className="text-sm font-medium">Scope Rules ({scopeRules.length})</h4>
         <div className="flex items-center gap-2">
-          <Can permission={Permission.GroupsWrite} mode="disable">
+          <Can route="POST /api/v1/groups/{groupId}/scope-rules/reconcile" mode="disable">
             <Button
               size="sm"
               variant="outline"
@@ -203,7 +202,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
               Reconcile
             </Button>
           </Can>
-          <Can permission={Permission.GroupsWrite} mode="disable">
+          <Can route="POST /api/v1/groups/{groupId}/scope-rules" mode="disable">
             <Button size="sm" onClick={() => setDialogOpen(true)} disabled={isCreating || !groupId}>
               <Plus className="me-2 h-4 w-4" />
               Add Rule
@@ -302,14 +301,14 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
                     {
                       label: 'Edit',
                       icon: Pencil,
-                      permission: Permission.GroupsWrite,
+                      route: 'PUT /api/v1/groups/{groupId}/scope-rules/{ruleId}',
                       onClick: () => setEditingRule(rule),
                     },
                     {
                       label: 'Delete',
                       icon: Trash2,
                       destructive: true,
-                      permission: Permission.GroupsDelete,
+                      route: 'DELETE /api/v1/groups/{groupId}/scope-rules/{ruleId}',
                       onClick: () => setDeleteConfirm(rule),
                     },
                   ]}
