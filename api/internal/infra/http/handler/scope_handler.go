@@ -129,32 +129,6 @@ type ScopeExclusionResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ScanScheduleResponse represents a scan schedule in API responses.
-type ScanScheduleResponse struct {
-	ID                   string                 `json:"id"`
-	TenantID             string                 `json:"tenant_id"`
-	Name                 string                 `json:"name"`
-	Description          string                 `json:"description,omitempty"`
-	ScanType             string                 `json:"scan_type"`
-	TargetScope          string                 `json:"target_scope" validate:"omitempty,oneof=all selected tag"`
-	TargetIDs            []string               `json:"target_ids,omitempty"`
-	TargetTags           []string               `json:"target_tags,omitempty"`
-	ScannerConfigs       map[string]interface{} `json:"scanner_configs,omitempty"`
-	ScheduleType         string                 `json:"schedule_type"`
-	CronExpression       string                 `json:"cron_expression,omitempty"`
-	IntervalHours        int                    `json:"interval_hours,omitempty"`
-	Enabled              bool                   `json:"enabled"`
-	LastRunAt            *time.Time             `json:"last_run_at,omitempty"`
-	LastRunStatus        string                 `json:"last_run_status,omitempty"`
-	NextRunAt            *time.Time             `json:"next_run_at,omitempty"`
-	NotifyOnCompletion   bool                   `json:"notify_on_completion"`
-	NotifyOnFindings     bool                   `json:"notify_on_findings"`
-	NotificationChannels []string               `json:"notification_channels,omitempty"`
-	CreatedBy            string                 `json:"created_by,omitempty"`
-	CreatedAt            time.Time              `json:"created_at"`
-	UpdatedAt            time.Time              `json:"updated_at"`
-}
-
 // CreateTargetResponseWithWarnings wraps a target response with overlap warnings.
 type CreateTargetResponseWithWarnings struct {
 	ScopeTargetResponse
@@ -167,8 +141,6 @@ type ScopeStatsResponse struct {
 	ActiveTargets    int64   `json:"active_targets"`
 	TotalExclusions  int64   `json:"total_exclusions"`
 	ActiveExclusions int64   `json:"active_exclusions"`
-	TotalSchedules   int64   `json:"total_schedules"`
-	EnabledSchedules int64   `json:"enabled_schedules"`
 	Coverage         float64 `json:"coverage"`
 }
 
@@ -214,39 +186,6 @@ type UpdateScopeExclusionRequest struct {
 	ExpiresAt *time.Time `json:"expires_at"`
 }
 
-// CreateScanScheduleRequest represents the request to create a scan schedule.
-type CreateScanScheduleRequest struct {
-	Name                 string                 `json:"name" validate:"required,min=1,max=200"`
-	Description          string                 `json:"description" validate:"max=1000"`
-	ScanType             string                 `json:"scan_type" validate:"required"`
-	TargetScope          string                 `json:"target_scope"`
-	TargetIDs            []string               `json:"target_ids" validate:"max=100"`
-	TargetTags           []string               `json:"target_tags" validate:"max=20,dive,max=50"`
-	ScannerConfigs       map[string]interface{} `json:"scanner_configs"`
-	ScheduleType         string                 `json:"schedule_type" validate:"required"`
-	CronExpression       string                 `json:"cron_expression" validate:"max=100"`
-	IntervalHours        int                    `json:"interval_hours" validate:"min=0,max=8760"`
-	NotifyOnCompletion   bool                   `json:"notify_on_completion"`
-	NotifyOnFindings     bool                   `json:"notify_on_findings"`
-	NotificationChannels []string               `json:"notification_channels" validate:"max=10,dive,max=50"`
-}
-
-// UpdateScanScheduleRequest represents the request to update a scan schedule.
-type UpdateScanScheduleRequest struct {
-	Name                 *string                `json:"name" validate:"omitempty,min=1,max=200"`
-	Description          *string                `json:"description" validate:"omitempty,max=1000"`
-	TargetScope          *string                `json:"target_scope" validate:"omitempty,oneof=all selected tag"`
-	TargetIDs            []string               `json:"target_ids" validate:"omitempty,max=100"`
-	TargetTags           []string               `json:"target_tags" validate:"omitempty,max=20,dive,max=50"`
-	ScannerConfigs       map[string]interface{} `json:"scanner_configs"`
-	ScheduleType         *string                `json:"schedule_type"`
-	CronExpression       *string                `json:"cron_expression" validate:"omitempty,max=100"`
-	IntervalHours        *int                   `json:"interval_hours" validate:"omitempty,min=0,max=8760"`
-	NotifyOnCompletion   *bool                  `json:"notify_on_completion"`
-	NotifyOnFindings     *bool                  `json:"notify_on_findings"`
-	NotificationChannels []string               `json:"notification_channels" validate:"omitempty,max=10,dive,max=50"`
-}
-
 // CheckScopeRequest represents the request to check scope matching.
 type CheckScopeRequest struct {
 	AssetType string `json:"asset_type" validate:"required"`
@@ -261,11 +200,6 @@ type BulkDeleteTargetsRequest struct {
 // BulkDeleteExclusionsRequest represents bulk delete exclusions request.
 type BulkDeleteExclusionsRequest struct {
 	ExclusionIDs []string `json:"exclusion_ids" validate:"required,min=1,max=100,dive,uuid"`
-}
-
-// BulkDeleteSchedulesRequest represents bulk delete schedules request.
-type BulkDeleteSchedulesRequest struct {
-	ScheduleIDs []string `json:"schedule_ids" validate:"required,min=1,max=100,dive,uuid"`
 }
 
 // BulkOperationResponse represents the response for bulk operations.
@@ -316,38 +250,6 @@ func toScopeExclusionResponse(e *scopedom.Exclusion) ScopeExclusionResponse {
 	}
 }
 
-func toScanScheduleResponse(s *scopedom.Schedule) ScanScheduleResponse {
-	targetIDs := make([]string, len(s.TargetIDs()))
-	for i, id := range s.TargetIDs() {
-		targetIDs[i] = id.String()
-	}
-
-	return ScanScheduleResponse{
-		ID:                   s.ID().String(),
-		TenantID:             s.TenantID().String(),
-		Name:                 s.Name(),
-		Description:          s.Description(),
-		ScanType:             s.ScanType().String(),
-		TargetScope:          s.TargetScope().String(),
-		TargetIDs:            targetIDs,
-		TargetTags:           s.TargetTags(),
-		ScannerConfigs:       s.ScannerConfigs(),
-		ScheduleType:         s.ScheduleType().String(),
-		CronExpression:       s.CronExpression(),
-		IntervalHours:        s.IntervalHours(),
-		Enabled:              s.Enabled(),
-		LastRunAt:            s.LastRunAt(),
-		LastRunStatus:        s.LastRunStatus(),
-		NextRunAt:            s.NextRunAt(),
-		NotifyOnCompletion:   s.NotifyOnCompletion(),
-		NotifyOnFindings:     s.NotifyOnFindings(),
-		NotificationChannels: s.NotificationChannels(),
-		CreatedBy:            s.CreatedBy(),
-		CreatedAt:            s.CreatedAt(),
-		UpdatedAt:            s.UpdatedAt(),
-	}
-}
-
 // =============================================================================
 // Error Handling
 // =============================================================================
@@ -372,13 +274,11 @@ func (h *ScopeHandler) handleServiceError(w http.ResponseWriter, resource string
 	switch {
 	case errors.Is(err, shared.ErrNotFound),
 		errors.Is(err, scopedom.ErrTargetNotFound),
-		errors.Is(err, scopedom.ErrExclusionNotFound),
-		errors.Is(err, scopedom.ErrScheduleNotFound):
+		errors.Is(err, scopedom.ErrExclusionNotFound):
 		apierror.NotFound(resource).WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists),
 		errors.Is(err, scopedom.ErrTargetAlreadyExists),
-		errors.Is(err, scopedom.ErrExclusionAlreadyExists),
-		errors.Is(err, scopedom.ErrScheduleAlreadyExists):
+		errors.Is(err, scopedom.ErrExclusionAlreadyExists):
 		apierror.Conflict(resource + " already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
@@ -1061,316 +961,12 @@ func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Reques
 }
 
 // =============================================================================
-// Schedule Handlers
-// =============================================================================
-
-// ListSchedules handles GET /api/v1/scope/schedules
-// @Summary      List scan schedules
-// @Description  Get a paginated list of scan schedules for the current tenant
-// @Tags         Scope
-// @Accept       json
-// @Produce      json
-// @Param        scan_types      query     string  false  "Filter by scan types (comma-separated)"
-// @Param        schedule_types  query     string  false  "Filter by schedule types (comma-separated)"
-// @Param        enabled         query     bool    false  "Filter by enabled status"
-// @Param        search          query     string  false  "Search by name"
-// @Param        page            query     int     false  "Page number" default(1)
-// @Param        per_page        query     int     false  "Items per page" default(20)
-// @Success      200  {object}  ListResponse[ScanScheduleResponse]
-// @Failure      400  {object}  apierror.Error
-// @Failure      401  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /scope/schedules [get]
-func (h *ScopeHandler) ListSchedules(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	query := r.URL.Query()
-
-	input := scope.ListSchedulesInput{
-		TenantID:      tenantID,
-		ScanTypes:     parseQueryArray(query.Get("scan_types")),
-		ScheduleTypes: parseQueryArray(query.Get("schedule_types")),
-		Enabled:       parseQueryBoolPtr(query.Get("enabled")),
-		Search:        query.Get("search"),
-		Page:          parseQueryInt(query.Get("page"), 1),
-		PerPage:       parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
-	}
-
-	result, err := h.service.ListSchedules(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, "Scan schedule", err)
-		return
-	}
-
-	responses := make([]ScanScheduleResponse, len(result.Data))
-	for i, schedule := range result.Data {
-		responses[i] = toScanScheduleResponse(schedule)
-	}
-
-	response := ListResponse[ScanScheduleResponse]{
-		Data:       responses,
-		Total:      result.Total,
-		Page:       result.Page,
-		PerPage:    result.PerPage,
-		TotalPages: result.TotalPages,
-		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-// CreateSchedule handles POST /api/v1/scope/schedules
-// @Summary      Create scan schedule
-// @Description  Create a new scan schedule
-// @Tags         Scope
-// @Accept       json
-// @Produce      json
-// @Param        body  body      CreateScanScheduleRequest  true  "Scan schedule data"
-// @Success      201   {object}  ScanScheduleResponse
-// @Failure      400   {object}  apierror.Error
-// @Failure      409   {object}  apierror.Error
-// @Failure      500   {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /scope/schedules [post]
-func (h *ScopeHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	userID := middleware.GetUserID(r.Context())
-
-	var req CreateScanScheduleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid JSON").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := scope.CreateScheduleInput{
-		TenantID:             tenantID,
-		Name:                 req.Name,
-		Description:          req.Description,
-		ScanType:             req.ScanType,
-		TargetScope:          req.TargetScope,
-		TargetIDs:            req.TargetIDs,
-		TargetTags:           req.TargetTags,
-		ScannerConfigs:       req.ScannerConfigs,
-		ScheduleType:         req.ScheduleType,
-		CronExpression:       req.CronExpression,
-		IntervalHours:        req.IntervalHours,
-		NotifyOnCompletion:   req.NotifyOnCompletion,
-		NotifyOnFindings:     req.NotifyOnFindings,
-		NotificationChannels: req.NotificationChannels,
-		CreatedBy:            userID,
-	}
-
-	schedule, err := h.service.CreateSchedule(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, "Scan schedule", err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toScanScheduleResponse(schedule))
-}
-
-// GetSchedule handles GET /api/v1/scope/schedules/{id}
-// @Summary      Get scan schedule
-// @Description  Get a single scan schedule by ID
-// @Tags         Scope
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Schedule ID"
-// @Success      200  {object}  ScanScheduleResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /scope/schedules/{id} [get]
-func (h *ScopeHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
-	scheduleID := chi.URLParam(r, "id")
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	schedule, err := h.service.GetSchedule(r.Context(), tenantID, scheduleID)
-	if err != nil {
-		h.handleServiceError(w, "Scan schedule", err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toScanScheduleResponse(schedule))
-}
-
-// UpdateSchedule handles PUT /api/v1/scope/schedules/{id}
-// @Summary      Update scan schedule
-// @Description  Update an existing scan schedule
-// @Tags         Scope
-// @Accept       json
-// @Produce      json
-// @Param        id    path      string                     true  "Schedule ID"
-// @Param        body  body      UpdateScanScheduleRequest  true  "Update data"
-// @Success      200   {object}  ScanScheduleResponse
-// @Failure      400   {object}  apierror.Error
-// @Failure      404   {object}  apierror.Error
-// @Failure      500   {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /scope/schedules/{id} [put]
-func (h *ScopeHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
-	scheduleID := chi.URLParam(r, "id")
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	var req UpdateScanScheduleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid JSON").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := scope.UpdateScheduleInput{
-		Name:                 req.Name,
-		Description:          req.Description,
-		TargetScope:          req.TargetScope,
-		TargetIDs:            req.TargetIDs,
-		TargetTags:           req.TargetTags,
-		ScannerConfigs:       req.ScannerConfigs,
-		ScheduleType:         req.ScheduleType,
-		CronExpression:       req.CronExpression,
-		IntervalHours:        req.IntervalHours,
-		NotifyOnCompletion:   req.NotifyOnCompletion,
-		NotifyOnFindings:     req.NotifyOnFindings,
-		NotificationChannels: req.NotificationChannels,
-	}
-
-	schedule, err := h.service.UpdateSchedule(r.Context(), scheduleID, tenantID, input)
-	if err != nil {
-		h.handleServiceError(w, "Scan schedule", err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toScanScheduleResponse(schedule))
-}
-
-// DeleteSchedule handles DELETE /api/v1/scope/schedules/{id}
-// @Summary      Delete scan schedule
-// @Description  Delete a scan schedule
-// @Tags         Scope
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Schedule ID"
-// @Success      204  "No Content"
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /scope/schedules/{id} [delete]
-func (h *ScopeHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
-	scheduleID := chi.URLParam(r, "id")
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	if err := h.service.DeleteSchedule(r.Context(), scheduleID, tenantID); err != nil {
-		h.handleServiceError(w, "Scan schedule", err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// EnableSchedule handles POST /api/v1/scope/schedules/{id}/enable
-// @Summary      Enable scan schedule
-// @Description  Enable a scan schedule so it will run on its configured schedule
-// @Tags         Scope
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Schedule ID"
-// @Success      200  {object}  ScanScheduleResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /scope/schedules/{id}/enable [post]
-func (h *ScopeHandler) EnableSchedule(w http.ResponseWriter, r *http.Request) {
-	scheduleID := chi.URLParam(r, "id")
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	schedule, err := h.service.EnableSchedule(r.Context(), scheduleID, tenantID)
-	if err != nil {
-		h.handleServiceError(w, "Scan schedule", err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toScanScheduleResponse(schedule))
-}
-
-// DisableSchedule handles POST /api/v1/scope/schedules/{id}/disable
-// @Summary      Disable scan schedule
-// @Description  Disable a scan schedule so it will no longer run automatically
-// @Tags         Scope
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Schedule ID"
-// @Success      200  {object}  ScanScheduleResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /scope/schedules/{id}/disable [post]
-func (h *ScopeHandler) DisableSchedule(w http.ResponseWriter, r *http.Request) {
-	scheduleID := chi.URLParam(r, "id")
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	schedule, err := h.service.DisableSchedule(r.Context(), scheduleID, tenantID)
-	if err != nil {
-		h.handleServiceError(w, "Scan schedule", err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toScanScheduleResponse(schedule))
-}
-
-// RunScheduleNow handles POST /api/v1/scope/schedules/{id}/run
-// @Summary      Run scan schedule now
-// @Description  Trigger an immediate run of a scan schedule
-// @Tags         Scope
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Schedule ID"
-// @Success      200  {object}  ScanScheduleResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /scope/schedules/{id}/run [post]
-func (h *ScopeHandler) RunScheduleNow(w http.ResponseWriter, r *http.Request) {
-	scheduleID := chi.URLParam(r, "id")
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	schedule, err := h.service.RunScheduleNow(r.Context(), scheduleID, tenantID)
-	if err != nil {
-		h.handleServiceError(w, "Scan schedule", err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toScanScheduleResponse(schedule))
-}
-
-// =============================================================================
 // Stats & Check Handlers
 // =============================================================================
 
 // GetStats handles GET /api/v1/scope/stats
 // @Summary      Get scope statistics
-// @Description  Get aggregate statistics for scope targets, exclusions, and schedules
+// @Description  Get aggregate statistics for scope targets and exclusions
 // @Tags         Scope
 // @Produce      json
 // @Success      200  {object}  ScopeStatsResponse
@@ -1392,8 +988,6 @@ func (h *ScopeHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		ActiveTargets:    stats.ActiveTargets,
 		TotalExclusions:  stats.TotalExclusions,
 		ActiveExclusions: stats.ActiveExclusions,
-		TotalSchedules:   stats.TotalSchedules,
-		EnabledSchedules: stats.EnabledSchedules,
 		Coverage:         stats.Coverage,
 	}
 
@@ -1535,41 +1129,6 @@ func (h *ScopeHandler) BulkDeleteExclusions(w http.ResponseWriter, r *http.Reque
 		}
 		h.auditExclusion(r, audit.ActionScopeExclusionDeleted, id, before, nil)
 		return nil
-	})
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
-}
-
-// BulkDeleteSchedules handles POST /api/v1/scope/schedules/bulk/delete
-// @Summary      Bulk delete scan schedules
-// @Description  Delete multiple scan schedules in a single operation
-// @Tags         Scope
-// @Accept       json
-// @Produce      json
-// @Param        body  body      BulkDeleteSchedulesRequest  true  "Schedule IDs to delete"
-// @Success      200   {object}  ScopeBulkOperationResponse
-// @Failure      400   {object}  apierror.Error
-// @Failure      401   {object}  apierror.Error
-// @Failure      500   {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /scope/schedules/bulk/delete [post]
-func (h *ScopeHandler) BulkDeleteSchedules(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	var req BulkDeleteSchedulesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	result := h.bulkDeleteItems(r.Context(), req.ScheduleIDs, tenantID, func(ctx context.Context, id, tid string) error {
-		return h.service.DeleteSchedule(ctx, id, tid)
 	})
 
 	w.Header().Set("Content-Type", "application/json")
