@@ -336,6 +336,7 @@
 "POST /api/v1/scans/bulk/pause": {"permissions":["scans:write"]},
 "POST /api/v1/scans/import": {"permissions":["scans:write"]},
 "POST /api/v1/scans/quick": {"permissions":["scans:execute","scans:write"]},
+"POST /api/v1/scans/schedule-preview": {"permissions":["scans:read"]},
 "POST /api/v1/scans/{id}/activate": {"permissions":["scans:write"]},
 "POST /api/v1/scans/{id}/clone": {"permissions":["scans:write"]},
 "POST /api/v1/scans/{id}/disable": {"permissions":["scans:write"]},
