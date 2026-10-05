@@ -6,9 +6,10 @@
 // is auto-confirmed only when at least one strong rule fired and c ≥ 90;
 // otherwise it waits for review (c ≥ 50) or stays a candidate.
 //
-// An asset with no attribution record is a legacy asset and counts as
-// confirmed: everything in the inventory before EASM was put there by the
-// tenant, a scan it ran, or an integration it connected.
+// An asset with no attribution record is a legacy asset. For the inventory
+// and the review queue it counts as confirmed. For active scanning it does
+// not by itself: an internet-facing asset without a record is probed only
+// inside an active scope target or under a seed (StateUnattributed).
 package attribution
 
 import (
@@ -45,9 +46,18 @@ func (s State) Valid() bool {
 	return false
 }
 
-// AllowsActiveChecks reports whether a sensor may touch an asset in this
-// state (RFC-036 §6.3 active_allowed: confirmed only). The empty state is a
-// legacy asset without a record and is treated as confirmed.
+// StateUnattributed is never stored: it is the active-scan gate's answer for
+// an internet-facing asset with no attribution record that is neither inside
+// an active scope target nor at or under one of the tenant's root-domain
+// seeds or verified domains. Nobody has said it is the tenant's, so it is
+// not probed until a person confirms it or a scope target covers it.
+const StateUnattributed State = "unattributed"
+
+// AllowsActiveChecks reports whether a recorded state lets a sensor touch an
+// asset (RFC-036 §6.3 active_allowed: confirmed only). The empty state (no
+// record) answers true here only as far as the record goes: the active-scan
+// gate (internal/app/easm ActiveGate) then also requires an internet-facing
+// asset without a record to sit inside a scope target or under a seed.
 func (s State) AllowsActiveChecks() bool {
 	return s == "" || s == StateConfirmed
 }

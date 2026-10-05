@@ -5260,6 +5260,14 @@ definitions:
       active_checks_allowed:
         description: 'ActiveChecksAllowed: whether a scan may touch the asset.'
         type: boolean
+      active_checks_blocked_by:
+        description: |-
+          ActiveChecksBlockedBy says why a scan may not touch the asset when
+          active_checks_allowed is false: its state (needs_review, candidate,
+          dependency, monitor_only, rejected; rejected also for a name under a
+          rejected name), or unattributed: no record, and neither inside a scope
+          target nor under a root-domain seed or verified domain.
+        type: string
       confidence:
         type: integer
       decided_at:
