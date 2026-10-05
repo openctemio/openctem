@@ -1263,6 +1263,35 @@ and narrows dispatch:
   sensor can only withhold jobs from itself, and the sensor keeps enforcing
   its own policy on whatever it receives. Failures to read the sensor or the
   tenant setting withhold (fail closed).
+- **Organization opt-ins, default off** (research/25 D3, D9). Security
+  settings `allow_sensor_interactsh` and `allow_sensor_custom_templates`
+  (`tenant.SecuritySettings`), off for existing and new organizations. The
+  platform-side layer (`managed`) of the pre-check: with a switch off the
+  platform sends no job that turns out-of-band callbacks on or carries custom
+  templates, to any sensor, whatever its own policy allows. Sensors without a
+  local policy (legacy ceiling: both on, Q4 (a)) are therefore safe from this
+  release without a host change. Where it applies:
+  - scan create and update refuse `allow_interactsh: true` (boolean or the
+    string `"true"`) and a non-empty `custom_template_ids` with
+    `SENSOR_OPT_IN_DISABLED` (400);
+  - trigger of an existing scan: `allow_interactsh` is removed for that run
+    (the stored scan is untouched; the run carries a warning), and a scan with
+    custom templates is refused (running it without them would run the
+    scanner's default set, wider than what the author chose);
+  - `POST /api/v1/commands` refuses a scan payload asking for either (in
+    `config`, `scanner_config` or `custom_templates`);
+  - dispatch (`command.WithOptInPolicy`) withholds such commands from every
+    sensor (claim by id: `ErrOptInDisabled`), the backstop for commands queued
+    before the release; they expire. An unreadable setting withholds.
+
+  Only an owner changes them (`PATCH /tenants/{tenant}/settings/security`).
+  Turning one on is audited as `sensor.opt_in_changed` at critical severity
+  and logged as alert `sensor_opt_in_enabled`; turning it off is audited at
+  medium. `GET /api/v1/scans/sensor-opt-in-impact` (`scans:read`) returns the
+  switches and the scans that ask for either (at most 100), for the banner
+  shown to existing organizations. Enabling a switch never overrides a
+  sensor's local policy: the job still goes only to sensors whose own policy
+  accepts it.
 - **Install dialog.** `GET /sensors/{id}/config-templates` returns `policy`, a
   sensor-policy/v1 template (`configs/sensor-templates/policy.tmpl`)
   prefilled with the ranges of the sensor's scan zones (none for a sensor in

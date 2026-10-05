@@ -115,3 +115,36 @@ func TestHasPrivateAddress(t *testing.T) {
 		}
 	}
 }
+
+func TestAccepts_OptIns(t *testing.T) {
+	oast := Job{Type: "scan", Tool: "nuclei", Interactsh: true}
+	tmpl := Job{Type: "scan", Tool: "nuclei", CustomTemplates: 1}
+	legacy := &LocalPolicyReport{State: LocalPolicyAbsent} // allows both opt-ins locally
+	off := DispatchOptions{OptIns: &OptIns{}}
+	for name, tc := range map[string]struct {
+		job      Job
+		opts     DispatchOptions
+		wantRule string
+	}{
+		"interactsh, default off":     {oast, off, RuleAllowInteractsh},
+		"templates, default off":      {tmpl, off, RuleAllowCustomTemplates},
+		"plain job, default off":      {Job{Type: "scan", Tool: "nuclei"}, off, ""},
+		"interactsh enabled":          {oast, DispatchOptions{OptIns: &OptIns{AllowInteractsh: true}}, ""},
+		"templates enabled":           {tmpl, DispatchOptions{OptIns: &OptIns{AllowCustomTemplates: true}}, ""},
+		"not evaluated (nil opt-ins)": {oast, DispatchOptions{}, ""},
+	} {
+		got := Accepts(legacy, tc.job, tc.opts)
+		switch {
+		case tc.wantRule == "" && got != nil:
+			t.Errorf("%s: refused %+v", name, got)
+		case tc.wantRule != "" && (got == nil || got.Layer != RefusalLayerManaged || got.Rule != tc.wantRule):
+			t.Errorf("%s: %+v, want managed/%s", name, got, tc.wantRule)
+		}
+	}
+	// Enabled at the organization but refused by the sensor's own policy:
+	// the local refusal stands (the platform never widens the sensor).
+	strict := &LocalPolicyReport{State: LocalPolicyEnforced, Summary: &LocalPolicySummary{TargetsAllow: -1}}
+	if got := Accepts(strict, oast, DispatchOptions{OptIns: &OptIns{AllowInteractsh: true}}); got == nil || got.Layer != RefusalLayerLocal {
+		t.Errorf("enabled but locally refused: %+v", got)
+	}
+}
