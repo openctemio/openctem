@@ -28,6 +28,8 @@ type Settings struct {
 	AssetIdentity  AssetIdentitySettings  `json:"asset_identity"`
 	AssetLifecycle AssetLifecycleSettings `json:"asset_lifecycle"`
 	Retest         RetestSettings         `json:"retest"`
+	// EASM is attack-surface monitoring (research/22 P0-11).
+	EASM EASMSettings `json:"easm,omitempty"`
 
 	// SubscribedBundles is the set of product-bundle IDs the tenant runs
 	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the

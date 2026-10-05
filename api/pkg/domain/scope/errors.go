@@ -36,13 +36,6 @@ var (
 	// back into effect; create a new request instead.
 	ErrExclusionRejected = fmt.Errorf("%w: scope exclusion was rejected", shared.ErrConflict)
 
-	// Schedule errors
-	ErrInvalidScanType       = fmt.Errorf("%w: invalid scan type", shared.ErrValidation)
-	ErrInvalidScheduleType   = fmt.Errorf("%w: invalid schedule type", shared.ErrValidation)
-	ErrScheduleNotFound      = fmt.Errorf("%w: scan schedule not found", shared.ErrNotFound)
-	ErrScheduleAlreadyExists = fmt.Errorf("%w: scan schedule already exists", shared.ErrConflict)
-	ErrNameRequired          = fmt.Errorf("%w: name is required", shared.ErrValidation)
-
 	// Pattern errors
 	ErrInvalidPattern = fmt.Errorf("%w: invalid pattern", shared.ErrValidation)
 	ErrPatternTooLong = fmt.Errorf("%w: pattern too long", shared.ErrValidation)

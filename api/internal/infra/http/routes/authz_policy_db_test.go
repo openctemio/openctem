@@ -117,7 +117,7 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 		commandapp.WithSensorLookup(postgres.NewSensorRepository(db))), v, log)
 	commandHandler.SetAuditService(auditSvc)
 	commandHandler.SetScanCommandGate(scanapp.NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, log,
-		scanapp.WithScopeExclusionFilter(scopeapp.NewService(nil, postgres.NewScopeExclusionRepository(db), nil, nil, log)),
+		scanapp.WithScopeExclusionFilter(scopeapp.NewService(nil, postgres.NewScopeExclusionRepository(db), nil, log)),
 		scanapp.WithScanZones(postgres.NewScanZoneRepository(db), nil)))
 
 	router := infrahttp.NewChiRouter()
@@ -132,7 +132,7 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 		TemplateSource: handler.NewTemplateSourceHandler(templateapp.NewSourceService(postgres.NewTemplateSourceRepository(db), log), v, log),
 		Command:        commandHandler,
 		Scope: handler.NewScopeHandler(scopeapp.NewService(postgres.NewScopeTargetRepository(db),
-			postgres.NewScopeExclusionRepository(db), postgres.NewScopeScheduleRepository(db),
+			postgres.NewScopeExclusionRepository(db),
 			postgres.NewAssetRepository(db), log), v, log),
 		BusinessUnit: handler.NewBusinessUnitHandler(
 			app.NewBusinessUnitService(postgres.NewBusinessUnitRepository(db), postgres.NewAssetRepository(db), log), log),
@@ -572,7 +572,7 @@ http:
 // the same service read the scan dispatcher uses.
 func (h *authzPolicyHarness) excluded(tenantID string) bool {
 	h.t.Helper()
-	svc := scopeapp.NewService(nil, postgres.NewScopeExclusionRepository(&postgres.DB{DB: h.db}), nil, nil, logger.NewNop())
+	svc := scopeapp.NewService(nil, postgres.NewScopeExclusionRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop())
 	id := shared.NewID()
 	set, err := svc.ExcludedTargets(context.Background(), tenantID,
 		[]scopeapp.ExclusionCandidate{{ID: id, Values: []string{"prod.example.com"}}})

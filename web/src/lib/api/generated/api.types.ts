@@ -11762,6 +11762,100 @@ export interface paths {
     }
     trace?: never
   }
+  '/easm/settings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Attack-surface monitoring settings
+     * @description Whether the Certificate Transparency monitor and the DNS-only checks run for the organization, their cadence (platform floor 6 h), and when each last ran.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMSettingsResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Change attack-surface monitoring settings
+     * @description Turn the Certificate Transparency monitor (sends the organization's domain names to crt.sh and Cert Spotter) or the DNS-only checks off or on, and set their interval in hours: 0 for the platform default, otherwise 6 to 168. Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMSettingsUpdateRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMSettingsResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/easm/summary': {
     parameters: {
       query?: never
@@ -11813,6 +11907,54 @@ export interface paths {
     }
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/sweeps': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Run discovery and DNS checks now
+     * @description Starts the Certificate Transparency monitor and then the DNS-only checks for the organization in the background (each only if it is on). At most once per 15 minutes per organization (429 with Retry-After). Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description Accepted */
+        202: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SweepTicket']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     delete?: never
     options?: never
     head?: never
@@ -25314,596 +25456,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/scope/schedules': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * List scan schedules
-     * @description Get a paginated list of scan schedules for the current tenant
-     */
-    get: {
-      parameters: {
-        query?: {
-          /** @description Filter by scan types (comma-separated) */
-          scan_types?: string
-          /** @description Filter by schedule types (comma-separated) */
-          schedule_types?: string
-          /** @description Filter by enabled status */
-          enabled?: boolean
-          /** @description Search by name */
-          search?: string
-          /** @description Page number */
-          page?: number
-          /** @description Items per page */
-          per_page?: number
-        }
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-internal_infra_http_handler_ScanScheduleResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    /**
-     * Create scan schedule
-     * @description Create a new scan schedule
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description Scan schedule data */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.CreateScanScheduleRequest']
-        }
-      }
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ScanScheduleResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Conflict */
-        409: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/scope/schedules/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get scan schedule
-     * @description Get a single scan schedule by ID
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Schedule ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ScanScheduleResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    /**
-     * Update scan schedule
-     * @description Update an existing scan schedule
-     */
-    put: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Schedule ID */
-          id: string
-        }
-        cookie?: never
-      }
-      /** @description Update data */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.UpdateScanScheduleRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ScanScheduleResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    post?: never
-    /**
-     * Delete scan schedule
-     * @description Delete a scan schedule
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Schedule ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/scope/schedules/{id}/disable': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Disable scan schedule
-     * @description Disable a scan schedule so it will no longer run automatically
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Schedule ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ScanScheduleResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/scope/schedules/{id}/enable': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Enable scan schedule
-     * @description Enable a scan schedule so it will run on its configured schedule
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Schedule ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ScanScheduleResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/scope/schedules/{id}/run': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Run scan schedule now
-     * @description Trigger an immediate run of a scan schedule
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Schedule ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ScanScheduleResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/scope/schedules/bulk/delete': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Bulk delete scan schedules
-     * @description Delete multiple scan schedules in a single operation
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description Schedule IDs to delete */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.BulkDeleteSchedulesRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ScopeBulkOperationResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/scope/stats': {
     parameters: {
       query?: never
@@ -25913,7 +25465,7 @@ export interface paths {
     }
     /**
      * Get scope statistics
-     * @description Get aggregate statistics for scope targets, exclusions, and schedules
+     * @description Get aggregate statistics for scope targets and exclusions
      */
     get: {
       parameters: {
@@ -35474,6 +35026,12 @@ export interface components {
       exposed_services?: number
       total?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.SweepTicket': {
+      ct_included?: boolean
+      dns_included?: boolean
+      next_run_now_at?: string
+      started_at?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_easm.TypeCount': {
       count?: number
       type?: string
@@ -37419,9 +36977,6 @@ export interface components {
     'internal_infra_http_handler.BulkDeleteRequest': {
       group_ids: string[]
     }
-    'internal_infra_http_handler.BulkDeleteSchedulesRequest': {
-      schedule_ids: string[]
-    }
     'internal_infra_http_handler.BulkDeleteTargetsRequest': {
       target_ids: string[]
     }
@@ -37989,23 +37544,6 @@ export interface components {
       timeout_seconds?: number
       timezone?: string
     }
-    'internal_infra_http_handler.CreateScanScheduleRequest': {
-      cron_expression?: string
-      description?: string
-      interval_hours?: number
-      name: string
-      notification_channels?: string[]
-      notify_on_completion?: boolean
-      notify_on_findings?: boolean
-      scan_type: string
-      scanner_configs?: {
-        [key: string]: unknown
-      }
-      schedule_type: string
-      target_ids?: string[]
-      target_scope?: string
-      target_tags?: string[]
-    }
     'internal_infra_http_handler.CreateScanZoneRequest': {
       description?: string
       is_default?: boolean
@@ -38289,6 +37827,40 @@ export interface components {
     'internal_infra_http_handler.EASMSeedUpdateRequest': {
       discovery_enabled?: boolean
       label?: string
+    }
+    'internal_infra_http_handler.EASMSettingsResponse': {
+      /**
+       * @description CTAvailable / DNSAvailable: false when the operator turned the part
+       *     off for the whole platform; the switch then has no effect.
+       */
+      ct_available?: boolean
+      /** @description Effective cadence, platform defaults and floors. */
+      ct_effective_interval_hours?: number
+      /**
+       * @description CTEnabled: the Certificate Transparency monitor runs for the
+       *     organization (its domain names are sent to crt.sh and Cert Spotter).
+       */
+      ct_enabled?: boolean
+      /** @description CTIntervalHours / DNSIntervalHours: 0 = the platform default. */
+      ct_interval_hours?: number
+      dns_available?: boolean
+      /** @description DNSChecksEnabled: dangling CNAME/NS, lame delegation and email posture. */
+      dns_checks_enabled?: boolean
+      dns_effective_interval_hours?: number
+      dns_interval_hours?: number
+      /** @description Freshness. */
+      last_ct_sweep_at?: string
+      last_dns_check_at?: string
+      max_interval_hours?: number
+      min_interval_hours?: number
+      run_now_available_at?: string
+    }
+    'internal_infra_http_handler.EASMSettingsUpdateRequest': {
+      ct_enabled?: boolean
+      /** @description 0 = platform default; otherwise 6..168. */
+      ct_interval_hours?: number
+      dns_checks_enabled?: boolean
+      dns_interval_hours?: number
     }
     'internal_infra_http_handler.EmbeddedCategoryResponse': {
       color?: string
@@ -39394,14 +38966,6 @@ export interface components {
       total?: number
       total_pages?: number
     }
-    'internal_infra_http_handler.ListResponse-internal_infra_http_handler_ScanScheduleResponse': {
-      data?: components['schemas']['internal_infra_http_handler.ScanScheduleResponse'][]
-      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
-      page?: number
-      per_page?: number
-      total?: number
-      total_pages?: number
-    }
     'internal_infra_http_handler.ListResponse-internal_infra_http_handler_ScanSessionResponse': {
       data?: components['schemas']['internal_infra_http_handler.ScanSessionResponse'][]
       links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
@@ -40420,33 +39984,6 @@ export interface components {
       scan_id?: string
       success?: boolean
     }
-    'internal_infra_http_handler.ScanScheduleResponse': {
-      created_at?: string
-      created_by?: string
-      cron_expression?: string
-      description?: string
-      enabled?: boolean
-      id?: string
-      interval_hours?: number
-      last_run_at?: string
-      last_run_status?: string
-      name?: string
-      next_run_at?: string
-      notification_channels?: string[]
-      notify_on_completion?: boolean
-      notify_on_findings?: boolean
-      scan_type?: string
-      scanner_configs?: {
-        [key: string]: unknown
-      }
-      schedule_type?: string
-      target_ids?: string[]
-      /** @enum {string} */
-      target_scope?: 'all' | 'selected' | 'tag'
-      target_tags?: string[]
-      tenant_id?: string
-      updated_at?: string
-    }
     'internal_infra_http_handler.ScanSessionResponse': {
       asset_id?: string
       asset_type?: string
@@ -40648,9 +40185,7 @@ export interface components {
       active_exclusions?: number
       active_targets?: number
       coverage?: number
-      enabled_schedules?: number
       total_exclusions?: number
-      total_schedules?: number
       total_targets?: number
     }
     'internal_infra_http_handler.ScopeTargetResponse': {
@@ -41893,23 +41428,6 @@ export interface components {
       targets_per_job?: number
       timeout_seconds?: number
       timezone?: string
-    }
-    'internal_infra_http_handler.UpdateScanScheduleRequest': {
-      cron_expression?: string
-      description?: string
-      interval_hours?: number
-      name?: string
-      notification_channels?: string[]
-      notify_on_completion?: boolean
-      notify_on_findings?: boolean
-      scanner_configs?: {
-        [key: string]: unknown
-      }
-      schedule_type?: string
-      target_ids?: string[]
-      /** @enum {string} */
-      target_scope?: 'all' | 'selected' | 'tag'
-      target_tags?: string[]
     }
     'internal_infra_http_handler.UpdateScanSessionRequest': {
       error_message?: string
