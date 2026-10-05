@@ -5,3 +5,5 @@ SET lock_timeout = '5s';
 DROP TRIGGER IF EXISTS trigger_sensor_grants_default ON sensors;
 DROP FUNCTION IF EXISTS sensor_grants_default();
 DROP TABLE IF EXISTS sensor_grants;
+ALTER TABLE sensors DROP CONSTRAINT IF EXISTS chk_sensors_trust_level;
+ALTER TABLE sensors DROP COLUMN IF EXISTS trust_level;
