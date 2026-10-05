@@ -30,11 +30,16 @@ const ReasonOwnershipNotConfirmed = "its ownership is not confirmed for active s
 // refuseUnownedTargets refuses a target list (scan create, update, clone,
 // import, quick scan, a scan command) when any target is one the tenant has
 // not authorized for active scanning. A failed check refuses (fail closed).
-func (s *Service) refuseUnownedTargets(ctx context.Context, tenantID shared.ID, path string, targets []string) error {
+// takeoverOnly (IsTakeoverOnlyProbe) lets the gate admit dependency assets
+// with an open dangling_cname (research/22 E13).
+func (s *Service) refuseUnownedTargets(ctx context.Context, tenantID shared.ID, path string, targets []string, takeoverOnly bool) error {
 	if s.attributionGate == nil || len(targets) == 0 {
 		return nil
 	}
 	blocked, err := s.attributionGate.BlockedTargets(ctx, tenantID, targets)
+	if err == nil && takeoverOnly {
+		err = s.admitTakeoverTargets(ctx, tenantID, blocked, false)
+	}
 	if err != nil {
 		s.logger.Warn("ownership check failed, request refused", "tenant_id", tenantID.String(), "path", path,
 			"error", logger.SanitizeError(err))
@@ -88,7 +93,7 @@ func (s *Service) auditRefusedTargets(ctx context.Context, tenantID shared.ID, p
 // exclusions left in: group members by asset id, direct targets by name.
 // It returns the blocked candidates keyed by candidate id.
 func (s *Service) blockedCandidates(ctx context.Context, tenantID shared.ID, candidates []scope.ExclusionCandidate,
-	names map[shared.ID]string, memberIDs, excluded map[shared.ID]bool,
+	names map[shared.ID]string, memberIDs, excluded map[shared.ID]bool, takeoverOnly bool,
 ) (map[string]attribution.State, error) {
 	out := map[string]attribution.State{}
 	if s.attributionGate == nil || len(candidates) == 0 {
@@ -110,6 +115,9 @@ func (s *Service) blockedCandidates(ctx context.Context, tenantID shared.ID, can
 	}
 	if len(ids) > 0 {
 		blocked, err := s.attributionGate.ActiveCheckBlocked(ctx, tenantID, ids)
+		if err == nil && takeoverOnly {
+			err = s.admitTakeoverTargets(ctx, tenantID, blocked, true)
+		}
 		if err != nil {
 			return nil, attributionCheckFailed(err)
 		}
@@ -119,6 +127,9 @@ func (s *Service) blockedCandidates(ctx context.Context, tenantID shared.ID, can
 	}
 	if len(typed) > 0 {
 		blocked, err := s.attributionGate.BlockedTargets(ctx, tenantID, typed)
+		if err == nil && takeoverOnly {
+			err = s.admitTakeoverTargets(ctx, tenantID, blocked, false)
+		}
 		if err != nil {
 			return nil, attributionCheckFailed(err)
 		}
