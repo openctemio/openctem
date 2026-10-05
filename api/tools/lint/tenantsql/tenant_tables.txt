@@ -33,6 +33,7 @@ business_units
 capabilities
 ci_gate_overrides
 ci_gate_policies
+ci_pipelines
 ci_run_findings
 ci_runs
 ci_trust_configs

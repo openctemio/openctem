@@ -15,7 +15,7 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account) | console session, ops_admin+ (audited) |
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
 | Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/accept` with `{"token"}` in the body | owner/admin to invite; the token + matching email to accept |
-| Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain + allowed domains |
+| Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
 | Self-registration | `POST /api/v1/auth/register` | `AUTH_ALLOW_REGISTRATION=true` only (default false) |
 
 ### Invitation tokens stay out of URLs
@@ -123,7 +123,7 @@ or key belongs to. Changes take effect within 30 seconds on every API instance
 | User sessions (REST, WebSocket upgrade) | enforced | the people the policy is for |
 | `oct_` API keys on the tenant REST API | enforced | automation acting as a member |
 | `oct_` API keys on `POST /api/v1/mcp` | enforced | same key, same policy as REST (23b S-H2) |
-| Sensor keys (`/api/v1/agent/*`, `/api/v2/sensor`) | not applied | sensors run in scan zones and customer networks; own enrollment, key and egress controls |
+| Sensor keys (`/api/v2/sensor`) | not applied | sensors run in scan zones and customer networks; own enrollment, key and egress controls |
 | SCIM (`/scim/v2`) | not applied | the caller is the organization's IdP (a SaaS whose egress is not the users' network); gating it would also block deprovisioning. The owner-minted SCIM token is the boundary |
 | Inbound integration webhooks (Jira) | not applied | sent from the vendor's cloud, authenticated by the per-tenant webhook secret |
 | Platform admin console, public routes, platform administrator | not applied | not an organization's members |

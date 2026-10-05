@@ -1969,1551 +1969,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/agent/commands': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Poll commands
-     * @description Sensor polls for pending commands to execute
-     */
-    get: {
-      parameters: {
-        query?: {
-          /** @description Max commands to return */
-          limit?: number
-        }
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command'][]
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/commands/{id}/acknowledge': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Acknowledge command
-     * @description Sensor acknowledges receipt of a command
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Command ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/commands/{id}/complete': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Complete command
-     * @description Sensor reports successful command completion with optional result
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Command ID */
-          id: string
-        }
-        cookie?: never
-      }
-      /** @description Completion result */
-      requestBody?: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.UpdateCommandStatusRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/commands/{id}/fail': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Fail command
-     * @description Sensor reports command execution failure with error message
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Command ID */
-          id: string
-        }
-        cookie?: never
-      }
-      /** @description Error details */
-      requestBody?: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.UpdateCommandStatusRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/commands/{id}/start': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Start command
-     * @description Sensor reports that command execution has started
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Command ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/heartbeat': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Sensor heartbeat
-     * @description Send a heartbeat to indicate sensor is alive. The response is also a doorbell (RFC-023 §9.2a): pending_jobs > 0 means poll GET /agent/commands now; next_heartbeat_seconds is the advised interval; actions are typed directives (pause, resume, drain, rotate_key, update). A sensor that sends X-OpenCTEM-Sensor-Features: doorbell also gets config_version and, while disabled, a 200 with the pause action instead of a 401.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: {
-          /** @description Optional protocol features, comma-separated (doorbell) */
-          'X-OpenCTEM-Sensor-Features'?: string
-        }
-        path?: never
-        cookie?: never
-      }
-      /** @description Heartbeat data */
-      requestBody?: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.HeartbeatRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Heartbeat']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/ingest/baseline-diff': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * New-vs-base-branch findings
-     * @description Given the current scan's fingerprints + a PR base/target branch,
-     *     returns which are NEW (not already open on the base branch) so a
-     *     PR gate / inline comments focus only on findings the PR introduces.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description Repository, base branch, fingerprints */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.BaselineDiffRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/ingest/check': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Check fingerprints
-     * @description Check if fingerprints already exist for deduplication
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description Fingerprints to check */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.CheckFingerprintsRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.CheckFingerprintsResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/ingest/chunk': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Ingest CTIS report chunk
-     * @description Ingest a single chunk of a large CTIS report. Used for reports that exceed single upload limits.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description Chunk data */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.ChunkIngestRequest']
-        }
-      }
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ChunkIngestResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/ingest/ctis': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Ingest CTIS report
-     * @description Ingest a full CTIS (CTEM Ingest Schema) report containing assets and findings
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody: components['requestBodies']['internal_infra_http_handler.CTISIngestRequest']
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.IngestResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/ingest/recon': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Ingest recon results
-     * @description Ingest reconnaissance scan results (subdomains, DNS, ports, etc.)
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description Recon results */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.ReconIngestRequest']
-        }
-      }
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.IngestResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/ingest/sarif': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Ingest SARIF results
-     * @description Ingest scan results in SARIF 2.1.0 format
-     */
-    post: {
-      parameters: {
-        query?: {
-          /** @description Repository the log was produced from, when the log has no runs[].versionControlProvenance. Required in that case unless the artifact URIs name a github.com/gitlab.com/bitbucket.org repository. */
-          repository_url?: string
-          /** @description Branch that was scanned */
-          branch?: string
-          /** @description Commit that was scanned */
-          commit_sha?: string
-        }
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description SARIF data */
-      requestBody: {
-        content: {
-          'application/json': Record<string, never>
-        }
-      }
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.IngestResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/renew': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Renew sensor API key (self-service)
-     * @description Rotate the calling sensor's own API key. Authenticated by the current key; returns a fresh key shown once. The building block for auto-rotating credentials (kubelet-style).
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.RenewKeyResponse']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/scans': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Register scan session
-     * @description Sensor registers a new scan session before starting a scan
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      /** @description Scan registration data */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.RegisterScanRequest']
-        }
-      }
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.RegisterScanResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agent/scans/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get scan session (sensor)
-     * @description Sensor retrieves scan session details
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Scan session ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.ScanSession']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    /**
-     * Update scan session
-     * @description Sensor updates scan status after completion
-     */
-    patch: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Scan session ID */
-          id: string
-        }
-        cookie?: never
-      }
-      /** @description Update data */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.UpdateScanSessionRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': {
-              [key: string]: string
-            }
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    trace?: never
-  }
-  '/agent/suppressions': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Active suppression rules for the sensor's tenant
-     * @description Approved, unexpired suppression rules of the authenticated sensor's tenant, for the sensor-side security gate. Empty when the suppressions module is disabled. Platform sensors (no tenant) get 403.
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.SensorSuppressionsResponse']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agents': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    put?: never
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agents/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    put: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    post?: never
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agents/{id}/activate': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agents/{id}/config-templates': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agents/{id}/deactivate': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agents/{id}/regenerate-key': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agents/{id}/revoke': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agents/available-capabilities': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/agents/stats': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Deprecated: moved to /sensors
-     * @deprecated
-     * @description The sensor management API moved from /agents to /sensors. Every /agents route answers 308 to its /sensors equivalent until the date in the Sunset header.
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description Permanent Redirect */
-        308: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/asset-groups': {
     parameters: {
       query?: never
@@ -8746,6 +7201,120 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ci/pipelines': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List CI pipelines
+     * @description CI pipelines (sensors in runner mode) on the repositories the caller may see, most urgent first. Archived, revoked and never-run pipelines are hidden unless include_inactive=true or a status filter names them.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Comma-separated statuses (revoked, failing, degraded, stale, running, fresh, never, archived) */
+          status?: string
+          /** @description Also list archived, revoked and never-run pipelines */
+          include_inactive?: boolean
+          /** @description github or gitlab */
+          provider?: string
+          /** @description Repository asset */
+          repository_asset_id?: string
+          /** @description Repository, workflow path or name */
+          search?: string
+          /** @description Page (default 1) */
+          page?: number
+          /** @description Per page (default 25, max 200) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIPipelineListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/pipelines/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get a CI pipeline
+     * @description The pipeline with its status, its branches (runs per branch; the branch is never part of its identity) and its default-branch gate trend. Its runs are GET /ci/runs?pipeline_id=. 404 when the repository is outside the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Pipeline ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CIPipelineDetailResponse']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ci/runs': {
     parameters: {
       query?: never
@@ -8762,6 +7331,8 @@ export interface paths {
         query?: {
           /** @description Repository asset */
           repository_asset_id?: string
+          /** @description CI pipeline */
+          pipeline_id?: string
           /** @description pass, fail or none */
           verdict?: string
           /** @description github or gitlab */
@@ -9000,7 +7571,12 @@ export interface paths {
         }
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.CTISIngestRequest']
+      /** @description CTIS report */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CTISIngestRequest']
+        }
+      }
       responses: {
         /** @description Created */
         201: {
@@ -12851,6 +11427,209 @@ export interface paths {
           }
           content: {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SweepTicket']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/verified-domains': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List the organization's verified domains
+     * @description Domains the organization proved it controls with a DNS TXT record. Names under a verified domain are attributed with the strong rule fqdn_under_verified_root. Rows a platform administrator set up for SSO are listed read-only (managed=true).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomainList']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Add a domain to verify for EASM
+     * @description Returns the DNS TXT record to publish. The domain is verified for EASM only: it never admits SSO users (SSO domains are set up by a platform administrator). Public suffixes and shared consumer domains are refused. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Domain */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomainCreateRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomain']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/verified-domains/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /**
+     * Remove a domain the organization verified for EASM
+     * @description Names under it stop auto-confirming. SSO domains cannot be removed here. Audited.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Verified domain ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/verified-domains/{id}/verify': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Check a domain's TXT record now
+     * @description Looks up the TXT record and marks the domain verified when the exact token is present. At most 10 checks per organization per hour (429 with Retry-After). Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Verified domain ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.EASMVerifiedDomain']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Too Many Requests */
@@ -17121,6 +15900,80 @@ export interface paths {
             'application/json': {
               [key: string]: string
             }
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/fleet': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List the fleet
+     * @description Everything that scans for the organization in one list: sensors in daemon mode (heartbeat; can be offline; needs sensors:read) and CI pipelines in runner mode (freshness against their cadence; never offline, never dispatched; needs scans:ci:read and follows the data scope). Each mode is filtered by its own permission. Inactive rows are hidden unless include_inactive=true.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description all (default), daemon or runner */
+          mode?: string
+          /** @description scanner or collector */
+          role?: string
+          /** @description Comma-separated statuses of the modes listed */
+          status?: string
+          /** @description Only rows that need attention */
+          attention?: boolean
+          /** @description Also list inactive rows */
+          include_inactive?: boolean
+          /** @description Name, repository or workflow */
+          search?: string
+          /** @description Page (default 1) */
+          page?: number
+          /** @description Per page (default 25, max 200) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FleetListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
@@ -35782,6 +34635,11 @@ export interface components {
       offset_ns?: number
       position?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord': {
+      host?: string
+      type?: string
+      value?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_cirun.BaselineDiffOutput': {
       base_branch?: string
       base_branch_known?: boolean
@@ -35918,17 +34776,6 @@ export interface components {
     'github_com_openctemio_openctem_api_internal_app_easm.TypeCount': {
       count?: number
       type?: string
-    }
-    'github_com_openctemio_openctem_api_internal_app_ingest.BaselineDiffOutput': {
-      /**
-       * @description BaseBranchKnown is false when the base branch has no scan history yet
-       *     (then everything is treated as new).
-       */
-      base_branch_scanned?: boolean
-      /** @description New are fingerprints NOT already open on the base branch (introduced by the PR). */
-      new_fingerprints?: string[]
-      /** @description PreExisting are fingerprints already open on the base branch (tech debt). */
-      pre_existing_fingerprints?: string[]
     }
     'github_com_openctemio_openctem_api_internal_app_integration.CredentialItem': {
       credential_type?: string
@@ -37059,80 +35906,6 @@ export interface components {
       total?: number
       total_pages?: number
     }
-    'github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Command': {
-      acknowledged_at?: string
-      agent_id?: string
-      completed_at?: string
-      created_at?: string
-      error_message?: string
-      expires_at?: string
-      id?: string
-      payload?: number[]
-      priority?: string
-      result?: number[]
-      started_at?: string
-      status?: string
-      tenant_id?: string
-      type?: string
-    }
-    'github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.Heartbeat': {
-      /**
-       * @description Actions are typed control directives from a closed set: pause,
-       *     resume, drain, rotate_key, update, cancel. Never free-form text.
-       */
-      actions?: string[]
-      agent_id?: string
-      /**
-       * @description CancelCommandIDs are commands the sensor listed as running that it
-       *     must stop (canceled, timed out, re-queued, held elsewhere); sent with
-       *     the cancel action. Only for a sensor that reports its running list.
-       */
-      cancel_command_ids?: string[]
-      /**
-       * @description ConfigVersion is an opaque digest of what the platform governs about
-       *     the sensor; it changes when that changes. Sent to doorbell-aware
-       *     sensors only.
-       */
-      config_version?: string
-      /**
-       * @description NextHeartbeatSeconds is the server-advised interval to the next
-       *     heartbeat, already bounded by the server.
-       */
-      next_heartbeat_seconds?: number
-      /**
-       * @description PendingJobs is how many commands this sensor could claim right now
-       *     (capped at 100): poll GET /api/v1/agent/commands when it is > 0.
-       */
-      pending_jobs?: number
-      status?: string
-      tenant_id?: string
-    }
-    'github_com_openctemio_openctem_api_pkg_sensorproto_legacyv1.ScanSession': {
-      agent_id?: string
-      asset_id?: string
-      asset_type?: string
-      asset_value?: string
-      base_commit_sha?: string
-      branch?: string
-      commit_sha?: string
-      completed_at?: string
-      created_at?: string
-      duration_ms?: number
-      error_message?: string
-      findings_by_severity?: {
-        [key: string]: number
-      }
-      findings_fixed?: number
-      findings_new?: number
-      findings_total?: number
-      id?: string
-      scanner_name?: string
-      scanner_type?: string
-      scanner_version?: string
-      started_at?: string
-      status?: string
-      tenant_id?: string
-    }
     'github_com_openctemio_openctem_api_pkg_version.Info': {
       /** @example 2026-10-02T10:00:00Z */
       build_time?: string
@@ -37934,11 +36707,6 @@ export interface components {
       client_secret: string
       tenant_id: string
     }
-    'internal_infra_http_handler.BaselineDiffRequest': {
-      base_branch?: string
-      fingerprints?: string[]
-      repository?: string
-    }
     'internal_infra_http_handler.BasicAuthDataRequest': {
       password: string
       username: string
@@ -38112,6 +36880,12 @@ export interface components {
       repository_asset_id?: string
       revoked_at?: string
     }
+    'internal_infra_http_handler.CIGatePointResponse': {
+      commit_sha?: string
+      evaluated_at?: string
+      run_id?: string
+      verdict?: string
+    }
     'internal_infra_http_handler.CIGatePolicyListResponse': {
       data?: components['schemas']['internal_infra_http_handler.CIGatePolicyResponse'][]
       default?: components['schemas']['internal_infra_http_handler.CIGatePolicyResponse']
@@ -38139,6 +36913,146 @@ export interface components {
       scope_type?: string
       updated_at?: string
     }
+    'internal_infra_http_handler.CIPipelineBranchResponse': {
+      branch?: string
+      is_default_branch?: boolean
+      last_run_at?: string
+      last_verdict?: string
+      runs?: number
+    }
+    'internal_infra_http_handler.CIPipelineDetailResponse': {
+      branches?: components['schemas']['internal_infra_http_handler.CIPipelineBranchResponse'][]
+      created_at?: string
+      default_branch?: string
+      first_run_at?: string
+      /** @enum {string} */
+      freshness?: 'running' | 'fresh' | 'stale' | 'archived' | 'never'
+      /** @enum {string} */
+      gate?: 'passing' | 'failing' | 'none'
+      gate_trend?: components['schemas']['internal_infra_http_handler.CIGatePointResponse'][]
+      /** @enum {string} */
+      health?: 'ok' | 'degraded' | 'unknown'
+      health_reasons?: string[]
+      id?: string
+      inactive?: boolean
+      /** @enum {string} */
+      kind?: 'ci_pipeline'
+      last_default_run_at?: string
+      last_default_verdict?: string
+      last_fork_run_at?: string
+      last_pr_verdict?: string
+      last_run_at?: string
+      last_run_id?: string
+      /**
+       * @description Legacy: backfilled from runs that predate pipelines; the next run
+       *     confirms its repository id.
+       */
+      legacy?: boolean
+      median_interval_seconds?: number
+      /** @enum {string} */
+      mode?: 'runner'
+      /** @enum {string} */
+      pr_gate?: 'passing' | 'failing' | 'none'
+      /** @enum {string} */
+      provider?: 'github' | 'gitlab'
+      repository?: string
+      repository_asset_id?: string
+      revoked_at?: string
+      /** @enum {string} */
+      role?: 'scanner'
+      runs_count?: number
+      schedule_interval_seconds?: number
+      scheduled?: boolean
+      sensor_version?: string
+      /**
+       * @description StaleAfterSeconds is the expected-cadence threshold; StaleAt when the
+       *     pipeline turns stale without another run.
+       */
+      stale_after_seconds?: number
+      stale_at?: string
+      /** @enum {string} */
+      status?:
+        'revoked' | 'failing' | 'degraded' | 'stale' | 'running' | 'fresh' | 'never' | 'archived'
+      template_ref?: string
+      template_sha?: string
+      tools?: components['schemas']['internal_infra_http_handler.CIToolLabel'][]
+      trust_config_id?: string
+      /** @enum {string} */
+      version_status?: 'latest' | 'update_available' | 'unsupported' | 'unknown'
+      workflow_name?: string
+      workflow_path?: string
+    }
+    'internal_infra_http_handler.CIPipelineListResponse': {
+      counts?: {
+        [key: string]: number
+      }
+      data?: components['schemas']['internal_infra_http_handler.CIPipelineResponse'][]
+      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
+    }
+    'internal_infra_http_handler.CIPipelineResponse': {
+      created_at?: string
+      default_branch?: string
+      first_run_at?: string
+      /** @enum {string} */
+      freshness?: 'running' | 'fresh' | 'stale' | 'archived' | 'never'
+      /** @enum {string} */
+      gate?: 'passing' | 'failing' | 'none'
+      /** @enum {string} */
+      health?: 'ok' | 'degraded' | 'unknown'
+      health_reasons?: string[]
+      id?: string
+      inactive?: boolean
+      /** @enum {string} */
+      kind?: 'ci_pipeline'
+      last_default_run_at?: string
+      last_default_verdict?: string
+      last_fork_run_at?: string
+      last_pr_verdict?: string
+      last_run_at?: string
+      last_run_id?: string
+      /**
+       * @description Legacy: backfilled from runs that predate pipelines; the next run
+       *     confirms its repository id.
+       */
+      legacy?: boolean
+      median_interval_seconds?: number
+      /** @enum {string} */
+      mode?: 'runner'
+      /** @enum {string} */
+      pr_gate?: 'passing' | 'failing' | 'none'
+      /** @enum {string} */
+      provider?: 'github' | 'gitlab'
+      repository?: string
+      repository_asset_id?: string
+      revoked_at?: string
+      /** @enum {string} */
+      role?: 'scanner'
+      runs_count?: number
+      schedule_interval_seconds?: number
+      scheduled?: boolean
+      sensor_version?: string
+      /**
+       * @description StaleAfterSeconds is the expected-cadence threshold; StaleAt when the
+       *     pipeline turns stale without another run.
+       */
+      stale_after_seconds?: number
+      stale_at?: string
+      /** @enum {string} */
+      status?:
+        'revoked' | 'failing' | 'degraded' | 'stale' | 'running' | 'fresh' | 'never' | 'archived'
+      template_ref?: string
+      template_sha?: string
+      tools?: components['schemas']['internal_infra_http_handler.CIToolLabel'][]
+      trust_config_id?: string
+      /** @enum {string} */
+      version_status?: 'latest' | 'update_available' | 'unsupported' | 'unknown'
+      workflow_name?: string
+      workflow_path?: string
+    }
     'internal_infra_http_handler.CIRunResponse': {
       actor?: string
       branch?: string
@@ -38153,6 +37067,7 @@ export interface components {
       fork?: boolean
       id?: string
       is_default_branch?: boolean
+      pipeline_id?: string
       pipeline_url?: string
       provider?: string
       pull_request?: string
@@ -38161,7 +37076,15 @@ export interface components {
       repository?: string
       repository_asset_id?: string
       run_attempt?: string
+      scan_failures?: number
+      /**
+       * @description SensorVersion is the runner's version; Tools what its reports
+       *     declared; ScanFailures what it reported at evaluation. Labels only.
+       */
+      sensor_version?: string
       status?: string
+      template_ref?: string
+      tools?: components['schemas']['internal_infra_http_handler.CIToolLabel'][]
       trust_config_id?: string
       verdict?: string
       /**
@@ -38177,6 +37100,10 @@ export interface components {
       is_past_due?: boolean
       notes?: string
       ransomware_use?: string
+    }
+    'internal_infra_http_handler.CIToolLabel': {
+      name?: string
+      version?: string
     }
     'internal_infra_http_handler.CITrustConfigListResponse': {
       data?: components['schemas']['internal_infra_http_handler.CITrustConfigResponse'][]
@@ -38275,43 +37202,9 @@ export interface components {
     'internal_infra_http_handler.ChangeStateRequest': {
       reason?: string
     }
-    'internal_infra_http_handler.CheckFingerprintsRequest': {
-      fingerprints?: string[]
-    }
-    'internal_infra_http_handler.CheckFingerprintsResponse': {
-      /** @description Fingerprints that already exist */
-      existing?: string[]
-      /** @description Fingerprints that don't exist */
-      missing?: string[]
-    }
     'internal_infra_http_handler.CheckScopeRequest': {
       asset_type: string
       value: string
-    }
-    'internal_infra_http_handler.ChunkIngestRequest': {
-      /** @description 0-indexed chunk number */
-      chunk_index?: number
-      /** @description Compression algorithm (zstd, gzip, none) */
-      compression?: string
-      /** @description Base64-encoded chunk data */
-      data?: string
-      /** @description True for the last chunk */
-      is_final?: boolean
-      /** @description Unique ID for the chunked report */
-      report_id?: string
-      /** @description Total number of chunks */
-      total_chunks?: number
-    }
-    'internal_infra_http_handler.ChunkIngestResponse': {
-      assets_created?: number
-      assets_updated?: number
-      chunk_id?: string
-      chunk_index?: number
-      findings_created?: number
-      findings_skipped?: number
-      findings_updated?: number
-      report_id?: string
-      status?: string
     }
     'internal_infra_http_handler.ClassifyFindingRequest': {
       cve_id?: string
@@ -38873,14 +37766,6 @@ export interface components {
       name?: string
       path?: string
     }
-    'internal_infra_http_handler.DNSRecordResult': {
-      host?: string
-      record_type?: string
-      resolver?: string
-      status_code?: string
-      ttl?: number
-      values?: string[]
-    }
     'internal_infra_http_handler.DailyActivityResponse': {
       appeared?: number
       date?: string
@@ -38964,16 +37849,6 @@ export interface components {
       repository?: string
       source_url?: string
     }
-    'internal_infra_http_handler.DiscoveredURLResult': {
-      depth?: number
-      extension?: string
-      method?: string
-      parent?: string
-      source?: string
-      status_code?: number
-      type?: string
-      url?: string
-    }
     'internal_infra_http_handler.EASMDecisionRequest': {
       asset_ids?: string[]
       /** @description Note is an optional reason, kept in the audit log. */
@@ -39037,6 +37912,36 @@ export interface components {
       ct_interval_hours?: number
       dns_checks_enabled?: boolean
       dns_interval_hours?: number
+    }
+    'internal_infra_http_handler.EASMVerifiedDomain': {
+      created_at?: string
+      domain?: string
+      id?: string
+      /** @description Instructions is the TXT record to publish (easm rows only). */
+      instructions?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord']
+      last_checked_at?: string
+      /**
+       * @description Managed is true for an sso row: the organization cannot re-check or
+       *     delete it here.
+       */
+      managed?: boolean
+      /**
+       * @description Purpose: easm (added by the organization, attribution only) or sso
+       *     (set up by a platform administrator; admits SSO users, read-only here).
+       */
+      purpose?: string
+      /**
+       * @description Status: pending (TXT not seen yet), verified, or failed (it was
+       *     verified and the record is gone; names under it stop auto-confirming).
+       */
+      status?: string
+      verified_at?: string
+    }
+    'internal_infra_http_handler.EASMVerifiedDomainCreateRequest': {
+      domain?: string
+    }
+    'internal_infra_http_handler.EASMVerifiedDomainList': {
+      data?: components['schemas']['internal_infra_http_handler.EASMVerifiedDomain'][]
     }
     'internal_infra_http_handler.EmbeddedCategoryResponse': {
       color?: string
@@ -39591,6 +38496,69 @@ export interface components {
       /** @description Replacement string */
       replacement?: string
     }
+    'internal_infra_http_handler.FleetItem': {
+      /**
+       * @description Attention: the row needs someone to look (offline/degraded/stale
+       *     daemon; failing/degraded/stale pipeline).
+       */
+      attention?: boolean
+      description?: string
+      freshness?: string
+      gate?: string
+      health?: string
+      id?: string
+      /**
+       * @description Inactive rows (revoked or disabled daemons; archived, revoked or
+       *     never-run pipelines) are hidden unless include_inactive=true.
+       */
+      inactive?: boolean
+      /** @enum {string} */
+      kind?: 'sensor' | 'ci_pipeline'
+      last_seen_at?: string
+      links?: components['schemas']['internal_infra_http_handler.FleetLinks']
+      /** @enum {string} */
+      mode?: 'daemon' | 'runner'
+      name?: string
+      /** @description Runner-only fields. */
+      provider?: string
+      repository?: string
+      repository_asset_id?: string
+      /** @enum {string} */
+      role?: 'scanner' | 'collector'
+      /**
+       * @description Status is the mode's own status: a sensor state for a daemon
+       *     (online, degraded, late, stale, offline, idle, never_connected,
+       *     disabled, revoked), a pipeline status for a runner (failing, degraded,
+       *     stale, running, fresh, never, archived, revoked). A runner is never
+       *     offline.
+       */
+      status?: string
+      version?: string
+      workflow?: string
+    }
+    'internal_infra_http_handler.FleetLinks': {
+      self?: string
+    }
+    'internal_infra_http_handler.FleetListResponse': {
+      counts?: {
+        [key: string]: components['schemas']['internal_infra_http_handler.FleetModeCounts']
+      }
+      data?: components['schemas']['internal_infra_http_handler.FleetItem'][]
+      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
+      modes?: string[]
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
+    }
+    'internal_infra_http_handler.FleetModeCounts': {
+      attention?: number
+      by_status?: {
+        [key: string]: number
+      }
+      inactive?: number
+      total?: number
+    }
     'internal_infra_http_handler.FleetRefreshContentResponse': {
       commands_created?: number
       /**
@@ -39697,138 +38665,6 @@ export interface components {
       tenant_id?: string
       updated_at?: string
     }
-    'internal_infra_http_handler.HeartbeatOutbox': {
-      /** @description DeadLetterCount is the number of items the platform refused for good. */
-      dead_letter_count?: number
-      /**
-       * @description EvictedCount is the number of items dropped by the size/age cap since
-       *     the sensor process started.
-       */
-      evicted_count?: number
-      /** @description OldestAgeSeconds is the age of the oldest pending item (0 when empty). */
-      oldest_age_seconds?: number
-      /** @description PendingBytes is the size on disk of those items. */
-      pending_bytes?: number
-      /** @description PendingCount is the number of items waiting to be delivered. */
-      pending_count?: number
-    }
-    'internal_infra_http_handler.HeartbeatRequest': {
-      active_jobs?: number
-      arch?: string
-      capabilities?: string[]
-      capacity?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity']
-      collectors?: string[]
-      /**
-       * @description ConfigReport is the config report summary (research/26): digest,
-       *     health, fail and warn counts, observed_at, sent by SDKs that see
-       *     "config_report" on hello. The digest is the one PUT /config-report
-       *     returned. Read leniently (a member of the wrong shape is ignored).
-       */
-      config_report?: Record<string, never>
-      /**
-       * @description Content is a slim heartbeat's content freshness (RFC-033 §6.12): a
-       *     sensor whose manifest is acknowledged leaves tools out and sends each
-       *     tool's content here, with "tool" set. Merged into the stored tools.
-       */
-      content?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedContent'][]
-      /**
-       * @description Control is how well the sensor's heartbeat loop keeps time (sdk-go,
-       *     RFC-035 §5.5): {"interval_s","gap_s","lag_ms","build_ms","rtt_ms",
-       *     "failures"}. Read leniently (a member of the wrong type is ignored)
-       *     and clamped; interval_s feeds the sensor's heartbeat deadline.
-       */
-      control?: Record<string, never>
-      cpu_percent?: number
-      /**
-       * @description Disk/network throughput in MB/s. Optional — sensors that omit them leave
-       *     the corresponding load-balancing terms at zero. Accepted here so the
-       *     SENSOR_LB_DISK_IO_WEIGHT / SENSOR_LB_NETWORK_WEIGHT knobs have real inputs.
-       */
-      disk_read_mbps?: number
-      disk_write_mbps?: number
-      errors?: number
-      hostname?: string
-      /**
-       * @description InstanceID is the random id of the sensor process (sdk-go v0.12+), for
-       *     clone detection. Optional; older SDKs do not send it.
-       */
-      instance_id?: string
-      /**
-       * @description LocalPolicy is the sensor-local policy report (RFC-040 §5.7): state,
-       *     digest, summary and kill switch, sent by SDKs that see
-       *     "local_policy" on hello. Display data; sanitized before it is stored.
-       */
-      local_policy?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.LocalPolicyReport']
-      /**
-       * @description ManifestDigest is the digest of the sensor's registered manifest, as
-       *     the platform returned it (RFC-033, protocol v2 feature "manifest").
-       *     When it is not the stored one the v2 answer asks for the manifest
-       *     (action send_manifest). Absent: the platform derives the manifest
-       *     from this heartbeat.
-       */
-      manifest_digest?: string
-      max_concurrent_jobs?: number
-      memory_percent?: number
-      message?: string
-      name?: string
-      network_rx_mbps?: number
-      network_tx_mbps?: number
-      os?: string
-      /**
-       * @description Outbox is the state of the sensor's durable outbox (results queued on
-       *     disk, waiting to be delivered). Optional: SDKs without an outbox omit
-       *     it, and a heartbeat without it leaves the stored snapshot untouched.
-       *     Display data only; values are clamped before they are stored.
-       */
-      outbox?: components['schemas']['internal_infra_http_handler.HeartbeatOutbox']
-      queue?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedQueue']
-      region?: string
-      /**
-       * @description The sensor's load, computed by the SDK (RFC-030 §5.8), all optional:
-       *     the machine's resources (container limits when it runs in one), its
-       *     job slots and per-tool cost, and its local work queue. Untrusted:
-       *     clamped before it is stored, and it can only lower what dispatch
-       *     hands the sensor.
-       */
-      resources?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedResources']
-      scanners?: string[]
-      /**
-       * @description Build information, optional (docs/architecture/sensors.md "Build
-       *     information"): sdk {name, version} and sensor {name, version, commit,
-       *     build_time}. Kept raw and read leniently: a member of an unexpected
-       *     shape is ignored rather than failing the heartbeat. Untrusted; sensors
-       *     that omit it are read from their User-Agent.
-       */
-      sdk?: Record<string, never>
-      sensor?: Record<string, never>
-      status?: string
-      /**
-       * @description What the sensor reports it can do (RFC-029 §4.3.1), all optional:
-       *     its tool inventory, the capabilities it serves, how many jobs it runs
-       *     at once, and its platform. An absent list is "not reported" (the
-       *     administrator's settings apply); [] is "none". Untrusted: sanitized
-       *     against the tool catalog before it is stored, and it can only narrow
-       *     what the administrator allows.
-       */
-      tools?: components['schemas']['internal_infra_http_handler.HeartbeatTool'][]
-      total_scans?: number
-      uptime_seconds?: number
-      version?: string
-    }
-    'internal_infra_http_handler.HeartbeatTool': {
-      /**
-       * @description Capabilities are what the tool serves besides its name (sdk-go
-       *     v0.13+); sanitized against the capability registry like the flat list.
-       */
-      capabilities?: string[]
-      /** @description Content is the scanner content the tool scans with (RFC-031). */
-      content?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedContent'][]
-      installed?: boolean
-      /** @description Kind is "scanner" or "collector" (sdk-go v0.10+). */
-      kind?: string
-      name?: string
-      version?: string
-    }
     'internal_infra_http_handler.ImportMetadataRequest': {
       batch_id?: string
       description?: string
@@ -39856,8 +38692,8 @@ export interface components {
       assets_skipped_excluded?: number
       assets_updated?: number
       /**
-       * @description Binding is "command" when the report named a command assigned to this
-       *     sensor (X-OpenCTEM-Command-ID), "unsolicited" otherwise (RFC-040 §5.3).
+       * @description Binding is "command" when the report is bound to a command,
+       *     "unsolicited" otherwise (RFC-040 §5.3).
        */
       binding?: string
       cves_created?: number
@@ -39873,10 +38709,8 @@ export interface components {
       reopens_withheld?: number
       scan_id?: string
       /**
-       * @description UnsolicitedWarned: this sensor's role may not send results without a
-       *     command; the report was applied only because the tenant's policy is
-       *     "warn". Under "quarantine" it is held for review (422
-       *     RESULTS_QUARANTINED).
+       * @description UnsolicitedWarned: the report was applied only because the tenant's
+       *     policy for results without a command is "warn".
        */
       unsolicited_warned?: boolean
     }
@@ -40227,23 +39061,6 @@ export interface components {
       page_size?: number
       total_count?: number
     }
-    'internal_infra_http_handler.LiveHostResult': {
-      cdn?: string
-      content_length?: number
-      content_type?: string
-      host?: string
-      ip?: string
-      port?: number
-      redirect?: string
-      response_time_ms?: number
-      scheme?: string
-      status_code?: number
-      technologies?: string[]
-      title?: string
-      tls_version?: string
-      url?: string
-      web_server?: string
-    }
     'internal_infra_http_handler.LoginRequest': {
       email: string
       password: string
@@ -40397,15 +39214,6 @@ export interface components {
       schedules_to?: string
       /** @description Put the open findings back in the queue instead (when findings_to is empty). */
       unassign_findings?: boolean
-    }
-    'internal_infra_http_handler.OpenPortResult': {
-      banner?: string
-      host?: string
-      ip?: string
-      port?: number
-      protocol?: string
-      service?: string
-      version?: string
     }
     'internal_infra_http_handler.OutboxEntryResponse': {
       aggregate_id?: string
@@ -40635,25 +39443,6 @@ export interface components {
       status?: 'pending' | 'accepted' | 'discarded'
       tool_name?: string
     }
-    'internal_infra_http_handler.ReconIngestRequest': {
-      dns_records?: components['schemas']['internal_infra_http_handler.DNSRecordResult'][]
-      duration_ms?: number
-      finished_at?: number
-      live_hosts?: components['schemas']['internal_infra_http_handler.LiveHostResult'][]
-      open_ports?: components['schemas']['internal_infra_http_handler.OpenPortResult'][]
-      /** @description subdomain, dns, port, http_probe, url_crawl */
-      recon_type?: string
-      /** @description Scanner info */
-      scanner_name?: string
-      scanner_version?: string
-      /** @description Timing */
-      started_at?: number
-      /** @description Results (populated based on recon_type) */
-      subdomains?: components['schemas']['internal_infra_http_handler.SubdomainResult'][]
-      /** @description Target */
-      target?: string
-      urls?: components['schemas']['internal_infra_http_handler.DiscoveredURLResult'][]
-    }
     'internal_infra_http_handler.ReferenceResponse': {
       type?: string
       url?: string
@@ -40705,26 +39494,8 @@ export interface components {
       name?: string
       requires_verification?: boolean
     }
-    'internal_infra_http_handler.RegisterScanRequest': {
-      asset_type: string
-      asset_value: string
-      branch?: string
-      commit_sha?: string
-      scanner_name: string
-      scanner_type?: string
-      scanner_version?: string
-    }
-    'internal_infra_http_handler.RegisterScanResponse': {
-      base_commit_sha?: string
-      scan_id?: string
-      scan_url?: string
-    }
     'internal_infra_http_handler.RemoveAssetsRequest': {
       asset_ids: string[]
-    }
-    'internal_infra_http_handler.RenewKeyResponse': {
-      api_key?: string
-      expires_at?: string
     }
     'internal_infra_http_handler.RepositoryExtensionResponse': {
       asset_id?: string
@@ -41991,17 +40762,6 @@ export interface components {
       sdk_min_version?: string
       total?: number
     }
-    'internal_infra_http_handler.SensorSuppressionRule': {
-      asset_id?: string
-      expires_at?: string
-      path_pattern?: string
-      rule_id?: string
-      tool_name?: string
-    }
-    'internal_infra_http_handler.SensorSuppressionsResponse': {
-      count?: number
-      rules?: components['schemas']['internal_infra_http_handler.SensorSuppressionRule'][]
-    }
     'internal_infra_http_handler.SessionsResponse': {
       sessions?: components['schemas']['github_com_openctemio_openctem_api_internal_app.SessionInfo'][]
     }
@@ -42066,12 +40826,6 @@ export interface components {
       status?: string
       step_id?: string
       step_key?: string
-    }
-    'internal_infra_http_handler.SubdomainResult': {
-      domain?: string
-      host?: string
-      ips?: string[]
-      source?: string
     }
     'internal_infra_http_handler.SyncResponse': {
       message?: string
@@ -42418,10 +41172,6 @@ export interface components {
       scan_on_pr?: boolean
       scan_on_push?: boolean
     }
-    'internal_infra_http_handler.UpdateCommandStatusRequest': {
-      error_message?: string
-      result?: number[]
-    }
     'internal_infra_http_handler.UpdateCommentRequest': {
       content: string
     }
@@ -42612,17 +41362,6 @@ export interface components {
       targets_per_job?: number
       timeout_seconds?: number
       timezone?: string
-    }
-    'internal_infra_http_handler.UpdateScanSessionRequest': {
-      error_message?: string
-      findings_by_severity?: {
-        [key: string]: number
-      }
-      findings_fixed?: number
-      findings_new?: number
-      findings_total?: number
-      /** @enum {string} */
-      status: 'completed' | 'failed' | 'canceled'
     }
     'internal_infra_http_handler.UpdateScanZoneRequest': {
       description?: string
@@ -42842,12 +41581,6 @@ export interface components {
     'internal_infra_http_handler.CreateToolRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.CreateToolRequest']
-      }
-    }
-    /** @description CTIS report */
-    'internal_infra_http_handler.CTISIngestRequest': {
-      content: {
-        'application/json': components['schemas']['internal_infra_http_handler.CTISIngestRequest']
       }
     }
     /** @description Tool IDs */
