@@ -89,43 +89,6 @@ type ExclusionFilter struct {
 }
 
 // =============================================================================
-// Schedule Repository
-// =============================================================================
-
-// ScheduleRepository defines the interface for scan schedule persistence.
-type ScheduleRepository interface {
-	// Create persists a new scan schedule.
-	Create(ctx context.Context, schedule *Schedule) error
-
-	// GetByID retrieves a scan schedule by its tenant ID and ID.
-	GetByID(ctx context.Context, tenantID, id shared.ID) (*Schedule, error)
-
-	// Update updates an existing scan schedule.
-	Update(ctx context.Context, schedule *Schedule) error
-
-	// Delete removes a scan schedule by its tenant ID and ID.
-	Delete(ctx context.Context, tenantID, id shared.ID) error
-
-	// List retrieves scan schedules with filtering and pagination.
-	List(ctx context.Context, filter ScheduleFilter, page pagination.Pagination) (pagination.Result[*Schedule], error)
-
-	// ListDue retrieves all enabled schedules that are due to run.
-	ListDue(ctx context.Context) ([]*Schedule, error)
-
-	// Count returns the total number of scan schedules matching the filter.
-	Count(ctx context.Context, filter ScheduleFilter) (int64, error)
-}
-
-// ScheduleFilter defines the filtering options for listing schedules.
-type ScheduleFilter struct {
-	TenantID      *string
-	ScanTypes     []ScanType
-	ScheduleTypes []ScheduleType
-	Enabled       *bool
-	Search        *string
-}
-
-// =============================================================================
 // List Options
 // =============================================================================
 
@@ -155,8 +118,6 @@ type Stats struct {
 	ActiveTargets    int64   `json:"active_targets"`
 	TotalExclusions  int64   `json:"total_exclusions"`
 	ActiveExclusions int64   `json:"active_exclusions"`
-	TotalSchedules   int64   `json:"total_schedules"`
-	EnabledSchedules int64   `json:"enabled_schedules"`
 	Coverage         float64 `json:"coverage"`
 }
 
