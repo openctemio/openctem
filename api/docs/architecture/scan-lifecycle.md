@@ -35,7 +35,7 @@ Scan (definition) ──fires──▶ Run (one occurrence) ──is cut into─
 | `pending` | Created, no task claimed yet | no | — |
 | `running` | At least one task claimed or started | no | — |
 | `completed` | Every task completed | yes | success |
-| `partial` | Some tasks completed, some failed, or the deadline passed with work done; results kept, unfinished targets recorded | yes | partial |
+| `partial` | Some tasks completed, some failed, or the deadline passed with work done; results kept, unfinished targets recorded. Also when every step finished but zone routing left targets uncovered (`uncovered_targets`, research/22c B7): the run did not scan everything it was asked to | yes | partial |
 | `failed` | No task completed (all failed, or nobody claimed within 4 h scheduled / 1 h interactive) | yes | failure |
 | `timeout` | Deadline passed and no task completed | yes | failure |
 | `canceled` | Stopped by a user with `scans:write` | yes | not counted in the success rate |
