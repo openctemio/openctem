@@ -40234,7 +40234,7 @@ export interface components {
       /**
        * @description Disk/network throughput in MB/s. Optional — sensors that omit them leave
        *     the corresponding load-balancing terms at zero. Accepted here so the
-       *     AGENT_LB_DISK_IO_WEIGHT / AGENT_LB_NETWORK_WEIGHT knobs have real inputs.
+       *     SENSOR_LB_DISK_IO_WEIGHT / SENSOR_LB_NETWORK_WEIGHT knobs have real inputs.
        */
       disk_read_mbps?: number
       disk_write_mbps?: number
