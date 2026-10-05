@@ -473,11 +473,27 @@ func TestResolveScanTargets_GroupLargerThanOnePage(t *testing.T) {
 	}
 }
 
-// stubGate blocks the given asset ids.
+// stubGate blocks the given asset ids and typed targets.
 type stubGate struct {
-	blocked map[string]attribution.State
-	err     error
-	asked   []string
+	blocked      map[string]attribution.State
+	blockedTyped map[string]attribution.State
+	err          error
+	asked        []string
+	askedTyped   []string
+}
+
+func (g *stubGate) BlockedTargets(_ context.Context, _ shared.ID, targets []string) (map[string]attribution.State, error) {
+	g.askedTyped = append(g.askedTyped, targets...)
+	if g.err != nil {
+		return nil, g.err
+	}
+	out := map[string]attribution.State{}
+	for _, t := range targets {
+		if s, ok := g.blockedTyped[t]; ok {
+			out[t] = s
+		}
+	}
+	return out, nil
 }
 
 func (g *stubGate) ActiveCheckBlocked(_ context.Context, _ shared.ID, ids []string) (map[string]attribution.State, error) {
