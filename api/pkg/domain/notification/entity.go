@@ -58,6 +58,10 @@ const (
 	// needs them: a disable paused schedules, or a deprovisioned member still
 	// owns work to reassign.
 	TypeMemberLifecycle = "member_lifecycle"
+	// TypeSensorSecurity tells administrators about a change to which
+	// sensors may act for the organization: a sensor paired or re-paired, a
+	// grant widened, a sensor promoted (RFC-052).
+	TypeSensorSecurity = "sensor_security"
 )
 
 // Notification represents an in-app notification.
