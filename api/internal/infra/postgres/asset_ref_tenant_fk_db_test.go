@@ -30,7 +30,7 @@ var assetRefTables = []string{
 
 // compositeFromCreation are tables that later migrations created with their
 // composite (tenant_id, asset) keys; 000921's down does not drop them.
-var compositeFromCreation = []string{"scan_step_outputs", "scan_run_targets", "ci_runs", "ci_gate_overrides", "ci_pipelines"}
+var compositeFromCreation = []string{"scan_step_outputs", "scan_run_targets", "ci_runs", "ci_gate_overrides", "ci_pipelines", "ci_coverage_expectations"}
 
 func seedRefAsset(ctx context.Context, t *testing.T, db interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
@@ -54,9 +54,10 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 27 from 000921, 3 from the scan chaining tables (001049), 2 from the CI
-	// run tables (001072, RFC-051), 1 from CI pipelines (001077).
-	if n != 33 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 33 validated", n, allValid.Bool)
+	// run tables (001072, RFC-051), 1 from CI pipelines (001077), 1 from CI
+	// coverage expectations (001078).
+	if n != 34 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 34 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing
