@@ -416,7 +416,7 @@ func TestImportConfig_InvalidJSON(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data)
+			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data, shared.NewID().String())
 			assert.Error(t, err)
 			assert.Nil(t, result)
 			assert.ErrorIs(t, err, shared.ErrValidation)
@@ -464,7 +464,7 @@ func TestImportConfig_MissingRequiredFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := svc.ImportConfig(context.Background(), tenantID, []byte(tc.data))
+			result, err := svc.ImportConfig(context.Background(), tenantID, []byte(tc.data), shared.NewID().String())
 			assert.Error(t, err)
 			assert.Nil(t, result)
 			assert.ErrorIs(t, err, shared.ErrValidation)
@@ -499,7 +499,7 @@ func TestImportConfig_EmptyData(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data)
+			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data, shared.NewID().String())
 			assert.Error(t, err)
 			assert.Nil(t, result)
 		})
@@ -522,7 +522,7 @@ func TestImportConfig_InvalidScheduleTime(t *testing.T) {
 	jsonData, err := json.Marshal(data)
 	require.NoError(t, err)
 
-	result, err := svc.ImportConfig(context.Background(), tenantID, jsonData)
+	result, err := svc.ImportConfig(context.Background(), tenantID, jsonData, shared.NewID().String())
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.ErrorIs(t, err, shared.ErrValidation)
