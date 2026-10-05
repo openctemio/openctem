@@ -42,6 +42,25 @@ func WithPrivateTargetPolicy(p PrivateTargetPolicy) Option {
 	return func(s *Service) { s.privatePolicy = p }
 }
 
+// OptInPolicy returns the tenant's interactsh and custom-template switches
+// (research/25 D3). Satisfied by the tenant service.
+type OptInPolicy interface {
+	SensorOptIns(ctx context.Context, tenantID shared.ID) (sensordom.OptIns, error)
+}
+
+// WithOptInPolicy makes Poll, Claim and Acknowledge withhold, from every
+// sensor, commands that ask for an opt-in the tenant has not enabled. They
+// are refused when scans are created and triggered; this is the backstop
+// for commands queued before the switch or created another way.
+func WithOptInPolicy(p OptInPolicy) Option {
+	return func(s *Service) { s.optIns = p }
+}
+
+// ErrOptInDisabled: the command asks for interactsh or carries custom
+// templates and the tenant has not enabled them. It reads as "claimed";
+// the command stays pending until it expires or the tenant enables it.
+var ErrOptInDisabled = fmt.Errorf("%w (%w): the organization has not enabled this sensor opt-in", ErrCommandClaimed, shared.ErrConflict)
+
 // ErrLocalPolicyRequired: the command names private targets, the tenant
 // requires a local policy for them, and the claiming sensor enforces none.
 // It wraps ErrCommandClaimed and shared.ErrConflict, so a sensor is told
@@ -68,10 +87,19 @@ type dispatchGate struct {
 // gateFor loads the dispatch gate of sensorID. The tenant's private-target
 // switch is read only when a candidate names a private target.
 func (s *Service) gateFor(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, cmds []*commanddom.Command) *dispatchGate {
-	if sensorID == nil || len(cmds) == 0 || (s.sensors == nil && s.privatePolicy == nil) {
+	if sensorID == nil || len(cmds) == 0 || (s.sensors == nil && s.privatePolicy == nil && s.optIns == nil) {
 		return nil
 	}
 	g := &dispatchGate{}
+	if s.optIns != nil && anyOptIn(cmds) {
+		o, err := s.optIns.SensorOptIns(ctx, tenantID)
+		if err != nil {
+			s.logger.Warn("cannot read the tenant's sensor opt-ins; withholding commands",
+				"tenant_id", tenantID.String(), "error", err)
+			return &dispatchGate{closed: true}
+		}
+		g.opts.OptIns = &o
+	}
 	if s.privatePolicy != nil && anyPrivateTarget(cmds) {
 		required, err := s.privatePolicy.RequiresLocalPolicyForPrivateTargets(ctx, tenantID)
 		if err != nil {
@@ -132,6 +160,8 @@ func (g *dispatchGate) claimError(c *commanddom.Command) error {
 		return nil
 	case r.Rule == sensordom.RulePrivateNeedsLocalPlcy:
 		return ErrLocalPolicyRequired
+	case r.Layer == sensordom.RefusalLayerManaged && (r.Rule == sensordom.RuleAllowInteractsh || r.Rule == sensordom.RuleAllowCustomTemplates):
+		return ErrOptInDisabled
 	default:
 		return ErrSensorPolicyRefuses
 	}
@@ -142,6 +172,18 @@ func (g *dispatchGate) claimError(c *commanddom.Command) error {
 // the head of the queue do not starve it of the ones it accepts.
 func candidateLimit(limit int) int {
 	return min(max(limit*2, limit+10), 100)
+}
+
+// anyOptIn reports whether a command of cmds asks for interactsh or carries
+// custom templates.
+func anyOptIn(cmds []*commanddom.Command) bool {
+	for _, c := range cmds {
+		j := sensordom.JobOf(string(c.Type), c.Payload)
+		if j.Interactsh || j.CustomTemplates > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // anyPrivateTarget reports whether a command of cmds names private targets.

@@ -1441,7 +1441,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
 		// from sensors without a policy.
-		command.WithRefusalObserver(s.Sensor), command.WithPrivateTargetPolicy(s.Tenant)}
+		command.WithRefusalObserver(s.Sensor), command.WithPrivateTargetPolicy(s.Tenant),
+		// research/25 D3: interactsh and custom templates leave only when the
+		// organization enabled them (default off).
+		command.WithOptInPolicy(s.Tenant)}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}
@@ -1626,6 +1629,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A batch goes only to a sensor whose reported local policy accepts
 		// it; a trigger no sensor would accept is refused (research/25 §3.6).
 		scan.WithDispatchPolicy(repos.Sensor, s.Tenant),
+		// research/25 D3: interactsh and custom templates only when the
+		// organization enabled them (default off).
+		scan.WithOptInPolicy(s.Tenant),
 	)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
