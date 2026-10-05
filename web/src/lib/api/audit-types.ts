@@ -170,6 +170,8 @@ export type AuditAction =
   | 'scope_exclusion.deactivated'
   | 'scope_exclusion.approved'
   | 'scope_exclusion.rejected'
+  | 'suppression_rule.approved'
+  | 'suppression_rule.self_approved'
   | 'easm_seed.created'
   | 'easm_seed.updated'
   | 'easm_seed.deleted'
@@ -217,6 +219,7 @@ export type AuditResourceType =
   | 'scan_zone'
   | 'scope_target'
   | 'scope_exclusion'
+  | 'suppression_rule'
   | 'easm_seed'
   | 'report_schedule'
   | 'tool'
@@ -385,6 +388,8 @@ export function getActionLabel(action: AuditAction): string {
     'scope_exclusion.deactivated': 'Scope Exclusion Deactivated',
     'scope_exclusion.approved': 'Scope Exclusion Approved',
     'scope_exclusion.rejected': 'Scope Exclusion Rejected',
+    'suppression_rule.approved': 'Suppression Rule Approved',
+    'suppression_rule.self_approved': 'Suppression Rule Self-Approved by Owner',
     // EASM seeds (RFC-036)
     'easm_seed.created': 'EASM Seed Added',
     'easm_seed.updated': 'EASM Seed Changed',

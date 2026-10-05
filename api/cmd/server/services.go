@@ -1761,6 +1761,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize suppression service (platform-controlled false positive management)
 	s.Suppression = suppression.NewService(repos.Suppression, log)
+	// Four-eyes on approvals (owner decision B16) reads who may approve.
+	s.Suppression.SetApproverDirectory(repos.Suppression)
 
 	// Enforce approved suppression rules during ingest: a new finding matching an
 	// active (approved, non-expired) rule lands resolved+suppressed (out of the
