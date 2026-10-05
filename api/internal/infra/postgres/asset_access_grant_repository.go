@@ -105,14 +105,15 @@ func (r *AccessControlRepository) CreateAssetAccessGrant(ctx context.Context, te
 	if grantedBy != nil {
 		by = grantedBy.String()
 	}
-	// The asset must belong to the tenant and the user must be a member of
-	// it; otherwise nothing is inserted and the caller gets not-found.
+	// The asset must belong to the tenant and the user must be an active
+	// member of it (a disabled member or an offboarded tombstone gets no new
+	// grant); otherwise nothing is inserted and the caller gets not-found.
 	var id string
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO asset_access_grants (tenant_id, asset_id, user_id, source, granted_by)
 		SELECT a.tenant_id, a.id, tm.user_id, 'manual', $4::uuid
 		FROM assets a
-		JOIN tenant_members tm ON tm.tenant_id = a.tenant_id AND tm.user_id = $3::uuid
+		JOIN tenant_members tm ON tm.tenant_id = a.tenant_id AND tm.user_id = $3::uuid AND tm.status = 'active'
 		WHERE a.id = $2 AND a.tenant_id = $1 AND a.deleted_at IS NULL
 		RETURNING id::text`,
 		tenantID.String(), assetID.String(), userID.String(), by).Scan(&id)

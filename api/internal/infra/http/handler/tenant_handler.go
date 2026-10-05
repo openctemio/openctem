@@ -613,6 +613,10 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // the assignee and owner pickers need.
 //   - limit: max results (default 10, max 100)
 //   - offset: pagination offset
+//   - status: active | suspended | offboarded | all. Default: active and
+//     suspended (offboarded tombstones are left out, so pickers never offer
+//     a person who left; pickers pass status=active to leave out disabled
+//     members too).
 func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())
 	if tenantID.IsZero() {
@@ -648,6 +652,14 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		maxMemberLimit     = 500
 	)
 	search := r.URL.Query().Get("search")
+	statusFilter := r.URL.Query().Get("status")
+	switch statusFilter {
+	case "", tenant.MemberFilterAll, string(tenant.MemberStatusActive),
+		string(tenant.MemberStatusSuspended), string(tenant.MemberStatusOffboarded):
+	default:
+		apierror.BadRequest("status must be active, suspended, offboarded or all").WriteJSON(w)
+		return
+	}
 	limit := defaultMemberLimit
 	offset := 0
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
@@ -672,6 +684,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 			SearchNameOnly: !showDirectory,
 			Limit:          limit,
 			Offset:         offset,
+			Status:         statusFilter,
 		}
 		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
 		if err != nil {
@@ -724,7 +737,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	// Basic member list. Paginated like the include=user path: it used to
 	// return every member of the organization in one response.
 	result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(),
-		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset})
+		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset, Status: statusFilter})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -925,7 +938,7 @@ func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.RemoveMember(r.Context(), memberID, actx); err != nil {
-		h.handleServiceError(w, err)
+		h.writeLifecycleError(w, err)
 		return
 	}
 

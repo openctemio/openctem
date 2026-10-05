@@ -34,6 +34,10 @@ func (a scimMemberMgr) ReactivateMember(ctx context.Context, tenantID, membershi
 	return a.svc.ReactivateMember(ctx, membershipID.String(), app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
 }
 
+func (a scimMemberMgr) OffboardMember(ctx context.Context, tenantID, membershipID shared.ID) error {
+	return a.svc.DeprovisionMember(ctx, membershipID.String(), app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"})
+}
+
 // TestSCIMProvisioning_RoundTrip_RealDB exercises the SCIM provisioning path
 // against a real Postgres — the path the unit-test fakes bypassed, which hid
 // the invited_by FK bug (api#199). Provision a new user, assert the membership

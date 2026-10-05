@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -88,7 +89,11 @@ type TenantService struct {
 	// warning is logged): the never-lock-out guarantee still holds because the
 	// owner is always break-glass exempt at the enforcement gate.
 	ssoPathChecker SSOPathChecker
-	logger         *logger.Logger
+	// Member lifecycle (disable, offboard, erase): the transactional store
+	// and the in-app notice to administrators. Optional.
+	lifecycle         tenantdom.LifecycleRepository
+	lifecycleNotifier LifecycleInAppNotifier
+	logger            *logger.Logger
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
@@ -535,8 +540,10 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 	// Check if user is already a member. A suspended membership blocks
 	// re-add: the admin must reactivate the existing row instead of
 	// creating a duplicate that loses the suspension audit trail.
+	// An offboarded tombstone is not a membership: the person re-joins from
+	// zero (CreateMembership re-activates the row with the new role).
 	existing, err := s.repo.GetMembership(ctx, input.UserID, parsedTenantID)
-	if err == nil {
+	if err == nil && !existing.IsOffboarded() {
 		if existing.IsSuspended() {
 			return nil, fmt.Errorf(
 				"%w: this user has a suspended membership in this tenant — reactivate them via the Members page instead",
@@ -545,7 +552,7 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		}
 		return nil, fmt.Errorf("%w: user is already a member", shared.ErrValidation)
 	}
-	if !errors.Is(err, shared.ErrNotFound) {
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
@@ -670,8 +677,17 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	return membership, nil
 }
 
-// RemoveMember removes a member from a tenant.
+// RemoveMember removes a member from a tenant. With the member lifecycle
+// wired (production) it is an offboarding with no reassignment: it succeeds
+// when the member owns nothing that needs a new owner and otherwise returns
+// ErrReassignmentRequired (use OffboardMember with a plan). The membership
+// row is never deleted. The hard delete below remains only for a service
+// built without the lifecycle store.
 func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
+	if s.lifecycle != nil {
+		_, err := s.OffboardMember(ctx, membershipID, OffboardMemberInput{}, actx)
+		return err
+	}
 	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
 		return err
@@ -763,7 +779,16 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 		return err
 	}
 
-	if err := s.repo.UpdateMembershipStatus(ctx, membership); err != nil {
+	// With the lifecycle store, one transaction also suspends the member's
+	// API keys, pauses the schedules they own and drops their materialized
+	// scope (groups, grants and ownership stay frozen for a re-enable).
+	var disabled *tenantdom.DisableResult
+	if s.lifecycle != nil {
+		disabled, err = s.lifecycle.Disable(ctx, membership)
+	} else {
+		err = s.repo.UpdateMembershipStatus(ctx, membership)
+	}
+	if err != nil {
 		return err
 	}
 
@@ -815,7 +840,22 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 		WithSeverity(audit.SeverityHigh).
 		WithMessage("Member suspended").
 		WithMetadata("user_id", userID)
+	if disabled != nil {
+		event = event.
+			WithMetadata("suspended_keys", disabled.SuspendedKeys).
+			WithMetadata("paused_schedules", disabled.Paused())
+	}
 	s.logAudit(ctx, actx, event)
+
+	// Owned schedules never run as a disabled person: they were paused, and
+	// the administrators are told so they can hand them over or resume them.
+	if disabled.Paused() > 0 {
+		s.notifyAdmins(ctx, membership.TenantID(),
+			"A disabled member's schedules were paused",
+			fmt.Sprintf("A member was disabled. Their %s were paused and will not run until an administrator resumes them or offboards the member and reassigns them.",
+				pausedSummary(disabled)),
+			notificationdom.SeverityMedium)
+	}
 
 	return nil
 }
@@ -834,7 +874,14 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 		return err
 	}
 
-	if err := s.repo.UpdateMembershipStatus(ctx, membership); err != nil {
+	// With the lifecycle store, the keys a disable suspended come back and
+	// the scope is recomputed from the frozen groups and grants.
+	if s.lifecycle != nil {
+		err = s.lifecycle.Reenable(ctx, membership)
+	} else {
+		err = s.repo.UpdateMembershipStatus(ctx, membership)
+	}
+	if err != nil {
 		return err
 	}
 
@@ -859,7 +906,7 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionMemberReactivated, audit.ResourceTypeMembership, membershipID).
-		WithSeverity(audit.SeverityMedium).
+		WithSeverity(audit.SeverityHigh).
 		WithMessage("Member reactivated").
 		WithMetadata("user_id", userID)
 	s.logAudit(ctx, actx, event)
@@ -1024,7 +1071,7 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	// them via the Members page rather than sending a new invitation, so
 	// the suspend audit trail and any compliance evidence stay intact.
 	existingMember, err := s.repo.GetMemberByEmail(ctx, parsedID, input.Email)
-	if err == nil && existingMember != nil {
+	if err == nil && existingMember != nil && existingMember.Status != string(tenantdom.MemberStatusOffboarded) {
 		if existingMember.Status == string(tenantdom.MemberStatusSuspended) {
 			return nil, fmt.Errorf(
 				"%w: this user has a suspended membership in this tenant — reactivate them via the Members page instead of sending a new invitation",
@@ -1181,7 +1228,7 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 	// accepting an invitation cannot bypass an active suspension because
 	// that would silently erase the audit trail.
 	existingMembership, err := s.repo.GetMembership(ctx, userID, invitation.TenantID())
-	if err == nil {
+	if err == nil && !existingMembership.IsOffboarded() {
 		if existingMembership.IsSuspended() {
 			return nil, fmt.Errorf(
 				"%w: your access to this team is suspended — please contact an administrator to be reactivated",
@@ -1190,7 +1237,7 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 		}
 		return nil, fmt.Errorf("%w: you are already a member of this team", shared.ErrValidation)
 	}
-	if !errors.Is(err, shared.ErrNotFound) {
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 

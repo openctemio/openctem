@@ -63,6 +63,12 @@ const (
 	ActionMemberRoleChanged Action = "member.role_changed"
 	ActionMemberSuspended   Action = "member.suspended"
 	ActionMemberReactivated Action = "member.reactivated"
+	// ActionMemberOffboarded: access stripped, owned work reassigned, the
+	// membership kept as a tombstone (member lifecycle, RFC-050).
+	ActionMemberOffboarded Action = "member.offboarded"
+	// ActionMemberDataErased: an offboarded person's name and email were
+	// anonymised (owner only).
+	ActionMemberDataErased Action = "member.data_erased"
 
 	// Invitation actions
 	ActionInvitationCreated  Action = "invitation.created"
@@ -486,7 +492,7 @@ func (a Action) IsValid() bool {
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
-		ActionMemberSuspended, ActionMemberReactivated,
+		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
 		ActionComponentCreated, ActionComponentUpdated, ActionComponentDeleted,
@@ -586,7 +592,7 @@ func (a Action) Category() string {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated:
 		return "tenant"
 	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
-		ActionMemberSuspended, ActionMemberReactivated:
+		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased:
 		return "member"
 	case ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired:
 		return "invitation"
@@ -826,7 +832,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthFailed, ActionPermissionDenied,
 		ActionSensorRevoked, ActionSensorDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
-		ActionAuditChainRebaselined:
+		ActionAuditChainRebaselined, ActionMemberDataErased:
 		return SeverityCritical
 
 	// High - privilege changes and pipeline failures
@@ -836,7 +842,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
 		ActionUserSuspended, ActionUserDeactivated,
 		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
-		ActionMemberRemoved, ActionMemberRoleChanged,
+		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
