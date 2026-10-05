@@ -366,6 +366,7 @@
   "sensors.manifest.toolsAdded": "Đã thêm: {list}",
   "sensors.manifest.toolsRemoved": "Đã gỡ: {list}",
   "sensors.manifest.toolCapabilities": "Khả năng của {tool}: {changes}",
+  "sensors.manifest.toolContract": "Hợp đồng công cụ {tool} {from} → {to}",
   "sensors.manifest.sensorWide": "Khả năng chung của sensor: {changes}",
   "sensors.manifest.otherChanged": "Đã thay đổi: {list}",
   "auth.loginError.invalid_provider": "Nhà cung cấp đăng nhập này không được hỗ trợ.",
