@@ -22,42 +22,22 @@ Everything else (description, code, request and response, identifiers, raw scann
 metadata) is one tab or one disclosure away; activity and comments are one click away
 in the activity panel.
 
-## What the best tools do
+## Patterns this layout uses
 
-Studied October 2026 from public docs:
-
-- **GitHub Dependabot alert.** The fix comes first ("Create Dependabot security
-  update" at the top), along with the patched version and EPSS. Assignees and tags
-  sit in a right panel. A dismissal needs a reason, which goes into the timeline.
-  ([viewing alerts](https://docs.github.com/en/code-security/dependabot/dependabot-alerts/viewing-and-updating-dependabot-alerts),
-  [advisory data](https://docs.github.com/en/code-security/security-advisories/working-with-global-security-advisories-from-the-github-advisory-database/about-the-github-advisory-database))
-- **GitHub code scanning.** Metadata is on the right and the code on the left. "Show
-  paths" lists the source-to-sink steps. Rule help folds behind "Show more", and
-  autofix is offered inline.
-  ([about alerts](https://docs.github.com/en/code-security/code-scanning/managing-code-scanning-alerts/about-code-scanning-alerts))
-- **GitHub secret scanning.** Validity is Active / Inactive / Unknown, with a
-  re-verify button and the token's metadata.
-  ([evaluating alerts](https://docs.github.com/en/code-security/secret-scanning/managing-alerts-from-secret-scanning/evaluating-alerts))
-- **Snyk issue card.** Shows the priority score and the factors behind it (exploit
-  maturity, reachable, trending), "Fixed in", and an **"Upgrade to x.y.z"** button,
-  with the rest of the actions under "⋯". The factors only appear on hover, which is
-  weak.
-  ([issue card](https://docs.snyk.io/scan-fix-and-prevent/scan-with-snyk/snyk-projects/issue-card-information.md))
-- **GitLab vulnerability page.** Status and severity are in a sidebar. The body is a
-  set of collapsible sections in a fixed order: Risk (CVSS, EPSS, KEV), Remediation,
-  Details, Evidence, Related, Activity.
-  ([docs](https://docs.gitlab.com/user/application_security/vulnerabilities/))
-- **Tenable VM.** The finding pane is different for each finding type. The VPR key
-  drivers are global threat data and are labelled as such.
-  ([finding details](https://docs.tenable.com/vulnerability-management/Content/Explore/Findings/ViewFindingsDetails.htm),
-  [risk metrics](https://docs.tenable.com/vulnerability-management/Content/Explore/Findings/RiskMetrics.htm))
-- **Jira and Linear.** The narrative is in the main column and the properties are in
-  a right rail. Jira hides empty fields. Comments are a feed under the issue
-  ([Jira field layout](https://support.atlassian.com/jira-software-cloud/docs/configure-field-layout-in-the-issue-view/),
-  [Linear comments](https://linear.app/docs/comment-on-issues)).
-- **Wiz.** Treats toxic combinations and attack paths as the reason an issue
-  matters. This comes from its public material; the issue page itself is behind a
-  login.
+- **The fix comes first**, with the fixed-in version and the one action that
+  applies (upgrade, rotate, reconfigure); the other actions sit under "⋯".
+- **Properties live in a right rail** (status, severity, assignee, tags, SLA);
+  the narrative is in the main column. Empty fields are hidden.
+- **The body is a fixed order of collapsible sections:** risk (CVSS, EPSS, KEV),
+  remediation, details, evidence, related, activity. Rule help folds behind
+  "Show more".
+- **The pane differs by finding type:** code findings show the source-to-sink
+  path next to the code; secrets show validity (Active / Inactive / Unknown)
+  with a re-verify action and the token's metadata.
+- **Priority factors are visible, not hover-only.** Global threat data is
+  labelled as global, and attack paths and combined exposures are shown as the
+  reason an issue matters.
+- **A dismissal needs a reason**, and the reason goes into the timeline.
 
 ## Principles
 

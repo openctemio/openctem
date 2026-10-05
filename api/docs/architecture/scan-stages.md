@@ -87,6 +87,28 @@ payload comes from one builder, `scan.StepCommandPayload`.
   its steps to platform sensors, whatever the template prefers. (Steps after
   the first used to ignore it.)
 
+## 4. Report output-type binding (owner decision G12)
+
+`internal/app/ingest/output_binding.go`. A report bound to a command may
+carry only the asset types its tool is declared to produce or take: the
+outputs of the tool's catalog stages plus the inputs it re-observes
+(`stage.MayReport`). This stops a compromised or buggy sensor from planting
+arbitrary assets through a legitimate command (research/22b S2), and it is
+what makes chained outputs trustworthy.
+
+- **Quarantine mode** (the default for a tenant with no stored policy): the
+  out-of-contract assets, and the findings that name them, are stored in the
+  sensor result quarantine with reason `out_of_contract` and are not
+  applied; the rest of the report is. If the quarantine cannot take them they
+  are dropped, never applied.
+- **Warn mode** (existing tenants, as set by #889): the report is applied
+  whole; the tenant audit log records what was out of contract.
+- An unclassified type is out of every contract. A tool the catalog does not
+  know (a tenant's custom tool) has no contract and is not checked;
+  unsolicited reports keep their own gate.
+- Every case writes a `sensor.results_quarantined` audit entry (reason,
+  tool, counts, type labels) and a metric.
+
 ## 3. The hop router: chaining with a gate at every hop
 
 `internal/app/pipeline/hop_router.go`; tables `scan_step_outputs`,

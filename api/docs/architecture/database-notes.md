@@ -98,7 +98,7 @@ Valid values (from constraint `chk_findings_source`):
 
 ### Platform Agent Functions (v3.2)
 
-These functions support the K8s-style lease-based platform agent system. Added in migrations `000080`, `000083`, `000084`.
+These functions support the lease-based platform agent system. Added in migrations `000080`, `000083`, `000084`.
 
 #### Queue Management Functions
 

@@ -57,9 +57,9 @@ email domain is checked against the provider's allow-list.
 ## Who may configure SSO (platform administrator only)
 
 Configuring an organization's SSO is a **platform-administrator** operation, not
-a tenant one, modeled on Tenable Security Center, where SAML lives under
-system-level *Configuration* rather than in an organization user's settings. An
-organization owner or admin cannot set up SSO for their own organization.
+a tenant one: SAML and OIDC federation is system-level configuration, not an
+organization user's setting. An organization owner or admin cannot set up SSO
+for their own organization.
 
 A platform administrator is a normal user account that belongs to no
 organization and is linked to an `admin_users` row (RFC-022). They sign in on
