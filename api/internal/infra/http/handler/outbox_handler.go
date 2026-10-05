@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -18,6 +19,7 @@ import (
 
 // OutboxHandler handles notification outbox operations for tenants.
 type OutboxHandler struct {
+	configAuditor
 	repo   outbox.OutboxRepository
 	logger *logger.Logger
 }
@@ -345,6 +347,8 @@ func (h *OutboxHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("outbox entry reset for retry", "id", id, "tenant_id", tenantIDStr)
+	h.recordChange(r, h.logger, auditdom.ActionNotificationOutboxRetried, auditdom.ResourceTypeNotificationOutbox, id, "",
+		nil, nil, auditdom.SeverityLow, "Notification delivery retried")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(outboxToResponse(entry))
 }
@@ -413,5 +417,8 @@ func (h *OutboxHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("outbox entry deleted", "id", id, "tenant_id", tenantIDStr)
+	// A deleted entry is an alert that will never be delivered.
+	h.recordChange(r, h.logger, auditdom.ActionNotificationOutboxDeleted, auditdom.ResourceTypeNotificationOutbox, id, "",
+		nil, nil, auditdom.SeverityMedium, "Pending notification deleted")
 	w.WriteHeader(http.StatusNoContent)
 }
