@@ -37968,6 +37968,10 @@ export interface components {
       /** @description Every CVE the scanner named, primary first */
       cve_ids?: string[]
       cvss_score?: number
+      /** @description Detail only (GET /findings/{id}), never in lists or exports (research 24 P0-2). */
+      cvss_v2_vector?: string
+      /** @description CVSS v3.x vector the scanner reported */
+      cvss_v3_vector?: string
       cvss_vector?: string
       /** @description Version of cvss_score (2.0, 3.x, 3.1, 4.0) */
       cvss_version?: string
@@ -38066,6 +38070,8 @@ export interface components {
       rule_id?: string
       rule_name?: string
       scan_id?: string
+      /** @description The scanner's proof (plugin output); untrusted plain text */
+      scanner_output?: components['schemas']['internal_infra_http_handler.ScannerOutputResponse']
       secret_age_in_days?: number
       secret_commit_count?: number
       secret_entropy?: number
@@ -39911,6 +39917,13 @@ export interface components {
       ranges?: string[]
       sensor_ids?: string[]
       tenant_id?: string
+      updated_at?: string
+    }
+    'internal_infra_http_handler.ScannerOutputResponse': {
+      text?: string
+      /** @description Cut at 64 KiB */
+      truncated?: boolean
+      /** @description When the latest sighting wrote it */
       updated_at?: string
     }
     'internal_infra_http_handler.ScannerTemplateResponse': {
