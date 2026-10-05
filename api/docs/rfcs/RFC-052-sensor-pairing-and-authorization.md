@@ -283,7 +283,7 @@ One row per sensor in `sensor_grants` (composite foreign key on
 | Dimension | Column | Meaning (NULL = no limit from the grant) |
 |---|---|---|
 | Profile | `profile` | The profile it was created from (label only; the columns are the grant) |
-| Trust | `trust_level` | `new` or `trusted` (SP3 adds `restricted`, `quarantined`) |
+| Trust | `sensors.trust_level` (on the sensor row) | `new` or `trusted` (SP3 adds `restricted`, `quarantined`) |
 | Job types | `job_types` | `scan`, `collect`, `validate`, `connector_sync`, `connector_scan`, … |
 | Zones | `zone_ids` | A zoned command must be in one of these zones |
 | Tools | `tools` | The command's tool must be listed |
@@ -380,8 +380,9 @@ Each line is a test in the implementation PRs.
   created sensor), status, expires_at, approved_by, approved_at, …)`,
   indexed for the caps; rows older than 30 days are purged by the
   housekeeping job (audit keeps the record).
-- `sensor_grants` (§5.1); the migration inserts a `legacy-broad`,
-  `trusted` grant for every existing sensor in one statement.
+- `sensor_grants` (§5.1) and `sensors.trust_level`; the migration inserts a
+  `legacy-broad` grant for every existing sensor in one statement and leaves
+  existing sensors `trusted`; new sensors start `new`.
 - `tenants.sensor_bearer_keys_allowed boolean NOT NULL DEFAULT true`, then
   default changed to `false`: existing organizations keep bearer keys, new
   ones require key-bound identity (D-4).
