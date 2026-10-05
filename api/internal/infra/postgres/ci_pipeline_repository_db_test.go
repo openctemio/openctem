@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// CI pipelines against the real schema (migration 001081): legacy adoption,
+// CI pipelines against the real schema (migration 001084): legacy adoption,
 // the cadence and gate summary from runs (fork runs excluded, one CI run
 // counted once), the data scope on the listing, tenant isolation on every
 // read and write, the caps, revocation and the tools cap. Requires
