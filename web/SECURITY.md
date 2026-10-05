@@ -392,7 +392,6 @@ Baked into the client bundle at build time. Safe to expose:
 | `NEXT_PUBLIC_APP_URL`             | `http://localhost:3000` | Frontend URL                          |
 | `NEXT_PUBLIC_AUTH_PROVIDER`       | `local`                 | Auth mode (`local`, `oidc`, `hybrid`) |
 | `NEXT_PUBLIC_WS_BASE_URL`         | (empty)                 | WebSocket host override (same site)   |
-| `NEXT_PUBLIC_SSE_BASE_URL`        | (empty)                 | SSE URL (if cross-origin)             |
 | `NEXT_PUBLIC_AUTH_COOKIE_NAME`    | `auth_token`            | Access token cookie name              |
 | `NEXT_PUBLIC_REFRESH_COOKIE_NAME` | `refresh_token`         | Refresh token cookie name             |
 
