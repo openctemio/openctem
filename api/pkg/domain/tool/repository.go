@@ -45,7 +45,11 @@ type Repository interface {
 	// Tool operations (system-wide)
 	Create(ctx context.Context, tool *Tool) error
 	GetByID(ctx context.Context, id shared.ID) (*Tool, error)
-	GetByName(ctx context.Context, name string) (*Tool, error)
+	// GetByName resolves a tool name as the given tenant sees it: the platform
+	// tool of that name, else the tenant's own custom tool. Another tenant's
+	// custom tool is never returned. A zero tenantID resolves platform tools
+	// only.
+	GetByName(ctx context.Context, tenantID shared.ID, name string) (*Tool, error)
 	List(ctx context.Context, filter ToolFilter, page pagination.Pagination) (pagination.Result[*Tool], error)
 	ListByNames(ctx context.Context, names []string) ([]*Tool, error)
 	ListByCategoryID(ctx context.Context, categoryID shared.ID) ([]*Tool, error)

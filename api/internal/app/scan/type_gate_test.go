@@ -23,7 +23,7 @@ type stubTools struct {
 	err   error
 }
 
-func (s *stubTools) GetByName(_ context.Context, name string) (*tool.Tool, error) {
+func (s *stubTools) GetByName(_ context.Context, _ shared.ID, name string) (*tool.Tool, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -191,14 +191,14 @@ func TestFilterStepTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, ctx := range map[string]map[string]any{"fresh": rc, "stored": stored} {
-		st, err := svc.FilterStepTargets(context.Background(), "zap", ctx)
+		st, err := svc.FilterStepTargets(context.Background(), shared.ID{}, "zap", ctx)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if !reflect.DeepEqual(st.Targets, []string{"https://app.example.com", "typed-by-hand.example.com"}) || st.Refused != 1 {
 			t.Fatalf("%s zap: %+v", name, st)
 		}
-		st, err = svc.FilterStepTargets(context.Background(), "semgrep", ctx)
+		st, err = svc.FilterStepTargets(context.Background(), shared.ID{}, "semgrep", ctx)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -212,14 +212,14 @@ func TestFilterStepTargets(t *testing.T) {
 		"targets":                []string{"github.com/acme/app"},
 		RunContextKeyTargetTypes: map[string]string{"github.com/acme/app": "repository"},
 	}
-	_, err := svc.FilterStepTargets(context.Background(), "zap", only)
+	_, err := svc.FilterStepTargets(context.Background(), shared.ID{}, "zap", only)
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code != codeIncompatibleTargets || !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("err = %v, want %s", err, codeIncompatibleTargets)
 	}
 
 	// No typed targets: unchanged.
-	st, err := svc.FilterStepTargets(context.Background(), "zap", map[string]any{"targets": []string{"x"}})
+	st, err := svc.FilterStepTargets(context.Background(), shared.ID{}, "zap", map[string]any{"targets": []string{"x"}})
 	if err != nil || !reflect.DeepEqual(st.Targets, []string{"x"}) {
 		t.Fatalf("untyped: %+v %v", st, err)
 	}

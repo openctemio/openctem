@@ -255,3 +255,32 @@ func TestScopeDelegation_ScopeRules_DB(t *testing.T) {
 	_ = json.Unmarshal([]byte(body), &created)
 	h.expect(h.lead, false, http.MethodPut, rules+"/"+created.ID, map[string]any{"match_tags": []string{"prod", "dev"}}, http.StatusForbidden)
 }
+
+// The group-modification cap (RFC-050 W7, research 21b M-4): a restricted
+// manager may unassign an asset, change an ownership type or remove someone
+// else only in a group whose whole asset set is inside their own scope.
+func TestScopeDelegation_GroupModificationCap_DB(t *testing.T) {
+	h := newSDHarness(t)
+	out := "/api/v1/groups/" + h.groupOut
+	in := "/api/v1/groups/" + h.groupIn
+	h.exec(`INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member')`, h.groupOut, h.peer)
+	h.exec(`INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member')`, h.groupOut, h.lead)
+
+	h.expect(h.lead, false, http.MethodDelete, out+"/assets/"+h.assetOut, nil, http.StatusForbidden)
+	h.expect(h.lead, false, http.MethodPut, out+"/assets/"+h.assetOut, map[string]any{"ownership_type": "primary"}, http.StatusForbidden)
+	h.expect(h.lead, false, http.MethodDelete, out+"/members/"+h.peer, nil, http.StatusForbidden)
+	if n := h.count(`SELECT COUNT(*) FROM asset_owners WHERE group_id = $1 AND asset_id = $2 AND ownership_type = 'secondary'`, h.groupOut, h.assetOut); n != 1 {
+		t.Error("the lead changed another BU's group asset")
+	}
+	if n := h.count(`SELECT COUNT(*) FROM group_members WHERE group_id = $1 AND user_id = $2`, h.groupOut, h.peer); n != 1 {
+		t.Error("the lead removed a member of a group they do not fully cover")
+	}
+
+	// Leaving a group oneself only narrows one's own scope: allowed.
+	h.expect(h.lead, false, http.MethodDelete, out+"/members/"+h.lead, nil, http.StatusNoContent)
+	// Inside their own scope the lead manages the group.
+	h.expect(h.lead, false, http.MethodPut, in+"/assets/"+h.assetIn, map[string]any{"ownership_type": "primary"}, http.StatusNoContent)
+	h.expect(h.lead, false, http.MethodDelete, in+"/assets/"+h.assetIn, nil, http.StatusNoContent)
+	// An administrator is not capped.
+	h.expect(h.admin, true, http.MethodDelete, out+"/members/"+h.peer, nil, http.StatusNoContent)
+}

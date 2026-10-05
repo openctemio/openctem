@@ -16,7 +16,7 @@ import (
 // a PRE-EXISTING account it hasn't proven it owns. Matching an email is never,
 // on its own, enough to bind a federated identity.
 //
-// Four cases (GitLab-style): 4 returning user (allow), 3 different IdP (reject),
+// Four cases: 4 returning user (allow), 3 different IdP (reject),
 // 1 real password account (refuse — sign in first), 2 claimable passwordless
 // seat (claim ONLY with IdP-verified email AND a DNS-verified tenant domain).
 // =============================================================================

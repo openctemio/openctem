@@ -310,6 +310,9 @@ func registerSensorManagementRoutes(
 		// Manifest (RFC-033): the current one and its history.
 		r.GET("/{id}/manifest", h.Manifest, middleware.Require(permission.SensorsRead))
 		r.GET("/{id}/manifests", h.Manifests, middleware.Require(permission.SensorsRead))
+		// Setup checklist (research/26): the sensor's config report, explained
+		// from the platform catalog.
+		r.GET("/{id}/config-report", h.ConfigReport, middleware.Require(permission.SensorsRead))
 
 		// Available capabilities for tenant (aggregated from all accessible sensors)
 		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.SensorsRead))

@@ -297,6 +297,13 @@ type SensorResponse struct {
 	// §5.7): enforced on the sensor, shown here. Always present; state
 	// "unknown" when the sensor never reported one.
 	LocalPolicy SensorLocalPolicyResponse `json:"local_policy"`
+
+	// ConfigHealth is the platform's rollup of the sensor's latest config
+	// report (research/26): ok, attention, impaired or blocked; null when
+	// it sent none. While the report is stale it is still the last rollup;
+	// health_reasons then carry config_report_stale. The checklist is
+	// GET /sensors/{id}/config-report.
+	ConfigHealth *string `json:"config_health" enums:"ok,attention,impaired,blocked"`
 }
 
 // SensorLocalPolicyResponse is a sensor's local policy as the console shows
@@ -1123,6 +1130,10 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 	resp.ManifestDigest, resp.ManifestSource = a.ManifestDigest, a.ManifestSource
 	resp.ManifestAt = rfc3339Ptr(a.ManifestAt)
 	resp.LocalPolicy = localPolicyResponse(a)
+	if a.ConfigHealth != "" {
+		h := a.ConfigHealth
+		resp.ConfigHealth = &h
+	}
 
 	return resp
 }

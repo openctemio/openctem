@@ -290,9 +290,3 @@ func CORSWithEnvironment(cfg *config.CORSConfig, appEnv string) func(http.Handle
 		})
 	}
 }
-
-// CORS adds CORS headers based on configuration.
-// Deprecated: Use CORSWithEnvironment for production-safe CORS handling.
-func CORS(cfg *config.CORSConfig) func(http.Handler) http.Handler {
-	return CORSWithEnvironment(cfg, "")
-}
