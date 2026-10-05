@@ -1,0 +1,88 @@
+# Organization settings: storage, concurrency and failure handling
+
+Organization (tenant) settings live in one JSONB column, `tenants.settings`.
+Each top-level key is a **section**: `general`, `security`, `api`, `branding`,
+`branch`, `ai`, `risk_scoring`, `pentest`, `asset_identity`, `asset_source`,
+`asset_lifecycle`, `retest`. The key `subscribed_bundles` is written by the
+module bundle store. The data-scope policy is the separate column
+`tenants.members_without_group_see`.
+
+Code: `pkg/domain/tenant/settings.go` (typed sections),
+`pkg/domain/tenant/settings_section.go` (section keys, ETags, per-section
+decode), `internal/app/tenant/settings_write.go` (the write path),
+`internal/infra/postgres/tenant_repository.go` (`UpdateSettingsSection`,
+`UpdateProfile`).
+
+## Writes: one section at a time, compare-and-swap
+
+Every settings writer goes through `TenantService.writeSettingsSection`:
+
+1. Read the tenant and the section's stored value.
+2. Apply the change to that section only.
+3. Persist it with a compare-and-swap on that key alone:
+
+```sql
+UPDATE tenants
+   SET settings = jsonb_set(COALESCE(settings,'{}'), ARRAY[$section], $next, true),
+       updated_at = NOW()
+ WHERE id = $tenant
+   AND (COALESCE(settings,'{}') -> $section) IS NOT DISTINCT FROM $expected
+```
+
+Consequences:
+
+- Saving one section never rewrites another. Before this, every writer
+  rewrote the whole blob from a snapshot read earlier, so a general-settings
+  save, the asset-lifecycle dry-run stamp or a branding save could silently
+  revert a concurrent change to the IP allowlist, the MFA requirement, SSO
+  enforcement or the bundle subscription.
+- A writer whose snapshot of the same section is stale loses the CAS. Without
+  `If-Match` the service re-reads and re-applies the partial change (at most 3
+  attempts), so fields the caller did not send keep the concurrent value.
+- The organization profile (name, slug, description, logo URL) is written by
+  `UpdateProfile`, which never touches `settings`.
+
+## Optimistic concurrency for clients: ETag / If-Match
+
+- `GET /tenants/{t}/settings` and every section `PATCH` that returns the full
+  settings object carry `etags`: the entity tag of each section **as stored**
+  (a hash of its canonical JSON).
+- Section `GET`/`PATCH` endpoints (`pentest`, `risk-scoring`, `asset-source`,
+  `asset-lifecycle`, `asset-identity`, `/organization/settings/retest`, and the
+  section `PATCH`es) also set the `ETag` response header for their section.
+- A section write may send `If-Match: <etag>`. When the section changed since,
+  the API answers **409 `SETTINGS_CONFLICT`** with
+  `details: {section, etag, current}`; `current` is the stored section with
+  secrets redacted (`RedactSettings`). Without `If-Match` the write behaves as
+  described above.
+- The web console sends the section tag from its cached `GET /settings` on the
+  general, security, branding and API saves (`useSettingsSectionMutation`), and
+  on a conflict reloads the settings and shows the server message.
+
+## Failure handling: a corrupt section fails closed
+
+- Sections are decoded one by one (`SettingsFromMapChecked`). A section that
+  cannot be decoded falls back to its own default; the others are unaffected.
+  (Before, one wrongly typed key reset every section, including security, to
+  defaults: empty IP allowlist, MFA off.)
+- Enforcement points read security with `Tenant.SecuritySettingsStrict()`, which
+  returns an error for an unreadable security section:
+  - the IP allowlist gate denies the request;
+  - the SSO enforcement gate and the token-mint SSO check refuse;
+  - the token-mint 2FA check refuses, and "does any of my organizations require
+    2FA" counts the organization as requiring it.
+- A write to an unreadable section is refused (500, logged as an error), so it
+  is never overwritten with defaults. Writes to other sections still work.
+  An operator fixes the stored JSON.
+
+## Tests
+
+- `internal/app/tenant/settings_cas_db_test.go` (Postgres): racing saves of two
+  sections both persist; a stale `If-Match` is refused and the stored value is
+  unchanged; bundles, the dry-run stamp and a profile save do not disturb other
+  keys; a corrupt security section is never rewritten and reads fail closed.
+- `pkg/domain/tenant/settings_section_test.go`: per-section decode, ETag
+  stability, `If-Match` parsing.
+- `internal/infra/http/handler/settings_conflict_test.go`: the 409 body redacts
+  secrets.
+- `web/src/features/organization/api/__tests__/use-tenant-settings-if-match.test.tsx`.
