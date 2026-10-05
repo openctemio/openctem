@@ -1009,7 +1009,7 @@ results an out-of-scope id is reported exactly like an unknown id.
   job acting for them (scheduled scan, report) refuses instead of running
   with a bypass the person no longer holds.
 - **The scope follows its sources in the same transaction** (migration
-  000971, RFC-050 W6). Database triggers keep `user_accessible_assets` in
+  001015, RFC-050 W6). Database triggers keep `user_accessible_assets` in
   step whatever code path writes: a group asset row inserted or deleted
   (`asset_owners_scope_sync`), a member leaving a group
   (`group_members_scope_sync`), a group deactivated or re-activated

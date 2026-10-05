@@ -8,7 +8,7 @@ published at https://docs.openctem.io (operations/release-notes-*).
 ### Security: deactivating an access group removes its access at once
 
 - `user_accessible_assets` is now kept in step with its sources by database
-  triggers, in the writing transaction (migration **000971**, RFC-050 W6):
+  triggers, in the writing transaction (migration **001015**, RFC-050 W6):
   group asset assign/unassign, a member leaving a group, a group deactivated,
   re-activated or deleted, a scope rule deactivated or deleted. Before, a
   deactivated or deleted access group kept granting its assets indefinitely
