@@ -580,6 +580,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Scanner output retention: plugin output of findings closed more than
+	// 365 days ago is dropped (research 24 P0-2, owner decision C9).
+	if repos.Finding != nil {
+		w.ControllerManager.Register(controller.NewScannerOutputRetentionController(
+			repos.Finding,
+			&controller.ScannerOutputRetentionConfig{
+				Logger: log.With("controller", "finding-scanner-output-retention"),
+			},
+		))
+	}
+
 	// Sensor activity timeline retention: sensor_events past 90 days.
 	if repos.SensorEvent != nil {
 		w.ControllerManager.Register(controller.NewSensorEventRetentionController(

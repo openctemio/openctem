@@ -232,9 +232,21 @@ func buildFinding(item *nessusparser.Item, assetID, assetValue string) ctis.Find
 		f.Vulnerability = vuln
 	}
 
+	props := ctis.Properties{}
 	// Stored by ingest as the finding's patch publication date (research 17 R2).
 	if d := strings.TrimSpace(item.PatchPubDate); d != "" {
-		f.Properties = ctis.Properties{"patch_publication_date": d}
+		props["patch_publication_date"] = d
+	}
+	// Both CVSS vectors (the CVSS block above keeps one): ingest stores them
+	// as cvss_v2_vector and cvss_v3_vector (research 24 P0-2).
+	if v := strings.TrimSpace(item.CVSSVector); v != "" {
+		props["cvss_v2_vector"] = v
+	}
+	if v := strings.TrimSpace(item.CVSS3Vector); v != "" {
+		props["cvss_v3_vector"] = v
+	}
+	if len(props) > 0 {
+		f.Properties = props
 	}
 
 	if item.Solution != "" && !strings.EqualFold(item.Solution, "n/a") {
