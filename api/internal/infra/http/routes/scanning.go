@@ -425,6 +425,8 @@ func registerPipelineRoutes(
 		r.GET("/{id}", h.GetRun, middleware.Require(permission.PipelinesRead))
 		// A run's tasks, paged by cursor (the run read embeds the first page).
 		r.GET("/{id}/tasks", h.ListRunTasks, middleware.Require(permission.PipelinesRead))
+		// How each stage of the run was planned (counts by reason).
+		r.GET("/{id}/stages", h.ListRunStages, middleware.Require(permission.PipelinesRead))
 
 		// Write operations. Scan runs are pipeline runs, and this is how a
 		// scan run is stopped, so it also needs scans:write (owner decision

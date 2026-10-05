@@ -47,8 +47,9 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 		 WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2`).Scan(&n, &allValid); err != nil {
 		t.Fatal(err)
 	}
-	if n != 27 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 27 validated", n, allValid.Bool)
+	// 27 from 000921, 3 from the scan chaining tables (001042).
+	if n != 30 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 30 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing
@@ -216,7 +217,10 @@ func TestAssetRefTenantFKs_MigrationReplay(t *testing.T) {
 		}
 		exec(tx, "rollback to savepoint", `ROLLBACK TO SAVEPOINT before_up`)
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pg_constraint WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2`).Scan(&n); err != nil {
+		// The scan chaining tables (001042) were created with their keys
+		// and are not part of 000921.
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pg_constraint WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2
+			AND conrelid::regclass::text NOT IN ('scan_step_outputs', 'scan_run_targets')`).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		if n != 0 {
