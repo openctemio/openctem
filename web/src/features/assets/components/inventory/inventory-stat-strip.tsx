@@ -66,12 +66,14 @@ export function InventoryStatStrip({
     {
       id: 'internet',
       label: 'Internet-facing',
-      value: stats.byInternetAccessible['true'] ?? 0,
-      active: filters.isInternetAccessible === true,
+      // One definition across the product (research/22 P0-12): exposure =
+      // public, the population the Attack surface pages count.
+      value: stats.byExposure['public'] ?? 0,
+      active: isPublicOnly(filters.exposures),
       toggle: (f) =>
-        f.isInternetAccessible === true
-          ? { ...f, isInternetAccessible: undefined, page: 1 }
-          : { ...f, isInternetAccessible: true, page: 1 },
+        isPublicOnly(f.exposures)
+          ? { ...f, exposures: undefined, page: 1 }
+          : { ...f, exposures: ['public'], page: 1 },
     },
     {
       id: 'unowned',
@@ -110,4 +112,8 @@ export function InventoryStatStrip({
       }))}
     />
   )
+}
+
+function isPublicOnly(exposures: readonly string[] | undefined): boolean {
+  return exposures?.length === 1 && exposures[0] === 'public'
 }
