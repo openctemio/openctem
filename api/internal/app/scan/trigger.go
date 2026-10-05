@@ -352,6 +352,14 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	}
 	routing.record(runContext)
 
+	// Targets for the tenant's sensors outside any zone go only where a
+	// sensor's reported local policy accepts them (research/25 §3.6).
+	if !routing.usePlatform() {
+		if err := s.applyUnzonedPreflight(ctx, sc, plan, resolved.Targets, runContext); err != nil {
+			return nil, err
+		}
+	}
+
 	// Outside zones too, a scanner that reads one target per job gets one
 	// command per target, not one command that scans only the first.
 	if plan == nil {
@@ -1168,7 +1176,7 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	}
 	if len(r.Targets) == 0 && r.Unconfirmed > 0 && r.Excluded == 0 {
 		return shared.NewDomainError("ALL_TARGETS_UNCONFIRMED",
-			fmt.Sprintf("Every target of scan %q is an asset whose ownership is not confirmed yet; nothing to scan. Review their attribution first.", sc.Name),
+			fmt.Sprintf("No target of scan %q is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Targets.", sc.Name),
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.Excluded > 0 {

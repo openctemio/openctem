@@ -88,7 +88,7 @@ func TestPriorityRuleHandler_MutationsEnqueueReclassify(t *testing.T) {
 
 	// --- Create ---
 	body, _ := json.Marshal(map[string]any{
-		"name": "esc P0", "priority_class": "P0", "conditions": json.RawMessage("[]"),
+		"name": "esc P0", "priority_class": "P0", "conditions": json.RawMessage(`[{"field":"is_in_kev","operator":"eq","value":true}]`),
 	})
 	rec := httptest.NewRecorder()
 	h.Create(rec, withCtx(httptest.NewRequest(http.MethodPost, "/priority-rules", bytes.NewReader(body))))
