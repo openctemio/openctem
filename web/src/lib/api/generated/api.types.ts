@@ -26404,6 +26404,80 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/secret-store/{id}/rotate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Rotate credential
+     * @description Replace the secret of a credential in place. Send the data field matching the credential's type. Sources bound to the credential use the new value on their next fetch.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Credential ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description New secret */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.RotateCredentialRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CredentialResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors': {
     parameters: {
       query?: never
@@ -39342,6 +39416,17 @@ export interface components {
       id?: string
       secret_value?: string
     }
+    'internal_infra_http_handler.RotateCredentialRequest': {
+      api_key?: components['schemas']['internal_infra_http_handler.APIKeyDataRequest']
+      aws_role?: components['schemas']['internal_infra_http_handler.AWSRoleDataRequest']
+      azure_service_principal?: components['schemas']['internal_infra_http_handler.AzureServicePrincipalDataRequest']
+      basic_auth?: components['schemas']['internal_infra_http_handler.BasicAuthDataRequest']
+      bearer_token?: components['schemas']['internal_infra_http_handler.BearerTokenDataRequest']
+      gcp_service_account?: components['schemas']['internal_infra_http_handler.GCPServiceAccountDataRequest']
+      github_app?: components['schemas']['internal_infra_http_handler.GitHubAppDataRequest']
+      gitlab_token?: components['schemas']['internal_infra_http_handler.GitLabTokenDataRequest']
+      ssh_key?: components['schemas']['internal_infra_http_handler.SSHKeyDataRequest']
+    }
     'internal_infra_http_handler.RunDispatchResponse': {
       excluded_targets?: number
       resolved_targets?: number
@@ -40875,6 +40960,10 @@ export interface components {
     }
     'internal_infra_http_handler.UpdateCredentialRequest': {
       description?: string
+      /**
+       * Format: date-time
+       * @description ExpiresAt: RFC 3339 timestamp in the future, or null to clear.
+       */
       expires_at?: string
       name?: string
     }
