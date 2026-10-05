@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -803,7 +804,19 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 	}
 	qgPassed := qgResult == nil || qgResult.Passed
 
-	switch st.outcome() {
+	// Targets zone routing could not place were never scanned (22c B7): a
+	// run whose steps all finished but left targets out is partial, not
+	// completed. Targets refused by policy (exclusions, ownership, act
+	// scope) are not counted: the run did what it was allowed to do.
+	outcome := st.outcome()
+	uncovered := uncoveredTargetCount(run.Context)
+	partialMsg := fmt.Sprintf("Pipeline completed partially: %d of %d steps did not finish all their work", st.failed+st.partial, run.TotalSteps)
+	if outcome == pipeline.RunStatusCompleted && uncovered > 0 {
+		outcome = pipeline.RunStatusPartial
+		partialMsg = fmt.Sprintf("Pipeline completed, but %d target(s) were not scanned: no scan zone or sensor could reach them (see uncovered_targets)", uncovered)
+	}
+
+	switch outcome {
 	case pipeline.RunStatusCompleted:
 		if !s.finishRun(ctx, run, pipeline.RunStatusCompleted, "") {
 			return
@@ -820,8 +833,7 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	case pipeline.RunStatusPartial:
-		msg := fmt.Sprintf("Pipeline completed partially: %d of %d steps did not finish all their work", st.failed+st.partial, run.TotalSteps)
-		if !s.finishRun(ctx, run, pipeline.RunStatusPartial, msg) {
+		if !s.finishRun(ctx, run, pipeline.RunStatusPartial, partialMsg) {
 			return
 		}
 		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
@@ -831,6 +843,7 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 				WithMetadata("completed_steps", st.completed).
 				WithMetadata("partial_steps", st.partial).
 				WithMetadata("failed_steps", st.failed).
+				WithMetadata("uncovered_targets", uncovered).
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	default:
@@ -846,6 +859,28 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	}
+}
+
+// uncoveredTargetCount is how many targets the run's zone routing could not
+// place (the scan trigger records them): the zone summary's count, else the
+// length of the (bounded) uncovered list.
+func uncoveredTargetCount(runContext map[string]any) int {
+	if routing, ok := runContext["zone_routing"].(map[string]any); ok {
+		switch n := routing["uncovered_targets"].(type) {
+		case int:
+			if n > 0 {
+				return n
+			}
+		case float64:
+			if n > 0 {
+				return int(n)
+			}
+		}
+	}
+	if v := reflect.ValueOf(runContext["uncovered_targets"]); v.IsValid() && v.Kind() == reflect.Slice {
+		return v.Len()
+	}
+	return 0
 }
 
 // updateRunStats stores the run's step counters. A partial step is stored
