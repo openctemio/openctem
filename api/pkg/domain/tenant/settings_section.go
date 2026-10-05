@@ -20,7 +20,6 @@ import (
 const (
 	SectionGeneral        = "general"
 	SectionSecurity       = "security"
-	SectionAPI            = "api"
 	SectionBranding       = "branding"
 	SectionBranch         = "branch"
 	SectionAI             = "ai"
@@ -39,7 +38,6 @@ func settingsSectionTargets(s *Settings) map[string]any {
 	return map[string]any{
 		SectionGeneral:        &s.General,
 		SectionSecurity:       &s.Security,
-		SectionAPI:            &s.API,
 		SectionBranding:       &s.Branding,
 		SectionBranch:         &s.Branch,
 		SectionAI:             &s.AI,

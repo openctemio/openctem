@@ -730,7 +730,7 @@ func TestTenantSvc_UpdateTenant_UpdateSlug(t *testing.T) {
 
 	newSlug := "new-slug"
 	input := app.UpdateTenantInput{
-		Slug: &newSlug,
+		Slug: &newSlug, CallerIsOwner: true,
 	}
 
 	result, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input, app.AuditContext{})
@@ -749,7 +749,7 @@ func TestTenantSvc_UpdateTenant_DuplicateSlug(t *testing.T) {
 
 	newSlug := "taken-slug"
 	input := app.UpdateTenantInput{
-		Slug: &newSlug,
+		Slug: &newSlug, CallerIsOwner: true,
 	}
 
 	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(), input, app.AuditContext{})
@@ -2425,78 +2425,6 @@ func TestTenantSvc_UpdateSecuritySettings_PartialPatchPreservesOmitted(t *testin
 }
 
 // =============================================================================
-// UpdateAPISettings Tests
-// =============================================================================
-
-func TestTenantSvc_UpdateAPISettings_Success(t *testing.T) {
-	svc, repo := newTestTenantService()
-	existing := seedTenant(repo, "Team", "team-slug")
-
-	input := app.UpdateAPISettingsInput{
-		APIKeyEnabled: boolPtr(true),
-		WebhookURL:    strPtr("https://example.com/webhook"),
-		WebhookEvents: []string{"finding.created"},
-	}
-
-	result, err := svc.UpdateAPISettings(context.Background(), existing.ID().String(), input, app.AuditContext{})
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if !result.API.APIKeyEnabled {
-		t.Error("expected API key to be enabled")
-	}
-}
-
-// TestTenantSvc_UpdateAPISettings_PartialPatchPreservesOmitted proves that
-// toggling api_key_enabled does not wipe the webhook URL/secret/events.
-func TestTenantSvc_UpdateAPISettings_PartialPatchPreservesOmitted(t *testing.T) {
-	svc, repo := newTestTenantService()
-	existing := seedTenant(repo, "Team", "team-slug")
-	id := existing.ID().String()
-
-	// Seed webhook config.
-	_, err := svc.UpdateAPISettings(context.Background(), id, app.UpdateAPISettingsInput{
-		WebhookURL:    strPtr("https://hooks.example.com/x"),
-		WebhookSecret: strPtr("s3cr3t"),
-		WebhookEvents: []string{"finding.created", "scan.completed"},
-	}, app.AuditContext{})
-	if err != nil {
-		t.Fatalf("seed update failed: %v", err)
-	}
-
-	// Partial PATCH: only enable API keys.
-	result, err := svc.UpdateAPISettings(context.Background(), id, app.UpdateAPISettingsInput{
-		APIKeyEnabled: boolPtr(true),
-	}, app.AuditContext{})
-	if err != nil {
-		t.Fatalf("partial update failed: %v", err)
-	}
-
-	if !result.API.APIKeyEnabled {
-		t.Error("api_key_enabled not applied")
-	}
-	if result.API.WebhookURL != "https://hooks.example.com/x" {
-		t.Errorf("webhook url wiped: got %q", result.API.WebhookURL)
-	}
-	if result.API.WebhookSecret != "s3cr3t" {
-		t.Errorf("webhook secret wiped: got %q", result.API.WebhookSecret)
-	}
-	if len(result.API.WebhookEvents) != 2 {
-		t.Errorf("webhook events wiped: got %v", result.API.WebhookEvents)
-	}
-}
-
-func TestTenantSvc_UpdateAPISettings_InvalidID(t *testing.T) {
-	svc, _ := newTestTenantService()
-
-	input := app.UpdateAPISettingsInput{}
-	_, err := svc.UpdateAPISettings(context.Background(), "bad-uuid", input, app.AuditContext{})
-	if err == nil {
-		t.Fatal("expected error for invalid ID")
-	}
-}
-
-// =============================================================================
 // UpdateBrandingSettings Tests
 // =============================================================================
 
@@ -2728,10 +2656,6 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 		}},
 		{"UpdateSecuritySettings", func() error {
 			_, err := svc.UpdateSecuritySettings(context.Background(), invalidID, app.UpdateSecuritySettingsInput{SessionTimeoutMin: intPtr(60)}, app.AuditContext{})
-			return err
-		}},
-		{"UpdateAPISettings", func() error {
-			_, err := svc.UpdateAPISettings(context.Background(), invalidID, app.UpdateAPISettingsInput{}, app.AuditContext{})
 			return err
 		}},
 		{"UpdateBrandingSettings", func() error {
@@ -3007,6 +2931,42 @@ func TestTenantSvc_UpdateSecuritySettings_NoRequesterIPSkipsGuard(t *testing.T) 
 		IPWhitelist: []string{"10.0.0.0/8"},
 	}, app.AuditContext{}); err != nil {
 		t.Fatalf("no requester IP must skip the guard: %v", err)
+	}
+}
+
+type fixedSSOPath bool
+
+func (f fixedSSOPath) HasUsableSSOPath(context.Context, string) (bool, error) { return bool(f), nil }
+
+// Renaming the slug is owner-only and refused while SSO is configured: SAML
+// and SSO sign-in URLs are keyed by the slug (owner decision B13, 23b T-H1).
+func TestTenantSvc_UpdateTenant_SlugRules(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "old-slug")
+	newSlug := "new-slug"
+
+	_, err := svc.UpdateTenant(context.Background(), existing.ID().String(),
+		app.UpdateTenantInput{Slug: &newSlug}, app.AuditContext{})
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("admin renaming the slug: err = %v, want ErrForbidden", err)
+	}
+
+	// An admin saving the profile with the unchanged slug is fine.
+	same, name := "old-slug", "Renamed"
+	if _, err := svc.UpdateTenant(context.Background(), existing.ID().String(),
+		app.UpdateTenantInput{Slug: &same, Name: &name}, app.AuditContext{}); err != nil {
+		t.Fatalf("unchanged slug by an admin: %v", err)
+	}
+
+	svc.SetSSOPathChecker(fixedSSOPath(true))
+	_, err = svc.UpdateTenant(context.Background(), existing.ID().String(),
+		app.UpdateTenantInput{Slug: &newSlug, CallerIsOwner: true}, app.AuditContext{})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("owner renaming with SSO configured: err = %v, want ErrValidation", err)
+	}
+	stored, _ := repo.GetByID(context.Background(), existing.ID())
+	if stored.Slug() != "old-slug" {
+		t.Fatalf("slug changed despite the refusal: %s", stored.Slug())
 	}
 }
 

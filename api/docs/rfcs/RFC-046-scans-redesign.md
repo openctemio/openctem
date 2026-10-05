@@ -10,8 +10,9 @@
 > catalogue with typed inputs and outputs (`pkg/domain/stage`, migration
 > 001040 `tools.output_types`, `GET /api/v1/scans/stages`) and the one
 > planner (capability → tool at plan time, one payload builder and one step
-> dispatcher; fixes F1 and F2) are in review; the hop router with the per-hop
-> gate, report output-type binding and run-drawer stage lanes follow. State:
+> dispatcher; fixes F1 and F2) and the hop router (per-hop gate, stage
+> barrier, provenance in `scan_run_targets`, migrations 001048-001049) are in
+> review; report output-type binding and run-drawer stage lanes follow. State:
 > [architecture/scan-stages.md](../architecture/scan-stages.md).
 > Scope: api + web, with sdk-go and sensor changes where a phase says so.
 > Builds on and does not duplicate:
@@ -46,7 +47,7 @@ type is keyed by **what a task actually covered**, never by a whole run that
 only partly finished.
 
 How a scan runs is an **engine spec**: a small declarative document over a
-validated **stage catalogue** (reNgine-style), which the builder edits. Stages
+validated **stage catalogue**, which the builder edits. Stages
 chain through the inventory: a stage's output assets become the next stage's
 targets after passing the one target gate (RFC-042 §6.11).
 
@@ -115,7 +116,7 @@ be switched on, and no chaining between stages.
 |---|---|
 | D1 | Auto-resolve for non-repository findings is **coverage-scoped**: a finding resolves only when a task fully covered its asset with its tool and did not report it. Two weeks of **dry-run** first. Never from partial or failed coverage. |
 | D2 | One model: **Scan → Run → Task**. Retire `scan_sessions` (CI runs become runs with `trigger=ci`). Rename the event automation "Workflows" to **"Automations"**. |
-| D3 | A **reNgine-style declarative engine spec** over a validated **stage catalogue**; the builder edits the spec. |
+| D3 | A **declarative engine spec** over a validated **stage catalogue**; the builder edits the spec. |
 | D4 | **Skip** a scheduled occurrence while the scan's previous run is still active. |
 | D5 | A run that reaches its **deadline ends `partial`**; unfinished targets **roll over** to the next window. |
 | D6 | **Interactsh off by default**: only for tier T2 engines or a tenant's own interactsh server. |
@@ -125,7 +126,7 @@ be switched on, and no chaining between stages.
 | D10 | Quick scan is **ad hoc**, with "Save as scan". |
 | D11 | Schedules are **rrule + timezone**. |
 | D12 | Cancelling a run needs **`scans:write`**. |
-| D13 | reNgine extras (screenshots, OSINT, dorks, …) ship with EASM P3–P4. |
+| D13 | Recon extras (screenshots, OSINT, dorks, …) ship with EASM P3–P4. |
 
 ### 3.2 Backend decisions B1–B12 (owner, 2026-10-03)
 
