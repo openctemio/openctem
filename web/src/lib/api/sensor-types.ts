@@ -79,6 +79,9 @@ export interface SensorHealthReason {
     | 'sdk_unsupported'
     | 'heartbeat_late'
     | 'control_slow'
+    | 'config_check_failed'
+    | 'config_check_warning'
+    | 'config_report_stale'
     | (string & {})
   severity: 'warning' | 'critical'
   message: string
@@ -356,6 +359,11 @@ export interface Sensor {
   sensor_commit?: string
   /** When the sensor binary was built. */
   sensor_build_time?: string | null
+  /**
+   * The setup report's health (research/26 §4.6): null before the first
+   * report, absent on APIs without config reports.
+   */
+  config_health?: SensorConfigHealth | null
 }
 
 /** One tool of a sensor's reported inventory. */
@@ -779,4 +787,75 @@ export interface SensorLocalPolicy {
   summary?: SensorLocalPolicySummary
   warnings?: string[]
   reported_at?: string
+}
+
+// ---------------------------------------------------------------------------
+// Sensor setup report (research/26 §4.4–§4.8): GET /sensors/{id}/config-report
+// Hand-written to the API contract until the generated types carry it.
+// ---------------------------------------------------------------------------
+
+/** Rollup of the sensor's setup checks; "unknown" when the report is stale. */
+export type SensorConfigHealth = 'ok' | 'attention' | 'impaired' | 'blocked' | 'unknown'
+
+export type SensorConfigCheckStatus = 'pass' | 'warn' | 'fail' | 'skip' | 'error'
+
+export type SensorConfigCheckGroup =
+  | 'platform'
+  | 'identity'
+  | 'policy'
+  | 'tools'
+  | 'content'
+  | 'network'
+  | 'storage'
+  | 'runtime'
+  | 'config'
+  | 'connector'
+
+/** One setup check. `summary` and `excerpt` are the sensor's own words: data only. */
+export interface SensorConfigCheck {
+  id: string
+  group: SensorConfigCheckGroup | (string & {})
+  status: SensorConfigCheckStatus | (string & {})
+  severity: 'info' | 'warning' | 'critical' | (string & {})
+  code: string
+  /** The platform catalog explains this check; false for a newer sensor's check. */
+  known: boolean
+  /** Catalog title; the id for an unknown check. */
+  title: string
+  /** Catalog explanation, params substituted as plain text; absent when unknown. */
+  why?: string
+  /** "What we saw": the typed params as label/value pairs. */
+  observed?: { label: string; value: string }[]
+  summary?: string
+  excerpt?: string
+  keys?: string[]
+  blocks?: string[]
+  /** Fix snippets per install format, from the platform catalog only; {} when none. */
+  fix?: Partial<Record<string, string>>
+  docs_url?: string
+}
+
+/** A declared setting: whether it is set and where from. Never its value. */
+export interface SensorConfigSetting {
+  name: string
+  set: boolean
+  source: 'env' | 'option' | 'default' | 'unset' | (string & {})
+  secret: boolean
+  valid: boolean
+}
+
+export interface SensorConfigReport {
+  /** reported: sent by the sensor; derived: built by the platform from heartbeats; none: nothing yet. */
+  state: 'reported' | 'derived' | 'none' | (string & {})
+  /** The sensor's latest heartbeat names a different report (or none). */
+  stale: boolean
+  health: SensorConfigHealth | (string & {})
+  observed_at?: string | null
+  received_at?: string | null
+  truncated: boolean
+  runtime_kind?: string
+  derived_note?: string
+  counts?: Partial<Record<SensorConfigCheckStatus, number>>
+  checks?: SensorConfigCheck[]
+  settings?: SensorConfigSetting[]
 }

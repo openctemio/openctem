@@ -207,6 +207,7 @@ type Service struct {
 	privatePolicy       PrivateTargetPolicy   // optional; nil = the private-target switch is not read at trigger
 	tenantTools         TenantToolConfigs     // optional; nil = per-organization tool switch not enforced
 	optIns              OptInPolicy           // optional; nil = every sensor opt-in counts as enabled (opt_ins.go)
+	stepQueuer          StepQueuer            // the pipeline service's step dispatcher; nil refuses workflow scans
 	logger              *logger.Logger
 }
 

@@ -39,6 +39,12 @@ import (
 // never sent to a sensor.
 const RunContextKeyTargetTypes = "target_types"
 
+// RunContextKeyActor is the run-context key holding the user a run acts
+// for: who triggered it, else the scan's owner (a scheduled run). Chained
+// stages check derived targets against that user's act scope. Platform
+// bookkeeping: never sent to a sensor.
+const RunContextKeyActor = "actor_user_id"
+
 // Error codes of the gate.
 const (
 	codeNoCompatibleTargets  = "NO_COMPATIBLE_TARGETS"
@@ -190,14 +196,15 @@ func (s *Service) FilterStepTargets(ctx context.Context, tenantID shared.ID, too
 }
 
 // StepRunContext is the run context a step's command carries: the step's own
-// targets, and no target_types (platform bookkeeping, never sent to a
-// sensor).
+// targets, and no target_types or actor (platform bookkeeping, never sent to
+// a sensor).
 func StepRunContext(runContext map[string]any, st *StepTargets) map[string]any {
 	if runContext == nil {
 		return nil
 	}
 	out := maps.Clone(runContext)
 	delete(out, RunContextKeyTargetTypes)
+	delete(out, RunContextKeyActor)
 	if st != nil && st.Targets != nil {
 		if _, had := out["targets"]; had {
 			out["targets"] = st.Targets

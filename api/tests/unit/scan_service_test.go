@@ -11,6 +11,7 @@ import (
 
 	assettyperef "github.com/openctemio/openctem/api/pkg/domain/asset"
 
+	pipelineapp "github.com/openctemio/openctem/api/internal/app/pipeline"
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -251,8 +252,11 @@ func (m *mockTemplateRepo) Delete(_ context.Context, _ shared.ID) error         
 func (m *mockTemplateRepo) DeleteInTx(_ context.Context, _ *sql.Tx, _ shared.ID) error {
 	return nil
 }
-func (m *mockTemplateRepo) GetWithSteps(_ context.Context, _ shared.ID) (*pipeline.Template, error) {
-	return nil, nil
+func (m *mockTemplateRepo) GetWithSteps(_ context.Context, id shared.ID) (*pipeline.Template, error) {
+	if t, ok := m.templates[id.String()]; ok {
+		return t, nil
+	}
+	return nil, shared.ErrNotFound
 }
 func (m *mockTemplateRepo) GetSystemTemplateByID(_ context.Context, _ shared.ID) (*pipeline.Template, error) {
 	return nil, nil
@@ -913,6 +917,11 @@ func newTestScanService() (*scanservice.Service, *testScanServiceDeps) {
 		log,
 		scanservice.WithAuditService(deps.auditSvc),
 	)
+	// A workflow scan's first steps are queued by the pipeline service, the
+	// one step dispatcher (research/27 P0-2), as in production.
+	svc.SetStepQueuer(pipelineapp.NewService(deps.templateRepo, deps.stepRepo, deps.runRepo,
+		&mockStepRunRepo{}, newMockSensorRepo(), deps.commandRepo, nil, log,
+		pipelineapp.WithToolRepo(deps.toolRepo)))
 
 	return svc, deps
 }

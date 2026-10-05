@@ -232,11 +232,15 @@ const (
 	// a lease, at most its free slots of scans, in the fair dispatch order;
 	// its claim of each is a replay. Without it GET /commands only lists.
 	FeatureCapacity = "capacity"
+	// FeatureRefusal: POST /commands/{id}/fail accepts "refusal" {layer,
+	// rule, detail}; a refused routed job is re-queued to another eligible
+	// sensor and the refuser cannot claim it again (research/25 §3.6, D8).
+	FeatureRefusal = "refusal"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCapacity}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCapacity, FeatureRefusal}
 }
 
 // Deprecation announces a deprecated protocol on hello.
