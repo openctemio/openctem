@@ -72,7 +72,19 @@ func (h *SCIMTokenHandler) SetGroupMappings(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("invalid JSON body").WriteJSON(w)
 		return
 	}
-	if err := h.groups.SetRoleMappings(r.Context(), tenantID, body.Mappings); err != nil {
+	actx := auditapp.AuditContext{
+		TenantID:   tenantID.String(),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: middleware.GetUsername(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	if err := h.groups.SetRoleMappings(r.Context(), tenantID, body.Mappings, actx); err != nil {
+		if errors.Is(err, shared.ErrForbidden) {
+			apierror.Forbidden("Only the organization owner can map a group to the admin role or change such a mapping").WriteJSON(w)
+			return
+		}
 		if errors.Is(err, shared.ErrValidation) {
 			apierror.BadRequest("role must be admin, member, or viewer").WriteJSON(w)
 			return
