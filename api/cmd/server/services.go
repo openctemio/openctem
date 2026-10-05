@@ -1445,7 +1445,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Assets reported for a tenant's own scan commands get tenant_scanned
 	// attribution evidence (RFC-036 O8).
 	if repos.Attribution != nil {
-		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution))
+		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution, repos.EASMSeed))
 	}
 	// A nuclei takeover-template match from a tenant scan confirms an open
 	// dangling_cname as subdomain_takeover (RFC-036 P1).

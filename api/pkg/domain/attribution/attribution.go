@@ -77,8 +77,14 @@ const (
 	// RuleAssertedRoot: the name is below a domain the tenant listed (a domain
 	// asset or a scope target) but did not verify.
 	RuleAssertedRoot Rule = "fqdn_under_asserted_root"
-	// RuleTenantScanned: the tenant scanned or created the asset itself.
+	// RuleTenantScanned: the tenant scanned the asset itself: it was one of
+	// the targets the tenant gave the scan (research/22 E7).
 	RuleTenantScanned Rule = "tenant_scanned"
+	// RuleScanDiscovered: the tenant's own scan found the name while scanning
+	// something else (a subfinder child, a resolved address, a root domain
+	// named in a result). Medium: it brings a name to review, and never
+	// confirms one on its own (research/22 E7).
+	RuleScanDiscovered Rule = "tenant_scan_discovered"
 )
 
 // Class is the strength class of a rule.
@@ -96,9 +102,10 @@ type ruleDef struct {
 }
 
 var rules = map[Rule]ruleDef{
-	RuleVerifiedRoot:  {0.99, ClassStrong},
-	RuleTenantScanned: {0.95, ClassStrong},
-	RuleAssertedRoot:  {0.85, ClassMedium},
+	RuleVerifiedRoot:   {0.99, ClassStrong},
+	RuleTenantScanned:  {0.95, ClassStrong},
+	RuleAssertedRoot:   {0.85, ClassMedium},
+	RuleScanDiscovered: {0.60, ClassMedium},
 }
 
 // Weight returns the base weight and class of a rule.
