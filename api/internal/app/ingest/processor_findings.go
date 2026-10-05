@@ -716,7 +716,18 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 
-	// Step 7: the template content each finding was matched with
+	// Step 7: Scanner output and CVSS vectors (research 24 P0-2), matched by
+	// fingerprint like step 6, so new and re-sighted findings both get the
+	// latest output. Best-effort: a failure here must not fail the ingest.
+	evidence := make([]vulnerability.ScannerEvidenceUpdate, 0, len(validFindings))
+	for i := range validFindings {
+		if u := scannerEvidenceUpdate(validFindings[i].fingerprint, &validFindings[i].finding); !u.IsEmpty() {
+			evidence = append(evidence, u)
+		}
+	}
+	p.storeScannerEvidence(ctx, tenantID, evidence)
+
+	// Step 8: the template content each finding was matched with
 	// (research/18 O6): its new baseline for retests and later scans. A
 	// record of the sighting, like the enrichment above; it never changes a
 	// finding's status, and a baseline only narrows what later proves a fix.
@@ -729,6 +740,17 @@ func (p *FindingProcessor) processBatch(
 	p.recordTemplateSightings(ctx, tenantID, sightings)
 
 	return nil
+}
+
+// storeScannerEvidence writes each sighting's scanner output and vectors.
+func (p *FindingProcessor) storeScannerEvidence(ctx context.Context, tenantID shared.ID, updates []vulnerability.ScannerEvidenceUpdate) {
+	w, ok := p.repo.(scannerEvidenceWriter)
+	if !ok || len(updates) == 0 {
+		return
+	}
+	if _, err := w.UpdateScannerEvidenceBatch(ctx, tenantID, updates); err != nil {
+		p.logger.Warn("failed to store scanner output", "error", err, "count", len(updates))
+	}
 }
 
 // CheckFingerprints checks which fingerprints already exist in the database.
