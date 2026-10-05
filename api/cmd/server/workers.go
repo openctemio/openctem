@@ -7,20 +7,19 @@ import (
 	"sync"
 	"time"
 
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/internal/app/integration"
-	"github.com/openctemio/openctem/api/internal/app/tenablesc"
-
-	"github.com/openctemio/openctem/api/internal/app"
-	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/app/sla"
+	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
@@ -66,7 +65,7 @@ type Workers struct {
 	JobWorker                 *jobs.Worker
 	SensorHealthChecker       *jobs.SensorHealthChecker
 	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
-	ScanScheduler             *app.ScanScheduler
+	ScanScheduler             *scan.ScanScheduler
 	CommandExpirationChecker  *command.ExpirationChecker
 	OutboxScheduler           *outbox.Scheduler
 	FindingLifecycleScheduler *finding.FindingLifecycleScheduler
@@ -165,14 +164,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	// Initialize scan scheduler
-	w.ScanScheduler = app.NewScanScheduler(
+	w.ScanScheduler = scan.NewScanScheduler(
 		repos.Scan,
-		svc.Scan,
-		app.ScanSchedulerConfig{
+		svc.Scan, scan.ScanSchedulerConfig{
 			CheckInterval: time.Minute,
 			BatchSize:     50,
-		},
-		log,
+		}, log,
 	)
 
 	// Initialize command expiration checker
@@ -200,7 +197,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Handles feature branch finding expiry
 	w.FindingLifecycleScheduler = finding.NewFindingLifecycleScheduler(
 		repos.Finding,
-		repos.Tenant, finding.DefaultFindingLifecycleSchedulerConfig(), log,
+		repos.Tenant,
+		finding.DefaultFindingLifecycleSchedulerConfig(),
+		log,
 	)
 
 	// Store notification service reference for cleanup worker

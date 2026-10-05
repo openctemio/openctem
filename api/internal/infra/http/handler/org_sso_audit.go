@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,12 +20,12 @@ import (
 // orgSSOAuditContext attributes an SSO change to whoever made it: the platform
 // admin (actor_email "platform-admin:<email>", no actor_id) when the request
 // came through the admin console, otherwise the authenticated user.
-func orgSSOAuditContext(r *http.Request) app.AuditContext {
+func orgSSOAuditContext(r *http.Request) audit.AuditContext {
 	tenantID := middleware.GetTenantID(r.Context())
 	if middleware.GetAdminUser(r.Context()) != nil {
 		return adminAuditContext(r, tenantID)
 	}
-	return app.AuditContext{
+	return audit.AuditContext{
 		TenantID:   tenantID,
 		ActorID:    middleware.GetUserID(r.Context()),
 		ActorEmail: auditActorEmail(r.Context()),
@@ -37,7 +37,7 @@ func orgSSOAuditContext(r *http.Request) app.AuditContext {
 
 // logOrgSSOEvent writes event to the organization's audit log. The change has
 // already happened, so a failure is logged, not returned.
-func logOrgSSOEvent(ctx context.Context, svc *app.AuditService, log *logger.Logger, r *http.Request, event app.AuditEvent) {
+func logOrgSSOEvent(ctx context.Context, svc *audit.AuditService, log *logger.Logger, r *http.Request, event audit.AuditEvent) {
 	if svc == nil {
 		return
 	}

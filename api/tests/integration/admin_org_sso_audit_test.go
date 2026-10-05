@@ -22,6 +22,8 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	"github.com/openctemio/openctem/api/internal/app/tenant"
@@ -103,7 +105,7 @@ func TestAdminOrgSSOChangesReachOrganizationAuditLog(t *testing.T) {
 
 	pg := &postgres.DB{DB: db}
 	log := logger.NewNop()
-	auditSvc := app.NewAuditService(postgres.NewAuditRepository(pg), log)
+	auditSvc := audit.NewAuditService(postgres.NewAuditRepository(pg), log)
 	tenantRepo := postgres.NewTenantRepository(pg)
 	sso := auth.NewSSOService(postgres.NewIdentityProviderRepository(pg), tenantRepo, postgres.NewUserRepository(pg),
 		postgres.NewSessionRepository(db), postgres.NewRefreshTokenRepository(db), crypto.NewNoOpEncryptor(),
@@ -282,7 +284,7 @@ func TestCreatedOrgUserReportsEffectiveRole(t *testing.T) {
 		email := "role-" + tc.want + "-" + uuid.NewString()[:8] + "@created.example.test"
 		res, err := svc.CreateUser(ctx, tenant.CreateUserInput{
 			TenantID: tenantID, Email: email, Name: "Created", RoleIDs: []string{tc.roleID},
-		}, app.AuditContext{ActorEmail: "platform-admin:ops@platform.example.test"})
+		}, audit.AuditContext{ActorEmail: "platform-admin:ops@platform.example.test"})
 		if err != nil {
 			t.Fatalf("create %s: %v", tc.want, err)
 		}

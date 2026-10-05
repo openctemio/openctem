@@ -9,16 +9,16 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
-	authsvc "github.com/openctemio/openctem/api/internal/app/auth"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
-
-	"github.com/openctemio/openctem/api/internal/app"
-	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -580,7 +580,7 @@ func InitLocalAuthHandler(
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
 // optional config-template service. Templates live in
-// $AGENT_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
+// $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
 // edited without rebuilding the frontend.
 func newSensorHandlerWithTemplates(
 	sensorSvc *sensor.SensorService,
@@ -663,10 +663,10 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
-func newAttachmentHandlerWithAccessCheck(attachSvc *integration.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *app.AuditService, log *logger.Logger) *handler.AttachmentHandler {
+func newAttachmentHandlerWithAccessCheck(attachSvc *integration.AttachmentService, pentestSvc *compliance.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *auditsvc.AuditService, log *logger.Logger) *handler.AttachmentHandler {
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
-	h.SetStorageResolver(authsvc.NewSettingsStorageResolver(db, enc, log))
+	h.SetStorageResolver(auth.NewSettingsStorageResolver(db, enc, log))
 	h.SetAuditService(auditSvc)
 	return h
 }

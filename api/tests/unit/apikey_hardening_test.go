@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/apikey"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -87,7 +87,7 @@ func TestAPIKeyLifecycle_WritesAuditEvents(t *testing.T) {
 
 	tenantID := shared.NewID()
 	actor := shared.NewID()
-	actx := &app.AuditContext{TenantID: tenantID.String(), ActorID: actor.String()}
+	actx := &audit.AuditContext{TenantID: tenantID.String(), ActorID: actor.String()}
 
 	res, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(), Name: "audited", AuditContext: actx,

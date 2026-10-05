@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -197,7 +197,7 @@ func TestRecordBatchAutoResolved(t *testing.T) {
 
 	t.Run("creates activities for each finding ID", func(t *testing.T) {
 		activityRepo := &MockFindingActivityRepo{}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		findingIDs := []shared.ID{shared.NewID(), shared.NewID(), shared.NewID()}
 
@@ -246,7 +246,7 @@ func TestRecordBatchAutoResolved(t *testing.T) {
 
 	t.Run("empty IDs list is no-op", func(t *testing.T) {
 		activityRepo := &MockFindingActivityRepo{}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		err := svc.RecordBatchAutoResolved(ctx, tenantID, nil, "nuclei", "scan-123")
 		if err != nil {
@@ -261,7 +261,7 @@ func TestRecordBatchAutoResolved(t *testing.T) {
 	t.Run("propagates CreateBatch error", func(t *testing.T) {
 		expectedErr := errors.New("database connection lost")
 		activityRepo := &MockFindingActivityRepo{CreateBatchError: expectedErr}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		findingIDs := []shared.ID{shared.NewID()}
 
@@ -276,7 +276,7 @@ func TestRecordBatchAutoResolved(t *testing.T) {
 
 	t.Run("each activity has unique ID", func(t *testing.T) {
 		activityRepo := &MockFindingActivityRepo{}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		findingIDs := []shared.ID{shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()}
 		err := svc.RecordBatchAutoResolved(ctx, tenantID, findingIDs, "semgrep", "scan-5")
@@ -296,7 +296,7 @@ func TestRecordBatchAutoResolved(t *testing.T) {
 
 	t.Run("large batch creates all activities", func(t *testing.T) {
 		activityRepo := &MockFindingActivityRepo{}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		// Simulate a large auto-resolve batch (250 findings)
 		findingIDs := make([]shared.ID, 250)
@@ -317,7 +317,7 @@ func TestRecordBatchAutoResolved(t *testing.T) {
 
 	t.Run("preserves tool name and scan ID across all activities", func(t *testing.T) {
 		activityRepo := &MockFindingActivityRepo{}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		findingIDs := []shared.ID{shared.NewID(), shared.NewID()}
 		err := svc.RecordBatchAutoResolved(ctx, tenantID, findingIDs, "trivy", "scan-xyz-789")
@@ -355,7 +355,7 @@ func reopenedOf(ids ...shared.ID) []vulnerability.ReopenedFinding {
 // clears resolved_by / resolution / resolution_method on the row (RFC-039 §6.5).
 func TestRecordBatchAutoReopened_KeepsPreviousResolver(t *testing.T) {
 	activityRepo := &MockFindingActivityRepo{}
-	svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, logger.NewNop())
+	svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, logger.NewNop())
 	resolver := shared.NewID()
 	fid := shared.NewID()
 	err := svc.RecordBatchAutoReopened(context.Background(), shared.NewID(), []vulnerability.ReopenedFinding{{
@@ -381,7 +381,7 @@ func TestRecordBatchAutoReopened_KeepsPreviousResolver(t *testing.T) {
 // A scan re-detecting a validated_fixed finding refutes the downgrade.
 func TestRecordBatchAutoReopened_ValidatedFixedReason(t *testing.T) {
 	activityRepo := &MockFindingActivityRepo{}
-	svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, logger.NewNop())
+	svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, logger.NewNop())
 	err := svc.RecordBatchAutoReopened(context.Background(), shared.NewID(), []vulnerability.ReopenedFinding{{
 		ID: shared.NewID(), PreviousStatus: vulnerability.FindingStatusValidatedFixed,
 	}}, "nuclei", "")
@@ -404,7 +404,7 @@ func TestRecordBatchAutoReopened(t *testing.T) {
 
 	t.Run("creates activities for each finding ID", func(t *testing.T) {
 		activityRepo := &MockFindingActivityRepo{}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		findingIDs := []shared.ID{shared.NewID(), shared.NewID()}
 
@@ -444,7 +444,7 @@ func TestRecordBatchAutoReopened(t *testing.T) {
 
 	t.Run("empty IDs list is no-op", func(t *testing.T) {
 		activityRepo := &MockFindingActivityRepo{}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		err := svc.RecordBatchAutoReopened(ctx, tenantID, reopenedOf([]shared.ID{}...), "nuclei", "scan-1")
 		if err != nil {
@@ -459,7 +459,7 @@ func TestRecordBatchAutoReopened(t *testing.T) {
 	t.Run("propagates CreateBatch error", func(t *testing.T) {
 		expectedErr := errors.New("disk full")
 		activityRepo := &MockFindingActivityRepo{CreateBatchError: expectedErr}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		err := svc.RecordBatchAutoReopened(ctx, tenantID, reopenedOf([]shared.ID{shared.NewID()}...), "nuclei", "scan-1")
 		if err == nil {
@@ -472,7 +472,7 @@ func TestRecordBatchAutoReopened(t *testing.T) {
 
 	t.Run("activities have correct tenant and finding IDs", func(t *testing.T) {
 		activityRepo := &MockFindingActivityRepo{}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		fid1 := shared.NewID()
 		fid2 := shared.NewID()
@@ -501,7 +501,7 @@ func TestRecordBatchAutoReopened(t *testing.T) {
 
 	t.Run("single finding ID works", func(t *testing.T) {
 		activityRepo := &MockFindingActivityRepo{}
-		svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+		svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 		fid := shared.NewID()
 		err := svc.RecordBatchAutoReopened(ctx, tenantID, reopenedOf([]shared.ID{fid}...), "nuclei", "scan-1")
@@ -530,7 +530,7 @@ func TestActivityTimestampsAreSet(t *testing.T) {
 	tenantID := shared.NewID()
 
 	activityRepo := &MockFindingActivityRepo{}
-	svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+	svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 	findingIDs := []shared.ID{shared.NewID(), shared.NewID()}
 	err := svc.RecordBatchAutoResolved(ctx, tenantID, findingIDs, "nuclei", "scan-1")
@@ -553,7 +553,7 @@ func TestDifferentTenantsProduceDifferentActivities(t *testing.T) {
 	tenant2 := shared.NewID()
 
 	activityRepo := &MockFindingActivityRepo{}
-	svc := app.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
+	svc := activity.NewFindingActivityService(activityRepo, &stubFindingRepo{}, log)
 
 	_ = svc.RecordBatchAutoResolved(ctx, tenant1, []shared.ID{shared.NewID()}, "nuclei", "s1")
 	_ = svc.RecordBatchAutoResolved(ctx, tenant2, []shared.ID{shared.NewID()}, "nuclei", "s2")

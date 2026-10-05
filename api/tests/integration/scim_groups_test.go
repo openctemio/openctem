@@ -7,7 +7,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	"github.com/openctemio/openctem/api/internal/app/tenant"
@@ -23,9 +22,9 @@ import (
 // scimMembershipAdapter does: as the actor when there is one, else as SCIM
 // provisioning.
 func (a scimMemberMgr) UpdateMemberRole(ctx context.Context, tenantID, membershipID shared.ID, role string, actorID *shared.ID) error {
-	actx := app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"}
+	actx := auditapp.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"}
 	if actorID != nil {
-		actx = app.AuditContext{TenantID: tenantID.String(), ActorID: actorID.String()}
+		actx = auditapp.AuditContext{TenantID: tenantID.String(), ActorID: actorID.String()}
 	}
 	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), tenant.UpdateMemberRoleInput{Role: role}, actx)
 	return err
@@ -74,8 +73,7 @@ func TestSCIMGroups_RoleMapping_RealDB(t *testing.T) {
 
 	// Only the owner's mapping makes the "admin" group grant admin (23b S-H1).
 	owner := scimTestOwner(t, sqlDB, tenantID, "owner")
-	if err := groupSvc.SetRoleMappings(ctx, tenantID, map[string]string{"admin": "admin"},
-		app.AuditContext{ActorID: owner.String()}); err != nil {
+	if err := groupSvc.SetRoleMappings(ctx, tenantID, map[string]string{"admin": "admin"}, auditapp.AuditContext{ActorID: owner.String()}); err != nil {
 		t.Fatalf("owner maps admin: %v", err)
 	}
 
@@ -175,7 +173,7 @@ func TestSCIMGroups_ConfigurableMapping_RealDB(t *testing.T) {
 
 	// The owner maps an arbitrary IdP group name to admin.
 	owner := scimTestOwner(t, sqlDB, tenantID, "owner")
-	ownerCtx := app.AuditContext{ActorID: owner.String()}
+	ownerCtx := auditapp.AuditContext{ActorID: owner.String()}
 	if err := groupSvc.SetRoleMappings(ctx, tenantID, map[string]string{"Acme-OpenCTEM-Admins": "admin"}, ownerCtx); err != nil {
 		t.Fatalf("set mappings: %v", err)
 	}
@@ -279,7 +277,7 @@ func TestSCIMGroups_AdminMappingOwnerOnly_RealDB(t *testing.T) {
 	})
 
 	tenantRepo := postgres.NewTenantRepository(db)
-	auditSvc := app.NewAuditService(postgres.NewAuditRepository(db), log)
+	auditSvc := auditapp.NewAuditService(postgres.NewAuditRepository(db), log)
 	tenantSvc := tenant.NewTenantService(tenantRepo, log, tenant.WithTenantAuditService(auditSvc))
 	groupSvc := scim.NewGroupService(postgres.NewScimGroupRepository(db), tenantRepo, scimMemberMgr{svc: tenantSvc}, log)
 	groupSvc.SetAuditService(auditSvc)
@@ -298,8 +296,7 @@ func TestSCIMGroups_AdminMappingOwnerOnly_RealDB(t *testing.T) {
 	}
 
 	// The owner maps the IT admins group to admin; the peer is in it.
-	if err := groupSvc.SetRoleMappings(ctx, tenantID, map[string]string{"IT-Admins": "admin"},
-		app.AuditContext{ActorID: owner.String()}); err != nil {
+	if err := groupSvc.SetRoleMappings(ctx, tenantID, map[string]string{"IT-Admins": "admin"}, auditapp.AuditContext{ActorID: owner.String()}); err != nil {
 		t.Fatalf("owner sets admin mapping: %v", err)
 	}
 	var byOwner bool
@@ -322,7 +319,7 @@ func TestSCIMGroups_AdminMappingOwnerOnly_RealDB(t *testing.T) {
 	}
 
 	// The admin tries to demote the peer by remapping the group: refused, nothing changes.
-	err := groupSvc.SetRoleMappings(ctx, tenantID, map[string]string{"IT-Admins": "viewer"}, app.AuditContext{ActorID: admin.String()})
+	err := groupSvc.SetRoleMappings(ctx, tenantID, map[string]string{"IT-Admins": "viewer"}, auditapp.AuditContext{ActorID: admin.String()})
 	if !errors.Is(err, scim.ErrOwnerRequiredForAdminMapping) {
 		t.Fatalf("admin remaps the admin group: err = %v, want owner required", err)
 	}

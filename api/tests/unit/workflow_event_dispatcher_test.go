@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	findingsvc "github.com/openctemio/openctem/api/internal/app/finding"
+	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
 	"github.com/openctemio/openctem/api/pkg/domain/findingsource"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -391,8 +391,8 @@ type wfDispatchTestHarness struct {
 	wfRepo   *wfDispatchMockWorkflowRepo
 	nodeRepo *wfDispatchMockNodeRepo
 	runRepo  *wfDispatchMockRunRepo
-	service  *app.WorkflowService
-	dispatch *app.WorkflowEventDispatcher
+	service  *workflowsvc.WorkflowService
+	dispatch *workflowsvc.WorkflowEventDispatcher
 }
 
 func newWfDispatchTestHarness() *wfDispatchTestHarness {
@@ -403,7 +403,7 @@ func newWfDispatchTestHarness() *wfDispatchTestHarness {
 	runRepo := newWfDispatchMockRunRepo()
 	nodeRunRepo := NewMockNodeRunRepository()
 
-	svc := app.NewWorkflowService(
+	svc := workflowsvc.NewWorkflowService(
 		wfRepo,
 		nodeRepo,
 		edgeRepo,
@@ -412,7 +412,7 @@ func newWfDispatchTestHarness() *wfDispatchTestHarness {
 		log,
 	)
 
-	dispatcher := app.NewWorkflowEventDispatcher(wfRepo, nodeRepo, svc, log)
+	dispatcher := workflowsvc.NewWorkflowEventDispatcher(wfRepo, nodeRepo, svc, log)
 
 	return &wfDispatchTestHarness{
 		wfRepo:   wfRepo,
@@ -491,7 +491,7 @@ func TestWfDispatch_DispatchFindingEvent_Success(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	err := h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -510,7 +510,7 @@ func TestWfDispatch_DispatchFindingEvent_NoMatchingWorkflows(t *testing.T) {
 	assetID := shared.NewID()
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	err := h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -532,7 +532,7 @@ func TestWfDispatch_DispatchFindingEvent_WorkflowRepoError(t *testing.T) {
 	h.wfRepo.listActiveErr = expectedErr
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	err := h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -557,7 +557,7 @@ func TestWfDispatch_DispatchFindingEvent_InactiveWorkflowNotMatched(t *testing.T
 	h.wfRepo.listActiveResult = []*workflow.Workflow{}
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	err := h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -582,7 +582,7 @@ func TestWfDispatch_DispatchFindingEvent_MultipleWorkflowsAllTriggered(t *testin
 	h.wfRepo.workflows[wf2.ID.String()] = wf2
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	err := h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -673,7 +673,7 @@ func TestWfDispatch_MatchesTriggerFilters_NoFiltersMatchAll(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	err := h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -697,7 +697,7 @@ func TestWfDispatch_MatchesTriggerFilters_SeverityFilterMatch(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -718,7 +718,7 @@ func TestWfDispatch_MatchesTriggerFilters_SeverityFilterMismatch(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityLow)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -739,7 +739,7 @@ func TestWfDispatch_MatchesTriggerFilters_ToolFilterMatch(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -760,7 +760,7 @@ func TestWfDispatch_MatchesTriggerFilters_ToolFilterMismatch(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -781,7 +781,7 @@ func TestWfDispatch_MatchesTriggerFilters_SourceFilterMatch(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -802,7 +802,7 @@ func TestWfDispatch_MatchesTriggerFilters_SourceFilterMismatch(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -826,7 +826,7 @@ func TestWfDispatch_MatchesTriggerFilters_MultipleFiltersANDLogic(t *testing.T) 
 
 	// Matches severity but NOT tool
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "snyk", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -849,7 +849,7 @@ func TestWfDispatch_MatchesTriggerFilters_MultipleFiltersAllMatch(t *testing.T) 
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -874,7 +874,7 @@ func TestWfDispatch_MatchesSeverityFilter_SeverityInList(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityLow)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -895,7 +895,7 @@ func TestWfDispatch_MatchesSeverityFilter_SeverityNotInList(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityCritical)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -916,7 +916,7 @@ func TestWfDispatch_MatchesSeverityFilter_EmptySeverityListMatchAll(t *testing.T
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityInfo)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -938,7 +938,7 @@ func TestWfDispatch_MatchesSeverityFilter_CaseSensitiveMatch(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -963,7 +963,7 @@ func TestWfDispatch_MatchesToolFilter_ToolInList(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSCA, "trivy", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -984,7 +984,7 @@ func TestWfDispatch_MatchesToolFilter_ToolNotInList(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSCA, "grype", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -1005,7 +1005,7 @@ func TestWfDispatch_MatchesToolFilter_EmptyToolListMatchAll(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "any-tool", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -1026,7 +1026,7 @@ func TestWfDispatch_DispatchAITriageEvent_SuccessWithMatchingWorkflows(t *testin
 	wf := wfDispatchMakeWorkflow(t, tenantID, workflow.TriggerTypeAITriageCompleted, nil)
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: shared.NewID(),
 		TriageID:  shared.NewID(),
@@ -1052,7 +1052,7 @@ func TestWfDispatch_DispatchAITriageEvent_NoMatchingWorkflows(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: shared.NewID(),
 		TriageID:  shared.NewID(),
@@ -1079,7 +1079,7 @@ func TestWfDispatch_DispatchAITriageEvent_WrongTriggerTypeNotMatched(t *testing.
 	// Repo returns none for ai_triage_failed
 	h.wfRepo.listActiveResult = []*workflow.Workflow{}
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: shared.NewID(),
 		TriageID:  shared.NewID(),
@@ -1104,7 +1104,7 @@ func TestWfDispatch_DispatchAITriageEvent_FailedEventMatchesFailedWorkflow(t *te
 	wf := wfDispatchMakeWorkflow(t, tenantID, workflow.TriggerTypeAITriageFailed, nil)
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: shared.NewID(),
 		TriageID:  shared.NewID(),
@@ -1136,7 +1136,7 @@ func TestWfDispatch_MatchesAITriageTriggerFilters_NoFiltersMatchAll(t *testing.T
 	wf := wfDispatchMakeWorkflow(t, tenantID, workflow.TriggerTypeAITriageCompleted, nil)
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: shared.NewID(),
 		TriageID:  shared.NewID(),
@@ -1182,7 +1182,7 @@ func TestWfDispatch_AITriageNeedsReview_BlocksSideEffectWorkflow(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	// Triage flagged needs_review (potential prompt injection / coerced output).
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: shared.NewID(),
 		TriageID:  shared.NewID(),
@@ -1210,7 +1210,7 @@ func TestWfDispatch_AITriageNeedsReview_AllowsTriggerOnlyWorkflow(t *testing.T) 
 	wf := wfDispatchMakeWorkflow(t, tenantID, workflow.TriggerTypeAITriageCompleted, nil)
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: shared.NewID(),
 		TriageID:  shared.NewID(),
@@ -1239,7 +1239,7 @@ func TestWfDispatch_AITriageNoReview_AllowsSideEffectWorkflow(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	// needs_review absent/false → action workflow fires normally.
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: shared.NewID(),
 		TriageID:  shared.NewID(),
@@ -1268,7 +1268,7 @@ func TestWfDispatch_MatchesAITriageTriggerFilters_SeverityFilterMatch(t *testing
 	})
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:   tenantID,
 		FindingID:  shared.NewID(),
 		TriageID:   shared.NewID(),
@@ -1293,7 +1293,7 @@ func TestWfDispatch_MatchesAITriageTriggerFilters_SeverityFilterMismatch(t *test
 	})
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:   tenantID,
 		FindingID:  shared.NewID(),
 		TriageID:   shared.NewID(),
@@ -1318,7 +1318,7 @@ func TestWfDispatch_MatchesAITriageTriggerFilters_RiskScoreAboveMin(t *testing.T
 	})
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: shared.NewID(),
 		TriageID:  shared.NewID(),
@@ -1346,7 +1346,7 @@ func TestWfDispatch_MatchesAITriageTriggerFilters_RiskScoreBelowMin(t *testing.T
 	})
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: shared.NewID(),
 		TriageID:  shared.NewID(),
@@ -1379,7 +1379,7 @@ func TestWfDispatch_BuildFindingTriggerData_CorrectDataMap(t *testing.T) {
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
 
-	event := app.FindingEvent{
+	event := workflowsvc.FindingEvent{
 		TenantID:  tenantID,
 		Finding:   finding,
 		EventType: workflow.TriggerTypeFindingCreated,
@@ -1443,7 +1443,7 @@ func TestWfDispatch_BuildFindingTriggerData_NoChangesOmitted(t *testing.T) {
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	err := h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -1468,7 +1468,7 @@ func TestWfDispatch_BuildFindingTriggerData_IncludesAllFindingFields(t *testing.
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	finding := wfDispatchMakeFinding(t, tenantID, assetID, vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh)
-	event := app.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
+	event := workflowsvc.FindingEvent{TenantID: tenantID, Finding: finding, EventType: workflow.TriggerTypeFindingCreated}
 
 	_ = h.dispatch.DispatchFindingEvent(ctx, event)
 
@@ -1502,7 +1502,7 @@ func TestWfDispatch_BuildAITriageTriggerData_CorrectDataMap(t *testing.T) {
 	wf := wfDispatchMakeWorkflow(t, tenantID, workflow.TriggerTypeAITriageCompleted, nil)
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: findingID,
 		TriageID:  triageID,
@@ -1563,7 +1563,7 @@ func TestWfDispatch_BuildAITriageTriggerData_PreservesExistingFindingFromTriageD
 	wf := wfDispatchMakeWorkflow(t, tenantID, workflow.TriggerTypeAITriageCompleted, nil)
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
-	event := app.AITriageEvent{
+	event := workflowsvc.AITriageEvent{
 		TenantID:  tenantID,
 		FindingID: findingID,
 		TriageID:  triageID,
@@ -1603,7 +1603,7 @@ func TestWfDispatch_ValidateSourceFilter_ValidSourceCode(t *testing.T) {
 	log := logger.NewNop()
 	fsSvc := newWfDispatchFindingSourceCacheService(t, log, map[string]bool{"sast": true, "dast": true})
 
-	err := app.ValidateSourceFilter(ctx, map[string]any{"source_filter": []interface{}{"sast"}}, fsSvc)
+	err := workflowsvc.ValidateSourceFilter(ctx, map[string]any{"source_filter": []interface{}{"sast"}}, fsSvc)
 
 	if err != nil {
 		t.Errorf("expected nil error for valid source code, got %v", err)
@@ -1615,7 +1615,7 @@ func TestWfDispatch_ValidateSourceFilter_InvalidSourceCode(t *testing.T) {
 	log := logger.NewNop()
 	fsSvc := newWfDispatchFindingSourceCacheService(t, log, map[string]bool{"sast": true})
 
-	err := app.ValidateSourceFilter(ctx, map[string]any{"source_filter": []interface{}{"nonexistent_source"}}, fsSvc)
+	err := workflowsvc.ValidateSourceFilter(ctx, map[string]any{"source_filter": []interface{}{"nonexistent_source"}}, fsSvc)
 
 	if err == nil {
 		t.Error("expected error for invalid source code, got nil")
@@ -1627,7 +1627,7 @@ func TestWfDispatch_ValidateSourceFilter_NoSourceFilter(t *testing.T) {
 	log := logger.NewNop()
 	fsSvc := newWfDispatchFindingSourceCacheService(t, log, map[string]bool{"sast": true})
 
-	err := app.ValidateSourceFilter(ctx, map[string]any{"severity_filter": []interface{}{"high"}}, fsSvc)
+	err := workflowsvc.ValidateSourceFilter(ctx, map[string]any{"severity_filter": []interface{}{"high"}}, fsSvc)
 
 	if err != nil {
 		t.Errorf("expected nil error when no source_filter key, got %v", err)
@@ -1639,7 +1639,7 @@ func TestWfDispatch_ValidateSourceFilter_MultipleCodesAllValid(t *testing.T) {
 	log := logger.NewNop()
 	fsSvc := newWfDispatchFindingSourceCacheService(t, log, map[string]bool{"sast": true, "dast": true, "container": true})
 
-	err := app.ValidateSourceFilter(ctx, map[string]any{"source_filter": []interface{}{"sast", "dast", "container"}}, fsSvc)
+	err := workflowsvc.ValidateSourceFilter(ctx, map[string]any{"source_filter": []interface{}{"sast", "dast", "container"}}, fsSvc)
 
 	if err != nil {
 		t.Errorf("expected nil error when all source codes are valid, got %v", err)
@@ -1651,7 +1651,7 @@ func TestWfDispatch_ValidateSourceFilter_OneInvalidCodeFails(t *testing.T) {
 	log := logger.NewNop()
 	fsSvc := newWfDispatchFindingSourceCacheService(t, log, map[string]bool{"sast": true})
 
-	err := app.ValidateSourceFilter(ctx, map[string]any{"source_filter": []interface{}{"sast", "bogus"}}, fsSvc)
+	err := workflowsvc.ValidateSourceFilter(ctx, map[string]any{"source_filter": []interface{}{"sast", "bogus"}}, fsSvc)
 
 	if err == nil {
 		t.Error("expected error when one source code is invalid, got nil")
