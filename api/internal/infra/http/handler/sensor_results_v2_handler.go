@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -60,12 +61,20 @@ func (h *SensorResultsV2Handler) Limits() protov2.Limits { return h.receiver.Lim
 // is the generic problem; the reason is logged.
 func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := extractAPIKey(r)
-		if key == "" {
-			protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
-			return
+		// A signed request (key-bound sensor, RFC-052) is decided by its
+		// signature alone; only an unsigned one may present a bearer key.
+		id, signed, err := authenticateSigned(r, h.sensors, getClientIP(r), time.Now())
+		switch {
+		case err == nil:
+			r = signed
+		case errors.Is(err, errNotSigned):
+			key := extractAPIKey(r)
+			if key == "" {
+				protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
+				return
+			}
+			id, err = h.sensors.AuthenticateIdentityFrom(r.Context(), key, getClientIP(r))
 		}
-		id, err := h.sensors.AuthenticateIdentityFrom(r.Context(), key, getClientIP(r))
 		if err == nil && id.Paused && !isV2HeartbeatRequest(r) && !isV2HelloRequest(r) {
 			err = errSensorPaused
 		}
