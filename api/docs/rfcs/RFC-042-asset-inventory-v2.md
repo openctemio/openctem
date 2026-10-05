@@ -105,8 +105,9 @@ applies ownership, exclusions, lifecycle and budgets at dispatch time.**
    policies and daily rollups for the trend charts.
 10. **Source records, correlation and the canonical row stay separate**,
     following the practice in §4.1:
-    - per-source records live in `asset_sources` and a new
-      `service_sources`;
+    - per-source records live in new tenant-scoped `asset_source_records`
+      and `service_sources` tables (the old, never-written `asset_sources`
+      was dropped by the `drop_asset_sources` migration);
     - a single-flight correlation job per tenant and zone joins them,
       with deterministic, time-windowed keys and the zone as a hard
       boundary for private addresses;

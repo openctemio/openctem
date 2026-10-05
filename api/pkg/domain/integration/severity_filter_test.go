@@ -106,6 +106,11 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		// Fixed "medium" set by the SLA warning adapter (urgency of an
 		// approaching deadline, not the finding's severity).
 		EventTypeSLAWarning: true,
+		// Constant severities chosen by the CI alert job per signal.
+		EventTypeCIScheduleMissed:     true,
+		EventTypeCICoverageRegression: true,
+		EventTypeCIGateFailing:        true,
+		EventTypeCIRunnerOutdated:     true,
 	}
 
 	// Severity describes a finding/exposure, so the operator's filter is real.
