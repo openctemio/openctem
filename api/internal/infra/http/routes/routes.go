@@ -66,6 +66,9 @@ type Handlers struct {
 	AttackSurface *handler.AttackSurfaceHandler // nil if not initialized (no database)
 	EASM          *handler.EASMHandler          // RFC-036 overview; nil if not initialized
 	EASMSeed      *handler.EASMSeedHandler      // RFC-036 seeds; nil if not initialized
+	// EASMVerifiedDomain is tenant self-service domain verification
+	// (research/22 P0-10); nil if not initialized.
+	EASMVerifiedDomain *handler.EASMVerifiedDomainHandler
 	// EASMSettings is attack-surface monitoring settings and run-now
 	// (research/22 P0-11); nil if not initialized.
 	EASMSettings     *handler.EASMSettingsHandler
@@ -671,6 +674,9 @@ func Register(
 	}
 	if h.EASM != nil {
 		registerEASMRoutes(router, h.EASM, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMVerifiedDomain != nil {
+		registerEASMVerifiedDomainRoutes(router, h.EASMVerifiedDomain, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 	if h.EASMSettings != nil {
 		registerEASMSettingsRoutes(router, h.EASMSettings, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
