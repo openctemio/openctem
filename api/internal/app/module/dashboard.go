@@ -88,12 +88,6 @@ type DashboardStatsRepository interface {
 	// (a non-nil scope counts only in-scope assets and their findings).
 	GetAllStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*DashboardAllStats, error)
 
-	// Global stats (not tenant-scoped) - deprecated, use filtered versions
-	GetGlobalAssetStats(ctx context.Context) (AssetStatsData, error)
-	GetGlobalFindingStats(ctx context.Context) (FindingStatsData, error)
-	GetGlobalRepositoryStats(ctx context.Context) (RepositoryStatsData, error)
-	GetGlobalRecentActivity(ctx context.Context, limit int) ([]ActivityItem, error)
-
 	// MTTR & Trending
 	// A non-nil scope averages only findings on in-scope assets.
 	GetMTTRMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (map[string]float64, error)
@@ -334,54 +328,6 @@ type RiskTrendPoint struct {
 	P1Open           int     `json:"p1_open"`
 	P2Open           int     `json:"p2_open"`
 	P3Open           int     `json:"p3_open"`
-}
-
-// GetGlobalStats returns global dashboard statistics (not tenant-scoped).
-// Deprecated: Use GetStatsForTenants for proper multi-tenant authorization.
-func (s *DashboardService) GetGlobalStats(ctx context.Context) (*DashboardStats, error) {
-	// Get global asset stats
-	assetStats, err := s.repo.GetGlobalAssetStats(ctx)
-	if err != nil {
-		s.logger.Error("failed to get global asset stats", "error", err)
-		assetStats = AssetStatsData{ByType: make(map[string]int), ByStatus: make(map[string]int)}
-	}
-
-	// Get global finding stats
-	findingStats, err := s.repo.GetGlobalFindingStats(ctx)
-	if err != nil {
-		s.logger.Error("failed to get global finding stats", "error", err)
-		findingStats = FindingStatsData{BySeverity: make(map[string]int), ByStatus: make(map[string]int)}
-	}
-
-	// Get global repository stats
-	repoStats, err := s.repo.GetGlobalRepositoryStats(ctx)
-	if err != nil {
-		s.logger.Error("failed to get global repository stats", "error", err)
-		repoStats = RepositoryStatsData{}
-	}
-
-	// Get global recent activity
-	activity, err := s.repo.GetGlobalRecentActivity(ctx, 10)
-	if err != nil {
-		s.logger.Error("failed to get global recent activity", "error", err)
-		activity = []ActivityItem{}
-	}
-
-	return &DashboardStats{
-		AssetCount:               assetStats.Total,
-		AssetsByType:             assetStats.ByType,
-		AssetsByStatus:           assetStats.ByStatus,
-		AverageRiskScore:         assetStats.AverageRiskScore,
-		FindingCount:             findingStats.Total,
-		FindingsBySeverity:       findingStats.BySeverity,
-		FindingsByStatus:         findingStats.ByStatus,
-		OverdueFindings:          findingStats.Overdue,
-		AverageCVSS:              findingStats.AverageCVSS,
-		RepositoryCount:          repoStats.Total,
-		RepositoriesWithFindings: repoStats.WithFindings,
-		RecentActivity:           activity,
-		FindingTrend:             []FindingTrendPoint{},
-	}, nil
 }
 
 // ExecutiveSummary holds executive-level metrics for a time period.
