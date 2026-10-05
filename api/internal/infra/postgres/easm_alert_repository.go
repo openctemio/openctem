@@ -291,8 +291,8 @@ func (a *EASMAlerter) mergeDigest(ctx context.Context, tx *sql.Tx, tenantID shar
 	body := digestBody(d)
 	if rowID != "" {
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE notification_outbox SET title = $2, body = $3, severity = $4, metadata = $5, updated_at = now()
-			WHERE id = $1`, rowID, title, body, severity, meta); err != nil {
+			UPDATE notification_outbox SET title = $3, body = $4, severity = $5, metadata = $6, updated_at = now()
+			WHERE id = $1 AND tenant_id = $2`, rowID, tenantID.String(), title, body, severity, meta); err != nil {
 			return fmt.Errorf("update easm digest: %w", err)
 		}
 		return nil
