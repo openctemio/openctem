@@ -242,6 +242,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
 	"scan_zones":        func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
 	"sensors":           func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
+	// public_key is 32 bytes (lib/pq sends a string to a bytea parameter as raw
+	// bytes), thumbprint 43 base64url characters, status a
+	// closed set (CHECKs; RFC-052).
+	"sensor_keys": func(*schemaSeeder) map[string]any {
+		return map[string]any{"public_key": strings.Repeat("k", 32), "thumbprint": strings.Repeat("A", 43), "status": "active"}
+	},
 	// type has a format CHECK, not a list of literals.
 	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
 	// Definitions (RFC-044): namespace has a format CHECK; a tenant

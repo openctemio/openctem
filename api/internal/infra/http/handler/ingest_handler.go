@@ -538,13 +538,20 @@ type ChunkIngestResponse struct {
 // every other route, and a sensor that did not opt in, still gets the v1 401.
 func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		apiKey := extractAPIKey(r)
-		if apiKey == "" {
-			apierror.Unauthorized("API key required").WriteJSON(w)
-			return
+		// A signed request (key-bound sensor, RFC-052) is decided by its
+		// signature alone; only an unsigned one may present a bearer key.
+		id, signed, err := authenticateSigned(r, h.sensorService, getClientIP(r), time.Now())
+		switch {
+		case err == nil:
+			r = signed
+		case errors.Is(err, errNotSigned):
+			apiKey := extractAPIKey(r)
+			if apiKey == "" {
+				apierror.Unauthorized("API key required").WriteJSON(w)
+				return
+			}
+			id, err = h.sensorService.AuthenticateIdentityFrom(r.Context(), apiKey, getClientIP(r))
 		}
-
-		id, err := h.sensorService.AuthenticateIdentityFrom(r.Context(), apiKey, getClientIP(r))
 		if err == nil && id.Paused && !(isHeartbeatRequest(r) && sensorHasFeature(r, legacyv1.FeatureDoorbell)) {
 			err = errSensorPaused
 		}

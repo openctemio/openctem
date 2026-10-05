@@ -55,9 +55,9 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 			version, hostname, ip_address,
 			max_concurrent_jobs, current_jobs,
 			last_seen_at, last_error_at, total_findings, total_scans, error_count,
-			created_at, updated_at, key_expires_at, key_pepper_id
+			created_at, updated_at, key_expires_at, key_pepper_id, auth_kind
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
 	`
 
 	var ipAddr sql.NullString
@@ -97,6 +97,7 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 		a.UpdatedAt,
 		nullTime(a.InlineKeyExpiresAt),
 		r.value(),
+		string(a.AuthKind.OrBearer()),
 	)
 
 	if err != nil {
@@ -854,7 +855,7 @@ func (r *SensorRepository) selectQuery() string {
 		       manifest_digest, manifest_at, manifest_source,
 		       heartbeat_interval_seconds, heartbeat_due_at, reported_control, control_reported_at,
 		       reported_local_policy, local_policy_reported_at,
-		       ` + sensorActiveKeySQL("sensors") + ` AS active_key
+		       ` + sensorActiveKeySQL("sensors") + ` AS active_key, auth_kind
 		FROM sensors
 	`
 }
@@ -1019,6 +1020,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		controlAt        sql.NullTime
 		localPolicy      []byte
 		localPolicyAt    sql.NullTime
+		authKind         sql.NullString
 		activeKey        []byte
 	)
 
@@ -1100,6 +1102,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&localPolicy,
 		&localPolicyAt,
 		&activeKey,
+		&authKind,
 	)
 
 	if err != nil {
@@ -1232,6 +1235,10 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 	}
 	a.Control = scanControl(a.ID, control, controlAt)
 	a.LocalPolicy, a.LocalPolicyReportedAt = scanLocalPolicy(a.ID, localPolicy, localPolicyAt)
+	a.AuthKind = sensor.AuthKindBearer
+	if authKind.String == string(sensor.AuthKindKeyBound) {
+		a.AuthKind = sensor.AuthKindKeyBound
+	}
 
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
