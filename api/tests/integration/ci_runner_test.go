@@ -300,6 +300,9 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)
 	}
+	if r.auditCount(r.tenant, "ci_run.results_uploaded", "semgrep") != 1 {
+		t.Fatal("upload not audited")
+	}
 	resp, v := r.post("/api/v1/ci/runs/"+runID+"/evaluate", token, map[string]int{"scan_failures": 0})
 	if resp.StatusCode != http.StatusOK || v["verdict"] != "fail" || !hasReason(v, cirun.ReasonSecret) || hasReason(v, cirun.ReasonSeverity) {
 		t.Fatalf("default branch verdict: %d %v", resp.StatusCode, v)
@@ -313,7 +316,8 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 	}
 
 	// A report naming another repository is refused.
-	prTok := r.idp.token(t, aud, "acme/api", "feature/login", sha2, nil)
+	job := map[string]any{"job_id": "501"}
+	prTok := r.idp.token(t, aud, "acme/api", "feature/login", sha2, job)
 	code, ex2 := r.exchange(r.tenant, prTok)
 	if code != http.StatusCreated || ex2["is_default_branch"] != false || ex2["default_branch"] != "main" {
 		t.Fatalf("feature exchange: %d %v", code, ex2)
@@ -329,7 +333,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 
 	// A long job gets a fresh token for the same run; the old one stops.
 	resp, cont := r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
-		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha2, nil), "run_id": prRun})
+		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha2, job), "run_id": prRun})
 	if resp.StatusCode != http.StatusCreated || cont["run_id"] != prRun || cont["token"] == prToken {
 		t.Fatalf("continuation: %d %v", resp.StatusCode, cont)
 	}
@@ -347,6 +351,20 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha2, map[string]any{"pipeline_id": "2002"}), "run_id": prRun})
 	if resp.StatusCode != http.StatusUnauthorized || r.auditCount(r.tenant, "ci_run.token_refused", "run_mismatch") != 2 {
 		t.Fatalf("continuation by another pipeline run: %d", resp.StatusCode)
+	}
+	// Another job of the same pipeline run cannot renew this job's token.
+	resp, _ = r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
+		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha2, map[string]any{"job_id": "502"}), "run_id": prRun})
+	if resp.StatusCode != http.StatusUnauthorized || r.auditCount(r.tenant, "ci_run.token_refused", "run_mismatch") != 3 {
+		t.Fatalf("continuation by another job: %d", resp.StatusCode)
+	}
+	// The run records the job from the verified token, and the exchange
+	// audit names it.
+	var jobID string
+	_ = r.db.QueryRowContext(ctx, `SELECT external_job_id FROM ci_runs WHERE tenant_id = $1 AND id = $2`,
+		r.tenant.String(), prRun).Scan(&jobID)
+	if jobID != "501" || r.auditCount(r.tenant, "ci_run.token_issued", `"job_id": "501"`) < 2 {
+		t.Fatalf("job binding: job %q, issued audits %d", jobID, r.auditCount(r.tenant, "ci_run.token_issued", `"job_id": "501"`))
 	}
 
 	// The feature branch reports the old medium and a new high: the new

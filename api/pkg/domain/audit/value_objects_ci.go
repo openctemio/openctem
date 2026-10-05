@@ -13,6 +13,9 @@ const (
 	// ActionCIRunTokenRefused records a verified CI token that no trust
 	// configuration admitted, or a replayed one.
 	ActionCIRunTokenRefused Action = "ci_run.token_refused"
+	// ActionCIRunResultsUploaded records a report a run uploaded (counts and
+	// tool label; never finding content).
+	ActionCIRunResultsUploaded Action = "ci_run.results_uploaded"
 	// ActionCIRunEvaluated records a gate verdict.
 	ActionCIRunEvaluated Action = "ci_run.evaluated"
 
@@ -57,6 +60,7 @@ var _ = registerActions("ci", map[Action]Severity{
 	ActionCITrustConfigDeleted:  SeverityMedium,
 	ActionCIRunTokenIssued:      SeverityLow,
 	ActionCIRunTokenRefused:     SeverityMedium,
+	ActionCIRunResultsUploaded:  SeverityLow,
 	ActionCIRunEvaluated:        SeverityLow,
 	ActionCIGatePolicyCreated:   SeverityMedium,
 	ActionCIGatePolicyUpdated:   SeverityMedium,

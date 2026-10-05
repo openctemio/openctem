@@ -62,7 +62,9 @@ graph TD
 - `ci_trust_configs`: per tenant; `rules` JSONB (owners, repositories, refs,
   environments, events, fork and protected-ref switches).
 - `ci_runs`: per tenant, composite FK to the tenant's repository asset
-  (cascade). Token hash (unique) and expiry; verdict and its JSON detail.
+  (cascade). Token hash (unique) and expiry; verdict and its JSON detail; the
+  provider's run id, attempt and job id (`external_job_id`, migration
+  `001110`) from the verified claims.
 - `ci_run_findings`: `(run_id, fingerprint)`; the gate joins it to `findings`
   of the run's asset.
 - `ci_oidc_replay`: `(issuer, jti)`, global.
@@ -120,5 +122,10 @@ sequenceDiagram
   repository that this pipeline alone reported and nothing saw after its last
   run; findings from people (pentest, manual, bug bounty, red team) are never
   touched. A new sighting reopens a not-observed finding.
+- A run token is renewed only for the job it was issued to (same run id,
+  attempt and job id).
+- Audited: exchange (`ci_run.token_issued`/`token_refused`), each upload
+  (`ci_run.results_uploaded`), the verdict (`ci_run.evaluated`) and each
+  break-glass create, revoke and use. The actor is `ci:<provider>:<login>`.
 - Refusals are uniform to the caller and detailed in the audit log only after
   the token verified.

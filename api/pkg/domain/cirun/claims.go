@@ -34,7 +34,10 @@ type Claims struct {
 	Actor       string
 	RunID       string // GitHub run_id, GitLab pipeline_id
 	RunAttempt  string
-	Workflow    string // GitHub workflow_ref, GitLab ci_config_ref_uri
+	// JobID is the job within the pipeline run: GitHub check_run_id, GitLab
+	// job_id. A run token is renewed only for the job it was issued to.
+	JobID    string
+	Workflow string // GitHub workflow_ref, GitLab ci_config_ref_uri
 	// WorkflowName is the workflow's display name (GitHub workflow; GitLab
 	// has none). A label, never part of an identity.
 	WorkflowName string
@@ -179,6 +182,7 @@ func ParseGitHubClaims(m map[string]any) Claims {
 		Actor:          str(m, "actor"),
 		RunID:          str(m, "run_id"),
 		RunAttempt:     str(m, "run_attempt"),
+		JobID:          str(m, "check_run_id"),
 		Workflow:       str(m, "workflow_ref"),
 		Event:          str(m, "event_name"),
 		Environment:    str(m, "environment"),
@@ -211,6 +215,7 @@ func ParseGitLabClaims(m map[string]any) Claims {
 		SHA:            strings.ToLower(str(m, "sha")),
 		Actor:          str(m, "user_login"),
 		RunID:          str(m, "pipeline_id"),
+		JobID:          str(m, "job_id"),
 		Workflow:       str(m, "ci_config_ref_uri"),
 		Event:          str(m, "pipeline_source"),
 		Environment:    str(m, "environment"),

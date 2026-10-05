@@ -37382,6 +37382,7 @@ export interface components {
       environment?: string
       evaluated_at?: string
       event?: string
+      external_job_id?: string
       external_run_id?: string
       findings_count?: number
       fork?: boolean
