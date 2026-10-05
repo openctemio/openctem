@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/openctemio/ctis"
 
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
@@ -790,6 +792,16 @@ func (p *AssetProcessor) processBatch(
 		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered, excl)
 	}
 
+	// What this ingest wrote, for attribution (scan_attribution.go): every
+	// asset it created (report assets, root domains, resolved addresses) and
+	// every existing one it updated.
+	for _, a := range discovered {
+		scope.note(a, a.ID(), true)
+	}
+	for _, a := range updateAssets {
+		scope.note(a, a.ID(), false)
+	}
+
 	// Announce every asset this ingest created (report assets plus the root
 	// domains and resolved IPs derived from them) in ONE callback, so the
 	// workflow trigger and the notifier see the batch as a whole.
@@ -887,6 +899,15 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		if !isValidDomainName(rootDomain) {
 			continue
 		}
+		// The report names the root; it must be a registrable parent of the
+		// name it came with, or a sensor could create any domain (and through
+		// it a Certificate Transparency watch) it likes (research/22b S2).
+		rootDomain = strings.ToLower(strings.TrimSuffix(rootDomain, "."))
+		if !isRegistrableParent(rootDomain, getAssetName(ctisAsset)) {
+			p.logger.Warn("ingest: root_domain is not a registrable parent of the subdomain; not created",
+				"root_domain", logger.SanitizeValue(rootDomain), "subdomain", logger.SanitizeValue(getAssetName(ctisAsset)))
+			continue
+		}
 
 		// Skip if root domain already exists in current batch
 		if _, exists := existingMap[rootDomain]; exists {
@@ -979,6 +1000,21 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		"created", created,
 		"domains", domainNames,
 	)
+}
+
+// isRegistrableParent reports whether root is a strict parent of name and
+// is itself registrable: at or below its public suffix plus one label
+// (example.com, example.co.uk; never com or co.uk).
+func isRegistrableParent(root, name string) bool {
+	name = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
+	if root == "" || !strings.HasSuffix(name, "."+root) {
+		return false
+	}
+	etld1, err := publicsuffix.EffectiveTLDPlusOne(root)
+	if err != nil {
+		return false
+	}
+	return root == etld1 || strings.HasSuffix(root, "."+etld1)
 }
 
 // createSubdomainRelationships creates member_of relationships between subdomain and parent domain assets.
