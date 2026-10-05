@@ -266,7 +266,6 @@ R6 GET /api/v1/tenants/{tenant}/settings/risk-scoring
 R6 GET /api/v1/tenants/{tenant}/settings/risk-scoring/presets
 R6 PATCH /api/v1/tenants/{tenant}
 R6 PATCH /api/v1/tenants/{tenant}/members/{userId}
-R6 PATCH /api/v1/tenants/{tenant}/settings/api
 R6 PATCH /api/v1/tenants/{tenant}/settings/asset-identity
 R6 PATCH /api/v1/tenants/{tenant}/settings/branch
 R6 PATCH /api/v1/tenants/{tenant}/settings/branding
@@ -328,7 +327,6 @@ R9 GET /api/v1/users/me/sessions
 R9 GET /api/v1/users/me/tenants
 R9 PATCH /api/v1/tenants/{tenant}
 R9 PATCH /api/v1/tenants/{tenant}/members/{userId}
-R9 PATCH /api/v1/tenants/{tenant}/settings/api
 R9 PATCH /api/v1/tenants/{tenant}/settings/asset-identity
 R9 PATCH /api/v1/tenants/{tenant}/settings/branch
 R9 PATCH /api/v1/tenants/{tenant}/settings/branding
