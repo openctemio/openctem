@@ -571,7 +571,9 @@ func (s *AuthService) mfaRequiredByAnyOrganization(ctx context.Context, userID s
 		if err != nil || t == nil {
 			continue
 		}
-		if t.TypedSettings().Security.MFARequired {
+		sec, serr := t.SecuritySettingsStrict()
+		if serr != nil || sec.MFARequired {
+			// An unreadable security section counts as "2FA required".
 			return true
 		}
 	}
@@ -602,7 +604,12 @@ func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Ses
 	if err != nil {
 		return fmt.Errorf("failed to load tenant for 2FA policy: %w", err)
 	}
-	if !t.TypedSettings().Security.MFARequired {
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		// Fail closed: never mint a token on an unreadable 2FA policy.
+		return fmt.Errorf("failed to read 2FA policy: %w", err)
+	}
+	if !sec.MFARequired {
 		return nil
 	}
 	if sess.AuthMethod().IsFederated() {
