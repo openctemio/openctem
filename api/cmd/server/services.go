@@ -1622,6 +1622,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// it; a trigger no sensor would accept is refused (research/25 §3.6).
 		scan.WithDispatchPolicy(repos.Sensor, s.Tenant),
 	)
+	// A scheduled run acts as the scan owner: refused without one, paused
+	// when the owner is no longer an active member (RFC-050 W2).
+	s.Scan.SetOwnerActivity(repos.AccessControl)
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan
 	// service from here on.
