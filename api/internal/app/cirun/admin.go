@@ -85,6 +85,13 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 	if err := s.repo.UpdateTrustConfig(ctx, &next); err != nil {
 		return nil, err
 	}
+	// Disabling a configuration, or pointing it at another issuer or
+	// audience, withdraws the trust its pipelines were admitted under.
+	if (cur.Enabled && !next.Enabled) || cur.Issuer != next.Issuer || cur.Audience != next.Audience {
+		if err := s.revokePipelines(ctx, tenantID, &next, a, "the trust configuration was disabled or re-pointed"); err != nil {
+			return nil, err
+		}
+	}
 	s.logAudit(ctx, tenantID, a, auditapp.NewSuccessEvent(auditdom.ActionCITrustConfigUpdated, auditdom.ResourceTypeCITrustConfig, id.String()).
 		WithResourceName(next.Name).
 		WithMessage(fmt.Sprintf("CI trust configuration %q changed", next.Name)).
@@ -93,10 +100,14 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 }
 
 // DeleteTrustConfig removes a trust configuration (audited). Runs it
-// admitted stay; their unexpired tokens keep working until they expire.
+// admitted stay as history; its pipelines are revoked and the upload tokens
+// of its runs still running stop working at once.
 func (s *Service) DeleteTrustConfig(ctx context.Context, tenantID, id shared.ID, a Actor) error {
 	cur, err := s.repo.GetTrustConfig(ctx, tenantID, id)
 	if err != nil {
+		return err
+	}
+	if err := s.revokePipelines(ctx, tenantID, cur, a, "the trust configuration was deleted"); err != nil {
 		return err
 	}
 	if err := s.repo.DeleteTrustConfig(ctx, tenantID, id); err != nil {
@@ -106,6 +117,22 @@ func (s *Service) DeleteTrustConfig(ctx context.Context, tenantID, id shared.ID,
 		WithResourceName(cur.Name).
 		WithMessage(fmt.Sprintf("CI trust configuration %q deleted", cur.Name)).
 		WithChanges(auditdom.NewChanges().SetBefore("config", trustSnapshot(cur))))
+	return nil
+}
+
+// revokePipelines revokes the configuration's pipelines and its running
+// runs' upload tokens (audited when any pipeline was revoked).
+func (s *Service) revokePipelines(ctx context.Context, tenantID shared.ID, c *cirun.TrustConfig, a Actor, why string) error {
+	n, err := s.repo.RevokeTrustConfigPipelines(ctx, tenantID, c.ID, s.now().UTC())
+	if err != nil {
+		return fmt.Errorf("revoke pipelines: %w", err)
+	}
+	if n > 0 {
+		s.logAudit(ctx, tenantID, a, auditapp.NewSuccessEvent(auditdom.ActionCIPipelinesRevoked, auditdom.ResourceTypeCITrustConfig, c.ID.String()).
+			WithResourceName(c.Name).
+			WithMessage(fmt.Sprintf("%d CI pipeline(s) of %q revoked: %s", n, c.Name, why)).
+			WithMetadata("pipelines", n))
+	}
 	return nil
 }
 

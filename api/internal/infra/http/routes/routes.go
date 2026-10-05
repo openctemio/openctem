@@ -720,6 +720,10 @@ func Register(
 		registerSensorManagementRoutes(router, h.Sensor, h.SensorContent, h.SensorResults, authMiddleware, userSync)
 	}
 
+	// The fleet: sensors (daemon mode) and CI pipelines (runner mode) in one
+	// read model (RFC-051).
+	registerFleetRoutes(router, h.Sensor, h.CIAdmin, h.ModuleGate, authMiddleware, userSync, log)
+
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {
 		registerScanZoneRoutes(router, h.ScanZone, authMiddleware, userSync)
