@@ -323,13 +323,6 @@ func (s *TenantService) LogAuditEvent(ctx context.Context, actx auditapp.AuditCo
 	s.logAudit(ctx, actx, event)
 }
 
-// hasTenantModule checks if a tenant has access to a specific module.
-// In OSS edition, all modules are enabled by default.
-func (s *TenantService) hasTenantModule(ctx context.Context, tenantID string, moduleID string) (bool, error) {
-	// OSS edition: all modules are enabled
-	return true, nil
-}
-
 // =============================================================================
 // Tenant Operations
 // =============================================================================
