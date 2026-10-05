@@ -1,4 +1,4 @@
--- Switch the rules back on that 000915 switched off (only those still off and
+-- Switch the rules back on that 000942 switched off (only those still off and
 -- unchanged since), then drop the report.
 UPDATE priority_override_rules r
    SET is_active = TRUE, updated_at = NOW()

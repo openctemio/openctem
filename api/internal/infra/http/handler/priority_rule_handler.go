@@ -318,7 +318,7 @@ func (h *PriorityRuleHandler) Update(w http.ResponseWriter, r *http.Request) {
 		req.Conditions = &normalized
 	} else if req.IsActive != nil && *req.IsActive {
 		// Re-enabling keeps the stored conditions, so they must be valid too: a
-		// rule switched off by migration 000915 for having none must not come
+		// rule switched off by migration 000942 for having none must not come
 		// back on unchanged.
 		var stored json.RawMessage
 		err := h.db.QueryRowContext(r.Context(),

@@ -189,18 +189,18 @@ func TestSuppressionApprovers_CountAndOwner_DB(t *testing.T) {
 	}
 }
 
-// Migration 000915 switches off stored priority rules that cannot be valid and
+// Migration 000942 switches off stored priority rules that cannot be valid and
 // records them; valid rules stay on. Replayed as the schema owner in a
 // rolled-back transaction.
 func TestPriorityRuleSafetyMigration_DisablesInvalidRules_DB(t *testing.T) {
 	ctx := context.Background()
 	db := openGroupsDB(t)
 	tenant := seedTestTenant(ctx, t, db)
-	up, err := os.ReadFile("../../../migrations/000915_priority_rules_disable_invalid.up.sql")
+	up, err := os.ReadFile("../../../migrations/000942_priority_rules_disable_invalid.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	down, err := os.ReadFile("../../../migrations/000915_priority_rules_disable_invalid.down.sql")
+	down, err := os.ReadFile("../../../migrations/000942_priority_rules_disable_invalid.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
