@@ -517,6 +517,8 @@ export interface FindingApiFilters {
   view?: string
   /** Scanner rule families (Nessus / Tenable.sc plugin family). Sent as `family`. */
   families?: string[]
+  /** The state lens: open | fixed | dispositioned | all (research 24, C2). Sent as `state`. */
+  state?: 'open' | 'fixed' | 'dispositioned' | 'all'
   /** The asset's primary owner (a group-by-owner row's View). Sent as `asset_owner_id`. */
   asset_owner_id?: string
   /** Assets with no primary owner (the Unassigned owner row). Sent as `asset_owner_id_null=true`. */
@@ -542,4 +544,6 @@ export interface FindingStatsResponse {
   kev_open?: number
   epss_high_open?: number
   sla_breached?: number
+  /** The state lens counts of the same filter: open, fixed, dispositioned, all. */
+  by_state?: Partial<Record<'open' | 'fixed' | 'dispositioned' | 'all', number>>
 }
