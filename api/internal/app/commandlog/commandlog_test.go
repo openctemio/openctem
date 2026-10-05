@@ -40,7 +40,7 @@ func TestAppend_SanitizesAndRedacts(t *testing.T) {
 
 	secret := "octs_" + strings.Repeat("A", 32)
 	_, err := svc.Append(context.Background(), input(
-		RawLine{TS: "2026-10-05T11:59:00.5Z", Level: "WARNING", Msg: "key " + secret + " ‮evil\x1b[31m done", Source: "nuclei\nx",
+		RawLine{TS: "2026-10-05T11:59:00.5Z", Level: "WARNING", Msg: "key " + secret + " \u202eevil\x1b[31m done", Source: "nuclei\nx",
 			Fields: map[string]json.RawMessage{
 				"auth":  json.RawMessage(`"Bearer abcdefghijklmnopqrstuvwxyz0123"`),
 				"n":     json.RawMessage(`42`),
@@ -62,7 +62,7 @@ func TestAppend_SanitizesAndRedacts(t *testing.T) {
 	if strings.Contains(l.Msg, secret) || !strings.Contains(l.Msg, "[REDACTED]") {
 		t.Fatalf("sensor key not redacted: %q", l.Msg)
 	}
-	if strings.ContainsAny(l.Msg, "‮\x1b") {
+	if strings.ContainsAny(l.Msg, "\u202e\x1b") {
 		t.Fatalf("control or bidi character kept: %q", l.Msg)
 	}
 	if l.Level != LevelWarn || l.Source != "nuclei x" || !l.TS.Equal(time.Date(2026, 10, 5, 11, 59, 0, 500000000, time.UTC)) {
