@@ -378,8 +378,8 @@ Revoked, retired and archived pipelines raise nothing.
 | Endpoint | Permission |
 |---|---|
 | `GET /api/v1/ci/coverage` (`filter=gap\|uncovered\|covered`, `capability` with `state`, `expected`, `criticality`, `search`, paging; summary and template drift) | `scans:ci:read` |
-| `PUT /api/v1/ci/coverage/expected/{asset_id}` (`capabilities`) | `scans:ci:write` |
-| `DELETE /api/v1/ci/coverage/expected/{asset_id}` | `scans:ci:write` |
+| `PUT /api/v1/ci/coverage/expectations/{asset_id}` (`capabilities`) | `scans:ci:write` |
+| `DELETE /api/v1/ci/coverage/expectations/{asset_id}` | `scans:ci:write` |
 | `POST /api/v1/ci/pipelines/{id}/retire` (`reason`) | `scans:ci:write` |
 
 ### 10.7 Future work: sensor pools (F4) and policy timeouts (F5)
