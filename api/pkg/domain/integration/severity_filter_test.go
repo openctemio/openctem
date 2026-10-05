@@ -111,6 +111,8 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		EventTypeCICoverageRegression: true,
 		EventTypeCIGateFailing:        true,
 		EventTypeCIRunnerOutdated:     true,
+		EventTypeCIBreakGlass:         true,
+		EventTypeCITokenRefusals:      true,
 	}
 
 	// Severity describes a finding/exposure, so the operator's filter is real.

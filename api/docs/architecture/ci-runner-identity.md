@@ -45,6 +45,7 @@ graph TD
 | Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
 | Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
 | Alerts and stale sources (every 15 minutes, one replica) | `internal/app/cirun/alerts.go`, `internal/infra/controller/ci_alerts.go` |
+| Break-glass notices to administrators (in-app and `ci.break_glass`) | `internal/app/cirun/admin_alerts.go` |
 | Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001099_ci_coverage_alerts` |
 
 ## Request chains
@@ -54,6 +55,11 @@ graph TD
 | `POST /api/v1/ci/oidc/exchange` | per-IP token-exchange limit (60/min, shared store) → handler (32 KB body, unknown fields refused) |
 | `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
+
+Budgets beyond the chains: at most 200 reports per run (`cirun.MaxRunReports`,
+`409`), at most 300 runs per pipeline per hour (`cirun.MaxPipelineRunsPerHour`,
+refused at the exchange and audited `pipeline_rate`), 100,000 recorded
+findings per run.
 | `/api/v1/ci/{trust-configs,runs,pipelines,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
 | `GET /api/v1/fleet` | session tenant chain → `sensors:read` or `scans:ci:read`; the handler lists each mode under its own permission (runner rows also need the `scans` module) |
 
@@ -125,5 +131,9 @@ sequenceDiagram
   (`cirun.RunnerKeyPolicy`, wired into both sensor authenticators); the
   setting is read only for one-shot sensors, and an unreadable setting
   refuses.
+- A run token (`octci_`) authenticates only `/ci/runs/{its id}/{results,
+  baseline-diff,evaluate}`: every session, API-key, console and MCP route
+  refuses it, and the run routes refuse every other credential
+  (`routes/ci_run_token_scope_db_test.go`). Another run's id answers 404.
 - Refusals are uniform to the caller and detailed in the audit log only after
   the token verified.
