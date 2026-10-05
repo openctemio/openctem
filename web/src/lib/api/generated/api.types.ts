@@ -13042,6 +13042,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -13170,6 +13172,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -14668,6 +14678,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -14796,6 +14808,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -15035,6 +15055,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -15163,6 +15185,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -15334,6 +15364,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -15462,6 +15494,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -15779,6 +15819,8 @@ export interface paths {
             | 'verified'
             | 'accepted_risk'
           )[]
+          /** @description state equals */
+          state?: 'open' | 'fixed' | 'dispositioned' | 'all'
           /** @description source: any of (comma list) */
           source?: (
             | 'sast'
@@ -15907,6 +15949,14 @@ export interface paths {
           last_seen_at_gt?: string
           /** @description last seen at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
           last_seen_at_lt?: string
+          /** @description resolved at at least (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gte?: string
+          /** @description resolved at at most (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lte?: string
+          /** @description resolved at greater than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_gt?: string
+          /** @description resolved at less than (RFC 3339, YYYY-MM-DD, or -P30D) */
+          resolved_at_lt?: string
           /** @description network port: any of (comma list) */
           network_port?: number[]
           /** @description network port: none of (comma list) */
@@ -38056,6 +38106,15 @@ export interface components {
         [key: string]: number
       }
       by_source?: {
+        [key: string]: number
+      }
+      /**
+       * @description ByState counts the state lenses of the same filter: open, fixed,
+       *     dispositioned (false positive, accepted, duplicate; never counted as
+       *     fixed) and all. Send state=all with the other filters to label a lens
+       *     switcher.
+       */
+      by_state?: {
         [key: string]: number
       }
       by_status?: {
