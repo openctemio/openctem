@@ -1089,8 +1089,34 @@ export interface MisconfigurationDetails {
 // FINDING DETAIL (Extended for detail page)
 // ============================================
 
+/** Scanner facts kept since research 17 R2 / research 24 P0-2 (display only). */
+export interface FindingScannerFacts {
+  family?: string
+  /** Tenable VPR: an input shown for reference, never part of P0-P3 (C10). */
+  vprScore?: number
+  cvssVersion?: string
+  cvssV2Vector?: string
+  cvssV3Vector?: string
+  /** Every CVE the scanner named on this finding, primary first. */
+  cveIds: string[]
+  patchPublishedAt?: string
+  exploitAvailable?: boolean
+  networkPort?: number
+  networkTransport?: string
+  networkService?: string
+}
+
+/** The scanner's output for the finding: attacker-influenced plain text. */
+export interface FindingScannerOutput {
+  text: string
+  updatedAt?: string
+  truncated: boolean
+}
+
 export interface FindingDetail extends Finding {
   activities: Activity[]
+  scannerFacts?: FindingScannerFacts
+  scannerOutput?: FindingScannerOutput
   /** The affected package, for SCA / container findings. */
   component?: FindingComponent
   /** The CVE record, when the finding is an instance of one. */
