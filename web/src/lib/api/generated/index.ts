@@ -136,10 +136,9 @@ export type FindingRetestResponse = Schemas['internal_infra_http_handler.Finding
 export type FindingRetestListResponse =
   Schemas['internal_infra_http_handler.FindingRetestListResponse']
 
-// Scope (targets / exclusions / schedules)
+// Scope (targets / exclusions)
 export type ScopeTargetResponse = Schemas['internal_infra_http_handler.ScopeTargetResponse']
 export type ScopeExclusionResponse = Schemas['internal_infra_http_handler.ScopeExclusionResponse']
-export type ScanScheduleResponse = Schemas['internal_infra_http_handler.ScanScheduleResponse']
 export type ScopeStatsResponse = Schemas['internal_infra_http_handler.ScopeStatsResponse']
 export type ScopeMatchResponse = Schemas['internal_infra_http_handler.ScopeMatchResponse']
 export type ScopeBulkOperationResponse =
