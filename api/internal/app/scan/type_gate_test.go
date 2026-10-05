@@ -248,13 +248,13 @@ func TestStepRunContext(t *testing.T) {
 	}
 }
 
-// The workflow step payload carries the step's own targets.
-func TestWorkflowStepPayload_StepTargets(t *testing.T) {
+// The step payload carries the step's own targets.
+func TestStepCommandPayload_StepTargets(t *testing.T) {
 	run := &pipeline.Run{ID: shared.NewID(), Context: map[string]any{
 		"targets":                []string{"a", "b"},
 		RunContextKeyTargetTypes: map[string]string{"a": "host", "b": "repository"},
 	}}
-	p, err := workflowStepPayload(run, &pipeline.Step{ID: shared.NewID(), StepKey: "s", Tool: "nmap"}, "sr", &StepTargets{Targets: []string{"a"}, Refused: 1})
+	p, err := StepCommandPayload(run, &pipeline.Step{ID: shared.NewID(), StepKey: "s", Tool: "nmap"}, "nmap", "sr", "", &StepTargets{Targets: []string{"a"}, Refused: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
