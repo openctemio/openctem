@@ -551,7 +551,7 @@ does three things:
 - keeps the `webhooks` and `webhook_deliveries` tables untouched (no data is
   destroyed).
 
-Migration `001056` later dropped `webhook_deliveries`, which never held a row.
+Migration `001059` later dropped `webhook_deliveries`, which never held a row.
 The `webhooks` table is still there, unread.
 
 For outbound delivery, use a notification channel (Slack, Teams, Telegram,

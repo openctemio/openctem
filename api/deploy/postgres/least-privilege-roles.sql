@@ -105,7 +105,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- -----------------------------------------------------------------------------
 -- 3. Database and schemas. The application schemas are public plus any schema
---    a migration created (000213 created `deprecated`; 001056 dropped it).
+--    a migration created (000213 created `deprecated`; 001059 dropped it).
 --    Nobody else (PUBLIC) may
 --    connect, create temp tables or create objects in them.
 -- -----------------------------------------------------------------------------
