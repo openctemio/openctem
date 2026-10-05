@@ -3,7 +3,6 @@ export type {
   ApiAssetType,
   ApiAssetTypeCategory,
   ApiAssetTypeListResponse,
-  ApiAssetTypeCategoryListResponse,
   AssetTypeFilter,
 } from './api/asset-type-api.types'
 
@@ -11,7 +10,6 @@ export type {
 export {
   useAssetTypes,
   useActiveAssetTypes,
-  useAssetTypeCategories,
   useAssetType,
   useScopeTypeConfigs,
   assetTypeToScopeConfig,
