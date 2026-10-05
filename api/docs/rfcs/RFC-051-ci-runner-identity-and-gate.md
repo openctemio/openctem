@@ -120,7 +120,13 @@ repository asset and reopen findings on it, never another asset; it never
 resolves findings on a source's say-so and never writes the global
 vulnerability catalog; findings carry no sensor id. The stored fingerprints the
 report sighted are recorded for the run (`ci_run_findings`, at most 100,000 per
-run). Uploads use the ingest per-tenant rate limit and concurrency cap.
+run). Uploads use the ingest per-tenant rate limit and concurrency cap. A run
+accepts at most 200 reports (`409` beyond), and a pipeline may start at most
+300 runs an hour (the exchange is refused beyond, audited `pipeline_rate`).
+A secret finding is never stored in clear whatever the runner sends: the
+runner masks it, and the server keeps only a preview of at most four
+characters at each end (`vulnerability.MaskSecretPreview`), redacts the
+snippet and fingerprints the value with a keyed per-tenant HMAC.
 
 `POST /api/v1/ci/runs/{id}/baseline-diff` splits fingerprints into new and
 already open on the default branch, for inline comments on new findings only.

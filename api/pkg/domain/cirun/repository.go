@@ -37,6 +37,9 @@ type Repository interface {
 	PurgeExpiredJTIs(ctx context.Context, before time.Time) (int64, error)
 
 	CreateRun(ctx context.Context, r *Run) error
+	// CountPipelineRunsSince counts the runs a pipeline started since the
+	// time (the per-pipeline rate).
+	CountPipelineRunsSince(ctx context.Context, tenantID, pipelineID shared.ID, since time.Time) (int, error)
 	GetRun(ctx context.Context, tenantID, id shared.ID) (*Run, error)
 	// GetRunByTokenHash returns the run whose unexpired upload token hashes
 	// to hash. Not tenant-scoped: the token is the credential.
