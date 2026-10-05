@@ -6,9 +6,9 @@ package sensor_test
 // bearer key, and nonces are single use.
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"testing"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
@@ -25,7 +25,8 @@ func (h *activityHarness) keyBoundSensor(tenantID shared.ID, seed byte, status s
 	h.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix, max_concurrent_jobs, auth_kind)
 	        VALUES ($1, $2, $3, 'worker', 'active', 'unknown', 'daemon', $4, '', 5, 'key_bound')`,
 		id.String(), tenantID.String(), "kb-"+id.String()[:8], sensordom.KeyBoundHashPlaceholder())
-	pub := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{seed}, 32)).Public().(ed25519.PublicKey)
+	_ = seed
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
 	thumb := sensorsig.Thumbprint(pub)
 	revokedAt := "NULL"
 	if status == "revoked" {
@@ -107,7 +108,7 @@ func TestKeyBound_BearerRefused_DB(t *testing.T) {
 	// A key row on a sensor that is not key-bound authenticates nothing
 	// (auth_kind is the authority).
 	bearer := h.sensor(tid)
-	pub := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{9}, 32)).Public().(ed25519.PublicKey)
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
 	thumb := sensorsig.Thumbprint(pub)
 	h.exec(`INSERT INTO sensor_keys (tenant_id, sensor_id, thumbprint, public_key, status) VALUES ($1, $2, $3, $4, 'active')`,
 		tid.String(), bearer.String(), thumb, []byte(pub))
