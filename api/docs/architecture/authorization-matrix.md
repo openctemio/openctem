@@ -28,7 +28,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Core (dashboard, audit, settings) | 4 | `dashboard:read`, `audit:read`, `settings:read/write` |
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
-| Scans | 22 | `scans:read/write/delete/execute`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
+| Scans | 23 | `scans:read/write/delete/execute`, `scans:freeze:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
 | Sensors | 14 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
 | Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
@@ -99,6 +99,29 @@ Request
    ▼
 Handler
 ```
+
+### Step-up re-authentication
+
+A handful of routes also need **recent authentication** in the caller's own
+session: a sign-in or a step-up (`POST /api/v1/auth/step-up`, TOTP when the
+account has it, else the password) less than 10 minutes ago. The gate
+(`requireStepUp()`, `middleware.RequireRecentAuth`) runs after the permission
+check and answers `403 STEP_UP_REQUIRED` (outside the window) or
+`403 STEP_UP_UNAVAILABLE` (no user session, e.g. an API key). The state is
+`sessions.step_up_at`, server-side and per session. Routes:
+
+- `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}`
+- `POST /api/v1/scim-tokens`
+- `PATCH /api/v1/tenants/{tenant}/settings/security`
+- `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
+- `DELETE /api/v1/tenants/{tenant}`
+- `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
+- `POST /api/v1/ci/gate-overrides`
+- `POST /api/v1/audit-logs/rebaseline`
+
+Sensor pairing approval checks the same proof inside its request body. Details,
+errors and the threat model: [step-up-reauth.md](step-up-reauth.md). The list is
+test-enforced (`stepUpRoutes` in `routes/step_up_routes_test.go`).
 
 ## API Routes by Authorization Type
 
@@ -290,6 +313,22 @@ create's target validator, exclusions, zone routing) in one call.
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
 
+#### Scan freeze windows (`/api/v1/scan-freeze-windows`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/scan-freeze-windows` · `/{id}` | `scans:read` |
+| `POST /api/v1/scan-freeze-windows` · `PATCH /{id}` | `sensors:zones:write` |
+| `DELETE /api/v1/scan-freeze-windows/{id}` | `sensors:zones:delete` |
+| `POST /api/v1/scans/{id}/trigger` with `override_freeze: true` | `scans:execute` **and** `scans:freeze:override` (checked in the handler; 403 otherwise) |
+
+> `scans:freeze:override` is seeded by migration `001115` for owner and admin
+> and may be put on custom roles. Object level: every query carries
+> `tenant_id`; a zone window's zone is the same tenant's by the composite
+> foreign key `(tenant_id, scan_zone_id)`. Enforcement is the claim
+> predicate, so no command path bypasses a window. See
+> [scan-zones.md](scan-zones.md#freeze-windows).
+
 #### Sensors (`/api/v1/sensors`)
 
 | Endpoint | Permission Required |
@@ -359,8 +398,8 @@ create's target validator, exclusions, zone routing) in one call.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/api-keys` · `/{id}` | `integrations:api_keys:read` — owner/admin see every key of the organization; anyone else sees **only their own keys** (another user's key reads as 404) |
-| `POST /api/v1/api-keys` · `/{id}/revoke` | `integrations:api_keys:write` (owner/admin) |
-| `DELETE /api/v1/api-keys/{id}` | `integrations:api_keys:delete` (owner/admin) |
+| `POST /api/v1/api-keys` · `/{id}/revoke` | `integrations:api_keys:write` (owner/admin); create also needs **step-up** |
+| `DELETE /api/v1/api-keys/{id}` | `integrations:api_keys:delete` (owner/admin) + **step-up** |
 
 > Keys belong to the user who minted them (`api_keys.user_id`). The list shows
 > key names, scopes and last-used IPs, so a member or viewer is filtered to
@@ -371,7 +410,7 @@ create's target validator, exclusions, zone routing) in one call.
 | Endpoint | Gate |
 |----------|------|
 | `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`); a `PUT` that adds, changes or removes a mapping **to admin** is owner only (service check, 403) |
-| `POST /api/v1/scim-tokens` · `DELETE /{id}` | **owner only** (`RequireOwner`) |
+| `POST /api/v1/scim-tokens` · `DELETE /{id}` | **owner only** (`RequireOwner`); create also needs **step-up** |
 
 > A SCIM token can create, suspend and re-role every member, so minting and
 > revoking one is the owner's decision (owner decision 2026-10-02). Which IdP
@@ -554,8 +593,8 @@ These routes require the tenant ID in the URL path and use database-based member
 | `DELETE /api/v1/tenants/{tenant}/invitations/{id}` | Team admin+ |
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
 | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
-| `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** (refuses an IP allowlist that excludes the caller's IP) |
-| `DELETE /api/v1/tenants/{tenant}` | **Team owner only** |
+| `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
+| `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
 
 > **Peer administrators are the owner's** (owner decision 2026-10-02, AUTHZ
 > B3). Changing the role of, suspending, reactivating or removing a member who

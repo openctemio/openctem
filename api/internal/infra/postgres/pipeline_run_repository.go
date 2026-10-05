@@ -50,10 +50,10 @@ func (r *PipelineRunRepository) Create(ctx context.Context, run *pipeline.Run) e
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at
+			created_at, scheduled_for, deadline_at, freeze_override
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `)
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `, $23)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -79,6 +79,7 @@ func (r *PipelineRunRepository) Create(ctx context.Context, run *pipeline.Run) e
 		run.RetryAttempt,
 		run.CreatedAt,
 		nullTime(run.ScheduledFor),
+		run.FreezeOverride,
 	)
 
 	if isOccurrenceConflict(err) {
@@ -482,10 +483,10 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at
+			created_at, scheduled_for, deadline_at, freeze_override
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `)
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `, $23)
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
@@ -511,6 +512,7 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 		run.RetryAttempt,
 		run.CreatedAt,
 		nullTime(run.ScheduledFor),
+		run.FreezeOverride,
 	)
 	if isOccurrenceConflict(err) {
 		return pipeline.ErrOccurrenceAlreadyRun
@@ -1046,7 +1048,7 @@ func (r *PipelineRunRepository) selectQuery() string {
 		       started_at, completed_at, error_message,
 		       scan_profile_id, quality_gate_result, retry_attempt,
 		       created_at, scheduled_for,
-		       deadline_at, COALESCE(jsonb_array_length(unfinished_targets), 0)
+		       deadline_at, COALESCE(jsonb_array_length(unfinished_targets), 0), freeze_override
 		FROM pipeline_runs
 	`
 }
@@ -1166,6 +1168,7 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		&scheduledFor,
 		&deadlineAt,
 		&run.UnfinishedTargetCount,
+		&run.FreezeOverride,
 	)
 	_ = retryAttempt // populated below
 
@@ -1278,6 +1281,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		&scheduledFor,
 		&deadlineAt,
 		&run.UnfinishedTargetCount,
+		&run.FreezeOverride,
 	)
 
 	if err != nil {

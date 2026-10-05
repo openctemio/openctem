@@ -106,6 +106,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/sensors":                         {classConfig, "sensor management"},
 	"/api/v1/sensor-pairings":                 {classConfig, "sensor pairing (RFC-052): a pending request has no tenant until approved; the approver's tenant binds it"},
 	"/api/v1/scan-zones":                      {classConfig, "scan zones"},
+	"/api/v1/scan-freeze-windows":             {classConfig, "scan freeze windows: tenant dispatch configuration, no asset data"},
 	"/api/v1/scan-profiles":                   {classConfig, "scan profiles"},
 	"/api/v1/scanner-templates":               {classConfig, "scanner templates"},
 	"/api/v1/template-sources":                {classConfig, "template sources"},
