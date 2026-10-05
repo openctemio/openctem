@@ -392,13 +392,18 @@ function TrustConfigDialog({
           >
             <Input id="ci-aud" value={audience} onChange={(e) => setAudience(e.target.value)} />
           </Field>
-          {provider === 'gitlab' && (
-            <SwitchRow
-              id="ci-protected"
-              label="Protected branches and tags only"
-              checked={protectedRef}
-              onChange={setProtectedRef}
-            />
+          <SwitchRow
+            id="ci-protected"
+            label="Protected branches and tags only"
+            checked={protectedRef}
+            onChange={setProtectedRef}
+          />
+          {protectedRef && provider === 'github' && (
+            <p className="text-muted-foreground text-xs">
+              GitHub tokens do not say whether a ref is protected. List the deployment environments
+              above whose deployment branch rules admit only protected branches and tags; only jobs
+              running in one of them are admitted.
+            </p>
           )}
           <SwitchRow
             id="ci-forks"

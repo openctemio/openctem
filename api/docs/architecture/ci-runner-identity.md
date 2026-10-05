@@ -127,5 +127,9 @@ sequenceDiagram
 - Audited: exchange (`ci_run.token_issued`/`token_refused`), each upload
   (`ci_run.results_uploaded`), the verdict (`ci_run.evaluated`) and each
   break-glass create, revoke and use. The actor is `ci:<provider>:<login>`.
+- A run token (`octci_`) authenticates only `/ci/runs/{its id}/{results,
+  baseline-diff,evaluate}`: every session, API-key, console and MCP route
+  refuses it, and the run routes refuse every other credential
+  (`routes/ci_run_token_scope_db_test.go`). Another run's id answers 404.
 - Refusals are uniform to the caller and detailed in the audit log only after
   the token verified.

@@ -101,6 +101,8 @@ type SigningKeyRepository interface {
 	// Revoke revokes one key of a sensor (tenant-scoped); false when it was
 	// not active or pending.
 	Revoke(ctx context.Context, tenantID, sensorID, keyID shared.ID, reason string, at time.Time) (bool, error)
+	// RevokeAllForSensor revokes every pending or active key of a sensor.
+	RevokeAllForSensor(ctx context.Context, tenantID, sensorID shared.ID, reason string, at time.Time) (int64, error)
 }
 
 // NonceStore remembers request nonces for the signature window.
@@ -108,3 +110,15 @@ type NonceStore interface {
 	// Use records nonce for keyID and reports whether it was new.
 	Use(ctx context.Context, keyID, nonce string, ttl time.Duration) (bool, error)
 }
+
+// IdentityPolicyRepository stores the organization's sensor identity
+// policy (RFC-052 D-4): whether new bearer-key sensors may be created.
+type IdentityPolicyRepository interface {
+	BearerKeysAllowed(ctx context.Context, tenantID shared.ID) (bool, error)
+	SetBearerKeysAllowed(ctx context.Context, tenantID shared.ID, allowed bool) (changed bool, err error)
+}
+
+// ErrBearerKeysDisabled refuses a bearer-key sensor in an organization that
+// requires key-bound identity.
+var ErrBearerKeysDisabled = shared.NewDomainError("BEARER_KEYS_DISABLED",
+	"this organization requires key-bound identity: pair the sensor instead of creating a key", shared.ErrForbidden)
