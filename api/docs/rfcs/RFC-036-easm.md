@@ -821,7 +821,13 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
   probe a `dependency` asset with an open `dangling_cname`. The per-tenant
   off switch comes with P0-11.
 
-- **P0-9 rejection hygiene and reclassify on decision (B2, B4):** open.
+- **P0-9 rejection hygiene and reclassify on decision (B2, B4):** shipped
+  (#1145, migration `001018`). Rejected and tombstoned names (and names
+  under them) produce no CT exposure and their open CT and DNS-check
+  exposures are resolved on rejection; CT exposures link to the host's own
+  asset with an asset-independent fingerprint (stored rows re-keyed); every
+  decision queues an asset-scoped reclassify, drained every minute.
+  [easm.md §5a](../architecture/easm.md#5a-after-a-decision-built-p0-9).
 
 - **P0-10 tenant domain verification with a purpose (E6):** open.
 
