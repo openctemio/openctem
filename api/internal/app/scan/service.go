@@ -204,6 +204,7 @@ type Service struct {
 	connectorScans      ConnectorScans        // optional; nil = a connector cannot be a scanner (RFC-047)
 	policySensors       AvailableSensorLister // optional; nil = no policy preflight outside zones (policy_preflight.go)
 	privatePolicy       PrivateTargetPolicy   // optional; nil = the private-target switch is not read at trigger
+	stepQueuer          StepQueuer            // the pipeline service's step dispatcher; nil refuses workflow scans
 	logger              *logger.Logger
 }
 
