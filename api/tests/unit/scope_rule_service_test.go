@@ -849,6 +849,8 @@ func TestUpdateScopeRule_SuccessWithReReconciliation(t *testing.T) {
 	acRepo := newMockACRepoForScope()
 	acRepo.scopeRules[rule.ID()] = rule
 	acRepo.findAssetsByTagResult = matchingAssets
+	// The group reconcile reads the active rules back (the updated one).
+	acRepo.listActiveScopeRulesResult = []*accesscontrol.ScopeRule{rule}
 
 	groupRepo := newMockGroupRepoForScope()
 	svc := newTestScopeRuleService(acRepo, groupRepo)
@@ -899,10 +901,36 @@ func TestUpdateScopeRule_DeactivateTriggersReconciliation(t *testing.T) {
 		t.Error("expected rule to be deactivated")
 	}
 
-	// Deactivation changes matching but rule is now inactive,
-	// so reconciliation runs but doesn't add assets (matchingChanged && rule.IsActive() is false)
+	// The rule is no longer active, so nothing is matched for it.
 	if acRepo.findAssetsByTagCalls != 0 {
 		t.Errorf("expected 0 FindAssetsByTagMatch calls for deactivated rule, got %d", acRepo.findAssetsByTagCalls)
+	}
+}
+
+// Deactivating (or narrowing) a rule removes what it had auto-assigned when
+// no other active rule matches it any more (research 21b M-2): the group is
+// reconciled, not just the rule.
+func TestUpdateScopeRule_DeactivateRemovesStaleAssignments(t *testing.T) {
+	tenantID := shared.NewID()
+	groupID := shared.NewID()
+	rule := makeExistingScopeRule(tenantID, groupID, accesscontrol.ScopeRuleTagMatch)
+
+	acRepo := newMockACRepoForScope()
+	acRepo.scopeRules[rule.ID()] = rule
+	acRepo.listActiveScopeRulesResult = nil // no active rule left in the group
+	acRepo.listAutoAssignedResult = []shared.ID{shared.NewID(), shared.NewID()}
+
+	svc := newTestScopeRuleService(acRepo, newMockGroupRepoForScope())
+	inactive := false
+	if _, err := svc.UpdateRule(context.Background(), tenantID.String(), rule.ID().String(),
+		scope.UpdateRuleInput{IsActive: &inactive}); err != nil {
+		t.Fatalf("UpdateScopeRule failed: %v", err)
+	}
+	if acRepo.listAutoAssignedCalls != 1 {
+		t.Fatalf("expected the group reconcile to list auto-assigned assets once, got %d", acRepo.listAutoAssignedCalls)
+	}
+	if acRepo.bulkDeleteAutoCalls != 1 {
+		t.Errorf("expected the stale auto-assignments to be removed, got %d delete calls", acRepo.bulkDeleteAutoCalls)
 	}
 }
 

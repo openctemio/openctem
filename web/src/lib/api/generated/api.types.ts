@@ -20050,6 +20050,48 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pipeline-runs/{id}/stages': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List a run's stage plans
+     * @description How each stage of the run was planned: inputs, planned targets and skipped targets by reason (counts only). A run of another organization is not found.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.RunStageListResponse']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pipeline-runs/{id}/tasks': {
     parameters: {
       query?: never
@@ -39967,6 +40009,43 @@ export interface components {
        *     was settled at its deadline; the next scheduled run plans them first.
        */
       unfinished_target_count?: number
+    }
+    'internal_infra_http_handler.RunStageListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.RunStageResponse'][]
+    }
+    'internal_infra_http_handler.RunStageResponse': {
+      /** @description Chained: the stage took targets an earlier stage produced. */
+      chained?: boolean
+      /**
+       * @description Inputs is how many targets were considered (seeds plus outputs of the
+       *     types the stage takes); Planned how many were handed to the stage.
+       */
+      inputs?: number
+      /**
+       * @description MaxHop is the furthest discovery hop from a seed among planned
+       *     targets.
+       */
+      max_hop?: number
+      planned?: number
+      planned_at?: string
+      /**
+       * @description Skipped counts the targets left out, by reason: excluded,
+       *     unconfirmed, refused, other_zone, hop_limit, over_cap, duplicate,
+       *     invalid, incompatible_type.
+       */
+      skipped?: {
+        [key: string]: number
+      }
+      /**
+       * @description Stage is the catalog capability ("" when the catalog cannot place
+       *     the step).
+       */
+      stage?: string
+      /** @description StageKey is the step key of the stage in the run's template. */
+      stage_key?: string
+      /** @enum {string} */
+      tier?: 'T0' | 'T1' | 'T2'
+      tool?: string
     }
     'internal_infra_http_handler.RunTaskPageResponse': {
       data?: components['schemas']['internal_infra_http_handler.RunTaskResponse'][]
