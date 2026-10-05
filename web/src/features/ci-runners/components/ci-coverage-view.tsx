@@ -150,7 +150,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
   const [filterParam, setFilterParam] = useUrlFilter('coverage', '')
   const filter: CICoverageFilter = isCoverageFilter(filterParam) ? filterParam : ''
   const [q, setQ] = useUrlFilter('q', '')
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 25 })
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
   const [pending, setPending] = useState<string | null>(null)
   const { data, error, isLoading, mutate } = useCICoverage({
     filter,
