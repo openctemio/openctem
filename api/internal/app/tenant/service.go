@@ -2179,3 +2179,48 @@ func (s *TenantService) GetRiskScoringSettings(ctx context.Context, tenantID str
 	rs := settings.RiskScoring
 	return &rs, nil
 }
+
+// GetEASMSettings returns the tenant\x27s attack-surface monitoring settings
+// (research/22 P0-11). The zero value is the default: everything on at the
+// platform cadence.
+func (s *TenantService) GetEASMSettings(ctx context.Context, tenantID string) (*tenantdom.EASMSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	es := t.TypedSettings().EASM
+	return &es, nil
+}
+
+// UpdateEASMSettings replaces the tenant\x27s EASM settings and audits the
+// before/after values.
+func (s *TenantService) UpdateEASMSettings(
+	ctx context.Context,
+	tenantID string,
+	es tenantdom.EASMSettings,
+	actx auditapp.AuditContext,
+) (*tenantdom.EASMSettings, error) {
+	var before tenantdom.EASMSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionEASM, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().EASM
+		return t.UpdateEASMSettings(es)
+	})
+	if err != nil {
+		return nil, err
+	}
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionEASMSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().EASM)).
+		WithMessage("Attack-surface monitoring settings updated").
+		WithMetadata("ct_enabled", !es.CTDisabled).
+		WithMetadata("dns_checks_enabled", !es.DNSChecksDisabled).
+		WithMetadata("ct_interval_hours", es.CTIntervalHours).
+		WithMetadata("dns_interval_hours", es.DNSIntervalHours)
+	s.logAudit(ctx, actx, event)
+	out := t.TypedSettings().EASM
+	return &out, nil
+}

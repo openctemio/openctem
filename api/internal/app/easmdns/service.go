@@ -81,7 +81,9 @@ type Service struct {
 	maxNames     int
 	recheckAfter time.Duration
 	sweepBudget  time.Duration
-	now          func() time.Time
+	// tenantSettings carries the per-tenant switch and interval.
+	tenantSettings TenantSettingsReader
+	now            func() time.Time
 }
 
 // NewService builds the checks.
@@ -138,8 +140,12 @@ func (s *Service) run(ctx context.Context, tenantID shared.ID, kind string, chec
 	}
 	defer release()
 
+	run, recheck := s.tenantRecheck(ctx, tenantID)
+	if !run {
+		return res, nil
+	}
 	started := s.now()
-	targets, err := s.store.DueTargets(ctx, tenantID, kind, started.Add(-s.recheckAfter), s.maxNames)
+	targets, err := s.store.DueTargets(ctx, tenantID, kind, started.Add(-recheck), s.maxNames)
 	if err != nil {
 		return res, fmt.Errorf("list %s targets: %w", kind, err)
 	}

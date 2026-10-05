@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/dnsprobe/dnstest"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -191,5 +192,30 @@ func TestMonitorEmail_FlagsWeakAndResolvesFixed(t *testing.T) {
 	})
 	if res, _ := svc.MonitorEmail(context.Background(), tenant); res.Resolved != 1 {
 		t.Fatalf("fixed run: %+v", res)
+	}
+}
+
+type fakeTenantSettings map[string]tenant.EASMSettings
+
+func (f fakeTenantSettings) GetEASMSettings(_ context.Context, id string) (*tenant.EASMSettings, error) {
+	es := f[id]
+	return &es, nil
+}
+
+// research/22 P0-11 (E3): a tenant that turned the DNS checks off is not
+// checked; another tenant is.
+func TestMonitor_TenantSwitch(t *testing.T) {
+	off, on := shared.NewID(), shared.NewID()
+	store := newMemStore(Target{AssetID: shared.NewID(), Name: "acme.com"})
+	svc, _ := serviceWith(t, map[string]dnstest.Entry{"acme.com": {MX: []string{"mx.acme.com"}}}, store)
+	svc.SetTenantSettings(fakeTenantSettings{off.String(): {DNSChecksDisabled: true}})
+	if res, err := svc.MonitorEmail(context.Background(), off); err != nil || res.Checked != 0 {
+		t.Fatalf("checked a tenant that turned the checks off: %+v %v", res, err)
+	}
+	if res, _ := svc.MonitorTenant(context.Background(), off); res.Checked != 0 {
+		t.Fatalf("dangling check ran for a tenant with it off: %+v", res)
+	}
+	if res, err := svc.MonitorEmail(context.Background(), on); err != nil || res.Checked != 1 {
+		t.Fatalf("tenant with the checks on: %+v %v", res, err)
 	}
 }

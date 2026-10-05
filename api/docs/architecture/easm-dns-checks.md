@@ -167,7 +167,7 @@ address is not judged at all, so a private name server is never called lame.
 | `EASM_DNS_CHECKS_ENABLED` | `false` | off until the scans P1 work lands (claim-N with `SKIP LOCKED`, controller leases, write-amplification fixes): a daily controller over every tenant should not run by default before that. Turn it on per deployment; the per-run cap and budget bound it |
 | `EASM_DNS_RESOLVER` | first `nameserver` of `/etc/resolv.conf` | `host[:port]` of a recursive resolver |
 | `EASM_DNS_QPS` | `20` | |
-| `EASM_DNS_CHECK_INTERVAL` | `24h` | RFC-036 O9: daily light checks |
+| `EASM_DNS_CHECK_INTERVAL` | `24h` | RFC-036 O9: daily light checks. The platform default; a tenant may set 6 h to 168 h or turn the checks off (`/api/v1/easm/settings`, research/22 P0-11). The controller ticks hourly and checks a name once its window passed |
 | `EASM_DNS_MAX_NAMES_PER_RUN` | `500` | |
 
 The resolver sees which names the tenant owns. Point `EASM_DNS_RESOLVER` at
