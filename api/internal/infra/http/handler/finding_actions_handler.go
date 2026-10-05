@@ -182,6 +182,8 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  assigned_to_not  query  []string  false  "assigned to: none of (comma list)"  collectionFormat(csv)
 // @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
 // @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
+// @Param  asset_owner_id  query  []string  false  "asset owner id: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_owner_id_null  query  boolean  false  "asset owner id is unset (true) or set (false)"
 // @Param  exploit_available  query  boolean  false  "exploit available equals"
 // @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, or -P30D)"
@@ -330,6 +332,8 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  assigned_to_not  query  []string  false  "assigned to: none of (comma list)"  collectionFormat(csv)
 // @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
 // @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
+// @Param  asset_owner_id  query  []string  false  "asset owner id: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_owner_id_null  query  boolean  false  "asset owner id is unset (true) or set (false)"
 // @Param  exploit_available  query  boolean  false  "exploit available equals"
 // @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, or -P30D)"
 // @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, or -P30D)"

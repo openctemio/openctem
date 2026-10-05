@@ -509,6 +509,10 @@ export interface FindingApiFilters {
   families?: string[]
   /** The state lens: open | fixed | dispositioned | all (research 24, C2). Sent as `state`. */
   state?: 'open' | 'fixed' | 'dispositioned' | 'all'
+  /** The asset's primary owner (a group-by-owner row's View). Sent as `asset_owner_id`. */
+  asset_owner_id?: string
+  /** Assets with no primary owner (the Unassigned owner row). Sent as `asset_owner_id_null=true`. */
+  asset_owner_unassigned?: boolean
   /** Sort spec, e.g. 'priority_class,severity,-created_at'. */
   sort?: string
   page?: number
