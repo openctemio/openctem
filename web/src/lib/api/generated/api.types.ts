@@ -37266,9 +37266,6 @@ export interface components {
       asset_id?: string
       critical_days: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days: number
       info_days: number
@@ -37276,6 +37273,11 @@ export interface components {
       low_days: number
       medium_days: number
       name: string
+      /** @description P0Days..P3Days are optional; an omitted class keeps its default window. */
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       warning_threshold_pct?: number
     }
     'internal_infra_http_handler.CreateScanProfileRequest': {
@@ -39514,9 +39516,6 @@ export interface components {
       created_at?: string
       critical_days?: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days?: number
       id?: string
@@ -39526,6 +39525,15 @@ export interface components {
       low_days?: number
       medium_days?: number
       name?: string
+      /**
+       * @description P0Days..P3Days are the remediation windows per CTEM priority class.
+       *     They take precedence over the severity windows for every finding that
+       *     has a priority class.
+       */
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       tenant_id?: string
       updated_at?: string
       warning_threshold_pct?: number
@@ -40971,9 +40979,6 @@ export interface components {
     'internal_infra_http_handler.UpdateSLAPolicyRequest': {
       critical_days?: number
       description?: string
-      escalation_config?: {
-        [key: string]: unknown
-      }
       escalation_enabled?: boolean
       high_days?: number
       info_days?: number
@@ -40982,6 +40987,10 @@ export interface components {
       low_days?: number
       medium_days?: number
       name?: string
+      p0_days?: number
+      p1_days?: number
+      p2_days?: number
+      p3_days?: number
       warning_threshold_pct?: number
     }
     'internal_infra_http_handler.UpdateScanProfileRequest': {
