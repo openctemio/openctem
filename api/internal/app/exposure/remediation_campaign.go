@@ -78,7 +78,46 @@ type RemediationCampaignService struct {
 	ticketRepo  remediation.CampaignTicketRepository // nil → ticketing disabled
 	epicCreator CampaignEpicCreator                  // nil → ticketing disabled
 	audit       CampaignAuditLogger                  // nil → no audit trail (tests)
+	assignees   CampaignAssigneeChecker              // nil → naming an assignee is refused
 	logger      *logger.Logger
+}
+
+// CampaignAssigneeChecker decides whether a user may own a campaign in a
+// tenant: an active member with an active account.
+// postgres.AccessControlRepository.IsActiveTenantMember implements it.
+type CampaignAssigneeChecker interface {
+	IsActiveTenantMember(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+}
+
+// SetAssigneeChecker wires the campaign owner membership check. Without it
+// naming an owner is refused (fail closed).
+func (s *RemediationCampaignService) SetAssigneeChecker(c CampaignAssigneeChecker) {
+	s.assignees = c
+}
+
+// ErrInvalidCampaignAssignee is the one answer for an owner who is not an
+// active member of the organization (unknown, of another organization,
+// suspended or deactivated), so the endpoint is no oracle for which user ids
+// exist elsewhere (research doc 21b, C2 / L-15).
+var ErrInvalidCampaignAssignee = fmt.Errorf("%w: the assignee must be an active member of this organization", shared.ErrValidation)
+
+// assertAssignee refuses an owner who is not an active member of the tenant.
+// A nil id (no owner, or unassign) needs no check.
+func (s *RemediationCampaignService) assertAssignee(ctx context.Context, tenantID shared.ID, userID *shared.ID) error {
+	if userID == nil {
+		return nil
+	}
+	if s.assignees == nil {
+		return ErrInvalidCampaignAssignee
+	}
+	ok, err := s.assignees.IsActiveTenantMember(ctx, tenantID, *userID)
+	if err != nil {
+		return fmt.Errorf("check campaign assignee: %w", err)
+	}
+	if !ok {
+		return ErrInvalidCampaignAssignee
+	}
+	return nil
 }
 
 // CampaignAuditLogger writes audit-log events. *auditapp.AuditService
@@ -254,6 +293,9 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 			if aerr != nil {
 				return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
 			}
+			if err := s.assertAssignee(ctx, campaign.TenantID(), &assignee); err != nil {
+				return nil, err
+			}
 			toPtr = &assignee
 		}
 		if input.AssignedTeam != "" {
@@ -395,6 +437,13 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 		toPtr, aerr := resolveAssignee(campaign.AssignedTo(), input.AssignedTo, "assigned_to")
 		if aerr != nil {
 			return nil, aerr
+		}
+		// Only a newly named owner is checked; keeping the current one, or
+		// unassigning, is not.
+		if input.AssignedTo != nil && toPtr != nil {
+			if err := s.assertAssignee(ctx, campaign.TenantID(), toPtr); err != nil {
+				return nil, err
+			}
 		}
 		teamPtr, terr := resolveAssignee(campaign.AssignedTeam(), input.AssignedTeam, "assigned_team")
 		if terr != nil {
