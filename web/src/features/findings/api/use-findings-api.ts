@@ -102,6 +102,7 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.cve_ids?.length) params.set('cve_id', filters.cve_ids.join(','))
   if (filters.finding_types?.length) params.set('finding_type', filters.finding_types.join(','))
   if (filters.families?.length) params.set('family', filters.families.join(','))
+  if (filters.state) params.set('state', filters.state)
   if (filters.asset_owner_id) params.set('asset_owner_id', filters.asset_owner_id)
   if (filters.asset_owner_unassigned) params.set('asset_owner_id_null', 'true')
   if (filters.view) params.set('view', filters.view)
