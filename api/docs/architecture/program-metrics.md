@@ -114,7 +114,7 @@ an index:
 
 | Metric | Driving scan | Per-row lookups |
 |---|---|---|
-| MTTD | `idx_assets_stale_check` ∪ `idx_assets_internet` | `idx_asset_state_history_asset`, `idx_exposure_events_asset`, `idx_findings_tenant_asset_status` |
+| MTTD | `idx_assets_stale_check` ∪ `idx_assets_internet` | `idx_asset_state_history_asset_time`, `idx_exposure_events_asset`, `idx_findings_tenant_asset_status` |
 | MTTR validated | `idx_validation_evidence_tenant_created` hash-joined to findings (`idx_findings_resolved_at` ∧ `idx_findings_dashboard`) | none |
 | Owner acceptance | `idx_finding_activities_tenant_created` ∧ `idx_finding_activities_type` | `idx_finding_activities_tenant_finding`, `idx_findings_tenant_id_pk` |
 
