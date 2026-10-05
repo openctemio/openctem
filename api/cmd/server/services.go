@@ -1695,6 +1695,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		pipeline.WithAssetRefChecker(s.DataScope),
 	)
 
+	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
+	// are queued by the pipeline service, like every later step.
+	s.Scan.SetStepQueuer(s.Pipeline)
+
 	// Wire up pipeline deactivator to tool service for cascade deactivation
 	// When a tool is deactivated/deleted, all active pipelines using it will be deactivated
 	s.Tool.SetPipelineDeactivator(s.Pipeline)

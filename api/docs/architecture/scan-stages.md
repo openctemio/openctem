@@ -51,3 +51,35 @@ platform data: a tenant, a sensor or a report cannot widen it.
   engine spec (research/27 P1-1) calls it on save.
 - **API.** `GET /api/v1/scans/stages` (`scans:read`) serves the catalogue. It is
   static platform data and reads nothing of the tenant.
+
+## 2. The planner: one dispatcher, capability → tool
+
+Every pipeline step command is built on one path:
+`pipeline.Service.queueStepForExecutionWithSettings`. The scan trigger hands a
+workflow's first steps to it (`scan.StepQueuer`, wired as
+`s.Scan.SetStepQueuer(s.Pipeline)`); unwired, a workflow scan is refused. The
+payload comes from one builder, `scan.StepCommandPayload`.
+
+- **F1 (research/27).** A step that named only a capability passed validation
+  but its command carried no `scanner`, so the sensor failed it with
+  `scanner not found: `. `scan.ResolveStepTool` now decides the tool, with the
+  same rule for validation (scan trigger and pipeline template checks) and
+  dispatch, and the payload always names it in `scanner` and
+  `preferred_tool`.
+- **Resolution (owner decision G10).** A pinned tool is strict. A capability
+  that names one catalogue stage (`scan.ports`, or a word such as
+  `portscan`) runs the first active platform implementation of the stage,
+  the default first; a collector or connector is never picked; none active is
+  `NO_MATCHING_TOOL`. Capabilities naming several stages are refused
+  (`STEP_CAPABILITY_AMBIGUOUS`), never guessed. Capabilities the catalogue
+  does not know fall back to the tenant's tool lookup (tenant-scoped, platform
+  tools first). Platform implementations are read with
+  `GetPlatformToolByName`, never another tenant's tool of the same name.
+- **F2.** A step condition the scheduler cannot evaluate (`expression`, or a
+  type this version does not know) never passes; the step is skipped with
+  "Condition type ... cannot be evaluated". `SetCondition` already refused
+  expressions; this covers rows stored before that check.
+- **Own sensors only.** A scan with `run_on_tenant_runner` carries
+  `tenant_runner_only` in its run context; the dispatcher never sends any of
+  its steps to platform sensors, whatever the template prefers. (Steps after
+  the first used to ignore it.)
