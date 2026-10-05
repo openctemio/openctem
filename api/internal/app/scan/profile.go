@@ -104,19 +104,38 @@ func (s *ScanProfileService) CreateScanProfile(ctx context.Context, input Create
 	return profile, nil
 }
 
-// GetScanProfile retrieves a scan profile by ID.
+// GetScanProfile retrieves a scan profile the tenant may read: its own, or a
+// system profile. The seeded system profiles belong to the system tenant, so
+// a tenant-only lookup could never open or clone them (settings audit SC-M6).
 func (s *ScanProfileService) GetScanProfile(ctx context.Context, tenantID, profileID string) (*scanprofile.ScanProfile, error) {
+	tid, pid, err := parseProfileIDs(tenantID, profileID)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetByIDWithSystemFallback(ctx, tid, pid)
+}
+
+// getOwnScanProfile retrieves a profile the tenant owns. Every change goes
+// through it, so a system profile can be read and cloned but never edited,
+// deleted or made a tenant's default.
+func (s *ScanProfileService) getOwnScanProfile(ctx context.Context, tenantID, profileID string) (*scanprofile.ScanProfile, error) {
+	tid, pid, err := parseProfileIDs(tenantID, profileID)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetByTenantAndID(ctx, tid, pid)
+}
+
+func parseProfileIDs(tenantID, profileID string) (shared.ID, shared.ID, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+		return shared.ID{}, shared.ID{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
-
 	pid, err := shared.IDFromString(profileID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid profile id", shared.ErrValidation)
+		return shared.ID{}, shared.ID{}, fmt.Errorf("%w: invalid profile id", shared.ErrValidation)
 	}
-
-	return s.repo.GetByTenantAndID(ctx, tid, pid)
+	return tid, pid, nil
 }
 
 // GetDefaultScanProfile retrieves the default scan profile for a tenant.
@@ -206,7 +225,7 @@ func (s *ScanProfileService) UpdateScanProfile(ctx context.Context, input Update
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	profile, err := s.GetScanProfile(ctx, input.TenantID, input.ProfileID)
+	profile, err := s.getOwnScanProfile(ctx, input.TenantID, input.ProfileID)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +271,7 @@ func (s *ScanProfileService) DeleteScanProfile(ctx context.Context, tenantID, pr
 		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	profile, err := s.GetScanProfile(ctx, tenantID, profileID)
+	profile, err := s.getOwnScanProfile(ctx, tenantID, profileID)
 	if err != nil {
 		return err
 	}
@@ -274,7 +293,7 @@ func (s *ScanProfileService) SetDefaultScanProfile(ctx context.Context, tenantID
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	profile, err := s.GetScanProfile(ctx, tenantID, profileID)
+	profile, err := s.getOwnScanProfile(ctx, tenantID, profileID)
 	if err != nil {
 		return nil, err
 	}
@@ -323,6 +342,13 @@ func (s *ScanProfileService) CloneScanProfile(ctx context.Context, input CloneSc
 	if err != nil {
 		return nil, err
 	}
+	// The copy always belongs to the caller: a cloned system profile must not
+	// land in the system tenant.
+	callerTenant, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	clone.TenantID = callerTenant
 
 	if err := s.repo.Create(ctx, clone); err != nil {
 		return nil, err
@@ -347,7 +373,7 @@ func (s *ScanProfileService) UpdateQualityGate(ctx context.Context, input Update
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	profile, err := s.GetScanProfile(ctx, input.TenantID, input.ProfileID)
+	profile, err := s.getOwnScanProfile(ctx, input.TenantID, input.ProfileID)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +406,7 @@ type EvaluateQualityGateInput struct {
 func (s *ScanProfileService) EvaluateQualityGate(ctx context.Context, input EvaluateQualityGateInput) (*scanprofile.QualityGateResult, error) {
 	s.logger.Info("evaluating quality gate", "profile_id", input.ProfileID)
 
-	profile, err := s.GetScanProfile(ctx, input.TenantID, input.ProfileID)
+	profile, err := s.getOwnScanProfile(ctx, input.TenantID, input.ProfileID)
 	if err != nil {
 		return nil, err
 	}

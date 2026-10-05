@@ -93,7 +93,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	// A single-scanner run hands every target to one tool: members whose
 	// type it cannot scan are left out here. A workflow gates each step at
 	// its own dispatch (FilterStepTargets).
-	gate, err := s.newScannerTypeGate(ctx, sc.ScannerName)
+	gate, err := s.newScannerTypeGate(ctx, sc.TenantID, sc.ScannerName)
 	if err != nil {
 		return nil, err
 	}
