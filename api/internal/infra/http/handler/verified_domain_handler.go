@@ -51,9 +51,13 @@ type AddDomainRequest struct {
 
 // VerifiedDomainResponse is the JSON representation of a verified-domain row.
 type VerifiedDomainResponse struct {
-	ID            string                 `json:"id"`
-	Domain        string                 `json:"domain"`
-	Status        string                 `json:"status"`
+	ID     string `json:"id"`
+	Domain string `json:"domain"`
+	Status string `json:"status"`
+	// Purpose: sso (admits SSO JIT and SCIM users) or easm (the organization
+	// verified it itself for attack-surface management; admits nobody).
+	// Adding an easm domain here makes it sso (research/22 E6).
+	Purpose       string                 `json:"purpose"`
 	Instructions  domainverify.TXTRecord `json:"instructions"`
 	VerifiedAt    *string                `json:"verified_at,omitempty"`
 	LastCheckedAt *string                `json:"last_checked_at,omitempty"`
@@ -254,6 +258,7 @@ func toVerifiedDomainResponse(vd *verifieddomain.VerifiedDomain, txt domainverif
 		ID:           vd.ID().String(),
 		Domain:       vd.Domain(),
 		Status:       string(vd.Status()),
+		Purpose:      string(vd.Purpose()),
 		Instructions: txt,
 		CreatedAt:    vd.CreatedAt().Format(layout),
 		UpdatedAt:    vd.UpdatedAt().Format(layout),
