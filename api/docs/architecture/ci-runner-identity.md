@@ -117,6 +117,9 @@ sequenceDiagram
   verified token; the report's own branch information is replaced.
 - A run's report changes only its repository asset; the baseline branch is
   decided server-side.
+- A finding the run sees only on a non-counting branch is branch-only: left
+  out of exposure views until a counting branch sees it
+  (`branch-only-findings.md`).
 - Neither the CI provider's token nor the run token is logged, stored (only the
   run token's SHA-256) or audited.
 - Coverage lists only repositories in the caller's data scope; marking a

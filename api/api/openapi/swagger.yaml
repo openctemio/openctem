@@ -9755,6 +9755,11 @@ definitions:
         type: string
       branch_id:
         type: string
+      branch_only:
+        description: |-
+          BranchOnly: seen only on branches that do not count as exposure (a
+          feature or merge-request branch); left out of exposure views.
+        type: boolean
       comments_count:
         type: integer
       compliance_control_description:
@@ -23772,6 +23777,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -25233,6 +25242,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -25947,6 +25960,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -26628,6 +26645,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -27362,6 +27383,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
