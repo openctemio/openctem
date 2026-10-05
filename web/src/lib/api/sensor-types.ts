@@ -535,6 +535,22 @@ export interface AvailableCapabilitiesResponse {
 // SENSOR MANIFEST (api RFC-033: GET /api/v1/sensors/{id}/manifest[s])
 // ============================================
 
+/**
+ * A tool's tool-contract manifest (sdk-go docs/rfcs/sensor-sdk-v2.md), as the
+ * sensor declared it: by digest, with what the tool is and what it may
+ * produce. Ingest keeps only the declared output types of a ported tool.
+ */
+export interface SensorToolContract {
+  api_version: string
+  digest: string
+  version: string
+  class: 'target-scan' | 'connector' | 'parser' | 'enricher' | (string & {})
+  tier: 'T0' | 'T1' | 'T2' | (string & {})
+  network?: 'none' | 'targets' | 'egress-proxy' | 'vendor' | (string & {})
+  consumes?: string[] | null
+  produces: string[]
+}
+
 /** One tool of a sensor manifest. */
 export interface SensorManifestTool {
   name: string
@@ -545,6 +561,8 @@ export interface SensorManifestTool {
   target_types?: string[] | null
   content?:
     { name: string; version?: string; digest?: string; source?: string; managed: boolean }[] | null
+  /** Absent for a tool not ported to the tool contract. */
+  contract?: SensorToolContract | null
 }
 
 /** What a sensor is (RFC-033 §6.2), as the platform kept it. */
@@ -571,6 +589,7 @@ export interface SensorManifestIgnored {
     | 'unknown-tool'
     | 'invalid-name'
     | 'unknown-capability'
+    | 'invalid-contract'
     | 'limit'
     | (string & {})
 }
@@ -598,6 +617,8 @@ export interface SensorManifestDiff {
   tools_removed?: string[]
   versions?: { tool: string; from: string; to: string }[]
   installed?: { tool: string; from: string; to: string }[]
+  /** Tools whose tool-contract digest changed ("" when absent). */
+  contracts?: { tool: string; from: string; to: string }[]
   capabilities?: { tool?: string; added?: string[]; removed?: string[] }[]
   sensor_wide?: { added?: string[]; removed?: string[] } | null
   /** build, sdk, platform, resources, concurrency */

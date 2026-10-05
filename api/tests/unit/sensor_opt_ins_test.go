@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -231,9 +232,9 @@ func TestOptIns_CommandPayloadRefused(t *testing.T) {
 func TestOptIns_EnablingIsAudited(t *testing.T) {
 	ctx := context.Background()
 	auditRepo := newMockAuditRepo()
-	svc, repo := newTestTenantServiceWithOptions(app.WithTenantAuditService(app.NewAuditService(auditRepo, logger.NewNop())))
+	svc, repo := newTestTenantServiceWithOptions(app.WithTenantAuditService(auditsvc.NewAuditService(auditRepo, logger.NewNop())))
 	tn := seedTenant(repo, "Team", "team-optin")
-	actx := app.AuditContext{ActorID: shared.NewID().String()}
+	actx := auditsvc.AuditContext{ActorID: shared.NewID().String()}
 
 	optInEntries := func() []*audit.AuditLog {
 		var out []*audit.AuditLog

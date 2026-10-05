@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -26,7 +29,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -114,6 +119,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// discovery, JWKS and token request goes through the SSRF-safe client.
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
 	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+
+	// CI runs (RFC-051): OIDC exchange, uploads, the gate, administration.
+	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, log)
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
@@ -265,6 +273,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:          newEASMHandler(repos, svc, log),
 		EASMSeed:      newEASMSeedHandler(repos, svc, log),
+		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -349,6 +358,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Capability:      handler.NewCapabilityHandler(svc.Capability, v, log),
 		Scan:            handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
 		CI:              handler.NewCIHandler(svc.Scan, log),
+		CIAdmin:         ciAdmin,
+		CIRunner:        ciRunner,
 		Pipeline:        handler.NewPipelineHandler(svc.Pipeline, v, log),
 
 		// Workflows
@@ -569,7 +580,7 @@ func InitLocalAuthHandler(
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
 // optional config-template service. Templates live in
-// $AGENT_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
+// $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
 // edited without rebuilding the frontend.
 func newSensorHandlerWithTemplates(
 	sensorSvc *app.SensorService,
@@ -652,7 +663,7 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
-func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *app.AuditService, log *logger.Logger) *handler.AttachmentHandler {
+func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *compliance.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *auditsvc.AuditService, log *logger.Logger) *handler.AttachmentHandler {
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
 	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
@@ -758,13 +769,38 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 	return easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
 }
 
+// newEASMSettingsHandler builds the EASM settings and run-now handler
+// (research/22 P0-11).
+func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps, log *logger.Logger) *handler.EASMSettingsHandler {
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	var sweeper handler.EASMSweeper
+	if svc.EASMSweep != nil {
+		sweeper = svc.EASMSweep
+	}
+	platform := handler.EASMPlatform{
+		CTAvailable:   cfg.Worker.CertMonitorEnabled,
+		DNSAvailable:  svc.EASMDNS != nil,
+		CTDefaultHrs:  int(cfg.Worker.CertMonitorInterval.Hours()),
+		DNSDefaultHrs: int(cfg.Worker.EASMDNSInterval.Hours()),
+	}
+	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log)
+}
+
 // newEASMSeedHandler builds the seeds handler; every change is audited.
 func newEASMSeedHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMSeedHandler {
 	var audit handler.AttributionAuditor
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
-	return handler.NewEASMSeedHandler(easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed), audit, log)
+	h := handler.NewEASMSeedHandler(easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed), audit, log)
+	// A new seed starts a sweep so its first results arrive in minutes (P0-11).
+	if svc.EASMSweep != nil {
+		h.SetSweeper(svc.EASMSweep)
+	}
+	return h
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit
@@ -811,4 +847,36 @@ func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.Suppressi
 	h := handler.NewSuppressionHandler(svc.Suppression, log)
 	h.SetAuditService(svc.Audit)
 	return h
+}
+
+// newCIHandlers builds the CI run service and its two handlers (RFC-051).
+// The CI providers' discovery and JWKS documents are fetched through the
+// SSRF-safe client: a self-managed GitLab issuer is configured by a tenant.
+func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
+	if repos.CIRun == nil || svc.Ingest == nil {
+		return nil, nil
+	}
+	verifier := oidc.NewClient(httpsec.SafeHTTPClient(10*time.Second), func(raw string) error {
+		_, err := httpsec.ValidateURL(raw)
+		return err
+	})
+	var audit cirunapp.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	ciSvc := cirunapp.NewService(cirunapp.Deps{
+		Repo:     repos.CIRun,
+		Verifier: verifier,
+		Assets:   repos.Asset,
+		Branches: repos.Branch,
+		Baseline: repos.Finding,
+		Ingester: svc.Ingest,
+		Units:    repos.CIRun,
+		Audit:    audit,
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL}, log)
+	var ds handler.DataScopeEnforcer
+	if svc.DataScope != nil {
+		ds = svc.DataScope
+	}
+	return handler.NewCIAdminHandler(ciSvc, ds, log), handler.NewCIRunnerHandler(ciSvc, log)
 }

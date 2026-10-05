@@ -38,6 +38,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -91,7 +92,7 @@ func newV1Harness(t *testing.T) *v1Harness {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
-	sessionSvc := app.NewScanSessionService(postgres.NewScanSessionRepository(db), sensorRepo, log)
+	sessionSvc := scan.NewScanSessionService(postgres.NewScanSessionRepository(db), sensorRepo, log)
 
 	v := validator.New()
 	ih := NewIngestHandler(ingestSvc, sensorSvc, log)

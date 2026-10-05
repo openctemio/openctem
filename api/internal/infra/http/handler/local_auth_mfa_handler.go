@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -48,8 +49,8 @@ func writeMFAChallenge(w http.ResponseWriter, c *app.MFAChallengeInfo) {
 
 // selfAuditContext builds the audit context for a user acting on their own
 // account.
-func selfAuditContext(r *http.Request) app.AuditContext {
-	return app.AuditContext{
+func selfAuditContext(r *http.Request) audit.AuditContext {
+	return audit.AuditContext{
 		ActorID:    middleware.GetUserID(r.Context()),
 		ActorEmail: middleware.GetEmail(r.Context()),
 		ActorIP:    getClientIP(r),
@@ -406,7 +407,7 @@ func (h *LocalAuthHandler) ResetMemberMFA(w http.ResponseWriter, r *http.Request
 		apierror.BadRequest("Member ID is required").WriteJSON(w)
 		return
 	}
-	actx := app.AuditContext{
+	actx := audit.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),

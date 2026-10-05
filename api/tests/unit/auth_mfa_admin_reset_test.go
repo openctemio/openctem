@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/session"
@@ -67,8 +68,7 @@ func newResetHarness(t *testing.T) *resetHarness {
 	t.Helper()
 	base := newMFAHarness(t)
 	tenants := &resetTenantRepo{mockAuthTenantRepo: newMockAuthTenantRepo()}
-	svc := app.NewAuthService(base.users, base.sessions, newMockAuthRefreshTokenRepo(), tenants,
-		app.NewAuditService(base.audits, logger.NewNop()), defaultAuthTestConfig(), logger.NewNop())
+	svc := app.NewAuthService(base.users, base.sessions, newMockAuthRefreshTokenRepo(), tenants, auditsvc.NewAuditService(base.audits, logger.NewNop()), defaultAuthTestConfig(), logger.NewNop())
 	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatalf("cipher: %v", err)
@@ -104,7 +104,7 @@ func (h *resetHarness) enrolledUser(t *testing.T, email string) (shared.ID, *ses
 }
 
 func (h *resetHarness) reset(actor shared.ID, org shared.ID, target *tenant.Membership) error {
-	return h.svc.ResetMemberMFA(context.Background(), app.AuditContext{ActorID: actor.String()}, org.String(), target.ID().String())
+	return h.svc.ResetMemberMFA(context.Background(), auditsvc.AuditContext{ActorID: actor.String()}, org.String(), target.ID().String())
 }
 
 func (h *resetHarness) mfaOn(t *testing.T, uid shared.ID) bool {

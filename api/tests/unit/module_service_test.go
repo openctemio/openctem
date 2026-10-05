@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	modulesvc "github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -248,23 +249,23 @@ func (m *moduleAuditMockRepo) CountByAction(_ context.Context, _ *shared.ID, _ a
 // Test Helpers
 // =============================================================================
 
-func newTestModuleService(repo *moduleMockRepo) *app.ModuleService {
+func newTestModuleService(repo *moduleMockRepo) *modulesvc.ModuleService {
 	log := logger.NewNop()
-	return app.NewModuleService(repo, log)
+	return modulesvc.NewModuleService(repo, log)
 }
 
-func newTestModuleServiceWithTenant(repo *moduleMockRepo, tenantRepo *moduleTenanMockRepo) *app.ModuleService {
+func newTestModuleServiceWithTenant(repo *moduleMockRepo, tenantRepo *moduleTenanMockRepo) *modulesvc.ModuleService {
 	log := logger.NewNop()
-	svc := app.NewModuleService(repo, log)
+	svc := modulesvc.NewModuleService(repo, log)
 	svc.SetTenantModuleRepo(tenantRepo)
 	return svc
 }
 
-func newTestModuleServiceWithAudit(repo *moduleMockRepo, tenantRepo *moduleTenanMockRepo, auditRepo *moduleAuditMockRepo) *app.ModuleService {
+func newTestModuleServiceWithAudit(repo *moduleMockRepo, tenantRepo *moduleTenanMockRepo, auditRepo *moduleAuditMockRepo) *modulesvc.ModuleService {
 	log := logger.NewNop()
-	svc := app.NewModuleService(repo, log)
+	svc := modulesvc.NewModuleService(repo, log)
 	svc.SetTenantModuleRepo(tenantRepo)
-	auditSvc := app.NewAuditService(auditRepo, log)
+	auditSvc := auditsvc.NewAuditService(auditRepo, log)
 	svc.SetAuditService(auditSvc)
 	return svc
 }
@@ -786,7 +787,7 @@ func TestModuleService_UpdateTenantModules_Success(t *testing.T) {
 	updates := []module.TenantModuleUpdate{
 		{ModuleID: "reports", IsEnabled: false},
 	}
-	actx := app.AuditContext{ActorID: actorID}
+	actx := auditsvc.AuditContext{ActorID: actorID}
 
 	result, err := svc.UpdateTenantModules(context.Background(), tenantID, updates, actx)
 	if err != nil {
@@ -808,7 +809,7 @@ func TestModuleService_UpdateTenantModules_NoTenantRepo(t *testing.T) {
 		{ModuleID: "reports", IsEnabled: false},
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -828,7 +829,7 @@ func TestModuleService_UpdateTenantModules_TooManyUpdates(t *testing.T) {
 		updates[i] = module.TenantModuleUpdate{ModuleID: "mod", IsEnabled: true}
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -853,7 +854,7 @@ func TestModuleService_UpdateTenantModules_ExactlyMaxUpdates(t *testing.T) {
 		updates[i] = module.TenantModuleUpdate{ModuleID: mod.ID(), IsEnabled: false}
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error with exactly 50 updates, got: %v", err)
 	}
@@ -868,7 +869,7 @@ func TestModuleService_UpdateTenantModules_InvalidTenantID(t *testing.T) {
 		{ModuleID: "reports", IsEnabled: false},
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), "not-valid-uuid", updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), "not-valid-uuid", updates, auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -888,7 +889,7 @@ func TestModuleService_UpdateTenantModules_UnknownModule(t *testing.T) {
 		{ModuleID: "nonexistent_module", IsEnabled: false},
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -908,7 +909,7 @@ func TestModuleService_UpdateTenantModules_DisableCoreModule(t *testing.T) {
 		{ModuleID: "dashboard", IsEnabled: false},
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -929,7 +930,7 @@ func TestModuleService_UpdateTenantModules_EnableCoreModuleAllowed(t *testing.T)
 		{ModuleID: "dashboard", IsEnabled: true},
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error when enabling core module, got: %v", err)
 	}
@@ -947,7 +948,7 @@ func TestModuleService_UpdateTenantModules_InactiveModule(t *testing.T) {
 	}
 
 	// Inactive modules are not returned by ListActiveModules, so should be "unknown"
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -968,7 +969,7 @@ func TestModuleService_UpdateTenantModules_UpsertBatchError(t *testing.T) {
 		{ModuleID: "reports", IsEnabled: false},
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -985,7 +986,7 @@ func TestModuleService_UpdateTenantModules_ListActiveError(t *testing.T) {
 		{ModuleID: "reports", IsEnabled: false},
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -1006,7 +1007,7 @@ func TestModuleService_UpdateTenantModules_WithAuditLog(t *testing.T) {
 		{ModuleID: "reports", IsEnabled: false},
 		{ModuleID: "credentials", IsEnabled: true},
 	}
-	actx := app.AuditContext{ActorID: actorID}
+	actx := auditsvc.AuditContext{ActorID: actorID}
 
 	_, err := svc.UpdateTenantModules(context.Background(), tenantID, updates, actx)
 	if err != nil {
@@ -1030,7 +1031,7 @@ func TestModuleService_UpdateTenantModules_ParsesActorID(t *testing.T) {
 	updates := []module.TenantModuleUpdate{
 		{ModuleID: "reports", IsEnabled: false},
 	}
-	actx := app.AuditContext{ActorID: actorID}
+	actx := auditsvc.AuditContext{ActorID: actorID}
 
 	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, actx)
 	if err != nil {
@@ -1056,7 +1057,7 @@ func TestModuleService_UpdateTenantModules_EmptyActorID(t *testing.T) {
 	updates := []module.TenantModuleUpdate{
 		{ModuleID: "reports", IsEnabled: false},
 	}
-	actx := app.AuditContext{} // empty actor
+	actx := auditsvc.AuditContext{} // empty actor
 
 	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, actx)
 	if err != nil {
@@ -1078,7 +1079,7 @@ func TestModuleService_UpdateTenantModules_InvalidActorID(t *testing.T) {
 	updates := []module.TenantModuleUpdate{
 		{ModuleID: "reports", IsEnabled: false},
 	}
-	actx := app.AuditContext{ActorID: "not-a-uuid"}
+	actx := auditsvc.AuditContext{ActorID: "not-a-uuid"}
 
 	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, actx)
 	if err != nil {
@@ -1106,7 +1107,7 @@ func TestModuleService_UpdateTenantModules_MixedEnableDisable(t *testing.T) {
 		{ModuleID: "exposures", IsEnabled: false},
 	}
 
-	result, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	result, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1129,7 +1130,7 @@ func TestModuleService_UpdateTenantModules_EmptyUpdates(t *testing.T) {
 	// Empty updates should not fail (0 <= 50)
 	updates := []module.TenantModuleUpdate{}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error with empty updates, got: %v", err)
 	}
@@ -1150,7 +1151,7 @@ func TestModuleService_ResetTenantModules_Success(t *testing.T) {
 
 	svc := newTestModuleServiceWithTenant(repo, tenantRepo)
 
-	result, err := svc.ResetTenantModules(context.Background(), tenantID.String(), app.AuditContext{})
+	result, err := svc.ResetTenantModules(context.Background(), tenantID.String(), auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1166,7 +1167,7 @@ func TestModuleService_ResetTenantModules_NoTenantRepo(t *testing.T) {
 	repo := newModuleMockRepo()
 	svc := newTestModuleService(repo) // no tenant repo
 
-	_, err := svc.ResetTenantModules(context.Background(), validTenantID(), app.AuditContext{})
+	_, err := svc.ResetTenantModules(context.Background(), validTenantID(), auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -1180,7 +1181,7 @@ func TestModuleService_ResetTenantModules_InvalidTenantID(t *testing.T) {
 	tenantRepo := newModuleTenantMockRepo()
 	svc := newTestModuleServiceWithTenant(repo, tenantRepo)
 
-	_, err := svc.ResetTenantModules(context.Background(), "bad-uuid", app.AuditContext{})
+	_, err := svc.ResetTenantModules(context.Background(), "bad-uuid", auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -1196,7 +1197,7 @@ func TestModuleService_ResetTenantModules_DeleteError(t *testing.T) {
 
 	svc := newTestModuleServiceWithTenant(repo, tenantRepo)
 
-	_, err := svc.ResetTenantModules(context.Background(), validTenantID(), app.AuditContext{})
+	_, err := svc.ResetTenantModules(context.Background(), validTenantID(), auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -1210,7 +1211,7 @@ func TestModuleService_ResetTenantModules_WithAuditLog(t *testing.T) {
 	auditRepo := newModuleAuditMockRepo()
 	svc := newTestModuleServiceWithAudit(repo, tenantRepo, auditRepo)
 
-	_, err := svc.ResetTenantModules(context.Background(), validTenantID(), app.AuditContext{})
+	_, err := svc.ResetTenantModules(context.Background(), validTenantID(), auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1229,7 +1230,7 @@ func TestModuleService_ResetTenantModules_ReturnsFullConfig(t *testing.T) {
 	tenantRepo := newModuleTenantMockRepo()
 	svc := newTestModuleServiceWithTenant(repo, tenantRepo)
 
-	result, err := svc.ResetTenantModules(context.Background(), validTenantID(), app.AuditContext{})
+	result, err := svc.ResetTenantModules(context.Background(), validTenantID(), auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1286,7 +1287,7 @@ func TestModuleService_UpdateTenantModules_MultipleCoreModuleDisableAttempts(t *
 		{ModuleID: "assets", IsEnabled: false},
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -1327,7 +1328,7 @@ func TestModuleService_SetTenantModuleRepo(t *testing.T) {
 	svc := newTestModuleService(repo)
 
 	// Without tenant repo, update should fail
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), nil, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), nil, auditsvc.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error without tenant repo")
 	}
@@ -1340,7 +1341,7 @@ func TestModuleService_SetTenantModuleRepo(t *testing.T) {
 	updates := []module.TenantModuleUpdate{
 		{ModuleID: "reports", IsEnabled: false},
 	}
-	_, err = svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err = svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error after setting tenant repo, got: %v", err)
 	}
@@ -1358,7 +1359,7 @@ func TestModuleService_SetAuditService(t *testing.T) {
 		{ModuleID: "reports", IsEnabled: false},
 	}
 
-	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1366,10 +1367,10 @@ func TestModuleService_SetAuditService(t *testing.T) {
 	// Now set audit service and verify it logs
 	auditRepo := newModuleAuditMockRepo()
 	log := logger.NewNop()
-	auditSvc := app.NewAuditService(auditRepo, log)
+	auditSvc := auditsvc.NewAuditService(auditRepo, log)
 	svc.SetAuditService(auditSvc)
 
-	_, err = svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	_, err = svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1394,7 +1395,7 @@ func TestModuleService_UpdateTenantModules_AuditFailureDoesNotBreakUpdate(t *tes
 	}
 
 	// Update should succeed even if audit logging fails
-	result, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	result, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error (audit failure should not propagate), got: %v", err)
 	}
@@ -1434,7 +1435,7 @@ func TestModuleService_UpdateTenantModules_ReturnsUpdatedConfig(t *testing.T) {
 		{ModuleID: "reports", IsEnabled: true},
 	}
 
-	result, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, app.AuditContext{})
+	result, err := svc.UpdateTenantModules(context.Background(), validTenantID(), updates, auditsvc.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}

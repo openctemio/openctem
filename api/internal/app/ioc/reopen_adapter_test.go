@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -16,9 +16,9 @@ func (r *fakeReopenRepo) GetByID(_ context.Context, _, _ shared.ID) (*vulnerabil
 }
 func (r *fakeReopenRepo) Update(_ context.Context, _ *vulnerability.Finding) error { return nil }
 
-type capturingAuditor struct{ last app.AuditEvent }
+type capturingAuditor struct{ last audit.AuditEvent }
 
-func (a *capturingAuditor) LogEvent(_ context.Context, _ app.AuditContext, e app.AuditEvent) error {
+func (a *capturingAuditor) LogEvent(_ context.Context, _ audit.AuditContext, e audit.AuditEvent) error {
 	a.last = e
 	return nil
 }

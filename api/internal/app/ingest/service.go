@@ -10,7 +10,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/activity"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -58,7 +58,7 @@ type Service struct {
 	// instance would have its own mutex and could interleave appends.
 	auditSvc *auditapp.AuditService
 
-	activityService *app.FindingActivityService
+	activityService *activity.FindingActivityService
 
 	// assetExposureProjector promotes recon-discovered assets (open ports,
 	// exposed services, TLS certificates) into the Exposure Register. Runs
@@ -92,6 +92,9 @@ type Service struct {
 	commands     commandReader
 	results      sensorresult.Repository
 	resultLimits sensorresult.Limits
+	// contracts reads the submitting sensor's manifest, where a ported
+	// tool declares what it produces (output_binding.go). Nil-safe.
+	contracts ToolContractSource
 
 	logger *logger.Logger
 
@@ -205,7 +208,7 @@ func (s *Service) SetIdentityStore(store IdentityStore, reviewer IdentityReviewe
 }
 
 // SetActivityService sets the finding activity service for audit trail during ingestion.
-func (s *Service) SetActivityService(activityService *app.FindingActivityService) {
+func (s *Service) SetActivityService(activityService *activity.FindingActivityService) {
 	s.activityService = activityService
 	s.findingProcessor.SetActivityService(activityService)
 }
@@ -351,7 +354,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		opts.RequireAssetForFindings = true
 	}
 	binding := opts.Binding
-	if agt.ID.IsZero() {
+	// A server-side ingest (synthetic sensor, zero id) is trusted, except a
+	// CI run's report: it has no sensor row either, and keeps its binding.
+	if agt.ID.IsZero() && binding.Kind != BindingCIRun {
 		binding = TrustedBinding()
 	}
 	if binding.Kind == BindingCommand && binding.Tool != "" &&
@@ -538,7 +543,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		scanID := report.Metadata.ID
 		branchName := report.Metadata.Branch.Name
 		for _, assetID := range assetMap {
-			if binding.Kind == BindingCommand && !scope.allowedAsset(assetID) {
+			if (binding.Kind == BindingCommand || binding.Kind == BindingCIRun) && !scope.allowedAsset(assetID) {
 				continue
 			}
 			br, err := s.branchRepo.GetByName(ctx, assetID, branchName)

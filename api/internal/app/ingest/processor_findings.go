@@ -441,6 +441,7 @@ func (p *FindingProcessor) processBatch(
 	}
 
 	p.applySourceMitigations(ctx, tenantID, report, mitigations, scope, output)
+	output.SightedFingerprints = append(output.SightedFingerprints, fingerprints...)
 	if len(validFindings) == 0 {
 		return nil
 	}
