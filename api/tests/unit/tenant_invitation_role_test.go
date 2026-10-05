@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,7 +22,7 @@ func newInvitationRoleFixture(t *testing.T) (*app.TenantService, *mockTenantRepo
 	svc, repo := newTestTenantService()
 	tn := seedTenant(repo, "Team", "team-slug")
 	roleRepo := newMockRoleRepo()
-	svc.SetRoleService(app.NewRoleService(roleRepo, newMockPermissionRepo(), logger.NewNop()))
+	svc.SetRoleService(accesscontrol.NewRoleService(roleRepo, newMockPermissionRepo(), logger.NewNop()))
 	return svc, repo, roleRepo, tn.ID().String()
 }
 

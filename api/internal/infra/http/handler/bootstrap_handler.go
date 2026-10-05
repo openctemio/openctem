@@ -10,6 +10,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/openctemio/openctem/api/internal/app"
+
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -21,8 +23,8 @@ import (
 // BootstrapHandler handles the bootstrap endpoint that returns all initial data
 // needed after login in a single API call.
 type BootstrapHandler struct {
-	permCacheSvc   *app.PermissionCacheService
-	permVersionSvc *app.PermissionVersionService
+	permCacheSvc   *accesscontrol.PermissionCacheService
+	permVersionSvc *accesscontrol.PermissionVersionService
 	moduleSvc      *app.ModuleService
 	tenantSvc      *app.TenantService
 	logger         *logger.Logger
@@ -30,8 +32,8 @@ type BootstrapHandler struct {
 
 // NewBootstrapHandler creates a new bootstrap handler.
 func NewBootstrapHandler(
-	permCacheSvc *app.PermissionCacheService,
-	permVersionSvc *app.PermissionVersionService,
+	permCacheSvc *accesscontrol.PermissionCacheService,
+	permVersionSvc *accesscontrol.PermissionVersionService,
 	moduleSvc *app.ModuleService,
 	tenantSvc *app.TenantService,
 	log *logger.Logger,
