@@ -19,6 +19,10 @@ var adminOnlyPermissions = []Permission{
 	CommandsDelete,
 	ScanZonesWrite,
 	ScanZonesDelete,
+	// CI trust configurations issue upload credentials; the override lets a
+	// commit past the gate (RFC-051).
+	CIWrite,
+	CIOverride,
 }
 
 // AdminOnlyPermissions returns the permissions that only the system owner and

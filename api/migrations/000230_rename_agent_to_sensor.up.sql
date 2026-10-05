@@ -373,11 +373,21 @@ ON CONFLICT (id) DO NOTHING;
 DELETE FROM event_types WHERE id IN ('agent.offline', 'agent.error');
 UPDATE event_types SET category = 'sensors' WHERE category = 'agents';
 
+-- webhooks is dropped by 001069; the guard keeps a re-run of this migration on a
+-- later schema (TestSensorRenameUpgrade) working. Unchanged where the table exists.
+DO $$
+BEGIN
+    IF to_regclass('public.webhooks') IS NOT NULL THEN
+        EXECUTE $q$
 UPDATE webhooks SET event_types = (
     SELECT array_agg(DISTINCT CASE e WHEN 'agent.offline' THEN 'sensor.offline'
                                      WHEN 'agent.error'   THEN 'sensor.error' ELSE e END)
     FROM unnest(event_types::text[]) AS e)
-WHERE event_types::text[] && ARRAY['agent.offline', 'agent.error']::text[];
+WHERE event_types::text[] && ARRAY['agent.offline', 'agent.error']::text[]
+        $q$;
+    END IF;
+END
+$$;
 
 UPDATE integration_notification_extensions SET enabled_event_types = (
     SELECT jsonb_agg(DISTINCT CASE e WHEN 'agent.offline' THEN 'sensor.offline'

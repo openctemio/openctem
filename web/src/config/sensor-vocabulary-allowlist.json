@@ -38,12 +38,6 @@
       "reason": "Bookmarked /agents URLs redirect permanently to /sensors."
     },
     {
-      "id": "browser-storage-migration",
-      "files": "^src/lib/(__tests__/)?sensor-storage-migration(\\.test)?\\.ts$",
-      "pattern": ".*",
-      "reason": "Migrates browser storage written before the rename (old keys and agents:* values) once, on load."
-    },
-    {
       "id": "formerly-agents",
       "files": ".*",
       "pattern": "[Ff]ormerly (called )?[Aa]gents?",
