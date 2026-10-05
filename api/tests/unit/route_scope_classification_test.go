@@ -104,6 +104,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"POST /api/v1/ci/runs/{id}/baseline-diff": {classSystem, "CI run token: the run's repository only (RFC-051)"},
 	"POST /api/v1/ci/runs/{id}/evaluate":      {classSystem, "CI run token: the run's own verdict (RFC-051)"},
 	"/api/v1/sensors":                         {classConfig, "sensor management"},
+	"/api/v1/sensor-pairings":                 {classConfig, "sensor pairing (RFC-052): a pending request has no tenant until approved; the approver's tenant binds it"},
 	"/api/v1/scan-zones":                      {classConfig, "scan zones"},
 	"/api/v1/scan-profiles":                   {classConfig, "scan profiles"},
 	"/api/v1/scanner-templates":               {classConfig, "scanner templates"},
