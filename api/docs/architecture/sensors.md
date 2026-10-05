@@ -832,7 +832,7 @@ administrator merely declared on a sensor that never reported gets no work
 (it used to, and failed with "scanner not found"). Tool-less and
 capability-scoped commands are unaffected.
 
-**Capacity vs slots** (Kubernetes' `capacity` vs `allocatable`). The reported
+**Capacity vs slots** (total capacity vs what is allocatable now). The reported
 `max_concurrent_jobs` is the sensor **operator's ceiling** (`SENSOR_MAX_JOBS`),
 sent only when one is set; `capacity.slots_total` is what the sensor can run
 **now**, sized by the SDK from its CPU, memory and tools' learned cost (at
