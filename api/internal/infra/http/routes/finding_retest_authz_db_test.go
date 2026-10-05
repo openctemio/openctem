@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app"
@@ -122,6 +124,8 @@ func (h *rtHarness) seed() {
 
 	for _, tid := range []shared.ID{h.tenantA, h.tenantB} {
 		h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tid.String(), "rt-"+tid.String())
+		// Each tenant authorizes its domain for active checks (RFC-036 §6.3).
+		h.exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES ($1, 'domain', '*.example.com', 'active')`, tid.String())
 	}
 	h.t.Cleanup(func() {
 		ctx := context.Background()
@@ -303,5 +307,5 @@ func TestRetestSettingsAuthz_AdminOnlyAndTokenTenant(t *testing.T) {
 func realProbeGate(pg *postgres.DB, log *logger.Logger) *scanapp.Service {
 	scope := scopeapp.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg),
 		nil, postgres.NewAssetRepository(pg), log)
-	return scanapp.NewTargetGate(scope, postgres.NewAttributionRepository(pg), postgres.NewScanZoneRepository(pg), nil, log)
+	return scanapp.NewTargetGate(scope, easmapp.NewActiveGate(postgres.NewAttributionRepository(pg), postgres.NewAssetRepository(pg), scope, postgres.NewEASMSeedRepository(pg)), postgres.NewScanZoneRepository(pg), nil, log)
 }

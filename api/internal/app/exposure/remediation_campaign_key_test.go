@@ -20,7 +20,7 @@ type fakeKeyResolver struct {
 	n               int
 }
 
-func (f *fakeKeyResolver) CountByKey(_ context.Context, _ shared.ID, key string) (int64, int64, error) {
+func (f *fakeKeyResolver) CountByKey(_ context.Context, _ shared.ID, key string, _ *shared.DataScope) (int64, int64, error) {
 	f.countCalls++
 	f.gotKey = key
 	return f.total, f.resolved, nil
