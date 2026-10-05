@@ -122,20 +122,19 @@ The five highest risks (ranked in the architecture document §3):
 ### 3.2 Industry practice
 
 From research/05-mutual-distrust (2026-10-03, adversarially verified
-claims; vendor evidence survived only for Rapid7 and Tenable), with
-research 03 and the surveys in RFC-023 §2 and RFC-032 §4.
+claims), with research 03 and the surveys in RFC-023 §2 and RFC-032 §4.
 
 | Source | What it shows | Taken here |
 |---|---|---|
 | **Uptane** two-repository model | An online **Director** issues per-device instructions on demand; a separately keyed **Image repository** (offline keys, run by people) publishes what is approved; under full verification the device acts only when both agree. A compromised Director can still choose among approved items or withhold work. | The API is the Director (which job, which sensor, when); the signer's ledger, approved by people and anchored in an offline or customer-held key, is the Image repository (§5.6 points 4–5); the sensor checks the job against **both** the signature and the signed scope document, then its own local policy (§5.7) |
 | **TUF / Uptane roles and thresholds** | Roles can require several keys (a threshold); threshold 1 is allowed, so a quorum must be chosen, not assumed. Assume keys get compromised: minimal trust in online keys, expiry against freeze, monotonic versions against rollback, rotation and revocation through the root. | Offline root, expiring key set, `seq` + nonce + expiry per job (§5.6); the two-person rule is designed in deliberately (§5.6 point 5), and the root can be a 2-of-N threshold for installations that want it |
 | **Vault Transit, AWS KMS** | Sign-as-a-service with non-exportable keys, Ed25519 included (`ECC_NIST_EDWARDS25519`; KMS raw messages ≤ 4096 bytes). Moving the key out of the API stops **theft**, not **misuse**: an API that can call "sign" gets anything signed. | K2 custody (§5.6 point 2); the signer applies its own ledger, rate and approval policy and is callable only by the core's identity |
-| **Rapid7 InsightVM** | Engines can pair in reverse (engine → console, outbound only, polling); in both directions the console still decides what the engine does. | Outbound-only is today's model and stays; it shrinks network exposure but limits nothing a compromised console orders, which is why §5.6–§5.7 exist |
-| **Tenable** linking key | One tenant-wide linking key entered on every scanner; the linking documentation describes no signed tasks and no scanner-side scope (absence in the docs, not proof of absence). | Per-sensor enrollment and identity (RFC-032); signed tasks and local scope are a differentiator: no surveyed vendor documents protection of sensors against a compromised console |
-| **Kaseya VSA (2021)** | An authentication bypass on the management server let attackers push a malicious "agent hot-fix" procedure to every managed endpoint, run from folders the vendor required anti-malware to exclude. | Agents must not run payloads just because the server sent them (§5.8: no exec, signed code only); never ask customers to exclude folders where pushed content is written and executed (§5.10: EDR exclusions narrow, no exclusion of the template or content directories) |
-| **ScreenConnect CVE-2024-1709 (2024)** | One flawed check in the management plane gave full admin; admin-level extension upload turned it into code execution. | Console-uploaded templates, scripts or tools must not reach sensors without a second signer and a sensor-side gate (§5.8; P0 local template gate) |
-| **SolarWinds SUNBURST (2020)** | Trojanized updates carried valid vendor signatures because the build itself was compromised: a signature proves origin, not safety. | Signature checks are necessary but not sufficient: the local allow-list and a second, separately held approval key are what limit a signed but hostile instruction (§5.6, §5.7); RFC-031 pins the release workflow identity and refuses downgrades |
-| **CrowdStrike Channel File 291 (July 2024)** | Validation only on the control side (a Content Validator with a logic bug) let malformed content crash about 8.5 million sensors; the fix added bounds and input-count checks **in the sensor**, canary testing, successive deployment rings with bake-in telemetry, rollback, and **customer control over when content deploys**. | Sensors re-validate everything pushed to them against their own schema (RFC-038 S7, §5.8) and a new item: **staged rollout rings, a customer-controlled deploy window and a local kill switch** for templates, settings and content (§5.12) |
+| **Outbound-only scanner pairing** (common in scan engines) | Engines connect out to the console and poll; the console still decides what the engine does. | Outbound-only is today's model and stays; it shrinks network exposure but limits nothing a compromised console orders, which is why §5.6–§5.7 exist |
+| **Shared linking keys** | One tenant-wide key entered on every scanner, with no signed tasks and no scanner-side scope. | Per-sensor enrollment and identity (RFC-032); signed tasks and a local scope protect sensors against a compromised console |
+| **RMM supply-chain attack (2021)** | An authentication bypass on a remote-management server let attackers push a malicious "agent hot-fix" procedure to every managed endpoint, run from folders the product required anti-malware to exclude. | Agents must not run payloads just because the server sent them (§5.8: no exec, signed code only); never ask customers to exclude folders where pushed content is written and executed (§5.10: EDR exclusions narrow, no exclusion of the template or content directories) |
+| **Remote-access console bypass, CVE-2024-1709 (2024)** | One flawed check in the management plane gave full admin; admin-level extension upload turned it into code execution. | Console-uploaded templates, scripts or tools must not reach sensors without a second signer and a sensor-side gate (§5.8; P0 local template gate) |
+| **Trojanized signed updates (2020)** | Trojanized updates carried valid vendor signatures because the build itself was compromised: a signature proves origin, not safety. | Signature checks are necessary but not sufficient: the local allow-list and a second, separately held approval key are what limit a signed but hostile instruction (§5.6, §5.7); RFC-031 pins the release workflow identity and refuses downgrades |
+| **Endpoint-sensor content update outage (July 2024)** | Validation only on the control side (a content validator with a logic bug) let malformed content crash about 8.5 million sensors; the fix added bounds and input-count checks **in the sensor**, canary testing, successive deployment rings with bake-in telemetry, rollback, and **customer control over when content deploys**. | Sensors re-validate everything pushed to them against their own schema (RFC-038 S7, §5.8) and a new item: **staged rollout rings, a customer-controlled deploy window and a local kill switch** for templates, settings and content (§5.12) |
 
 ## 4. Threat model
 
@@ -560,7 +559,7 @@ targets:
 ports:   { allow: "1-1024,3389,5432,8000-8999" }
 tools:   { allow: [nuclei, httpx, naabu, dnsx, subfinder, trivy] }
 tiers:   { max: T1 }               # RFC-036: T2 (default logins, fuzzing) needs local opt-in
-templates: { custom: deny }        # platform-supplied custom templates (Wazuh-style local gate)
+templates: { custom: deny }        # platform-supplied custom templates (local gate)
 credentials:
   allow_refs: true
   providers:
@@ -682,7 +681,7 @@ in the chart and snippets:
 | Inbound | none. Health and metrics on loopback or a Unix socket; Kubernetes probes use `exec`. No pprof in release builds |
 | Process | non-root user, read-only root filesystem, `cap_drop: [ALL]` plus `NET_RAW` only when a SYN-scan tool is enabled, `no-new-privileges`, seccomp `RuntimeDefault` |
 | OS | immutable, minimal: Flatcar, Bottlerocket, Talos or Fedora CoreOS for dedicated hosts; distroless/Wolfi images; automatic security updates |
-| EDR | supported and recommended on sensor hosts; the docs list the scanner processes and their expected network behaviour so EDR exclusions are narrow, and **never exclude the template, content or work directories** where pushed content is written and run (the Kaseya VSA lesson, §3.2) |
+| EDR | supported and recommended on sensor hosts; the docs list the scanner processes and their expected network behaviour so EDR exclusions are narrow, and **never exclude the template, content or work directories** where pushed content is written and run (the 2021 RMM supply-chain lesson, §3.2) |
 | Rate and kill switch | `rate.max_pps` and `max_concurrent_jobs` in the policy; `kill_switch_file` (or `openctem-sensor stop-all`) refuses new jobs and stops running ones, locally, without the platform |
 | Time | NTP required (signatures and expiry, RFC-032 T12) |
 | Logs | stdout plus an **independent SIEM sink** (syslog RFC 5424 over TLS, or OTLP) configured locally; the platform cannot turn it off |
@@ -729,9 +728,9 @@ in the chart and snippets:
 **Threat.** Content pushed from the platform (custom templates, RFC-038
 tool settings, RFC-031 content pins and refreshes, signer key sets and
 scope documents) is malformed or malicious and reaches every sensor at once:
-the CrowdStrike 2024 failure mode (validated only on the control side,
-deployed to everyone at the same time) and the Kaseya/ScreenConnect mode
-(pushed by a compromised console).
+the July 2024 sensor-content failure mode (validated only on the control side,
+deployed to everyone at the same time) and the 2021/2024 compromised-console
+mode (pushed by a compromised console).
 
 **Design.**
 
@@ -773,7 +772,7 @@ green and verified end to end against a real sensor, as in RFC-032 §8.
 | | `POST /api/v1/commands`: `scan` commands go through scan target resolution (exclusions, zone routing, private-address check) or are restricted to owners/admins; `UpdateScan` runs the config validator | api | S | T6 (member bypass) |
 | | Result binding, cheap part: unsolicited v2 results only from `collector`/CI roles; tenant switch `sensor_results_require_command` (on for new tenants); advisory evidence off by default; scan sessions and ingest-job status scoped to the sensor; sensor reports never change compliance, classification, PII/PHI or exposure flags of an existing asset and do not reactivate archived assets; auto-reopen and auto-resolve only from command-bound reports of the same tool; legacy "no tools declared" auto-resolve off | api | M | T2, T3, T4 |
 | | The ingest worker re-reads the sensor's status before processing a queued report; revoking a sensor re-queues its leased commands | api | S | T2, T3 |
-| | Sensor-side local gates (Wazuh pattern), default **off for new installs**: `SENSOR_ALLOW_CUSTOM_TEMPLATES`, `SENSOR_ALLOW_INTERACTSH`; `SENSOR_ALLOWED_RANGES` and `SENSOR_ALLOWED_PORTS` intersected in `ScanTargetPolicy` (RFC-023 D8 layer 3); a local kill-switch file; a cap on `timeout_seconds` | sdk-go, sensor | M | T6–T9 |
+| | Sensor-side local gates, default **off for new installs**: `SENSOR_ALLOW_CUSTOM_TEMPLATES`, `SENSOR_ALLOW_INTERACTSH`; `SENSOR_ALLOWED_RANGES` and `SENSOR_ALLOWED_PORTS` intersected in `ScanTargetPolicy` (RFC-023 D8 layer 3); a local kill-switch file; a cap on `timeout_seconds` | sdk-go, sensor | M | T6–T9 |
 | | Audit scope targets, exclusions, tools and scanner templates; alert on scope widening (A7) | api | S | T6, T7 |
 | | Output encoding: `safeHref` on every data-driven `href`/`src` plus an ESLint rule; CSP `img-src` narrowed; markdown URL check refuses `//host`; Jira text escaped; server CSV skips leading whitespace like the client | web, api | S | T5 |
 | | Hardening defaults: snippets and chart set `runAsNonRoot`, `readOnlyRootFilesystem`, `cap_drop: [ALL]` (+`NET_RAW` only for SYN scanning), `no-new-privileges`, seccomp `RuntimeDefault`; an optional sensor egress `NetworkPolicy`; the hardening guide (§5.10) | api snippets, helm-charts, docs | S | T3, posture |
@@ -862,7 +861,6 @@ Q1 (a), Q2 (a), Q3 (a), Q4 (a), Q5 (c), Q6 (a), Q7 (a), Q8 (a).
 - The Update Framework specification: https://theupdateframework.github.io/specification/latest/
 - Uptane standard (Director/Image repositories): https://uptane.org/docs/latest/standard/uptane-standard
 - go-tuf v2: https://github.com/theupdateframework/go-tuf
-- Wazuh centralized configuration (local gate for remote commands): https://documentation.wazuh.com/current/user-manual/reference/centralized-configuration.html
 - Nuclei template signing and CVE-2024-43405: https://github.com/projectdiscovery/nuclei/security/advisories/GHSA-7h5p-mmpp-hgmm
 - OWASP API Security Top 10 2023, API1 Broken Object Level Authorization: https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/
 - WebAuthn Level 3: https://www.w3.org/TR/webauthn-3/
@@ -870,12 +868,7 @@ Q1 (a), Q2 (a), Q3 (a), Q4 (a), Q5 (c), Q6 (a), Q7 (a), Q8 (a).
 - CyberArk Central Credential Provider: https://docs.cyberark.com/credential-providers/latest/en/content/ccp/ccp-intro.htm
 - Trojan Source (bidi overrides): https://trojansource.codes/
 - OWASP CSV injection: https://owasp.org/www-community/attacks/CSV_Injection
-- Rapid7 scan engine communication (reverse pairing): https://docs.rapid7.com/insightvm/scan-engine-communication-methods/
-- Tenable Nessus linking: https://docs.tenable.com/nessus/Content/LinkToTenableVulnerabilityManagement.htm
-- CrowdStrike Channel File 291 root cause analysis: https://www.crowdstrike.com/wp-content/uploads/2024/08/Channel-File-291-Incident-Root-Cause-Analysis-08.06.2024.pdf
-- Kaseya VSA / REvil (Sophos): https://www.sophos.com/en-us/blog/independence-day-revil-uses-supply-chain-exploit-to-attack-hundreds-of-businesses/
-- ScreenConnect CVE-2024-1709 (Huntress): https://www.huntress.com/blog/a-catastrophe-for-control-understanding-the-screenconnect-authentication-bypass
-- SolarWinds SUNBURST (Mandiant): https://cloud.google.com/blog/topics/threat-intelligence/evasive-attacker-leverages-solarwinds-supply-chain-compromises-with-sunburst-backdoor
+- CVE-2024-1709: https://nvd.nist.gov/vuln/detail/CVE-2024-1709
 - TUF security: https://theupdateframework.io/docs/security/
 - Vault Transit: https://developer.hashicorp.com/vault/docs/secrets/transit
 - AWS KMS asymmetric key specs (Ed25519): https://docs.aws.amazon.com/kms/latest/developerguide/asymmetric-key-specs.html

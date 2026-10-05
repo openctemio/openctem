@@ -1,4 +1,4 @@
-# RFC-022 — Platform administration console (Tenable-style system admin)
+# RFC-022 — Platform administration console (system admin)
 
 > Status: **Accepted** (2026-09-30) — Phases 1-3 implemented (api#547, api#548, openctemio/ui#505).
 > **Revision 2** (2026-09-30): the administrator is a user account signing in on
@@ -23,9 +23,9 @@
 > [Revision 8](#revision-8-sso-changes-wait-for-an-owner)).
 
 > Scope: api + ui. Separates *application (platform) administration* from
-> *organization (tenant) administration*, modeled on Tenable Security Center,
-> where the system administrator is an account with a system-level role and a
-> different menu (Organizations, Users, Scanning, System) from organization users.
+> *organization (tenant) administration*: the system administrator is an account
+> with a system-level role and a different menu (Organizations, Users, Scanning,
+> System) from organization users.
 
 ## Problem
 
@@ -49,14 +49,14 @@
 
 | # | Decision | Why |
 |---|----------|-----|
-| D1 | **Identity = a `users` account linked to `admin_users`** (rev. 2; originally `admin_users` alone). The account belongs to no organization (enforced in the database); `admin_users` holds the role (`super_admin` > `ops_admin` > `readonly`), the second factor, lockout and the admin audit trail. | Tenable SC: one account table, one login page, the Administrator role is system-level and belongs to no organization. Keeping the account out of every organization is what separates the tiers, not a second account table. `PLATFORM_ADMIN_EMAILS` is removed. |
+| D1 | **Identity = a `users` account linked to `admin_users`** (rev. 2; originally `admin_users` alone). The account belongs to no organization (enforced in the database); `admin_users` holds the role (`super_admin` > `ops_admin` > `readonly`), the second factor, lockout and the admin audit trail. | One account table, one login page; the administrator role is system-level and belongs to no organization. Keeping the account out of every organization is what separates the tiers, not a second account table. `PLATFORM_ADMIN_EMAILS` is removed. |
 | D2 | **Same backend.** Extend `/api/v1/admin/*`; no second service. | Admin operations (create org, assign bundles, configure SSO) need the same tenant/module/SSO services. A second service would duplicate logic or call back into the api. |
 | D3 | **Console = password sign-in on `/login` + mandatory TOTP**, server-side console sessions. SSO/SAML sign-ins cannot open it. No admin API keys (rev. 3). | Admin sessions must be revocable (server-side), short-lived, and MFA-protected. No organization's IdP may authenticate a platform administrator. |
 | D4 | **TOTP implemented in-house** (RFC 6238: HMAC-SHA1, 6 digits, 30 s, ±1 step), verified against the RFC test vectors. | No OTP library is in `go.mod`; ~50 lines is easier to audit than a new dependency on the admin auth path. Reusable later for tenant-user 2FA, which is also missing (the UI calls `/users/me/2fa`, which has no backend). |
-| D5 | **Same Next.js app, separate shell** (own route group, layout, login, sidebar; shared `SidebarBrand`). | Tenable does the same: one application, a different menu per account type. Can be split into its own deployable later because the route group is independent. `/admin` + `/api/v1/admin` can be IP-restricted at the ingress. |
+| D5 | **Same Next.js app, separate shell** (own route group, layout, login, sidebar; shared `SidebarBrand`). | One application, a different menu per account type. Can be split into its own deployable later because the route group is independent. `/admin` + `/api/v1/admin` can be IP-restricted at the ingress. |
 | D6 | **SCIM stays a tenant-admin feature** (api#546). | The tenant's own IT connects their IdP. |
 | D7 | **Bundles become licensing only through a separate entitlement layer.** | Today a tenant admin's per-module "on" override beats the bundle baseline, and the module gate is fail-open, so locking bundle *subscription* alone would lock nothing. Entitlement (platform-set ceiling, fail-closed) ⊇ subscription (tenant) ⊇ toggles. OSS default: entitled to everything. |
-| D8 | **Organization creation is a per-installation setting**, `TENANT_CREATION_MODE=self_service\|admin_only` (default `admin_only` since rev. 6; was `self_service`). | SaaS/trials need self-service; on-prem/enterprise wants admin-only (Tenable). The platform admin can always create organizations. |
+| D8 | **Organization creation is a per-installation setting**, `TENANT_CREATION_MODE=self_service\|admin_only` (default `admin_only` since rev. 6; was `self_service`). | SaaS/trials need self-service; on-prem/enterprise wants admin-only. The platform admin can always create organizations. |
 
 ## Design — Phase 1: console authentication (api, as revised)
 
@@ -121,18 +121,12 @@ account's and is reset through the normal forgot-password flow.
 ## Revision 2: administrators are user accounts
 
 Phase 1 first shipped a separate console login (own password on
-`admin_credentials`, own form at `/admin/login`). Re-checking Tenable:
-
-- **Tenable Security Center**: one user table and one login page. *Administrator*
-  is a system-level role: the account belongs to no organization, cannot see
-  organization data, and manages organizations, system configuration and SAML.
-- **Tenable Vulnerability Management (cloud)**: one login; the customer's own
-  Administrator configures SAML for their container. **MSSP portal**: the same
-  login, then SSO into customer containers.
-
-So two separate identity stores and two login forms were not the Tenable model.
-What actually separates the tiers there is that the administrator account is in
-no organization. Revision 2 adopts that: one account and one login, a database
+`admin_credentials`, own form at `/admin/login`). Two identity stores and two
+login forms add attack surface without separating anything: what separates the
+tiers is that the administrator account is in no organization, cannot see
+organization data, and manages organizations, system configuration and SAML,
+while each organization's own administrator configures SAML for that
+organization. Revision 2 adopts that: one account and one login, a database
 guarantee that an administrator account is in no organization, TOTP before the
 console, and no IdP path to the console. The console password, `/admin/auth/login`,
 `/admin/auth/password`, `PLATFORM_ADMIN_EMAILS` and the tenant-context
@@ -164,8 +158,8 @@ through a platform-level identity provider that is separate from every
 organization's IdP.
 
 References: Microsoft's emergency-access guidance (at least two accounts, not
-federated, alert on every use, test regularly) and Tenable's advice to keep a
-local administrator for when SSO is unavailable.
+federated, alert on every use, test regularly) and the common practice of keeping
+a local administrator for when SSO is unavailable.
 
 ### Break-glass administrators
 
@@ -285,7 +279,7 @@ The 2026-10-02 admin-plane review proved that an `ops_admin` could
 `POST /admin/tenants/{id}/users {"role":"admin"}` into any existing
 organization, receive the set-password link when SMTP was off (or use an email
 it controls when it was on), sign in, and read the organization's findings,
-credentials and audit log. That contradicts the Tenable model this RFC adopts:
+credentials and audit log. That contradicts the model this RFC adopts:
 the system administrator manages organizations but cannot see their data.
 Owner decision, implemented here:
 
@@ -324,8 +318,7 @@ exists). That is a separate decision.
 
 ## Revision 6: admin-only organization creation and the first organization
 
-Owner decision 2026-10-02 ("admin-only + setup creates the first org", the
-Tenable Security Center model).
+Owner decision 2026-10-02 ("admin-only + setup creates the first org").
 
 - **Default `TENANT_CREATION_MODE=admin_only`.** Organizations are created by
   the platform administrator: the console (`POST /admin/tenants`) or
@@ -454,7 +447,7 @@ organization. So the console only **proposes** such a change:
   `sso_enabled` / `sso_provider` / `sso_config_url` security fields (written,
   never read by the login path).
 - **Phase 3 (ui) — console shell** (implemented, openctemio/ui#505; sign-in reworked for
-  rev. 2). A Tenable-style sidebar: Overview · Organizations · Users · Scanning
+  rev. 2). A sidebar: Overview · Organizations · Users · Scanning
   (target mappings, platform tools) · System (Configuration, Diagnostics, Job
   queue, System logs, Keys). Replaces the transitional `(dashboard)/admin` pages.
 - **Phase 4 — Entitlements.** Platform-set bundle ceiling per organization,
