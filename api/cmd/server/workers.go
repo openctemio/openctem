@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 
 	"github.com/openctemio/openctem/api/internal/app"
@@ -65,7 +66,7 @@ type Workers struct {
 	JobWorker                 *jobs.Worker
 	SensorHealthChecker       *jobs.SensorHealthChecker
 	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
-	ScanScheduler             *app.ScanScheduler
+	ScanScheduler             *scan.ScanScheduler
 	CommandExpirationChecker  *command.ExpirationChecker
 	OutboxScheduler           *outbox.Scheduler
 	FindingLifecycleScheduler *app.FindingLifecycleScheduler
@@ -164,14 +165,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	// Initialize scan scheduler
-	w.ScanScheduler = app.NewScanScheduler(
+	w.ScanScheduler = scan.NewScanScheduler(
 		repos.Scan,
-		svc.Scan,
-		app.ScanSchedulerConfig{
+		svc.Scan, scan.ScanSchedulerConfig{
 			CheckInterval: time.Minute,
 			BatchSize:     50,
-		},
-		log,
+		}, log,
 	)
 
 	// Initialize command expiration checker

@@ -8,7 +8,7 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/reportschedule"
@@ -63,14 +63,14 @@ func TestReportRecipients_MembersOrAllowedDomains_DB(t *testing.T) {
 
 	db := &postgres.DB{DB: sqldb}
 	repo := postgres.NewReportScheduleRepository(db)
-	svc := app.NewReportScheduleService(repo, logger.NewNop())
+	svc := module.NewReportScheduleService(repo, logger.NewNop())
 	svc.SetRecipientPolicy(postgres.NewTenantRepository(db))
 	create := func(emails ...string) error {
 		rs := make([]reportschedule.Recipient, 0, len(emails))
 		for _, e := range emails {
 			rs = append(rs, reportschedule.Recipient{Email: e})
 		}
-		_, err := svc.CreateSchedule(ctx, app.CreateReportScheduleInput{
+		_, err := svc.CreateSchedule(ctx, module.CreateReportScheduleInput{
 			TenantID: tenant, Name: "rr weekly", ReportType: "executive_summary", Format: "html",
 			CronExpression: "0 9 * * 1", Recipients: rs,
 		})

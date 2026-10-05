@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -18,18 +18,18 @@ import (
 // VerifiedDomainHandler handles tenant-scoped domain-ownership verification.
 type VerifiedDomainHandler struct {
 	service *domainverify.Service
-	audit   *app.AuditService
+	audit   *auditsvc.AuditService
 	logger  *logger.Logger
 }
 
 // SetAuditService records verified-domain changes in the organization's audit
 // log.
-func (h *VerifiedDomainHandler) SetAuditService(svc *app.AuditService) {
+func (h *VerifiedDomainHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 
-func domainAuditEvent(action audit.Action, vd *verifieddomain.VerifiedDomain, message string) app.AuditEvent {
-	return app.NewSuccessEvent(action, audit.ResourceTypeVerifiedDomain, vd.ID().String()).
+func domainAuditEvent(action audit.Action, vd *verifieddomain.VerifiedDomain, message string) auditsvc.AuditEvent {
+	return auditsvc.NewSuccessEvent(action, audit.ResourceTypeVerifiedDomain, vd.ID().String()).
 		WithResourceName(vd.Domain()).
 		WithMessage(message).
 		WithMetadata("domain", vd.Domain()).
@@ -51,9 +51,13 @@ type AddDomainRequest struct {
 
 // VerifiedDomainResponse is the JSON representation of a verified-domain row.
 type VerifiedDomainResponse struct {
-	ID            string                 `json:"id"`
-	Domain        string                 `json:"domain"`
-	Status        string                 `json:"status"`
+	ID     string `json:"id"`
+	Domain string `json:"domain"`
+	Status string `json:"status"`
+	// Purpose: sso (admits SSO JIT and SCIM users) or easm (the organization
+	// verified it itself for attack-surface management; admits nobody).
+	// Adding an easm domain here makes it sso (research/22 E6).
+	Purpose       string                 `json:"purpose"`
 	Instructions  domainverify.TXTRecord `json:"instructions"`
 	VerifiedAt    *string                `json:"verified_at,omitempty"`
 	LastCheckedAt *string                `json:"last_checked_at,omitempty"`
@@ -206,9 +210,8 @@ func (h *VerifiedDomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, domainAuditEvent(audit.ActionSSOVerifiedDomainDeleted, removed,
 			"Domain '"+removed.Domain()+"' removed"))
 	} else {
-		logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
-			app.NewSuccessEvent(audit.ActionSSOVerifiedDomainDeleted, audit.ResourceTypeVerifiedDomain, id.String()).
-				WithMessage("Verified domain removed"))
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionSSOVerifiedDomainDeleted, audit.ResourceTypeVerifiedDomain, id.String()).
+			WithMessage("Verified domain removed"))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -255,6 +258,7 @@ func toVerifiedDomainResponse(vd *verifieddomain.VerifiedDomain, txt domainverif
 		ID:           vd.ID().String(),
 		Domain:       vd.Domain(),
 		Status:       string(vd.Status()),
+		Purpose:      string(vd.Purpose()),
 		Instructions: txt,
 		CreatedAt:    vd.CreatedAt().Format(layout),
 		UpdatedAt:    vd.UpdatedAt().Format(layout),

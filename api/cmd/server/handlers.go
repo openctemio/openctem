@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
@@ -509,6 +511,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.DomainVerify != nil {
 		handlers.VerifiedDomain = handler.NewVerifiedDomainHandler(svc.DomainVerify, log)
 		handlers.VerifiedDomain.SetAuditService(svc.Audit)
+		// Tenant self-service verification for EASM (research/22 P0-10, E6).
+		var audit handler.AttributionAuditor
+		if svc.Audit != nil {
+			audit = svc.Audit
+		}
+		handlers.EASMVerifiedDomain = handler.NewEASMVerifiedDomainHandler(svc.DomainVerify, audit, log)
 	}
 
 	// SAML SP handler (RFC-009 9d+9e): metadata, config CRUD, and the
@@ -577,7 +585,7 @@ func InitLocalAuthHandler(
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
 // optional config-template service. Templates live in
-// $AGENT_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
+// $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
 // edited without rebuilding the frontend.
 func newSensorHandlerWithTemplates(
 	sensorSvc *app.SensorService,
@@ -660,7 +668,7 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
-func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *app.AuditService, log *logger.Logger) *handler.AttachmentHandler {
+func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *compliance.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *auditsvc.AuditService, log *logger.Logger) *handler.AttachmentHandler {
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
 	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -800,7 +801,7 @@ func newTestAuthServiceWithConfig(cfg config.AuthConfig) (*app.AuthService, *aut
 	auditRepo := &mockAuthAuditRepo{}
 	log := logger.NewNop()
 
-	auditService := app.NewAuditService(auditRepo, log)
+	auditService := auditsvc.NewAuditService(auditRepo, log)
 
 	svc := app.NewAuthService(
 		userRepo,
