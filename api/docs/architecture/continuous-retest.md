@@ -66,7 +66,7 @@ finding, `properties.template_digest` (sha256 of the matching template file)
 and `template_path`, and per report the template release in
 `tool.properties.content` (`nuclei-templates`: version, archive digest).
 Ingest keeps them on the finding as the last sighting's baseline (migration
-000951: `findings.template_digest`, `template_path`, `templates_version`,
+001013: `findings.template_digest`, `template_path`, `templates_version`,
 `templates_digest`, `template_seen_at`; sanitized: sha256 digests only, a
 relative path without `..`, a short version token). A sighting without a
 digest keeps the baseline; one with a new digest re-baselines.

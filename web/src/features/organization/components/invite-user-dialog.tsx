@@ -38,6 +38,8 @@ interface InviteUserDialogProps {
   tenantSlug: string | undefined
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Only the owner may make someone an administrator (settings decision B2). */
+  canGrantAdmin?: boolean
   /** Called after the invitation is created (refresh the invitation list). */
   onInvited?: () => void
 }
@@ -53,6 +55,7 @@ export function InviteUserDialog({
   open,
   onOpenChange,
   onInvited,
+  canGrantAdmin = false,
 }: InviteUserDialogProps) {
   const [email, setEmail] = useState('')
   const [roleIds, setRoleIds] = useState<string[]>([])
@@ -198,6 +201,7 @@ export function InviteUserDialog({
                   )}
                 </div>
                 <RoleChecklist
+                  canGrantAdmin={canGrantAdmin}
                   roles={roles}
                   selected={roleIds}
                   onChange={setRoleIds}
