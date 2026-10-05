@@ -118,6 +118,7 @@ import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { FindingApiFilters } from '@/features/findings/api/finding-api.types'
 import { AssigneeSelect } from '@/features/findings/components/assignee-select'
 import { useMembers } from '@/features/organization/api/use-members'
+import { memberDisplayName } from '@/features/organization/lib/member-lifecycle'
 import { useTenant } from '@/context/tenant-provider'
 import { useHashTab } from '@/hooks/use-hash-tab'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
@@ -381,11 +382,13 @@ export default function RemediationPage() {
 
   // Resolve assignee UUIDs → display names via the tenant member list.
   const { currentTenant } = useTenant()
-  const { members } = useMembers(currentTenant?.id)
+  // A name map, not a picker: it must also name people who were disabled or
+  // left (marked "(deactivated)"), so it lists every status.
+  const { members } = useMembers(currentTenant?.id, { status: 'all', limit: 500 })
   const memberNameById = useMemo(() => {
     const m = new Map<string, string>()
     for (const mem of members) {
-      if (mem.user_id) m.set(mem.user_id, mem.name || mem.email || mem.user_id)
+      if (mem.user_id) m.set(mem.user_id, memberDisplayName(mem))
     }
     return m
   }, [members])
