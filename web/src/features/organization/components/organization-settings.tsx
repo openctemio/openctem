@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Save, Building, Upload, Loader2, AlertCircle, Lock } from 'lucide-react'
-import { usePermissions, Permission } from '@/lib/permissions'
+import { useCanMutate } from '@/lib/permissions'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -316,12 +316,17 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
   const { currentTenant, updateCurrentTenant, refreshTenants } = useTenant()
   const tenantId = currentTenant?.id
 
-  // Permission check - can user update tenant settings?
-  const { can, isOwner } = usePermissions()
-  const canUpdateTenant = can(Permission.TeamUpdate)
-  // Security settings are owner-only on the backend (RequireTeamOwner);
-  // TeamUpdate alone would render a dead control for admins.
-  const canManageSecurityAndAPI = canUpdateTenant && isOwner()
+  // Controls follow the API route gates (permission + role), so a custom
+  // role with team:update but not admin no longer sees a Save that 403s.
+  const canUpdateTenant = useCanMutate(
+    'PATCH /api/v1/tenants/{tenant}',
+    'PATCH /api/v1/tenants/{tenant}/settings/general',
+    'PATCH /api/v1/tenants/{tenant}/settings/branding'
+  )
+  // Security settings are owner-only on the backend (RequireTeamOwner).
+  const canManageSecurityAndAPI = useCanMutate('PATCH /api/v1/tenants/{tenant}/settings/security')
+  // Storage configuration is admin-only (RequireAdmin).
+  const canSaveStorage = useCanMutate('PATCH /api/v1/attachments/storage-config')
 
   // Fetch settings
   const { settings, isLoading, isError, error, mutate } = useTenantSettings(tenantId)
@@ -598,6 +603,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
               form={STORAGE_FORM_ID}
               busy={storageStatus.saving}
               disabled={!storageStatus.canSave}
+              locked={!canSaveStorage}
+              lockedReason="Only administrators can change the file storage"
             />
           )}
         </PageHeader>

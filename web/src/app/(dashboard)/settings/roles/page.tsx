@@ -33,7 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import {
   Plus,
   Shield,
@@ -234,7 +234,7 @@ export default function RolesPage() {
                 {
                   label: 'Edit role',
                   icon: Pencil,
-                  permission: Permission.RolesWrite,
+                  route: 'PUT /api/v1/roles/{roleId}',
                   onClick: () => setEditRole(role),
                 },
                 {
@@ -242,7 +242,7 @@ export default function RolesPage() {
                   icon: Trash2,
                   destructive: true,
                   separatorBefore: true,
-                  permission: Permission.RolesDelete,
+                  route: 'DELETE /api/v1/roles/{roleId}',
                   onClick: () => {
                     setRoleToDelete(role)
                     setDeleteDialogOpen(true)
@@ -288,7 +288,7 @@ export default function RolesPage() {
           title="Roles"
           description="Roles bundle permissions; a user can hold several roles."
         >
-          <Can permission={Permission.RolesWrite}>
+          <Can route="POST /api/v1/roles">
             <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
               Create role
@@ -352,7 +352,7 @@ export default function RolesPage() {
                   title="No roles yet"
                   description="Create a role to grant a set of permissions to users."
                   action={
-                    <Can permission={Permission.RolesWrite}>
+                    <Can route="POST /api/v1/roles">
                       <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
                         <Plus className="me-2 h-4 w-4" />
                         Create role
