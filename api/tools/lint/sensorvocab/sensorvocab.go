@@ -26,10 +26,9 @@ import (
 // AllowedPaths are repo-relative path prefixes whose code may use the old
 // vocabulary.
 var AllowedPaths = map[string]string{
-	"pkg/sensorproto/legacyv1/": "the frozen protocol v1 / deprecated management path vocabulary lives here and only here",
+	"pkg/sensorproto/legacyv1/": "the pre-sensor environment variable names, read with a warning until they are retired",
 	"scripts/rename/":           "the rename tooling names the old vocabulary to find it",
 	"tools/lint/sensorvocab/":   "this guard",
-	"tests/compat/v1/":          "its own module, pinned to the last released sdk-go: it drives protocol v1 with the SDK's identifiers and must not change",
 }
 
 // AllowedIdents are identifiers that contain "agent" but do not mean a sensor.

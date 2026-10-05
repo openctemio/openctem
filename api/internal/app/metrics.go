@@ -16,13 +16,13 @@ var (
 
 // Command metrics
 var (
-	CommandsTotal    = metrics.CommandsTotal
-	CommandsExpired  = metrics.CommandsExpired
+	CommandsTotal   = metrics.CommandsTotal
+	CommandsExpired = metrics.CommandsExpired
 )
 
 // Scan metrics
 var (
-	ScansScheduled          = metrics.ScansScheduled
+	ScansScheduled = metrics.ScansScheduled
 )
 
 // Finding lifecycle metrics

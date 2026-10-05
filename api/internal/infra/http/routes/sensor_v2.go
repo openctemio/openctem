@@ -14,6 +14,12 @@ import (
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
+// Sensor self-renewal budget, per sensor: a burst of 5, then one every 2 minutes.
+const (
+	renewRatePerSecond = 1.0 / 120.0
+	renewBurst         = 5
+)
+
 // Per-sensor budgets of the v2 results routes, on top of the per-tenant
 // ingest rate. Writes: 10/s, burst 20 (a segmented report sends at most 4
 // segments in flight). Reads (status polls every Retry-After: 2 s, hello):
@@ -64,8 +70,9 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ct
 	commit := []Middleware{throttleWrite, middleware.BodyLimit(1 << 20)}
 
 	// Control plane (RFC-029): per-sensor budgets only (the per-tenant ingest
-	// budget is for report writes). Key renewal also takes v1's per-sensor
-	// renewal budget: it mints a credential each time.
+	// budget is for report writes). Key renewal also takes a per-sensor renewal
+	// budget (a burst of 5, then one every 2 minutes): it mints a credential each
+	// time, and a stolen key must not mint an unbounded set of fresh ones.
 	controlWrite := []Middleware{middleware.V2Throttle(nil, writeLimiter, nil, handler.SensorKey)}
 	controlRead := []Middleware{throttleRead}
 	renewLimiter := middleware.NewTelemetryRateLimiter(renewRatePerSecond, renewBurst, time.Hour, log)

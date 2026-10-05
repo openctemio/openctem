@@ -69,5 +69,5 @@
     }
   ],
   "excludedPaths": ["^src/lib/api/openapi/", "^src/lib/api/generated/"],
-  "excludedPathsReason": "The vendored OpenAPI spec and the types generated from it are copies of the API's spec, which still documents protocol v1 (/api/v1/agent/*, agent_id) on purpose. They change only by re-vendoring (npm run generate:api-types)."
+  "excludedPathsReason": "The vendored OpenAPI spec and the types generated from it are copies of the API's spec, which may name the user-agent header and historical values. They change only by re-vendoring (npm run generate:api-types)."
 }

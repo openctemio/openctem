@@ -17,9 +17,7 @@ import (
 // keyChainExempt lists allowlisted prefixes that are not mounted on a
 // key-capable chain (buildTokenTenantMiddlewares), with the reason.
 var keyChainExempt = map[string]string{
-	"/api/v1/agent/":              "sensor protocol v1: sensor-key auth only",
 	"/api/v2/sensor":              "sensor protocol v2: sensor authenticator only",
-	"/api/v1/agents":              "308 redirect to /api/v1/sensors",
 	"/scim/v2":                    "SCIM bearer token auth only",
 	"/api/v1/scim":                "SCIM bearer token auth only (token management is /api/v1/scim-tokens, denied)",
 	"/api/v1/mcp":                 "key-only endpoint (the MCP server)",

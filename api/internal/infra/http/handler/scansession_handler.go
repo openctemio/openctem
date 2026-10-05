@@ -16,7 +16,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -131,62 +130,6 @@ type RegisterScanResponse struct {
 	ScanURL       string `json:"scan_url,omitempty"`
 }
 
-// RegisterScan handles POST /api/v1/agent/scans
-// @Summary      Register scan session
-// @Description  Sensor registers a new scan session before starting a scan
-// @Tags         Sensor
-// @Accept       json
-// @Produce      json
-// @Param        request  body      RegisterScanRequest  true  "Scan registration data"
-// @Success      201  {object}  RegisterScanResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      401  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     ApiKeyAuth
-// @Router       /agent/scans [post]
-func (h *ScanSessionHandler) RegisterScan(w http.ResponseWriter, r *http.Request) {
-	agt := SensorFromContext(r.Context())
-	if agt == nil {
-		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
-		return
-	}
-
-	var req RegisterScanRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		apierror.BadRequest(err.Error()).WriteJSON(w)
-		return
-	}
-
-	output, err := h.service.RegisterScan(r.Context(), agt, app.RegisterScanInput{
-		ScannerName:    req.ScannerName,
-		ScannerVersion: req.ScannerVersion,
-		ScannerType:    req.ScannerType,
-		AssetType:      req.AssetType,
-		AssetValue:     req.AssetValue,
-		CommitSha:      req.CommitSha,
-		Branch:         req.Branch,
-	})
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	resp := RegisterScanResponse{
-		ScanID:        output.ScanID,
-		BaseCommitSha: output.BaseCommitSha,
-		ScanURL:       output.ScanURL,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
-}
-
 // UpdateScanSessionRequest represents the request to update a scan session.
 type UpdateScanSessionRequest struct {
 	Status             string         `json:"status" validate:"required,oneof=completed failed canceled"`
@@ -195,111 +138,6 @@ type UpdateScanSessionRequest struct {
 	FindingsNew        int            `json:"findings_new"`
 	FindingsFixed      int            `json:"findings_fixed"`
 	FindingsBySeverity map[string]int `json:"findings_by_severity"`
-}
-
-// UpdateScan handles PATCH /api/v1/agent/scans/{id}
-// @Summary      Update scan session
-// @Description  Sensor updates scan status after completion
-// @Tags         Sensor
-// @Accept       json
-// @Produce      json
-// @Param        id       path      string                    true  "Scan session ID"
-// @Param        request  body      UpdateScanSessionRequest  true  "Update data"
-// @Success      200  {object}  map[string]string
-// @Failure      400  {object}  apierror.Error
-// @Failure      401  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     ApiKeyAuth
-// @Router       /agent/scans/{id} [patch]
-func (h *ScanSessionHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
-	agt := SensorFromContext(r.Context())
-	if agt == nil {
-		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
-		return
-	}
-
-	scanID := chi.URLParam(r, "id")
-	if scanID == "" {
-		apierror.BadRequest("scan_id is required").WriteJSON(w)
-		return
-	}
-
-	var req UpdateScanSessionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		apierror.BadRequest(err.Error()).WriteJSON(w)
-		return
-	}
-
-	err := h.service.UpdateScanSession(r.Context(), agt, scanID, app.UpdateScanSessionInput{
-		Status:             req.Status,
-		ErrorMessage:       req.ErrorMessage,
-		FindingsTotal:      req.FindingsTotal,
-		FindingsNew:        req.FindingsNew,
-		FindingsFixed:      req.FindingsFixed,
-		FindingsBySeverity: req.FindingsBySeverity,
-	})
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
-}
-
-// GetScan handles GET /api/v1/agent/scans/{id}
-// @Summary      Get scan session (sensor)
-// @Description  Sensor retrieves scan session details
-// @Tags         Sensor
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Scan session ID"
-// @Success      200  {object}  legacyv1.ScanSession
-// @Failure      400  {object}  apierror.Error
-// @Failure      401  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     ApiKeyAuth
-// @Router       /agent/scans/{id} [get]
-func (h *ScanSessionHandler) GetScan(w http.ResponseWriter, r *http.Request) {
-	agt := SensorFromContext(r.Context())
-	if agt == nil {
-		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
-		return
-	}
-
-	// Platform sensors must have tenant context
-	if agt.TenantID == nil {
-		apierror.Forbidden(legacyv1.MsgJobContextRequired).WriteJSON(w)
-		return
-	}
-	tenantID := *agt.TenantID
-
-	scanID := chi.URLParam(r, "id")
-	if scanID == "" {
-		apierror.BadRequest("scan_id is required").WriteJSON(w)
-		return
-	}
-
-	session, err := h.service.GetScan(r.Context(), tenantID, scanID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	// A sensor reads only the sessions it registered (RFC-040 §5.3).
-	if session.SensorID == nil || !session.SensorID.Equals(agt.ID) {
-		apierror.NotFound("scan session").WriteJSON(w)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(legacyv1.NewScanSession(session))
 }
 
 // List handles GET /api/v1/scan-sessions (admin interface)

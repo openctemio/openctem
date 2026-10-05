@@ -16,12 +16,11 @@ import (
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
-// TestHeartbeatOutbox_StoredAndShown: a v1 heartbeat carrying the outbox block
+// TestHeartbeatOutbox_StoredAndShown: a heartbeat carrying the outbox block
 // stores it, GET /sensors/{id} and GET /sensors show it with outbox_warning,
-// a heartbeat without it leaves the snapshot untouched, and the heartbeat
-// response is the plain v1 one either way.
+// and a heartbeat without it leaves the snapshot untouched.
 func TestHeartbeatOutbox_StoredAndShown(t *testing.T) {
-	h := newV1Harness(t)
+	h := newSensorHarness(t)
 	sh := NewSensorHandler(
 		app.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop()),
 		validator.New(), logger.NewNop())
@@ -67,13 +66,9 @@ func TestHeartbeatOutbox_StoredAndShown(t *testing.T) {
 		t.Fatal("sensor missing from list")
 		return SensorResponse{}
 	}
-	const plainV1 = `{"agent_id":"<self>","status":"ok","tenant_id":"<tenant>"}` + "\n"
 	heartbeat := func(body map[string]any) {
 		t.Helper()
-		_, raw := h.do(http.MethodPost, "/api/v1/agent/heartbeat", body, true)
-		if got := h.mask(string(raw)); got != plainV1 {
-			t.Fatalf("heartbeat response changed: %q, want %q", got, plainV1)
-		}
+		h.heartbeat(body)
 	}
 
 	// Never reported: outbox is null, no warning.
