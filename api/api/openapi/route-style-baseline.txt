@@ -251,7 +251,6 @@ R6 GET /api/v1/tenants/{tenant}/members/stats
 R6 GET /api/v1/tenants/{tenant}/settings
 R6 GET /api/v1/tenants/{tenant}/settings/asset-identity
 R6 GET /api/v1/tenants/{tenant}/settings/asset-lifecycle
-R6 GET /api/v1/tenants/{tenant}/settings/asset-source
 R6 GET /api/v1/tenants/{tenant}/settings/modules
 R6 GET /api/v1/tenants/{tenant}/settings/modules/bundles
 R6 GET /api/v1/tenants/{tenant}/settings/modules/graph
@@ -285,7 +284,6 @@ R6 POST /api/v1/tenants/{tenant}/settings/risk-scoring/recalculate
 R6 POST /api/v1/tenants/{tenant}/users
 R6 POST /api/v1/tenants/{tenant}/users/{userId}/setup-link
 R6 PUT /api/v1/tenants/{tenant}/settings/asset-lifecycle
-R6 PUT /api/v1/tenants/{tenant}/settings/asset-source
 R7 GET /api/v1/invitations/{token}
 R7 GET /api/v1/invitations/{token}/preview
 R7 POST /api/v1/invitations/{token}/accept
@@ -307,7 +305,6 @@ R9 GET /api/v1/tenants/{tenant}/members/stats
 R9 GET /api/v1/tenants/{tenant}/settings
 R9 GET /api/v1/tenants/{tenant}/settings/asset-identity
 R9 GET /api/v1/tenants/{tenant}/settings/asset-lifecycle
-R9 GET /api/v1/tenants/{tenant}/settings/asset-source
 R9 GET /api/v1/tenants/{tenant}/settings/modules
 R9 GET /api/v1/tenants/{tenant}/settings/modules/bundles
 R9 GET /api/v1/tenants/{tenant}/settings/modules/graph
@@ -354,7 +351,6 @@ R9 POST /api/v1/validation/evidence
 R9 POST /api/v1/webhooks/incoming/github
 R9 POST /api/v1/webhooks/incoming/jira
 R9 PUT /api/v1/tenants/{tenant}/settings/asset-lifecycle
-R9 PUT /api/v1/tenants/{tenant}/settings/asset-source
 R9 PUT /api/v1/users/me
 R9 PUT /api/v1/users/me/preferences
 # The owner-approval routes for admin-console SSO changes (#827) landed under

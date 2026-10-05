@@ -2,7 +2,7 @@
 
 Organization (tenant) settings live in one JSONB column, `tenants.settings`.
 Each top-level key is a **section**: `general`, `security`, `branding`,
-`branch`, `ai`, `risk_scoring`, `pentest`, `asset_identity`, `asset_source`,
+`branch`, `ai`, `risk_scoring`, `pentest`, `asset_identity`,
 `asset_lifecycle`, `retest`. The key `subscribed_bundles` is written by the
 module bundle store. The data-scope policy is the separate column
 `tenants.members_without_group_see`.
@@ -69,7 +69,7 @@ Consequences:
 - `GET /tenants/{t}/settings` and every section `PATCH` that returns the full
   settings object carry `etags`: the entity tag of each section **as stored**
   (a hash of its canonical JSON).
-- Section `GET`/`PATCH` endpoints (`pentest`, `risk-scoring`, `asset-source`,
+- Section `GET`/`PATCH` endpoints (`pentest`, `risk-scoring`,
   `asset-lifecycle`, `asset-identity`, `/organization/settings/retest`, and the
   section `PATCH`es) also set the `ETag` response header for their section.
 - A section write may send `If-Match: <etag>`. When the section changed since,
@@ -140,7 +140,7 @@ change on their own (status, sync times, counters); header maps and the
 password in a URL's user info are never recorded.
 
 Every other section save (general, branding, branch, pentest, risk scoring,
-asset source/lifecycle/identity, retest) keeps its action and severity and
+asset lifecycle/identity, retest) keeps its action and severity and
 now carries the diff too.
 
 ## Tests

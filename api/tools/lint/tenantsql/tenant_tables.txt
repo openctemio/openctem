@@ -47,7 +47,6 @@ control_tests
 credentials
 ct_monitor_state
 ctem_cycles
-data_sources
 definition_identifiers
 definition_relations
 definition_taxonomy
@@ -102,10 +101,6 @@ report_schedules
 risk_snapshots
 role_permissions_admin_only_stripped
 roles
-rule_bundles
-rule_overrides
-rule_sources
-rules
 runtime_telemetry_events
 saml_providers
 saved_views
