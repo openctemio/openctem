@@ -2153,6 +2153,14 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// auto-provisioning gate — a non-member is auto-joined only when the email
 	// domain is DNS-verified for the tenant (see SSOService.jitProvisioningAllowed).
 	s.DomainVerify = domainverify.NewService(repos.VerifiedDomain, domainverify.NewNetResolver(), log)
+	// Tenant verification checks: 10 per organization per hour across
+	// replicas (Redis), the in-process window on a Redis error.
+	if redisClient != nil {
+		if rl, err := redis.NewRateLimiter(redisClient, "easm_domain_verify", domainverify.MaxEASMVerifyPerHour, time.Hour, log); err == nil {
+			s.DomainVerify.SetVerifyLimiter(&redisVerifyLimiter{rl: rl,
+				fallback: domainverify.NewWindowLimiter(domainverify.MaxEASMVerifyPerHour, time.Hour)})
+		}
+	}
 	s.SSO.SetDomainVerifier(s.DomainVerify)
 	// SCIM attaches an EXISTING account only on a domain the organization has
 	// DNS-verified; anyone else must be invited (their consent).
@@ -2401,6 +2409,21 @@ func connectorScansIfEnabled(c *tenablesc.Service) scan.ConnectorScans {
 		return nil
 	}
 	return c
+}
+
+// redisVerifyLimiter counts tenant domain-verification checks in Redis, and
+// in-process when Redis fails (never unlimited).
+type redisVerifyLimiter struct {
+	rl       *redis.RateLimiter
+	fallback *domainverify.WindowLimiter
+}
+
+func (l *redisVerifyLimiter) Allow(ctx context.Context, tenantID shared.ID) (bool, error) {
+	res, err := l.rl.Allow(ctx, "tenant:"+tenantID.String())
+	if err != nil || res == nil {
+		return l.fallback.Allow(ctx, tenantID)
+	}
+	return res.Allowed, nil
 }
 
 // easmRecheck is the default re-check window of the EASM sweeps for an

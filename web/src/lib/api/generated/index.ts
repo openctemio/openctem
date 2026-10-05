@@ -176,6 +176,8 @@ export type EASMReviewPage =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']
 export type EASMReviewItem =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewItem']
+export type EASMVerifiedDomain = Schemas['internal_infra_http_handler.EASMVerifiedDomain']
+export type EASMVerifiedDomainList = Schemas['internal_infra_http_handler.EASMVerifiedDomainList']
 export type EASMReviewEvidence =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence']
 /** POST /api/v1/easm/candidates/decisions */
