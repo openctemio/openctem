@@ -82,7 +82,11 @@ export function MemberAccessReportView({
           </DetailSection>
         </>
       )}
-      <DetailSection title="Owned schedules" icon={CalendarClock} count={ownedScheduleCount(report)}>
+      <DetailSection
+        title="Owned schedules"
+        icon={CalendarClock}
+        count={ownedScheduleCount(report)}
+      >
         <DetailChipList chips={schedules} label="Owned schedules" />
       </DetailSection>
       <DetailStatGrid aria-label="Owned work">

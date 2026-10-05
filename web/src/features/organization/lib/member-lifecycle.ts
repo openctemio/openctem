@@ -8,11 +8,7 @@
  */
 
 import { ApiClientError } from '@/lib/api/error-handler'
-import type {
-  MemberAccessReport,
-  MemberStatus,
-  OffboardMemberInput,
-} from '../types/member.types'
+import type { MemberAccessReport, MemberStatus, OffboardMemberInput } from '../types/member.types'
 
 /** A category of owned work an offboarding must hand to someone else. */
 export type OffboardCategory = 'schedules' | 'findings' | 'assets'

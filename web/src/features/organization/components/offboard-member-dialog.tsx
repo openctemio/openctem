@@ -168,8 +168,8 @@ export function OffboardMemberDialog({
 
         {serverMissing.length > 0 && (
           <DetailCallout tone="warning" title="Something still needs a new owner">
-            {serverMissing.map((c) => OFFBOARD_CATEGORY_LABEL[c]).join(', ')}. Their holdings changed
-            while this dialog was open; choose a new owner and try again.
+            {serverMissing.map((c) => OFFBOARD_CATEGORY_LABEL[c]).join(', ')}. Their holdings
+            changed while this dialog was open; choose a new owner and try again.
           </DetailCallout>
         )}
 
