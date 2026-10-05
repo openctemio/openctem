@@ -522,12 +522,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.CIRead,
     module: Module.Scans,
   },
-  // /runners renders the same sensor/runner inventory as /sensors (typeFilter)
-  // — mirror its guard so it isn't left fail-open.
-  '/runners': {
-    permission: Permission.SensorsRead,
-    module: Module.Sensors,
-  },
   '/settings/scanning/profiles': {
     permission: Permission.ScanProfilesRead,
     module: Module.Scans,

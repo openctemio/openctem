@@ -13,7 +13,7 @@ asset-source priority design that keyed on them (RFC-003, withdrawn; see
 
 | Channel | Direction | Identity | Where it is configured |
 |---|---|---|---|
-| Sensor (scanner, collector, runner) | push, protocol v2 `/api/v2/sensor/*` | per-sensor key, tenant taken from the key | Sensors ([sensors.md](./sensors.md)) |
+| Sensor (scanner, collector) | push, protocol v2 `/api/v2/sensor/*` | per-sensor key, tenant taken from the key | Sensors ([sensors.md](./sensors.md)) |
 | Integration (SCM, cloud, ticketing, vulnerability-management connectors) | pull, server side | per-tenant encrypted credentials | Integrations |
 | Import (file upload, CTIS / SARIF) | push through the API | user or `oct_` API key | Assets and findings import |
 | Manual | UI / API | user | — |

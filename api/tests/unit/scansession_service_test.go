@@ -282,7 +282,7 @@ func newTestScanSessionService() (*scan.ScanSessionService, *scanSessionMockRepo
 }
 
 func newTestSensorWithTenant(tenantID shared.ID) *sensor.Sensor {
-	agt, _ := sensor.NewSensor(tenantID, "test-sensor", sensor.SensorTypeRunner, "test", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeStandalone)
+	agt, _ := sensor.NewSensor(tenantID, "test-sensor", sensor.SensorTypeWorker, "test", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeStandalone)
 	return agt
 }
 

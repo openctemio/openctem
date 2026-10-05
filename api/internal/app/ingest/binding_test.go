@@ -73,7 +73,7 @@ func TestAlterScopeCoverage(t *testing.T) {
 
 func TestRoleMayPushUnsolicited(t *testing.T) {
 	for typ, want := range map[sensor.SensorType]bool{
-		sensor.SensorTypeRunner: true, sensor.SensorTypeCollector: true,
+		"runner": false, sensor.SensorTypeCollector: true,
 		sensor.SensorTypeWorker: false, sensor.SensorTypeEASM: false, "": false,
 	} {
 		if got := RoleMayPushUnsolicited(typ); got != want {

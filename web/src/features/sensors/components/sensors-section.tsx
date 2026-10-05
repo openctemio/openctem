@@ -109,7 +109,7 @@ import {
   type SensorPolicyFilter,
 } from '../lib/fleet'
 
-type SensorTypeFilter = 'runner' | 'worker' | 'collector' | 'sensor'
+type SensorTypeFilter = 'worker' | 'collector' | 'sensor'
 
 interface SensorsSectionProps {
   typeFilter?: SensorTypeFilter

@@ -34,9 +34,11 @@ CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs 
 - **R-1** One binary, one SDK. The sensor's one-shot mode is the **runner**
   mode; the OIDC exchange lives in the SDK kit (sdk-go `pkg/sensorkit`), next
   to the runner entry point.
-- **R-2** CI authenticates by OIDC federation; a sensor API key used by a
-  `runner`-type sensor still works but every response carries
-  `Deprecation` and a `Link` to the exchange endpoint.
+- **R-2** CI authenticates by OIDC federation only. The `runner` sensor
+  type (a sensor API key used from CI) was deprecated, then removed (owner
+  decision 2026-10-05, migration `001114`): existing runner sensors and their
+  keys are deleted, the type is refused, and the CI ingest path submits
+  reports as a CI run (`ingest.ProducerCIRun`), never as a sensor.
 - **R-3** Runs are attached to the repository asset; they are never sensors.
 - **R-4** The verdict comes from a central policy: new findings only (compared
   with the default branch) by default, accepted risk honored, secrets always

@@ -336,7 +336,7 @@ describe('SensorDetailSheet', () => {
 
     it('a CI sensor has no job slots', () => {
       open({
-        sensor: { ...healthy, type: 'runner', execution_mode: 'standalone', tools: ['semgrep'] },
+        sensor: { ...healthy, type: 'worker', execution_mode: 'standalone', tools: ['semgrep'] },
       })
       const stats = screen.getByLabelText('Key numbers')
       expect(within(stats).queryByText('Jobs running')).toBeNull()

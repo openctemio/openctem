@@ -20,7 +20,7 @@ func newIdentitySensor(t *testing.T) (*sensorSvcMockRepo, *app.SensorService, *a
 	repo := newSensorSvcMockRepo()
 	svc := newSensorSvcTestService(repo)
 	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
-		TenantID: shared.NewID().String(), Name: "identity-sensor", Type: "runner",
+		TenantID: shared.NewID().String(), Name: "identity-sensor", Type: "worker",
 	})
 	if err != nil {
 		t.Fatalf("create sensor: %v", err)
