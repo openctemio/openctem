@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import { useTenant } from '@/context/tenant-provider'
 import { useDashboardStats } from '@/features/dashboard'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
@@ -24,10 +25,16 @@ import {
   CoverageHygiene,
   CtemMaturityCard,
 } from '@/features/dashboard/components/ctem'
-import { AnalystDetail } from '@/features/dashboard/components/analyst-detail'
 import { useScopingSummary } from '@/features/scoping/api'
 import { readinessRows, readinessScore, visibleReadiness } from '@/features/scoping/readiness'
 import { useNavItemAccess } from '@/lib/permissions'
+
+// The analyst charts sit below the fold and are recharts-heavy: load them after
+// the action-first cards instead of in the dashboard's first-load JS.
+const AnalystDetail = dynamic(
+  () => import('@/features/dashboard/components/analyst-detail').then((m) => m.AnalystDetail),
+  { ssr: false }
+)
 
 /**
  * The CTEM action-first main dashboard. Self-contained: it fetches its own
