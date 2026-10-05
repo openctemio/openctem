@@ -69,7 +69,7 @@ func newChangeAuditHarness(t *testing.T) *authzPolicyHarness {
 	cfg.Auth.Provider = config.AuthProviderLocal
 
 	scope := handler.NewScopeHandler(scopeapp.NewService(postgres.NewScopeTargetRepository(db),
-		postgres.NewScopeExclusionRepository(db), postgres.NewScopeScheduleRepository(db),
+		postgres.NewScopeExclusionRepository(db),
 		postgres.NewAssetRepository(db), log), v, log)
 	scope.SetAuditService(auditSvc)
 	templates := handler.NewScannerTemplateHandler(
