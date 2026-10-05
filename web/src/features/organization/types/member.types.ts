@@ -145,7 +145,7 @@ export const STATUS_DISPLAY: Record<
 > = {
   active: { label: 'Active', color: 'text-green-400', bgColor: 'bg-green-500/20' },
   pending: { label: 'Pending', color: 'text-yellow-400', bgColor: 'bg-yellow-500/20' },
-  suspended: { label: 'Disabled', color: 'text-orange-400', bgColor: 'bg-orange-500/20' },
+  suspended: { label: 'Disabled', color: 'text-warning', bgColor: 'bg-warning/15' },
   offboarded: { label: 'Offboarded', color: 'text-muted-foreground', bgColor: 'bg-muted' },
 }
 
