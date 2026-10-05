@@ -259,6 +259,42 @@ behind a "Show all" link, and the filter panel has an Attribution facet.
 Code: `web/src/features/attack-surface/components/easm-review-queue.tsx`,
 `web/src/features/assets/lib/inventory-url.ts` (`attributionQuery`).
 
+## 4c. Alerts (built, P0-7)
+
+EASM exposures reach the notification outbox (research/22 P0-7, owner
+decision E4). The CT monitor, the DNS checks and takeover confirmation write
+exposures through `postgres.EASMExposureWriter`; the DNS checks' reopen goes
+through `EASMDNSRepository.ReopenAuto`. Both enqueue in **the same
+transaction** as the exposure write, and only for rows that were **inserted**
+(`xmax = 0` on the upsert) or **reopened** by the check. A re-sighting
+announces nothing; a rollback leaves neither row.
+
+| Exposure | Alert |
+|---|---|
+| Asset rejected ("Not ours") or deleted | never |
+| Medium or higher on an approved asset (confirmed, dependency, or no record) | `new_exposure` now, one per exposure (`aggregate_type` `exposure`, URL `/exposures/{id}`) |
+| Low or info; asset `needs_review`/`candidate` (labeled `unverified`) or `monitor_only`; exposure linked to no asset (`unlinked`) | the tenant's daily digest |
+| Immediate alerts past 30 per tenant per rolling hour | the digest, counted as `throttled` |
+
+The **digest** is one `notification_outbox` row per tenant and day
+(`aggregate_type` `easm_digest`, due at 08:00 UTC, unique while pending:
+`uq_notification_outbox_easm_digest`, migration `001014`). Each digest-class
+exposure updates it: exact count, counts by severity and by attribution
+label, up to 25 named items, the highest severity. It goes out as
+`new_exposure` like the immediate alerts, so integrations that receive
+`new_exposure` (a default-enabled type) get EASM alerts with no setup, and
+their severity filter applies.
+
+Payload metadata: `channel` `easm`, `exposure_id`, `event_type`, `severity`,
+`source` (`cert_transparency`, `easm_dns`), `attribution` (state or label),
+`reason` (`new`/`reopened`), `asset_id`/`asset_name`, `fingerprint`.
+
+**Tenant isolation.** The alerter loads exposures with the tenant id in the
+query, so ids of another tenant announce nothing; the throttle counter
+(`easm_alert_throttle`) and the digest are per tenant. The throttle row is
+locked for the transaction, which serializes one tenant's alert writes.
+Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_test.go`.
+
 ## 4d. Verified domains (built, P0-10)
 
 A tenant member with `scope:write` verifies a domain with the DNS TXT flow
@@ -282,6 +318,7 @@ Redis error), and every change is audited high. Rows are per tenant, so two
 organizations may verify the same domain and neither learns of the other.
 The 12-hour re-check marks a lost record `failed`, and names under it stop
 auto-confirming.
+||||||| 581f55743
 
 ## 5. Data model (planned)
 

@@ -36,7 +36,7 @@ import {
 import { toast } from 'sonner'
 import { useSWRConfig } from 'swr'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission, isHiddenReleaseStatus } from '@/lib/permissions'
+import { Can, isHiddenReleaseStatus } from '@/lib/permissions'
 import {
   useTenantModules,
   useUpdateTenantModules,
@@ -376,7 +376,7 @@ export default function ModuleManagementPage() {
   return (
     <Main>
       <PageHeader title="Modules" description={PAGE_DESCRIPTION}>
-        <Can permission={Permission.TeamUpdate}>
+        <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
           <Button
             variant="outline"
             size="sm"
@@ -414,7 +414,7 @@ export default function ModuleManagementPage() {
           selection. This replaces the old one-shot "apply a preset" flow,
           which overwrote the config and duplicated this exact catalog. The
           manual toggles below layer on top as non-destructive overrides. */}
-      <Can permission={Permission.TeamUpdate}>
+      <Can route="POST /api/v1/tenants/{tenant}/settings/modules/bundles">
         <BundleSubscriptionCard tenantId={tenantId} onChanged={() => mutate()} />
       </Can>
 
@@ -538,7 +538,7 @@ export default function ModuleManagementPage() {
           Save sits in a bar pinned to the bottom of the content column, shown
           only while there are unsaved changes. */}
       {isDirty && (
-        <Can permission={Permission.TeamUpdate}>
+        <Can route="PATCH /api/v1/tenants/{tenant}/settings/modules">
           <div className="sticky bottom-4 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-lg">
             <div className="text-sm tabular-nums text-muted-foreground">
               {[

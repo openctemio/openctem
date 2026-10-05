@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/template"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	ts "github.com/openctemio/openctem/api/pkg/domain/templatesource"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,6 +21,7 @@ import (
 
 // TemplateSourceHandler handles HTTP requests for template sources.
 type TemplateSourceHandler struct {
+	configAuditor
 	service   *template.SourceService
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -173,6 +175,9 @@ func (h *TemplateSourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	created := toTemplateSourceResponse(source)
+	h.recordChange(r, h.logger, auditdom.ActionRuleSourceCreated, auditdom.ResourceTypeTemplateSource, created.ID, created.Name,
+		nil, created, auditdom.SeverityMedium, "Template source created")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -348,11 +353,18 @@ func (h *TemplateSourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Audit:           h.buildAuditContext(r),
 	}
 
+	var before any
+	if prev, gerr := h.service.GetSource(r.Context(), input.TenantID, input.SourceID); gerr == nil {
+		before = toTemplateSourceResponse(prev)
+	}
 	source, err := h.service.UpdateSource(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	updated := toTemplateSourceResponse(source)
+	h.recordChange(r, h.logger, auditdom.ActionRuleSourceUpdated, auditdom.ResourceTypeTemplateSource, updated.ID, updated.Name,
+		before, updated, auditdom.SeverityMedium, "Template source updated")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toTemplateSourceResponse(source))
@@ -380,10 +392,18 @@ func (h *TemplateSourceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	tenantID := middleware.GetTenantID(r.Context())
 
+	var before any
+	name := ""
+	if prev, gerr := h.service.GetSource(r.Context(), tenantID, sourceID); gerr == nil {
+		view := toTemplateSourceResponse(prev)
+		before, name = view, view.Name
+	}
 	if err := h.service.DeleteSource(r.Context(), tenantID, sourceID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordChange(r, h.logger, auditdom.ActionRuleSourceDeleted, auditdom.ResourceTypeTemplateSource, sourceID, name,
+		before, nil, auditdom.SeverityMedium, "Template source deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -415,6 +435,8 @@ func (h *TemplateSourceHandler) Enable(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordChange(r, h.logger, auditdom.ActionRuleSourceUpdated, auditdom.ResourceTypeTemplateSource, sourceID, source.Name,
+		map[string]any{"enabled": false}, map[string]any{"enabled": true}, auditdom.SeverityMedium, "Template source enabled")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toTemplateSourceResponse(source))
@@ -447,6 +469,8 @@ func (h *TemplateSourceHandler) Disable(w http.ResponseWriter, r *http.Request) 
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordChange(r, h.logger, auditdom.ActionRuleSourceUpdated, auditdom.ResourceTypeTemplateSource, sourceID, source.Name,
+		map[string]any{"enabled": true}, map[string]any{"enabled": false}, auditdom.SeverityMedium, "Template source disabled")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toTemplateSourceResponse(source))

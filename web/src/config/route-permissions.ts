@@ -587,10 +587,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SLARead,
     module: Module.Sla,
   },
+  // Readable by anyone with pentest access; the page itself is read-only
+  // unless the caller may PATCH the settings (organization administrators).
   '/settings/pentest': {
-    permission: Permission.PentestWrite,
+    permission: Permission.PentestRead,
     module: Module.Pentest,
-    message: 'You need pentest write access to manage pentest settings.',
   },
   '/settings/members': {
     permission: Permission.MembersRead,

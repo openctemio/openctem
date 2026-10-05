@@ -101,6 +101,21 @@ Severity follows what the change does, not which endpoint it came through:
 | SCIM token revoked | Medium |
 | evidence storage configuration (`storage_config.updated`, keys redacted) | High |
 | invitation canceled or declined (`invitation.deleted`), resent (`invitation.resent`) | Low |
+| integration created / enabled / disabled / plain update | Medium |
+| integration update that changes credentials (`integration.credentials_changed`) or a URL | High |
+| integration deleted | High |
+| Jira/GitHub inbound webhook secret read (the response carries it) or rotated | High |
+| pending notification deleted from the outbox / retried | Medium / Low |
+| SLA policy created or updated | Medium; High when any window got longer |
+| SLA policy deleted | High |
+| priority rule created / updated / deleted (re-classifies findings) | High |
+| scope rule created / updated / deleted (changes what members see) | High |
+| assignment rule created / updated / deleted | Medium |
+| template source created / updated / enabled / disabled / deleted | Medium |
+
+Integration diffs are taken from the redacted API view, without fields that
+change on their own (status, sync times, counters); header maps and the
+password in a URL's user info are never recorded.
 
 Every other section save (general, branding, branch, pentest, risk scoring,
 asset source/lifecycle/identity, retest) keeps its action and severity and
@@ -122,3 +137,6 @@ now carries the diff too.
 - `internal/app/tenant/settings_audit_db_test.go`, `internal/infra/http/handler/scim_token_audit_db_test.go`,
   `internal/infra/http/handler/storage_config_audit_db_test.go` (Postgres): one
   audit row per change with actor, diff and severity; no secret in the row.
+- `internal/infra/http/handler/config_audit_db_test.go` (Postgres): priority
+  rule create/update/delete rows (High, actor, diff); SLA and integration
+  severity/view rules.

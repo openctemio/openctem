@@ -24,7 +24,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import {
   Plus,
   Bell,
@@ -48,6 +48,8 @@ import {
 import type { Integration } from '@/features/integrations'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { ALL_NOTIFICATION_SEVERITIES } from '@/features/integrations/types/integration.types'
+import { coversAllSeverities } from '@/features/notifications/lib/notification-filters'
+import { notificationChannelsOnly } from '@/features/integrations/lib/integration-routing'
 import {
   useTenantEventTypes,
   labelEventTypes,
@@ -171,7 +173,9 @@ export default function NotificationIntegrationsPage() {
   // Handle the API response format
   const integrations = useMemo(() => {
     if (!integrationsData) return []
-    return integrationsData.data ?? []
+    // SIEM destinations (Splunk) are managed on the SIEM page; this page's
+    // edit dialog would overwrite their HEC token with a webhook URL.
+    return notificationChannelsOnly(integrationsData.data ?? [])
   }, [integrationsData])
 
   // Calculate stats
@@ -322,14 +326,9 @@ export default function NotificationIntegrationsPage() {
                 <TooltipTrigger asChild>
                   <div className="flex gap-1 flex-wrap cursor-default">
                     {(() => {
-                      // null/undefined means no filter = all severities
-                      // empty array also means all severities
-                      // 5+ severities (accounting for legacy data missing 'medium') = all severities
-                      const severities = ext?.enabled_severities
-                      const isAllSeverities =
-                        !severities ||
-                        severities.length === 0 ||
-                        severities.length >= ALL_NOTIFICATION_SEVERITIES.length - 1
+                      // "All" only when every real severity is enabled.
+                      const severities = ext?.enabled_severities ?? []
+                      const isAllSeverities = coversAllSeverities(severities)
                       if (isAllSeverities) {
                         return <span className="text-xs text-muted-foreground">All severities</span>
                       }
@@ -369,11 +368,8 @@ export default function NotificationIntegrationsPage() {
                   <p className="text-xs font-medium mb-1">Severity filters:</p>
                   <p className="text-xs text-muted-foreground">
                     {(() => {
-                      const severities = ext?.enabled_severities
-                      const isAllSeverities =
-                        !severities ||
-                        severities.length === 0 ||
-                        severities.length >= ALL_NOTIFICATION_SEVERITIES.length - 1
+                      const severities = ext?.enabled_severities ?? []
+                      const isAllSeverities = coversAllSeverities(severities)
                       if (isAllSeverities) {
                         // Show actual list of all severities
                         return ALL_NOTIFICATION_SEVERITIES.map((s) => s.label).join(', ')
@@ -470,12 +466,13 @@ export default function NotificationIntegrationsPage() {
               label: 'Send test',
               icon: Send,
               onClick: () => void handleTestNotification(integration),
+              route: 'POST /api/v1/integrations/{id}/test-notification',
             },
             {
               label: 'Edit',
               icon: Pencil,
               onClick: () => handleEditClick(integration),
-              permission: Permission.NotificationsWrite,
+              route: 'PUT /api/v1/integrations/{id}/notification',
             },
             {
               label: 'View events',
@@ -484,7 +481,7 @@ export default function NotificationIntegrationsPage() {
                 router.push(
                   `/settings/integrations/notifications/history?integration=${integration.id}`
                 ),
-              permission: Permission.IntegrationsManage,
+              route: 'PUT /api/v1/integrations/{id}',
             },
             {
               label: 'Delete',
@@ -492,7 +489,7 @@ export default function NotificationIntegrationsPage() {
               onClick: () => handleDeleteClick(integration),
               destructive: true,
               separatorBefore: true,
-              permission: Permission.NotificationsDelete,
+              route: 'DELETE /api/v1/integrations/{id}',
             },
           ]
           return <DataTableRowActions actions={actions} />
@@ -524,7 +521,7 @@ export default function NotificationIntegrationsPage() {
           title="Notification channels"
           description="Send security alerts to Slack, Microsoft Teams, Telegram and custom webhooks."
         >
-          <Can permission={Permission.IntegrationsManage}>
+          <Can route="PUT /api/v1/integrations/{id}">
             <Button
               variant="outline"
               size="sm"
@@ -542,7 +539,7 @@ export default function NotificationIntegrationsPage() {
               Queue
             </Button>
           </Can>
-          <Can permission={Permission.NotificationsWrite}>
+          <Can route="POST /api/v1/integrations/notifications">
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
               Add channel
@@ -570,7 +567,7 @@ export default function NotificationIntegrationsPage() {
                   title="No notification channels"
                   description="Add Slack, Microsoft Teams, Telegram, or webhook integrations to receive security alerts."
                   action={
-                    <Can permission={Permission.NotificationsWrite}>
+                    <Can route="POST /api/v1/integrations/notifications">
                       <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                         <Plus className="me-2 h-4 w-4" />
                         Add channel
