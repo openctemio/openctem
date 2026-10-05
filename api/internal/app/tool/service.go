@@ -170,9 +170,13 @@ func (s *Service) GetToolByName(ctx context.Context, tenantID, name string) (*to
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
 	}
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	// No tenant (platform-only caller): platform tools only.
+	var tid shared.ID
+	if tenantID != "" {
+		var err error
+		if tid, err = shared.IDFromString(tenantID); err != nil {
+			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+		}
 	}
 	return s.toolRepo.GetByName(ctx, tid, name)
 }

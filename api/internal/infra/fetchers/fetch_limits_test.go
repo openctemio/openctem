@@ -32,7 +32,7 @@ func TestHTTPFetch_StopsAtSizeLimit(t *testing.T) {
 	}
 }
 
-// A clone that grows past the cap is cancelled (settings audit SC-M2: the
+// A clone that grows past the cap is canceled (settings audit SC-M2: the
 // clone lands on the API server's disk).
 func TestCloneWithSizeCap_AbortsOversizedClone(t *testing.T) {
 	oldMax, oldPoll := maxCloneBytes, cloneSizePoll
@@ -51,7 +51,7 @@ func TestCloneWithSizeCap_AbortsOversizedClone(t *testing.T) {
 			case <-time.After(20 * time.Millisecond):
 			}
 			if i > 200 {
-				return nil, errors.New("clone was never cancelled")
+				return nil, errors.New("clone was never canceled")
 			}
 		}
 	}

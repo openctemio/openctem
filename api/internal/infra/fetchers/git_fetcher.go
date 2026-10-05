@@ -61,7 +61,7 @@ func dirSize(dir string) int64 {
 }
 
 // cloneWithSizeCap runs clone while watching the target directory; once it
-// grows past maxCloneBytes the clone is cancelled and ErrRepositoryTooLarge
+// grows past maxCloneBytes the clone is canceled and ErrRepositoryTooLarge
 // returned.
 func cloneWithSizeCap(ctx context.Context, dir string, clone func(context.Context) (*git.Repository, error)) (*git.Repository, error) {
 	cctx, cancel := context.WithCancel(ctx)

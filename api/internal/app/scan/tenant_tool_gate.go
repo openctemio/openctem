@@ -15,7 +15,7 @@ type TenantToolConfigs interface {
 	GetByTenantAndTool(ctx context.Context, tenantID, toolID shared.ID) (*tool.TenantToolConfig, error)
 }
 
-// WithTenantToolConfigs makes trigger-time validation honour an
+// WithTenantToolConfigs makes trigger-time validation honor an
 // organization's "disabled" switch on a tool (settings decision B10). Before,
 // the switch was stored but a disabled tool was still dispatched.
 func WithTenantToolConfigs(c TenantToolConfigs) ServiceOption {
