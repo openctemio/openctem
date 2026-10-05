@@ -415,10 +415,14 @@ func registerEASMSettingsRoutes(
 	moduleGate Middleware,
 ) {
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
-	router.Group("/api/v1/easm", func(r Router) {
-		r.GET("/settings", h.Get, middleware.Require(permission.SettingsRead))
-		r.PUT("/settings", h.Update, middleware.Require(permission.SettingsWrite))
-		r.POST("/sweeps", h.RunNow, middleware.Require(permission.ScopeWrite))
+	// Own sub-paths: registerEASMRoutes already mounts /api/v1/easm, and chi
+	// panics when the same path is mounted twice.
+	router.Group("/api/v1/easm/settings", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
+		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/easm/sweeps", func(r Router) {
+		r.POST("/", h.RunNow, middleware.Require(permission.ScopeWrite))
 	}, tenantMiddlewares...)
 }
 
