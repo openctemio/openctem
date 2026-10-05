@@ -64,7 +64,7 @@ graph TD
 - `ci_runs`: per tenant, composite FK to the tenant's repository asset
   (cascade). Token hash (unique) and expiry; verdict and its JSON detail; the
   provider's run id, attempt and job id (`external_job_id`, migration
-  `001110`) from the verified claims.
+  `001118`) from the verified claims.
 - `ci_run_findings`: `(run_id, fingerprint)`; the gate joins it to `findings`
   of the run's asset.
 - `ci_oidc_replay`: `(issuer, jti)`, global.
