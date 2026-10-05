@@ -1,6 +1,6 @@
 package postgres
 
-// Sensor refusals of a command (research/25 §3.6, D8; migration 001035):
+// Sensor refusals of a command (research/25 §3.6, D8; migration 001046):
 // the refusals recorded on a command, the re-queue that excludes the
 // refuser, and the sensors that could still take the command.
 
