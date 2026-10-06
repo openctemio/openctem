@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Reactions on a comment, Slack / GitHub style: pills under the body (emoji +
+ * Reactions on a comment, pills under the body (emoji +
  * count, highlighted when you reacted, click to toggle, names on hover), a
  * trailing "+" pill, and the lazy emoji picker both of them open.
  */

@@ -734,7 +734,7 @@ func heartbeatDoorbellConfig(cfg *config.Config) app.DoorbellConfig {
 	case sc.KeyRenewBefore > 0:
 		c.KeyRenewBefore = sc.KeyRenewBefore
 	case sc.KeyTTL > 0:
-		// Kubelet-style: renew at half-life.
+		// Renew at half-life.
 		c.KeyRenewBefore = sc.KeyTTL / 2
 	}
 	return c.Normalized(offlineMark(cfg.Worker.HeartbeatTimeout))

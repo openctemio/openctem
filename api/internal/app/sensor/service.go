@@ -1190,7 +1190,7 @@ func (s *SensorService) RegenerateAPIKey(ctx context.Context, tenantID, sensorID
 // RenewAPIKey lets an already-authenticated sensor rotate its own credential.
 //
 // Unlike RegenerateAPIKey (an admin action, tenant+id scoped), this is the
-// self-service, kubelet-style renewal a sensor drives itself: it presents its
+// self-service renewal a sensor drives itself: it presents its
 // current key, gets authenticated by AuthenticateIdentity upstream, and calls
 // this with that identity to mint a fresh one. The identity says which
 // credential was presented (the inline key or a sensor_api_keys row).
