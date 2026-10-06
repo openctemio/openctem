@@ -7,7 +7,7 @@
 --    Deleting a configuration keeps the runs and pipelines as history
 --    (ON DELETE SET NULL on trust_config_id only). The constraints are added
 --    NOT VALID here (no table scan under this transaction's lock) and
---    validated by 001140. A cross-tenant reference cannot be written by the
+--    validated by 001145. A cross-tenant reference cannot be written by the
 --    application; any that exists is cleared first (it names nothing the row's
 --    tenant owns).
 -- 2. ci_gate_policies: the polymorphic scope_id becomes repository_asset_id

@@ -1,6 +1,6 @@
 package integration
 
-// CI data model (migration 001139, docs/rfcs/RFC-051-ci-runner-identity-and-gate.md
+// CI data model (migration 001144, docs/rfcs/RFC-051-ci-runner-identity-and-gate.md
 // "Data model"): gate policies reference their repository or business unit
 // with foreign keys and follow a merged repository; trust-configuration
 // references carry the tenant; break-glass stores no email; retention.
