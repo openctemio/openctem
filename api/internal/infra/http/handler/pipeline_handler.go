@@ -26,6 +26,9 @@ type PipelineHandler struct {
 	service   *pipelinesvc.Service
 	validator *validator.Validator
 	logger    *logger.Logger
+	// taskLogs reads a run task's logs (nil: GET .../tasks/{task_id}/logs
+	// answers an empty log).
+	taskLogs taskLogReader
 }
 
 // NewPipelineHandler creates a new PipelineHandler.

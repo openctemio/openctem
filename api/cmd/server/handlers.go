@@ -15,8 +15,10 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -102,6 +104,14 @@ func WireAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
 	}
 }
 
+// newPipelineHandler builds the pipeline handler with the run page's task
+// logs (RFC-029 §4.4.1).
+func newPipelineHandler(svc *pipelinesvc.Service, logs *commandlog.Service, v *validator.Validator, log *logger.Logger) *handler.PipelineHandler {
+	h := handler.NewPipelineHandler(svc, v, log)
+	h.SetTaskLogs(logs)
+	return h
+}
+
 // NewHandlers creates all HTTP handlers.
 func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	cfg := deps.Config
@@ -134,6 +144,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetZoneLister(repos.ScanZone)
+	sensorHandler.SetGrantService(svc.SensorGrant)
 	commandHandler.SetPipelineService(svc.Pipeline)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
@@ -143,6 +154,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Continuous retest (RFC-039): a retest check's evidence is recorded
 	// advisory-only and its retest settled when the sensor completes or fails it.
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
+	// Per-task logs from sensors (RFC-029 §4.4.1), shown on the run page.
+	commandLogs := commandlog.NewService(repos.CommandLog)
+	commandHandler.SetCommandLogs(commandLogs)
 	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
 	// Sensor authentication and the services the protocol v2 control handler
@@ -150,10 +164,20 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Sensor, log)
 	// Heartbeat doorbell (RFC-023 §9.2a): the heartbeat tells a sensor that
 	// work is waiting and when to ring again. One cheap query per heartbeat.
-	ingestHandler.SetDoorbell(app.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log))
+	doorbell := app.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log)
+	// Gated actions (rotate_key) ring only when the sensor's grant lists
+	// them (RFC-052 §5.3).
+	doorbell.SetGrants(repos.SensorGrant)
+	ingestHandler.SetDoorbell(doorbell)
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
 	ingestHandler.SetHeartbeatObserver(svc.SensorPlatformHealth)
+	// A CI sensor's key is refused when its organization requires OIDC for
+	// CI (RFC-051).
+	ciKeyPolicy := newCIRunnerKeyPolicy(repos, svc, log)
+	if ciKeyPolicy != nil {
+		ingestHandler.SetCIRunnerKeyPolicy(ciKeyPolicy)
+	}
 
 	// Tenant handler with role service and asset service wired.
 	// Exposed as a package-level var so main.go can back-wire the
@@ -324,7 +348,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		ScanFreeze:      handler.NewScanFreezeWindowHandler(svc.ScanFreeze, log),
 		Ingest:          ingestHandler,
-		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, log),
+		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
 		SensorPairing:   newSensorPairingHandler(svc, log),
 		IOC:             newIOCHandlerWithFindingCheck(deps, log),
 		Validation:      validationHandler,
@@ -354,7 +378,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CI:              handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:         ciAdmin,
 		CIRunner:        ciRunner,
-		Pipeline:        handler.NewPipelineHandler(svc.Pipeline, v, log),
+		Pipeline:        newPipelineHandler(svc.Pipeline, commandLogs, v, log),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
@@ -722,14 +746,32 @@ func offlineMark(heartbeatTimeout time.Duration) time.Duration {
 // newSensorResultsV2Handler builds the protocol v2 results handler (RFC-026),
 // or returns nil — /api/v2/sensor is then not mounted — while
 // SENSOR_PROTOCOL_V2_RESULTS is off.
-func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.SensorResultsV2Handler {
+func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Services, ciKeys *cirunapp.RunnerKeyPolicy,
+	log *logger.Logger) *handler.SensorResultsV2Handler {
 	if !cfg.Ingest.V2Results || repos.IngestJob == nil || repos.IngestReport == nil || svc.Sensor == nil {
 		return nil
 	}
 	receiver := ingest.NewV2Receiver(repos.IngestReport, repos.IngestJob, repos.IngestJob, repos.Command,
 		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
 	log.Info("sensor protocol v2 results enabled", "path", protov2.PathPrefix)
-	return handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+	h := handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+	if ciKeys != nil {
+		h.SetCIRunnerKeyPolicy(ciKeys)
+	}
+	return h
+}
+
+// newCIRunnerKeyPolicy builds the "OIDC required for CI" policy over the
+// tenants' setting (nil without the CI repository).
+func newCIRunnerKeyPolicy(repos *Repositories, svc *Services, log *logger.Logger) *cirunapp.RunnerKeyPolicy {
+	if repos.CIRun == nil {
+		return nil
+	}
+	var audit cirunapp.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return cirunapp.NewRunnerKeyPolicy(repos.CIRun, audit, log)
 }
 
 // newEASMHandler builds the EASM overview and review queue handler; every
@@ -879,6 +921,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
+	admin.SetSettingsService(ciSvc)
 	return admin, handler.NewCIRunnerHandler(ciSvc, log)
 }
 

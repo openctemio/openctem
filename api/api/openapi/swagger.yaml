@@ -1,5 +1,102 @@
 basePath: /api/v1
 definitions:
+  SensorGrant:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      capabilities:
+        items:
+          type: string
+        type: array
+      effective:
+        allOf:
+        - $ref: '#/definitions/SensorGrantEffective'
+        description: Effective is what applies now, after the trust level.
+      job_types:
+        items:
+          type: string
+        type: array
+      legacy_broad:
+        type: boolean
+      profile:
+        type: string
+      remote_actions:
+        items:
+          type: string
+        type: array
+      sensor_id:
+        type: string
+      target_cidrs:
+        items:
+          type: string
+        type: array
+      target_domains:
+        items:
+          type: string
+        type: array
+      target_network:
+        type: string
+      tier_ceiling:
+        type: integer
+      tools:
+        items:
+          type: string
+        type: array
+      trust_level:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+      zone_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  SensorGrantEffective:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      tier_ceiling:
+        type: integer
+    type: object
+  SensorGrantProfile:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      default:
+        type: boolean
+      job_types:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      parameterised:
+        description: 'Parameterised: the name takes ":<integration>" (collector).'
+        type: boolean
+      target_network:
+        type: string
+      tier_ceiling:
+        type: integer
+    type: object
+  SensorGrantSummary:
+    properties:
+      legacy_broad:
+        type: boolean
+      profile:
+        type: string
+      sensor_id:
+        type: string
+      trust_level:
+        type: string
+    type: object
   ctis.ASVSInfo:
     properties:
       control_id:
@@ -2988,6 +3085,15 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  github_com_openctemio_openctem_api_internal_app_cirun.Settings:
+    properties:
+      require_oidc:
+        description: |-
+          RequireOIDC refuses CI results sent with a sensor key: a CI job must
+          prove its identity with its provider's OIDC token. On for every
+          organization created after migration 001120; existing ones opt in.
+        type: boolean
     type: object
   github_com_openctemio_openctem_api_internal_app_cirun.Verdict:
     properties:
@@ -7925,6 +8031,14 @@ definitions:
         type: string
       ransomware_use:
         type: string
+    type: object
+  internal_infra_http_handler.CISettingsRequest:
+    properties:
+      require_oidc:
+        description: |-
+          RequireOIDC refuses CI results sent with a sensor key (a CI job must
+          use its provider's OIDC identity).
+        type: boolean
     type: object
   internal_infra_http_handler.CITemplateDrift:
     properties:
@@ -13047,6 +13161,34 @@ definitions:
       tool:
         type: string
     type: object
+  internal_infra_http_handler.RunTaskLogLine:
+    properties:
+      fields:
+        additionalProperties: {}
+        type: object
+      level:
+        enum:
+        - debug
+        - info
+        - warn
+        - error
+        type: string
+      msg:
+        type: string
+      source:
+        type: string
+      ts:
+        type: string
+    type: object
+  internal_infra_http_handler.RunTaskLogsResponse:
+    properties:
+      lines:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunTaskLogLine'
+        type: array
+      truncated:
+        type: boolean
+    type: object
   internal_infra_http_handler.RunTaskPageResponse:
     properties:
       data:
@@ -14356,6 +14498,20 @@ definitions:
       tools:
         items:
           type: string
+        type: array
+    type: object
+  internal_infra_http_handler.SensorGrantProfiles:
+    properties:
+      profiles:
+        items:
+          $ref: '#/definitions/SensorGrantProfile'
+        type: array
+    type: object
+  internal_infra_http_handler.SensorGrantSummaries:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/SensorGrantSummary'
         type: array
     type: object
   internal_infra_http_handler.SensorHealthReasonResponse:
@@ -16327,6 +16483,61 @@ definitions:
         items:
           type: string
         maxItems: 20
+        type: array
+    type: object
+  internal_infra_http_handler.UpdateSensorGrantRequest:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      capabilities:
+        items:
+          type: string
+        type: array
+      job_types:
+        items:
+          type: string
+        type: array
+      profile:
+        type: string
+      remote_actions:
+        items:
+          type: string
+        type: array
+      target_cidrs:
+        items:
+          type: string
+        type: array
+      target_domains:
+        items:
+          type: string
+        type: array
+      target_network:
+        enum:
+        - any
+        - public
+        - none
+        type: string
+      tier_ceiling:
+        maximum: 2
+        minimum: 0
+        type: integer
+      tools:
+        items:
+          type: string
+        type: array
+      trust_level:
+        enum:
+        - new
+        - trusted
+        type: string
+      version:
+        description: Version is the version read; a stale one answers 409.
+        type: integer
+      zone_ids:
+        items:
+          type: string
         type: array
     type: object
   internal_infra_http_handler.UpdateSensorRequest:
@@ -21448,6 +21659,51 @@ paths:
       security:
       - CIRunToken: []
       summary: Upload a CI run's results
+      tags:
+      - CI
+  /ci/settings:
+    get:
+      description: Whether the organization requires the CI job's OIDC identity for
+        CI results (a CI sensor's key is then refused). On for organizations created
+        since this setting exists.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Settings'
+      security:
+      - BearerAuth: []
+      summary: CI settings
+      tags:
+      - CI
+    put:
+      consumes:
+      - application/json
+      description: Turning require_oidc off lets CI sensors authenticate with a sensor
+        key again (audited at high severity).
+      parameters:
+      - description: CI settings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CISettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Settings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change the CI settings
       tags:
       - CI
   /ci/trust-configs:
@@ -31072,6 +31328,42 @@ paths:
       summary: List a run's tasks
       tags:
       - Pipelines
+  /pipeline-runs/{id}/tasks/{task_id}/logs:
+    get:
+      description: The log lines the sensor sent for one task of the run, oldest first,
+        at most 5000. Kept 14 days. A task that is not in the run (or the run is another
+        organization's) is not found.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Task ID
+        in: path
+        name: task_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.RunTaskLogsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: A run task's logs
+      tags:
+      - Pipelines
   /repositories/{repository_id}/branches:
     get:
       description: Retrieves all branches for a repository
@@ -35386,6 +35678,79 @@ paths:
       summary: Disable sensor
       tags:
       - Sensors
+  /sensors/{id}/grant:
+    get:
+      description: What the sensor may do (RFC-052 §5) and what applies now after
+        its trust level (effective).
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/SensorGrant'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a sensor's grant
+      tags:
+      - Sensors
+    put:
+      consumes:
+      - application/json
+      description: Narrowing (and demoting the trust level) needs sensors:grant:narrow;
+        any widening (and promoting to trusted) needs sensors:grant:widen, is audited
+        at high severity and notifies every administrator. Takes effect on the sensor's
+        next request.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New grant
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateSensorGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/SensorGrant'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change a sensor's grant
+      tags:
+      - Sensors
   /sensors/{id}/heartbeat-history:
     get:
       description: 'How the sensor''s heartbeats arrived over the last hours (at most
@@ -35732,6 +36097,38 @@ paths:
       security:
       - BearerAuth: []
       summary: Refresh scanner content on every sensor
+      tags:
+      - Sensors
+  /sensors/grant-profiles:
+    get:
+      description: The profiles an administrator may choose for a sensor. legacy-broad
+        is never listed.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorGrantProfiles'
+      security:
+      - BearerAuth: []
+      summary: List sensor grant profiles
+      tags:
+      - Sensors
+  /sensors/grant-summaries:
+    get:
+      description: 'For the sensor list: which sensors still have the broad legacy
+        grant and which are New.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorGrantSummaries'
+      security:
+      - BearerAuth: []
+      summary: List the grant profile and trust level of every sensor
       tags:
       - Sensors
   /sensors/identity-policy:
