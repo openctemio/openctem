@@ -66,7 +66,10 @@ const (
 	ProblemCommandClaimed     ProblemType = "command-claimed"
 	ProblemTransitionConflict ProblemType = "transition-conflict"
 	ProblemRenewalRefused     ProblemType = "renewal-refused"
-	ProblemTooManyItems       ProblemType = "too-many-items"
+	// ProblemCIOIDCRequired refuses a CI (runner) sensor's key: the
+	// organization requires the CI job's OIDC identity (RFC-051).
+	ProblemCIOIDCRequired ProblemType = "ci-oidc-required"
+	ProblemTooManyItems   ProblemType = "too-many-items"
 
 	// RFC-033 (ProblemTypeBaseSensor).
 	ProblemManifestInvalid           ProblemType = "manifest-invalid"
@@ -136,6 +139,7 @@ var problemDefs = map[ProblemType]problemDef{
 	ProblemCommandClaimed:     {http.StatusConflict, "Command claimed", "Another sensor claimed this command first.", false, ProblemTypeBaseSensor},
 	ProblemTransitionConflict: {http.StatusConflict, "Transition conflict", "The command already reached this state with a different result or message.", false, ProblemTypeBaseSensor},
 	ProblemRenewalRefused:     {http.StatusForbidden, "Renewal refused", "This sensor may not renew its key.", false, ProblemTypeBaseSensor},
+	ProblemCIOIDCRequired:     {http.StatusForbidden, "OIDC required for CI", "This organization accepts CI results only with the CI job's OIDC identity, not a sensor key: set OPENCTEM_TENANT_ID and add a CI trust configuration.", false, ProblemTypeBaseSensor},
 	ProblemTooManyItems:       {http.StatusUnprocessableEntity, "Too many items", "The request lists more items than the limit; split it into several requests.", false, ProblemTypeBaseSensor},
 
 	ProblemManifestInvalid:           {http.StatusUnprocessableEntity, "Manifest invalid", "The manifest is not a JSON object with a schema member of the documented shape.", false, ProblemTypeBaseSensor},

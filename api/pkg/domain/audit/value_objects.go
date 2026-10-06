@@ -247,6 +247,17 @@ const (
 	ActionSensorKeyRevoked        Action = "sensor.key_revoked"
 	ActionSensorIdentityPolicySet Action = "sensor.identity_policy_changed"
 
+	// Per-sensor grants (RFC-052 §5). GrantChanged: an administrator changed
+	// a sensor's grant or trust level (high when it widened; the diff names
+	// every dimension). ClaimRefusedGrant: a sensor tried to claim a job its
+	// grant does not cover. CredentialRefused: the job carried credentials
+	// the sensor may not receive. PushRefusedGrant: a sensor sent results
+	// without a job and its grant does not allow push ingest.
+	ActionSensorGrantChanged      Action = "sensor.grant_changed"
+	ActionSensorClaimRefusedGrant Action = "sensor.claim_refused_grant"
+	ActionSensorCredentialRefused Action = "sensor.credential_refused"
+	ActionSensorPushRefusedGrant  Action = "sensor.push_refused_grant"
+
 	// Scan zone actions (RFC-023): every change to a zone or to which sensors
 	// serve it.
 	ActionScanZoneCreated          Action = "scan_zone.created"
@@ -556,6 +567,7 @@ func (a Action) IsValid() bool {
 		ActionSensorResultPolicyUpdated,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet,
+		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant,
 		ActionIntegrationSyncRequested,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
@@ -674,7 +686,8 @@ func (a Action) Category() string {
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
-		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet:
+		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet,
+		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
