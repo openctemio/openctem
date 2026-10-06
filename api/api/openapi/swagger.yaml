@@ -9359,7 +9359,6 @@ definitions:
         type: array
       type:
         enum:
-        - runner
         - worker
         - collector
         - sensor

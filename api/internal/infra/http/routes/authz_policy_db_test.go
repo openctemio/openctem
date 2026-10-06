@@ -273,7 +273,7 @@ func (h *authzPolicyHarness) sensor(tenantID string) string {
 	h.t.Helper()
 	id := uuid.NewString()
 	h.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode, api_key_hash, api_key_prefix)
-	        VALUES ($1, $2, $3, 'runner', 'active', 'unknown', 'standalone', $4, 'rda_test')`,
+	        VALUES ($1, $2, $3, 'worker', 'active', 'unknown', 'standalone', $4, 'rda_test')`,
 		id, tenantID, "authzpol-"+id[:8], "hash-"+id)
 	return id
 }
@@ -283,7 +283,7 @@ func TestAuthzPolicy_SensorsAreAdminOnly_DB(t *testing.T) {
 	tid := h.tenant()
 	admin, member, viewer := h.member(tid, "admin"), h.member(tid, "member"), h.member(tid, "viewer")
 	sid := h.sensor(tid)
-	create := `{"name":"sensor-x","type":"runner"}`
+	create := `{"name":"sensor-x","type":"worker"}`
 
 	for _, u := range []policyUser{member, viewer} {
 		h.expect(u, http.MethodGet, "/api/v1/sensors", "", http.StatusOK)

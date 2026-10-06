@@ -27,7 +27,7 @@ import { SensorFirstReport } from './sensor-tool-review'
 import { hasReportedTools } from '../lib/capabilities'
 
 /** What the sensor does, mapped to the API's legacy type and execution mode. */
-export type InstallRole = 'scanner' | 'ci' | 'collector'
+export type InstallRole = 'scanner' | 'collector'
 
 /**
  * The roles. None of them sets tools: which tools a sensor has is known only
@@ -42,12 +42,6 @@ export const INSTALL_ROLES: Record<
     hint: 'Runs the scans the platform sends it, all the time',
     type: 'worker',
     mode: 'daemon',
-  },
-  ci: {
-    label: 'CI runner',
-    hint: 'Scans once from a pipeline and exits',
-    type: 'runner',
-    mode: 'standalone',
   },
   collector: {
     label: 'Collector',
@@ -402,7 +396,7 @@ export function SensorInstallFlow({
 
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">Role</legend>
-              <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Role">
+              <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Role">
                 {(Object.keys(INSTALL_ROLES) as InstallRole[]).map((r) => (
                   <button
                     key={r}

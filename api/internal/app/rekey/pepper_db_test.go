@@ -36,7 +36,7 @@ func TestTokenPepper_StampRehashCount(t *testing.T) {
 	}
 	sensors := postgres.NewSensorRepository(db)
 	sensors.SetKeyPepperID(oldID)
-	s, _ := sensordom.NewSensor(tenantID, "s", sensordom.SensorTypeRunner, "", nil, nil, sensordom.ExecutionModeStandalone)
+	s, _ := sensordom.NewSensor(tenantID, "s", sensordom.SensorTypeWorker, "", nil, nil, sensordom.ExecutionModeStandalone)
 	s.SetAPIKey("sensor-hash-old", "rda_old0")
 	if err := sensors.Create(ctx, s); err != nil {
 		t.Fatalf("create sensor: %v", err)

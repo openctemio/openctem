@@ -42,9 +42,9 @@ Scanning → Agents** (`/agents`).
 3. The platform generates an **API Key** — copy it and configure your agent with
    it, then **Done**.
 
-You can regenerate an agent's key later. CI/CD runners have their own view at
-**Discovery → Runners** (`/runners`), which is the same tool filtered to
-runner-type agents. Scan behavior is further shaped by **Profiles**, **Tools**,
+You can regenerate an agent's key later. CI/CD pipelines are not sensors:
+they authenticate with their CI provider's OIDC identity and are listed under
+CI/CD (`/ci-runners`; the old `/runners` URL redirects there). Scan behavior is further shaped by **Profiles**, **Tools**,
 and **Scanner Templates** (also under Settings → Scanning).
 
 ## Asset inventory

@@ -1,8 +1,8 @@
 package integration
 
 // RFC-040 §5.3 (owner decision Q6 (a)) on protocol v2: a report without a
-// command from a worker is quarantined on a quarantine-mode tenant; a CI
-// runner's is applied but never auto-resolves there; a report bound to a
+// command from a worker is quarantined on a quarantine-mode tenant; a
+// warn-mode tenant applies it but never auto-resolves; a report bound to a
 // command auto-resolves only on the assets its command covers.
 
 import (
@@ -105,13 +105,6 @@ func (r *v2Rig) scanProfile(tn v2Tenant, name string) string {
 	return id.String()
 }
 
-func (r *v2Rig) setSensorType(tn v2Tenant, typ string) {
-	r.t.Helper()
-	if _, err := r.db.Exec(`UPDATE sensors SET type = $2 WHERE id = $1`, tn.sensor.String(), typ); err != nil {
-		r.t.Fatal(err)
-	}
-}
-
 func reportID(n int) string {
 	return "0192a3b4-0000-7000-8000-0000000040" + string(rune('0'+n/10)) + string(rune('0'+n%10))
 }
@@ -144,30 +137,21 @@ func TestIngestV2Binding_UnsolicitedWorkerQuarantined(t *testing.T) {
 	}
 }
 
-// A CI runner's report without a command is applied on a new tenant, but its
-// commit never auto-resolves there, nor on a warn-mode tenant.
-func TestIngestV2Binding_RunnerAppliedNoAutoResolveInQuarantineMode(t *testing.T) {
+// On a warn-mode tenant a report without a command is applied, but it never
+// closes a finding (owner decision O11, research 18 F3).
+func TestIngestV2Binding_UnsolicitedAppliedNeverAutoResolves(t *testing.T) {
 	r, results := newBindingV2Rig(t)
 	tn := r.newTenant("semgrep")
-	r.setSensorType(tn, "runner")
-
-	base := tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}, v2Finding{rule: "b", assetRef: "repo"})
-	if st := r.sendWhole(tn, r.openAs(tn, reportID(2), "runner", nil, base), base); st.Accepted.Findings != 2 || st.Quarantined.Findings != 0 {
-		t.Fatalf("runner upload not applied: %+v", st)
-	}
-	next := tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"})
-	st := r.sendWhole(tn, r.openAs(tn, reportID(3), "runner", nil, next), next)
-	if st.AutoResolve != protov2.AutoResolveSkipped || r.countFindings(tn, "resolved") != 0 {
-		t.Fatalf("an unsolicited report auto-resolved on a quarantine-mode tenant: %+v", st)
-	}
-
-	// Warn mode still applies the upload, but a report without a command
-	// never closes a finding (owner decision O11, research 18 F3).
 	p := sensorresult.Policy{TenantID: tn.tenant, Mode: sensorresult.ModeWarn}
 	if err := results.SavePolicy(context.Background(), &p); err != nil {
 		t.Fatal(err)
 	}
-	st = r.sendWhole(tn, r.openAs(tn, reportID(4), "runner", nil, next), next)
+	base := tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}, v2Finding{rule: "b", assetRef: "repo"})
+	if st := r.sendWhole(tn, r.openAs(tn, reportID(2), "runner", nil, base), base); st.Accepted.Findings != 2 || st.Quarantined.Findings != 0 {
+		t.Fatalf("warn-mode upload not applied: %+v", st)
+	}
+	next := tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"})
+	st := r.sendWhole(tn, r.openAs(tn, reportID(3), "runner", nil, next), next)
 	if st.AutoResolve != protov2.AutoResolveSkipped || r.countFindings(tn, "resolved") != 0 {
 		t.Fatalf("a warn-mode upload without a command closed findings: %+v", st)
 	}

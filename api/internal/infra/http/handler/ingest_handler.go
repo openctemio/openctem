@@ -319,13 +319,6 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 			apierror.Forbidden("This organization accepts CI results only with the CI job's OIDC identity, not a sensor key").WriteJSON(w)
 			return
 		}
-		// A CI runner authenticating with a long-lived sensor key: still
-		// accepted, but deprecated in favor of OIDC workload identity
-		// (RFC-051). The headers let the runner warn its pipeline.
-		if agt.Type == sensor.SensorTypeRunner {
-			w.Header().Set("Deprecation", runnerKeyDeprecatedAt)
-			w.Header().Set("Link", `</api/v1/ci/oidc/exchange>; rel="successor-version"`)
-		}
 
 		// Add sensor to context
 		ctx := context.WithValue(r.Context(), sensorContextKey, agt)
@@ -348,11 +341,6 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 
 // SetCIRunnerKeyPolicy wires the "OIDC required for CI" policy.
 func (h *IngestHandler) SetCIRunnerKeyPolicy(p CIRunnerKeyPolicy) { h.ciKeys = p }
-
-// runnerKeyDeprecatedAt is the RFC 9745 Deprecation value for CI runners
-// that authenticate with a sensor API key (2026-10-05): CI should use OIDC
-// workload identity (RFC-051).
-const runnerKeyDeprecatedAt = "@1791158400"
 
 // errSensorPaused refuses a disabled sensor.
 var errSensorPaused = errors.New("sensor is disabled")

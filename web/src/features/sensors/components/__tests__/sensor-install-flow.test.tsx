@@ -89,14 +89,13 @@ describe('SensorInstallFlow', () => {
     expect(screen.getByText(/You choose its tools after it connects/)).toBeInTheDocument()
   })
 
-  it('a CI runner is one-shot; a collector has no scan tools', async () => {
+  it('offers no CI runner role: CI pipelines use OIDC, not a sensor key', () => {
     render(<SensorInstallFlow />)
-    await userEvent.type(screen.getByLabelText('Name'), 'ci')
-    await userEvent.click(screen.getByRole('radio', { name: /CI runner/ }))
-    await userEvent.click(screen.getByRole('button', { name: /Create and show the command/ }))
-    expect(api.create).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: 'runner', execution_mode: 'standalone' })
-    )
+    expect(screen.queryByRole('radio', { name: /CI runner/ })).toBeNull()
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual([
+      expect.stringMatching(/^Scanner/),
+      expect.stringMatching(/^Collector/),
+    ])
   })
 
   it('refuses a name a shell or a container cannot use', async () => {

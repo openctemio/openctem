@@ -49,7 +49,7 @@ func TestSensorKeyExpiry_RoundTrip(t *testing.T) {
 
 	repo := NewSensorRepository(&DB{DB: db})
 
-	a, err := sensor.NewSensor(tenantID, "expiry-sensor", sensor.SensorTypeRunner, "", nil, nil, sensor.ExecutionModeStandalone)
+	a, err := sensor.NewSensor(tenantID, "expiry-sensor", sensor.SensorTypeWorker, "", nil, nil, sensor.ExecutionModeStandalone)
 	if err != nil {
 		t.Fatalf("new sensor: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestSensorUpdate_DoesNotRevertKeyColumns(t *testing.T) {
 	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()
 
 	repo := NewSensorRepository(&DB{DB: db})
-	a, err := sensor.NewSensor(tenantID, "suk-sensor", sensor.SensorTypeRunner, "", nil, nil, sensor.ExecutionModeStandalone)
+	a, err := sensor.NewSensor(tenantID, "suk-sensor", sensor.SensorTypeWorker, "", nil, nil, sensor.ExecutionModeStandalone)
 	if err != nil {
 		t.Fatalf("new sensor: %v", err)
 	}

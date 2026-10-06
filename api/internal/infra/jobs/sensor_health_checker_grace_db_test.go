@@ -61,7 +61,7 @@ func TestLegacySensorHealthChecker_OffByDefault_KeepsStartupGrace(t *testing.T) 
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO sensors (id, tenant_id, name, type, status, health, execution_mode,
 			api_key_hash, api_key_prefix, last_seen_at)
-		VALUES ($1, $2, $3, 'runner', 'active', 'online', 'standalone', $4, 'rda_test', now() - interval '10 minutes')`,
+		VALUES ($1, $2, $3, 'worker', 'active', 'online', 'standalone', $4, 'rda_test', now() - interval '10 minutes')`,
 		sensorID, tenantID, "leghealth-"+sensorID[:8], "hash-"+sensorID); err != nil {
 		t.Fatalf("insert sensor: %v", err)
 	}

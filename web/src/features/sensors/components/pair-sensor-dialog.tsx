@@ -74,7 +74,6 @@ import { ToggleChip } from './toggle-chip'
 const SENSOR_TYPES: { value: SensorType; label: string }[] = [
   { value: 'worker', label: 'Worker (scans)' },
   { value: 'collector', label: 'Collector' },
-  { value: 'runner', label: 'CI runner' },
   { value: 'sensor', label: 'Endpoint' },
 ]
 

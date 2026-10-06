@@ -6,15 +6,15 @@
  */
 
 // Sensor types - maps to backend SensorType
-// runner = CI/CD one-shot, worker = daemon, collector = asset discovery, sensor = EASM
-export type SensorType = 'runner' | 'worker' | 'collector' | 'sensor'
+// worker = daemon, collector = asset discovery, sensor = EASM
+export type SensorType = 'worker' | 'collector' | 'sensor'
 
 /**
  * Sensor role (RFC-023 §9.1, decision D18): what a sensor does, as opposed to
  * its legacy `type`, which mixes what it does with how it runs. The API does
  * not send a role yet (it arrives with RFC-023 Phase 2, together with the
  * endpoint-agent and monitor roles); until then the role is derived from the
- * legacy type exactly as the RFC maps it: worker, runner and the old EASM
+ * legacy type exactly as the RFC maps it: worker and the old EASM
  * 'sensor' type scan, a collector collects.
  */
 export type SensorRole = 'scanner' | 'collector'
