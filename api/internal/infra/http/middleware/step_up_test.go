@@ -11,7 +11,6 @@ import (
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 )
 
@@ -142,7 +141,7 @@ func TestRequireRecentAuth_ExternalProviderToken(t *testing.T) {
 }
 
 // RecentAuthGate is the same check for a service: it judges only the user
-// making the request, and answers with a *shared.StepUpError.
+// making the request, and answers with CheckRecentAuth's errors.
 func TestRecentAuthGate(t *testing.T) {
 	const window = 10 * time.Minute
 	now := time.Now()
@@ -150,74 +149,39 @@ func TestRecentAuthGate(t *testing.T) {
 		ctx = context.WithValue(ctx, UserIDKey, "u1")
 		return context.WithValue(ctx, SessionIDKey, "s1")
 	}
+	dbDown := errors.New("db down")
 	for _, tc := range []struct {
 		name        string
 		checker     RecentAuthChecker
 		ctx         func(context.Context) context.Context
 		actor       string
-		want        string // "", "required", "unavailable", "error"
+		want        error
 		wantChecked bool
 	}{
-		{"fresh session of the actor", &stubRecentAuth{at: now.Add(-time.Minute)}, session, "u1", "", true},
-		{"stale session of the actor", &stubRecentAuth{at: now.Add(-time.Hour)}, session, "u1", "required", true},
-		{"actor is not the request's user (an accepted invitation)", &stubRecentAuth{at: now.Add(-time.Hour)}, session, "inviter", "", false},
-		{"no request user (a system path)", &stubRecentAuth{}, func(ctx context.Context) context.Context { return ctx }, "u1", "", false},
-		{"empty actor", &stubRecentAuth{}, session, "", "", false},
+		{"fresh session of the actor", &stubRecentAuth{at: now.Add(-time.Minute)}, session, "u1", nil, true},
+		{"stale session of the actor", &stubRecentAuth{at: now.Add(-time.Hour)}, session, "u1", ErrStepUpRequired, true},
+		{"actor is not the request's user (an accepted invitation)", &stubRecentAuth{at: now.Add(-time.Hour)}, session, "inviter", nil, false},
+		{"no request user (a system path)", &stubRecentAuth{}, func(ctx context.Context) context.Context { return ctx }, "u1", nil, false},
+		{"empty actor", &stubRecentAuth{}, session, "", nil, false},
 		{"API key of the actor", &stubRecentAuth{at: now},
-			func(ctx context.Context) context.Context { return context.WithValue(session(ctx), APIKeyIDKey, "k1") }, "u1", "unavailable", false},
-		{"no checker wired", nil, session, "u1", "unavailable", false},
-		{"lookup error fails closed", &stubRecentAuth{err: errors.New("db down")}, session, "u1", "error", true},
+			func(ctx context.Context) context.Context { return context.WithValue(session(ctx), APIKeyIDKey, "k1") }, "u1", ErrStepUpUnavailable, false},
+		{"no checker wired", nil, session, "u1", ErrStepUpUnavailable, false},
+		{"lookup error fails closed", &stubRecentAuth{err: dbDown}, session, "u1", dbDown, true},
 		{"external provider token signed in an hour ago", &stubRecentAuth{at: now}, func(ctx context.Context) context.Context {
 			ctx = context.WithValue(ctx, UserIDKey, "u1")
 			ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderOIDC)
 			return context.WithValue(ctx, ClaimsKey, &keycloak.Claims{AuthTime: jwtv5.NewNumericDate(now.Add(-time.Hour))})
-		}, "u1", "required", false},
+		}, "u1", ErrStepUpRequired, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st, _ := tc.checker.(*stubRecentAuth)
 			err := RecentAuthGate{Checker: tc.checker, Window: window}.RequireRecentAuth(tc.ctx(context.Background()), tc.actor)
-			var su *shared.StepUpError
-			isStepUp := errors.As(err, &su)
-			switch tc.want {
-			case "":
-				if err != nil {
-					t.Fatalf("want admitted, got %v", err)
-				}
-			case "required":
-				if !isStepUp || su.Unavailable || su.Window != window {
-					t.Fatalf("want STEP_UP_REQUIRED, got %v", err)
-				}
-			case "unavailable":
-				if !isStepUp || !su.Unavailable {
-					t.Fatalf("want STEP_UP_UNAVAILABLE, got %v", err)
-				}
-			case "error":
-				if err == nil || isStepUp {
-					t.Fatalf("want the lookup error, got %v", err)
-				}
+			if !errors.Is(err, tc.want) || (tc.want == nil && err != nil) {
+				t.Fatalf("got %v, want %v", err, tc.want)
 			}
 			if st != nil && (len(st.calls) > 0) != tc.wantChecked {
 				t.Fatalf("session checked = %v, want %v", len(st.calls) > 0, tc.wantChecked)
 			}
 		})
-	}
-}
-
-func TestWriteStepUpError(t *testing.T) {
-	rec := httptest.NewRecorder()
-	WriteStepUpError(rec, &shared.StepUpError{Window: 10 * time.Minute, Message: "Confirm your identity to continue"})
-	var body struct {
-		Code    string         `json:"code"`
-		Details map[string]int `json:"details"`
-	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	if rec.Code != http.StatusForbidden || body.Code != "STEP_UP_REQUIRED" || body.Details["window_seconds"] != 600 {
-		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
-	}
-	rec = httptest.NewRecorder()
-	WriteStepUpError(rec, &shared.StepUpError{Unavailable: true, Message: "x"})
-	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	if rec.Code != http.StatusForbidden || body.Code != "STEP_UP_UNAVAILABLE" {
-		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
 	}
 }

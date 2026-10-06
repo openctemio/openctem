@@ -123,8 +123,9 @@ refuses outside the window and passes inside it.
 
 Some routes need step-up only for one kind of change, which only the service
 can tell. The service asks a `shared.RecentAuthGate` (wired at startup to
-`middleware.RecentAuthGate`, the same check as `requireStepUp()`), and the
-handler answers its `*shared.StepUpError` exactly like the middleware
+`middleware.RecentAuthGate`, which calls `middleware.CheckRecentAuth`, the
+check behind `requireStepUp()`), and the handler answers its refusal with
+`middleware.WriteStepUpError`, exactly like the middleware
 (`403 STEP_UP_REQUIRED` with `window_seconds`, or `STEP_UP_UNAVAILABLE`), so
 the web dialog appears and the request is retried.
 
@@ -141,7 +142,12 @@ above.
 
 Sensor pairing approval (`POST /api/v1/sensor-pairings/{id}/approve`, RFC-052)
 checks a step-up proof inside the request body with the same
-`VerifyStepUp`. Reads and cosmetic changes never prompt.
+`VerifyStepUp`. Changing a sensor's grant (`PUT /api/v1/sensors/{id}/grant`)
+asks for step-up only when the change widens the grant or promotes the
+sensor: the grant service knows that, so the check runs there
+(`handler.StepUpWideningApprover`, `middleware.CheckRecentAuth`) and the
+answer is the same 403 `STEP_UP_REQUIRED`. Narrowing stays one click. Reads
+and cosmetic changes never prompt.
 
 The platform admin console has its own sessions: it already requires a fresh
 authenticator code inside the request for the audit-chain rebaseline

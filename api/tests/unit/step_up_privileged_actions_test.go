@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	app "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -31,17 +31,13 @@ func (g *recordingGate) RequireRecentAuth(_ context.Context, actorID string) err
 }
 
 func refusingGate() *recordingGate {
-	return &recordingGate{err: &shared.StepUpError{Window: 10 * time.Minute, Message: "Confirm your identity to continue"}}
+	return &recordingGate{err: middleware.ErrStepUpRequired}
 }
 
 func wantStepUp(t *testing.T, what string, err error) {
 	t.Helper()
-	var su *shared.StepUpError
-	if !errors.As(err, &su) {
+	if !errors.Is(err, middleware.ErrStepUpRequired) {
 		t.Fatalf("%s: want a step-up refusal, got %v", what, err)
-	}
-	if !errors.Is(err, shared.ErrForbidden) {
-		t.Fatalf("%s: a step-up refusal must also be forbidden", what)
 	}
 }
 
@@ -115,8 +111,7 @@ func TestStepUp_OrdinaryAndSystemGrantsDoNotAsk(t *testing.T) {
 	// A non-owner is refused for the role itself before step-up is asked.
 	err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.OwnerRoleID.String()},
 		f.admin.String(), audit.AuditContext{})
-	var su *shared.StepUpError
-	if !errors.Is(err, shared.ErrForbidden) || errors.As(err, &su) {
+	if !errors.Is(err, shared.ErrForbidden) || errors.Is(err, middleware.ErrStepUpRequired) {
 		t.Fatalf("an administrator granting owner must be refused outright, got %v", err)
 	}
 }
