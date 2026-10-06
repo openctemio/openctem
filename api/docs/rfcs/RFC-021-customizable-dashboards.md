@@ -176,7 +176,7 @@ New personas are just new entries in the template registry — no schema change.
 
 Use a small, dependency-light React grid (e.g. a self-contained CSS-grid + a
 lightweight drag/resize) rather than a heavy external one, to respect the
-Artifact-style no-bloat house rule and keep bundle size down. Evaluate in Phase 1;
+no-bloat house rule and keep bundle size down. Evaluate in Phase 1;
 fall back to a simple reorder-only (no free resize) if drag-resize proves heavy —
 reorder + fixed sizes still delivers the core value.
 
