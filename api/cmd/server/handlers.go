@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
@@ -602,6 +603,12 @@ func InitLocalAuthHandler(
 			log,
 		)
 		log.Info("local auth handler initialized")
+		// Widening a sensor's grant needs a recent sign-in or step-up.
+		if svc.SensorGrant != nil {
+			svc.SensorGrant.SetWideningApprover(handler.StepUpWideningApprover{
+				Checker: handlers.LocalAuth.RecentAuthChecker(), Window: authapp.StepUpWindow,
+			})
+		}
 	}
 }
 

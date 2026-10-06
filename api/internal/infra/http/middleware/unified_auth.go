@@ -236,7 +236,7 @@ func validateOIDCToken(ctx context.Context, tokenString string, validator *keycl
 		return nil, errors.New("OIDC auth not configured")
 	}
 
-	claims, err := validator.ValidateToken(tokenString)
+	claims, err := validator.ValidateToken(ctx, tokenString)
 	if err != nil {
 		if log != nil {
 			log.Debug("OIDC token validation failed",
