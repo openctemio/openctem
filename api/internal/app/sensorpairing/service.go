@@ -98,7 +98,7 @@ type SensorLookup interface {
 type ApprovalHook interface {
 	ValidProfile(profile string) bool
 	DefaultProfile() string
-	OnApproved(profile string, approvedBy shared.ID) func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error
+	OnApproved(tenantID shared.ID, profile string, zones []shared.ID, approvedBy shared.ID) func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error
 }
 
 // Actor is the authenticated user acting on the user plane.
@@ -575,14 +575,8 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 	if !in.Type.IsValid() {
 		return nil, ErrInvalid
 	}
-	profile := in.Profile
-	if s.hook != nil {
-		if profile == "" {
-			profile = s.hook.DefaultProfile()
-		}
-		if !s.hook.ValidProfile(profile) {
-			return nil, ErrInvalid
-		}
+	if in.Profile != "" && s.hook != nil && !s.hook.ValidProfile(in.Profile) {
+		return nil, ErrInvalid
 	}
 	now := s.now()
 	// Read the request as the approver may see it (theirs, or tenantless
@@ -590,6 +584,17 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 	p, err := s.claimable(ctx, actor, id, in.Code, now)
 	if err != nil {
 		return nil, err
+	}
+	// The profile chosen now, else the one the expectation named, else the
+	// narrow default.
+	profile := firstNonEmpty(in.Profile, p.RequestedProfile)
+	if s.hook != nil {
+		if profile == "" {
+			profile = s.hook.DefaultProfile()
+		}
+		if !s.hook.ValidProfile(profile) {
+			return nil, ErrInvalid
+		}
 	}
 	if p.RepairSensorID != nil && !s.sensorInTenant(ctx, actor.TenantID, *p.RepairSensorID) {
 		return nil, ErrNotFound
@@ -611,7 +616,7 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 		OS: p.HostFacts.OS, Arch: p.HostFacts.Arch, Version: p.HostFacts.SensorVersion, ZoneIDs: zones, KeyID: shared.NewID(),
 	}
 	if s.hook != nil {
-		approval.OnApproved = s.hook.OnApproved(profile, actor.UserID)
+		approval.OnApproved = s.hook.OnApproved(actor.TenantID, profile, zones, actor.UserID)
 	}
 	res, err := s.repo.Approve(ctx, approval, nil)
 	if err != nil {

@@ -113,9 +113,13 @@ func TestTenantRoutes_SSOChangeDecisionsAreOwnerOnly(t *testing.T) {
 		}
 		auth := func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), middleware.LocalUserKey, u)))
+				ctx := context.WithValue(r.Context(), middleware.LocalUserKey, u)
+				ctx = context.WithValue(ctx, middleware.UserIDKey, u.ID().String())
+				ctx = context.WithValue(ctx, middleware.SessionIDKey, shared.NewID().String())
+				next.ServeHTTP(w, r.WithContext(ctx))
 			})
 		}
+		withStepUpChecker(t, alwaysSteppedUp{})
 		router := infrahttp.NewChiRouter()
 		registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 		mux := router.(interface{ Handler() http.Handler }).Handler()
