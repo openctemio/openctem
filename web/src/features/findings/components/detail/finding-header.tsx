@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
+import { BranchOnlyBadge } from '../branch-only-badge'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -109,6 +110,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
             {typeCfg.label}
           </Badge>
         )}
+        {finding.branchOnly && <BranchOnlyBadge />}
         {finding.cve && (
           <Badge variant="outline" asChild className="font-mono text-xs">
             <a

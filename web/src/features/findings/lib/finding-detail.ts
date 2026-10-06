@@ -201,6 +201,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     epssScore: api.epss_score ?? v?.epss_score,
     epssPercentile: api.epss_percentile ?? v?.epss_percentile,
     isInKev: api.is_in_kev || !!v?.cisa_kev,
+    branchOnly: api.branch_only || false,
     kevDueDate: api.kev_due_date || v?.cisa_kev?.due_date,
 
     priorityClass: api.priority_class as PriorityClass | undefined,

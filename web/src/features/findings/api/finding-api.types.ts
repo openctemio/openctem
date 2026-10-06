@@ -317,6 +317,8 @@ export interface ApiFinding {
 
   // Data flow / taint tracking
   has_data_flow?: boolean // Lightweight flag for list views
+  /** Seen only on a branch that does not count as exposure (feature / MR branch). */
+  branch_only?: boolean
   data_flow?: ApiDataFlow // Full data when fetching single finding
 
   // Secret-specific fields
@@ -549,6 +551,9 @@ export interface FindingApiFilters {
   priority_classes?: string[] // e.g. ['P0','P1']
   is_in_kev?: boolean
   is_reachable?: boolean
+  /** Only findings seen on a feature branch alone (sent as `branch_only=true`).
+   *  Without it the list leaves them out. */
+  branch_only?: boolean
   /** "Assigned to / owned by me" — findings where the current user is the
    *  assignee, owns the asset, or is a member of an assigned group. Sent as
    *  `assigned_to_me=true`. Backs the My Work view. */

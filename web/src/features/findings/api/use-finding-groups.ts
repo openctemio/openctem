@@ -67,6 +67,8 @@ export interface FindingGroupsFilters {
   cve_ids?: string
   asset_tags?: string
   assigned_to_me?: boolean
+  /** Only findings seen on a feature branch alone (default: left out). */
+  branch_only?: boolean
   page?: number
   per_page?: number
   /** A saved view the groups run (its filter, with these filters on top). */
@@ -90,6 +92,7 @@ export function buildGroupsUrl(filters: FindingGroupsFilters): string {
   if (filters.cve_ids) params.set('cve_id', filters.cve_ids)
   if (filters.asset_tags) params.set('asset_tag', filters.asset_tags)
   if (filters.assigned_to_me) params.set('related_to', 'me')
+  if (filters.branch_only) params.set('branch_only', 'true')
   if (filters.view) params.set('view', filters.view)
   if (filters.state) params.set('state', filters.state)
   if (filters.page) params.set('page', String(filters.page))
