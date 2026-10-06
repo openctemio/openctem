@@ -58,6 +58,8 @@ type v2HarnessOpts struct {
 	maxPending    int
 	tenantLimiter *middleware.TelemetryRateLimiter
 	control       *handler.SensorControlV2Handler
+	// ciKeys, when set, is the "OIDC required for CI" policy.
+	ciKeys handler.CIRunnerKeyPolicy
 }
 
 func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
@@ -105,7 +107,11 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 	h.jwtToken = tok
 
 	router := infrahttp.NewChiRouter()
-	registerSensorV2Routes(router, handler.NewSensorResultsV2Handler(receiver, sensorSvc, log), opts.control, opts.tenantLimiter, log)
+	resultsHandler := handler.NewSensorResultsV2Handler(receiver, sensorSvc, log)
+	if opts.ciKeys != nil {
+		resultsHandler.SetCIRunnerKeyPolicy(opts.ciKeys)
+	}
+	registerSensorV2Routes(router, resultsHandler, opts.control, opts.tenantLimiter, log)
 	router.Group("/api/v1/probe", func(r Router) {
 		r.GET("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(299) })
 	}, userAuth)

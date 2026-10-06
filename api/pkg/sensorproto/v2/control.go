@@ -193,6 +193,47 @@ type ReleaseRequest struct {
 // MaxReleaseReasonBytes bounds the reason stored with a released command.
 const MaxReleaseReasonBytes = 200
 
+// LogsAction is the logs resource under CommandsPath + "/{command_id}"
+// (FeatureLogs, RFC-029 §4.4.1).
+const LogsAction = "logs"
+
+// Limits of POST /commands/{id}/logs.
+const (
+	// MaxLogsBodyBytes caps one logs request body.
+	MaxLogsBodyBytes = 256 << 10
+	// MaxLogLinesPerBatch caps the lines of one batch.
+	MaxLogLinesPerBatch = 500
+	// MaxLogSeq bounds the batch number (exclusive).
+	MaxLogSeq = 10000
+)
+
+// LogsRequest is the body of POST /commands/{id}/logs: batch seq (from 0,
+// per command; a replayed seq is stored once) of a task's log lines.
+type LogsRequest struct {
+	Seq   int       `json:"seq"`
+	Lines []LogLine `json:"lines"`
+}
+
+// LogLine is one log line. The platform caps, cleans and redacts every
+// member again; Fields values are scalars (anything else is kept as its
+// JSON text).
+type LogLine struct {
+	TS     string                     `json:"ts"`
+	Level  string                     `json:"level"`
+	Msg    string                     `json:"msg"`
+	Source string                     `json:"source,omitempty"`
+	Fields map[string]json.RawMessage `json:"fields,omitempty"`
+}
+
+// LogsResponse answers POST /commands/{id}/logs. Truncated: the command
+// reached its log caps and this batch was dropped (Dropped lines); the
+// sensor must not resend it.
+type LogsResponse struct {
+	Stored    int  `json:"stored"`
+	Dropped   int  `json:"dropped"`
+	Truncated bool `json:"truncated"`
+}
+
 // FailRequest is the body of POST /commands/{id}/fail.
 type FailRequest struct {
 	ErrorMessage string `json:"error_message"`

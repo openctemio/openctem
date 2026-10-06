@@ -238,7 +238,7 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 	authAt := assertionAuthnInstant(assertion)
 	if forcedAuthn {
 		if age := time.Since(authAt); authAt.IsZero() || age > freshAuthMaxAge || age < -time.Minute {
-			s.logger.Warn("saml login refused: the IdP did not authenticate the user again", "org", orgSlug)
+			s.logger.Warn("saml login refused: the IdP did not authenticate the user again", "org", logger.SanitizeValue(orgSlug))
 			return nil, ErrSAMLResponseInvalid
 		}
 	}
