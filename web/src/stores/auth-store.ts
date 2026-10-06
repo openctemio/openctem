@@ -19,7 +19,7 @@ import { devLog } from '@/lib/logger'
 import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
 import { csrfHeaders } from '@/lib/csrf-client'
 import { validateRedirectUrl } from '@/lib/redirect'
-import { removeCookie } from '@/lib/cookies'
+import { getCookie, removeCookie } from '@/lib/cookies'
 import { env } from '@/lib/env'
 import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
 
@@ -138,13 +138,31 @@ function extractUser(token: string): AuthUser {
  * (it 404s); the page is /login and it reads `redirect`, which it validates.
  * Without an explicit target, the user comes back to the page they were on.
  */
-export function loginPageUrl(returnUrl?: string): string {
+export function loginPageUrl(returnUrl?: string, reauth?: { org?: string }): string {
   const target = returnUrl ?? `${window.location.pathname}${window.location.search}`
   const url = new URL('/login', window.location.origin)
   if (target && target !== '/' && !target.startsWith('/login')) {
     url.searchParams.set('redirect', target)
   }
+  if (reauth) {
+    // Step-up for an SSO account: the organization's sign-in buttons, and the
+    // identity provider asked to authenticate the user again.
+    if (reauth.org) url.searchParams.set('org', reauth.org)
+    url.searchParams.set('reauth', '1')
+  }
   return `${url.pathname}${url.search}`
+}
+
+/** The current organization's slug, from the (JS-readable) tenant cookie. */
+function currentTenantSlug(): string | undefined {
+  const raw = getCookie(env.cookies.tenant)
+  if (!raw) return undefined
+  try {
+    const slug = (JSON.parse(raw) as { slug?: unknown }).slug
+    return typeof slug === 'string' && slug ? slug : undefined
+  } catch {
+    return undefined
+  }
 }
 
 let sessionEnding = false
@@ -160,10 +178,11 @@ let sessionEnding = false
  * sign-out server action does (and ends the session on the API), then
  * redirects to `/login?redirect=<this page>`.
  */
-export function endSessionAndSignIn(returnUrl?: string): void {
+export function endSessionAndSignIn(returnUrl?: string, options?: { reauth?: boolean }): void {
   if (sessionEnding || typeof window === 'undefined') return
   sessionEnding = true
-  const target = loginPageUrl(returnUrl)
+  // Read the organization before its cookie is dropped below.
+  const target = loginPageUrl(returnUrl, options?.reauth ? { org: currentTenantSlug() } : undefined)
   // The team cookies are JS-readable: drop them now, so even if the action
   // below cannot run, /login shows the form instead of sending the browser
   // back (it only skips the form when a team is selected).

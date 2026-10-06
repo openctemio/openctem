@@ -427,3 +427,37 @@ func TestStepUp_FailuresLockTheAccountAndAreRateLimited_DB(t *testing.T) {
 		t.Fatal("step-up is not rate limited")
 	}
 }
+
+// A session created by the organization's identity provider counts as recent
+// authentication only from the provider's own authentication time (stamped as
+// step_up_at at sign-in when it was recent), never from its creation: the
+// provider may have signed the user in silently from a session it remembered.
+func TestStepUp_FederatedSessionNeedsProviderAuthentication_DB(t *testing.T) {
+	h := newStepUpHarness(t)
+	sso := h.owner(false)
+
+	silent, tokSilent := h.signIn(sso, time.Minute)
+	h.exec(`UPDATE sessions SET auth_method = 'sso', idp_tenant_id = $2 WHERE id = $1`, silent, h.tenant)
+	if got := h.probe(tokSilent); got != "STEP_UP_REQUIRED" {
+		t.Fatalf("an SSO session without a recent provider authentication: %s", got)
+	}
+
+	fresh, tokFresh := h.signIn(sso, time.Minute)
+	h.exec(`UPDATE sessions SET auth_method = 'saml', idp_tenant_id = $2, step_up_at = NOW() - interval '2 minutes' WHERE id = $1`,
+		fresh, h.tenant)
+	if got := h.probe(tokFresh); got != "allowed" {
+		t.Fatalf("an SSO session whose provider authenticated the user 2 minutes ago: %s", got)
+	}
+	h.exec(`UPDATE sessions SET step_up_at = NOW() - interval '11 minutes' WHERE id = $1`, fresh)
+	if got := h.probe(tokFresh); got != "STEP_UP_REQUIRED" {
+		t.Fatalf("a provider authentication older than the window: %s", got)
+	}
+
+	// A sign-in with a global social provider is not the organization's
+	// identity provider: its creation still counts, as for a password.
+	social, tokSocial := h.signIn(sso, time.Minute)
+	h.exec(`UPDATE sessions SET auth_method = 'sso' WHERE id = $1`, social)
+	if got := h.probe(tokSocial); got != "allowed" {
+		t.Fatalf("a fresh social sign-in: %s", got)
+	}
+}

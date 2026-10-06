@@ -453,6 +453,15 @@ generic `400` and revokes nothing.
 
 ---
 
+## Step-up re-authentication needs `auth_time`
+
+Sensitive actions ask an SSO user without an authenticator to sign in again
+at Entra ID (docs/architecture/step-up-reauth.md). The API checks the
+id_token's `auth_time`, which Entra adds only as an optional claim: in the app
+registration, **Token configuration → Add optional claim → ID → `auth_time`**.
+Without it the re-sign-in is refused and the user cannot run those actions
+(an authenticator code always works).
+
 ## Reference
 
 - Architecture / rationale: [`architecture/sso-authentication.md`](../architecture/sso-authentication.md)

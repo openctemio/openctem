@@ -406,12 +406,20 @@ func (r *SessionRepository) MarkStepUp(ctx context.Context, sessionID, userID sh
 
 // RecentAuthAt returns when userID last proved their identity in sessionID:
 // the later of the sign-in that created the session and its last step-up.
-// session.ErrSessionNotFound when the session is not an active, unexpired
-// session of userID.
+// For a session created by an organization's identity provider (auth_method
+// sso or saml with idp_tenant_id) the sign-in is the provider's
+// authentication, recorded as step_up_at when it was recent; the session's
+// creation does not count, since the provider may have signed the user in
+// silently. session.ErrSessionNotFound when the session is not an active,
+// unexpired session of userID.
 func (r *SessionRepository) RecentAuthAt(ctx context.Context, sessionID, userID shared.ID) (time.Time, error) {
 	var at time.Time
 	err := r.db.QueryRowContext(ctx, `
-		SELECT GREATEST(created_at, COALESCE(step_up_at, created_at))
+		SELECT CASE
+			WHEN auth_method IN ('sso', 'saml') AND idp_tenant_id IS NOT NULL
+				THEN COALESCE(step_up_at, 'epoch'::timestamptz)
+			ELSE GREATEST(created_at, COALESCE(step_up_at, created_at))
+		END
 		FROM sessions
 		WHERE id = $1 AND user_id = $2 AND status = 'active' AND expires_at > NOW()`,
 		sessionID.String(), userID.String()).Scan(&at)

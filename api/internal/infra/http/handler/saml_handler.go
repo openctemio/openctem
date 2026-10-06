@@ -65,17 +65,41 @@ func NewSAMLHandler(svc *app.SAMLService, cookieCfg CookieConfig, frontendURL st
 // (Lax cookies are not sent on cross-site POST) — SAML therefore requires HTTPS.
 func samlRequestCookieName(org string) string { return "saml_authn_" + org }
 
+// The request-tracking cookie holds the AuthnRequest ID, followed by
+// samlForcedSuffix when the request asked for ForceAuthn. Stripping the
+// suffix only relaxes the freshness refusal for one's own sign-in: whether
+// the session may run sensitive actions depends on the signed AuthnInstant.
+const samlForcedSuffix = ".force"
+
+func samlRequestCookieValue(requestID string, forced bool) string {
+	if forced {
+		return requestID + samlForcedSuffix
+	}
+	return requestID
+}
+
+func parseSAMLRequestCookie(v string) (requestID string, forced bool) {
+	if id, ok := strings.CutSuffix(v, samlForcedSuffix); ok {
+		return id, true
+	}
+	return v, false
+}
+
+// isTrueParam reads a boolean query parameter ("true" or "1").
+func isTrueParam(v string) bool { return v == "true" || v == "1" }
+
 // Login handles GET /api/v1/auth/saml/{org}/login — SP-initiated login.
 func (h *SAMLHandler) Login(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
-	redirectURL, requestID, err := h.svc.Login(r.Context(), org, h.baseURL(r))
+	forceAuthn := isTrueParam(r.URL.Query().Get("reauth"))
+	redirectURL, requestID, err := h.svc.Login(r.Context(), org, h.baseURL(r), forceAuthn)
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     samlRequestCookieName(org),
-		Value:    requestID,
+		Value:    samlRequestCookieValue(requestID, forceAuthn),
 		Path:     "/",
 		MaxAge:   300,
 		HttpOnly: true,
@@ -92,8 +116,10 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
 
 	var possibleRequestIDs []string
+	forcedAuthn := false
 	if c, cerr := r.Cookie(samlRequestCookieName(org)); cerr == nil && c.Value != "" {
-		possibleRequestIDs = []string{c.Value}
+		id, forced := parseSAMLRequestCookie(c.Value)
+		possibleRequestIDs, forcedAuthn = []string{id}, forced
 	}
 	// Clear the single-use request cookie regardless of the outcome.
 	http.SetCookie(w, &http.Cookie{
@@ -103,7 +129,7 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 
 	// A SAML response is a few KB; cap the form body the service parses.
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	result, err := h.svc.ACS(r.Context(), org, h.baseURL(r), r, possibleRequestIDs)
+	result, err := h.svc.ACS(r.Context(), org, h.baseURL(r), r, possibleRequestIDs, forcedAuthn)
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
