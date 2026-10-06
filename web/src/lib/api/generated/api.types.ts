@@ -7459,6 +7459,15 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description RUNNER_OUTDATED: the runner reports a version below the minimum supported one */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Too Many Requests */
         429: {
           headers: {
@@ -7974,6 +7983,82 @@ export interface paths {
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/settings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * CI settings
+     * @description Whether the organization requires the CI job's OIDC identity for CI results (a CI sensor's key is then refused). On for organizations created since this setting exists.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Settings']
+          }
+        }
+      }
+    }
+    /**
+     * Change the CI settings
+     * @description Turning require_oidc off lets CI sensors authenticate with a sensor key again (audited at high severity).
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description CI settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CISettingsRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Settings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -27960,6 +28045,124 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/sensors/{id}/grant': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get a sensor's grant
+     * @description What the sensor may do (RFC-052 §5) and what applies now after its trust level (effective).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['SensorGrant']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Change a sensor's grant
+     * @description Narrowing (and demoting the trust level) needs sensors:grant:narrow; any widening (and promoting to trusted) needs sensors:grant:widen, is audited at high severity and notifies every administrator. Takes effect on the sensor's next request.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description New grant */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateSensorGrantRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['SensorGrant']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors/{id}/heartbeat-history': {
     parameters: {
       query?: never
@@ -28608,6 +28811,84 @@ export interface paths {
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/grant-profiles': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List sensor grant profiles
+     * @description The profiles an administrator may choose for a sensor. legacy-broad is never listed.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorGrantProfiles']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/grant-summaries': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List the grant profile and trust level of every sensor
+     * @description For the sensor list: which sensors still have the broad legacy grant and which are New.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorGrantSummaries']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -34279,6 +34560,49 @@ export interface paths {
 export type webhooks = Record<string, never>
 export interface components {
   schemas: {
+    SensorGrant: {
+      allow_credentials?: boolean
+      allow_push_ingest?: boolean
+      capabilities?: string[]
+      /** @description Effective is what applies now, after the trust level. */
+      effective?: components['schemas']['SensorGrantEffective']
+      job_types?: string[]
+      legacy_broad?: boolean
+      profile?: string
+      remote_actions?: string[]
+      sensor_id?: string
+      target_cidrs?: string[]
+      target_domains?: string[]
+      target_network?: string
+      tier_ceiling?: number
+      tools?: string[]
+      trust_level?: string
+      updated_at?: string
+      version?: number
+      zone_ids?: string[]
+    }
+    SensorGrantEffective: {
+      allow_credentials?: boolean
+      allow_push_ingest?: boolean
+      tier_ceiling?: number
+    }
+    SensorGrantProfile: {
+      allow_credentials?: boolean
+      allow_push_ingest?: boolean
+      default?: boolean
+      job_types?: string[]
+      name?: string
+      /** @description Parameterised: the name takes ":<integration>" (collector). */
+      parameterised?: boolean
+      target_network?: string
+      tier_ceiling?: number
+    }
+    SensorGrantSummary: {
+      legacy_broad?: boolean
+      profile?: string
+      sensor_id?: string
+      trust_level?: string
+    }
     'ctis.ASVSInfo': {
       /** @description Control ID (e.g., "2.1.1") */
       control_id?: string
@@ -34300,6 +34624,14 @@ export interface components {
       missing_role_check?: string
       /** @description Unprotected function */
       unprotected_function?: string
+    }
+    'ctis.Advisory': {
+      /** @description Advisory id (MS24-001, RHSA-2024:1234, DSA-5600-1). */
+      id?: string
+      /** @description Issuer (microsoft, redhat, debian, ...). */
+      source?: string
+      /** @description Advisory URL. */
+      url?: string
     }
     'ctis.ArtifactLocation': {
       /** @description Index within the artifacts array */
@@ -34328,6 +34660,12 @@ export interface components {
        *     address, so a renamed host or repository keeps its history.
        */
       identifiers?: components['schemas']['ctis.AssetIdentifiers']
+      /**
+       * @description What a scanner observed about the host that helps match it across
+       *     tools (FQDN, NetBIOS name, MACs, OS CPE, cloud id, agent id). Weaker
+       *     than Identifiers.
+       */
+      identity_hints?: components['schemas']['ctis.IdentityHints']
       /** @description CTEM: Is the asset directly accessible from the internet */
       is_internet_accessible?: boolean
       /** @description Human-readable name */
@@ -34723,6 +35061,8 @@ export interface components {
       /** @description Start line number */
       start_line?: number
     }
+    /** @enum {string} */
+    'ctis.DetectionType': 'confirmed' | 'potential' | 'info'
     'ctis.DomainTechnical': {
       /** @description DNS records */
       dns_records?: components['schemas']['ctis.DNSRecord'][]
@@ -34810,6 +35150,11 @@ export interface components {
       /** @description Misconfiguration-specific details */
       misconfiguration?: components['schemas']['ctis.MisconfigurationDetails']
       /**
+       * @description The finding as the source tool names it: native id, severity, status,
+       *     detection type, credentialed flag, raw record reference.
+       */
+      native?: components['schemas']['ctis.NativeIdentity']
+      /**
        * @description Network location (for network/host findings, e.g. Nessus/Tenable): the
        *     port/protocol/service the finding was observed on. Distinct from the
        *     code-centric Location above.
@@ -34837,10 +35182,26 @@ export interface components {
       rule_id?: string
       /** @description Rule name */
       rule_name?: string
+      /**
+       * @description Every score of the finding with its source and date (CVSS v3.1 and
+       *     v4.0 together, vendor scores, EPSS, SSVC). The vulnerability.cvss_*
+       *     members stay the primary CVSS score.
+       */
+      scores?: components['schemas']['ctis.Score'][]
       /** @description Secret-specific details */
       secret?: components['schemas']['ctis.SecretDetails']
       /** @description Severity (required): critical, high, medium, low, info */
       severity?: components['schemas']['ctis.Severity']
+      /**
+       * @description Source fields no CTIS member holds, as strings, so an importer drops
+       *     nothing silently. Bounded: at most 64 entries, keys of 128 and values
+       *     of 4096 bytes, 32 KiB in all. Use SetSourceExtra to stay within it.
+       */
+      source_extra?: {
+        [key: string]: string
+      }
+      /** @description The finding's history as the source tracks it. */
+      source_lifecycle?: components['schemas']['ctis.SourceLifecycle']
       /** @description Stacks - call stacks relevant to the finding (SARIF stacks) */
       stacks?: components['schemas']['ctis.StackTrace'][]
       /** @description Finding status: open, resolved, false_positive, accepted_risk, in_progress */
@@ -34855,6 +35216,8 @@ export interface components {
       title?: string
       /** @description Finding type (required): vulnerability, secret, misconfiguration, compliance */
       type?: components['schemas']['ctis.FindingType']
+      /** @description Exploitability statement (VEX) about this finding's vulnerability. */
+      vex?: components['schemas']['ctis.VEX']
       /** @description Vulnerability-specific details */
       vulnerability?: components['schemas']['ctis.VulnerabilityDetails']
       /** @description Vulnerability class(es): SQL Injection, XSS, Command Injection, etc. */
@@ -34957,6 +35320,25 @@ export interface components {
       /** @description IP version: 4 or 6 */
       version?: number
     }
+    'ctis.IdentityHints': {
+      /**
+       * @description Id of the scanner's own agent installed on the host (a Nessus or
+       *     Qualys agent UUID). Unique per scanner, not across scanners. The Go
+       *     name says whose agent it is, so it is not read as a receiver's own
+       *     endpoint software.
+       */
+      agent_id?: string
+      /** @description Cloud resource id the scanner reported (instance id, ARN). */
+      cloud_resource_id?: string
+      /** @description Fully qualified DNS name the scanner resolved. */
+      fqdn?: string
+      /** @description MAC addresses observed. */
+      mac_addresses?: string[]
+      /** @description NetBIOS name. */
+      netbios_name?: string
+      /** @description CPE of the detected operating system (cpe:/o:... or cpe:2.3:o:...). */
+      os_cpe?: string
+    }
     'ctis.LogicalLocation': {
       /** @description Fully qualified name (e.g., "pkg.MyClass.myMethod") */
       fully_qualified_name?: string
@@ -35029,6 +35411,55 @@ export interface components {
       /** @description Total volume USD */
       total_volume_usd?: number
     }
+    'ctis.NativeIdentity': {
+      /**
+       * @description Whether the scan that found it was authenticated on the target. Absent
+       *     means unknown; false means the scan ran without credentials.
+       */
+      credentialed?: boolean
+      /** @description Whether the tool confirmed the issue or only suspects it. */
+      detection_type?: components['schemas']['ctis.DetectionType']
+      /**
+       * @description The tool's family or category of the check (Nessus plugin family,
+       *     Qualys vulnerability category).
+       */
+      family?: string
+      /**
+       * @description The tool's id of this occurrence (DefectDojo unique_id_from_tool, a
+       *     Tenable or Qualys detection id), when it has one.
+       */
+      instance_id?: string
+      /**
+       * @description Where the raw record can be found again: a URL into the source, or a
+       *     locator inside the imported file. Informational; receivers never fetch
+       *     it.
+       */
+      raw_ref?: string
+      /**
+       * @description Vocabulary of the native values below. Selects the mapping tables of
+       *     NormalizeNativeSeverity, NormalizeNativeStatus and
+       *     NormalizeDetectionType.
+       */
+      scheme?: components['schemas']['ctis.NativeScheme']
+      /**
+       * @description The tool's severity exactly as reported ("4", "5", "High", "error").
+       *     finding.severity holds the normalized level.
+       */
+      severity?: string
+      /**
+       * @description The tool's status exactly as reported ("Re-Opened", "fixed",
+       *     "risk_accepted"). finding.status and source_lifecycle.state hold the
+       *     normalized values.
+       */
+      status?: string
+      /**
+       * @description The tool's id of the vulnerability or check: a Nessus plugin ID, a
+       *     Qualys QID, a DefectDojo vuln_id_from_tool, a SARIF rule id.
+       */
+      vuln_id?: string
+    }
+    /** @enum {string} */
+    'ctis.NativeScheme': 'nessus' | 'qualys' | 'defectdojo' | 'sarif' | 'other'
     'ctis.NetworkLocation': {
       /**
        * @description Host the finding was observed on (IP or hostname). Optional when the
@@ -35083,6 +35514,8 @@ export interface components {
       type?: string
     }
     'ctis.Remediation': {
+      /** @description Vendor advisories that address the finding. */
+      advisories?: components['schemas']['ctis.Advisory'][]
       /** @description Auto-fixable */
       auto_fixable?: boolean
       /** @description Effort estimate: trivial, low, medium, high */
@@ -35096,10 +35529,14 @@ export interface components {
       fix_code?: string
       /** @description Regex-based fix pattern (for tools that provide regex replacements) */
       fix_regex?: components['schemas']['ctis.FixRegex']
+      /** @description When the vendor published the patch. */
+      patch_published_at?: string
       /** @description Short recommendation */
       recommendation?: string
       /** @description Reference URLs */
       references?: string[]
+      /** @description Kind of fix: patch, upgrade, config, workaround, mitigation, no_fix. */
+      solution_type?: components['schemas']['ctis.SolutionType']
       /** @description Detailed fix steps */
       steps?: string[]
     }
@@ -35197,6 +35634,30 @@ export interface components {
       /** @description Scope type: domain, network, repository, cloud_account */
       type?: string
     }
+    'ctis.Score': {
+      /** @description When the source assigned or last updated it. */
+      as_of?: string
+      /** @description Qualitative rating as the source states it ("high", "Act"). */
+      label?: string
+      /** @description Who assigned it: nvd, ghsa, vendor, tenable, qualys, first, cisa, ... */
+      source?: string
+      /** @description Scoring system (required). */
+      system?: components['schemas']['ctis.ScoreSystem']
+      /**
+       * @description Numeric value: 0-10 for cvss and vpr, 0-1 for epss and
+       *     epss_percentile (FIRST's fractions), absent for ssvc.
+       */
+      value?: number
+      /** @description Vector string ("CVSS:3.1/AV:N/...", an SSVC vector). */
+      vector?: string
+      /**
+       * @description System version: "2.0", "3.0", "3.1" or "4.0" for CVSS (required
+       *     there), the model version for EPSS, "2" for SSVC.
+       */
+      version?: string
+    }
+    /** @enum {string} */
+    'ctis.ScoreSystem': 'cvss' | 'epss' | 'epss_percentile' | 'ssvc' | 'vpr' | 'vendor'
     'ctis.SecretDetails': {
       /** @description Secret age (how long since creation, if known) */
       age_in_days?: number
@@ -35362,6 +35823,22 @@ export interface components {
       /** @description Is verified on explorer (etherscan, etc.) */
       verified?: boolean
     }
+    /** @enum {string} */
+    'ctis.SolutionType': 'patch' | 'upgrade' | 'config' | 'workaround' | 'mitigation' | 'no_fix'
+    'ctis.SourceLifecycle': {
+      /** @description When the source first found it. */
+      first_found?: string
+      /** @description When the source last saw it fixed. */
+      last_fixed?: string
+      /** @description When the source last found it. */
+      last_found?: string
+      /** @description The source state, normalized (native.status keeps the source's word). */
+      state?: components['schemas']['ctis.SourceState']
+      /** @description How many times the source has found it. */
+      times_found?: number
+    }
+    /** @enum {string} */
+    'ctis.SourceState': 'new' | 'active' | 'reopened' | 'fixed'
     'ctis.StackFrame': {
       /** @description Location of this frame */
       location?: components['schemas']['ctis.FindingLocation']
@@ -35477,6 +35954,35 @@ export interface components {
       /** @description Quote token symbol (WETH, USDT, etc.) */
       quote_token?: string
     }
+    'ctis.VEX': {
+      /** @description When the statement was made. */
+      as_of?: string
+      /**
+       * @description Why the product is not affected. Only with status not_affected, which
+       *     needs a justification or a statement.
+       */
+      justification?: components['schemas']['ctis.VEXJustification']
+      /**
+       * @description The justification as the source document states it (a CycloneDX
+       *     analysis.justification such as code_not_reachable).
+       */
+      native_justification?: string
+      /** @description Who made the statement: a document id or URL, a vendor, a team. */
+      source?: string
+      /** @description Impact or action statement, plain text. */
+      statement?: string
+      /** @description Status (required). */
+      status?: components['schemas']['ctis.VEXStatus']
+    }
+    /** @enum {string} */
+    'ctis.VEXJustification':
+      | 'component_not_present'
+      | 'vulnerable_code_not_present'
+      | 'vulnerable_code_not_in_execute_path'
+      | 'vulnerable_code_cannot_be_controlled_by_adversary'
+      | 'inline_mitigations_already_exist'
+    /** @enum {string} */
+    'ctis.VEXStatus': 'not_affected' | 'affected' | 'fixed' | 'under_investigation'
     'ctis.VulnDataSource': {
       /** @description Data source ID (e.g., "nvd", "ghsa", "osv") */
       id?: string
@@ -35535,6 +36041,12 @@ export interface components {
       fixed_version?: string
       /** @description All available fixed versions */
       fixed_versions?: string[]
+      /**
+       * @description Every id of the vulnerability with its namespace (CVE, GHSA, OSV,
+       *     vendor). cve_id and cve_ids stay as they are; producers that send
+       *     both keep them consistent.
+       */
+      ids?: components['schemas']['ctis.VulnerabilityID'][]
       /** @description In CISA KEV (Known Exploited Vulnerabilities) */
       in_cisa_kev?: boolean
       /** @description Is direct dependency (vs transitive) */
@@ -35566,6 +36078,19 @@ export interface components {
       /** @description Vulnerability status: affected, fixed, under_investigation, will_not_fix */
       vuln_status?: string
     }
+    'ctis.VulnerabilityID': {
+      /**
+       * @description The identifier (required): CVE-2024-3094, GHSA-xxxx-xxxx-xxxx,
+       *     PYSEC-2021-1, RHSA-2024:1234.
+       */
+      id?: string
+      /** @description Issuer of a vendor id (redhat, microsoft, ubuntu, ...). */
+      source?: string
+      /** @description Namespace (required). */
+      type?: components['schemas']['ctis.VulnerabilityIDType']
+    }
+    /** @enum {string} */
+    'ctis.VulnerabilityIDType': 'cve' | 'ghsa' | 'osv' | 'vendor'
     'ctis.WalletDetails': {
       /** @description Balance (native token, in wei) */
       balance?: string
@@ -35800,6 +36325,14 @@ export interface components {
       base_branch_known?: boolean
       new?: string[]
       pre_existing?: string[]
+    }
+    'github_com_openctemio_openctem_api_internal_app_cirun.Settings': {
+      /**
+       * @description RequireOIDC refuses CI results sent with a sensor key: a CI job must
+       *     prove its identity with its provider's OIDC token. On for every
+       *     organization created after migration 001120; existing ones opt in.
+       */
+      require_oidc?: boolean
     }
     'github_com_openctemio_openctem_api_internal_app_cirun.Verdict': {
       baseline?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView']
@@ -37055,6 +37588,56 @@ export interface components {
       snippet?: string
       start_column?: number
       start_line?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropAdvisory': {
+      id?: string
+      source?: string
+      url?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropLifecycle': {
+      first_found?: string
+      last_fixed?: string
+      last_found?: string
+      state?: string
+      times_found?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropNative': {
+      credentialed?: boolean
+      detection_type?: string
+      family?: string
+      instance_id?: string
+      raw_ref?: string
+      scheme?: string
+      severity?: string
+      status?: string
+      vuln_id?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropScore': {
+      as_of?: string
+      label?: string
+      source?: string
+      system?: string
+      value?: number
+      vector?: string
+      version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropSolution': {
+      advisories?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropAdvisory'][]
+      patch_published_at?: string
+      type?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVEX': {
+      as_of?: string
+      justification?: string
+      native_justification?: string
+      source?: string
+      statement?: string
+      status?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVulnID': {
+      id?: string
+      source?: string
+      type?: string
     }
     'github_com_openctemio_openctem_api_pkg_domain_vulnerability.LogicalLocation': {
       fully_qualified_name?: string
@@ -38371,6 +38954,13 @@ export interface components {
       notes?: string
       ransomware_use?: string
     }
+    'internal_infra_http_handler.CISettingsRequest': {
+      /**
+       * @description RequireOIDC refuses CI results sent with a sensor key (a CI job must
+       *     use its provider's OIDC identity).
+       */
+      require_oidc?: boolean
+    }
     'internal_infra_http_handler.CITemplateDrift': {
       current?: string
       drifted?: number
@@ -39605,6 +40195,8 @@ export interface components {
       sla_status?: string
       snippet?: string
       source?: string
+      /** @description What the source knew (CTIS 1.4): native identity, every score, VEX, ...; untrusted */
+      source_data?: components['schemas']['internal_infra_http_handler.FindingSourceDataResponse']
       stacks?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.StackTrace'][]
       start_column?: number
       start_line?: number
@@ -39697,6 +40289,18 @@ export interface components {
       is_active?: boolean
       name?: string
       updated_at?: string
+    }
+    'internal_infra_http_handler.FindingSourceDataResponse': {
+      lifecycle?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropLifecycle']
+      location_key?: string
+      native?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropNative']
+      scores?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropScore'][]
+      solution?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropSolution']
+      source_extra?: {
+        [key: string]: string
+      }
+      vex?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVEX']
+      vulnerability_ids?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVulnID'][]
     }
     'internal_infra_http_handler.FindingSourceResponse': {
       category?: components['schemas']['internal_infra_http_handler.FindingSourceCategoryResponse']
@@ -41678,6 +42282,12 @@ export interface components {
       max_concurrent_jobs?: number
       tools?: string[]
     }
+    'internal_infra_http_handler.SensorGrantProfiles': {
+      profiles?: components['schemas']['SensorGrantProfile'][]
+    }
+    'internal_infra_http_handler.SensorGrantSummaries': {
+      data?: components['schemas']['SensorGrantSummary'][]
+    }
     'internal_infra_http_handler.SensorHealthReasonResponse': {
       /** @enum {string} */
       code?:
@@ -42770,6 +43380,25 @@ export interface components {
       description?: string
       priority?: number
       tags?: string[]
+    }
+    'internal_infra_http_handler.UpdateSensorGrantRequest': {
+      allow_credentials?: boolean
+      allow_push_ingest?: boolean
+      capabilities?: string[]
+      job_types?: string[]
+      profile?: string
+      remote_actions?: string[]
+      target_cidrs?: string[]
+      target_domains?: string[]
+      /** @enum {string} */
+      target_network?: 'any' | 'public' | 'none'
+      tier_ceiling?: number
+      tools?: string[]
+      /** @enum {string} */
+      trust_level?: 'new' | 'trusted'
+      /** @description Version is the version read; a stale one answers 409. */
+      version?: number
+      zone_ids?: string[]
     }
     'internal_infra_http_handler.UpdateSensorRequest': {
       capabilities?: string[]

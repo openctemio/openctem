@@ -133,6 +133,11 @@ sequenceDiagram
 - Audited: exchange (`ci_run.token_issued`/`token_refused`), each upload
   (`ci_run.results_uploaded`), the verdict (`ci_run.evaluated`) and each
   break-glass create, revoke and use. The actor is `ci:<provider>:<login>`.
+- With "OIDC required for CI" (`tenants.ci_require_oidc`, default on for new
+  organizations), a one-shot sensor's key is refused on every sensor route
+  (`cirun.RunnerKeyPolicy`, wired into both sensor authenticators); the
+  setting is read only for one-shot sensors, and an unreadable setting
+  refuses.
 - A run token (`octci_`) authenticates only `/ci/runs/{its id}/{results,
   baseline-diff,evaluate}`: every session, API-key, console and MCP route
   refuses it, and the run routes refuse every other credential
