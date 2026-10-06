@@ -25,6 +25,7 @@ import (
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // End-to-end OIDC callback against a mock identity provider (httptest TLS
@@ -141,7 +142,7 @@ func mockOkta(t *testing.T, email string, mode idTokenMode) *mockOktaIdP {
 			if mode == idTokenWrongIssuer {
 				iss = "https://evil.example.com/oauth2/default"
 			}
-			resp["id_token"] = signIDToken(t, key, oidcClaims{
+			resp["id_token"] = signIDToken(t, key, oidc.Claims{
 				Nonce: idp.nonce,
 				Email: email,
 				RegisteredClaims: jwtv5.RegisteredClaims{

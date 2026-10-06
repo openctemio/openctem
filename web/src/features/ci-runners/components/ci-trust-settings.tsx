@@ -15,6 +15,7 @@ import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Check, Copy, KeyRound, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { PageHeader, EmptyState, ErrorState, GatedButton } from '@/features/shared'
+import { CIRequireOIDC } from './ci-require-oidc'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -79,6 +80,7 @@ export function CITrustSettings() {
         title="CI pipelines"
         description="Let GitHub Actions and GitLab CI jobs send results with their own identity instead of a stored API key, and decide what fails a pipeline."
       />
+      <CIRequireOIDC canWrite={canWrite} />
       <Tabs defaultValue="trust">
         <TabsList>
           <TabsTrigger value="trust">Trust</TabsTrigger>
@@ -392,13 +394,18 @@ function TrustConfigDialog({
           >
             <Input id="ci-aud" value={audience} onChange={(e) => setAudience(e.target.value)} />
           </Field>
-          {provider === 'gitlab' && (
-            <SwitchRow
-              id="ci-protected"
-              label="Protected branches and tags only"
-              checked={protectedRef}
-              onChange={setProtectedRef}
-            />
+          <SwitchRow
+            id="ci-protected"
+            label="Protected branches and tags only"
+            checked={protectedRef}
+            onChange={setProtectedRef}
+          />
+          {protectedRef && provider === 'github' && (
+            <p className="text-muted-foreground text-xs">
+              GitHub tokens do not say whether a ref is protected. List the deployment environments
+              above whose deployment branch rules admit only protected branches and tags; only jobs
+              running in one of them are admitted.
+            </p>
           )}
           <SwitchRow
             id="ci-forks"

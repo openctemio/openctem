@@ -15,6 +15,7 @@ import (
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // --- fakes ---------------------------------------------------------------
@@ -100,14 +101,10 @@ func newBCHarness(t *testing.T) *bcHarness {
 	sessRepo := &bcSessionRepo{updated: map[string]bool{}}
 	rtRepo := &bcRefreshRepo{revoked: map[string]bool{}}
 
-	verifier := newOIDCVerifier(&http.Client{Timeout: 2 * time.Second}, logger.NewNop())
-	// Seed the JWKS cache under the DERIVED Entra JWKS URL so keyForKID resolves
-	// the test key without any network fetch.
+	// Serve the test key at the DERIVED Entra JWKS URL without any network
+	// fetch: the transport answers only that URL.
 	jwksURL := identityproviderdom.ProviderEntraID.JWKSURL(testTenantID)
-	verifier.cache[jwksURL] = &jwksEntry{
-		keys:      map[string]*rsa.PublicKey{testKID: &key.PublicKey},
-		fetchedAt: time.Now(),
-	}
+	verifier := oidc.NewClient(&http.Client{Timeout: 2 * time.Second, Transport: jwksTransport(t, jwksURL, &key.PublicKey)}, nil)
 
 	svc := &SSOService{
 		ipRepo:           &bcIPRepo{},

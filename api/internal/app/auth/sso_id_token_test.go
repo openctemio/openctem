@@ -18,6 +18,7 @@ import (
 
 	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 const (
@@ -49,7 +50,7 @@ func jwksServer(t *testing.T, pub *rsa.PublicKey) *httptest.Server {
 }
 
 // signIDToken mints an RS256 id_token with testKID in the header.
-func signIDToken(t *testing.T, key *rsa.PrivateKey, claims oidcClaims) string {
+func signIDToken(t *testing.T, key *rsa.PrivateKey, claims oidc.Claims) string {
 	t.Helper()
 	tok := jwtv5.NewWithClaims(jwtv5.SigningMethodRS256, claims)
 	tok.Header["kid"] = testKID
@@ -60,13 +61,14 @@ func signIDToken(t *testing.T, key *rsa.PrivateKey, claims oidcClaims) string {
 	return signed
 }
 
-func validClaims() oidcClaims {
-	return oidcClaims{
+func validClaims() oidc.Claims {
+	return oidc.Claims{
 		Nonce: testNonce,
 		TID:   testTenantID,
 		Email: "user@example.com",
 		RegisteredClaims: jwtv5.RegisteredClaims{
 			Issuer:    testIssuer(testTenantID),
+			Subject:   "user-sub",
 			Audience:  jwtv5.ClaimStrings{testClientID},
 			ExpiresAt: jwtv5.NewNumericDate(time.Now().Add(1 * time.Hour)),
 			IssuedAt:  jwtv5.NewNumericDate(time.Now()),
@@ -74,17 +76,41 @@ func validClaims() oidcClaims {
 	}
 }
 
-func newTestVerifier(t *testing.T) *oidcVerifier {
+// newOIDCVerifier is the SSO verifier without the URL guard, so it can reach
+// the loopback test servers. Production uses newOIDCClient.
+func newOIDCVerifier(c *http.Client, _ *logger.Logger) *oidc.Client {
+	return oidc.NewClient(c, nil)
+}
+
+func newTestVerifier(t *testing.T) *oidc.Client {
 	t.Helper()
 	return newOIDCVerifier(&http.Client{Timeout: 5 * time.Second}, logger.NewNop())
 }
 
-func entraExpectations(jwksURL string) idTokenExpectations {
-	return idTokenExpectations{
-		jwksURL:        jwksURL,
-		audience:       testClientID,
-		nonce:          testNonce,
-		validateIssuer: entraIssuerValidator(testTenantID),
+// jwksTransport answers GET jwksURL with a JWKS holding pub under testKID and
+// fails every other request.
+func jwksTransport(t *testing.T, jwksURL string, pub *rsa.PublicKey) http.RoundTripper {
+	t.Helper()
+	srv := jwksServer(t, pub)
+	t.Cleanup(srv.Close)
+	return roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.String() != jwksURL {
+			return nil, errors.New("unexpected request to " + r.URL.String())
+		}
+		return http.Get(srv.URL) //nolint:noctx // test transport
+	})
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func entraExpectations(jwksURL string) oidc.Expectations {
+	return oidc.Expectations{
+		JWKSURI:    jwksURL,
+		ClientID:   testClientID,
+		Nonce:      testNonce,
+		IssuerRule: oidc.EntraIssuer(testTenantID),
 	}
 }
 
@@ -96,7 +122,7 @@ func TestOIDCVerify_ValidToken(t *testing.T) {
 	v := newTestVerifier(t)
 	idToken := signIDToken(t, key, validClaims())
 
-	claims, err := v.verify(context.Background(), idToken, entraExpectations(srv.URL))
+	claims, err := v.VerifyIDToken(context.Background(), idToken, entraExpectations(srv.URL))
 	if err != nil {
 		t.Fatalf("verify returned error for a valid token: %v", err)
 	}
@@ -115,7 +141,7 @@ func TestOIDCVerify_NonceMismatch(t *testing.T) {
 	c.Nonce = "attacker-nonce"
 	idToken := signIDToken(t, key, c)
 
-	if _, err := v.verify(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
+	if _, err := v.VerifyIDToken(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
 		t.Fatal("expected error for nonce mismatch, got nil")
 	}
 }
@@ -130,7 +156,7 @@ func TestOIDCVerify_WrongAudience(t *testing.T) {
 	c.Audience = jwtv5.ClaimStrings{"some-other-client"}
 	idToken := signIDToken(t, key, c)
 
-	if _, err := v.verify(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
+	if _, err := v.VerifyIDToken(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
 		t.Fatal("expected error for wrong audience, got nil")
 	}
 }
@@ -147,7 +173,7 @@ func TestOIDCVerify_Expired(t *testing.T) {
 	c.IssuedAt = jwtv5.NewNumericDate(time.Now().Add(-60 * time.Minute))
 	idToken := signIDToken(t, key, c)
 
-	if _, err := v.verify(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
+	if _, err := v.VerifyIDToken(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
 		t.Fatal("expected error for expired token, got nil")
 	}
 }
@@ -161,7 +187,7 @@ func TestOIDCVerify_WrongSigningKey(t *testing.T) {
 	v := newTestVerifier(t)
 	idToken := signIDToken(t, signKey, validClaims())
 
-	if _, err := v.verify(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
+	if _, err := v.VerifyIDToken(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
 		t.Fatal("expected error for signature mismatch, got nil")
 	}
 }
@@ -176,7 +202,7 @@ func TestOIDCVerify_IssuerMismatch(t *testing.T) {
 	c.Issuer = "https://login.microsoftonline.com/evil/v2.0" // does not match tid
 	idToken := signIDToken(t, key, c)
 
-	if _, err := v.verify(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
+	if _, err := v.VerifyIDToken(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
 		t.Fatal("expected error for issuer mismatch, got nil")
 	}
 }
@@ -195,7 +221,7 @@ func TestOIDCVerify_SingleTenantDirectoryMismatch(t *testing.T) {
 	c.Issuer = testIssuer(otherTID)
 	idToken := signIDToken(t, key, c)
 
-	if _, err := v.verify(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
+	if _, err := v.VerifyIDToken(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
 		t.Fatal("expected error for single-tenant directory mismatch, got nil")
 	}
 }
@@ -212,13 +238,13 @@ func TestOIDCVerify_MultiTenantAcceptsAnyDirectory(t *testing.T) {
 	c.Issuer = testIssuer(otherTID)
 	idToken := signIDToken(t, key, c)
 
-	exp := idTokenExpectations{
-		jwksURL:        srv.URL,
-		audience:       testClientID,
-		nonce:          testNonce,
-		validateIssuer: entraIssuerValidator("common"), // multi-tenant authority
+	exp := oidc.Expectations{
+		JWKSURI:    srv.URL,
+		ClientID:   testClientID,
+		Nonce:      testNonce,
+		IssuerRule: oidc.EntraIssuer("common"), // multi-tenant authority
 	}
-	if _, err := v.verify(context.Background(), idToken, exp); err != nil {
+	if _, err := v.VerifyIDToken(context.Background(), idToken, exp); err != nil {
 		t.Fatalf("multi-tenant verify rejected a consistent token: %v", err)
 	}
 }
@@ -237,69 +263,22 @@ func TestOIDCVerify_RejectsNoneAlg(t *testing.T) {
 		t.Fatalf("sign none token: %v", err)
 	}
 
-	if _, err := v.verify(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
+	if _, err := v.VerifyIDToken(context.Background(), idToken, entraExpectations(srv.URL)); err == nil {
 		t.Fatal("expected error for alg=none token, got nil")
 	}
 }
 
 func TestOIDCVerify_EmptyTokenAndNonce(t *testing.T) {
 	v := newTestVerifier(t)
-	if _, err := v.verify(context.Background(), "", entraExpectations("http://unused")); err == nil {
+	if _, err := v.VerifyIDToken(context.Background(), "", entraExpectations("http://unused")); err == nil {
 		t.Fatal("expected error for empty id_token")
 	}
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
 	idToken := signIDToken(t, key, validClaims())
 	exp := entraExpectations("http://unused")
-	exp.nonce = ""
-	if _, err := v.verify(context.Background(), idToken, exp); err == nil {
+	exp.Nonce = ""
+	if _, err := v.VerifyIDToken(context.Background(), idToken, exp); err == nil {
 		t.Fatal("expected error for empty expected nonce")
-	}
-}
-
-func TestEntraIssuerValidator(t *testing.T) {
-	tests := []struct {
-		name       string
-		configured string
-		issuer     string
-		tid        string
-		wantErr    bool
-	}{
-		{"single-tenant match", testTenantID, testIssuer(testTenantID), testTenantID, false},
-		{"single-tenant dir mismatch", testTenantID, testIssuer("other"), "other", true},
-		{"issuer/tid inconsistent", testTenantID, testIssuer("x"), testTenantID, true},
-		{"missing tid", testTenantID, testIssuer(testTenantID), "", true},
-		{"common accepts any", "common", testIssuer("anydir"), "anydir", false},
-		{"empty accepts any", "", testIssuer("anydir"), "anydir", false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := entraIssuerValidator(tc.configured)(tc.issuer, tc.tid)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("err = %v, wantErr = %v", err, tc.wantErr)
-			}
-		})
-	}
-}
-
-func TestParseJWKS(t *testing.T) {
-	key, _ := rsa.GenerateKey(rand.Reader, 2048)
-	n := base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes())
-	e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes())
-	body := []byte(`{"keys":[{"kty":"RSA","kid":"k1","use":"sig","n":"` + n + `","e":"` + e + `"}]}`)
-
-	keys, err := parseJWKS(body)
-	if err != nil {
-		t.Fatalf("parseJWKS: %v", err)
-	}
-	if _, ok := keys["k1"]; !ok {
-		t.Error("expected key k1 in parsed JWKS")
-	}
-
-	if _, err := parseJWKS([]byte(`{"keys":[]}`)); err == nil {
-		t.Error("expected error for JWKS with no usable keys")
-	}
-	if _, err := parseJWKS([]byte(`not json`)); err == nil {
-		t.Error("expected error for malformed JWKS")
 	}
 }
 
@@ -341,22 +320,6 @@ func TestWithOpenIDScope(t *testing.T) {
 	in := []string{"openid", "email"}
 	if got := withOpenIDScope(in); len(got) != 2 {
 		t.Fatalf("openid must not be duplicated: %v", got)
-	}
-}
-
-func TestOktaAndGoogleIssuerValidators(t *testing.T) {
-	okta := oktaIssuerValidator("https://acme.okta.com/")
-	if err := okta("https://acme.okta.com/oauth2/default", ""); err != nil {
-		t.Fatalf("own issuer rejected: %v", err)
-	}
-	if err := okta("https://evil.okta.com/oauth2/default", ""); err == nil {
-		t.Fatal("another org's issuer accepted")
-	}
-	if err := googleIssuerValidator("https://accounts.google.com", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := googleIssuerValidator("https://evil.example.com", ""); err == nil {
-		t.Fatal("non-Google issuer accepted")
 	}
 }
 

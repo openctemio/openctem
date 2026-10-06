@@ -77,6 +77,9 @@ func registerCIRoutes(
 		return
 	}
 	router.Group("/api/v1/ci", func(r Router) {
+		r.GET("/settings", admin.GetSettings, middleware.Require(permission.CIRead))
+		r.PUT("/settings", admin.UpdateSettings, middleware.Require(permission.CIWrite))
+
 		r.GET("/trust-configs", admin.ListTrustConfigs, middleware.Require(permission.CIRead))
 		r.POST("/trust-configs", admin.CreateTrustConfig, middleware.Require(permission.CIWrite))
 		r.GET("/trust-configs/{id}", admin.GetTrustConfig, middleware.Require(permission.CIRead))
@@ -100,7 +103,7 @@ func registerCIRoutes(
 		r.DELETE("/gate-policies/{id}", admin.DeleteGatePolicy, middleware.Require(permission.CIWrite))
 
 		r.GET("/gate-overrides", admin.ListOverrides, middleware.Require(permission.CIRead))
-		r.POST("/gate-overrides", admin.CreateOverride, middleware.Require(permission.CIOverride))
+		r.POST("/gate-overrides", admin.CreateOverride, middleware.Require(permission.CIOverride), requireStepUp())
 		r.POST("/gate-overrides/{id}/revoke", admin.RevokeOverride, middleware.Require(permission.CIOverride))
 	}, append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)...)
 }
