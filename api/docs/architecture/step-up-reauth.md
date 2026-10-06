@@ -89,6 +89,7 @@ answers:
   window, or unknown, revoked, expired or another user's.
 - `403 STEP_UP_UNAVAILABLE`: the request has no user session that can step up
   (an `oct_` API key, a token without a session id), or no checker is wired.
+- `500`: the lookup failed. It fails closed.
 
 A token from the external OIDC provider (`AUTH_PROVIDER=oidc`/`hybrid`) has no
 platform session. Its recent authentication is the provider's signed
@@ -97,7 +98,6 @@ answers `STEP_UP_REQUIRED` when it is older (the client signs in at the
 provider again with `prompt=login` / `max_age=0` and sends the new token), and
 `STEP_UP_UNAVAILABLE` when the token has no `auth_time`. A refreshed token
 keeps its original `auth_time`, so refreshing never extends the window.
-- `500`: the lookup failed. It fails closed.
 
 Add every new protected route to `stepUpRoutes` in
 `internal/infra/http/routes/step_up_routes_test.go`; the test proves each one
