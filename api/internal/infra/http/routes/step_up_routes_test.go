@@ -64,6 +64,11 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",
 	"POST /api/v1/organization/members/{id}/erase",
+	"GET /api/v1/integrations/jira/webhook-secret",
+	"POST /api/v1/integrations/jira/webhook-secret/rotate",
+	"GET /api/v1/integrations/github/webhook-secret",
+	"POST /api/v1/integrations/github/webhook-secret/rotate",
+	"PATCH /api/v1/attachments/storage-config",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -121,6 +126,8 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerCIRoutes(router, &handler.CIAdminHandler{}, nil, auth, nil, chain(), nil, logger.NewNop())
 			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
+			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain())
+			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			mux := router.(interface{ Handler() http.Handler }).Handler()
 
 			for _, route := range stepUpRoutes {

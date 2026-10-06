@@ -40,8 +40,9 @@ func registerAttachmentRoutes(
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.PentestFindingsWrite))
 		// Link orphan attachments to a finding after creation
 		r.POST("/link", h.LinkToContext, middleware.Require(permission.PentestFindingsWrite))
-		// Storage config — admin only
+		// Storage config — admin only. Changing it (where evidence files go,
+		// with which credentials) needs step-up.
 		r.GET("/storage-config", h.GetStorageConfig, middleware.RequireAdmin())
-		r.PATCH("/storage-config", h.UpdateStorageConfig, middleware.RequireAdmin())
+		r.PATCH("/storage-config", h.UpdateStorageConfig, middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 }

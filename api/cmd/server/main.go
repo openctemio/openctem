@@ -292,6 +292,7 @@ func run() int {
 	if cfg.Auth.Provider.SupportsLocal() {
 		InitLocalAuthHandler(&handlers, services, repos, cfg, log)
 	}
+	wireStepUpGate(&handlers, services)
 
 	// ==========================================================================
 	// WebSocket Hub

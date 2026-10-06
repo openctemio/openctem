@@ -14,6 +14,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -575,6 +576,26 @@ func InitLocalAuthHandler(
 			log,
 		)
 		log.Info("local auth handler initialized")
+	}
+}
+
+// wireStepUpGate gives the services that need step-up re-authentication for
+// some of their actions (making someone an administrator or an owner,
+// renaming the organization's slug) the same check the sensitive routes use
+// (docs/architecture/step-up-reauth.md). Without local auth there is no
+// session store: platform sessions then cannot step up (fail closed) and
+// external provider tokens are judged by their auth_time.
+func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
+	var checker middleware.RecentAuthChecker
+	if handlers.LocalAuth != nil {
+		checker = handlers.LocalAuth.RecentAuthChecker()
+	}
+	gate := middleware.RecentAuthGate{Checker: checker, Window: authapp.StepUpWindow}
+	if svc.Role != nil {
+		svc.Role.SetStepUpGate(gate)
+	}
+	if svc.Tenant != nil {
+		svc.Tenant.SetStepUpGate(gate)
 	}
 }
 
