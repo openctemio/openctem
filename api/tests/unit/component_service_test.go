@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -249,7 +249,7 @@ func (s *stubAssetChecker) GetByID(_ context.Context, _, _ shared.ID) (*assetdom
 func TestComponentServiceAssetOwnership(t *testing.T) {
 	t.Run("CreateComponent rejects foreign asset", func(t *testing.T) {
 		repo := newMockComponentRepo()
-		svc := app.NewComponentService(repo, &stubAssetChecker{err: shared.ErrNotFound}, logger.NewNop())
+		svc := asset.NewComponentService(repo, &stubAssetChecker{err: shared.ErrNotFound}, logger.NewNop())
 		_, err := svc.CreateComponent(context.Background(), validCreateComponentInput())
 		if !errors.Is(err, shared.ErrNotFound) {
 			t.Fatalf("expected ErrNotFound, got %v", err)
@@ -261,7 +261,7 @@ func TestComponentServiceAssetOwnership(t *testing.T) {
 
 	t.Run("ListAssetComponents rejects foreign asset", func(t *testing.T) {
 		repo := newMockComponentRepo()
-		svc := app.NewComponentService(repo, &stubAssetChecker{err: shared.ErrNotFound}, logger.NewNop())
+		svc := asset.NewComponentService(repo, &stubAssetChecker{err: shared.ErrNotFound}, logger.NewNop())
 		_, err := svc.ListAssetComponents(context.Background(), shared.NewID().String(), shared.NewID().String(), 1, 20)
 		if !errors.Is(err, shared.ErrNotFound) {
 			t.Fatalf("expected ErrNotFound, got %v", err)
@@ -273,7 +273,7 @@ func TestComponentServiceAssetOwnership(t *testing.T) {
 
 	t.Run("owner asset allowed", func(t *testing.T) {
 		repo := newMockComponentRepo()
-		svc := app.NewComponentService(repo, &stubAssetChecker{err: nil}, logger.NewNop())
+		svc := asset.NewComponentService(repo, &stubAssetChecker{err: nil}, logger.NewNop())
 		if _, err := svc.CreateComponent(context.Background(), validCreateComponentInput()); err != nil {
 			t.Fatalf("expected success for owned asset, got %v", err)
 		}
@@ -283,15 +283,15 @@ func TestComponentServiceAssetOwnership(t *testing.T) {
 	})
 }
 
-func newComponentService(repo *mockComponentRepo) *app.ComponentService {
+func newComponentService(repo *mockComponentRepo) *asset.ComponentService {
 	// nil assetChecker → ownership verification is skipped (guarded), keeping
 	// the existing component tests focused on component logic. Cross-tenant
 	// ownership is covered by TestComponentServiceAssetOwnership.
-	return app.NewComponentService(repo, nil, logger.NewNop())
+	return asset.NewComponentService(repo, nil, logger.NewNop())
 }
 
-func validCreateComponentInput() app.CreateComponentInput {
-	return app.CreateComponentInput{
+func validCreateComponentInput() asset.CreateComponentInput {
+	return asset.CreateComponentInput{
 		TenantID:  shared.NewID().String(),
 		AssetID:   shared.NewID().String(),
 		Name:      "lodash",
@@ -598,7 +598,7 @@ func TestUpdateComponent_Success(t *testing.T) {
 	dep.SetComponent(comp)
 	repo.getDependencyResult = dep
 
-	input := app.UpdateComponentInput{}
+	input := asset.UpdateComponentInput{}
 
 	result, err := svc.UpdateComponent(context.Background(), dep.ID().String(), tenantID.String(), input)
 	if err != nil {
@@ -616,7 +616,7 @@ func TestUpdateComponent_InvalidID(t *testing.T) {
 	repo := newMockComponentRepo()
 	svc := newComponentService(repo)
 
-	_, err := svc.UpdateComponent(context.Background(), "bad-id", shared.NewID().String(), app.UpdateComponentInput{})
+	_, err := svc.UpdateComponent(context.Background(), "bad-id", shared.NewID().String(), asset.UpdateComponentInput{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -630,7 +630,7 @@ func TestUpdateComponent_NotFound(t *testing.T) {
 	repo.getDependencyErr = shared.ErrNotFound
 	svc := newComponentService(repo)
 
-	_, err := svc.UpdateComponent(context.Background(), shared.NewID().String(), shared.NewID().String(), app.UpdateComponentInput{})
+	_, err := svc.UpdateComponent(context.Background(), shared.NewID().String(), shared.NewID().String(), asset.UpdateComponentInput{})
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
@@ -653,7 +653,7 @@ func TestUpdateComponent_IDORCheck_WrongTenant(t *testing.T) {
 	dep.SetComponent(comp)
 	repo.getDependencyResult = dep
 
-	_, err := svc.UpdateComponent(context.Background(), dep.ID().String(), attackerTenantID.String(), app.UpdateComponentInput{})
+	_, err := svc.UpdateComponent(context.Background(), dep.ID().String(), attackerTenantID.String(), asset.UpdateComponentInput{})
 	if err == nil {
 		t.Fatal("expected error for IDOR (wrong tenant)")
 	}
@@ -674,7 +674,7 @@ func TestUpdateComponent_BlankTenantRejected(t *testing.T) {
 	dep.SetComponent(comp)
 	repo.getDependencyResult = dep
 
-	_, err := svc.UpdateComponent(context.Background(), dep.ID().String(), "", app.UpdateComponentInput{})
+	_, err := svc.UpdateComponent(context.Background(), dep.ID().String(), "", asset.UpdateComponentInput{})
 	if err == nil {
 		t.Fatal("expected error for blank tenant")
 	}
@@ -700,7 +700,7 @@ func TestUpdateComponent_RepoError(t *testing.T) {
 	repo.getDependencyResult = dep
 	repo.updateDependencyErr = errors.New("db write failed")
 
-	_, err := svc.UpdateComponent(context.Background(), dep.ID().String(), tenantID.String(), app.UpdateComponentInput{})
+	_, err := svc.UpdateComponent(context.Background(), dep.ID().String(), tenantID.String(), asset.UpdateComponentInput{})
 	if err == nil {
 		t.Fatal("expected error from repo update failure")
 	}
@@ -834,7 +834,7 @@ func TestListComponents_Success(t *testing.T) {
 		TotalPages: 1,
 	}
 
-	input := app.ListComponentsInput{
+	input := asset.ListComponentsInput{
 		TenantID: shared.NewID().String(),
 		Page:     1,
 		PerPage:  20,
@@ -859,7 +859,7 @@ func TestListComponents_InvalidTenantID(t *testing.T) {
 	repo := newMockComponentRepo()
 	svc := newComponentService(repo)
 
-	input := app.ListComponentsInput{
+	input := asset.ListComponentsInput{
 		TenantID: "not-a-uuid",
 	}
 
@@ -884,7 +884,7 @@ func TestListComponents_WithAssetIDFilter(t *testing.T) {
 		TotalPages: 0,
 	}
 
-	input := app.ListComponentsInput{
+	input := asset.ListComponentsInput{
 		TenantID: shared.NewID().String(),
 		AssetID:  shared.NewID().String(),
 		Page:     1,
@@ -908,7 +908,7 @@ func TestListComponents_WithNameFilter(t *testing.T) {
 		Data: []*component.Component{},
 	}
 
-	input := app.ListComponentsInput{
+	input := asset.ListComponentsInput{
 		TenantID: shared.NewID().String(),
 		Name:     "lodash",
 	}
@@ -927,7 +927,7 @@ func TestListComponents_WithEcosystemsFilter(t *testing.T) {
 		Data: []*component.Component{},
 	}
 
-	input := app.ListComponentsInput{
+	input := asset.ListComponentsInput{
 		TenantID:   shared.NewID().String(),
 		Ecosystems: []string{"npm", "pypi"},
 	}
@@ -943,7 +943,7 @@ func TestListComponents_RepoError(t *testing.T) {
 	repo.listComponentsErr = errors.New("db read failure")
 	svc := newComponentService(repo)
 
-	input := app.ListComponentsInput{
+	input := asset.ListComponentsInput{
 		TenantID: shared.NewID().String(),
 	}
 

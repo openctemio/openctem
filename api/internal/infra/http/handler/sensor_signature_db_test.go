@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -60,7 +60,7 @@ func TestSignedSensorAuth_DB(t *testing.T) {
 		tid.String(), sid.String(), signer.KeyID(), []byte(signer.PublicKey()))
 
 	db := &postgres.DB{DB: sqldb}
-	svc := app.NewSensorService(postgres.NewSensorRepository(db), nil, logger.NewNop())
+	svc := sensor.NewSensorService(postgres.NewSensorRepository(db), nil, logger.NewNop())
 	svc.SetSigningKeyRepository(postgres.NewSensorSigningKeyRepository(db))
 
 	var gotTenant string

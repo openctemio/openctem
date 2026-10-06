@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/findingsource"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -19,14 +19,14 @@ import (
 // FindingSourceHandler handles finding source-related HTTP requests.
 // Finding sources are read-only system configuration.
 type FindingSourceHandler struct {
-	service      *app.FindingSourceService
-	cacheService *app.FindingSourceCacheService
+	service      *finding.FindingSourceService
+	cacheService *finding.FindingSourceCacheService
 	validator    *validator.Validator
 	logger       *logger.Logger
 }
 
 // NewFindingSourceHandler creates a new finding source handler.
-func NewFindingSourceHandler(svc *app.FindingSourceService, cacheSvc *app.FindingSourceCacheService, v *validator.Validator, log *logger.Logger) *FindingSourceHandler {
+func NewFindingSourceHandler(svc *finding.FindingSourceService, cacheSvc *finding.FindingSourceCacheService, v *validator.Validator, log *logger.Logger) *FindingSourceHandler {
 	return &FindingSourceHandler{
 		service:      svc,
 		cacheService: cacheSvc,
@@ -114,7 +114,7 @@ func toFindingSourceWithCategoryResponse(fsc *findingsource.FindingSourceWithCat
 }
 
 // cachedToFindingSourceResponse converts a cached finding source to API response.
-func cachedToFindingSourceResponse(cached *app.CachedFindingSource, includeCategory bool) FindingSourceResponse {
+func cachedToFindingSourceResponse(cached *finding.CachedFindingSource, includeCategory bool) FindingSourceResponse {
 	resp := FindingSourceResponse{
 		ID:           cached.ID,
 		Code:         cached.Code,

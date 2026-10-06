@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -84,9 +84,9 @@ func (h *VulnerabilityHandler) attachReactions(r *http.Request, tenantID string,
 
 // reactionInput builds the service input from the authenticated request.
 // The tenant always comes from the credential.
-func (h *VulnerabilityHandler) reactionInput(r *http.Request, emoji string) app.CommentReactionInput {
+func (h *VulnerabilityHandler) reactionInput(r *http.Request, emoji string) finding.CommentReactionInput {
 	ctx := r.Context()
-	return app.CommentReactionInput{
+	return finding.CommentReactionInput{
 		TenantID:     middleware.MustGetTenantID(ctx),
 		CommentID:    r.PathValue("comment_id"),
 		Emoji:        emoji,

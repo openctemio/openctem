@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 )
 
@@ -62,11 +61,11 @@ func TestStepUp(t *testing.T) {
 		var err error
 		for range 20 {
 			err = h.svc.VerifyStepUp(ctx, uid, "", authapp.StepUpProof{Password: "wrong-password"})
-			if errors.Is(err, app.ErrAccountLocked) {
+			if errors.Is(err, authapp.ErrAccountLocked) {
 				break
 			}
 		}
-		if !errors.Is(err, app.ErrAccountLocked) {
+		if !errors.Is(err, authapp.ErrAccountLocked) {
 			t.Fatalf("no lockout after repeated failures: %v", err)
 		}
 		if err := h.svc.VerifyStepUp(ctx, uid, "", authapp.StepUpProof{Password: mfaTestPassword}); err == nil {

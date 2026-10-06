@@ -14,7 +14,7 @@ import (
 	gws "github.com/gorilla/websocket"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
@@ -43,7 +43,7 @@ type wsHarness struct {
 	db       *sql.DB
 	tenantID shared.ID
 	repo     *postgres.NotificationRepository
-	svc      *app.NotificationService
+	svc      *integrationapp.NotificationService
 	server   *httptest.Server
 }
 
@@ -74,7 +74,7 @@ func newWSHarness(t *testing.T) *wsHarness {
 	repo := postgres.NewNotificationRepository(&postgres.DB{DB: db})
 	return &wsHarness{
 		t: t, db: db, tenantID: tenantID, repo: repo,
-		svc:    app.NewNotificationService(repo, hub, log),
+		svc:    integrationapp.NewNotificationService(repo, hub, log),
 		server: srv,
 	}
 }
@@ -344,7 +344,7 @@ func TestNotificationPreferences_AppliedToListCountAndPush(t *testing.T) {
 
 	cases := []struct {
 		name  string
-		prefs app.UpdatePreferencesInput
+		prefs integrationapp.UpdatePreferencesInput
 		// sent notifications (type, severity, title) and which titles the
 		// user must still see.
 		send []notification.NotificationParams
@@ -352,7 +352,7 @@ func TestNotificationPreferences_AppliedToListCountAndPush(t *testing.T) {
 	}{
 		{
 			name:  "in-app disabled",
-			prefs: app.UpdatePreferencesInput{InAppEnabled: &inAppOff},
+			prefs: integrationapp.UpdatePreferencesInput{InAppEnabled: &inAppOff},
 			send: []notification.NotificationParams{
 				{Title: "crit", Severity: notification.SeverityCritical},
 				{Title: "info", Severity: notification.SeverityInfo},
@@ -361,7 +361,7 @@ func TestNotificationPreferences_AppliedToListCountAndPush(t *testing.T) {
 		},
 		{
 			name:  "muted type",
-			prefs: app.UpdatePreferencesInput{MutedTypes: []string{notification.TypeScanCompleted}},
+			prefs: integrationapp.UpdatePreferencesInput{MutedTypes: []string{notification.TypeScanCompleted}},
 			send: []notification.NotificationParams{
 				{Title: "scan-done", NotificationType: notification.TypeScanCompleted},
 				{Title: "scan-failed", NotificationType: notification.TypeScanFailed},
@@ -370,7 +370,7 @@ func TestNotificationPreferences_AppliedToListCountAndPush(t *testing.T) {
 		},
 		{
 			name:  "minimum severity high",
-			prefs: app.UpdatePreferencesInput{MinSeverity: &high},
+			prefs: integrationapp.UpdatePreferencesInput{MinSeverity: &high},
 			send: []notification.NotificationParams{
 				{Title: "sev-critical", Severity: notification.SeverityCritical},
 				{Title: "sev-high", Severity: notification.SeverityHigh},
@@ -442,10 +442,10 @@ func TestNotificationPreferences_SQLMatchesDomainRule(t *testing.T) {
 	}
 
 	off, on := false, true
-	prefSets := []app.UpdatePreferencesInput{{InAppEnabled: &on}, {InAppEnabled: &off}}
+	prefSets := []integrationapp.UpdatePreferencesInput{{InAppEnabled: &on}, {InAppEnabled: &off}}
 	for _, sev := range append([]string{""}, severities...) {
 		s := sev
-		prefSets = append(prefSets, app.UpdatePreferencesInput{MinSeverity: &s, MutedTypes: []string{notification.TypeScanFailed}})
+		prefSets = append(prefSets, integrationapp.UpdatePreferencesInput{MinSeverity: &s, MutedTypes: []string{notification.TypeScanFailed}})
 	}
 
 	for i, in := range prefSets {

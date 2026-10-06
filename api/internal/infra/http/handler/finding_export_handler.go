@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -287,7 +287,7 @@ func (h *VulnerabilityHandler) ExportFindings(w http.ResponseWriter, r *http.Req
 		hdr.Set("Cache-Control", "no-store")
 		hdr.Set("X-Content-Type-Options", "nosniff")
 		hdr.Set("Trailer", "X-Export-Truncated, X-Export-Rows")
-		hdr.Set("X-Export-Max-Rows", strconv.Itoa(app.MaxExportRows))
+		hdr.Set("X-Export-Max-Rows", strconv.Itoa(finding.MaxExportRows))
 		name := "findings-" + time.Now().UTC().Format("20060102-150405")
 		if format == exportFormatCSV {
 			hdr.Set("Content-Type", "text/csv; charset=utf-8")

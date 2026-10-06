@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -226,7 +226,7 @@ func (h *AdminConsoleHandler) ChangePassword(w http.ResponseWriter, r *http.Requ
 	}
 	if err := h.svc.ChangePassword(r.Context(), a, req.CurrentPassword, req.NewPassword, clientInfo(r)); err != nil {
 		switch {
-		case errors.Is(err, app.ErrPasswordMismatch):
+		case errors.Is(err, auth.ErrPasswordMismatch):
 			apierror.BadRequest("Current password is incorrect").WriteJSON(w)
 		case errors.Is(err, password.ErrPasswordTooShort), errors.Is(err, password.ErrPasswordNoUppercase),
 			errors.Is(err, password.ErrPasswordNoLowercase), errors.Is(err, password.ErrPasswordNoNumber),

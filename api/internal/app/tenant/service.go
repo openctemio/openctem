@@ -31,7 +31,7 @@ type EmailJobEnqueuer interface {
 
 // MemberStatusEmailNotifier sends transactional emails when a
 // membership lifecycle event happens (suspend / reactivate). The
-// concrete implementation is *app.EmailService; we depend on the
+// concrete implementation is *auth.EmailService; we depend on the
 // interface here to keep the dependency direction clean.
 type MemberStatusEmailNotifier interface {
 	SendMemberSuspendedEmail(ctx context.Context, recipientEmail, recipientName, teamName, actorName, tenantID string) error

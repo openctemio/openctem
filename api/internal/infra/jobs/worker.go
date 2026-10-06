@@ -8,7 +8,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -65,7 +65,7 @@ func WithAITriageProcessor(processor AITriageProcessor) WorkerOption {
 }
 
 // NewWorker creates a new background job worker.
-func NewWorker(cfg WorkerConfig, emailService *app.EmailService, log *logger.Logger, opts ...WorkerOption) (*Worker, error) {
+func NewWorker(cfg WorkerConfig, emailService *auth.EmailService, log *logger.Logger, opts ...WorkerOption) (*Worker, error) {
 	server := asynq.NewServer(
 		asynq.RedisClientOpt{
 			Addr:      cfg.RedisAddr,

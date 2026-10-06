@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
@@ -36,7 +36,7 @@ type fakeFindingReader struct {
 	finding *vulnerability.Finding
 }
 
-func (f *fakeFindingReader) ListFindings(_ context.Context, in app.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error) {
+func (f *fakeFindingReader) ListFindings(_ context.Context, in findingapp.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error) {
 	f.gotTenant = in.TenantID
 	return pagination.NewResult([]*vulnerability.Finding{}, 0, pagination.Pagination{Page: 1, PerPage: 25}), nil
 }
@@ -48,7 +48,7 @@ func (f *fakeFindingReader) GetFindingWithScope(_ context.Context, tenantID, _, 
 	}
 	return f.finding, nil
 }
-func (f *fakeFindingReader) GetFindingStatsWithScope(_ context.Context, in app.GetFindingStatsInput) (*vulnerability.FindingStats, error) {
+func (f *fakeFindingReader) GetFindingStatsWithScope(_ context.Context, in findingapp.GetFindingStatsInput) (*vulnerability.FindingStats, error) {
 	f.gotTenant = in.TenantID
 	f.gotScopeUser = in.ActingUserID
 	f.gotIsAdmin = in.IsAdmin
@@ -57,7 +57,7 @@ func (f *fakeFindingReader) GetFindingStatsWithScope(_ context.Context, in app.G
 	}
 	return &vulnerability.FindingStats{}, nil
 }
-func (f *fakeFindingReader) ListActiveCVEs(_ context.Context, _ app.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error) {
+func (f *fakeFindingReader) ListActiveCVEs(_ context.Context, _ findingapp.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.NewResult([]vulnerability.ActiveCVE{}, 0, pagination.Pagination{Page: 1, PerPage: 25}), nil
 }
 

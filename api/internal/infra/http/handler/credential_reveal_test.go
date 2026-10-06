@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -65,7 +65,7 @@ func newRevealFixture(t *testing.T) (*CredentialImportHandler, *exposure.Exposur
 	ev := exposure.Reconstitute(shared.NewID(), shared.NewID(), nil,
 		exposure.EventTypeCredentialLeaked, exposure.SeverityHigh, exposure.StateActive,
 		"alice@corp.test", "", details, "fp", "data_breach", now, now, nil, nil, "", now, now)
-	svc := app.NewCredentialImportService(&revealStubRepo{ev: ev}, nil, logger.NewNop())
+	svc := integration.NewCredentialImportService(&revealStubRepo{ev: ev}, nil, logger.NewNop())
 	svc.SetSecretProtector(p)
 	return NewCredentialImportHandler(svc, nil, logger.NewNop()), ev
 }

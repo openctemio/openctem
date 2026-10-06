@@ -10,10 +10,14 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/capability"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
@@ -190,8 +194,8 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 // campaign actively closes its open findings (RFC-015 Phase 3). Kept here (not
 // in exposure) so exposure needn't import the finding service or the guard.
 type campaignFindingResolver struct {
-	vuln  *app.VulnerabilityService
-	guard *app.BulkGuard
+	vuln  *finding.VulnerabilityService
+	guard *finding.BulkGuard
 }
 
 // maxCampaignResolve caps how many findings one campaign-resolve touches; the
@@ -224,7 +228,7 @@ func (a campaignFindingResolver) ResolveOpenByFilter(ctx context.Context, tenant
 	if status == "" {
 		status = string(vulnerability.FindingStatusFixApplied)
 	}
-	res, err := a.vuln.BulkUpdateFindingsStatus(ctx, tenantID, app.BulkUpdateStatusInput{
+	res, err := a.vuln.BulkUpdateFindingsStatus(ctx, tenantID, finding.BulkUpdateStatusInput{
 		FindingIDs:          idStrs,
 		Status:              status,
 		Resolution:          in.Resolution,
@@ -500,15 +504,15 @@ func (b *wsHubBroadcaster) Broadcast(channel string, data any) {
 // Services holds all service instances.
 type Services struct {
 	// Auth
-	Auth    *app.AuthService
-	Session *app.SessionService
+	Auth    *auth.AuthService
+	Session *auth.SessionService
 
 	// Core
 	Audit  *audit.AuditService
-	User   *app.UserService
-	Tenant *app.TenantService
+	User   *tenantapp.UserService
+	Tenant *tenantapp.TenantService
 	// UserProvisioning creates accounts on behalf of administrators.
-	UserProvisioning *app.UserProvisioningService
+	UserProvisioning *tenantapp.UserProvisioningService
 
 	// DataScope enforces the Layer 2 (group) data scope on by-id reads and
 	// writes and on indirect lists (asset groups, attack surface, exposures,
@@ -516,25 +520,25 @@ type Services struct {
 	DataScope *datascope.Enforcer
 
 	// Assets
-	Asset                  *app.AssetService
-	AssetGroup             *app.AssetGroupService
-	AssetType              *app.AssetTypeService
-	AssetRelationship      *app.AssetRelationshipService
-	AssetImport            *app.AssetImportService
-	RelationshipSuggestion *app.RelationshipSuggestionService
+	Asset                  *asset.AssetService
+	AssetGroup             *asset.AssetGroupService
+	AssetType              *asset.AssetTypeService
+	AssetRelationship      *asset.AssetRelationshipService
+	AssetImport            *asset.AssetImportService
+	RelationshipSuggestion *asset.RelationshipSuggestionService
 	Scope                  *scope.Service
 	AttackSurface          *attack.SurfaceService
 	ThreatModel            *threatmodel.Service
 
 	// Configuration (read-only system config)
-	FindingSource      *app.FindingSourceService
-	FindingSourceCache *app.FindingSourceCacheService
+	FindingSource      *finding.FindingSourceService
+	FindingSourceCache *finding.FindingSourceCacheService
 
 	// Vulnerabilities & Exposures
-	Vulnerability   *app.VulnerabilityService
+	Vulnerability   *finding.VulnerabilityService
 	FindingActivity *activity.FindingActivityService
-	FindingActions  *app.FindingActionsService
-	SourceAnalytics *app.SourceAnalyticsService
+	FindingActions  *finding.FindingActionsService
+	SourceAnalytics *finding.SourceAnalyticsService
 	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
 	CTEMID          *ctemidapp.Service
@@ -543,13 +547,13 @@ type Services struct {
 	ActiveGate       *easmapp.ActiveGate
 	EASMDNS          *easmdnsapp.Service
 	EASMSweep        *easmapp.SweepService
-	CredentialImport *app.CredentialImportService
+	CredentialImport *integration.CredentialImportService
 
 	// Components & Branches
-	Component      *app.ComponentService
-	SBOMImport     *app.SBOMImportService
+	Component      *asset.ComponentService
+	SBOMImport     *asset.SBOMImportService
 	ReportSchedule *module.ReportScheduleService
-	Branch         *app.BranchService
+	Branch         *asset.BranchService
 
 	// Dashboard
 	Dashboard *module.DashboardService
@@ -559,13 +563,13 @@ type Services struct {
 	SavedView     *savedviewapp.Service
 
 	// Integrations & Notifications
-	Integration    *app.IntegrationService
+	Integration    *integration.IntegrationService
 	DefectDojoSync *defectdojo.SyncService
 	Outbox         *outbox.Service
-	Notification   *app.NotificationService
+	Notification   *integration.NotificationService
 
 	// Sensors & Commands
-	Sensor *app.SensorService
+	Sensor *sensorapp.SensorService
 	// SensorPairing runs interactive pairing (RFC-052); nil when the
 	// installation has no encryption key to derive the pairing key from.
 	SensorPairing *sensorpairing.Service
@@ -595,7 +599,7 @@ type Services struct {
 	Pipeline        *pipeline.Service
 	ScannerTemplate *app.ScannerTemplateService
 	TemplateSource  *template.SourceService
-	SecretStore     *app.SecretStoreService
+	SecretStore     *integration.SecretStoreService
 	TemplateSyncer  *template.Syncer
 
 	// TemplateKeys signs custom templates for sensors; nil when no key is
@@ -614,7 +618,7 @@ type Services struct {
 	Suppression *suppression.Service
 
 	// Sensor Selection
-	SensorSelector *app.SensorSelector
+	SensorSelector *sensorapp.SensorSelector
 
 	// Access Control
 	Group          *accesscontrol.GroupService
@@ -641,7 +645,7 @@ type Services struct {
 	SLA *sla.Service
 
 	// Priority Classification (RFC-004)
-	PriorityClassification *app.PriorityClassificationService
+	PriorityClassification *finding.PriorityClassificationService
 
 	// B1/B2 reclassification pipeline — memory queue,
 	// publisher (called from control CRUD), reclassifier (consumed
@@ -654,11 +658,11 @@ type Services struct {
 	IOCRepo *postgres.IOCRepository
 
 	// bulk-action guard (attached to finding bulk handlers).
-	BulkGuard *app.BulkGuard
+	BulkGuard *finding.BulkGuard
 
 	// Pentest
 	Pentest    *compliance.PentestService
-	Attachment *app.AttachmentService
+	Attachment *integration.AttachmentService
 
 	// Compliance
 	Compliance *compliance.ComplianceService
@@ -683,7 +687,7 @@ type Services struct {
 	RemediationGroup    *remediation.GroupService
 
 	// Business Units
-	BusinessUnit *app.BusinessUnitService
+	BusinessUnit *asset.BusinessUnitService
 
 	// API Keys & Webhooks
 	APIKey *apikey.Service
@@ -705,8 +709,8 @@ type Services struct {
 	SessionRevocations *redis.SessionRevocationStore
 
 	// Email
-	Email        *app.EmailService
-	EmailEnqueue app.EmailJobEnqueuer
+	Email        *auth.EmailService
+	EmailEnqueue tenantapp.EmailJobEnqueuer
 
 	// Encryption
 	Encryptor crypto.Encryptor
@@ -717,21 +721,21 @@ type Services struct {
 	JWTGenerator *jwt.Generator
 
 	// SSO
-	SSO *app.SSOService
+	SSO *auth.SSOService
 
 	// Social OAuth login (Google / GitHub / Microsoft). nil when no provider
 	// is configured, which keeps the OAuth routes unregistered.
-	OAuth *app.OAuthService
+	OAuth *auth.OAuthService
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
-	SAML *app.SAMLService
+	SAML *auth.SAMLService
 
 	// Admin-console SAML / identity-provider changes wait for an owner of
 	// the organization (RFC-022).
-	SSOChange *app.SSOChangeService
+	SSOChange *auth.SSOChangeService
 
 	// SCIM 2.0 provisioning (RFC-009)
 	SCIMToken        *scim.TokenService
@@ -743,7 +747,7 @@ type Services struct {
 // a system audit context so SCIM-driven membership changes go through the full
 // lifecycle (session revoke + permission-cache clear + audit).
 type scimMembershipAdapter struct {
-	svc *app.TenantService
+	svc *tenantapp.TenantService
 }
 
 func scimAuditContext(tenantID shared.ID) audit.AuditContext {
@@ -751,7 +755,7 @@ func scimAuditContext(tenantID shared.ID) audit.AuditContext {
 }
 
 func (a scimMembershipAdapter) AddMember(ctx context.Context, tenantID, userID shared.ID, role string) error {
-	_, err := a.svc.AddMember(ctx, tenantID.String(), app.AddMemberInput{UserID: userID, Role: role}, shared.ID{}, scimAuditContext(tenantID))
+	_, err := a.svc.AddMember(ctx, tenantID.String(), tenantapp.AddMemberInput{UserID: userID, Role: role}, shared.ID{}, scimAuditContext(tenantID))
 	return err
 }
 
@@ -780,7 +784,7 @@ func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, m
 	if actorID != nil {
 		actx = audit.AuditContext{TenantID: tenantID.String(), ActorID: actorID.String()}
 	}
-	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, actx)
+	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), tenantapp.UpdateMemberRoleInput{Role: role}, actx)
 	return err
 }
 
@@ -813,17 +817,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Audit = audit.NewAuditService(repos.Audit, log)
 
 	// Initialize core services
-	s.User = app.NewUserService(repos.User, log)
-	s.Tenant = app.NewTenantService(repos.Tenant, log,
-		app.WithTenantAuditService(s.Audit),
-		app.WithUserInfoProvider(tenantapp.NewUserDisplayNames(repos.User)),
+	s.User = tenantapp.NewUserService(repos.User, log)
+	s.Tenant = tenantapp.NewTenantService(repos.Tenant, log,
+		tenantapp.WithTenantAuditService(s.Audit),
+		tenantapp.WithUserInfoProvider(tenantapp.NewUserDisplayNames(repos.User)),
 	)
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
 
 	// Initialize asset services
-	s.Asset = app.NewAssetService(repos.Asset, log)
+	s.Asset = asset.NewAssetService(repos.Asset, log)
 	s.Asset.SetRepositoryExtensionRepository(repos.RepoExt)
 	// Wire owner_ref→user auto-resolution (was dead: SetUserMatcher never called,
 	// so an email owner_ref never resolved to a real user_id). Membership-checked.
@@ -836,7 +840,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.DataScope = datascope.New(repos.DataScope, httpDataScopeCaller, log)
 	s.DataScope.SetAdminLookup(membershipAdminLookup(repos.Tenant))
 	s.Asset.SetDataScope(s.DataScope)
-	s.Asset.SetScoringConfigProvider(app.NewTenantScoringConfigProvider(repos.Tenant))
+	s.Asset.SetScoringConfigProvider(asset.NewTenantScoringConfigProvider(repos.Tenant))
 	s.Asset.SetRedisClient(deps.RedisClient)
 	// The Postgres asset repository also implements the narrow
 	// LifecycleRepository side-interface; wire it so the snooze
@@ -851,9 +855,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// (falls back to own criticality). Raises scores for BU-critical assets only.
 	s.Asset.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
 
-	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
+	s.AssetGroup = asset.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetGroup.SetDataScope(s.DataScope)
-	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
+	s.AssetType = asset.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.Asset, log)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
@@ -866,25 +870,25 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.ThreatModel, s.AttackSurface, repos.Asset, repos.AssetRelationship,
 		repos.AttackerProfileReader, repos.Finding, log)
 	s.ThreatModel.SetDataScope(s.DataScope)
-	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
+	s.AssetRelationship = asset.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.AssetRelationship.SetDataScope(s.DataScope)
-	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
+	s.RelationshipSuggestion = asset.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 	s.RelationshipSuggestion.SetDataScope(s.DataScope)
-	s.AssetImport = app.NewAssetImportService(repos.Asset, log)
+	s.AssetImport = asset.NewAssetImportService(repos.Asset, log)
 
 	// Initialize finding source service (read-only system configuration)
-	s.FindingSource = app.NewFindingSourceService(repos.FindingSource, repos.FindingSourceCat, log)
+	s.FindingSource = finding.NewFindingSourceService(repos.FindingSource, repos.FindingSourceCat, log)
 
 	// Initialize finding source cache service (global cache, 24h TTL)
-	s.FindingSourceCache, err = app.NewFindingSourceCacheService(deps.RedisClient, repos.FindingSource, log)
+	s.FindingSourceCache, err = finding.NewFindingSourceCacheService(deps.RedisClient, repos.FindingSource, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create finding source cache service: %w", err)
 	}
 
 	// Initialize component & branch services
-	s.Component = app.NewComponentService(repos.Component, repos.Asset, log)
+	s.Component = asset.NewComponentService(repos.Component, repos.Asset, log)
 	s.Component.SetDataScope(s.DataScope)
-	s.SBOMImport = app.NewSBOMImportService(repos.Component, repos.Asset, log)
+	s.SBOMImport = asset.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.SBOMImport.SetDataScope(s.DataScope)
 	s.ReportSchedule = module.NewReportScheduleService(repos.ReportSchedule, log)
 	s.ReportSchedule.SetRecipientPolicy(repos.Tenant)
@@ -899,10 +903,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		},
 	}, log)
 	s.SavedView.SetAuditService(s.Audit)
-	s.Branch = app.NewBranchService(repos.Branch, log)
+	s.Branch = asset.NewBranchService(repos.Branch, log)
 
 	// Initialize vulnerability & exposure services
-	s.Vulnerability = app.NewVulnerabilityService(repos.Vulnerability, repos.Finding, log)
+	s.Vulnerability = finding.NewVulnerabilityService(repos.Vulnerability, repos.Finding, log)
 	s.Vulnerability.SetCommentRepository(repos.FindingComment)
 	s.Vulnerability.SetCommentReactionRepository(repos.CommentReaction)
 	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
@@ -924,7 +928,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Note: AITriage is wired to VulnerabilityService later after AITriage initialization
 
 	// Initialize finding lifecycle service (closed-loop: fix_applied → verify → resolved)
-	s.FindingActions = app.NewFindingActionsService(
+	s.FindingActions = finding.NewFindingActionsService(
 		repos.Finding, repos.AccessControl, repos.Group, repos.Asset,
 		s.FindingActivity, deps.DB, log,
 	)
@@ -932,7 +936,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.
-	s.SourceAnalytics = app.NewSourceAnalyticsService(repos.Finding, log)
+	s.SourceAnalytics = finding.NewSourceAnalyticsService(repos.Finding, log)
 
 	s.Exposure = exposure.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.Exposure.SetDataScope(s.DataScope)
@@ -981,7 +985,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		sweepDNS = s.EASMDNS
 	}
 	s.EASMSweep = easmapp.NewSweepService(sweepCT, sweepDNS, postgres.NewEASMSweepRepository(&postgres.DB{DB: deps.DB}), log)
-	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
+	s.CredentialImport = integration.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.CredentialImport.SetDataScope(s.DataScope)
 	// Leaked-credential secrets are sealed with the platform credential key
 	// on every write path, and the fingerprint HMAC is keyed from it.
@@ -1004,7 +1008,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize Priority Classification service (RFC-004)
 	epssAdapter := postgres.NewEPSSAdapter(repos.ThreatIntel.EPSS().(*postgres.EPSSRepository))
 	kevAdapter := postgres.NewKEVAdapter(repos.ThreatIntel.KEV().(*postgres.KEVRepository))
-	s.PriorityClassification = app.NewPriorityClassificationService(
+	s.PriorityClassification = finding.NewPriorityClassificationService(
 		repos.Finding, repos.Asset,
 		epssAdapter, kevAdapter,
 		repos.PriorityRule, repos.PriorityAudit, log,
@@ -1023,7 +1027,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// tenants). The owner-presence lookup is batch + tenant-scoped and only runs
 	// for tenants that enabled the floor.
 	s.PriorityClassification.SetAssetOwnerLookup(postgres.NewAssetOwnershipLookupRepo(deps.DB))
-	s.PriorityClassification.SetOwnershipFloorPolicy(app.NewTenantOwnershipFloorPolicy(repos.Tenant))
+	s.PriorityClassification.SetOwnershipFloorPolicy(finding.NewTenantOwnershipFloorPolicy(repos.Tenant))
 	// RFC-036 §6.8: findings on assets whose attribution is not confirmed
 	// (needs_review, candidate, rejected) are capped at P2.
 	if repos.Attribution != nil {
@@ -1034,7 +1038,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
 	// bursts while keeping the classification itself intact on the
 	// dashboard.
-	s.PriorityClassification.SetPriorityFloodGuard(app.NewPriorityFloodGuard(app.PriorityFloodConfig{}))
+	s.PriorityClassification.SetPriorityFloodGuard(finding.NewPriorityFloodGuard(finding.PriorityFloodConfig{}))
 
 	// Close-the-loop: feed attack-path reachability (from the exposure-chain
 	// graph) into prioritization, so an internal asset on a validated
@@ -1106,7 +1110,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// bulk-action safety rail. Defaults: 500 rows/request,
 	// 10k rows/tenant/hour. Attached to bulk finding handlers below.
-	s.BulkGuard = app.NewBulkGuard(app.BulkGuardConfig{})
+	s.BulkGuard = finding.NewBulkGuard(finding.BulkGuardConfig{})
 
 	// Initialize Pentest service
 	s.Pentest = compliance.NewPentestService(
@@ -1158,9 +1162,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// (or "gcs") silently kept files on an ephemeral container disk.
 		return nil, fmt.Errorf("unsupported STORAGE_PROVIDER %q (local, s3 or minio)", cfg.Storage.Provider)
 	}
-	s.Attachment = app.NewAttachmentService(repos.Attachment, fileStorage, log)
+	s.Attachment = integration.NewAttachmentService(repos.Attachment, fileStorage, log)
 	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)
-	storageResolver := app.NewSettingsStorageResolver(deps.DB, s.Encryptor, log)
+	storageResolver := auth.NewSettingsStorageResolver(deps.DB, s.Encryptor, log)
 	// "local" is always the operator storage above, never a tenant-chosen
 	// path; a tenant's own S3/MinIO bucket goes through the SSRF guard.
 	s.Attachment.SetTenantStorageResolver(storageResolver, storage.NewTenantStorageFactory(fileStorage))
@@ -1265,7 +1269,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
-	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
+	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
 	s.Compliance = compliance.NewComplianceService(
@@ -1375,7 +1379,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.GitHubTicket.SetActivityRecorder(s.FindingActivity)
 
 	// Initialize integration & notification services
-	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
+	s.Integration = integration.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
 	s.Integration.SetTransactionDB(deps.DB)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
@@ -1407,7 +1411,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// that point. The publisher itself filters to escalations only (see its
 	// doc comment) so ingest does not double-notify alongside "new_finding".
 	s.PriorityClassification.SetChangePublisher(
-		app.NewOutboxPriorityChangePublisher(s.Outbox, log),
+		finding.NewOutboxPriorityChangePublisher(s.Outbox, log),
 	)
 
 	// Note: UserNotificationService is wired later after NotificationService is initialized
@@ -1415,7 +1419,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Note: NotificationService is wired later after WebSocketHub is initialized
 
 	// Initialize sensor & command services
-	s.Sensor = app.NewSensorService(repos.Sensor, s.Audit, log)
+	s.Sensor = sensorapp.NewSensorService(repos.Sensor, s.Audit, log)
 	// Pepper the sensor API-key hash: HMAC-SHA256(pepper, key) stops a
 	// DB-only leak from being brute-forced offline. The pepper is
 	// SENSOR_KEY_PEPPER, else derived from APP_ENCRYPTION_KEY with HKDF (no
@@ -1618,7 +1622,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log.Warn("APP_ENCRYPTION_KEY not configured - secret store using zero key (development only)")
 		encryptionKey = make([]byte, 32)
 	}
-	s.SecretStore, err = app.NewSecretStoreService(repos.SecretStore, encryptionKey, s.Audit, log, previousSecretStoreKeys...)
+	s.SecretStore, err = integration.NewSecretStoreService(repos.SecretStore, encryptionKey, s.Audit, log, previousSecretStoreKeys...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize secret store service: %w", err)
 	}
@@ -1645,7 +1649,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Capability = capability.NewCapabilityService(repos.Capability, s.Audit, log)
 
 	// Initialize sensor selector for load balancing
-	s.SensorSelector = app.NewSensorSelector(repos.Sensor, repos.Command, deps.SensorStateStore, log)
+	s.SensorSelector = sensorapp.NewSensorSelector(repos.Sensor, repos.Command, deps.SensorStateStore, log)
 	// Same SENSOR_LB_* weights drive job placement, so tuning them changes
 	// scheduling and not just the reported score.
 	s.SensorSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
@@ -2075,7 +2079,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Module.SetWSBroadcaster(broadcaster)
 
 	// Initialize user notification service (needs WebSocketHub)
-	s.Notification = app.NewNotificationService(
+	s.Notification = integration.NewNotificationService(
 		repos.Notification,
 		s.WebSocketHub,
 		log,
@@ -2124,10 +2128,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	})
 
 	// Initialize session service
-	s.Session = app.NewSessionService(repos.Session, repos.RefreshToken, log)
+	s.Session = auth.NewSessionService(repos.Session, repos.RefreshToken, log)
 
 	// Initialize auth service
-	s.Auth = app.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
+	s.Auth = auth.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
@@ -2143,7 +2147,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// this device", password change, enabling 2FA, suspension) records its id
 	// in Redis so the auth middleware rejects its still-unexpired access
 	// tokens on the next request. Without Redis they expire naturally.
-	var revocationStore app.SessionRevocationStore
+	var revocationStore auth.SessionRevocationStore
 	if redisClient != nil {
 		if tokens, err := redis.NewTokenStore(redisClient, log); err != nil {
 			log.Warn("session revocation store unavailable", "error", err)
@@ -2163,7 +2167,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Session.SetRevocationStore(sessionRevocations, revocationTTL)
 
 	// Wire permission services to session service
-	tenantMembershipAdapter := app.NewTenantMembershipAdapter(repos.Tenant)
+	tenantMembershipAdapter := tenantapp.NewTenantMembershipAdapter(repos.Tenant)
 	s.Session.SetPermissionServices(s.PermCache, s.PermVersion, tenantMembershipAdapter)
 
 	// Wire session service to user service for session revocation on suspension
@@ -2176,7 +2180,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Tenant.SetSessionService(s.Session)
 
 	// Initialize SSO service for per-tenant identity provider authentication
-	s.SSO = app.NewSSOService(
+	s.SSO = auth.NewSSOService(
 		repos.IdentityProvider,
 		repos.Tenant,
 		repos.User,
@@ -2210,7 +2214,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// provider actually has credentials, so the login surface the API advertises
 	// on /auth/providers matches the routes it registers — see registerAuthRoutes.
 	if cfg.OAuth.Enabled && cfg.OAuth.HasAnyProvider() {
-		s.OAuth = app.NewOAuthService(
+		s.OAuth = auth.NewOAuthService(
 			repos.User,
 			repos.Session,
 			repos.RefreshToken,
@@ -2229,12 +2233,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	}
 
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
-	s.SAML = app.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
+	s.SAML = auth.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
 
 	// A platform administrator's SAML / identity-provider change waits for an
 	// owner of the organization; owners are told in-app (and by email, wired
 	// in main once the email service exists).
-	s.SSOChange = app.NewSSOChangeService(repos.SSOChange, s.SAML, s.SSO, repos.Tenant, repos.Tenant, log)
+	s.SSOChange = auth.NewSSOChangeService(repos.SSOChange, s.SAML, s.SSO, repos.Tenant, repos.Tenant, log)
 	s.SSOChange.SetNotificationService(s.Notification)
 
 	// Wire the SSO-path checker so TenantService can refuse enabling sso_enforced
@@ -2278,14 +2282,14 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 		SkipVerify: cfg.SMTP.SkipVerify,
 		Timeout:    cfg.SMTP.Timeout,
 	})
-	s.Email = app.NewEmailService(emailSender, cfg.SMTP, cfg.App.Name, log)
+	s.Email = auth.NewEmailService(emailSender, cfg.SMTP, cfg.App.Name, log)
 	log.Info("email service initialized", "host", cfg.SMTP.Host, "from", cfg.SMTP.From)
 
 	return nil
 }
 
 // Note: SetEmailEnqueuer was removed. The previous implementation
-// rebuilt s.Tenant with `app.NewTenantService(nil, nil, ...)`, which
+// rebuilt s.Tenant with `tenant.NewTenantService(nil, nil, ...)`, which
 // dropped the repo and the logger and would panic on any subsequent
 // call. The actual wiring of the email enqueuer happens in main.go
 // where it can also re-attach the permission and session services
@@ -2395,7 +2399,7 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 // the same asynq server, their tasks are enqueued whether or not SMTP is on,
 // and SMTP_ENABLED defaults to false. Returning early here (as this used to)
 // left those queues with no consumer in a default deployment.
-func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *aitriage.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
+func NewJobWorker(cfg *config.Config, emailService *auth.EmailService, aiTriageService *aitriage.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 	redisTLS, err := redis.TLSConfig(&cfg.Redis)
 	if err != nil {

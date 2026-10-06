@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -46,7 +46,7 @@ func TestUpdatePreferences_ReturnsPreferencesObject(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := &prefsUserRepo{u: u}
-	h := NewUserHandler(app.NewUserService(repo, logger.NewNop()), nil, nil, validator.New(), logger.NewNop())
+	h := NewUserHandler(tenant.NewUserService(repo, logger.NewNop()), nil, nil, validator.New(), logger.NewNop())
 
 	body, _ := json.Marshal(map[string]string{"theme": "dark", "language": "vi"})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/me/preferences", bytes.NewReader(body))

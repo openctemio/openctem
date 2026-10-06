@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -232,7 +232,7 @@ func TestOptIns_CommandPayloadRefused(t *testing.T) {
 func TestOptIns_EnablingIsAudited(t *testing.T) {
 	ctx := context.Background()
 	auditRepo := newMockAuditRepo()
-	svc, repo := newTestTenantServiceWithOptions(app.WithTenantAuditService(auditsvc.NewAuditService(auditRepo, logger.NewNop())))
+	svc, repo := newTestTenantServiceWithOptions(tenantapp.WithTenantAuditService(auditsvc.NewAuditService(auditRepo, logger.NewNop())))
 	tn := seedTenant(repo, "Team", "team-optin")
 	actx := auditsvc.AuditContext{ActorID: shared.NewID().String()}
 
@@ -246,7 +246,7 @@ func TestOptIns_EnablingIsAudited(t *testing.T) {
 		return out
 	}
 
-	if _, err := svc.UpdateSecuritySettings(ctx, tn.ID().String(), app.UpdateSecuritySettingsInput{MFARequired: boolPtr(true)}, actx); err != nil {
+	if _, err := svc.UpdateSecuritySettings(ctx, tn.ID().String(), tenantapp.UpdateSecuritySettingsInput{MFARequired: boolPtr(true)}, actx); err != nil {
 		t.Fatal(err)
 	}
 	if n := len(optInEntries()); n != 0 {
@@ -257,7 +257,7 @@ func TestOptIns_EnablingIsAudited(t *testing.T) {
 		t.Fatalf("default opt-ins %+v err %v, want both off", o, err)
 	}
 
-	if _, err := svc.UpdateSecuritySettings(ctx, tn.ID().String(), app.UpdateSecuritySettingsInput{AllowSensorInteractsh: boolPtr(true)}, actx); err != nil {
+	if _, err := svc.UpdateSecuritySettings(ctx, tn.ID().String(), tenantapp.UpdateSecuritySettingsInput{AllowSensorInteractsh: boolPtr(true)}, actx); err != nil {
 		t.Fatal(err)
 	}
 	got := optInEntries()
@@ -268,7 +268,7 @@ func TestOptIns_EnablingIsAudited(t *testing.T) {
 		t.Fatalf("after enabling interactsh: %+v", o)
 	}
 
-	if _, err := svc.UpdateSecuritySettings(ctx, tn.ID().String(), app.UpdateSecuritySettingsInput{AllowSensorInteractsh: boolPtr(false)}, actx); err != nil {
+	if _, err := svc.UpdateSecuritySettings(ctx, tn.ID().String(), tenantapp.UpdateSecuritySettingsInput{AllowSensorInteractsh: boolPtr(false)}, actx); err != nil {
 		t.Fatal(err)
 	}
 	got = optInEntries()

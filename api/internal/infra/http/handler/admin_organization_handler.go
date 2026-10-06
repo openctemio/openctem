@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -28,23 +27,23 @@ import (
 // setup reuse the tenant SSO handlers under AdminTenantScope.
 type AdminOrganizationHandler struct {
 	orgs      admin.OrganizationReader
-	tenants   *app.TenantService
+	tenants   *tenantapp.TenantService
 	users     user.Repository
 	validator *validator.Validator
 	logger    *logger.Logger
 	// provisioning creates accounts (organization users, and the owner of a
 	// new organization) — the same service organization admins use.
-	provisioning *app.UserProvisioningService
+	provisioning *tenantapp.UserProvisioningService
 }
 
 // WithUserProvisioning wires administrator-created accounts.
-func (h *AdminOrganizationHandler) WithUserProvisioning(svc *app.UserProvisioningService) *AdminOrganizationHandler {
+func (h *AdminOrganizationHandler) WithUserProvisioning(svc *tenantapp.UserProvisioningService) *AdminOrganizationHandler {
 	h.provisioning = svc
 	return h
 }
 
 // NewAdminOrganizationHandler creates the handler.
-func NewAdminOrganizationHandler(orgs admin.OrganizationReader, tenants *app.TenantService, users user.Repository, v *validator.Validator, log *logger.Logger) *AdminOrganizationHandler {
+func NewAdminOrganizationHandler(orgs admin.OrganizationReader, tenants *tenantapp.TenantService, users user.Repository, v *validator.Validator, log *logger.Logger) *AdminOrganizationHandler {
 	return &AdminOrganizationHandler{orgs: orgs, tenants: tenants, users: users, validator: v, logger: log.With("handler", "admin_organization")}
 }
 
@@ -282,7 +281,7 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		switch {
 		case errors.Is(err, tenant.ErrPlatformAdminMembership):
 			apierror.Conflict("Platform administrators cannot belong to an organization. Use another owner email.").WriteJSON(w)
-		case errors.Is(err, app.ErrAccountExists):
+		case errors.Is(err, tenantapp.ErrAccountExists):
 			apierror.Conflict("An account with this email was just created. Try again.").WriteJSON(w)
 		case shared.IsValidation(err):
 			apierror.BadRequest(err.Error()).WriteJSON(w)
@@ -397,7 +396,7 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 			apierror.Conflict("This organization already has an owner (active or suspended). Its owner and administrators invite or create users themselves; if every owner is suspended, a super admin can use owner recovery.").WriteJSON(w)
 		case errors.Is(err, tenant.ErrPlatformAdminMembership):
 			apierror.Conflict("Platform administrators cannot belong to an organization.").WriteJSON(w)
-		case errors.Is(err, app.ErrAccountExists):
+		case errors.Is(err, tenantapp.ErrAccountExists):
 			apierror.Conflict("An account with this email already exists. The first owner must be a new account.").WriteJSON(w)
 		case errors.Is(err, shared.ErrNotFound):
 			apierror.NotFound("organization").WriteJSON(w)
@@ -469,7 +468,7 @@ func (h *AdminOrganizationHandler) SetSSOEnforcement(w http.ResponseWriter, r *h
 		return
 	}
 	settings, err := h.tenants.UpdateSecuritySettings(r.Context(), id.String(),
-		app.UpdateSecuritySettingsInput{SSOEnforced: req.Enforced}, adminAuditContext(r, id.String()))
+		tenantapp.UpdateSecuritySettingsInput{SSOEnforced: req.Enforced}, adminAuditContext(r, id.String()))
 	if err != nil {
 		switch {
 		case errors.Is(err, shared.ErrNotFound):

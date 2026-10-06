@@ -74,7 +74,7 @@ const mttdInternetFacingQuery = `
 				(SELECT MIN(e.first_seen_at) FROM exposure_events e
 					WHERE e.asset_id = f.id AND e.tenant_id = $1),
 				(SELECT MIN(fi.first_detected_at) FROM findings fi
-					WHERE fi.tenant_id = $1 AND fi.asset_id = f.id)
+					WHERE fi.tenant_id = $1 AND fi.asset_id = f.id AND NOT fi.branch_only)
 			) AS detected_at
 		FROM fresh f
 	),
@@ -122,7 +122,7 @@ const mttrValidatedQuery = `
 	timed AS (
 		SELECT EXTRACT(EPOCH FROM (f.resolved_at - v.validated_at)) / 3600.0 AS hours
 		FROM validated v
-		JOIN findings f ON f.id = v.finding_id AND f.tenant_id = $1
+		JOIN findings f ON f.id = v.finding_id AND f.tenant_id = $1 AND NOT f.branch_only
 		WHERE f.status IN ('resolved', 'verified')
 			AND f.resolved_at IS NOT NULL
 			AND f.resolved_at >= NOW() - make_interval(days => $2::int)
@@ -167,7 +167,7 @@ const ownerAcceptanceQuery = `
 			(fa.changes->>'assignee_id')::uuid AS assignee_id,
 			f.sla_deadline, f.resolved_at
 		FROM finding_activities fa
-		JOIN findings f ON f.id = fa.finding_id AND f.tenant_id = $1
+		JOIN findings f ON f.id = fa.finding_id AND f.tenant_id = $1 AND NOT f.branch_only
 		WHERE fa.tenant_id = $1
 			AND fa.activity_type = 'assigned'
 			AND fa.created_at >= NOW() - make_interval(days => $2::int)

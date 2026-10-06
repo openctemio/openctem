@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -15,11 +15,11 @@ import (
 // revoked) sensor comes back as Paused so the heartbeat can tell it to pause
 // (RFC-023 §9.2a).
 
-func newIdentitySensor(t *testing.T) (*sensorSvcMockRepo, *app.SensorService, *app.CreateSensorOutput) {
+func newIdentitySensor(t *testing.T) (*sensorSvcMockRepo, *sensor.SensorService, *sensor.CreateSensorOutput) {
 	t.Helper()
 	repo := newSensorSvcMockRepo()
 	svc := newSensorSvcTestService(repo)
-	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+	out, err := svc.CreateSensor(context.Background(), sensor.CreateSensorInput{
 		TenantID: shared.NewID().String(), Name: "identity-sensor", Type: "worker",
 	})
 	if err != nil {
@@ -83,7 +83,7 @@ func TestAuthenticateIdentity_RowKeyCarriesItsOwnExpiry(t *testing.T) {
 	svc.SetKeyTTL(2 * time.Hour)
 	svc.SetAPIKeyRepository(newMockSensorAPIKeyRepo(repo))
 
-	renewed, expiresAt, err := svc.RenewAPIKey(context.Background(), app.SensorIdentity{Sensor: out.Sensor})
+	renewed, expiresAt, err := svc.RenewAPIKey(context.Background(), sensor.SensorIdentity{Sensor: out.Sensor})
 	if err != nil || expiresAt == nil {
 		t.Fatalf("renew: key expiry %v, err %v", expiresAt, err)
 	}

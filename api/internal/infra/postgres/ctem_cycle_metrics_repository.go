@@ -80,7 +80,7 @@ func (r *CTEMCycleMetricsRepository) Compute(
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0), 0)::double precision
 		  FROM findings
-		 WHERE tenant_id = $1
+		 WHERE tenant_id = $1 AND NOT branch_only
 		   AND resolved_at IS NOT NULL
 		   AND resolved_at >= $2 AND resolved_at < $3
 	`, tid, start, end).Scan(&mttr); err != nil {
@@ -92,7 +92,7 @@ func (r *CTEMCycleMetricsRepository) Compute(
 	var opened int64
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM findings
-		 WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3
+		 WHERE tenant_id = $1 AND NOT branch_only AND created_at >= $2 AND created_at < $3
 	`, tid, start, end).Scan(&opened); err != nil {
 		return nil, fmt.Errorf("compute findings_opened: %w", err)
 	}
@@ -102,7 +102,7 @@ func (r *CTEMCycleMetricsRepository) Compute(
 	var resolved int64
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM findings
-		 WHERE tenant_id = $1
+		 WHERE tenant_id = $1 AND NOT branch_only
 		   AND resolved_at IS NOT NULL
 		   AND resolved_at >= $2 AND resolved_at < $3
 	`, tid, start, end).Scan(&resolved); err != nil {
@@ -133,7 +133,7 @@ func (r *CTEMCycleMetricsRepository) Compute(
 		    )
 		  ) AS with_ev
 		FROM findings f
-		WHERE f.tenant_id = $1
+		WHERE f.tenant_id = $1 AND NOT f.branch_only
 		  AND f.resolved_at IS NOT NULL
 		  AND f.resolved_at >= $2 AND f.resolved_at < $3
 	`, tid, start, end).Scan(&totalClosed, &withEvidence); err != nil {
@@ -171,7 +171,7 @@ func (r *CTEMCycleMetricsRepository) Compute(
 		SELECT COUNT(*) FILTER (WHERE priority_class = 'P0'),
 		       COUNT(*) FILTER (WHERE priority_class = 'P1')
 		  FROM findings
-		 WHERE tenant_id = $1
+		 WHERE tenant_id = $1 AND NOT branch_only
 		   AND resolved_at IS NOT NULL
 		   AND resolved_at >= $2 AND resolved_at < $3
 	`, tid, start, end).Scan(&p0Resolved, &p1Resolved); err != nil {

@@ -7,10 +7,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	appcompliance "github.com/openctemio/openctem/api/internal/app/compliance"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -59,19 +60,19 @@ type jsonrpcError struct {
 // the handler can never widen scope beyond the authenticated key's tenant.
 
 type mcpFindingReader interface {
-	ListFindings(ctx context.Context, in app.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error)
+	ListFindings(ctx context.Context, in finding.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error)
 	// GetFindingWithScope enforces the caller's data-scope + pentest membership
 	// (never the admin-bypass GetFinding).
 	GetFindingWithScope(ctx context.Context, tenantID, findingID, actingUserID string, isAdmin bool) (*vulnerability.Finding, error)
 	// GetFindingStatsWithScope applies the caller's group data-scope (isAdmin=false),
 	// so aggregate posture is confined exactly like list_findings — never the
 	// admin-wide GetFindingStats.
-	GetFindingStatsWithScope(ctx context.Context, input app.GetFindingStatsInput) (*vulnerability.FindingStats, error)
-	ListActiveCVEs(ctx context.Context, in app.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error)
+	GetFindingStatsWithScope(ctx context.Context, input finding.GetFindingStatsInput) (*vulnerability.FindingStats, error)
+	ListActiveCVEs(ctx context.Context, in finding.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error)
 }
 
 type mcpPriorityExplainer interface {
-	ExplainFinding(ctx context.Context, tenantID, findingID shared.ID) (*app.PriorityExplanation, error)
+	ExplainFinding(ctx context.Context, tenantID, findingID shared.ID) (*finding.PriorityExplanation, error)
 }
 
 type mcpSurfaceReader interface {
@@ -87,7 +88,7 @@ type mcpComplianceReader interface {
 }
 
 type mcpAssetReader interface {
-	ListAssets(ctx context.Context, in app.ListAssetsInput) (pagination.Result[*assetdom.Asset], error)
+	ListAssets(ctx context.Context, in asset.ListAssetsInput) (pagination.Result[*assetdom.Asset], error)
 	GetAsset(ctx context.Context, tenantID, assetID string) (*assetdom.Asset, error)
 }
 

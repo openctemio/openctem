@@ -9,12 +9,12 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// --- EPSS Adapter (implements app.EPSSRepository) ---
+// --- EPSS Adapter (implements finding.EPSSRepository) ---
 
 // EPSSAdapter wraps the existing EPSS repository to implement the priority service interface.
 type EPSSAdapter struct {
@@ -26,14 +26,14 @@ func NewEPSSAdapter(repo *EPSSRepository) *EPSSAdapter {
 	return &EPSSAdapter{repo: repo}
 }
 
-func (a *EPSSAdapter) GetByCVEIDs(ctx context.Context, cveIDs []string) (map[string]app.EPSSData, error) {
+func (a *EPSSAdapter) GetByCVEIDs(ctx context.Context, cveIDs []string) (map[string]finding.EPSSData, error) {
 	scores, err := a.repo.GetByCVEIDs(ctx, cveIDs)
 	if err != nil {
 		return nil, err
 	}
-	result := make(map[string]app.EPSSData, len(scores))
+	result := make(map[string]finding.EPSSData, len(scores))
 	for _, s := range scores {
-		result[s.CVEID()] = app.EPSSData{
+		result[s.CVEID()] = finding.EPSSData{
 			Score:      s.Score(),
 			Percentile: s.Percentile(),
 		}
@@ -41,7 +41,7 @@ func (a *EPSSAdapter) GetByCVEIDs(ctx context.Context, cveIDs []string) (map[str
 	return result, nil
 }
 
-// --- KEV Adapter (implements app.KEVRepository) ---
+// --- KEV Adapter (implements finding.KEVRepository) ---
 
 // KEVAdapter wraps the existing KEV repository.
 type KEVAdapter struct {
@@ -53,14 +53,14 @@ func NewKEVAdapter(repo *KEVRepository) *KEVAdapter {
 	return &KEVAdapter{repo: repo}
 }
 
-func (a *KEVAdapter) GetByCVEIDs(ctx context.Context, cveIDs []string) (map[string]app.KEVData, error) {
+func (a *KEVAdapter) GetByCVEIDs(ctx context.Context, cveIDs []string) (map[string]finding.KEVData, error) {
 	entries, err := a.repo.GetByCVEIDs(ctx, cveIDs)
 	if err != nil {
 		return nil, err
 	}
-	result := make(map[string]app.KEVData, len(entries))
+	result := make(map[string]finding.KEVData, len(entries))
 	for _, e := range entries {
-		d := app.KEVData{
+		d := finding.KEVData{
 			Ransomware: e.KnownRansomwareCampaignUse(),
 		}
 		if dueDate := e.DueDate(); !dueDate.IsZero() {
@@ -71,7 +71,7 @@ func (a *KEVAdapter) GetByCVEIDs(ctx context.Context, cveIDs []string) (map[stri
 	return result, nil
 }
 
-// --- Priority Rule Repository (implements app.PriorityRuleRepository) ---
+// --- Priority Rule Repository (implements finding.PriorityRuleRepository) ---
 
 // PriorityRuleRepository handles priority override rules.
 type PriorityRuleRepository struct {
@@ -179,7 +179,7 @@ func (r *PriorityRuleRepository) Delete(ctx context.Context, tenantID, ruleID sh
 	return err
 }
 
-// --- Priority Audit Repository (implements app.PriorityAuditRepository) ---
+// --- Priority Audit Repository (implements finding.PriorityAuditRepository) ---
 
 // PriorityAuditRepository logs priority class changes.
 type PriorityAuditRepository struct {
@@ -224,7 +224,7 @@ func (r *PriorityAuditRepository) DeleteOlderThan(ctx context.Context, before ti
 	return n, nil
 }
 
-func (r *PriorityAuditRepository) LogChange(ctx context.Context, entry app.PriorityAuditEntry) error {
+func (r *PriorityAuditRepository) LogChange(ctx context.Context, entry finding.PriorityAuditEntry) error {
 	query := `
 		INSERT INTO priority_class_audit_log (tenant_id, finding_id, previous_class, new_class,
 			reason, source, rule_id, actor_id, created_at)
@@ -302,9 +302,9 @@ func (r *CompensatingControlLookupRepo) GetEffectiveForAssets(ctx context.Contex
 
 // Verify interface compliance
 var (
-	_ app.EPSSRepository            = (*EPSSAdapter)(nil)
-	_ app.KEVRepository             = (*KEVAdapter)(nil)
-	_ app.PriorityRuleRepository    = (*PriorityRuleRepository)(nil)
-	_ app.PriorityAuditRepository   = (*PriorityAuditRepository)(nil)
-	_ app.CompensatingControlLookup = (*CompensatingControlLookupRepo)(nil)
+	_ finding.EPSSRepository            = (*EPSSAdapter)(nil)
+	_ finding.KEVRepository             = (*KEVAdapter)(nil)
+	_ finding.PriorityRuleRepository    = (*PriorityRuleRepository)(nil)
+	_ finding.PriorityAuditRepository   = (*PriorityAuditRepository)(nil)
+	_ finding.CompensatingControlLookup = (*CompensatingControlLookupRepo)(nil)
 )

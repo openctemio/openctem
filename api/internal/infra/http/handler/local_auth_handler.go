@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -23,9 +23,9 @@ import (
 
 // LocalAuthHandler handles local authentication requests.
 type LocalAuthHandler struct {
-	authService    *app.AuthService
-	sessionService *app.SessionService
-	emailService   *app.EmailService
+	authService    *auth.AuthService
+	sessionService *auth.SessionService
+	emailService   *auth.EmailService
 	platformAdmin  PlatformAdminChecker
 	authConfig     config.AuthConfig
 	cookieConfig   CookieConfig
@@ -36,9 +36,9 @@ type LocalAuthHandler struct {
 
 // NewLocalAuthHandler creates a new LocalAuthHandler.
 func NewLocalAuthHandler(
-	authService *app.AuthService,
-	sessionService *app.SessionService,
-	emailService *app.EmailService,
+	authService *auth.AuthService,
+	sessionService *auth.SessionService,
+	emailService *auth.EmailService,
 	platformAdmin PlatformAdminChecker,
 	authConfig config.AuthConfig,
 	log *logger.Logger,
@@ -101,7 +101,7 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.authService.Register(r.Context(), app.RegisterInput{
+	result, err := h.authService.Register(r.Context(), auth.RegisterInput{
 		Email:           req.Email,
 		Password:        req.Password,
 		Name:            req.Name,
@@ -241,7 +241,7 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	ipAddress := getClientIP(r)
 	userAgent := r.UserAgent()
 
-	result, err := h.authService.Login(r.Context(), app.LoginInput{
+	result, err := h.authService.Login(r.Context(), auth.LoginInput{
 		Email:     req.Email,
 		Password:  req.Password,
 		IPAddress: ipAddress,
@@ -265,7 +265,7 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // writeLoginSuccess sets the session cookies and writes the login response
 // shared by password login and the second-factor steps. recoveryCodes is set
 // only when the login just completed a forced 2FA enrollment.
-func (h *LocalAuthHandler) writeLoginSuccess(w http.ResponseWriter, r *http.Request, result *app.LoginResult, recoveryCodes []string) {
+func (h *LocalAuthHandler) writeLoginSuccess(w http.ResponseWriter, r *http.Request, result *auth.LoginResult, recoveryCodes []string) {
 	// Convert tenant memberships to response format
 	tenants := make([]TenantInfo, len(result.Tenants))
 	for i, t := range result.Tenants {
@@ -450,7 +450,7 @@ func (h *LocalAuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	result, err := h.authService.ExchangeToken(r.Context(), app.ExchangeTokenInput{
+	result, err := h.authService.ExchangeToken(r.Context(), auth.ExchangeTokenInput{
 		RefreshToken: refreshToken,
 		TenantID:     req.TenantID,
 	})
@@ -539,7 +539,7 @@ func (h *LocalAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) 
 	ipAddress := getClientIP(r)
 	userAgent := r.UserAgent()
 
-	result, err := h.authService.RefreshToken(r.Context(), app.RefreshTokenInput{
+	result, err := h.authService.RefreshToken(r.Context(), auth.RefreshTokenInput{
 		RefreshToken: refreshToken,
 		TenantID:     req.TenantID,
 		IPAddress:    ipAddress,
@@ -627,7 +627,7 @@ func (h *LocalAuthHandler) CreateFirstTeam(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	result, err := h.authService.CreateFirstTeam(r.Context(), app.CreateFirstTeamInput{
+	result, err := h.authService.CreateFirstTeam(r.Context(), auth.CreateFirstTeamInput{
 		RefreshToken: refreshToken,
 		TeamName:     req.TeamName,
 		TeamSlug:     req.TeamSlug,
@@ -756,7 +756,7 @@ func (h *LocalAuthHandler) acceptInvitationWithRefresh(w http.ResponseWriter, r 
 		return
 	}
 
-	result, err := h.authService.AcceptInvitationWithRefreshToken(r.Context(), app.AcceptInvitationWithRefreshTokenInput{
+	result, err := h.authService.AcceptInvitationWithRefreshToken(r.Context(), auth.AcceptInvitationWithRefreshTokenInput{
 		RefreshToken:    refreshToken,
 		InvitationToken: invitationToken,
 	})
@@ -878,7 +878,7 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 
 	// Always return success to prevent email enumeration
 	ipAddress := getClientIP(r)
-	result, _ := h.authService.ForgotPassword(r.Context(), app.ForgotPasswordInput{
+	result, _ := h.authService.ForgotPassword(r.Context(), auth.ForgotPasswordInput{
 		Email: req.Email,
 	})
 
@@ -948,7 +948,7 @@ func (h *LocalAuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.authService.ResetPassword(r.Context(), app.ResetPasswordInput{
+	if err := h.authService.ResetPassword(r.Context(), auth.ResetPasswordInput{
 		Token:       req.Token,
 		NewPassword: req.NewPassword,
 	}); err != nil {
@@ -999,7 +999,7 @@ func (h *LocalAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.authService.ChangePassword(r.Context(), userID, app.ChangePasswordInput{
+	if err := h.authService.ChangePassword(r.Context(), userID, auth.ChangePasswordInput{
 		CurrentPassword:  req.CurrentPassword,
 		NewPassword:      req.NewPassword,
 		CurrentSessionID: middleware.GetSessionID(r.Context()),
@@ -1019,7 +1019,7 @@ func (h *LocalAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request
 
 // SessionsResponse is the response body for listing sessions.
 type SessionsResponse struct {
-	Sessions []app.SessionInfo `json:"sessions"`
+	Sessions []auth.SessionInfo `json:"sessions"`
 }
 
 // ListSessions lists all active sessions for the authenticated user.
@@ -1149,55 +1149,55 @@ func (h *LocalAuthHandler) Info(w http.ResponseWriter, r *http.Request) {
 // handleAuthError handles authentication errors and returns appropriate HTTP responses.
 func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, app.ErrInvalidCredentials):
+	case errors.Is(err, auth.ErrInvalidCredentials):
 		apierror.Unauthorized("Invalid email or password").WriteJSON(w)
-	case errors.Is(err, app.ErrAccountLocked):
+	case errors.Is(err, auth.ErrAccountLocked):
 		apierror.Forbidden("Account is locked due to too many failed attempts").WriteJSON(w)
-	case errors.Is(err, app.ErrAccountSuspended):
+	case errors.Is(err, auth.ErrAccountSuspended):
 		apierror.Forbidden("Account is suspended").WriteJSON(w)
-	case errors.Is(err, app.ErrEmailNotVerified):
+	case errors.Is(err, auth.ErrEmailNotVerified):
 		apierror.Forbidden("Email is not verified").WriteJSON(w)
-	case errors.Is(err, app.ErrRegistrationDisabled):
+	case errors.Is(err, auth.ErrRegistrationDisabled):
 		apierror.Forbidden("Registration is not available").WriteJSON(w)
-	case errors.Is(err, app.ErrTenantCreationDisabled):
+	case errors.Is(err, auth.ErrTenantCreationDisabled):
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):
 		apierror.Conflict("Platform administrators cannot belong to an organization. Use the admin console, or a separate account.").WriteJSON(w)
-	case errors.Is(err, app.ErrEmailAlreadyExists):
+	case errors.Is(err, auth.ErrEmailAlreadyExists):
 		apierror.Conflict("Email already exists").WriteJSON(w)
-	case errors.Is(err, app.ErrInvalidResetToken):
+	case errors.Is(err, auth.ErrInvalidResetToken):
 		apierror.BadRequest("Invalid or expired reset token").WriteJSON(w)
-	case errors.Is(err, app.ErrInvalidVerificationToken):
+	case errors.Is(err, auth.ErrInvalidVerificationToken):
 		apierror.BadRequest("Invalid or expired verification token").WriteJSON(w)
-	case errors.Is(err, app.ErrPasswordMismatch):
+	case errors.Is(err, auth.ErrPasswordMismatch):
 		// 400, not 401: the caller IS authenticated. Clients treat a 401 as an
 		// expired session and sign the user out, which is wrong for a typo.
 		apierror.BadRequest("Current password is incorrect").WriteJSON(w)
-	case errors.Is(err, app.ErrSessionLimitReached):
+	case errors.Is(err, auth.ErrSessionLimitReached):
 		apierror.Forbidden("Maximum number of active sessions reached").WriteJSON(w)
-	case errors.Is(err, app.ErrTenantAccessDenied):
+	case errors.Is(err, auth.ErrTenantAccessDenied):
 		apierror.Forbidden("User does not have access to this tenant").WriteJSON(w)
-	case errors.Is(err, app.ErrSSORequired):
+	case errors.Is(err, auth.ErrSSORequired):
 		apierror.Forbidden("This organization requires SSO sign-in. Please sign in through your identity provider.").WriteJSON(w)
-	case errors.Is(err, app.ErrTenantRequired):
+	case errors.Is(err, auth.ErrTenantRequired):
 		apierror.BadRequest("tenant_id is required").WriteJSON(w)
 	// Two-factor authentication
-	case errors.Is(err, app.ErrMFAChallengeInvalid):
+	case errors.Is(err, auth.ErrMFAChallengeInvalid):
 		apierror.Unauthorized("Your sign-in verification expired or is no longer valid. Please sign in again.").WriteJSON(w)
-	case errors.Is(err, app.ErrMFACodeInvalid):
+	case errors.Is(err, auth.ErrMFACodeInvalid):
 		apierror.Unauthorized("Invalid verification code").WriteJSON(w)
-	case errors.Is(err, app.ErrMFAEnrollmentRequired):
+	case errors.Is(err, auth.ErrMFAEnrollmentRequired):
 		apierror.New(http.StatusForbidden, apierror.CodeMFAEnrollmentRequired,
 			"This organization requires two-factor authentication. Sign in again to complete it.").WriteJSON(w)
-	case errors.Is(err, app.ErrMFANotSupported):
+	case errors.Is(err, auth.ErrMFANotSupported):
 		apierror.BadRequest("Two-factor authentication for this account is managed by your identity provider").WriteJSON(w)
-	case errors.Is(err, app.ErrMFAAlreadyEnabled):
+	case errors.Is(err, auth.ErrMFAAlreadyEnabled):
 		apierror.Conflict("Two-factor authentication is already enabled").WriteJSON(w)
-	case errors.Is(err, app.ErrMFANotEnabled):
+	case errors.Is(err, auth.ErrMFANotEnabled):
 		apierror.BadRequest("Two-factor authentication is not enabled").WriteJSON(w)
-	case errors.Is(err, app.ErrMFANoPendingSetup):
+	case errors.Is(err, auth.ErrMFANoPendingSetup):
 		apierror.BadRequest("Start two-factor setup first").WriteJSON(w)
-	case errors.Is(err, app.ErrMFAUnavailable):
+	case errors.Is(err, auth.ErrMFAUnavailable):
 		apierror.ServiceUnavailable("Two-factor authentication is not available on this server").WriteJSON(w)
 	// Session/Token errors. A malformed, forged or expired refresh JWT (or
 	// anything else presented as one, e.g. a 2FA challenge token) is a 401,

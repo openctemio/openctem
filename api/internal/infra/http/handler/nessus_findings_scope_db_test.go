@@ -19,7 +19,7 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -102,7 +102,7 @@ func TestNessusFindingsUpload_UploaderScope_DB(t *testing.T) {
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, log)
-	h := NewAssetImportHandler(app.NewAssetImportService(postgres.NewAssetRepository(db), log), ingestSvc, log)
+	h := NewAssetImportHandler(assetapp.NewAssetImportService(postgres.NewAssetRepository(db), log), ingestSvc, log)
 	h.SetDataScope(enforcer)
 
 	type result struct {

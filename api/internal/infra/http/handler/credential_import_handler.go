@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -25,7 +25,7 @@ const queryParamFalse = "false"
 
 // CredentialImportHandler handles credential import HTTP requests.
 type CredentialImportHandler struct {
-	service   *app.CredentialImportService
+	service   *integration.CredentialImportService
 	validator *validator.Validator
 	logger    *logger.Logger
 	// audit records every reveal of a plaintext leaked secret. The read
@@ -71,7 +71,7 @@ func (h *CredentialImportHandler) auditReveal(r *http.Request, id, identifier st
 
 // NewCredentialImportHandler creates a new credential import handler.
 func NewCredentialImportHandler(
-	svc *app.CredentialImportService,
+	svc *integration.CredentialImportService,
 	v *validator.Validator,
 	log *logger.Logger,
 ) *CredentialImportHandler {
@@ -275,7 +275,7 @@ func (h *CredentialImportHandler) ImportCSV(w http.ResponseWriter, r *http.Reque
 // @Param source query string false "Filter by source (comma-separated)"
 // @Param search query string false "Search in identifier"
 // @Param sort query string false "Sort field (prefix - for desc)"
-// @Success 200 {object} app.CredentialListResult
+// @Success 200 {object} integration.CredentialListResult
 // @Failure 401 {object} apierror.Error
 // @Router /credentials [get]
 func (h *CredentialImportHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -296,7 +296,7 @@ func (h *CredentialImportHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse filters
-	opts := app.CredentialListOptions{
+	opts := integration.CredentialListOptions{
 		Search:    r.URL.Query().Get("search"),
 		SortField: r.URL.Query().Get("sort"),
 	}
@@ -329,7 +329,7 @@ func (h *CredentialImportHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Tags Credentials
 // @Produce json
 // @Param id path string true "Credential ID"
-// @Success 200 {object} app.CredentialItem
+// @Success 200 {object} integration.CredentialItem
 // @Failure 404 {object} apierror.Error
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/{id} [get]
@@ -392,7 +392,7 @@ func (h *CredentialImportHandler) RevealSecret(w http.ResponseWriter, r *http.Re
 	secret, err := h.service.RevealSecret(r.Context(), tenantID, id)
 	switch {
 	case err == nil:
-	case errors.Is(err, app.ErrCredentialNoSecret):
+	case errors.Is(err, integration.ErrNoSecret):
 		apierror.NotFound("credential has no stored secret").WriteJSON(w)
 		return
 	case errors.Is(err, credential.ErrSecretUnreadable):
@@ -450,7 +450,7 @@ func (h *CredentialImportHandler) GetStats(w http.ResponseWriter, r *http.Reques
 // @Param page_size query int false "Page size" default(20)
 // @Param state query string false "Filter by state (comma-separated)"
 // @Param search query string false "Search in identifier"
-// @Success 200 {object} app.IdentityListResult
+// @Success 200 {object} integration.IdentityListResult
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/identities [get]
 func (h *CredentialImportHandler) ListByIdentity(w http.ResponseWriter, r *http.Request) {
@@ -471,7 +471,7 @@ func (h *CredentialImportHandler) ListByIdentity(w http.ResponseWriter, r *http.
 	}
 
 	// Parse filters
-	opts := app.CredentialListOptions{
+	opts := integration.CredentialListOptions{
 		Search: r.URL.Query().Get("search"),
 	}
 
@@ -497,7 +497,7 @@ func (h *CredentialImportHandler) ListByIdentity(w http.ResponseWriter, r *http.
 // @Tags Credentials
 // @Produce json
 // @Param id path string true "Credential ID"
-// @Success 200 {array} app.CredentialItem
+// @Success 200 {array} integration.CredentialItem
 // @Failure 404 {object} apierror.Error
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/{id}/related [get]
@@ -529,7 +529,7 @@ func (h *CredentialImportHandler) GetRelatedCredentials(w http.ResponseWriter, r
 // @Param identity path string true "Identity (username or email)"
 // @Param page query int false "Page number" default(1)
 // @Param page_size query int false "Page size" default(20)
-// @Success 200 {object} app.CredentialListResult
+// @Success 200 {object} integration.CredentialListResult
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/identities/{identity}/exposures [get]
 func (h *CredentialImportHandler) GetExposuresForIdentity(w http.ResponseWriter, r *http.Request) {
@@ -904,7 +904,7 @@ type CredentialStateChangeRequest struct {
 // @Produce json
 // @Param id path string true "Credential ID"
 // @Param request body CredentialStateChangeRequest false "Resolution notes"
-// @Success 200 {object} app.CredentialItem
+// @Success 200 {object} integration.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
 // @Router /credentials/{id}/resolve [post]
@@ -943,7 +943,7 @@ func (h *CredentialImportHandler) Resolve(w http.ResponseWriter, r *http.Request
 // @Produce json
 // @Param id path string true "Credential ID"
 // @Param request body CredentialStateChangeRequest false "Acceptance notes"
-// @Success 200 {object} app.CredentialItem
+// @Success 200 {object} integration.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
 // @Router /credentials/{id}/accept [post]
@@ -982,7 +982,7 @@ func (h *CredentialImportHandler) Accept(w http.ResponseWriter, r *http.Request)
 // @Produce json
 // @Param id path string true "Credential ID"
 // @Param request body CredentialStateChangeRequest false "Notes"
-// @Success 200 {object} app.CredentialItem
+// @Success 200 {object} integration.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
 // @Router /credentials/{id}/false-positive [post]
@@ -1019,7 +1019,7 @@ func (h *CredentialImportHandler) MarkFalsePositive(w http.ResponseWriter, r *ht
 // @Tags Credentials
 // @Produce json
 // @Param id path string true "Credential ID"
-// @Success 200 {object} app.CredentialItem
+// @Success 200 {object} integration.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
 // @Router /credentials/{id}/reactivate [post]

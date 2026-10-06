@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -15,7 +15,7 @@ import (
 
 // OAuthHandler handles OAuth authentication requests.
 type OAuthHandler struct {
-	oauthService *app.OAuthService
+	oauthService *auth.OAuthService
 	oauthConfig  config.OAuthConfig
 	authConfig   config.AuthConfig
 	logger       *logger.Logger
@@ -23,7 +23,7 @@ type OAuthHandler struct {
 
 // NewOAuthHandler creates a new OAuthHandler.
 func NewOAuthHandler(
-	oauthService *app.OAuthService,
+	oauthService *auth.OAuthService,
 	oauthConfig config.OAuthConfig,
 	authConfig config.AuthConfig,
 	log *logger.Logger,
@@ -66,7 +66,7 @@ func (h *OAuthHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oauthProvider := app.OAuthProvider(provider)
+	oauthProvider := auth.OAuthProvider(provider)
 	if !oauthProvider.IsValid() {
 		apierror.BadRequest("Invalid OAuth provider").WriteJSON(w)
 		return
@@ -93,7 +93,7 @@ func (h *OAuthHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.oauthService.GetAuthorizationURL(r.Context(), app.AuthorizationURLInput{
+	result, err := h.oauthService.GetAuthorizationURL(r.Context(), auth.AuthorizationURLInput{
 		Provider:      oauthProvider,
 		RedirectURI:   redirectURI,
 		FinalRedirect: finalRedirect,
@@ -147,7 +147,7 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oauthProvider := app.OAuthProvider(provider)
+	oauthProvider := auth.OAuthProvider(provider)
 	if !oauthProvider.IsValid() {
 		apierror.BadRequest("Invalid OAuth provider").WriteJSON(w)
 		return
@@ -174,7 +174,7 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		req.RedirectURI = h.oauthConfig.FrontendCallbackURL
 	}
 
-	result, err := h.oauthService.HandleCallback(r.Context(), app.CallbackInput{
+	result, err := h.oauthService.HandleCallback(r.Context(), auth.CallbackInput{
 		Provider:    oauthProvider,
 		Code:        req.Code,
 		State:       req.State,
@@ -204,7 +204,7 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 // ProvidersResponse is the response body for listing available providers.
 type ProvidersResponse struct {
-	Providers []app.ProviderInfo `json:"providers"`
+	Providers []auth.ProviderInfo `json:"providers"`
 }
 
 // ListProviders returns the list of available OAuth providers.
@@ -230,17 +230,17 @@ func (h *OAuthHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 // handleOAuthError handles OAuth errors and returns appropriate HTTP responses.
 func (h *OAuthHandler) handleOAuthError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, app.ErrOAuthDisabled):
+	case errors.Is(err, auth.ErrOAuthDisabled):
 		apierror.Forbidden("OAuth is disabled").WriteJSON(w)
-	case errors.Is(err, app.ErrProviderDisabled):
+	case errors.Is(err, auth.ErrProviderDisabled):
 		apierror.Forbidden("This OAuth provider is not configured").WriteJSON(w)
-	case errors.Is(err, app.ErrInvalidProvider):
+	case errors.Is(err, auth.ErrInvalidProvider):
 		apierror.BadRequest("Invalid OAuth provider").WriteJSON(w)
-	case errors.Is(err, app.ErrInvalidState):
+	case errors.Is(err, auth.ErrInvalidState):
 		apierror.BadRequest("Invalid or expired state token").WriteJSON(w)
-	case errors.Is(err, app.ErrOAuthExchangeFailed):
+	case errors.Is(err, auth.ErrOAuthExchangeFailed):
 		apierror.BadRequest("Failed to exchange authorization code").WriteJSON(w)
-	case errors.Is(err, app.ErrOAuthUserInfoFailed):
+	case errors.Is(err, auth.ErrOAuthUserInfoFailed):
 		apierror.BadRequest("Failed to get user information from provider").WriteJSON(w)
 	default:
 		h.logger.Error("oauth error", "error", err)
