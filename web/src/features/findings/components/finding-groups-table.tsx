@@ -224,6 +224,8 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
     statuses?: string
     sources?: string
     assignedToMe?: boolean
+    /** Only findings seen on a feature branch alone. */
+    branchOnly?: boolean
     view?: string
     /** The state lens; when set, it is the status scope (no default statuses). */
     state?: 'open' | 'fixed' | 'dispositioned' | 'all'
@@ -284,6 +286,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   const severities = filters?.severities
   const sources = filters?.sources
   const assignedToMe = !!filters?.assignedToMe
+  const branchOnly = !!filters?.branchOnly
   const savedView = filters?.view
   const {
     data,
@@ -297,6 +300,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
     severities: filters?.severities || undefined,
     sources: filters?.sources || undefined,
     assigned_to_me: !!filters?.assignedToMe,
+    branch_only: branchOnly,
     view: filters?.view,
     page: pagination.pageIndex + 1,
     per_page: pagination.pageSize,
@@ -322,6 +326,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
     filters?.severities ?? '',
     filters?.sources ?? '',
     filters?.assignedToMe ? 'mine' : '',
+    branchOnly ? 'branch-only' : '',
     savedView ?? '',
     pagination.pageIndex,
     pagination.pageSize,
@@ -353,6 +358,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
           sources: sources.split(',') as NonNullable<FindingApiFilters['sources']>,
         }),
         ...(assignedToMe && { assigned_to_me: true }),
+        ...(branchOnly && { branch_only: true }),
         ...(savedView && { view: savedView }),
         ...groupFilter,
         page: 1,
@@ -363,7 +369,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       if (rows.some((f) => !belongsToGroup(dimension, key, f))) throw new GroupFilterUnsupported()
       return { rows, total: res.total ?? rows.length }
     },
-    [dimension, statuses, lens, severities, sources, assignedToMe, savedView]
+    [dimension, statuses, lens, severities, sources, assignedToMe, branchOnly, savedView]
   )
 
   const lazy = useLazyGroupRows<ApiFinding>({
