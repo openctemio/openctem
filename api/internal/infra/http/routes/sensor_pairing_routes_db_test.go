@@ -19,7 +19,7 @@ import (
 
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -45,7 +45,7 @@ func TestSensorPairingRoutes_DB(t *testing.T) {
 	db := &postgres.DB{DB: sqldb}
 	log := logger.NewNop()
 	sensorRepo := postgres.NewSensorRepository(db)
-	sensors := app.NewSensorService(sensorRepo, nil, log)
+	sensors := sensorapp.NewSensorService(sensorRepo, nil, log)
 	svc, err := sensorpairing.NewService(postgres.NewSensorPairingRepository(db), sensorRepo,
 		"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0", "route-test-pepper", log)
 	if err != nil {

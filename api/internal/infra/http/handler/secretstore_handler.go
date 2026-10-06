@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
@@ -21,13 +21,13 @@ import (
 
 // SecretStoreHandler handles HTTP requests for secret store credentials.
 type SecretStoreHandler struct {
-	service   *app.SecretStoreService
+	service   *integration.SecretStoreService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewSecretStoreHandler creates a new SecretStoreHandler.
-func NewSecretStoreHandler(service *app.SecretStoreService, v *validator.Validator, log *logger.Logger) *SecretStoreHandler {
+func NewSecretStoreHandler(service *integration.SecretStoreService, v *validator.Validator, log *logger.Logger) *SecretStoreHandler {
 	return &SecretStoreHandler{
 		service:   service,
 		validator: v,
@@ -133,26 +133,26 @@ type RotateCredentialRequest struct {
 
 // parseOptionalExpiry reads expires_at: absent = unchanged, null = clear,
 // otherwise an RFC 3339 timestamp.
-func parseOptionalExpiry(raw json.RawMessage) (app.OptionalTime, error) {
+func parseOptionalExpiry(raw json.RawMessage) (integration.OptionalTime, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
-		return app.OptionalTime{}, nil
+		return integration.OptionalTime{}, nil
 	}
 	if bytes.Equal(trimmed, []byte("null")) {
-		return app.OptionalTime{Set: true}, nil
+		return integration.OptionalTime{Set: true}, nil
 	}
 	var s string
 	if err := json.Unmarshal(trimmed, &s); err != nil {
-		return app.OptionalTime{}, errors.New("expires_at must be an RFC 3339 timestamp or null")
+		return integration.OptionalTime{}, errors.New("expires_at must be an RFC 3339 timestamp or null")
 	}
 	if s == "" {
-		return app.OptionalTime{Set: true}, nil
+		return integration.OptionalTime{Set: true}, nil
 	}
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
-		return app.OptionalTime{}, errors.New("expires_at must be an RFC 3339 timestamp (for example 2026-12-31T23:59:59Z) or null")
+		return integration.OptionalTime{}, errors.New("expires_at must be an RFC 3339 timestamp (for example 2026-12-31T23:59:59Z) or null")
 	}
-	return app.OptionalTime{Set: true, Value: &t}, nil
+	return integration.OptionalTime{Set: true, Value: &t}, nil
 }
 
 // CredentialResponse represents the response for a credential.
@@ -225,7 +225,7 @@ func (h *SecretStoreHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateCredentialInput{
+	input := integration.CreateCredentialInput{
 		TenantID:       tenantID,
 		UserID:         userID,
 		Name:           req.Name,
@@ -314,7 +314,7 @@ func (h *SecretStoreHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.ListCredentialsInput{
+	input := integration.ListCredentialsInput{
 		TenantID: tenantID,
 		Page:     1,
 		PageSize: 20,
@@ -404,7 +404,7 @@ func (h *SecretStoreHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	actorID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
 
-	input := app.UpdateCredentialInput{
+	input := integration.UpdateCredentialInput{
 		TenantID:     tenantID,
 		CredentialID: credentialID,
 		ActorID:      actorID,
@@ -485,7 +485,7 @@ func (h *SecretStoreHandler) Rotate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	actorID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
-	cred, err := h.service.RotateCredential(r.Context(), app.RotateCredentialInput{
+	cred, err := h.service.RotateCredential(r.Context(), integration.RotateCredentialInput{
 		TenantID:     tenantID,
 		CredentialID: credentialID,
 		ActorID:      actorID,

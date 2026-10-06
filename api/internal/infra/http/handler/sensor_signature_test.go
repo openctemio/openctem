@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/sensorsig"
@@ -25,11 +25,11 @@ type fakeSigned struct {
 	used   int
 }
 
-func (f *fakeSigned) SigningIdentity(_ context.Context, keyID string, _ bool) (app.SensorIdentity, ed25519.PublicKey, error) {
+func (f *fakeSigned) SigningIdentity(_ context.Context, keyID string, _ bool) (sensor.SensorIdentity, ed25519.PublicKey, error) {
 	if keyID != f.keyID {
-		return app.SensorIdentity{}, nil, errors.New("unknown")
+		return sensor.SensorIdentity{}, nil, errors.New("unknown")
 	}
-	return app.SensorIdentity{Sensor: &sensordom.Sensor{ID: shared.NewID(), AuthKind: sensordom.AuthKindKeyBound}}, f.pub, nil
+	return sensor.SensorIdentity{Sensor: &sensordom.Sensor{ID: shared.NewID(), AuthKind: sensordom.AuthKindKeyBound}}, f.pub, nil
 }
 
 func (f *fakeSigned) UseNonce(_ context.Context, keyID, nonce string) error {
@@ -41,7 +41,7 @@ func (f *fakeSigned) UseNonce(_ context.Context, keyID, nonce string) error {
 	return nil
 }
 
-func (f *fakeSigned) RecordSignedUse(app.SensorIdentity, string) { f.used++ }
+func (f *fakeSigned) RecordSignedUse(sensor.SensorIdentity, string) { f.used++ }
 
 func newSignedFixture(t *testing.T) (*fakeSigned, *sensorsig.Signer) {
 	t.Helper()

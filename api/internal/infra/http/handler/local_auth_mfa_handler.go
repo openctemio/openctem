@@ -9,8 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -31,7 +31,7 @@ type MFAChallengeResponse struct {
 	ExpiresIn   int64  `json:"expires_in"`
 }
 
-func writeMFAChallenge(w http.ResponseWriter, c *app.MFAChallengeInfo) {
+func writeMFAChallenge(w http.ResponseWriter, c *auth.MFAChallengeInfo) {
 	expires := int64(time.Until(c.ExpiresAt).Seconds())
 	if expires < 0 {
 		expires = 0
@@ -93,7 +93,7 @@ func (h *LocalAuthHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("code or recovery_code is required").WriteJSON(w)
 		return
 	}
-	result, err := h.authService.VerifyMFALogin(r.Context(), app.VerifyMFAInput{
+	result, err := h.authService.VerifyMFALogin(r.Context(), auth.VerifyMFAInput{
 		Token:        req.MFAToken,
 		Code:         req.Code,
 		RecoveryCode: req.RecoveryCode,
@@ -175,7 +175,7 @@ func (h *LocalAuthHandler) ConfirmMFAEnrollment(w http.ResponseWriter, r *http.R
 		apierror.ValidationFailed("Validation failed", err).WriteJSON(w)
 		return
 	}
-	result, codes, err := h.authService.CompleteMFAEnrollmentFromChallenge(r.Context(), app.CompleteMFAEnrollmentInput{
+	result, codes, err := h.authService.CompleteMFAEnrollmentFromChallenge(r.Context(), auth.CompleteMFAEnrollmentInput{
 		Token:     req.MFAToken,
 		Code:      req.Code,
 		IPAddress: getClientIP(r),
@@ -222,7 +222,7 @@ type MFARecoveryCodesResponse struct {
 // @Tags         Users
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {object}  app.MFAStatus
+// @Success      200  {object}  auth.MFAStatus
 // @Failure      401  {object}  map[string]string
 // @Router       /users/me/2fa [get]
 func (h *LocalAuthHandler) GetMFAStatus(w http.ResponseWriter, r *http.Request) {
@@ -372,7 +372,7 @@ func (h *LocalAuthHandler) RegenerateRecoveryCodes(w http.ResponseWriter, r *htt
 // a 401 as an expired session (they sign the user out). The public login step
 // keeps 401 for a wrong code (handleAuthError).
 func (h *LocalAuthHandler) handleSelfServiceMFAError(w http.ResponseWriter, err error) {
-	if errors.Is(err, app.ErrMFACodeInvalid) {
+	if errors.Is(err, auth.ErrMFACodeInvalid) {
 		apierror.BadRequest("Invalid verification code").WriteJSON(w)
 		return
 	}

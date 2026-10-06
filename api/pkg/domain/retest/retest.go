@@ -79,21 +79,21 @@ var (
 
 // Retest is one retest attempt of one finding.
 type Retest struct {
-	ID             shared.ID
-	TenantID       shared.ID
-	FindingID      shared.ID
-	AssetID        shared.ID
-	Trigger        Trigger
-	RequestedBy    *shared.ID
-	Status         Status
-	Outcome        Outcome
-	Reason         string
-	PriorStatus    vulnerability.FindingStatus
-	ResultStatus   vulnerability.FindingStatus
+	ID           shared.ID
+	TenantID     shared.ID
+	FindingID    shared.ID
+	AssetID      shared.ID
+	Trigger      Trigger
+	RequestedBy  *shared.ID
+	Status       Status
+	Outcome      Outcome
+	Reason       string
+	PriorStatus  vulnerability.FindingStatus
+	ResultStatus vulnerability.FindingStatus
 	// TemplateID is the rule re-run: the nuclei template id, or the
 	// finding's rule id for a tool retest.
-	TemplateID     string
-	Target         string
+	TemplateID string
+	Target     string
 	// Method is how the retest re-checks (MethodTool, MethodValidate). Not
 	// stored: it follows from the check command's type.
 	Method         string

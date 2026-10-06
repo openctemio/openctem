@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -436,13 +436,13 @@ func defaultOAuthAuthConfig() config.AuthConfig {
 	}
 }
 
-func newTestOAuthService() (*app.OAuthService, *mockOAuthUserRepo, *mockOAuthSessionRepo, *mockOAuthRefreshTokenRepo) {
+func newTestOAuthService() (*auth.OAuthService, *mockOAuthUserRepo, *mockOAuthSessionRepo, *mockOAuthRefreshTokenRepo) {
 	userRepo := newMockUserRepoForOAuth()
 	sessionRepo := newMockOAuthSessionRepo()
 	refreshTokenRepo := newMockOAuthRefreshTokenRepo()
 	log := logger.NewNop()
 
-	svc := app.NewOAuthService(
+	svc := auth.NewOAuthService(
 		userRepo,
 		sessionRepo,
 		refreshTokenRepo,
@@ -454,13 +454,13 @@ func newTestOAuthService() (*app.OAuthService, *mockOAuthUserRepo, *mockOAuthSes
 	return svc, userRepo, sessionRepo, refreshTokenRepo
 }
 
-func newTestOAuthServiceWithConfig(oauthCfg config.OAuthConfig, authCfg config.AuthConfig) (*app.OAuthService, *mockOAuthUserRepo, *mockOAuthSessionRepo, *mockOAuthRefreshTokenRepo) {
+func newTestOAuthServiceWithConfig(oauthCfg config.OAuthConfig, authCfg config.AuthConfig) (*auth.OAuthService, *mockOAuthUserRepo, *mockOAuthSessionRepo, *mockOAuthRefreshTokenRepo) {
 	userRepo := newMockUserRepoForOAuth()
 	sessionRepo := newMockOAuthSessionRepo()
 	refreshTokenRepo := newMockOAuthRefreshTokenRepo()
 	log := logger.NewNop()
 
-	svc := app.NewOAuthService(
+	svc := auth.NewOAuthService(
 		userRepo,
 		sessionRepo,
 		refreshTokenRepo,
@@ -503,8 +503,8 @@ func TestOAuthService_GetAuthorizationURL_SuccessGoogle(t *testing.T) {
 	svc, _, _, _ := newTestOAuthService()
 	ctx := context.Background()
 
-	result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
-		Provider:      app.OAuthProviderGoogle,
+	result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
+		Provider:      auth.OAuthProviderGoogle,
 		RedirectURI:   "http://localhost:3000/auth/sso/callback",
 		FinalRedirect: "/dashboard",
 	})
@@ -543,8 +543,8 @@ func TestOAuthService_GetAuthorizationURL_SuccessGitHub(t *testing.T) {
 	svc, _, _, _ := newTestOAuthService()
 	ctx := context.Background()
 
-	result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
-		Provider:      app.OAuthProviderGitHub,
+	result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
+		Provider:      auth.OAuthProviderGitHub,
 		RedirectURI:   "http://localhost:3000/auth/sso/callback",
 		FinalRedirect: "/dashboard",
 	})
@@ -567,8 +567,8 @@ func TestOAuthService_GetAuthorizationURL_SuccessMicrosoft(t *testing.T) {
 	svc, _, _, _ := newTestOAuthService()
 	ctx := context.Background()
 
-	result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
-		Provider:      app.OAuthProviderMicrosoft,
+	result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
+		Provider:      auth.OAuthProviderMicrosoft,
 		RedirectURI:   "http://localhost:3000/auth/sso/callback",
 		FinalRedirect: "/dashboard",
 	})
@@ -598,15 +598,15 @@ func TestOAuthService_GetAuthorizationURL_OAuthDisabled(t *testing.T) {
 	svc, _, _, _ := newTestOAuthServiceWithConfig(oauthCfg, defaultOAuthAuthConfig())
 	ctx := context.Background()
 
-	result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
-		Provider:    app.OAuthProviderGoogle,
+	result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
+		Provider:    auth.OAuthProviderGoogle,
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
 	})
 
 	if result != nil {
 		t.Fatalf("expected nil result, got %+v", result)
 	}
-	if !errors.Is(err, app.ErrOAuthDisabled) {
+	if !errors.Is(err, auth.ErrOAuthDisabled) {
 		t.Fatalf("expected ErrOAuthDisabled, got %v", err)
 	}
 }
@@ -615,15 +615,15 @@ func TestOAuthService_GetAuthorizationURL_UnknownProvider(t *testing.T) {
 	svc, _, _, _ := newTestOAuthService()
 	ctx := context.Background()
 
-	result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
-		Provider:    app.OAuthProvider("unknown"),
+	result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
+		Provider:    auth.OAuthProvider("unknown"),
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
 	})
 
 	if result != nil {
 		t.Fatalf("expected nil result, got %+v", result)
 	}
-	if !errors.Is(err, app.ErrInvalidProvider) {
+	if !errors.Is(err, auth.ErrInvalidProvider) {
 		t.Fatalf("expected ErrInvalidProvider, got %v", err)
 	}
 }
@@ -635,15 +635,15 @@ func TestOAuthService_GetAuthorizationURL_DisabledProvider(t *testing.T) {
 	svc, _, _, _ := newTestOAuthServiceWithConfig(oauthCfg, defaultOAuthAuthConfig())
 	ctx := context.Background()
 
-	result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
-		Provider:    app.OAuthProviderGoogle,
+	result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
+		Provider:    auth.OAuthProviderGoogle,
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
 	})
 
 	if result != nil {
 		t.Fatalf("expected nil result, got %+v", result)
 	}
-	if !errors.Is(err, app.ErrProviderDisabled) {
+	if !errors.Is(err, auth.ErrProviderDisabled) {
 		t.Fatalf("expected ErrProviderDisabled, got %v", err)
 	}
 }
@@ -657,15 +657,15 @@ func TestOAuthService_GetAuthorizationURL_ProviderNotConfigured(t *testing.T) {
 	svc, _, _, _ := newTestOAuthServiceWithConfig(oauthCfg, defaultOAuthAuthConfig())
 	ctx := context.Background()
 
-	result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
-		Provider:    app.OAuthProviderGitHub,
+	result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
+		Provider:    auth.OAuthProviderGitHub,
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
 	})
 
 	if result != nil {
 		t.Fatalf("expected nil result, got %+v", result)
 	}
-	if !errors.Is(err, app.ErrProviderDisabled) {
+	if !errors.Is(err, auth.ErrProviderDisabled) {
 		t.Fatalf("expected ErrProviderDisabled, got %v", err)
 	}
 }
@@ -765,8 +765,8 @@ func TestOAuthService_StateToken_ValidStatePassesValidation(t *testing.T) {
 	ctx := context.Background()
 
 	// Generate a state via GetAuthorizationURL
-	result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
-		Provider:      app.OAuthProviderGoogle,
+	result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
+		Provider:      auth.OAuthProviderGoogle,
 		RedirectURI:   "http://localhost:3000/auth/sso/callback",
 		FinalRedirect: "/dashboard",
 	})
@@ -821,14 +821,14 @@ func TestOAuthService_StateToken_TamperedStateFails(t *testing.T) {
 	svc, _, _, _ := newTestOAuthServiceWithConfig(oauthCfg, defaultOAuthAuthConfig())
 	ctx := context.Background()
 
-	_, err := svc.HandleCallback(ctx, app.CallbackInput{
-		Provider:    app.OAuthProviderGoogle,
+	_, err := svc.HandleCallback(ctx, auth.CallbackInput{
+		Provider:    auth.OAuthProviderGoogle,
 		Code:        "auth-code",
 		State:       tamperedState,
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
 	})
 
-	if !errors.Is(err, app.ErrInvalidState) {
+	if !errors.Is(err, auth.ErrInvalidState) {
 		t.Fatalf("expected ErrInvalidState for tampered state, got %v", err)
 	}
 }
@@ -842,14 +842,14 @@ func TestOAuthService_StateToken_ExpiredStateFails(t *testing.T) {
 	svc, _, _, _ := newTestOAuthServiceWithConfig(oauthCfg, defaultOAuthAuthConfig())
 	ctx := context.Background()
 
-	_, err := svc.HandleCallback(ctx, app.CallbackInput{
-		Provider:    app.OAuthProviderGoogle,
+	_, err := svc.HandleCallback(ctx, auth.CallbackInput{
+		Provider:    auth.OAuthProviderGoogle,
 		Code:        "auth-code",
 		State:       state,
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
 	})
 
-	if !errors.Is(err, app.ErrInvalidState) {
+	if !errors.Is(err, auth.ErrInvalidState) {
 		t.Fatalf("expected ErrInvalidState for expired state, got %v", err)
 	}
 }
@@ -863,14 +863,14 @@ func TestOAuthService_StateToken_WrongProviderFails(t *testing.T) {
 	svc, _, _, _ := newTestOAuthServiceWithConfig(oauthCfg, defaultOAuthAuthConfig())
 	ctx := context.Background()
 
-	_, err := svc.HandleCallback(ctx, app.CallbackInput{
-		Provider:    app.OAuthProviderGoogle, // Different from state's "github"
+	_, err := svc.HandleCallback(ctx, auth.CallbackInput{
+		Provider:    auth.OAuthProviderGoogle, // Different from state's "github"
 		Code:        "auth-code",
 		State:       state,
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
 	})
 
-	if !errors.Is(err, app.ErrInvalidState) {
+	if !errors.Is(err, auth.ErrInvalidState) {
 		t.Fatalf("expected ErrInvalidState for wrong provider, got %v", err)
 	}
 }
@@ -881,14 +881,14 @@ func TestOAuthService_StateToken_InvalidFormatFails(t *testing.T) {
 	ctx := context.Background()
 
 	// State without "." separator
-	_, err := svc.HandleCallback(ctx, app.CallbackInput{
-		Provider:    app.OAuthProviderGoogle,
+	_, err := svc.HandleCallback(ctx, auth.CallbackInput{
+		Provider:    auth.OAuthProviderGoogle,
 		Code:        "auth-code",
 		State:       "no-dot-separator",
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
 	})
 
-	if !errors.Is(err, app.ErrInvalidState) {
+	if !errors.Is(err, auth.ErrInvalidState) {
 		t.Fatalf("expected ErrInvalidState for invalid format, got %v", err)
 	}
 }
@@ -904,8 +904,8 @@ func TestOAuthService_HandleCallback_OAuthDisabled(t *testing.T) {
 	svc, _, _, _ := newTestOAuthServiceWithConfig(oauthCfg, defaultOAuthAuthConfig())
 	ctx := context.Background()
 
-	result, err := svc.HandleCallback(ctx, app.CallbackInput{
-		Provider:    app.OAuthProviderGoogle,
+	result, err := svc.HandleCallback(ctx, auth.CallbackInput{
+		Provider:    auth.OAuthProviderGoogle,
 		Code:        "auth-code",
 		State:       "some-state",
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
@@ -914,7 +914,7 @@ func TestOAuthService_HandleCallback_OAuthDisabled(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected nil result, got %+v", result)
 	}
-	if !errors.Is(err, app.ErrOAuthDisabled) {
+	if !errors.Is(err, auth.ErrOAuthDisabled) {
 		t.Fatalf("expected ErrOAuthDisabled, got %v", err)
 	}
 }
@@ -923,8 +923,8 @@ func TestOAuthService_HandleCallback_InvalidProvider(t *testing.T) {
 	svc, _, _, _ := newTestOAuthService()
 	ctx := context.Background()
 
-	result, err := svc.HandleCallback(ctx, app.CallbackInput{
-		Provider:    app.OAuthProvider("invalid"),
+	result, err := svc.HandleCallback(ctx, auth.CallbackInput{
+		Provider:    auth.OAuthProvider("invalid"),
 		Code:        "auth-code",
 		State:       "some-state",
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
@@ -933,7 +933,7 @@ func TestOAuthService_HandleCallback_InvalidProvider(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected nil result, got %+v", result)
 	}
-	if !errors.Is(err, app.ErrInvalidProvider) {
+	if !errors.Is(err, auth.ErrInvalidProvider) {
 		t.Fatalf("expected ErrInvalidProvider, got %v", err)
 	}
 }
@@ -945,8 +945,8 @@ func TestOAuthService_HandleCallback_DisabledProvider(t *testing.T) {
 	svc, _, _, _ := newTestOAuthServiceWithConfig(oauthCfg, defaultOAuthAuthConfig())
 	ctx := context.Background()
 
-	result, err := svc.HandleCallback(ctx, app.CallbackInput{
-		Provider:    app.OAuthProviderMicrosoft,
+	result, err := svc.HandleCallback(ctx, auth.CallbackInput{
+		Provider:    auth.OAuthProviderMicrosoft,
 		Code:        "auth-code",
 		State:       "some-state",
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
@@ -955,7 +955,7 @@ func TestOAuthService_HandleCallback_DisabledProvider(t *testing.T) {
 	if result != nil {
 		t.Fatalf("expected nil result, got %+v", result)
 	}
-	if !errors.Is(err, app.ErrProviderDisabled) {
+	if !errors.Is(err, auth.ErrProviderDisabled) {
 		t.Fatalf("expected ErrProviderDisabled, got %v", err)
 	}
 }
@@ -966,15 +966,15 @@ func TestOAuthService_HandleCallback_DisabledProvider(t *testing.T) {
 
 func TestOAuthProvider_IsValid(t *testing.T) {
 	tests := []struct {
-		provider app.OAuthProvider
+		provider auth.OAuthProvider
 		valid    bool
 	}{
-		{app.OAuthProviderGoogle, true},
-		{app.OAuthProviderGitHub, true},
-		{app.OAuthProviderMicrosoft, true},
-		{app.OAuthProvider("unknown"), false},
-		{app.OAuthProvider(""), false},
-		{app.OAuthProvider("facebook"), false},
+		{auth.OAuthProviderGoogle, true},
+		{auth.OAuthProviderGitHub, true},
+		{auth.OAuthProviderMicrosoft, true},
+		{auth.OAuthProvider("unknown"), false},
+		{auth.OAuthProvider(""), false},
+		{auth.OAuthProvider("facebook"), false},
 	}
 
 	for _, tt := range tests {
@@ -988,13 +988,13 @@ func TestOAuthProvider_IsValid(t *testing.T) {
 
 func TestOAuthProvider_ToAuthProvider(t *testing.T) {
 	tests := []struct {
-		provider app.OAuthProvider
+		provider auth.OAuthProvider
 		expected user.AuthProvider
 	}{
-		{app.OAuthProviderGoogle, user.AuthProviderGoogle},
-		{app.OAuthProviderGitHub, user.AuthProviderGitHub},
-		{app.OAuthProviderMicrosoft, user.AuthProviderMicrosoft},
-		{app.OAuthProvider("unknown"), user.AuthProviderLocal}, // fallback
+		{auth.OAuthProviderGoogle, user.AuthProviderGoogle},
+		{auth.OAuthProviderGitHub, user.AuthProviderGitHub},
+		{auth.OAuthProviderMicrosoft, user.AuthProviderMicrosoft},
+		{auth.OAuthProvider("unknown"), user.AuthProviderLocal}, // fallback
 	}
 
 	for _, tt := range tests {
@@ -1019,8 +1019,8 @@ func TestOAuthService_StateToken_FallbackToJWTSecret(t *testing.T) {
 	ctx := context.Background()
 
 	// Should still work, using JWT secret as fallback for signing
-	result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
-		Provider:      app.OAuthProviderGoogle,
+	result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
+		Provider:      auth.OAuthProviderGoogle,
 		RedirectURI:   "http://localhost:3000/auth/sso/callback",
 		FinalRedirect: "/dashboard",
 	})
@@ -1057,29 +1057,29 @@ func TestOAuthService_GetAuthorizationURL_ContainsScopes(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		provider app.OAuthProvider
+		provider auth.OAuthProvider
 		scopes   []string
 	}{
 		{
 			name:     "Google scopes",
-			provider: app.OAuthProviderGoogle,
+			provider: auth.OAuthProviderGoogle,
 			scopes:   []string{"openid", "email", "profile"},
 		},
 		{
 			name:     "GitHub scopes",
-			provider: app.OAuthProviderGitHub,
+			provider: auth.OAuthProviderGitHub,
 			scopes:   []string{"read:user", "user:email"},
 		},
 		{
 			name:     "Microsoft scopes",
-			provider: app.OAuthProviderMicrosoft,
+			provider: auth.OAuthProviderMicrosoft,
 			scopes:   []string{"openid", "email", "profile", "User.Read"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
+			result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
 				Provider:    tt.provider,
 				RedirectURI: "http://localhost:3000/auth/sso/callback",
 			})
@@ -1106,8 +1106,8 @@ func TestOAuthService_GetAuthorizationURL_RedirectURIPassedThrough(t *testing.T)
 
 	redirectURI := "http://localhost:3000/auth/sso/callback"
 
-	result, err := svc.GetAuthorizationURL(ctx, app.AuthorizationURLInput{
-		Provider:    app.OAuthProviderGoogle,
+	result, err := svc.GetAuthorizationURL(ctx, auth.AuthorizationURLInput{
+		Provider:    auth.OAuthProviderGoogle,
 		RedirectURI: redirectURI,
 	})
 
@@ -1129,8 +1129,8 @@ func TestOAuthService_GetAuthorizationURL_UniqueStates(t *testing.T) {
 	svc, _, _, _ := newTestOAuthService()
 	ctx := context.Background()
 
-	input := app.AuthorizationURLInput{
-		Provider:    app.OAuthProviderGoogle,
+	input := auth.AuthorizationURLInput{
+		Provider:    auth.OAuthProviderGoogle,
 		RedirectURI: "http://localhost:3000/auth/sso/callback",
 	}
 

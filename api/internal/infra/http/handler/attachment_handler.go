@@ -13,8 +13,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
@@ -39,10 +40,10 @@ type FindingCampaignAccessChecker interface {
 
 // AttachmentHandler handles file upload/download/delete HTTP endpoints.
 type AttachmentHandler struct {
-	service         *app.AttachmentService
-	accessChecker   FindingCampaignAccessChecker // optional; when nil, no campaign check
-	storageResolver *app.SettingsStorageResolver // optional; for storage config CRUD
-	audit           *auditapp.AuditService       // optional; audits storage config changes
+	service         *integration.AttachmentService
+	accessChecker   FindingCampaignAccessChecker  // optional; when nil, no campaign check
+	storageResolver *auth.SettingsStorageResolver // optional; for storage config CRUD
+	audit           *auditapp.AuditService        // optional; audits storage config changes
 	logger          *logger.Logger
 }
 
@@ -50,12 +51,12 @@ type AttachmentHandler struct {
 func (h *AttachmentHandler) SetAuditService(a *auditapp.AuditService) { h.audit = a }
 
 // NewAttachmentHandler creates a new handler.
-func NewAttachmentHandler(svc *app.AttachmentService, log *logger.Logger) *AttachmentHandler {
+func NewAttachmentHandler(svc *integration.AttachmentService, log *logger.Logger) *AttachmentHandler {
 	return &AttachmentHandler{service: svc, logger: log}
 }
 
 // SetStorageResolver wires the tenant storage config resolver for GET/PATCH storage settings.
-func (h *AttachmentHandler) SetStorageResolver(resolver *app.SettingsStorageResolver) {
+func (h *AttachmentHandler) SetStorageResolver(resolver *auth.SettingsStorageResolver) {
 	h.storageResolver = resolver
 }
 
@@ -185,7 +186,7 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	att, err := h.service.Upload(r.Context(), app.UploadInput{
+	att, err := h.service.Upload(r.Context(), integration.UploadInput{
 		TenantID:    tenantID,
 		Filename:    header.Filename,
 		ContentType: contentType,

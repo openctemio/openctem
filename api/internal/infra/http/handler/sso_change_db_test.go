@@ -27,7 +27,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -103,10 +103,10 @@ func TestAdminSSOChange_RequiresOwnerApproval_DB(t *testing.T) {
 	tenantRepo := postgres.NewTenantRepository(pg)
 	userRepo := postgres.NewUserRepository(pg)
 	ipRepo := postgres.NewIdentityProviderRepository(pg)
-	ssoSvc := app.NewSSOService(ipRepo, tenantRepo, userRepo, postgres.NewSessionRepository(raw),
+	ssoSvc := auth.NewSSOService(ipRepo, tenantRepo, userRepo, postgres.NewSessionRepository(raw),
 		postgres.NewRefreshTokenRepository(raw), crypto.NewNoOpEncryptor(), config.AuthConfig{JWTSecret: strings.Repeat("s", 64)}, log)
-	samlSvc := app.NewSAMLService(postgres.NewSAMLProviderRepository(pg), tenantRepo, ssoSvc, log)
-	changes := app.NewSSOChangeService(postgres.NewSSOChangeRepository(pg), samlSvc, ssoSvc, tenantRepo, tenantRepo, log)
+	samlSvc := auth.NewSAMLService(postgres.NewSAMLProviderRepository(pg), tenantRepo, ssoSvc, log)
+	changes := auth.NewSSOChangeService(postgres.NewSSOChangeRepository(pg), samlSvc, ssoSvc, tenantRepo, tenantRepo, log)
 	sent := &capturedNotifications{}
 	changes.SetNotificationService(sent)
 	changes.SetMailer(sent)
@@ -233,7 +233,7 @@ func TestAdminSSOChange_RequiresOwnerApproval_DB(t *testing.T) {
 		if body["status"] != "pending" || body["kind"] != "saml_config" {
 			t.Fatalf("body %v, want a pending saml_config change", body)
 		}
-		if body["certificate_sha256"] != app.CertificateFingerprint(cert) {
+		if body["certificate_sha256"] != auth.CertificateFingerprint(cert) {
 			t.Fatalf("certificate_sha256 %v does not identify the submitted certificate", body["certificate_sha256"])
 		}
 		if got := liveCert(org); got != "" {

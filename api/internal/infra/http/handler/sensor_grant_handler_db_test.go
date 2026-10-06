@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -29,7 +29,7 @@ import (
 func TestSensorGrantHandler_Permissions(t *testing.T) {
 	h := newGrantHarness(t)
 	pg := &postgres.DB{DB: h.db}
-	sh := NewSensorHandler(app.NewSensorService(postgres.NewSensorRepository(pg), nil, logger.NewNop()), validator.New(), logger.NewNop())
+	sh := NewSensorHandler(sensorapp.NewSensorService(postgres.NewSensorRepository(pg), nil, logger.NewNop()), validator.New(), logger.NewNop())
 	grants := postgres.NewSensorGrantRepository(pg)
 	sh.SetGrantService(sensorgrant.NewService(grants, postgres.NewSensorRepository(pg), logger.NewNop()))
 	userID := shared.NewID().String()

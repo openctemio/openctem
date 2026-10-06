@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -23,7 +23,7 @@ import (
 func TestSensorReportedCaps_Response(t *testing.T) {
 	h := newSensorHarness(t)
 	sh := NewSensorHandler(
-		app.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop()),
+		sensor.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop()),
 		validator.New(), logger.NewNop())
 	get := func() map[string]json.RawMessage {
 		t.Helper()

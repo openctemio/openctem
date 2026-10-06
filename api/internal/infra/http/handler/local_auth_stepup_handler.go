@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -95,7 +94,7 @@ func (h *LocalAuthHandler) StepUp(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Enter your authenticator code or password").WriteJSON(w)
 	case errors.Is(err, authapp.ErrStepUpFailed):
 		apierror.New(http.StatusForbidden, "STEP_UP_FAILED", "Re-authentication failed").WriteJSON(w)
-	case errors.Is(err, app.ErrAccountLocked):
+	case errors.Is(err, authapp.ErrAccountLocked):
 		apierror.Forbidden("Account is locked due to too many failed attempts").WriteJSON(w)
 	case errors.Is(err, authapp.ErrStepUpUnavailable):
 		apierror.New(http.StatusForbidden, middleware.CodeStepUpUnavailable,
@@ -112,7 +111,7 @@ func (h *LocalAuthHandler) RecentAuthChecker() middleware.RecentAuthChecker {
 	return recentAuthChecker{svc: h.authService}
 }
 
-type recentAuthChecker struct{ svc *app.AuthService }
+type recentAuthChecker struct{ svc *authapp.AuthService }
 
 func (c recentAuthChecker) RecentAuthAt(ctx context.Context, userID, sessionID string) (time.Time, error) {
 	at, err := c.svc.RecentAuthAt(ctx, userID, sessionID)

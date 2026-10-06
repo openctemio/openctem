@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	toolapp "github.com/openctemio/openctem/api/internal/app/tool"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -82,7 +83,7 @@ func newChangeAuditHarness(t *testing.T) *authzPolicyHarness {
 	router := infrahttp.NewChiRouter()
 	Register(router, Handlers{Scope: scope, ScannerTemplate: templates, Tool: tools}, cfg, log,
 		AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen},
-		tenantRepo, app.NewUserService(postgres.NewUserRepository(db), log), nil, nil, nil)
+		tenantRepo, tenant.NewUserService(postgres.NewUserRepository(db), log), nil, nil, nil)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)
 	return &authzPolicyHarness{t: t, db: sqldb, srv: srv, gen: gen, roles: postgres.NewRoleRepository(db)}

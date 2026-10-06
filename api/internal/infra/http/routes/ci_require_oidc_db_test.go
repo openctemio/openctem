@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -30,7 +30,7 @@ func TestCIRequireOIDC_RunnerKeyRefused_DB(t *testing.T) {
 		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM audit_logs WHERE tenant_id = $1`, h.tenantID)
 	})
 
-	runner, err := h.sensors.CreateSensor(ctx, app.CreateSensorInput{TenantID: h.tenantID, Name: "ci-runner",
+	runner, err := h.sensors.CreateSensor(ctx, sensorapp.CreateSensorInput{TenantID: h.tenantID, Name: "ci-runner",
 		Type: "runner", Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "standalone"})
 	if err != nil {
 		t.Fatalf("create runner sensor: %v", err)

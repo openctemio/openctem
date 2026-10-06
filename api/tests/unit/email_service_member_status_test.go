@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	emaildom "github.com/openctemio/openctem/api/pkg/email"
 )
 
-// tenantSMTPResolverMock implements app.TenantSMTPResolver for testing
+// tenantSMTPResolverMock implements auth.TenantSMTPResolver for testing
 // the per-tenant-SMTP resolution branch inside
 // EmailService.getSenderForTenant.
 //
@@ -105,7 +105,7 @@ func TestEmailService_SendMemberSuspendedEmail_NotConfigured(t *testing.T) {
 }
 
 func TestEmailService_SendMemberSuspendedEmail_NilSender(t *testing.T) {
-	svc := app.NewEmailService(nil, emailTestConfig(), "OpenCTEM", emailTestLogger())
+	svc := auth.NewEmailService(nil, emailTestConfig(), "OpenCTEM", emailTestLogger())
 
 	err := svc.SendMemberSuspendedEmail(
 		context.Background(), "u@e.com", "U", "T", "A", "tenant-xyz",

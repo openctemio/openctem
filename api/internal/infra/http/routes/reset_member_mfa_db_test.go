@@ -19,8 +19,9 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -72,7 +73,7 @@ func newResetMFAHarness(t *testing.T) *resetMFAHarness {
 		JWTSecret: "reset-mfa-route-test-secret-0123456789abcdef", JWTIssuer: "test",
 		AccessTokenDuration: time.Hour, RefreshTokenDuration: time.Hour, SessionDuration: time.Hour,
 	}
-	authSvc := app.NewAuthService(userRepo, sessions, postgres.NewRefreshTokenRepository(sqldb), tenantRepo, auditSvc, authCfgApp, log)
+	authSvc := auth.NewAuthService(userRepo, sessions, postgres.NewRefreshTokenRepository(sqldb), tenantRepo, auditSvc, authCfgApp, log)
 	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
@@ -86,11 +87,11 @@ func newResetMFAHarness(t *testing.T) *resetMFAHarness {
 	v := validator.New()
 	router := infrahttp.NewChiRouter()
 	Register(router, Handlers{
-		Tenant:    handler.NewTenantHandler(app.NewTenantService(tenantRepo, log, app.WithTenantAuditService(auditSvc)), v, log),
+		Tenant:    handler.NewTenantHandler(tenant.NewTenantService(tenantRepo, log, tenant.WithTenantAuditService(auditSvc)), v, log),
 		LocalAuth: handler.NewLocalAuthHandler(authSvc, nil, nil, nil, authCfgApp, log),
 		// Not about step-up (step_up_db_test.go is): every session is fresh.
 		StepUp: alwaysSteppedUp{},
-	}, cfg, log, AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}, tenantRepo, app.NewUserService(userRepo, log), nil, nil, nil)
+	}, cfg, log, AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}, tenantRepo, tenant.NewUserService(userRepo, log), nil, nil, nil)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)
 

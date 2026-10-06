@@ -9,8 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	exposuresvc "github.com/openctemio/openctem/api/internal/app/exposure"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
@@ -23,13 +23,13 @@ import (
 // ExposureHandler handles exposure event HTTP requests.
 type ExposureHandler struct {
 	service     *exposuresvc.ExposureService
-	userService *app.UserService
+	userService *tenant.UserService
 	validator   *validator.Validator
 	logger      *logger.Logger
 }
 
 // NewExposureHandler creates a new exposure handler.
-func NewExposureHandler(svc *exposuresvc.ExposureService, userSvc *app.UserService, v *validator.Validator, log *logger.Logger) *ExposureHandler {
+func NewExposureHandler(svc *exposuresvc.ExposureService, userSvc *tenant.UserService, v *validator.Validator, log *logger.Logger) *ExposureHandler {
 	return &ExposureHandler{
 		service:     svc,
 		userService: userSvc,

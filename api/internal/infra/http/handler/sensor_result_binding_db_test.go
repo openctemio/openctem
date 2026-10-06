@@ -18,9 +18,9 @@ import (
 	"github.com/lib/pq"
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -61,7 +61,7 @@ func newBindingRig(t *testing.T, mode sensorresult.Mode) *bindingRig {
 	log := logger.NewNop()
 
 	sensorRepo := postgres.NewSensorRepository(db)
-	sensorSvc := app.NewSensorService(sensorRepo, nil, log)
+	sensorSvc := sensor.NewSensorService(sensorRepo, nil, log)
 	sensorSvc.SetAPIKeyRepository(postgres.NewSensorAPIKeyRepository(db))
 	svc := ingest.NewService(
 		postgres.NewAssetRepository(db), postgres.NewFindingRepository(db),
@@ -93,7 +93,7 @@ func newBindingRig(t *testing.T, mode sensorresult.Mode) *bindingRig {
 		{"worker", "worker", "daemon"}, {"other-worker", "worker", "daemon"},
 		{"ci", "runner", "standalone"}, {"collector", "collector", "daemon"},
 	} {
-		out, err := sensorSvc.CreateSensor(ctx, app.CreateSensorInput{
+		out, err := sensorSvc.CreateSensor(ctx, sensor.CreateSensorInput{
 			TenantID: rig.tenant.String(), Name: s.name, Type: s.typ, ExecutionMode: s.mode,
 			Tools: []string{"nmap", "nuclei"}, Capabilities: []string{"infra"},
 		})

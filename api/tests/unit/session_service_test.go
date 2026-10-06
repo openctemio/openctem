@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -268,11 +268,11 @@ func (m *mockRefreshTokenRepo) DeleteExpired(_ context.Context) (int64, error) {
 // Helper: create a SessionService for testing
 // =============================================================================
 
-func newTestSessionService() (*app.SessionService, *mockSessionRepo, *mockRefreshTokenRepo) {
+func newTestSessionService() (*auth.SessionService, *mockSessionRepo, *mockRefreshTokenRepo) {
 	sessRepo := newMockSessionRepo()
 	rtRepo := newMockRefreshTokenRepo()
 	log := logger.NewNop()
-	svc := app.NewSessionService(sessRepo, rtRepo, log)
+	svc := auth.NewSessionService(sessRepo, rtRepo, log)
 	return svc, sessRepo, rtRepo
 }
 

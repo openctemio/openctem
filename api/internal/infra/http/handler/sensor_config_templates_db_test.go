@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -32,7 +32,7 @@ import (
 // (and its fingerprint) when SENSOR_CA_CERT_FILE names a certificate.
 func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 	f := newFleetHarness(t, sensordom.HealthPolicy{})
-	f.sh.SetTemplateService(app.NewSensorConfigTemplateService("../../../../configs/sensor-templates", logger.NewNop()))
+	f.sh.SetTemplateService(sensor.NewSensorConfigTemplateService("../../../../configs/sensor-templates", logger.NewNop()))
 	f.sh.SetPublicAPIURL("https://192.168.8.204")
 	f.sh.SetSensorImage("ghcr.io/openctemio/sensor:v0.4.2")
 
