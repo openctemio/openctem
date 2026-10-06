@@ -66,7 +66,7 @@ const runnerKeyAuditEvery = 10 * time.Minute
 const maxRunnerKeyAuditMemory = 10_000
 
 // RunnerKeyPolicy decides whether a sensor key may authenticate a CI
-// (one-shot, runner) sensor: not when its organization requires OIDC for CI.
+// (one-shot, standalone) sensor: not when its organization requires OIDC for CI.
 type RunnerKeyPolicy struct {
 	store SettingsStore
 	audit Auditor

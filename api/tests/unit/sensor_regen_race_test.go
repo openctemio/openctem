@@ -38,7 +38,7 @@ func TestSensorService_RenewAPIKey_RegenerationBeforeRotate_Refused(t *testing.T
 			tenantID := shared.NewID()
 
 			out, err := svc.CreateSensor(ctx, app.CreateSensorInput{
-				TenantID: tenantID.String(), Name: "regen-race", Type: "runner",
+				TenantID: tenantID.String(), Name: "regen-race", Type: "worker",
 			})
 			if err != nil {
 				t.Fatalf("create sensor: %v", err)

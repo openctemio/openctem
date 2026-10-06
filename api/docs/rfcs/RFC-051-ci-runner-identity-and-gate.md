@@ -34,13 +34,15 @@ CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs 
 - **R-1** One binary, one SDK. The sensor's one-shot mode is the **runner**
   mode; the OIDC exchange lives in the SDK kit (sdk-go `pkg/sensorkit`), next
   to the runner entry point.
-- **R-2** CI authenticates by OIDC federation; a sensor API key used by a
-  `runner`-type sensor still works but every response carries
-  `Deprecation` and a `Link` to the exchange endpoint. **OIDC required for
-  CI** (`tenants.ci_require_oidc`, migration `001120`, `GET/PUT
+- **R-2** CI authenticates by OIDC federation only. The `runner` sensor
+  type (a sensor API key used from CI) was deprecated, then removed (owner
+  decision 2026-10-05, migration `001146`): existing runner sensors and their
+  keys are deleted, the type is refused, and the CI ingest path submits
+  reports as a CI run (`ingest.ProducerCIRun`), never as a sensor. **OIDC
+  required for CI** (`tenants.ci_require_oidc`, migration `001120`, `GET/PUT
   /api/v1/ci/settings`, `scans:ci:read`/`scans:ci:write`): when on, the key of
-  a one-shot sensor (type `runner` or execution mode `standalone`) is refused
-  on every sensor route (v2: `403` problem `ci-oidc-required`) and audited
+  a one-shot sensor (execution mode `standalone`) is refused on every sensor
+  route (v2: `403` problem `ci-oidc-required`) and audited
   (`ci_run.runner_key_refused`, at most once per sensor every ten minutes); an
   unreadable setting refuses. On for every organization created after the
   migration; existing ones keep accepting keys until an administrator turns it

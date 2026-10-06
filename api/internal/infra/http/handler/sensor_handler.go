@@ -135,7 +135,7 @@ func (h *SensorHandler) SetCACertificateFile(path string) {
 // CreateSensorRequest represents the request body for creating a sensor.
 type CreateSensorRequest struct {
 	Name              string   `json:"name" validate:"required,min=1,max=255"`
-	Type              string   `json:"type" validate:"required,oneof=runner worker collector sensor"`
+	Type              string   `json:"type" validate:"required,oneof=worker collector sensor"`
 	Description       string   `json:"description" validate:"max=1000"`
 	Capabilities      []string `json:"capabilities" validate:"max=20,dive,max=50"`
 	Tools             []string `json:"tools" validate:"max=20,dive,max=50"`

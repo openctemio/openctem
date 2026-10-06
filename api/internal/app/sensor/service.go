@@ -350,7 +350,7 @@ func (s *SensorService) SetAPIKeyRepository(repo sensordom.APIKeyRepository) {
 type CreateSensorInput struct {
 	TenantID          string   `json:"tenant_id" validate:"required,uuid"`
 	Name              string   `json:"name" validate:"required,min=1,max=255"`
-	Type              string   `json:"type" validate:"required,oneof=runner worker collector sensor"`
+	Type              string   `json:"type" validate:"required,oneof=worker collector sensor"`
 	Description       string   `json:"description" validate:"max=1000"`
 	Capabilities      []string `json:"capabilities" validate:"max=20,dive,max=50"`
 	Tools             []string `json:"tools" validate:"max=20,dive,max=50"`
@@ -442,7 +442,7 @@ func (s *SensorService) GetSensor(ctx context.Context, tenantID, sensorID string
 // ListSensorsInput represents the input for listing sensors.
 type ListSensorsInput struct {
 	TenantID      string   `json:"tenant_id" validate:"required,uuid"`
-	Type          string   `json:"type" validate:"omitempty,oneof=runner worker collector sensor"`
+	Type          string   `json:"type" validate:"omitempty,oneof=worker collector sensor"`
 	Status        string   `json:"status" validate:"omitempty,oneof=active disabled revoked"`      // Admin-controlled
 	Health        string   `json:"health" validate:"omitempty,oneof=unknown online offline error"` // Automatic
 	ExecutionMode string   `json:"execution_mode" validate:"omitempty,oneof=standalone daemon"`
@@ -1423,8 +1423,6 @@ func (s *SensorService) pruneExpiredKeys(ctx context.Context, sensorID shared.ID
 // (used when minting a rotated key). Prep for scope enforcement (Phase 4).
 func scopesForSensor(t sensordom.SensorType) []string {
 	switch t {
-	case sensordom.SensorTypeRunner:
-		return sensordom.RunnerScopes()
 	case sensordom.SensorTypeCollector:
 		return sensordom.CollectorScopes()
 	case sensordom.SensorTypeEASM:

@@ -40,7 +40,7 @@ type bindingRig struct {
 	ids     map[string]shared.ID         // sensor name -> id
 }
 
-// newBindingRig builds a tenant with a worker, a second worker, a CI runner
+// newBindingRig builds a tenant with a worker, a second worker
 // and a collector. mode "" leaves the tenant without a policy row (a new
 // tenant: quarantine).
 func newBindingRig(t *testing.T, mode sensorresult.Mode) *bindingRig {
@@ -91,7 +91,7 @@ func newBindingRig(t *testing.T, mode sensorresult.Mode) *bindingRig {
 	}
 	for _, s := range []struct{ name, typ, mode string }{
 		{"worker", "worker", "daemon"}, {"other-worker", "worker", "daemon"},
-		{"ci", "runner", "standalone"}, {"collector", "collector", "daemon"},
+		{"collector", "collector", "daemon"},
 	} {
 		out, err := sensorSvc.CreateSensor(ctx, sensor.CreateSensorInput{
 			TenantID: rig.tenant.String(), Name: s.name, Type: s.typ, ExecutionMode: s.mode,
@@ -243,7 +243,7 @@ func withFindings(rep *ctis.Report, rules ...string) *ctis.Report {
 
 // A sensor without a command cannot alter an existing asset: no exposure,
 // compliance, classification or PII flag, and no reactivation. Collector and
-// CI runner reports are limited the same way. Before RFC-040 the worker's
+// reports are limited the same way. Before RFC-040 the worker's
 // report re-applied every flag and reactivated the inactive host.
 func TestResultBinding_UnsolicitedCannotAlterExistingAsset(t *testing.T) {
 	r := newBindingRig(t, sensorresult.ModeWarn)
@@ -253,7 +253,7 @@ func TestResultBinding_UnsolicitedCannotAlterExistingAsset(t *testing.T) {
 	}
 	before := r.asset("db-1.corp.example")
 
-	for _, sensorName := range []string{"worker", "ci", "collector"} {
+	for _, sensorName := range []string{"worker", "collector"} {
 		code, body := r.push(sensorName, hostReport("nmap", true, "db-1.corp.example", "old-1.corp.example", "new-"+sensorName+".corp.example"), "")
 		if code != http.StatusCreated {
 			t.Fatalf("%s: status %d %v", sensorName, code, body)
@@ -316,15 +316,14 @@ func TestResultBinding_UnsolicitedCannotReopenHumanResolved(t *testing.T) {
 	}
 }
 
-// CI runner and collector uploads keep working on a new tenant (quarantine
-// mode), while the same report from a worker is quarantined with 422
+// Collector uploads keep working on a new tenant (quarantine mode), while the same report from a worker is quarantined with 422
 // RESULTS_QUARANTINED, applies nothing, and can be accepted or discarded.
-func TestResultBinding_CIUploadsWorkWorkerQuarantined(t *testing.T) {
+func TestResultBinding_CollectorUploadsWorkWorkerQuarantined(t *testing.T) {
 	r := newBindingRig(t, "")
 	if p := r.svc.ResultPolicy(context.Background(), r.tenant); p.Mode != sensorresult.ModeQuarantine || p.Stored {
 		t.Fatalf("a new tenant's policy is %+v, want the quarantine default", p)
 	}
-	for _, name := range []string{"ci", "collector"} {
+	for _, name := range []string{"collector"} {
 		code, body := r.push(name, withFindings(hostReport("nuclei", false, name+".corp.example"), name+"-rule"), "")
 		if code != http.StatusCreated || body["findings_created"] != float64(1) {
 			t.Fatalf("%s upload: %d %v", name, code, body)

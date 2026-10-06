@@ -46,7 +46,7 @@ func TestSensorAPIKeyRepository_RoundTrip(t *testing.T) {
 	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()
 
 	sensorRepo := NewSensorRepository(&DB{DB: db})
-	a, err := sensordom.NewSensor(tenantID, "aak-sensor", sensordom.SensorTypeRunner, "", nil, nil, sensordom.ExecutionModeStandalone)
+	a, err := sensordom.NewSensor(tenantID, "aak-sensor", sensordom.SensorTypeWorker, "", nil, nil, sensordom.ExecutionModeStandalone)
 	if err != nil {
 		t.Fatalf("new sensor: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestSensorAPIKeyRepository_RoundTrip(t *testing.T) {
 	repo := NewSensorAPIKeyRepository(&DB{DB: db})
 
 	// Create key N.
-	kN, _ := sensordom.NewAPIKey(a.ID, "keyN", sensordom.RunnerScopes())
+	kN, _ := sensordom.NewAPIKey(a.ID, "keyN", sensordom.WorkerScopes())
 	kN.SetKeyHash("hash-N", "rda_N0000000")
 	expN := time.Now().Add(1 * time.Hour).Truncate(time.Microsecond)
 	kN.SetExpiration(expN)
@@ -73,7 +73,7 @@ func TestSensorAPIKeyRepository_RoundTrip(t *testing.T) {
 	if got.SensorID != a.ID || !got.IsValid() {
 		t.Fatalf("round-trip mismatch: sensor=%v valid=%v", got.SensorID, got.IsValid())
 	}
-	if len(got.Scopes) != len(sensordom.RunnerScopes()) {
+	if len(got.Scopes) != len(sensordom.WorkerScopes()) {
 		t.Errorf("scopes not round-tripped: %v", got.Scopes)
 	}
 
@@ -86,7 +86,7 @@ func TestSensorAPIKeyRepository_RoundTrip(t *testing.T) {
 	}
 
 	// Overlap: issue key N+1 while N is still active → two active keys coexist.
-	kN1, _ := sensordom.NewAPIKey(a.ID, "keyN+1", sensordom.RunnerScopes())
+	kN1, _ := sensordom.NewAPIKey(a.ID, "keyN+1", sensordom.WorkerScopes())
 	kN1.SetKeyHash("hash-N1", "rda_N1000000")
 	if err := repo.Create(ctx, kN1); err != nil {
 		t.Fatalf("create key N+1: %v", err)
@@ -140,7 +140,7 @@ func TestSensorAPIKeyRepository_RotateKey(t *testing.T) {
 
 	sensorRepo := NewSensorRepository(&DB{DB: db})
 	newSensor := func(name, hash string) shared.ID {
-		s, err := sensordom.NewSensor(tenantID, name, sensordom.SensorTypeRunner, "", nil, nil, sensordom.ExecutionModeStandalone)
+		s, err := sensordom.NewSensor(tenantID, name, sensordom.SensorTypeWorker, "", nil, nil, sensordom.ExecutionModeStandalone)
 		if err != nil {
 			t.Fatalf("new sensor: %v", err)
 		}
@@ -155,7 +155,7 @@ func TestSensorAPIKeyRepository_RotateKey(t *testing.T) {
 
 	repo := NewSensorAPIKeyRepository(&DB{DB: db})
 	newKey := func(sensorID shared.ID, name string, exp *time.Time) *sensordom.APIKey {
-		k, _ := sensordom.NewAPIKey(sensorID, name, sensordom.RunnerScopes())
+		k, _ := sensordom.NewAPIKey(sensorID, name, sensordom.WorkerScopes())
 		k.SetKeyHash("hash-"+name, "rda_"+(name + "________")[:8])
 		if exp != nil {
 			k.SetExpiration(*exp)
@@ -313,7 +313,7 @@ func TestSensorAPIKeyRepository_RenewalRechecksPresentedKey(t *testing.T) {
 	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()
 
 	sensorRepo := NewSensorRepository(&DB{DB: db})
-	s, err := sensordom.NewSensor(tenantID, "src-a", sensordom.SensorTypeRunner, "", nil, nil, sensordom.ExecutionModeStandalone)
+	s, err := sensordom.NewSensor(tenantID, "src-a", sensordom.SensorTypeWorker, "", nil, nil, sensordom.ExecutionModeStandalone)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestSensorAPIKeyRepository_RenewalRechecksPresentedKey(t *testing.T) {
 	long := time.Now().Add(90 * 24 * time.Hour).Truncate(time.Microsecond)
 	at := time.Now().Add(15 * time.Minute).Truncate(time.Microsecond)
 	newKey := func(name string) *sensordom.APIKey {
-		k, _ := sensordom.NewAPIKey(sid, name, sensordom.RunnerScopes())
+		k, _ := sensordom.NewAPIKey(sid, name, sensordom.WorkerScopes())
 		k.SetKeyHash("hash-"+name, "rda_"+(name + "________")[:8])
 		k.SetExpiration(long)
 		return k

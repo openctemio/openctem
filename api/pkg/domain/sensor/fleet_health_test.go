@@ -107,17 +107,17 @@ func TestAssessHealth_StateLadder(t *testing.T) {
 		}, StateRevoked},
 		{"CI runner between runs is idle, not offline", func() *Sensor {
 			s := daemon(ago(3 * time.Hour))
-			s.Type, s.ExecutionMode = SensorTypeRunner, ExecutionModeStandalone
+			s.Type, s.ExecutionMode = SensorTypeWorker, ExecutionModeStandalone
 			return s
 		}, StateIdle},
 		{"CI runner during a run is online", func() *Sensor {
 			s := daemon(ago(20 * time.Second))
-			s.Type, s.ExecutionMode = SensorTypeRunner, ExecutionModeStandalone
+			s.Type, s.ExecutionMode = SensorTypeWorker, ExecutionModeStandalone
 			return s
 		}, StateOnline},
 		{"CI runner that never ran", func() *Sensor {
 			s := daemon(nil)
-			s.Type, s.ExecutionMode = SensorTypeRunner, ExecutionModeStandalone
+			s.Type, s.ExecutionMode = SensorTypeWorker, ExecutionModeStandalone
 			return s
 		}, StateNeverConnected},
 		{"heartbeating with an outbox backlog is degraded", func() *Sensor {

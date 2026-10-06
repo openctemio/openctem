@@ -1,7 +1,7 @@
 package routes
 
 // "OIDC required for CI" (RFC-051) over the real v2 sensor routes: a CI
-// (runner) sensor's key is refused while its organization requires OIDC,
+// (standalone, one-shot) sensor's key is refused while its organization requires OIDC,
 // every other sensor is untouched, and the refusal is audited once.
 
 import (
@@ -31,7 +31,7 @@ func TestCIRequireOIDC_RunnerKeyRefused_DB(t *testing.T) {
 	})
 
 	runner, err := h.sensors.CreateSensor(ctx, sensorapp.CreateSensorInput{TenantID: h.tenantID, Name: "ci-runner",
-		Type: "runner", Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "standalone"})
+		Type: "worker", Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "standalone"})
 	if err != nil {
 		t.Fatalf("create runner sensor: %v", err)
 	}

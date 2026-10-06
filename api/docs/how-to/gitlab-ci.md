@@ -226,12 +226,12 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 | `401` on upload after a long scan | The 15-minute run token expired: the sensor exchanges the token at the first upload, so keep the upload and the verdict within 15 minutes of each other (split slow scanners into parallel jobs) |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than this project's repository |
 | Every finding is "new" | The default branch was never scanned: see step 5 |
-| Push disabled, "scan-only mode" in the log | `OPENCTEM_TENANT_ID` (or the legacy `API_KEY`) is not set in the job |
+| Push disabled, "scan-only mode" in the log | `OPENCTEM_TENANT_ID` is not set in the job |
 | Self-managed: token refused with an issuer or key error | The Issuer URL does not match `iss`, or the API cannot reach your GitLab's keys (private address flag, certificate) |
 
-## Moving off API keys
+## No API keys in CI
 
-If a pipeline still uses `API_KEY`, it keeps working but every response carries
-a `Deprecation` header and the sensor prints a warning. Add the trust
-configuration and the `id_tokens` block, check one pipeline uploads, then
-delete the `API_KEY` variable and revoke that sensor's key.
+CI jobs authenticate only with their ID token. Runner sensors (a sensor API key
+stored in CI) were removed, with their keys, on upgrade. If a pipeline still
+sets `API_KEY`, add the trust configuration and the `id_tokens` block, then
+delete the variable.

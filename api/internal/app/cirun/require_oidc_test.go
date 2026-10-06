@@ -33,10 +33,10 @@ func (c *countingAudit) LogEvent(context.Context, auditapp.AuditContext, auditap
 
 func TestRunnerKeyPolicy(t *testing.T) {
 	tid := shared.NewID()
-	runner := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Type: sensor.SensorTypeRunner}
+	runner := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Type: sensor.SensorTypeCollector, ExecutionMode: sensor.ExecutionModeStandalone}
 	standalone := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Type: sensor.SensorTypeWorker, ExecutionMode: sensor.ExecutionModeStandalone}
 	daemon := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Type: sensor.SensorTypeWorker, ExecutionMode: sensor.ExecutionModeDaemon}
-	platform := &sensor.Sensor{ID: shared.NewID(), Type: sensor.SensorTypeRunner}
+	platform := &sensor.Sensor{ID: shared.NewID(), Type: sensor.SensorTypeWorker, ExecutionMode: sensor.ExecutionModeStandalone}
 
 	store := &fakeSettings{require: true}
 	audit := &countingAudit{}

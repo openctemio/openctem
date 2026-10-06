@@ -29,7 +29,7 @@ type StateInput = Pick<
 
 /** A one-shot (CI) sensor connects only while it runs. */
 export function isOneShotSensor(sensor: Pick<Sensor, 'type' | 'execution_mode'>): boolean {
-  return sensor.execution_mode === 'standalone' || sensor.type === 'runner'
+  return sensor.execution_mode === 'standalone'
 }
 
 /**

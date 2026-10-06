@@ -336,7 +336,7 @@ Agents are distributed components (scanners, collectors) that execute security t
     "id": "uuid",
     "tenant_id": "uuid",
     "name": "my-scanner",
-    "type": "runner",
+    "type": "worker",
     "execution_mode": "daemon",
     "status": "pending",
     "capabilities": ["sast", "sca"],

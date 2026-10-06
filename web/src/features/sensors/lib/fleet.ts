@@ -287,8 +287,7 @@ export function filterSensors(
       return false
     }
     if (f.modes.length) {
-      const mode: SensorModeFilter =
-        s.execution_mode === 'standalone' || s.type === 'runner' ? 'ci' : 'daemon'
+      const mode: SensorModeFilter = s.execution_mode === 'standalone' ? 'ci' : 'daemon'
       if (!f.modes.includes(mode)) return false
     }
     if (f.protocols.length && !f.protocols.includes(sensorProtocolOf(s))) return false

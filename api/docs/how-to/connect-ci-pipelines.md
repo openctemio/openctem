@@ -171,15 +171,15 @@ says how it ran, never "offline":
 Disabling or deleting a trust configuration revokes its pipelines and stops
 the upload tokens of their running jobs at once.
 
-## 6. Moving off API keys
+## 6. No API keys in CI
 
-A runner sensor's API key still works unless the organization requires OIDC
-for CI; its responses carry a `Deprecation` header and the sensor prints a
-warning. Once the pipeline runs with OIDC, delete the `API_KEY` secret from CI,
-revoke the runner sensor's key, and turn on **Require OIDC for CI** at the top
-of **Settings > Scanning > CI pipelines**: a CI sensor's key is then refused
-(`403 ci-oidc-required`) and each refusal is audited. Organizations created
-since this setting exists have it on from the start.
+CI jobs authenticate only with their OIDC identity. The former `runner` sensor
+type (a sensor API key stored in CI) was removed: such sensors and their keys
+were deleted on upgrade (migration `001146`) and new ones cannot be created.
+Delete any `API_KEY` secret left in your CI settings. **Require OIDC for CI**
+(top of **Settings > Scanning > CI pipelines**, on for organizations created
+since it exists) also refuses the key of any one-shot (standalone) sensor
+(`403 ci-oidc-required`, audited).
 
 ## Troubleshooting
 
