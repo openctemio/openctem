@@ -43,7 +43,23 @@ var (
 // CheckRecentAuth is the RequireRecentAuth decision for code that only knows
 // inside a service whether an action is sensitive (a grant change that widens).
 // It fails closed: any other error means the check itself failed.
+//
+// A token from the external OIDC provider has no platform session: its recent
+// authentication is the provider's own, the signature-verified auth_time
+// claim. The client steps up by signing in at the provider again
+// (prompt=login, max_age=0) and sending the new token; a token without
+// auth_time cannot step up.
 func CheckRecentAuth(ctx context.Context, checker RecentAuthChecker, window time.Duration) error {
+	if GetAuthProvider(ctx) == AuthProviderOIDC {
+		claims := GetClaims(ctx)
+		if claims == nil || claims.AuthTime == nil {
+			return ErrStepUpUnavailable
+		}
+		if !recentEnough(claims.AuthTime.Time, window) {
+			return ErrStepUpRequired
+		}
+		return nil
+	}
 	userID, sessionID := GetUserID(ctx), GetSessionID(ctx)
 	if checker == nil || IsAPIKeyAuthenticated(ctx) || userID == "" || sessionID == "" {
 		return ErrStepUpUnavailable
@@ -52,11 +68,17 @@ func CheckRecentAuth(ctx context.Context, checker RecentAuthChecker, window time
 	if err != nil && !errors.Is(err, ErrNoRecentAuth) {
 		return err
 	}
-	now := time.Now()
-	if err != nil || at.IsZero() || at.After(now.Add(time.Minute)) || now.Sub(at) > window {
+	if err != nil || !recentEnough(at, window) {
 		return ErrStepUpRequired
 	}
 	return nil
+}
+
+// recentEnough reports whether at lies within window before now (and not
+// more than a minute of clock skew ahead).
+func recentEnough(at time.Time, window time.Duration) bool {
+	now := time.Now()
+	return !at.IsZero() && !at.After(now.Add(time.Minute)) && now.Sub(at) <= window
 }
 
 // WriteStepUpError answers ErrStepUpRequired / ErrStepUpUnavailable the way
