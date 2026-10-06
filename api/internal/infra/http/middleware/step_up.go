@@ -44,6 +44,15 @@ func RequireRecentAuth(checker RecentAuthChecker, window time.Duration) func(htt
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
+			// A token from the external OIDC provider has no platform
+			// session: its recent authentication is the provider's own,
+			// the signature-verified auth_time claim. The client steps up
+			// by signing in at the provider again (prompt=login, max_age=0)
+			// and sending the new token.
+			if GetAuthProvider(ctx) == AuthProviderOIDC {
+				requireRecentProviderAuth(w, r, next, window)
+				return
+			}
 			userID, sessionID := GetUserID(ctx), GetSessionID(ctx)
 			if checker == nil || IsAPIKeyAuthenticated(ctx) || userID == "" || sessionID == "" {
 				apierror.New(http.StatusForbidden, CodeStepUpUnavailable,
@@ -58,14 +67,38 @@ func RequireRecentAuth(checker RecentAuthChecker, window time.Duration) func(htt
 				apierror.InternalServerError("could not check re-authentication").WriteJSON(w)
 				return
 			}
-			now := time.Now()
-			if err != nil || at.IsZero() || at.After(now.Add(time.Minute)) || now.Sub(at) > window {
-				apierror.New(http.StatusForbidden, CodeStepUpRequired,
-					"Confirm your identity to continue").
-					WithDetails(map[string]int{"window_seconds": int(window.Seconds())}).WriteJSON(w)
+			if err != nil || !recentEnough(at, window) {
+				writeStepUpRequired(w, window)
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func requireRecentProviderAuth(w http.ResponseWriter, r *http.Request, next http.Handler, window time.Duration) {
+	claims := GetClaims(r.Context())
+	if claims == nil || claims.AuthTime == nil {
+		apierror.New(http.StatusForbidden, CodeStepUpUnavailable,
+			"This token does not say when you signed in; sign in again at your identity provider").WriteJSON(w)
+		return
+	}
+	if !recentEnough(claims.AuthTime.Time, window) {
+		writeStepUpRequired(w, window)
+		return
+	}
+	next.ServeHTTP(w, r)
+}
+
+// recentEnough reports whether at lies within window before now (and not
+// more than a minute of clock skew ahead).
+func recentEnough(at time.Time, window time.Duration) bool {
+	now := time.Now()
+	return !at.IsZero() && !at.After(now.Add(time.Minute)) && now.Sub(at) <= window
+}
+
+func writeStepUpRequired(w http.ResponseWriter, window time.Duration) {
+	apierror.New(http.StatusForbidden, CodeStepUpRequired,
+		"Confirm your identity to continue").
+		WithDetails(map[string]int{"window_seconds": int(window.Seconds())}).WriteJSON(w)
 }

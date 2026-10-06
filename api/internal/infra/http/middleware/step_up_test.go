@@ -8,6 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	jwtv5 "github.com/golang-jwt/jwt/v5"
+
+	"github.com/openctemio/openctem/api/pkg/keycloak"
 )
 
 type stubRecentAuth struct {
@@ -82,4 +86,56 @@ func TestRequireRecentAuth(t *testing.T) {
 			t.Fatalf("calls %v", st.calls)
 		}
 	})
+}
+
+// A token from the external OIDC provider has no platform session; its
+// recent authentication is the provider's signed auth_time claim.
+func TestRequireRecentAuth_ExternalProviderToken(t *testing.T) {
+	const window = 10 * time.Minute
+	now := time.Now()
+	provider := func(authTime *jwtv5.NumericDate) func(context.Context) context.Context {
+		return func(ctx context.Context) context.Context {
+			ctx = context.WithValue(ctx, UserIDKey, "kc-user")
+			ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderOIDC)
+			return context.WithValue(ctx, ClaimsKey, &keycloak.Claims{AuthTime: authTime})
+		}
+	}
+	for _, tc := range []struct {
+		name     string
+		ctx      func(context.Context) context.Context
+		wantCode int
+		wantErr  string
+	}{
+		{"signed in at the provider a minute ago", provider(jwtv5.NewNumericDate(now.Add(-time.Minute))), http.StatusOK, ""},
+		{"signed in at the provider an hour ago", provider(jwtv5.NewNumericDate(now.Add(-time.Hour))), http.StatusForbidden, "STEP_UP_REQUIRED"},
+		{"auth_time in the future", provider(jwtv5.NewNumericDate(now.Add(time.Hour))), http.StatusForbidden, "STEP_UP_REQUIRED"},
+		{"no auth_time", provider(nil), http.StatusForbidden, "STEP_UP_UNAVAILABLE"},
+		{"no claims", func(ctx context.Context) context.Context {
+			return context.WithValue(context.WithValue(ctx, UserIDKey, "kc-user"), AuthProviderKey, AuthProviderOIDC)
+		}, http.StatusForbidden, "STEP_UP_UNAVAILABLE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The session checker is never consulted for a provider token.
+			st := &stubRecentAuth{at: now}
+			h := RequireRecentAuth(st, window)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			req := httptest.NewRequest(http.MethodPost, "/x", nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req.WithContext(tc.ctx(req.Context())))
+			if rec.Code != tc.wantCode {
+				t.Fatalf("status %d, want %d (%s)", rec.Code, tc.wantCode, rec.Body.String())
+			}
+			var body struct {
+				Code string `json:"code"`
+			}
+			_ = json.Unmarshal(rec.Body.Bytes(), &body)
+			if body.Code != tc.wantErr {
+				t.Fatalf("code %q, want %q", body.Code, tc.wantErr)
+			}
+			if len(st.calls) != 0 {
+				t.Fatal("a provider token was checked against a platform session")
+			}
+		})
+	}
 }
