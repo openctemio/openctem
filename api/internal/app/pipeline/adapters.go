@@ -54,7 +54,7 @@ func (a *AuditServiceAdapter) LogEvent(ctx context.Context, actx AuditContext, e
 
 // ========== Sensor Selector Adapter ==========
 
-// SensorSelectorAdapter adapts app.SensorSelector to pipeline.SensorSelector.
+// SensorSelectorAdapter adapts sensor.SensorSelector to pipeline.SensorSelector.
 type SensorSelectorAdapter struct {
 	SelectSensorFunc          func(ctx context.Context, req SelectSensorRequest) (*SelectSensorResult, error)
 	CanUsePlatformSensorsFunc func(ctx context.Context, tenantID shared.ID) (bool, string)

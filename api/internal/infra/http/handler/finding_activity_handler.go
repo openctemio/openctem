@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -19,14 +19,14 @@ import (
 // FindingActivityHandler handles finding activity HTTP requests.
 type FindingActivityHandler struct {
 	activityService      *activity.FindingActivityService
-	vulnerabilityService *app.VulnerabilityService
+	vulnerabilityService *finding.VulnerabilityService
 	logger               *logger.Logger
 }
 
 // NewFindingActivityHandler creates a new finding activity handler.
 func NewFindingActivityHandler(
 	actSvc *activity.FindingActivityService,
-	vulnSvc *app.VulnerabilityService,
+	vulnSvc *finding.VulnerabilityService,
 	log *logger.Logger,
 ) *FindingActivityHandler {
 	return &FindingActivityHandler{

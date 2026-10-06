@@ -11,8 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -26,18 +26,18 @@ import (
 // metadata an admin registers with their IdP, admin config CRUD, and the
 // SP-initiated browser login (login redirect + ACS).
 type SAMLHandler struct {
-	svc         *app.SAMLService
+	svc         *auth.SAMLService
 	cookieCfg   CookieConfig
 	frontendURL string // origin the browser is redirected to after login
 	publicURL   string // configured public origin (APP_URL); see samlBaseURL
 	audit       *auditsvc.AuditService
-	changes     *app.SSOChangeService
+	changes     *auth.SSOChangeService
 	logger      *logger.Logger
 }
 
 // SetChangeApproval routes SAML changes made from the platform admin console
 // through an owner's approval (RFC-022).
-func (h *SAMLHandler) SetChangeApproval(svc *app.SSOChangeService) {
+func (h *SAMLHandler) SetChangeApproval(svc *auth.SSOChangeService) {
 	h.changes = svc
 }
 
@@ -55,7 +55,7 @@ func (h *SAMLHandler) SetPublicURL(publicURL string) {
 
 // NewSAMLHandler creates the handler. cookieCfg + frontendURL drive the
 // browser login flow (session cookies + post-login redirect).
-func NewSAMLHandler(svc *app.SAMLService, cookieCfg CookieConfig, frontendURL string, log *logger.Logger) *SAMLHandler {
+func NewSAMLHandler(svc *auth.SAMLService, cookieCfg CookieConfig, frontendURL string, log *logger.Logger) *SAMLHandler {
 	return &SAMLHandler{svc: svc, cookieCfg: cookieCfg, frontendURL: frontendURL, logger: log.With("handler", "saml")}
 }
 
@@ -317,7 +317,7 @@ func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid JSON body").WriteJSON(w)
 		return
 	}
-	in := app.SAMLConfigInput{
+	in := auth.SAMLConfigInput{
 		IDPEntityID:    body.IDPEntityID,
 		IDPSSOURL:      body.IDPSSOURL,
 		IDPCertificate: body.IDPCertificate,

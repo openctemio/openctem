@@ -18,8 +18,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -30,7 +30,7 @@ import (
 // SensorResultsV2Handler serves /api/v2/sensor.
 type SensorResultsV2Handler struct {
 	receiver *ingest.V2Receiver
-	sensors  *app.SensorService
+	sensors  *sensorapp.SensorService
 	logger   *logger.Logger
 	// features are the RFC-029 control-plane features mounted next to the
 	// results routes, listed on hello.
@@ -56,7 +56,7 @@ func (h *SensorResultsV2Handler) SetControlFeatures(features []string) {
 }
 
 // NewSensorResultsV2Handler builds the handler.
-func NewSensorResultsV2Handler(receiver *ingest.V2Receiver, sensors *app.SensorService, log *logger.Logger) *SensorResultsV2Handler {
+func NewSensorResultsV2Handler(receiver *ingest.V2Receiver, sensors *sensorapp.SensorService, log *logger.Logger) *SensorResultsV2Handler {
 	return &SensorResultsV2Handler{receiver: receiver, sensors: sensors, logger: log.With("handler", "sensor-results-v2")}
 }
 

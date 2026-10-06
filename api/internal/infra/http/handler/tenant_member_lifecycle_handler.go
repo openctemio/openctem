@@ -16,8 +16,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/audit"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -125,7 +125,7 @@ func (h *TenantHandler) OffboardMember(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("Authentication required").WriteJSON(w)
 		return
 	}
-	result, err := h.service.OffboardMember(r.Context(), memberID, app.OffboardMemberInput{
+	result, err := h.service.OffboardMember(r.Context(), memberID, tenantapp.OffboardMemberInput{
 		SchedulesTo:      req.SchedulesTo,
 		FindingsTo:       req.FindingsTo,
 		UnassignFindings: req.UnassignFindings,

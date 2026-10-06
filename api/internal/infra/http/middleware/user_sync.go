@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -29,7 +29,9 @@ const syncInterval = 24 * time.Hour
 // - User-specific data (preferences, profile) stored locally
 // - Future migration away from Keycloak
 // Supports both local auth (LocalClaimsKey) and OIDC auth (ClaimsKey).
-func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handler) http.Handler {
+//
+//nolint:gocognit // existing middleware; only its import changed here
+func UserSync(userService *tenant.UserService, log *logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()

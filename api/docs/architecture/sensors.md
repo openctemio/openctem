@@ -33,7 +33,7 @@ log fields (`sensor_id`), metrics and API environment variables (`SENSOR_*`).
 | Layer | Package |
 |---|---|
 | Domain | `pkg/domain/sensor` (entity, API keys, errors, repository interfaces) |
-| Application | `internal/app/sensor` (service, selector, config templates); compat shim `internal/app/sensor_service.go` |
+| Application | `internal/app/sensor` (service, selector, config templates) |
 | Persistence | `internal/infra/postgres/sensor_repository.go`, `sensor_apikey_repository.go` |
 | HTTP | `internal/infra/http/handler/sensor_handler.go` (management), `ingest_handler.go` (sensor key authentication, services shared with the v2 control plane) |
 | Health | `internal/infra/controller/sensor_health.go`, `internal/infra/jobs/sensor_health_checker.go`, `internal/infra/redis/sensor_state.go` |

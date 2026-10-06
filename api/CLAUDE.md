@@ -57,11 +57,8 @@ api/
 │   ├── app/               # Application services (business logic)
 │   │   ├── <cluster>/     # One bounded context per folder (audit/,
 │   │   │                  # asset/, finding/, auth/, tenant/, ...)
-│   │   └── <cluster>_service.go  # Compat shim — type aliases re-
-│   │                      #   exporting the cluster's public surface
-│   │                      #   as `app.X` for pre-refactor callers.
-│   │                      #   New code should import the cluster
-│   │                      #   package directly.
+│   │                      # Callers import the cluster package
+│   │                      # directly (no `app.X` re-exports).
 │   ├── domain/            # Domain models and interfaces
 │   │   └── shared/        # Shared types (ID, errors)
 │   └── infra/             # Infrastructure layer
@@ -169,9 +166,6 @@ auth/oauth_service.go
 
 Exceptions:
 - Test files keep `_test.go` suffix (Go requirement).
-- The compat shim file at `internal/app/<cluster>_service.go` DOES carry
-  the `_service` suffix because it lives in `package app`, not inside
-  a named cluster folder.
 
 Struct names keep the `Service` suffix (`AuthService`, `AssetService`) —
 only file names are adjusted.

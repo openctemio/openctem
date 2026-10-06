@@ -63,7 +63,11 @@ the finding without a regression flag.
 | SLA warning and breach escalation | `AND NOT f.branch_only` in both controller queries |
 | Notifications and ticket rules on new findings | the created callback skips them (`FindingProcessor.withoutBranchOnly`); a promoted finding runs it then |
 | Regression follow-up (fresh SLA, ticket comment, notification) | skipped for branch-only findings |
-| Dashboards, CTEM and program metrics, risk snapshots, asset and group finding counts | not yet: a follow-up change adds `NOT branch_only` to those queries |
+| Dashboards (stats, trend, MTTR, velocity, recent activity, data quality, process metrics), the executive summary and its top risks | `NOT branch_only` in `dashboard_repository.go` |
+| Program metrics, CTEM cycle metrics, validation coverage by priority, findings by source | `NOT branch_only` in each query |
+| Daily risk snapshots | `NOT branch_only` in `risk_snapshot.go` |
+| Asset finding counts (inventory, `has_findings`, aggregate stats, graph), asset group and business unit counts, group findings | `NOT branch_only` in the asset, asset group and business unit repositories |
+| Threat model status (findings on the model's assets) | `ListThreatFindings` |
 
 Unchanged on purpose: the CI gate and the run page (they read the run's own
 fingerprints; the gate's findings link adds `branch_only=true` for a run on a
@@ -95,3 +99,6 @@ hosted repository is already exposed).
 - `internal/app/ingest/branch_only_test.go`: workflows skip branch-only
   findings and run for promoted ones.
 - `pkg/domain/vulnerability/finding_branch_only_test.go`: the list default.
+- `internal/infra/postgres/branch_only_metrics_db_test.go`: dashboards, the
+  executive summary, recent activity, the threat model and asset counts leave
+  a branch-only finding out, and count it once promoted.

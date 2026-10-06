@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/sensorsig"
 )
 
@@ -34,9 +34,9 @@ var errSignedRefused = errors.New("signed request refused")
 
 // signedAuthenticator is what the verifier needs from the sensor service.
 type signedAuthenticator interface {
-	SigningIdentity(ctx context.Context, keyID string, allowPaused bool) (app.SensorIdentity, ed25519.PublicKey, error)
+	SigningIdentity(ctx context.Context, keyID string, allowPaused bool) (sensor.SensorIdentity, ed25519.PublicKey, error)
 	UseNonce(ctx context.Context, keyID, nonce string) error
-	RecordSignedUse(id app.SensorIdentity, clientIP string)
+	RecordSignedUse(id sensor.SensorIdentity, clientIP string)
 }
 
 // authenticateSigned verifies a signed sensor request. It returns
@@ -45,30 +45,30 @@ type signedAuthenticator interface {
 // request carries the verified body (already read and checked against
 // Content-Digest). A disabled sensor is returned with Paused set; the caller
 // decides what a paused sensor may reach, as for a bearer key.
-func authenticateSigned(r *http.Request, svc signedAuthenticator, clientIP string, now time.Time) (app.SensorIdentity, *http.Request, error) {
+func authenticateSigned(r *http.Request, svc signedAuthenticator, clientIP string, now time.Time) (sensor.SensorIdentity, *http.Request, error) {
 	p, err := sensorsig.Parse(r.Header)
 	if errors.Is(err, sensorsig.ErrMissing) {
-		return app.SensorIdentity{}, nil, errNotSigned
+		return sensor.SensorIdentity{}, nil, errNotSigned
 	}
 	if err != nil {
-		return app.SensorIdentity{}, nil, errSignedRefused
+		return sensor.SensorIdentity{}, nil, errSignedRefused
 	}
 	if err := p.CheckWindow(now); err != nil {
-		return app.SensorIdentity{}, nil, errSignedRefused
+		return sensor.SensorIdentity{}, nil, errSignedRefused
 	}
 	id, pub, err := svc.SigningIdentity(r.Context(), p.Params.KeyID, true)
 	if err != nil {
-		return app.SensorIdentity{}, nil, errSignedRefused
+		return sensor.SensorIdentity{}, nil, errSignedRefused
 	}
 	if err := p.Verify(r, pub); err != nil {
-		return app.SensorIdentity{}, nil, errSignedRefused
+		return sensor.SensorIdentity{}, nil, errSignedRefused
 	}
 	if err := svc.UseNonce(r.Context(), p.Params.KeyID, p.Params.Nonce); err != nil {
-		return app.SensorIdentity{}, nil, errSignedRefused
+		return sensor.SensorIdentity{}, nil, errSignedRefused
 	}
 	body, err := readSignedBody(r, p)
 	if err != nil {
-		return app.SensorIdentity{}, nil, errSignedRefused
+		return sensor.SensorIdentity{}, nil, errSignedRefused
 	}
 	r2 := r.Clone(r.Context())
 	r2.Body = io.NopCloser(bytes.NewReader(body))

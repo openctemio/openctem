@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -21,7 +21,7 @@ type contextKey string
 
 const sensorContextKey contextKey = "sensor"
 
-// sensorIdentityContextKey carries the app.SensorIdentity AuthenticateSource
+// sensorIdentityContextKey carries the sensor.SensorIdentity AuthenticateSource
 // resolved (paused flag, presented key expiry) for the heartbeat doorbell.
 const sensorIdentityContextKey contextKey = "sensor_identity"
 
@@ -30,11 +30,11 @@ const sensorIdentityContextKey contextKey = "sensor_identity"
 // sensor, heartbeat doorbell and heartbeat latency observer.
 type IngestHandler struct {
 	ingestService *ingest.Service
-	sensorService *app.SensorService
+	sensorService *sensorapp.SensorService
 	logger        *logger.Logger
 
 	// doorbell computes the heartbeat hints (RFC-023 §9.2a). Nil: no hints.
-	doorbell *app.Doorbell
+	doorbell *sensorapp.Doorbell
 
 	// heartbeats observes heartbeat handling latency for the health
 	// controller's platform-health guard (RFC-035 D3). Nil: not observed.
@@ -62,14 +62,14 @@ func (h *IngestHandler) observeHeartbeat(d time.Duration) {
 
 // SetDoorbell wires the heartbeat doorbell. Optional; without it the
 // heartbeat carries no hints.
-func (h *IngestHandler) SetDoorbell(d *app.Doorbell) {
+func (h *IngestHandler) SetDoorbell(d *sensorapp.Doorbell) {
 	h.doorbell = d
 }
 
 // NewIngestHandler creates a new ingest handler.
 func NewIngestHandler(
 	ingestSvc *ingest.Service,
-	sensorSvc *app.SensorService,
+	sensorSvc *sensorapp.SensorService,
 	log *logger.Logger,
 ) *IngestHandler {
 	return &IngestHandler{
@@ -348,15 +348,15 @@ var errSensorPaused = errors.New("sensor is disabled")
 // sensorIdentityFromContext returns the identity AuthenticateSource
 // resolved, falling back to the bare sensor (no paused flag, the sensor's
 // effective key expiry) when only that is in the context.
-func sensorIdentityFromContext(ctx context.Context) app.SensorIdentity {
-	if id, ok := ctx.Value(sensorIdentityContextKey).(app.SensorIdentity); ok && id.Sensor != nil {
+func sensorIdentityFromContext(ctx context.Context) sensorapp.SensorIdentity {
+	if id, ok := ctx.Value(sensorIdentityContextKey).(sensorapp.SensorIdentity); ok && id.Sensor != nil {
 		return id
 	}
 	agt := SensorFromContext(ctx)
 	if agt == nil {
-		return app.SensorIdentity{}
+		return sensorapp.SensorIdentity{}
 	}
-	return app.SensorIdentity{Sensor: agt, KeyExpiresAt: agt.KeyState().ExpiresAt}
+	return sensorapp.SensorIdentity{Sensor: agt, KeyExpiresAt: agt.KeyState().ExpiresAt}
 }
 
 // SensorFromContext retrieves the authenticated sensor from context.

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -180,7 +180,7 @@ func (m *MockFindingRepoForLifecycle) EnrichBatchByFingerprints(ctx context.Cont
 	return 0, nil
 }
 
-// MockTenantLister implements app.TenantLister for tests.
+// MockTenantLister implements finding.TenantLister for tests.
 type MockTenantLister struct {
 	TenantIDs []shared.ID
 	Error     error
@@ -207,10 +207,10 @@ func TestFindingLifecycleScheduler_ExpiresFeatureBranchFindings(t *testing.T) {
 
 	log := logger.New(logger.Config{Level: "error"})
 
-	scheduler := app.NewFindingLifecycleScheduler(
+	scheduler := finding.NewFindingLifecycleScheduler(
 		mockFindingRepo,
 		mockTenantLister,
-		app.FindingLifecycleSchedulerConfig{
+		finding.FindingLifecycleSchedulerConfig{
 			CheckInterval:     time.Hour,
 			DefaultExpiryDays: 30,
 			Enabled:           true,
@@ -329,7 +329,7 @@ func TestBranch_Retention(t *testing.T) {
 // =============================================================================
 
 func TestDefaultFindingLifecycleSchedulerConfig(t *testing.T) {
-	cfg := app.DefaultFindingLifecycleSchedulerConfig()
+	cfg := finding.DefaultFindingLifecycleSchedulerConfig()
 
 	if cfg.CheckInterval != time.Hour {
 		t.Errorf("CheckInterval = %v, want %v", cfg.CheckInterval, time.Hour)

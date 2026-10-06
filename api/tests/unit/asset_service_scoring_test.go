@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -62,9 +62,9 @@ func (m *mockBatchAssetRepository) BatchUpdateRiskScores(_ context.Context, _ sh
 // Helper
 // =============================================================================
 
-func newTestAssetService(repo asset.Repository) *app.AssetService {
+func newTestAssetService(repo asset.Repository) *assetapp.AssetService {
 	log := logger.NewNop()
-	return app.NewAssetService(repo, log)
+	return assetapp.NewAssetService(repo, log)
 }
 
 func makeTestAssetForService(exposure asset.Exposure, criticality asset.Criticality, findingCount int) *asset.Asset {
@@ -89,7 +89,7 @@ func TestAssetService_ScoringConfig_NoProvider(t *testing.T) {
 
 	// Service should use legacy config internally — verify by checking the asset
 	// can be created without a provider
-	_, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-no-provider",
 		Type:        "website",
@@ -115,7 +115,7 @@ func TestAssetService_ScoringConfig_CacheMiss(t *testing.T) {
 	svc.SetScoringConfigProvider(provider)
 
 	// CreateAsset triggers getScoringConfig — should be a cache miss
-	_, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-cache-miss",
 		Type:        "website",
@@ -139,7 +139,7 @@ func TestAssetService_ScoringConfig_CacheHit(t *testing.T) {
 	svc.SetScoringConfigProvider(provider)
 
 	// First call — cache miss
-	_, _ = svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, _ = svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-cache-hit-1",
 		Type:        "website",
@@ -148,7 +148,7 @@ func TestAssetService_ScoringConfig_CacheHit(t *testing.T) {
 	})
 
 	// Second call — should be cache hit
-	_, _ = svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, _ = svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-cache-hit-2",
 		Type:        "website",
@@ -170,7 +170,7 @@ func TestAssetService_ScoringConfig_CacheInvalidation(t *testing.T) {
 	svc.SetScoringConfigProvider(provider)
 
 	// First call — cache miss
-	_, _ = svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, _ = svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-invalidation-1",
 		Type:        "website",
@@ -182,7 +182,7 @@ func TestAssetService_ScoringConfig_CacheInvalidation(t *testing.T) {
 	svc.InvalidateScoringConfigCache(serviceTenantID)
 
 	// Next call — should be cache miss again
-	_, _ = svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, _ = svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-invalidation-2",
 		Type:        "website",
@@ -203,7 +203,7 @@ func TestAssetService_ScoringConfig_ProviderError_FallbackToLegacy(t *testing.T)
 	svc.SetScoringConfigProvider(provider)
 
 	// Should not fail — falls back to legacy config
-	_, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-provider-error",
 		Type:        "website",
@@ -394,7 +394,7 @@ func TestAssetService_ScoringConfig_UsesCustomWeights(t *testing.T) {
 	provider := &mockScoringConfigProvider{config: &customConfig}
 	svc.SetScoringConfigProvider(provider)
 
-	created, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	created, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-custom-weights",
 		Type:        "website",
@@ -422,7 +422,7 @@ func TestAssetService_ScoringConfig_CacheTTLBehavior(t *testing.T) {
 	svc.SetScoringConfigProvider(provider)
 
 	// Trigger cache population
-	_, _ = svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, _ = svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-ttl-1",
 		Type:        "website",
@@ -430,7 +430,7 @@ func TestAssetService_ScoringConfig_CacheTTLBehavior(t *testing.T) {
 	})
 
 	// Within TTL — should use cache
-	_, _ = svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, _ = svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-ttl-2",
 		Type:        "website",
@@ -445,7 +445,7 @@ func TestAssetService_ScoringConfig_CacheTTLBehavior(t *testing.T) {
 	// but we can verify invalidation works as expected
 	svc.InvalidateScoringConfigCache(serviceTenantID)
 
-	_, _ = svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	_, _ = svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "test-ttl-3",
 		Type:        "website",
