@@ -93,6 +93,10 @@ var assetMergeRefs = []mergeRef{
 		keys: []mergeKey{{cols: []string{"control_id"}}}},
 	{table: "scan_coverage_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// One gate policy per repository: the kept repository keeps its own,
+	// else it takes a merged one's.
+	{table: "ci_gate_policies", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{}}},
 	// One expectation per repository: the kept repository keeps its own.
 	{table: "ci_coverage_expectations", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},

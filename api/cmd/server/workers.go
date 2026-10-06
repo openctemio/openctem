@@ -272,6 +272,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			MinVersion:    sensordom.NormalizeVersion(deps.Config.SensorConfig.MinVersion),
 		}, log)
 		w.ControllerManager.Register(controller.NewCIAlertsController(job, 0))
+		// Retention: expired run token hashes, run findings after 90 days,
+		// runs after 400 days (each pipeline keeps its latest runs).
+		w.ControllerManager.Register(controller.NewCIRetentionController(cirunapp.NewRetentionJob(repos.CIRun, log), 0))
 	}
 
 	jobRecovery := controller.NewJobRecoveryController(

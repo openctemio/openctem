@@ -277,6 +277,11 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	// findings.definition_id must name one of the finding's own links, which
 	// do not exist yet when the finding is seeded.
 	"findings": func(*schemaSeeder) map[string]any { return map[string]any{"definition_id": nil} },
+	// A CI gate policy names its repository or business unit only for that
+	// scope (chk_ci_gate_policies_scope).
+	"ci_gate_policies": func(*schemaSeeder) map[string]any {
+		return map[string]any{"scope_type": "tenant", "repository_asset_id": nil, "business_unit_id": nil}
+	},
 	// digest has a format CHECK; manifest and ignored have type CHECKs.
 	// digest and health have CHECKs; report must be an object.
 	"sensor_config_reports": func(*schemaSeeder) map[string]any {

@@ -442,8 +442,10 @@ func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID share
 
 // ------------------------------------------------------------- policies ---
 
-const ciPolicyColumns = `id, tenant_id, scope_type, scope_id, enabled, mode, fail_on_severity, new_findings_only,
-	fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at`
+// The scope id is the repository or the business unit, each its own column
+// with a foreign key (migration 001113).
+const ciPolicyColumns = `id, tenant_id, scope_type, COALESCE(repository_asset_id, business_unit_id), enabled, mode,
+	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at`
 
 func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 	var (
@@ -488,8 +490,8 @@ func (r *CIRunRepository) GatePoliciesFor(ctx context.Context, tenantID, assetID
 	return r.queryPolicies(ctx, `SELECT `+ciPolicyColumns+` FROM ci_gate_policies p
 		WHERE p.tenant_id = $1 AND p.enabled AND (
 			p.scope_type = 'tenant'
-			OR (p.scope_type = 'repository' AND p.scope_id = $2)
-			OR (p.scope_type = 'business_unit' AND p.scope_id IN (
+			OR (p.scope_type = 'repository' AND p.repository_asset_id = $2)
+			OR (p.scope_type = 'business_unit' AND p.business_unit_id IN (
 				SELECT bua.business_unit_id FROM business_unit_assets bua
 				WHERE bua.tenant_id = $1 AND bua.asset_id = $2)))
 		LIMIT 100`, tenantID.String(), assetID.String())
@@ -527,11 +529,19 @@ func (r *CIRunRepository) GetGatePolicy(ctx context.Context, tenantID, id shared
 
 // CreateGatePolicy inserts a policy; one per scope.
 func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePolicy) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_gate_policies (id, tenant_id, scope_type, scope_id, enabled, mode,
-		fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $12)`,
-		p.ID.String(), p.TenantID.String(), p.ScopeType, nullID(p.ScopeID), p.Enabled, p.Mode, p.FailOnSeverity,
-		p.NewFindingsOnly, p.FailOnKEV, nullFloat(p.EPSSThreshold), nullID(p.CreatedBy), p.CreatedAt)
+	var repoID, unitID *shared.ID
+	switch p.ScopeType {
+	case cirun.ScopeRepository:
+		repoID = p.ScopeID
+	case cirun.ScopeBusinessUnit:
+		unitID = p.ScopeID
+	}
+	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_gate_policies (id, tenant_id, scope_type, repository_asset_id,
+		business_unit_id, enabled, mode, fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by,
+		updated_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13)`,
+		p.ID.String(), p.TenantID.String(), p.ScopeType, nullID(repoID), nullID(unitID), p.Enabled, p.Mode,
+		p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV, nullFloat(p.EPSSThreshold), nullID(p.CreatedBy), p.CreatedAt)
 	if isUniqueViolation(err) {
 		return cirun.ErrPolicyExists
 	}
@@ -563,7 +573,10 @@ func (r *CIRunRepository) DeleteGatePolicy(ctx context.Context, tenantID, id sha
 
 // ------------------------------------------------------------ overrides ---
 
-const ciOverrideColumns = `id, tenant_id, repository_asset_id, commit_sha, reason, created_by, created_by_email,
+// The creator's email is read from users when the override is read; it is
+// never copied into the CI table (migration 001113).
+const ciOverrideColumns = `id, tenant_id, repository_asset_id, commit_sha, reason, created_by,
+	COALESCE((SELECT u.email FROM users u WHERE u.id = ci_gate_overrides.created_by), ''),
 	expires_at, revoked_at, revoked_by, created_at`
 
 func scanCIOverride(row ciScanner) (cirun.GateOverride, error) {
@@ -590,9 +603,9 @@ func scanCIOverride(row ciScanner) (cirun.GateOverride, error) {
 // CreateOverride inserts a break-glass override.
 func (r *CIRunRepository) CreateOverride(ctx context.Context, o *cirun.GateOverride) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_gate_overrides (id, tenant_id, repository_asset_id, commit_sha,
-		reason, created_by, created_by_email, expires_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		reason, created_by, expires_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		o.ID.String(), o.TenantID.String(), o.RepositoryAssetID.String(), o.CommitSHA, o.Reason, nullID(o.CreatedBy),
-		o.CreatedByEmail, o.ExpiresAt, o.CreatedAt)
+		o.ExpiresAt, o.CreatedAt)
 	return err
 }
 
