@@ -10,5 +10,5 @@
 ### Added: retention for CI runs
 
 - An hourly job (one replica) deletes the per-run finding fingerprints of runs older than 90 days and runs older than 400 days, always keeping each pipeline's latest run and latest default-branch run, and clears run token hashes once the token has expired.
-- Migrations `001113` (constraints, column split, email drop) and `001114` (validates the new trust-configuration keys without blocking writes).
+- Migrations `001139` (constraints, column split, email drop) and `001140` (validates the new trust-configuration keys without blocking writes).
 - **Upgrade note:** on a large installation the first retention pass works in batches over several hours; nothing to do.

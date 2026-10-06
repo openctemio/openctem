@@ -471,7 +471,7 @@ func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID share
 // ------------------------------------------------------------- policies ---
 
 // The scope id is the repository or the business unit, each its own column
-// with a foreign key (migration 001113).
+// with a foreign key (migration 001139).
 const ciPolicyColumns = `id, tenant_id, scope_type, COALESCE(repository_asset_id, business_unit_id), enabled, mode,
 	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at`
 
@@ -602,7 +602,7 @@ func (r *CIRunRepository) DeleteGatePolicy(ctx context.Context, tenantID, id sha
 // ------------------------------------------------------------ overrides ---
 
 // The creator's email is read from users when the override is read; it is
-// never copied into the CI table (migration 001113).
+// never copied into the CI table (migration 001139).
 const ciOverrideColumns = `id, tenant_id, repository_asset_id, commit_sha, reason, created_by,
 	COALESCE((SELECT u.email FROM users u WHERE u.id = ci_gate_overrides.created_by), ''),
 	expires_at, revoked_at, revoked_by, created_at`
