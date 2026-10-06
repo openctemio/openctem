@@ -403,7 +403,7 @@ export function CIPipelineSheet({ id, onClose }: { id: string | null; onClose: (
                 </Button>
               )}
               <Button asChild size="sm" variant="outline">
-                <Link href="/settings/scanning/ci">
+                <Link href="/ci-cd?tab=setup">
                   <Settings2 className="h-4 w-4" />
                   CI trust and gate
                 </Link>

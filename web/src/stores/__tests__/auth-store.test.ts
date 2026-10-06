@@ -497,6 +497,13 @@ describe('loginPageUrl', () => {
     expect(loginPageUrl()).toBe('/login?redirect=%2Ffindings%3Fseverity%3Dcritical')
   })
 
+  it('a step-up re-sign-in names the organization and asks for re-authentication', () => {
+    expect(loginPageUrl('/settings', { org: 'acme' })).toBe(
+      '/login?redirect=%2Fsettings&org=acme&reauth=1'
+    )
+    expect(loginPageUrl('/settings', {})).toBe('/login?redirect=%2Fsettings&reauth=1')
+  })
+
   it('adds no redirect for the home page or the login page itself', () => {
     expect(loginPageUrl('/')).toBe('/login')
     expect(loginPageUrl('/login?redirect=%2Fx')).toBe('/login')

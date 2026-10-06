@@ -73,7 +73,8 @@ func TestGenerateAuthorizeURL_PKCE_S256(t *testing.T) {
 	}
 
 	// Recover the verifier from state and prove S256(verifier) == challenge.
-	_, _, _, verifier, verr := svc.validateState(res.State)
+	st, verr := svc.validateState(res.State)
+	verifier := st.codeVerifier
 	if verr != nil {
 		t.Fatalf("validateState: %v", verr)
 	}
@@ -152,7 +153,7 @@ func TestValidateState_TamperedPKCE_FailsClosed(t *testing.T) {
 	b64 := base64.URLEncoding.EncodeToString(js)
 	state := b64 + "." + svc.signState(b64)
 
-	if _, _, _, _, err := svc.validateState(state); err == nil {
+	if _, err := svc.validateState(state); err == nil {
 		t.Fatal("expected error for undecryptable pkce ciphertext")
 	}
 }

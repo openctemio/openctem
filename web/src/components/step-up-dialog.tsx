@@ -168,7 +168,9 @@ export function StepUpDialogHost() {
               <Button
                 type="button"
                 onClick={() =>
-                  endSessionAndSignIn(window.location.pathname + window.location.search)
+                  endSessionAndSignIn(window.location.pathname + window.location.search, {
+                    reauth: true,
+                  })
                 }
               >
                 Sign in again

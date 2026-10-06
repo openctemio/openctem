@@ -242,6 +242,10 @@ type SSOAuthorizeInput struct {
 	OrgSlug     string
 	Provider    string
 	RedirectURI string // Frontend callback URL
+	// ForceReauth asks the provider to authenticate the user again (step-up
+	// re-authentication): prompt=login and max_age=0, and the callback
+	// refuses an id_token whose auth_time is not fresh.
+	ForceReauth bool
 }
 
 // SSOAuthorizeResult is the result of generating an SSO authorization URL.
@@ -484,7 +488,7 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 	// Generate state token with nonce (CSRF + replay) and a PKCE code_challenge
 	// (RFC 7636). The verifier is carried, encrypted, inside the signed state and
 	// recovered at callback — see generateState.
-	state, nonce, codeChallenge, err := s.generateState(input.OrgSlug, input.Provider)
+	state, nonce, codeChallenge, err := s.generateState(input.OrgSlug, input.Provider, input.ForceReauth)
 	if err != nil {
 		return nil, fmt.Errorf("generate state: %w", err)
 	}
@@ -526,6 +530,15 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 			params.Set("hd", rp.allowedDomains[0])
 		}
 	}
+	if input.ForceReauth {
+		// OIDC Core 3.1.2.1: max_age=0 makes the provider authenticate the
+		// user again and return auth_time. Google keeps its own prompt
+		// (it does not accept "login"); the others get prompt=login too.
+		params.Set("max_age", "0")
+		if rp.provider != identityproviderdom.ProviderGoogleWorkspace {
+			params.Set("prompt", "login")
+		}
+	}
 
 	return &SSOAuthorizeResult{
 		AuthorizationURL: authURL + "?" + params.Encode(),
@@ -555,10 +568,11 @@ type SSOCallbackResult struct {
 // HandleCallback handles the SSO OAuth callback.
 func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput) (*SSOCallbackResult, error) {
 	// Validate state and extract org slug + nonce + PKCE verifier
-	orgSlug, stateProvider, nonce, codeVerifier, err := s.validateState(input.State)
+	st, err := s.validateState(input.State)
 	if err != nil {
 		return nil, ErrSSOInvalidState
 	}
+	orgSlug, stateProvider, nonce, codeVerifier := st.org, st.provider, st.nonce, st.codeVerifier
 
 	if stateProvider != input.Provider {
 		return nil, ErrSSOInvalidState
@@ -599,7 +613,11 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	// login without one is refused: the federated identity (issuer, subject)
 	// that binds the account to this IdP, and the session binding used by
 	// back-channel logout, come only from the verified id_token.
-	claims, err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce)
+	var maxAuthAge time.Duration
+	if st.reauth {
+		maxAuthAge = freshAuthMaxAge
+	}
+	claims, err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce, maxAuthAge)
 	if err != nil {
 		s.logger.Warn("SSO id_token validation failed",
 			"provider", input.Provider, "source", rp.source, "error", err)
@@ -687,6 +705,9 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	var fed federatedBinding
 	if claims != nil {
 		fed = federatedBinding{issuer: claims.Issuer, sid: claims.SID, sub: claims.Subject}
+		if claims.AuthTime != nil {
+			fed.authTime = claims.AuthTime.Time
+		}
 	}
 	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSSO, t.ID(), fed)
 	if err != nil {
@@ -819,7 +840,7 @@ func (s *SSOService) jitProvisioningAllowed(ctx context.Context, t *tenantdom.Te
 // caller can bind the account to the IdP identity (issuer/subject) and, for
 // Entra, read the domain-verified email. The returned claims are never nil
 // when the error is nil.
-func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) (*oidc.Claims, error) {
+func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string, maxAuthAge time.Duration) (*oidc.Claims, error) {
 	jwksURL := rp.provider.JWKSURL(rp.tenantIdentifier)
 	if jwksURL == "" {
 		return nil, fmt.Errorf("%s provider has no id_token signing keys (is the organization URL configured?)", rp.provider)
@@ -829,9 +850,10 @@ func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, id
 	}
 
 	exp := oidc.Expectations{
-		JWKSURI:  jwksURL,
-		ClientID: rp.clientID,
-		Nonce:    nonce,
+		JWKSURI:    jwksURL,
+		ClientID:   rp.clientID,
+		Nonce:      nonce,
+		MaxAuthAge: maxAuthAge,
 	}
 	switch rp.provider {
 	case identityproviderdom.ProviderEntraID:
@@ -888,7 +910,7 @@ func entraUserInfoFromClaims(claims *oidc.Claims) (*SSOUserInfo, error) {
 // changes — the verifier rides inside the existing `state` the UI already
 // round-trips. (In dev without APP_ENCRYPTION_KEY the encryptor is a no-op, so
 // the verifier is plaintext — acceptable for dev only.)
-func (s *SSOService) generateState(orgSlug, provider string) (state, nonce, codeChallenge string, err error) {
+func (s *SSOService) generateState(orgSlug, provider string, reauth bool) (state, nonce, codeChallenge string, err error) {
 	randomBytes := make([]byte, 16)
 	if _, err := rand.Read(randomBytes); err != nil {
 		return "", "", "", err
@@ -919,6 +941,9 @@ func (s *SSOService) generateState(orgSlug, provider string) (state, nonce, code
 		"random":   base64.URLEncoding.EncodeToString(randomBytes),
 		"exp":      time.Now().Add(10 * time.Minute).Unix(),
 	}
+	if reauth {
+		stateData["reauth"] = true
+	}
 
 	stateJSON, marshalErr := json.Marshal(stateData)
 	if marshalErr != nil {
@@ -938,13 +963,25 @@ func (s *SSOService) signState(data string) string {
 	return base64.URLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// validateState validates the state token and returns org slug, provider, the
-// nonce embedded at authorize time (compared against the id_token nonce), and
-// the decrypted PKCE code_verifier (RFC 7636) for the token exchange.
-func (s *SSOService) validateState(state string) (orgSlug, provider, nonce, codeVerifier string, err error) {
+// ssoState is a verified SSO state: the org slug, provider, the nonce embedded
+// at authorize time (compared against the id_token nonce), the decrypted PKCE
+// code_verifier (RFC 7636) for the token exchange, and whether the flow asked
+// the provider to authenticate the user again.
+type ssoState struct {
+	org, provider, nonce, codeVerifier string
+	reauth                             bool
+}
+
+// validateState validates the signed state token and returns its contents.
+func (s *SSOService) validateState(state string) (ssoState, error) {
+	orgSlug, provider, nonce, codeVerifier, reauth, err := s.parseState(state)
+	return ssoState{org: orgSlug, provider: provider, nonce: nonce, codeVerifier: codeVerifier, reauth: reauth}, err
+}
+
+func (s *SSOService) parseState(state string) (orgSlug, provider, nonce, codeVerifier string, reauth bool, err error) {
 	parts := strings.SplitN(state, ".", 2)
 	if len(parts) != 2 {
-		return "", "", "", "", errors.New("invalid state format")
+		return "", "", "", "", false, errors.New("invalid state format")
 	}
 
 	stateData, signature := parts[0], parts[1]
@@ -952,34 +989,34 @@ func (s *SSOService) validateState(state string) (orgSlug, provider, nonce, code
 	// Verify signature
 	expectedSig := s.signState(stateData)
 	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		return "", "", "", "", errors.New("invalid state signature")
+		return "", "", "", "", false, errors.New("invalid state signature")
 	}
 
 	// Decode state data
 	stateJSON, err := base64.URLEncoding.DecodeString(stateData)
 	if err != nil {
-		return "", "", "", "", errors.New("invalid state encoding")
+		return "", "", "", "", false, errors.New("invalid state encoding")
 	}
 
 	var data map[string]interface{}
 	if err := json.Unmarshal(stateJSON, &data); err != nil {
-		return "", "", "", "", errors.New("invalid state JSON")
+		return "", "", "", "", false, errors.New("invalid state JSON")
 	}
 
 	// Check expiration
 	expFloat, ok := data["exp"].(float64)
 	if !ok {
-		return "", "", "", "", errors.New("invalid state expiration")
+		return "", "", "", "", false, errors.New("invalid state expiration")
 	}
 	if time.Now().Unix() > int64(expFloat) {
-		return "", "", "", "", errors.New("state expired")
+		return "", "", "", "", false, errors.New("state expired")
 	}
 
 	orgSlug, _ = data["org"].(string)
 	provider, _ = data["provider"].(string)
 	nonce, _ = data["nonce"].(string)
 	if orgSlug == "" || provider == "" {
-		return "", "", "", "", errors.New("missing state fields")
+		return "", "", "", "", false, errors.New("missing state fields")
 	}
 
 	// Recover the PKCE verifier: it was AES-GCM-encrypted at authorize time (see
@@ -988,12 +1025,13 @@ func (s *SSOService) validateState(state string) (orgSlug, provider, nonce, code
 	if enc, encOK := data["pkce"].(string); encOK && enc != "" {
 		v, decErr := s.encryptor.DecryptString(enc)
 		if decErr != nil {
-			return "", "", "", "", errors.New("invalid state pkce")
+			return "", "", "", "", false, errors.New("invalid state pkce")
 		}
 		codeVerifier = v
 	}
 
-	return orgSlug, provider, nonce, codeVerifier, nil
+	reauth, _ = data["reauth"].(bool)
+	return orgSlug, provider, nonce, codeVerifier, reauth, nil
 }
 
 // ssoTokens represents OAuth token response.
@@ -1438,7 +1476,15 @@ type federatedBinding struct {
 	issuer string
 	sid    string
 	sub    string
+	// authTime is when the provider last authenticated the user (id_token
+	// auth_time, SAML AuthnInstant); zero when the provider did not say.
+	authTime time.Time
 }
+
+// freshAuthMaxAge is how old the provider's authentication may be when a
+// flow asked for a fresh one (prompt=login / ForceAuthn): the user signed in
+// at the provider and was sent straight back.
+const freshAuthMaxAge = 5 * time.Minute
 
 func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMethod sessiondom.AuthMethod, idpTenant shared.ID, fed federatedBinding) (*SessionResult, error) {
 	// Bind the token to its session: generate the session id first, embed it in
@@ -1481,6 +1527,7 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
 		return nil, fmt.Errorf("save session: %w", err)
 	}
+	s.stampProviderAuthentication(ctx, newSession, fed.authTime)
 
 	refreshTokenEntity, err := sessiondom.NewRefreshToken(
 		u.ID(),
@@ -1543,6 +1590,14 @@ func (s *SSOService) requireFederatedDomainProof(ctx context.Context, t *tenantd
 // accounts, auto-provisions tenant membership when requested, and creates the
 // session. Reused by the SAML SP flow so it shares the SSO session machinery.
 func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string, autoProvision bool) (*SSOCallbackResult, error) {
+	return s.completeFederatedLogin(ctx, t, email, name, defaultRole, autoProvision, time.Time{})
+}
+
+// completeFederatedLogin is CompleteFederatedLogin with the time the
+// provider authenticated the user (SAML AuthnInstant), which opens the
+// step-up window when it is recent.
+func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string,
+	autoProvision bool, authAt time.Time) (*SSOCallbackResult, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, ErrSSONoEmail
@@ -1635,7 +1690,7 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 	// tenant's IdP (exempt from this tenant's enforcement only — it IS this
 	// tenant's SSO login). No OIDC id_token binding — SAML single
 	// logout is out of scope for the OIDC back-channel path.
-	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML, t.ID(), federatedBinding{})
+	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML, t.ID(), federatedBinding{authTime: authAt})
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
