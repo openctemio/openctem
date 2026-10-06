@@ -32,6 +32,12 @@ import (
 // for a verified token, to the tenant's audit log.
 var ErrExchangeRefused = errors.New("ci token exchange refused")
 
+// ErrRunnerOutdated refuses an exchange from a runner that reports a version
+// below the minimum supported one (SENSOR_MIN_VERSION). It is told to the
+// caller (only after its token verified and was admitted): the fix is on its
+// side.
+var ErrRunnerOutdated = errors.New("ci runner older than the minimum supported version")
+
 // errPipelineRate is a pipeline over MaxPipelineRunsPerHour (refused as
 // ErrExchangeRefused, audited).
 var errPipelineRate = errors.New("pipeline run rate exceeded")
@@ -241,6 +247,16 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
 		return nil, ErrExchangeRefused
 	}
+	// A runner below the minimum supported version is refused. The version
+	// is the one the runner reports (User-Agent): this keeps known-bad
+	// releases out, it does not authenticate the binary. A client that
+	// reports no sensor version is admitted and shown as unknown.
+	if v := s.runnerVersion(in.UserAgent); s.cfg.Versions.MinVersion != "" &&
+		sensor.ClassifyVersion(v, "", s.cfg.Versions.MinVersion) == sensor.VersionUnsupported {
+		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "runner_outdated",
+			Detail: fmt.Sprintf("runner %s is older than the minimum supported version %s", v, s.cfg.Versions.MinVersion)}})
+		return nil, ErrRunnerOutdated
+	}
 	fresh, err := s.repo.ClaimJTI(ctx, tok.Issuer, tok.JTI, tok.ExpiresAt.Add(time.Hour))
 	if err != nil {
 		return nil, fmt.Errorf("record token id: %w", err)
@@ -363,7 +379,7 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 	if recent >= cirun.MaxPipelineRunsPerHour {
 		return nil, errPipelineRate
 	}
-	_, sensorVersion := sensor.ResolveBuild(sensor.BuildReport{}, "", userAgent, now)
+	sensorVersion := s.runnerVersion(userAgent)
 	token, hash, err := cirun.NewToken()
 	if err != nil {
 		return nil, err
@@ -388,6 +404,7 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		Actor:             truncate(c.Actor, 255),
 		ExternalRunID:     truncate(c.RunID, 64),
 		RunAttempt:        truncate(c.RunAttempt, 16),
+		ExternalJobID:     truncate(c.JobID, 64),
 		Workflow:          truncate(c.Workflow, 500),
 		PipelineURL:       truncate(cirun.PipelineURL(cfg.Provider, cfg.Issuer, c), 1000),
 		Fork:              c.IsForkEvent(),
@@ -395,7 +412,7 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		TokenExpiresAt:    &expires,
 		Status:            cirun.StatusRunning,
 		PipelineID:        &pipeline.ID,
-		SensorVersion:     sensor.NormalizeVersion(sensorVersion),
+		SensorVersion:     sensorVersion,
 		TemplateRef:       templateRef,
 		CreatedAt:         now,
 		UpdatedAt:         now,
@@ -405,6 +422,13 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 	}
 	s.refreshPipeline(ctx, tenantID, run.PipelineID)
 	return &ExchangeOutput{Run: run, Token: token, ExpiresAt: expires}, nil
+}
+
+// runnerVersion is the sensor version the runner's User-Agent reports
+// (normalized; "" when it reports none).
+func (s *Service) runnerVersion(userAgent string) string {
+	_, v := sensor.ResolveBuild(sensor.BuildReport{}, "", userAgent, s.now())
+	return sensor.NormalizeVersion(v)
 }
 
 // upsertPipeline finds or creates the run's pipeline within the caps and
@@ -443,9 +467,11 @@ func (s *Service) refreshPipeline(ctx context.Context, tenantID shared.ID, pipel
 	}
 }
 
-// continueRun issues a fresh token for an existing run of the same pipeline
-// run: same tenant, repository, commit and CI run id, not yet evaluated and
-// recent. Anything else is ErrExchangeRefused.
+// continueRun issues a fresh token for an existing run of the same job: same
+// tenant, repository, commit, CI run id and attempt, and the same job when
+// the run recorded one; not yet evaluated and recent. Anything else is
+// ErrExchangeRefused: another job of the pipeline, or a re-run, gets its own
+// run.
 func (s *Service) continueRun(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims, rawRunID string) (*ExchangeOutput, error) {
 	runID, err := shared.IDFromString(strings.TrimSpace(rawRunID))
 	if err != nil {
@@ -461,6 +487,7 @@ func (s *Service) continueRun(ctx context.Context, tenantID shared.ID, cfg *ciru
 	now := s.now().UTC()
 	if run.Repository != asset.NormalizeName(cirun.CanonicalRepository(cfg.Provider, cfg.Issuer, c.Repository), asset.AssetTypeRepository, "") ||
 		run.CommitSHA != c.SHA || run.ExternalRunID == "" || run.ExternalRunID != c.RunID || run.Issuer != cfg.Issuer ||
+		run.RunAttempt != truncate(c.RunAttempt, 16) || (run.ExternalJobID != "" && run.ExternalJobID != truncate(c.JobID, 64)) ||
 		run.Status != cirun.StatusRunning || now.Sub(run.CreatedAt) > MaxRunContinuation {
 		return nil, ErrExchangeRefused
 	}
@@ -531,6 +558,8 @@ func (s *Service) auditRefusal(ctx context.Context, tenantID shared.ID, in Excha
 		WithMetadata("event", c.Event).
 		WithMetadata("actor", c.Actor).
 		WithMetadata("pipeline_run_id", c.RunID).
+		WithMetadata("run_attempt", c.RunAttempt).
+		WithMetadata("job_id", c.JobID).
 		WithMetadata("commit_sha", c.SHA)
 	for _, code := range codes {
 		if code == "replay" {
@@ -554,6 +583,9 @@ func (s *Service) auditIssued(ctx context.Context, tenantID shared.ID, in Exchan
 		WithMetadata("event", r.Event).
 		WithMetadata("actor", r.Actor).
 		WithMetadata("pipeline_run_id", r.ExternalRunID).
+		WithMetadata("run_attempt", r.RunAttempt).
+		WithMetadata("job_id", r.ExternalJobID).
+		WithMetadata("continuation", strings.TrimSpace(in.RunID) != "").
 		WithMetadata("pipeline_url", r.PipelineURL).
 		WithMetadata("fork", r.Fork).
 		WithMetadata("token_expires_at", out.ExpiresAt.Format(time.RFC3339))
@@ -627,7 +659,35 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 		}
 		s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	}
+	s.auditUpload(ctx, run, report, out)
 	return out, nil
+}
+
+// auditUpload records a report the run uploaded: who (the CI identity from
+// the verified token), which job, the tool label and the counts.
+func (s *Service) auditUpload(ctx context.Context, run *cirun.Run, report *ctis.Report, out *ingest.Output) {
+	tool := ""
+	if report.Tool != nil {
+		tool = cirun.SanitizeLabel(report.Tool.Name, 100)
+	}
+	ev := auditapp.NewSuccessEvent(auditdom.ActionCIRunResultsUploaded, auditdom.ResourceTypeCIRun, run.ID.String()).
+		WithResourceName(run.Repository).
+		WithMessage(fmt.Sprintf("CI run on %s at %s uploaded %d finding(s)%s", run.Repository, shortSHA(run.CommitSHA),
+			len(report.Findings), nonEmptyPrefix(" from ", tool))).
+		WithMetadata("findings", len(report.Findings)).
+		WithMetadata("findings_sighted", len(out.SightedFingerprints)).
+		WithMetadata("tool", tool).
+		WithMetadata("commit_sha", run.CommitSHA).
+		WithMetadata("pipeline_run_id", run.ExternalRunID).
+		WithMetadata("job_id", run.ExternalJobID)
+	s.logAudit(ctx, run.TenantID, Actor{Email: ciActor(cirun.Claims{Provider: run.Provider, Actor: run.Actor})}, ev)
+}
+
+func nonEmptyPrefix(prefix, s string) string {
+	if s == "" {
+		return ""
+	}
+	return prefix + s
 }
 
 // repoAssetRef is the report-local id of the run's repository asset.

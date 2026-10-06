@@ -296,6 +296,41 @@ sensor learns nothing about other sensors' work):
   `If-Match` would give a single writer; per-command versions arrive with
   leases (§4.11).
 
+#### 4.4.1 Task logs: `POST /commands/{command_id}/logs` (amendment, 2026-10-05)
+
+Feature `logs` (listed on hello only when the platform serves it; a sensor
+sends no logs otherwise). A sensor sends what a task's tool logged, through
+its outbox, in numbered batches:
+
+```json
+{ "seq": 0, "lines": [ { "ts": "2026-10-05T10:00:00Z", "level": "warn",
+  "msg": "…", "source": "nuclei", "fields": { "target": "https://a.example" } } ] }
+```
+
+- **Who may write.** The tenant and the sensor come from the key. The command
+  must be the tenant's and held (or last held) by this sensor
+  (`commands.sensor_id`); anything else answers `404 command-not-found`, the
+  same answer for another tenant's, another sensor's or an unknown id.
+  Logs are accepted while the command runs and up to 24 hours after it
+  finished (an outbox replaying after an outage); later is `409
+  invalid-transition` with `"state": "closed"`.
+- **Bounds.** A body is at most 256 KiB and 500 lines, `seq` is 0–9999. A
+  command keeps at most 200 batches and 2 MiB of lines; a batch past that
+  answers `200 {"stored": 0, "dropped": n, "truncated": true}` and is not
+  resent. Every 4xx is final for the batch.
+- **Idempotent.** `(command_id, seq)` is the key; a replayed seq answers what
+  was stored and stores nothing.
+- **Hostile input.** The platform does not trust the sensor's redaction: it
+  caps every line (message 8 KiB, 32 fields of 1 KiB), removes control and
+  bidi-override characters and runs its secret redactor (cloud and API keys,
+  bearer tokens, private-key headers, password/token assignments, platform
+  `oct_`/`octs_` keys) before storing. The web shows the lines as plain text.
+- **Storage and reads.** `command_logs` (migration 001130), kept 14 days by
+  the command-log retention controller and deleted with the command. The run
+  page reads them with `GET /api/v1/pipeline-runs/{id}/tasks/{task_id}/logs`
+  (`pipelines:read`, tenant from the token; a task that is not in that run of
+  that tenant is 404), at most 5000 lines.
+
 ### 4.5 `GET /suppressions`
 
 Response `200` (same document as v1 §9.2b):
@@ -379,6 +414,7 @@ templates; they never quote sensor bytes.
 | command transitions | same-state replay is `200` without side effects (D5) |
 | `PUT …/results/{report_id}` | sensor-chosen id + `Content-Digest` (RFC-026) |
 | `POST /keys` | overlap keeps the presented key valid (§4.7); not retried without a TTL |
+| `POST /commands/{id}/logs` | `(command_id, seq)` is stored once; a replay answers what was stored (§4.4.1) |
 
 ### 4.11 Evolution rules (how v2 changes without v3)
 

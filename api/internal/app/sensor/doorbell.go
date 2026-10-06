@@ -120,6 +120,33 @@ type Doorbell struct {
 	cfg    DoorbellConfig
 	logger *logger.Logger
 	now    func() time.Time
+	grants GrantSource
+}
+
+// GrantSource reads a sensor's grant: the doorbell rings a gated action
+// (rotate_key, update, diagnostics) only when the grant lists it
+// (RFC-052 §5.3). Narrowing actions (pause, drain, cancel) always ring.
+type GrantSource interface {
+	Get(ctx context.Context, tenantID, sensorID shared.ID) (*sensordom.Grant, error)
+}
+
+// SetGrants makes the doorbell drop gated actions the sensor's grant does
+// not list. A grant that cannot be read drops them too (fail closed).
+func (d *Doorbell) SetGrants(g GrantSource) { d.grants = g }
+
+// mayRing reports whether action may go to the sensor.
+func (d *Doorbell) mayRing(ctx context.Context, a *sensordom.Sensor, action sensordom.Action) bool {
+	if d.grants == nil {
+		return true
+	}
+	if a.TenantID == nil {
+		return false
+	}
+	g, err := d.grants.Get(ctx, *a.TenantID, a.ID)
+	if err != nil || g == nil {
+		return false
+	}
+	return g.MayReceiveAction(string(action))
 }
 
 // NewDoorbell builds a doorbell over src. cfg should already be Normalized.
@@ -155,7 +182,7 @@ func (d *Doorbell) Ring(ctx context.Context, req DoorbellRequest) sensordom.Hear
 		return h
 	}
 	if exp := req.Identity.KeyExpiresAt; exp != nil && d.cfg.KeyRenewBefore > 0 &&
-		!d.now().Add(d.cfg.KeyRenewBefore).Before(*exp) {
+		!d.now().Add(d.cfg.KeyRenewBefore).Before(*exp) && d.mayRing(ctx, a, sensordom.ActionRotateKey) {
 		h.Actions = append(h.Actions, sensordom.ActionRotateKey)
 	}
 

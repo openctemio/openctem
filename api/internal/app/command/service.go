@@ -33,6 +33,10 @@ type Service struct {
 	// optIns withholds commands asking for an opt-in the tenant has not
 	// enabled (local_policy.go, research/25 D3); nil: not applied.
 	optIns OptInPolicy
+	// grants enforces each sensor's grant (local_policy.go, RFC-052 §5);
+	// nil: not enforced. grantRefusals hears about refused claims by id.
+	grants        GrantReader
+	grantRefusals GrantRefusalObserver
 	// now is the clock (tests replace it).
 	now func() time.Time
 }
@@ -426,7 +430,11 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	}
 	if sid, err := shared.IDFromString(sensorID); err == nil {
 		cmds := []*commanddom.Command{cmd}
-		if err := s.gateFor(ctx, cmd.TenantID, &sid, cmds).claimError(cmd); err != nil {
+		gate := s.gateFor(ctx, cmd.TenantID, &sid, cmds)
+		if err := gate.claimError(cmd); err != nil {
+			if errors.Is(err, ErrOutOfGrant) && s.grantRefusals != nil {
+				s.grantRefusals.ObserveGrantRefusal(ctx, cmd.TenantID, sid, cmd.ID.String(), gate.grantRefusal(cmd))
+			}
 			return nil, err
 		}
 	}
