@@ -202,6 +202,7 @@ to them:
 | Global "Sign in with Microsoft" | `OAuthService.getMicrosoftUserInfo` → `VerifyIDToken` | `EntraIssuer("common")`, no nonce (confidential code flow), then `xms_edov` |
 | Platform administrators' identity provider | `adminconsole` → `VerifyIDToken` | discovered issuer, nonce, `client_id` |
 | OIDC back-channel logout | `SSOService.verifyLogoutToken` → `VerifyJWT` | audience one of the provider's client ids, `events`, no nonce, recent `iat` |
+| External OIDC provider access tokens (`AUTH_PROVIDER=oidc`/`hybrid`) | `keycloak.Validator.ValidateToken` → `VerifyJWT` | realm issuer (`{base}/realms/{realm}`), audience: `KEYCLOAK_CLIENT_ID` in `aud` or equal to `azp` when set; realm and tenant roles read from the verified claims; JWKS warmed on `KEYCLOAK_JWKS_REFRESH_INTERVAL` |
 | CI workload tokens | `cirun.Service.verify` → `VerifyWorkloadToken` | discovered JWKS on the issuer's host, lifetime ≤ 24h, `sub` and `jti` (replay is refused by `ClaimJTI`) |
 
 The core does, for every flow:
@@ -225,7 +226,8 @@ The core does, for every flow:
 
 Trust stays separate. The core never decides which issuer to believe: tenant
 SSO trusts the organization's identity provider records, the console trusts
-the platform identity provider, CI trusts the organization's `ci_trust_configs`.
+the platform identity provider, CI trusts the organization's `ci_trust_configs`,
+the external provider mode trusts the one realm in `KEYCLOAK_*`.
 These are different principals (a person, an administrator, a pipeline), and
 no configuration is shared between them: an identity provider trusted for
 sign-in is not trusted for CI tokens, and the other way round.

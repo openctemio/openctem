@@ -119,7 +119,12 @@ refuses outside the window and passes inside it.
 
 Sensor pairing approval (`POST /api/v1/sensor-pairings/{id}/approve`, RFC-052)
 checks a step-up proof inside the request body with the same
-`VerifyStepUp`. Reads and cosmetic changes never prompt.
+`VerifyStepUp`. Changing a sensor's grant (`PUT /api/v1/sensors/{id}/grant`)
+asks for step-up only when the change widens the grant or promotes the
+sensor: the grant service knows that, so the check runs there
+(`handler.StepUpWideningApprover`, `middleware.CheckRecentAuth`) and the
+answer is the same 403 `STEP_UP_REQUIRED`. Narrowing stays one click. Reads
+and cosmetic changes never prompt.
 
 The platform admin console has its own sessions: it already requires a fresh
 authenticator code inside the request for the audit-chain rebaseline
