@@ -39,7 +39,7 @@ type JobRecoveryControllerConfig struct {
 }
 
 // JobRecoveryController recovers stuck jobs and re-queues them.
-// This is a K8s-style controller that ensures jobs don't get lost if a sensor
+// This is a reconciliation controller that ensures jobs don't get lost if a sensor
 // goes offline or fails to complete them.
 //
 // The controller performs two main tasks:

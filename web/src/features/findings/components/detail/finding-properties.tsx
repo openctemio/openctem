@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The finding's properties, Linear / GitHub style: who, when and where, as a
+ * The finding's properties (who, when and where) as a
  * label → value list in the page's right rail (and in the drawer). Status,
  * severity and assignee are editable in place through `useFindingTriage`.
  *

@@ -184,7 +184,7 @@ const (
 	ActionSensorConnected      Action = "sensor.connected"
 	ActionSensorDisconnected   Action = "sensor.disconnected"
 	// ActionSensorKeyRenewed records a sensor rotating its OWN credential via
-	// POST /agent/renew (self-service, kubelet-style), as opposed to the admin
+	// POST /agent/renew (self-service), as opposed to the admin
 	// hard rotation recorded by ActionSensorKeyRegenerated.
 	ActionSensorKeyRenewed Action = "sensor.key_renewed"
 	// ActionSensorKeyRenewalRefused records a renewal refused because the key

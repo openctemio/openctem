@@ -1,4 +1,4 @@
-// Package controller implements K8s-style reconciliation loop controllers
+// Package controller implements reconciliation loop controllers
 // for self-healing background operations.
 //
 // Controllers periodically reconcile the desired state of the system with its actual state.
