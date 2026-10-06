@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Need to integrate with multiple security tools (Wiz, Tenable, Snyk, CrowdStrike).
+Need to integrate with multiple security tools (Tenable.sc and further providers).
 
 ## Decision
 Use **Adapter Pattern** with common interface:

@@ -4,7 +4,7 @@
 > recommended; implementation in progress in the monorepo, P0 first).**
 > This document describes how EASM works in OpenCTEM today and the
 > architecture RFC-036 builds towards. Each section marks what is **built**, what is **partial** and what is
-> **planned**. The reasoning, the industry survey, the ranked gap list and the
+> **planned**. The reasoning, the source survey, the ranked gap list and the
 > phased plan are in
 > [RFC-036](../rfcs/RFC-036-easm.md). Update this page in the same PR whenever
 > a phase ships.
@@ -429,7 +429,7 @@ the ports it found open (`technical.ip_address.ports`). Ingest
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and
   `netblock`, and relationship types `announced_by` (IP/netblock → ASN),
   `serves_certificate` (service → certificate), `hosted_by` (asset →
-  provider/CDN) and `cname_of` (emitted by DNS resolution). OWASP Amass' Open
+  provider/CDN) and `cname_of` (emitted by DNS resolution). The OWASP Open
   Asset Model is the reference vocabulary.
 - **Observations.** Append-only per (asset, facet), where the facets are DNS
   record set, open ports, TLS certificate, HTTP fingerprint, technology set and

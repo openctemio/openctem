@@ -13,7 +13,7 @@
 │  │                                                                      │   │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │   │
 │  │  │   http/  │ │  grpc/   │ │   ws/    │ │ postgres/│ │connector/│  │   │
-│  │  │ REST API │ │ gRPC API │ │WebSocket │ │    DB    │ │ Wiz/etc  │  │   │
+│  │  │ REST API │ │ gRPC API │ │WebSocket │ │    DB    │ │ Provider │  │   │
 │  │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘  │   │
 │  └───────┼────────────┼────────────┼────────────┼────────────┼─────────┘   │
 │          │            │            │            │            │             │
@@ -264,10 +264,10 @@ Hexagonal / Ports & Adapters
 ```
 ├── interface.go       # Connector interface
 │
-├── wiz/
-│   ├── client.go      # Wiz API client
+├── <provider>/
+│   ├── client.go      # provider API client
 │   ├── client_test.go
-│   ├── mapper.go      # Map Wiz → Domain
+│   ├── mapper.go      # Map provider → Domain
 │   └── config.go
 │
 ├── tenable/
