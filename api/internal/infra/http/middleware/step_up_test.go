@@ -139,3 +139,49 @@ func TestRequireRecentAuth_ExternalProviderToken(t *testing.T) {
 		})
 	}
 }
+
+// RecentAuthGate is the same check for a service: it judges only the user
+// making the request, and answers with CheckRecentAuth's errors.
+func TestRecentAuthGate(t *testing.T) {
+	const window = 10 * time.Minute
+	now := time.Now()
+	session := func(ctx context.Context) context.Context {
+		ctx = context.WithValue(ctx, UserIDKey, "u1")
+		return context.WithValue(ctx, SessionIDKey, "s1")
+	}
+	dbDown := errors.New("db down")
+	for _, tc := range []struct {
+		name        string
+		checker     RecentAuthChecker
+		ctx         func(context.Context) context.Context
+		actor       string
+		want        error
+		wantChecked bool
+	}{
+		{"fresh session of the actor", &stubRecentAuth{at: now.Add(-time.Minute)}, session, "u1", nil, true},
+		{"stale session of the actor", &stubRecentAuth{at: now.Add(-time.Hour)}, session, "u1", ErrStepUpRequired, true},
+		{"actor is not the request's user (an accepted invitation)", &stubRecentAuth{at: now.Add(-time.Hour)}, session, "inviter", nil, false},
+		{"no request user (a system path)", &stubRecentAuth{}, func(ctx context.Context) context.Context { return ctx }, "u1", nil, false},
+		{"empty actor", &stubRecentAuth{}, session, "", nil, false},
+		{"API key of the actor", &stubRecentAuth{at: now},
+			func(ctx context.Context) context.Context { return context.WithValue(session(ctx), APIKeyIDKey, "k1") }, "u1", ErrStepUpUnavailable, false},
+		{"no checker wired", nil, session, "u1", ErrStepUpUnavailable, false},
+		{"lookup error fails closed", &stubRecentAuth{err: dbDown}, session, "u1", dbDown, true},
+		{"external provider token signed in an hour ago", &stubRecentAuth{at: now}, func(ctx context.Context) context.Context {
+			ctx = context.WithValue(ctx, UserIDKey, "u1")
+			ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderOIDC)
+			return context.WithValue(ctx, ClaimsKey, &keycloak.Claims{AuthTime: jwtv5.NewNumericDate(now.Add(-time.Hour))})
+		}, "u1", ErrStepUpRequired, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, _ := tc.checker.(*stubRecentAuth)
+			err := RecentAuthGate{Checker: tc.checker, Window: window}.RequireRecentAuth(tc.ctx(context.Background()), tc.actor)
+			if !errors.Is(err, tc.want) || (tc.want == nil && err != nil) {
+				t.Fatalf("got %v, want %v", err, tc.want)
+			}
+			if st != nil && (len(st.calls) > 0) != tc.wantChecked {
+				t.Fatalf("session checked = %v, want %v", len(st.calls) > 0, tc.wantChecked)
+			}
+		})
+	}
+}

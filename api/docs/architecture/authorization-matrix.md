@@ -118,6 +118,14 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
 - `POST /api/v1/audit-logs/rebaseline`
+- `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST .../webhook-secret/rotate`
+- `PATCH /api/v1/attachments/storage-config`
+
+Some changes need it only in one case, decided by the service through the
+same check (`shared.RecentAuthGate`): making someone an administrator or an
+owner (every role-assignment, member, invitation and user-creation path) and
+renaming the organization's slug (`PATCH /api/v1/tenants/{tenant}` with a new
+`slug`).
 
 Sensor pairing approval checks the same proof inside its request body. Details,
 errors and the threat model: [step-up-reauth.md](step-up-reauth.md). The list is
@@ -579,7 +587,7 @@ These routes require the tenant ID in the URL path and use database-based member
 |----------|---------------|
 | `GET /api/v1/tenants/{tenant}/members` | Team viewer+; **emails, last sign-in and second-factor status only for owner/admin** (others get ids, names, avatars, roles; `search` matches names only) |
 | `GET /api/v1/tenants/{tenant}/invitations` | Team viewer+ |
-| `PATCH /api/v1/tenants/{tenant}` | Team admin+ |
+| `PATCH /api/v1/tenants/{tenant}` | Team admin+ (a new `slug`: owner only + **step-up**) |
 | `POST /api/v1/tenants/{tenant}/members` | Team admin+ |
 | `PATCH /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
 | `POST /api/v1/tenants/{tenant}/members/{id}/suspend` · `/reactivate` | Team admin+; **owner only when the target is an administrator** |

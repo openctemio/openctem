@@ -369,6 +369,9 @@ func (h *TenantHandler) handleValidationError(w http.ResponseWriter, err error) 
 }
 
 func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if writeStepUpError(w, err) {
+		return
+	}
 	// Module toggle rejections carry a structured ToggleError so the
 	// UI can render a dependency-aware confirmation dialog without
 	// regex-ing the error message. Detect it BEFORE the generic
@@ -1196,6 +1199,9 @@ func writeProvisionedUser(w http.ResponseWriter, status int, p *tenantapp.Provis
 
 // handleProvisioningError maps account-provisioning errors.
 func (h *TenantHandler) handleProvisioningError(w http.ResponseWriter, err error) {
+	if writeStepUpError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, tenantapp.ErrAccountExists):
 		apierror.Conflict("An account with this email already exists. Invite them instead.").WriteJSON(w)
