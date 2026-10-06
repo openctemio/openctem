@@ -371,6 +371,7 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *pi
 		if stepRun != nil {
 			cmd.SetStepRunID(stepRun.ID) // the step finishes with its last batch
 		}
+		cmd.FreezeOverride = run.FreezeOverride
 		if b.Zone != nil {
 			cmd.SetScanZone(b.Zone.ID)
 			if b.SensorID != nil {

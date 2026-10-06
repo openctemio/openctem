@@ -189,6 +189,18 @@ func (s *Service) auditVerdict(ctx context.Context, run *cirun.Run, in EvaluateI
 				WithMetadata("run_id", run.ID.String()).
 				WithMetadata("commit_sha", run.CommitSHA).
 				WithMetadata("blocking", v.Summary.Blocking))
+		var oid *shared.ID
+		if id, err := shared.IDFromString(v.Override.ID); err == nil {
+			oid = &id
+		}
+		s.alertAdmins(ctx, run.TenantID, breakGlassAlert(AdminAlert{
+			Title: "CI break-glass used: " + run.Repository,
+			Body: fmt.Sprintf("Break-glass let %s at %s pass the CI gate with %d blocking finding(s).",
+				run.Repository, shortSHA(run.CommitSHA), v.Summary.Blocking),
+			URL: "/ci-runners/" + run.ID.String(), Aggregate: "ci_gate_override", AggregateID: oid,
+			Metadata: map[string]any{"action": "used", "repository": run.Repository, "commit_sha": run.CommitSHA,
+				"run_id": run.ID.String(), "blocking": v.Summary.Blocking},
+		}))
 	}
 }
 

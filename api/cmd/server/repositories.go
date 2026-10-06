@@ -99,6 +99,8 @@ type Repositories struct {
 	SensorSigningKey *postgres.SensorSigningKeyRepository
 	// SensorPairing: pairing requests (RFC-052).
 	SensorPairing *postgres.SensorPairingRepository
+	// SensorGrant: per-sensor grants (RFC-052 §5).
+	SensorGrant *postgres.SensorGrantRepository
 	// SensorEvent is the sensor activity timeline (sensor_events).
 	SensorEvent *postgres.SensorEventRepository
 	// SensorHeartbeatHistory is the per-sensor heartbeat history behind the
@@ -119,6 +121,8 @@ type Repositories struct {
 
 	// Scan zones (RFC-023)
 	ScanZone *postgres.ScanZoneRepository
+	// Scan freeze windows (docs/architecture/scan-zones.md)
+	ScanFreezeWindow *postgres.ScanFreezeWindowRepository
 
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
@@ -344,6 +348,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorAPIKey:           postgres.NewSensorAPIKeyRepository(db),
 		SensorSigningKey:       postgres.NewSensorSigningKeyRepository(db),
 		SensorPairing:          postgres.NewSensorPairingRepository(db),
+		SensorGrant:            postgres.NewSensorGrantRepository(db),
 		SensorEvent:            postgres.NewSensorEventRepository(db),
 		SensorHeartbeatHistory: postgres.NewSensorHeartbeatHistoryRepository(db),
 		Command:                postgres.NewCommandRepository(db),
@@ -356,7 +361,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ScanCoverage: postgres.NewScanCoverageRepository(db),
 
 		// Scan zones (RFC-023)
-		ScanZone: postgres.NewScanZoneRepository(db),
+		ScanZone:         postgres.NewScanZoneRepository(db),
+		ScanFreezeWindow: postgres.NewScanFreezeWindowRepository(db),
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),
