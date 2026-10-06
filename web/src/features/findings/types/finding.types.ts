@@ -647,13 +647,13 @@ export type FindingSource =
   // Automated scanning tools (AppSec)
   | 'sast' // Static Application Security Testing (Semgrep, CodeQL, SonarQube)
   | 'dast' // Dynamic Application Security Testing (ZAP, Burp, Nuclei)
-  | 'sca' // Software Composition Analysis (Trivy, Snyk, Grype)
+  | 'sca' // Software Composition Analysis (Trivy, Grype)
   | 'secret' // Secret detection (Betterleaks, Trufflehog)
   | 'iac' // Infrastructure as Code scanning (Checkov, Tfsec, Kics)
   | 'container' // Container image scanning
   // Cloud & Infrastructure security
-  | 'cspm' // Cloud Security Posture Management (Wiz, Prisma Cloud, AWS Security Hub)
-  | 'easm' // External Attack Surface Management (Censys, Shodan, ProjectDiscovery)
+  | 'cspm' // Cloud Security Posture Management (cloud posture scanners)
+  | 'easm' // External Attack Surface Management (ProjectDiscovery and external data sources)
   // Runtime & Production
   | 'rasp' // Runtime Application Self-Protection
   | 'waf' // Web Application Firewall findings
