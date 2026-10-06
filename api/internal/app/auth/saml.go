@@ -174,7 +174,11 @@ func validateCertificatePEM(certPEM string) error {
 // redirect URL (carrying the deflate+base64 AuthnRequest) and the request ID,
 // which the caller stores in a short-lived cookie so the ACS can bind the
 // response's InResponseTo (replay/CSRF protection).
-func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string) (redirectURL, requestID string, err error) {
+//
+// forceAuthn asks the IdP to authenticate the user again (step-up
+// re-authentication); the ACS then refuses an assertion whose AuthnInstant
+// is not fresh.
+func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string, forceAuthn bool) (redirectURL, requestID string, err error) {
 	sp, _, err := s.resolveServiceProvider(ctx, orgSlug, baseURL)
 	if err != nil {
 		return "", "", err
@@ -182,6 +186,10 @@ func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string) (redir
 	authnReq, err := sp.MakeAuthenticationRequest(sp.IDPMetadata.IDPSSODescriptors[0].SingleSignOnServices[0].Location, saml.HTTPRedirectBinding, saml.HTTPPostBinding)
 	if err != nil {
 		return "", "", fmt.Errorf("build authn request: %w", err)
+	}
+	if forceAuthn {
+		force := true
+		authnReq.ForceAuthn = &force
 	}
 	u, err := authnReq.Redirect(orgSlug, sp)
 	if err != nil {
@@ -193,7 +201,11 @@ func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string) (redir
 // ACS validates an IdP SAML response and completes the federated login. The
 // caller supplies possibleRequestIDs (from the request-tracking cookie) so the
 // assertion's InResponseTo is bound to a request this SP actually initiated.
-func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.Request, possibleRequestIDs []string) (*SSOCallbackResult, error) {
+//
+// forcedAuthn says the request asked for ForceAuthn: an assertion whose
+// AuthnInstant is older than a few minutes is then refused.
+func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.Request, possibleRequestIDs []string,
+	forcedAuthn bool) (*SSOCallbackResult, error) {
 	sp, tenantAndCfg, err := s.resolveServiceProvider(ctx, orgSlug, baseURL)
 	if err != nil {
 		return nil, err
@@ -223,7 +235,26 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 		return nil, ErrSSODomainNotAllowed
 	}
 
-	return s.sso.CompleteFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision())
+	authAt := assertionAuthnInstant(assertion)
+	if forcedAuthn {
+		if age := time.Since(authAt); authAt.IsZero() || age > freshAuthMaxAge || age < -time.Minute {
+			s.logger.Warn("saml login refused: the IdP did not authenticate the user again", "org", orgSlug)
+			return nil, ErrSAMLResponseInvalid
+		}
+	}
+	return s.sso.completeFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision(), authAt)
+}
+
+// assertionAuthnInstant is the latest AuthnInstant of the (signature- and
+// condition-checked) assertion's authentication statements.
+func assertionAuthnInstant(a *saml.Assertion) time.Time {
+	var at time.Time
+	for _, st := range a.AuthnStatements {
+		if st.AuthnInstant.After(at) {
+			at = st.AuthnInstant
+		}
+	}
+	return at
 }
 
 // resolvedSAML bundles the tenant + its enabled SAML config.

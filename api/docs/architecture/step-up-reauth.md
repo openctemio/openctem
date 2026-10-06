@@ -14,6 +14,13 @@ password or TOTP; SSO users re-authenticate at their identity provider).
 - **Recent authentication** of a session = the later of its sign-in
   (`sessions.created_at`) and its last successful step-up
   (`sessions.step_up_at`, migration `001116`).
+- A session created by the **organization's identity provider** (OIDC SSO or
+  SAML: `auth_method` `sso`/`saml` with `idp_tenant_id`) does not count its
+  creation. Its recent authentication is the provider's own: the id_token
+  `auth_time` or the SAML `AuthnInstant`, stamped as `step_up_at` at sign-in
+  when it is within the window. A provider that signs the user in silently
+  from a session it remembers therefore opens no window. A global social
+  sign-in (no `idp_tenant_id`) counts its creation, like a password.
 - A sensitive route accepts the request while recent authentication is less
   than **10 minutes** old (`authapp.StepUpWindow`). The window is fixed from
   the moment of proof; using it does not extend it.
@@ -35,9 +42,25 @@ Proof rules (`AuthService.VerifyStepUp`, shared with sensor-pairing approval):
   refused (the same compare-and-set replay guard as sign-in).
 - A local account without TOTP gives its password.
 - An SSO account without TOTP has nothing the API can verify: the call answers
-  `403 STEP_UP_UNAVAILABLE` and the user signs in again (the new session is
-  inside the window). This path never stamps the session, so a session cannot
-  push its own window forward without a proof.
+  `403 STEP_UP_UNAVAILABLE` and the user signs in again at the identity
+  provider. This path never stamps the session, so a session cannot push its
+  own window forward without a proof.
+
+## Re-authentication at the identity provider
+
+The web dialog's "Sign in again" ends the session and opens
+`/login?org=<organization>&reauth=1`. The sign-in then asks the provider to
+authenticate the user again:
+
+| Protocol | Request | Checked on the way back |
+|---|---|---|
+| OIDC (`GET /api/v1/auth/sso/{provider}/authorize?…&reauth=true`) | `prompt=login` and `max_age=0` (Google: `max_age=0` with its own `prompt`); the flag rides in the signed `state` | the id_token must carry `auth_time` no older than 5 minutes (2 minutes of skew); otherwise the sign-in is refused |
+| SAML (`GET /api/v1/auth/saml/{org}/login?reauth=1`) | `ForceAuthn="true"` in the AuthnRequest; the request-tracking cookie remembers it | the signed assertion's `AuthnInstant` must be no older than 5 minutes; otherwise the sign-in is refused |
+
+The window itself never depends on the flag: it opens only from the
+provider's signed authentication time (see Model). Entra ID includes
+`auth_time` only when the app registration adds it as an optional claim
+(`docs/how-to/configure-entraid.md`).
 
 Errors:
 
@@ -66,6 +89,14 @@ answers:
   window, or unknown, revoked, expired or another user's.
 - `403 STEP_UP_UNAVAILABLE`: the request has no user session that can step up
   (an `oct_` API key, a token without a session id), or no checker is wired.
+
+A token from the external OIDC provider (`AUTH_PROVIDER=oidc`/`hybrid`) has no
+platform session. Its recent authentication is the provider's signed
+`auth_time` claim: the route admits it while `auth_time` is within the window,
+answers `STEP_UP_REQUIRED` when it is older (the client signs in at the
+provider again with `prompt=login` / `max_age=0` and sends the new token), and
+`STEP_UP_UNAVAILABLE` when the token has no `auth_time`. A refreshed token
+keeps its original `auth_time`, so refreshing never extends the window.
 - `500`: the lookup failed. It fails closed.
 
 Add every new protected route to `stepUpRoutes` in
@@ -116,11 +147,15 @@ calls `POST /auth/step-up`, and retries the original request once.
 - **Cross-session / cross-user:** the stamp is keyed by session id and user id;
   a step-up in one session opens nothing in another, and a token naming
   another user's session is refused.
-- **Residual:** a stolen session used inside the victim's own window; an SSO
-  user's identity provider may re-authenticate silently (we do not yet send
-  `prompt=login` / `ForceAuthn`); deployments using the external OIDC provider
-  (Keycloak tokens carry no session id) get `STEP_UP_UNAVAILABLE` on these
-  routes.
+- **Silent federated sign-in:** an attacker at an unlocked browser whose
+  identity provider session is still alive can sign in again without a
+  password, but that session opens no window: only a recent, signed provider
+  authentication (`auth_time`, `AuthnInstant`) does, and the re-sign-in asks
+  the provider for one (`prompt=login`, `max_age=0`, `ForceAuthn`).
+- **Residual:** a stolen session used inside the victim's own window; a
+  provider that ignores `prompt=login` yet reports a fresh `auth_time` is
+  trusted (its signature is what we verify); a global social sign-in (Google,
+  GitHub, Microsoft without an organization IdP) counts from its creation.
 
 ## Key files
 

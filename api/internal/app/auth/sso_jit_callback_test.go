@@ -119,6 +119,8 @@ const (
 type mockOktaIdP struct {
 	srv   *httptest.Server
 	nonce string
+	// authTime, when set, is the id_token auth_time claim.
+	authTime *jwtv5.NumericDate
 }
 
 // mockOkta serves the token, userinfo and JWKS endpoints for one email.
@@ -143,8 +145,9 @@ func mockOkta(t *testing.T, email string, mode idTokenMode) *mockOktaIdP {
 				iss = "https://evil.example.com/oauth2/default"
 			}
 			resp["id_token"] = signIDToken(t, key, oidc.Claims{
-				Nonce: idp.nonce,
-				Email: email,
+				Nonce:    idp.nonce,
+				Email:    email,
+				AuthTime: idp.authTime,
 				RegisteredClaims: jwtv5.RegisteredClaims{
 					Issuer:    iss,
 					Subject:   "okta-sub-" + email,
