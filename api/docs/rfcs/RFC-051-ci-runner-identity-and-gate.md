@@ -36,7 +36,7 @@ CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs 
   to the runner entry point.
 - **R-2** CI authenticates by OIDC federation only. The `runner` sensor
   type (a sensor API key used from CI) was deprecated, then removed (owner
-  decision 2026-10-05, migration `001143`): existing runner sensors and their
+  decision 2026-10-05, migration `001146`): existing runner sensors and their
   keys are deleted, the type is refused, and the CI ingest path submits
   reports as a CI run (`ingest.ProducerCIRun`), never as a sensor. **OIDC
   required for CI** (`tenants.ci_require_oidc`, migration `001120`, `GET/PUT
