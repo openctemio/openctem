@@ -1,5 +1,6 @@
 'use client'
 
+import type { SensorGrantSummary } from '@/lib/api/sensor-grant-hooks'
 import { AlertTriangle, CheckCircle2, Circle, MinusCircle } from 'lucide-react'
 
 import { useTranslation } from '@/context/i18n-provider'
@@ -92,7 +93,7 @@ export function distinctHostname(sensor: Pick<Sensor, 'name' | 'hostname'>): str
  * Name, then host and address on lines of their own (short lines instead of
  * one long one); badges for a platform sensor and the deprecated protocol.
  */
-export function SensorNameCell({ sensor }: { sensor: Sensor }) {
+export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: SensorGrantSummary }) {
   const host = distinctHostname(sensor)
   const ip = sensor.ip_address || null
   const fallback = isOneShotSensor(sensor) ? 'CI/CD runner · one-shot' : 'No host reported yet'
@@ -105,6 +106,7 @@ export function SensorNameCell({ sensor }: { sensor: Sensor }) {
         {sensor.is_platform_sensor && <SensorTag>Platform</SensorTag>}
         <ProtocolTag sensor={sensor} />
         <ConfigHealthTag health={sensor.config_health} />
+        <SensorGrantTags grant={grant} />
       </span>
       {host && (
         <span
@@ -126,6 +128,35 @@ export function SensorNameCell({ sensor }: { sensor: Sensor }) {
       )}
       {!sensor.hostname && !ip && <span className={cn('truncate text-xs', muted)}>{fallback}</span>}
     </div>
+  )
+}
+
+/**
+ * Grant flags on the list (RFC-052): the broad grant every sensor that
+ * predates per-sensor grants has, and the New trust level (passive work
+ * only, no credentials, no results without a job).
+ */
+export function SensorGrantTags({ grant }: { grant?: SensorGrantSummary }) {
+  if (!grant) return null
+  return (
+    <>
+      {grant.legacy_broad && (
+        <SensorTag
+          tone="warning"
+          title="Legacy broad grant: this sensor may do anything a sensor can. Narrow it to the profile that matches what it does."
+        >
+          Legacy broad grant
+        </SensorTag>
+      )}
+      {grant.trust_level === 'new' && (
+        <SensorTag
+          tone="info"
+          title="New: passive work only, no credentials and no results without a job until an administrator promotes it."
+        >
+          New
+        </SensorTag>
+      )}
+    </>
   )
 }
 
