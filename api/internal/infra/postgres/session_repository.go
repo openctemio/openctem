@@ -384,3 +384,39 @@ type sessionScanFields struct {
 	createdAt         time.Time
 	updatedAt         time.Time
 }
+
+// MarkStepUp records that userID re-authenticated at `at` inside sessionID
+// (step-up, docs/architecture/step-up-reauth.md). Only an active, unexpired
+// session that belongs to userID is marked; false means there was none.
+// Sessions are not tenant-scoped: the session id and its owner are the key.
+func (r *SessionRepository) MarkStepUp(ctx context.Context, sessionID, userID shared.ID, at time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE sessions SET step_up_at = $3, updated_at = NOW()
+		WHERE id = $1 AND user_id = $2 AND status = 'active' AND expires_at > NOW()`,
+		sessionID.String(), userID.String(), at)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
+}
+
+// RecentAuthAt returns when userID last proved their identity in sessionID:
+// the later of the sign-in that created the session and its last step-up.
+// session.ErrSessionNotFound when the session is not an active, unexpired
+// session of userID.
+func (r *SessionRepository) RecentAuthAt(ctx context.Context, sessionID, userID shared.ID) (time.Time, error) {
+	var at time.Time
+	err := r.db.QueryRowContext(ctx, `
+		SELECT GREATEST(created_at, COALESCE(step_up_at, created_at))
+		FROM sessions
+		WHERE id = $1 AND user_id = $2 AND status = 'active' AND expires_at > NOW()`,
+		sessionID.String(), userID.String()).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, session.ErrSessionNotFound
+	}
+	return at, err
+}

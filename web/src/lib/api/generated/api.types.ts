@@ -6678,6 +6678,118 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/auth/step-up': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Step-up re-authentication state
+     * @description method is totp (an authenticator code), password, or fresh_sign_in (an SSO account without an authenticator: sign in again). valid_until is set while the session is inside its window.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.StepUpState']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Step-up re-authentication
+     * @description Verifies a current authenticator code (accounts with two-factor authentication; recovery codes are not accepted) or the password (other local accounts) and lets this session perform sensitive actions for 10 minutes. The window belongs to this session only and is extended only by another successful step-up. Failures count towards the account lockout. SSO accounts without an authenticator get STEP_UP_UNAVAILABLE and sign in again instead.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Authenticator code or password */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.StepUpRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.StepUpResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/auth/token': {
     parameters: {
       query?: never
@@ -7347,6 +7459,15 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description RUNNER_OUTDATED: the runner reports a version below the minimum supported one */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Too Many Requests */
         429: {
           headers: {
@@ -7862,6 +7983,82 @@ export interface paths {
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ci/settings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * CI settings
+     * @description Whether the organization requires the CI job's OIDC identity for CI results (a CI sensor's key is then refused). On for organizations created since this setting exists.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Settings']
+          }
+        }
+      }
+    }
+    /**
+     * Change the CI settings
+     * @description Turning require_oidc off lets CI sensors authenticate with a sensor key again (audited at high severity).
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description CI settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CISettingsRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Settings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -20753,6 +20950,322 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scan-freeze-windows': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List scan freeze windows
+     * @description The organization's freeze windows, each with whether it is active now. scan_zone_id lists one zone's windows; scope=tenant lists only the windows that freeze the whole organization.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Scan zone ID */
+          scan_zone_id?: string
+          /** @description tenant: only organization-wide windows */
+          scope?: 'tenant'
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Create scan freeze window
+     * @description While the window is active, active (T1/T2) scan work of the organization, or of the zone, is not dispatched: scheduled runs are deferred to the window's end, other triggers are refused (409 SCAN_FREEZE_ACTIVE) unless the caller overrides with scans:freeze:override. Passive work and ingest continue. At most 50 windows per organization.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Freeze window */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CreateScanFreezeWindowRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description scan zone not in this organization */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scan-freeze-windows/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get scan freeze window */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Freeze window ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    /** Delete scan freeze window */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Freeze window ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    /**
+     * Update scan freeze window
+     * @description Omitted fields are unchanged; the zone cannot change. Disabling a window releases the work it held.
+     */
+    patch: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Freeze window ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Changes */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateScanFreezeWindowRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    trace?: never
+  }
   '/scan-profiles': {
     parameters: {
       query?: never
@@ -24029,8 +24542,26 @@ export interface paths {
             'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
+        /** @description override_freeze without scans:freeze:override */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
         /** @description Not Found */
         404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description SCAN_FREEZE_ACTIVE: a scan freeze window is active */
+        409: {
           headers: {
             [name: string]: unknown
           }
@@ -34094,6 +34625,14 @@ export interface components {
       /** @description Unprotected function */
       unprotected_function?: string
     }
+    'ctis.Advisory': {
+      /** @description Advisory id (MS24-001, RHSA-2024:1234, DSA-5600-1). */
+      id?: string
+      /** @description Issuer (microsoft, redhat, debian, ...). */
+      source?: string
+      /** @description Advisory URL. */
+      url?: string
+    }
     'ctis.ArtifactLocation': {
       /** @description Index within the artifacts array */
       index?: number
@@ -34121,6 +34660,12 @@ export interface components {
        *     address, so a renamed host or repository keeps its history.
        */
       identifiers?: components['schemas']['ctis.AssetIdentifiers']
+      /**
+       * @description What a scanner observed about the host that helps match it across
+       *     tools (FQDN, NetBIOS name, MACs, OS CPE, cloud id, agent id). Weaker
+       *     than Identifiers.
+       */
+      identity_hints?: components['schemas']['ctis.IdentityHints']
       /** @description CTEM: Is the asset directly accessible from the internet */
       is_internet_accessible?: boolean
       /** @description Human-readable name */
@@ -34516,6 +35061,8 @@ export interface components {
       /** @description Start line number */
       start_line?: number
     }
+    /** @enum {string} */
+    'ctis.DetectionType': 'confirmed' | 'potential' | 'info'
     'ctis.DomainTechnical': {
       /** @description DNS records */
       dns_records?: components['schemas']['ctis.DNSRecord'][]
@@ -34603,6 +35150,11 @@ export interface components {
       /** @description Misconfiguration-specific details */
       misconfiguration?: components['schemas']['ctis.MisconfigurationDetails']
       /**
+       * @description The finding as the source tool names it: native id, severity, status,
+       *     detection type, credentialed flag, raw record reference.
+       */
+      native?: components['schemas']['ctis.NativeIdentity']
+      /**
        * @description Network location (for network/host findings, e.g. Nessus/Tenable): the
        *     port/protocol/service the finding was observed on. Distinct from the
        *     code-centric Location above.
@@ -34630,10 +35182,26 @@ export interface components {
       rule_id?: string
       /** @description Rule name */
       rule_name?: string
+      /**
+       * @description Every score of the finding with its source and date (CVSS v3.1 and
+       *     v4.0 together, vendor scores, EPSS, SSVC). The vulnerability.cvss_*
+       *     members stay the primary CVSS score.
+       */
+      scores?: components['schemas']['ctis.Score'][]
       /** @description Secret-specific details */
       secret?: components['schemas']['ctis.SecretDetails']
       /** @description Severity (required): critical, high, medium, low, info */
       severity?: components['schemas']['ctis.Severity']
+      /**
+       * @description Source fields no CTIS member holds, as strings, so an importer drops
+       *     nothing silently. Bounded: at most 64 entries, keys of 128 and values
+       *     of 4096 bytes, 32 KiB in all. Use SetSourceExtra to stay within it.
+       */
+      source_extra?: {
+        [key: string]: string
+      }
+      /** @description The finding's history as the source tracks it. */
+      source_lifecycle?: components['schemas']['ctis.SourceLifecycle']
       /** @description Stacks - call stacks relevant to the finding (SARIF stacks) */
       stacks?: components['schemas']['ctis.StackTrace'][]
       /** @description Finding status: open, resolved, false_positive, accepted_risk, in_progress */
@@ -34648,6 +35216,8 @@ export interface components {
       title?: string
       /** @description Finding type (required): vulnerability, secret, misconfiguration, compliance */
       type?: components['schemas']['ctis.FindingType']
+      /** @description Exploitability statement (VEX) about this finding's vulnerability. */
+      vex?: components['schemas']['ctis.VEX']
       /** @description Vulnerability-specific details */
       vulnerability?: components['schemas']['ctis.VulnerabilityDetails']
       /** @description Vulnerability class(es): SQL Injection, XSS, Command Injection, etc. */
@@ -34750,6 +35320,25 @@ export interface components {
       /** @description IP version: 4 or 6 */
       version?: number
     }
+    'ctis.IdentityHints': {
+      /**
+       * @description Id of the scanner's own agent installed on the host (a Nessus or
+       *     Qualys agent UUID). Unique per scanner, not across scanners. The Go
+       *     name says whose agent it is, so it is not read as a receiver's own
+       *     endpoint software.
+       */
+      agent_id?: string
+      /** @description Cloud resource id the scanner reported (instance id, ARN). */
+      cloud_resource_id?: string
+      /** @description Fully qualified DNS name the scanner resolved. */
+      fqdn?: string
+      /** @description MAC addresses observed. */
+      mac_addresses?: string[]
+      /** @description NetBIOS name. */
+      netbios_name?: string
+      /** @description CPE of the detected operating system (cpe:/o:... or cpe:2.3:o:...). */
+      os_cpe?: string
+    }
     'ctis.LogicalLocation': {
       /** @description Fully qualified name (e.g., "pkg.MyClass.myMethod") */
       fully_qualified_name?: string
@@ -34822,6 +35411,55 @@ export interface components {
       /** @description Total volume USD */
       total_volume_usd?: number
     }
+    'ctis.NativeIdentity': {
+      /**
+       * @description Whether the scan that found it was authenticated on the target. Absent
+       *     means unknown; false means the scan ran without credentials.
+       */
+      credentialed?: boolean
+      /** @description Whether the tool confirmed the issue or only suspects it. */
+      detection_type?: components['schemas']['ctis.DetectionType']
+      /**
+       * @description The tool's family or category of the check (Nessus plugin family,
+       *     Qualys vulnerability category).
+       */
+      family?: string
+      /**
+       * @description The tool's id of this occurrence (DefectDojo unique_id_from_tool, a
+       *     Tenable or Qualys detection id), when it has one.
+       */
+      instance_id?: string
+      /**
+       * @description Where the raw record can be found again: a URL into the source, or a
+       *     locator inside the imported file. Informational; receivers never fetch
+       *     it.
+       */
+      raw_ref?: string
+      /**
+       * @description Vocabulary of the native values below. Selects the mapping tables of
+       *     NormalizeNativeSeverity, NormalizeNativeStatus and
+       *     NormalizeDetectionType.
+       */
+      scheme?: components['schemas']['ctis.NativeScheme']
+      /**
+       * @description The tool's severity exactly as reported ("4", "5", "High", "error").
+       *     finding.severity holds the normalized level.
+       */
+      severity?: string
+      /**
+       * @description The tool's status exactly as reported ("Re-Opened", "fixed",
+       *     "risk_accepted"). finding.status and source_lifecycle.state hold the
+       *     normalized values.
+       */
+      status?: string
+      /**
+       * @description The tool's id of the vulnerability or check: a Nessus plugin ID, a
+       *     Qualys QID, a DefectDojo vuln_id_from_tool, a SARIF rule id.
+       */
+      vuln_id?: string
+    }
+    /** @enum {string} */
+    'ctis.NativeScheme': 'nessus' | 'qualys' | 'defectdojo' | 'sarif' | 'other'
     'ctis.NetworkLocation': {
       /**
        * @description Host the finding was observed on (IP or hostname). Optional when the
@@ -34876,6 +35514,8 @@ export interface components {
       type?: string
     }
     'ctis.Remediation': {
+      /** @description Vendor advisories that address the finding. */
+      advisories?: components['schemas']['ctis.Advisory'][]
       /** @description Auto-fixable */
       auto_fixable?: boolean
       /** @description Effort estimate: trivial, low, medium, high */
@@ -34889,10 +35529,14 @@ export interface components {
       fix_code?: string
       /** @description Regex-based fix pattern (for tools that provide regex replacements) */
       fix_regex?: components['schemas']['ctis.FixRegex']
+      /** @description When the vendor published the patch. */
+      patch_published_at?: string
       /** @description Short recommendation */
       recommendation?: string
       /** @description Reference URLs */
       references?: string[]
+      /** @description Kind of fix: patch, upgrade, config, workaround, mitigation, no_fix. */
+      solution_type?: components['schemas']['ctis.SolutionType']
       /** @description Detailed fix steps */
       steps?: string[]
     }
@@ -34990,6 +35634,30 @@ export interface components {
       /** @description Scope type: domain, network, repository, cloud_account */
       type?: string
     }
+    'ctis.Score': {
+      /** @description When the source assigned or last updated it. */
+      as_of?: string
+      /** @description Qualitative rating as the source states it ("high", "Act"). */
+      label?: string
+      /** @description Who assigned it: nvd, ghsa, vendor, tenable, qualys, first, cisa, ... */
+      source?: string
+      /** @description Scoring system (required). */
+      system?: components['schemas']['ctis.ScoreSystem']
+      /**
+       * @description Numeric value: 0-10 for cvss and vpr, 0-1 for epss and
+       *     epss_percentile (FIRST's fractions), absent for ssvc.
+       */
+      value?: number
+      /** @description Vector string ("CVSS:3.1/AV:N/...", an SSVC vector). */
+      vector?: string
+      /**
+       * @description System version: "2.0", "3.0", "3.1" or "4.0" for CVSS (required
+       *     there), the model version for EPSS, "2" for SSVC.
+       */
+      version?: string
+    }
+    /** @enum {string} */
+    'ctis.ScoreSystem': 'cvss' | 'epss' | 'epss_percentile' | 'ssvc' | 'vpr' | 'vendor'
     'ctis.SecretDetails': {
       /** @description Secret age (how long since creation, if known) */
       age_in_days?: number
@@ -35155,6 +35823,22 @@ export interface components {
       /** @description Is verified on explorer (etherscan, etc.) */
       verified?: boolean
     }
+    /** @enum {string} */
+    'ctis.SolutionType': 'patch' | 'upgrade' | 'config' | 'workaround' | 'mitigation' | 'no_fix'
+    'ctis.SourceLifecycle': {
+      /** @description When the source first found it. */
+      first_found?: string
+      /** @description When the source last saw it fixed. */
+      last_fixed?: string
+      /** @description When the source last found it. */
+      last_found?: string
+      /** @description The source state, normalized (native.status keeps the source's word). */
+      state?: components['schemas']['ctis.SourceState']
+      /** @description How many times the source has found it. */
+      times_found?: number
+    }
+    /** @enum {string} */
+    'ctis.SourceState': 'new' | 'active' | 'reopened' | 'fixed'
     'ctis.StackFrame': {
       /** @description Location of this frame */
       location?: components['schemas']['ctis.FindingLocation']
@@ -35270,6 +35954,35 @@ export interface components {
       /** @description Quote token symbol (WETH, USDT, etc.) */
       quote_token?: string
     }
+    'ctis.VEX': {
+      /** @description When the statement was made. */
+      as_of?: string
+      /**
+       * @description Why the product is not affected. Only with status not_affected, which
+       *     needs a justification or a statement.
+       */
+      justification?: components['schemas']['ctis.VEXJustification']
+      /**
+       * @description The justification as the source document states it (a CycloneDX
+       *     analysis.justification such as code_not_reachable).
+       */
+      native_justification?: string
+      /** @description Who made the statement: a document id or URL, a vendor, a team. */
+      source?: string
+      /** @description Impact or action statement, plain text. */
+      statement?: string
+      /** @description Status (required). */
+      status?: components['schemas']['ctis.VEXStatus']
+    }
+    /** @enum {string} */
+    'ctis.VEXJustification':
+      | 'component_not_present'
+      | 'vulnerable_code_not_present'
+      | 'vulnerable_code_not_in_execute_path'
+      | 'vulnerable_code_cannot_be_controlled_by_adversary'
+      | 'inline_mitigations_already_exist'
+    /** @enum {string} */
+    'ctis.VEXStatus': 'not_affected' | 'affected' | 'fixed' | 'under_investigation'
     'ctis.VulnDataSource': {
       /** @description Data source ID (e.g., "nvd", "ghsa", "osv") */
       id?: string
@@ -35328,6 +36041,12 @@ export interface components {
       fixed_version?: string
       /** @description All available fixed versions */
       fixed_versions?: string[]
+      /**
+       * @description Every id of the vulnerability with its namespace (CVE, GHSA, OSV,
+       *     vendor). cve_id and cve_ids stay as they are; producers that send
+       *     both keep them consistent.
+       */
+      ids?: components['schemas']['ctis.VulnerabilityID'][]
       /** @description In CISA KEV (Known Exploited Vulnerabilities) */
       in_cisa_kev?: boolean
       /** @description Is direct dependency (vs transitive) */
@@ -35359,6 +36078,19 @@ export interface components {
       /** @description Vulnerability status: affected, fixed, under_investigation, will_not_fix */
       vuln_status?: string
     }
+    'ctis.VulnerabilityID': {
+      /**
+       * @description The identifier (required): CVE-2024-3094, GHSA-xxxx-xxxx-xxxx,
+       *     PYSEC-2021-1, RHSA-2024:1234.
+       */
+      id?: string
+      /** @description Issuer of a vendor id (redhat, microsoft, ubuntu, ...). */
+      source?: string
+      /** @description Namespace (required). */
+      type?: components['schemas']['ctis.VulnerabilityIDType']
+    }
+    /** @enum {string} */
+    'ctis.VulnerabilityIDType': 'cve' | 'ghsa' | 'osv' | 'vendor'
     'ctis.WalletDetails': {
       /** @description Balance (native token, in wei) */
       balance?: string
@@ -35569,9 +36301,19 @@ export interface components {
       offset_ns?: number
       position?: number
     }
+    /** @enum {string} */
+    'github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod':
+      'totp' | 'password' | 'fresh_sign_in' | ''
     'github_com_openctemio_openctem_api_internal_app_auth.StepUpProof': {
       password?: string
       totp?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_auth.StepUpState': {
+      method?: components['schemas']['github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod']
+      /** @description ValidUntil is when the current window closes; nil when it is closed. */
+      valid_until?: string
+      /** @description WindowSeconds is the length of a window opened by a step-up. */
+      window_seconds?: number
     }
     'github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord': {
       host?: string
@@ -35583,6 +36325,14 @@ export interface components {
       base_branch_known?: boolean
       new?: string[]
       pre_existing?: string[]
+    }
+    'github_com_openctemio_openctem_api_internal_app_cirun.Settings': {
+      /**
+       * @description RequireOIDC refuses CI results sent with a sensor key: a CI job must
+       *     prove its identity with its provider's OIDC token. On for every
+       *     organization created after migration 001120; existing ones opt in.
+       */
+      require_oidc?: boolean
     }
     'github_com_openctemio_openctem_api_internal_app_cirun.Verdict': {
       baseline?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView']
@@ -36228,9 +36978,10 @@ export interface components {
        */
       repositories?: string[]
       /**
-       * @description RequireProtectedRef admits only pipelines on a protected branch or tag
-       *     (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
-       *     configuration with this set admits nothing).
+       * @description RequireProtectedRef admits only pipelines on a protected branch or tag.
+       *     GitLab: the token's ref_protected claim. GitHub tokens carry no such
+       *     claim: the job must run in one of Environments (required with this
+       *     switch), whose deployment branch rules admit only protected refs.
        */
       require_protected_ref?: boolean
     }
@@ -36837,6 +37588,56 @@ export interface components {
       snippet?: string
       start_column?: number
       start_line?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropAdvisory': {
+      id?: string
+      source?: string
+      url?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropLifecycle': {
+      first_found?: string
+      last_fixed?: string
+      last_found?: string
+      state?: string
+      times_found?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropNative': {
+      credentialed?: boolean
+      detection_type?: string
+      family?: string
+      instance_id?: string
+      raw_ref?: string
+      scheme?: string
+      severity?: string
+      status?: string
+      vuln_id?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropScore': {
+      as_of?: string
+      label?: string
+      source?: string
+      system?: string
+      value?: number
+      vector?: string
+      version?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropSolution': {
+      advisories?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropAdvisory'][]
+      patch_published_at?: string
+      type?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVEX': {
+      as_of?: string
+      justification?: string
+      native_justification?: string
+      source?: string
+      statement?: string
+      status?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVulnID': {
+      id?: string
+      source?: string
+      type?: string
     }
     'github_com_openctemio_openctem_api_pkg_domain_vulnerability.LogicalLocation': {
       fully_qualified_name?: string
@@ -38152,6 +38953,13 @@ export interface components {
       notes?: string
       ransomware_use?: string
     }
+    'internal_infra_http_handler.CISettingsRequest': {
+      /**
+       * @description RequireOIDC refuses CI results sent with a sensor key (a CI job must
+       *     use its provider's OIDC identity).
+       */
+      require_oidc?: boolean
+    }
     'internal_infra_http_handler.CITemplateDrift': {
       current?: string
       drifted?: number
@@ -38622,6 +39430,20 @@ export interface components {
       p2_days?: number
       p3_days?: number
       warning_threshold_pct?: number
+    }
+    'internal_infra_http_handler.CreateScanFreezeWindowRequest': {
+      days?: number[]
+      description?: string
+      enabled?: boolean
+      end_time?: string
+      ends_at?: string
+      name?: string
+      /** @enum {string} */
+      recurrence?: 'once' | 'weekly'
+      scan_zone_id?: string
+      start_time?: string
+      starts_at?: string
+      timezone?: string
     }
     'internal_infra_http_handler.CreateScanProfileRequest': {
       description?: string
@@ -39372,6 +40194,8 @@ export interface components {
       sla_status?: string
       snippet?: string
       source?: string
+      /** @description What the source knew (CTIS 1.4): native identity, every score, VEX, ...; untrusted */
+      source_data?: components['schemas']['internal_infra_http_handler.FindingSourceDataResponse']
       stacks?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.StackTrace'][]
       start_column?: number
       start_line?: number
@@ -39464,6 +40288,18 @@ export interface components {
       is_active?: boolean
       name?: string
       updated_at?: string
+    }
+    'internal_infra_http_handler.FindingSourceDataResponse': {
+      lifecycle?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropLifecycle']
+      location_key?: string
+      native?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropNative']
+      scores?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropScore'][]
+      solution?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropSolution']
+      source_extra?: {
+        [key: string]: string
+      }
+      vex?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVEX']
+      vulnerability_ids?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVulnID'][]
     }
     'internal_infra_http_handler.FindingSourceResponse': {
       category?: components['schemas']['internal_infra_http_handler.FindingSourceCategoryResponse']
@@ -40996,6 +41832,30 @@ export interface components {
       total_runs?: number
       updated_at?: string
     }
+    'internal_infra_http_handler.ScanFreezeWindowListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.ScanFreezeWindowResponse'][]
+      total?: number
+    }
+    'internal_infra_http_handler.ScanFreezeWindowResponse': {
+      active?: boolean
+      active_until?: string
+      created_at?: string
+      created_by?: string
+      days?: number[]
+      description?: string
+      enabled?: boolean
+      end_time?: string
+      ends_at?: string
+      id?: string
+      name?: string
+      /** @enum {string} */
+      recurrence?: 'once' | 'weekly'
+      scan_zone_id?: string
+      start_time?: string
+      starts_at?: string
+      timezone?: string
+      updated_at?: string
+    }
     'internal_infra_http_handler.ScanProfileResponse': {
       created_at?: string
       created_by?: string
@@ -41936,6 +42796,14 @@ export interface components {
       step_id?: string
       step_key?: string
     }
+    'internal_infra_http_handler.StepUpRequest': {
+      password?: string
+      totp?: string
+    }
+    'internal_infra_http_handler.StepUpResponse': {
+      valid_until?: string
+      window_seconds?: number
+    }
     'internal_infra_http_handler.SyncResponse': {
       message?: string
       success?: boolean
@@ -42206,6 +43074,11 @@ export interface components {
       context?: {
         [key: string]: unknown
       }
+      /**
+       * @description OverrideFreeze starts the scan although a scan freeze window is
+       *     active. Needs scans:freeze:override (403 otherwise); audited.
+       */
+      override_freeze?: boolean
     }
     'internal_infra_http_handler.TriggerSyncRequest': {
       /** @description empty or "all" for all sources */
@@ -42427,6 +43300,19 @@ export interface components {
       p2_days?: number
       p3_days?: number
       warning_threshold_pct?: number
+    }
+    'internal_infra_http_handler.UpdateScanFreezeWindowRequest': {
+      days?: number[]
+      description?: string
+      enabled?: boolean
+      end_time?: string
+      ends_at?: string
+      name?: string
+      /** @enum {string} */
+      recurrence?: 'once' | 'weekly'
+      start_time?: string
+      starts_at?: string
+      timezone?: string
     }
     'internal_infra_http_handler.UpdateScanProfileRequest': {
       description?: string

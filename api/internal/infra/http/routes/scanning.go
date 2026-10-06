@@ -180,6 +180,28 @@ func registerScanZoneRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerScanFreezeWindowRoutes registers the scan freeze window API.
+// Everyone who reads scans reads the windows (the console shows a banner
+// while one is active); creating and changing them needs
+// sensors:zones:write and deleting sensors:zones:delete, the scan zone
+// administration permissions (owner and admin).
+func registerScanFreezeWindowRoutes(
+	router Router,
+	h *handler.ScanFreezeWindowHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/scan-freeze-windows", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ScansRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.ScansRead))
+		r.POST("/", h.Create, middleware.Require(permission.ScanZonesWrite))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.ScanZonesWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScanZonesDelete))
+	}, tenantMiddlewares...)
+}
+
 // registerPipelineRoutes registers pipeline management endpoints.
 // Pipelines orchestrate multi-step scan workflows via templates, steps, and runs.
 func registerPipelineRoutes(

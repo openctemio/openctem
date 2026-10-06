@@ -173,6 +173,8 @@
   "settings.item.capabilities": "Capabilities",
   "settings.item.ci-pipelines": "CI pipelines",
   "settings.desc.ci-pipelines": "Which CI pipelines may send results, and what fails them.",
+  "settings.item.freeze-windows": "Scan freeze windows",
+  "settings.desc.freeze-windows": "When active scans pause for maintenance or a change freeze.",
   "settings.item.scanner-content": "Scanner content",
   "settings.desc.capabilities": "The capability taxonomy that tools are matched on.",
   "settings.desc.scanner-content": "How fresh vulnerability databases, templates and rules must be.",

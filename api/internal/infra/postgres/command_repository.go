@@ -52,9 +52,9 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 			result, scheduled_at, schedule_id, step_run_id,
 			is_platform_job, platform_sensor_id,
 			auth_token_hash, auth_token_prefix, auth_token_expires_at,
-			queue_priority, queued_at, dispatch_attempts, scan_zone_id
+			queue_priority, queued_at, dispatch_attempts, scan_zone_id, freeze_override
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -84,6 +84,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 		nullTime(cmd.QueuedAt),
 		cmd.DispatchAttempts,
 		nullIDString(cmd.ScanZoneID),
+		cmd.FreezeOverride,
 	)
 
 	if err != nil {
@@ -145,7 +146,8 @@ func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID sh
 
 // pendingForSensorWhere is the poll's predicate for sensorID in tenantID:
 // pending and due, pinned to the sensor or unpinned, the zone claim
-// predicate, the tool gate and the capability gate. Arguments: $1 tenant,
+// predicate, the tool gate, the capability gate and the freeze hold
+// (freezeHoldPredicate). Arguments: $1 tenant,
 // $2 sensor (when given), then the capabilities.
 func pendingForSensorWhere(tenantID shared.ID, sensorID *shared.ID, capabilities []string) (string, []any) {
 	where := `commands.tenant_id = $1 AND ` + pendingReadyPredicate
@@ -159,7 +161,7 @@ func pendingForSensorWhere(tenantID shared.ID, sensorID *shared.ID, capabilities
 		// to prove.
 		where += " AND commands.sensor_id IS NULL AND commands.scan_zone_id IS NULL AND " + commandToolSQL + " IS NULL"
 	}
-	where += " AND " + capabilityClaimPredicate(fmt.Sprintf("$%d", len(args)+1))
+	where += " AND " + capabilityClaimPredicate(fmt.Sprintf("$%d", len(args)+1)) + " AND " + freezeHoldPredicate
 	args = append(args, pq.Array(capabilities))
 	return where, args
 }
@@ -252,7 +254,8 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 		AND ` + zoneClaimPredicate("$2") + `
 		AND ` + toolClaimPredicate("$2") + `
 		AND ` + refusedByPredicate("$2") + `
-		AND ` + capabilityClaimPredicate("$3")
+		AND ` + capabilityClaimPredicate("$3") + `
+		AND ` + freezeHoldPredicate
 	query := `
 		SELECT
 			LEAST($4::int,
@@ -424,6 +427,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND ` + toolClaimPredicate("$3") + `
 		  AND ` + capabilityClaimPredicate(claimSensorCapabilities) + `
 		  AND ` + refusedByPredicate("$3") + `
+		  AND ` + freezeHoldPredicate + `
 	`
 	result, err := r.db.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID, r.leaseSeconds())
 	if err != nil {

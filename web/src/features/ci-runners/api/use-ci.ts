@@ -24,6 +24,8 @@ import type {
   CIPipelineDetail,
   CIPipelineList,
   FleetList,
+  CICoverage,
+  CISettings,
 } from '../types'
 import {
   fleetURL,
@@ -32,10 +34,13 @@ import {
   type PipelineListFilters,
 } from '../lib/pipeline'
 
+import { coverageExpectationURL, coverageURL, type CoverageFilters } from '../lib/coverage'
+
 export const CI_BASE = '/api/v1/ci'
 const TRUST = `${CI_BASE}/trust-configs`
 const POLICIES = `${CI_BASE}/gate-policies`
 const OVERRIDES = `${CI_BASE}/gate-overrides`
+const SETTINGS = `${CI_BASE}/settings`
 
 export interface CIRunFilters {
   verdict?: CIVerdictFilter
@@ -109,6 +114,21 @@ export function useCIRun(id: string | null) {
   return useSWR<CIRun>(
     currentTenant && id ? `${CI_BASE}/runs/${encodeURIComponent(id)}` : null,
     (url: string) => get<CIRun>(url)
+  )
+}
+
+export function useCISettings({ enabled = true }: { enabled?: boolean } = {}) {
+  const { currentTenant } = useTenant()
+  return useSWR<CISettings>(currentTenant && enabled ? SETTINGS : null, (url: string) =>
+    get<CISettings>(url)
+  )
+}
+
+export function useSaveCISettings() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant ? SETTINGS : null,
+    async (_url: string, { arg }: { arg: CISettings }) => put<CISettings>(SETTINGS, arg)
   )
 }
 
@@ -190,5 +210,48 @@ export function useRevokeGateOverride() {
     currentTenant ? OVERRIDES : null,
     async (_url: string, { arg }: { arg: string }) =>
       post<void>(`${OVERRIDES}/${encodeURIComponent(arg)}/revoke`, {})
+  )
+}
+
+/** Repository x capability coverage within the caller's data scope. */
+export function useCICoverage(
+  filters: CoverageFilters,
+  { enabled = true }: { enabled?: boolean } = {}
+) {
+  const { currentTenant } = useTenant()
+  return useSWR<CICoverage>(
+    currentTenant && enabled ? coverageURL(CI_BASE, filters) : null,
+    (url: string) => get<CICoverage>(url),
+    { keepPreviousData: true }
+  )
+}
+
+/** Mark a repository as expected to be covered (capabilities empty = all), or stop. */
+export function useSetCoverageExpectation() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant ? `${CI_BASE}/coverage/expectations` : null,
+    async (
+      _url: string,
+      { arg }: { arg: { assetId: string; expected: boolean; capabilities?: string[] } }
+    ) => {
+      const url = coverageExpectationURL(CI_BASE, arg.assetId)
+      return arg.expected
+        ? put<unknown>(url, { capabilities: arg.capabilities ?? [] })
+        : del<void>(url)
+    }
+  )
+}
+
+/** Retire a pipeline: the findings only it reported close as source retired. */
+export function useRetirePipeline() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant ? `${CI_BASE}/pipelines/retire` : null,
+    async (_url: string, { arg }: { arg: { id: string; reason: string } }) =>
+      post<{ pipeline_id?: string; findings_closed?: number }>(
+        `${CI_BASE}/pipelines/${encodeURIComponent(arg.id)}/retire`,
+        { reason: arg.reason }
+      )
   )
 }
