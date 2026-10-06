@@ -20495,6 +20495,68 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pipeline-runs/{id}/tasks/{task_id}/logs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * A run task's logs
+     * @description The log lines the sensor sent for one task of the run, oldest first, at most 5000. Kept 14 days. A task that is not in the run (or the run is another organization's) is not found.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Run ID */
+          id: string
+          /** @description Task ID */
+          task_id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.RunTaskLogsResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/repositories/{repository_id}/branches': {
     parameters: {
       query?: never
@@ -41576,6 +41638,20 @@ export interface components {
       /** @enum {string} */
       tier?: 'T0' | 'T1' | 'T2'
       tool?: string
+    }
+    'internal_infra_http_handler.RunTaskLogLine': {
+      fields?: {
+        [key: string]: unknown
+      }
+      /** @enum {string} */
+      level?: 'debug' | 'info' | 'warn' | 'error'
+      msg?: string
+      source?: string
+      ts?: string
+    }
+    'internal_infra_http_handler.RunTaskLogsResponse': {
+      lines?: components['schemas']['internal_infra_http_handler.RunTaskLogLine'][]
+      truncated?: boolean
     }
     'internal_infra_http_handler.RunTaskPageResponse': {
       data?: components['schemas']['internal_infra_http_handler.RunTaskResponse'][]

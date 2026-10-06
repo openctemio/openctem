@@ -247,11 +247,15 @@ const (
 	// (research/26). A sensor sends neither to a server that does not list
 	// it. Display and health data only: it never widens dispatch.
 	FeatureConfigReport = "config_report"
+	// FeatureLogs: POST /commands/{id}/logs stores the log lines of a task
+	// the sensor holds, in numbered batches (RFC-029 §4.4.1). A sensor sends
+	// no logs to a server that does not list it.
+	FeatureLogs = "logs"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCapacity, FeatureRefusal, FeatureConfigReport}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCapacity, FeatureRefusal, FeatureConfigReport, FeatureLogs}
 }
 
 // Deprecation announces a deprecated protocol on hello.
