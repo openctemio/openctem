@@ -1,4 +1,4 @@
--- Validate the composite trust-configuration foreign keys 001139 added NOT
+-- Validate the composite trust-configuration foreign keys 001144 added NOT
 -- VALID. VALIDATE takes a lock that does not block reads or writes, in its own
 -- transaction (separate migration file).
 ALTER TABLE ci_runs VALIDATE CONSTRAINT fk_ci_runs_trust_config;
