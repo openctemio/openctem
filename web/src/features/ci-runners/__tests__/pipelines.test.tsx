@@ -115,7 +115,9 @@ describe('pipeline lib', () => {
   })
 
   it('reads the page mode from the URL, legacy run-style links included', () => {
-    expect(fleetPageMode('', true, true)).toBe('all')
+    // The page opens on the daemons; CI pipelines have their own page.
+    expect(fleetPageMode('', true, true)).toBe('daemon')
+    expect(fleetPageMode('all', true, true)).toBe('all')
     expect(fleetPageMode('', true, false)).toBe('daemon')
     expect(fleetPageMode('', false, true)).toBe('runner')
     expect(fleetPageMode('runner', true, true)).toBe('runner')
@@ -127,11 +129,10 @@ describe('pipeline lib', () => {
     expect(fleetPageMode('collector', true, true)).toBe('daemon')
   })
 
-  it('sends the old CI runners links to the Sensors page in runner mode', () => {
-    expect(resolveLegacyRoute('/ci-runners')).toBe('/sensors?mode=runner')
-    expect(resolveLegacyRoute('/ci-runners/0192-run')).toBe(
-      '/sensors?mode=runner&view=runs&run=0192-run'
-    )
+  it('sends the old CI runners and runner-sensor links to CI/CD integration', () => {
+    expect(resolveLegacyRoute('/ci-runners')).toBe('/ci-cd')
+    expect(resolveLegacyRoute('/runners')).toBe('/ci-cd')
+    expect(resolveLegacyRoute('/ci-runners/0192-run')).toBe('/ci-cd?view=runs&run=0192-run')
   })
 })
 
@@ -150,7 +151,7 @@ describe('CIPipelinesPanel', () => {
     expect(screen.getByText('No CI pipelines yet')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /set up ci trust/i })).toHaveAttribute(
       'href',
-      '/settings/scanning/ci'
+      '/ci-cd?tab=setup'
     )
   })
 
