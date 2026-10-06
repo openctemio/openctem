@@ -52,7 +52,7 @@ specific flags. They are never free-form command-line text.
 | S2 | **Schemas live with the tools, in the sensor.** The SDK defines the Go type (`core.SettingsSchema`), the registration hook (`ToolSpec.Settings`), digests, delivery, signature checks and the store. Adding a tool or an option never needs an SDK release (fits sdk-go `docs/STABILITY.md`). |
 | S3 | **Registration is part of the RFC-033 manifest:** each `ManifestTool` gains `settings: {schema_version, digest}`; the schema body is sent once (`PUT /api/v2/sensor/tool-schemas`, content-addressed by digest) and fetched on `send_tool_schemas`. Heartbeats never carry schemas. |
 | S4 | **Server-side validation is authoritative.** The api validates every write against the stored schema (never trusts the form), then evaluates policy rules (S5), then audits. |
-| S5 | **Policy constraints use CEL** (cel-go): non-Turing-complete, cost-bounded, sandboxed, the same language Kubernetes uses for CRD validation and admission policies. Built-in rules ship as code (tier, sensitive, scope); tenant-authored rules are a later phase. OPA/Rego is rejected as an extra service and language for this size of problem (§9). |
+| S5 | **Policy constraints use CEL** (cel-go): non-Turing-complete, cost-bounded, sandboxed. Built-in rules ship as code (tier, sensitive, scope); tenant-authored rules are a later phase. OPA/Rego is rejected as an extra service and language for this size of problem (§9). |
 | S6 | **Delivery is a signed document**, `SensorSettings{sensor_id, version, issued_at, expires_at?, tools: {name: {schema_digest, values}}}`, signed with the platform's job-signing key that the sensor pinned at enrollment (RFC-032 T7 / RFC-023 P6). Until that key exists, the document travels on the sensor's authenticated v2 channel (TLS + RFC 9421 signed request) and its digest is echoed in the heartbeat. Monotonic `version` blocks rollback (TUF's idea). |
 | S7 | **The sensor validates against its own schema**: unknown keys, wrong types, out-of-range values and a schema digest it does not have are **rejected**, not dropped. It stores the accepted document atomically (temp + fsync + rename, 0600, dir 0700) on the state volume, applies it from the next job (running jobs keep their settings), and reports `{version, digest, status, errors}` back. |
 | S8 | **Options map to flags in the adapter, typed.** Each option is a field the adapter turns into specific argv entries with `strconv`/fixed strings (e.g. `rate_limit: 150` → `-rate-limit 150`). There is no "extra args" option. Every built argv still passes `core.ValidateExtraArgs` / `DangerousToolFlags` as a backstop. |
@@ -110,21 +110,21 @@ sensor, and a key typed into a scan profile silently does nothing.
 - Sensors are admin-only to change (authz audit #2); custom scanner
   templates are owner/admin-only (api#773).
 
-## 4. What mature systems do
+## 4. Design principles
 
-| System | What it does well | What we take |
-|---|---|---|
-| **Terraform provider schemas** [1] | Each attribute is typed (Bool, Int64, String, List, Map, nested), `Required`/`Optional`/`Computed`, `Sensitive` (hidden from logs and plan output), `Validators`, `Default`, `PlanModifiers`, `Description`/`MarkdownDescription`, `DeprecationMessage`. The plugin owns its schema; core only renders and checks it. | The plugin (tool) owns a typed schema; `sensitive`; per-field description and deprecation; the platform renders, it does not invent. |
-| **Kubernetes CRD structural schemas** [2] | OpenAPI v3 schema is mandatory; unknown fields are **pruned**; `default` is applied server-side; `x-kubernetes-validations` carry **CEL** rules with `message`, `messageExpression` and transition rules on `oldSelf`; CEL has a cost budget. | Structural (closed) schemas, server-side defaulting, CEL for cross-field and policy rules with messages, transition rules (e.g. a value may only decrease). We **reject** unknown keys rather than prune them, because a silently dropped scan option is the bug we have today. |
-| **Kubernetes CEL** [3] | Non-Turing-complete, cost-estimable, sandboxed, no I/O, embedded in the API server. | Why CEL for S5. |
-| **Grafana plugin settings** [4] | `jsonData` (plain, readable by viewers) vs `secureJsonData` (encrypted, never returned to the browser); `secureJsonFields` tells the UI a secret is set without revealing it. | Write-only secret fields, "set / not set" indicator, "replace" instead of "show". |
-| **OpenTelemetry Collector** [5] | Each component owns its `Config` struct and implements `confmap.Validator`; the core calls `Validate()` on every component config before start. | Validation is the component's job; the sensor validates with the same schema it published, so the two sides cannot disagree. |
-| **Nomad task drivers** [6] | A driver plugin returns `ConfigSchema()` (plugin level) and `TaskConfigSchema()` (task level) as `hclspec`; Nomad validates jobs against the driver's schema before placement. | Two scopes: sensor-level (plugin config) and scan-level (task config) → `x-octm-scope`. Platform validates before dispatch. |
-| **ProjectDiscovery tools** [7] | nuclei/httpx read YAML config files with precedence built-ins < system < user < selected config < CLI. Options include `rate-limit`, `concurrency`, `bulk-size`, `severity`, `tags`, `exclude-tags`, `interactsh-server`, `proxy`, `headless`. | Typed options for the safe subset; `proxy`, `interactsh-server`, `templates`, `headless` stay platform-controlled (RFC-034, RFC-036 tiers), not settings. We pass flags, not config files, so `-config` stays blocked (`DangerousToolFlags`). |
-| **JSON Schema 2020-12** [8] | Validation keywords (`type`, `enum`, `const`, bounds, `pattern`, `required`, `additionalProperties`) and annotations (`title`, `description`, `default`, `deprecated`, `readOnly`, `writeOnly`, `examples`). | The base vocabulary; `writeOnly` for secrets; `deprecated` for evolution. |
-| **JSON Forms** [9] / **react-jsonschema-form** [10] | Generate forms from a data schema plus a UI schema, validate with Ajv. RJSF ships a **shadcn theme** (`@rjsf/shadcn`). | Generate forms from the schema; see §6.9 for why we render our own small renderer instead of adding RJSF. |
-| **The Update Framework** [11] | Signed metadata with version numbers (no rollback), expiry (no freeze attack), role-separated keys. | Signed settings document with monotonic `version` and an optional `expires_at`; the signing key is the pinned job-signing root. |
-| **OPA / Rego** [12] | General policy engine, sidecar or library, Rego language. | Considered for S5, not chosen (§9). |
+| Principle | What we take |
+|---|---|
+| The tool owns a typed schema (typed attributes, required/optional, sensitive, validators, defaults, descriptions, deprecation); the platform renders it and does not invent one | The tool owns a typed schema; `sensitive`; per-field description and deprecation. |
+| Structural (closed) schemas with server-side defaulting and cross-field policy rules that carry messages and transition rules | Structural schemas, server-side defaulting, CEL for cross-field and policy rules with messages, transition rules (e.g. a value may only decrease). We **reject** unknown keys rather than prune them, because a silently dropped scan option is the bug we have today. |
+| A non-Turing-complete, cost-estimable, sandboxed expression language with no I/O | Why CEL for S5. |
+| Secrets are write-only: stored encrypted, never returned to the browser; the UI is told a secret is set without revealing it | Write-only secret fields, "set / not set" indicator, "replace" instead of "show". |
+| Validation is the component's job, and both sides validate with the same schema | The sensor validates with the same schema it published, so the two sides cannot disagree. |
+| Two scopes: process-level config and per-task config | Sensor-level and scan-level settings (`x-octm-scope`). The platform validates before dispatch. |
+| **ProjectDiscovery tools** [1]: nuclei/httpx read YAML config files with precedence built-ins < system < user < selected config < CLI. Options include `rate-limit`, `concurrency`, `bulk-size`, `severity`, `tags`, `exclude-tags`, `interactsh-server`, `proxy`, `headless`. | Typed options for the safe subset; `proxy`, `interactsh-server`, `templates`, `headless` stay platform-controlled (RFC-034, RFC-036 tiers), not settings. We pass flags, not config files, so `-config` stays blocked (`DangerousToolFlags`). |
+| **JSON Schema 2020-12** [2]: Validation keywords (`type`, `enum`, `const`, bounds, `pattern`, `required`, `additionalProperties`) and annotations (`title`, `description`, `default`, `deprecated`, `readOnly`, `writeOnly`, `examples`). | The base vocabulary; `writeOnly` for secrets; `deprecated` for evolution. |
+| **JSON Forms** [3] / **react-jsonschema-form** [4]: Generate forms from a data schema plus a UI schema, validate with Ajv. RJSF ships a **shadcn theme** (`@rjsf/shadcn`). | Generate forms from the schema; see §6.9 for why we render our own small renderer instead of adding RJSF. |
+| **The Update Framework** [5]: Signed metadata with version numbers (no rollback), expiry (no freeze attack), role-separated keys. | Signed settings document with monotonic `version` and an optional `expires_at`; the signing key is the pinned job-signing root. |
+| **OPA / Rego** [6]: General policy engine, sidecar or library, Rego language. | Considered for S5, not chosen (§9). |
 
 ## 5. Trust and threat model
 
@@ -562,7 +562,7 @@ caps them at `SENSOR_NUCLEI_MAX_RATE_LIMIT` / `_CONCURRENCY` /
 | Ship tool config files (nuclei `-config`) from the platform | A config file can set anything the tool supports, including proxies, template paths and output; it re-opens what `DangerousToolFlags` closes. |
 | Full JSON Schema + Ajv + RJSF | Larger attack and review surface (`$ref`, `oneOf`, remote refs), two validators that can disagree (Ajv in JS, another in Go). The subset is validated by one Go implementation shared by api and sensor. |
 | Protobuf / CUE for schemas | Strong typing, but no UI metadata convention and a new toolchain for sensor authors; JSON Schema is what form generators and humans already read. |
-| OPA/Rego for policy | Another language and (usually) another service; our rules are small expressions over one document. CEL is embedded, cost-bounded and already the Kubernetes choice for exactly this. |
+| OPA/Rego for policy | Another language and (usually) another service; our rules are small expressions over one document. CEL is embedded and cost-bounded. |
 | Settings in heartbeats | Heartbeats must stay small (RFC-033, RFC-035); settings change rarely. `config_version` + fetch is the existing pattern. |
 | Sensor-local only (env / file on the host) | That is today; the owner asked for platform-managed settings. Host env stays as the operator's override for content/egress settings that are explicitly host-owned (RFC-034 O1). |
 
@@ -570,7 +570,7 @@ caps them at `SENSOR_NUCLEI_MAX_RATE_LIMIT` / `_CONCURRENCY` /
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
-| O1 | Unknown keys arriving at the sensor | (a) reject the tool's block; (b) drop and continue (Kubernetes pruning) | **(a)**: a dropped option is the silent-failure class we keep fixing |
+| O1 | Unknown keys arriving at the sensor | (a) reject the tool's block; (b) drop and continue (prune) | **(a)**: a dropped option is the silent-failure class we keep fixing |
 | O2 | Integrity of the settings document | (a) Ed25519-signed by the platform job-signing key (requires RFC-023 P6 / RFC-032 pinned root); (b) HMAC with a per-sensor secret; (c) rely on authenticated TLS + signed request only | **(a) when the key exists, (c) until then**; (b) adds a second secret to manage for no gain once (a) exists |
 | O3 | Policy rules | (a) built-in rules only; (b) + tenant CEL rules; (c) OPA | **(a) in P2, (b) in P4** |
 | O4 | Form rendering | (a) own renderer over shadcn; (b) `@rjsf/shadcn`; (c) JSON Forms | **(a)** |
@@ -582,15 +582,9 @@ caps them at `SENSOR_NUCLEI_MAX_RATE_LIMIT` / `_CONCURRENCY` /
 
 ## 11. Sources
 
-1. Terraform Plugin Framework, Attributes: https://developer.hashicorp.com/terraform/plugin/framework/handling-data/attributes
-2. Kubernetes, CustomResourceDefinitions (structural schema, pruning, defaulting, `x-kubernetes-validations`): https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/
-3. Kubernetes, Common Expression Language: https://kubernetes.io/docs/reference/using-api/cel/
-4. Grafana, data source authentication (`jsonData`, `secureJsonData`, `secureJsonFields`): https://grafana.com/developers/plugin-tools/how-to-guides/data-source-plugins/add-authentication-for-data-source-plugins
-5. OpenTelemetry Collector, component `Config` and `confmap.Validator`: https://github.com/open-telemetry/opentelemetry-collector/blob/main/component/config.go
-6. Nomad, task driver plugins (`ConfigSchema`, `TaskConfigSchema`, `hclspec`): https://developer.hashicorp.com/nomad/docs/concepts/plugins/task-drivers
-7. ProjectDiscovery nuclei, running and configuration: https://docs.projectdiscovery.io/tools/nuclei/running
-8. JSON Schema 2020-12 Validation (incl. `deprecated`, `writeOnly`): https://json-schema.org/draft/2020-12/json-schema-validation
-9. JSON Forms: https://jsonforms.io/docs/
-10. react-jsonschema-form, themes (incl. `@rjsf/shadcn`): https://rjsf-team.github.io/react-jsonschema-form/docs/usage/themes
-11. The Update Framework, overview: https://theupdateframework.io/docs/overview/
-12. Open Policy Agent: https://www.openpolicyagent.org/docs/latest/
+1. ProjectDiscovery nuclei, running and configuration: https://docs.projectdiscovery.io/tools/nuclei/running
+2. JSON Schema 2020-12 Validation (incl. `deprecated`, `writeOnly`): https://json-schema.org/draft/2020-12/json-schema-validation
+3. JSON Forms: https://jsonforms.io/docs/
+4. react-jsonschema-form, themes (incl. `@rjsf/shadcn`): https://rjsf-team.github.io/react-jsonschema-form/docs/usage/themes
+5. The Update Framework, overview: https://theupdateframework.io/docs/overview/
+6. Open Policy Agent: https://www.openpolicyagent.org/docs/latest/

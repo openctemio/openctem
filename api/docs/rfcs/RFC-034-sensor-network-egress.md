@@ -83,7 +83,7 @@ a sensor reaches internal segments it cannot route to directly:
   in extra args ([RFC-038 §6.12](RFC-038-sensor-tool-settings.md)).
 - **No anonymity, no public proxy lists, no Tor.** The proxies are the
   customer's own infrastructure.
-- **No VPN or overlay network.** WireGuard, IPsec or Tailscale between the
+- **No VPN or overlay network.** WireGuard, IPsec or another VPN between the
   sensor and a segment are the customer's network team's choice. A sensor on
   such a network is "direct" for this RFC.
 - **No raw-packet scanning through proxies.** ICMP, TCP SYN, UDP and

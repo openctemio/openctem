@@ -99,7 +99,7 @@ semantics arrive with the telemetry-correlation phase below.)
 ### Technique → executor routing
 
 Reuse `validation.DefaultSelector`. Round 1 supports **safe-check** only
-(reachability-style techniques). `nuclei` re-check and Atomic-Red-Team style
+(reachability-style techniques). `nuclei` re-check and Atomic Red Team test
 execution are later kinds behind the same `Selector` seam — no rework.
 
 ### Correlation (validation ↔ simulation)

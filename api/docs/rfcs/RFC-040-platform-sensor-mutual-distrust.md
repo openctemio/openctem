@@ -75,7 +75,7 @@ key (RFC-023 §11 says the same).
 | M9 | **Independent records.** Each side keeps its own tamper-evident log and ships it to a place the other side cannot write: the platform's audit chain, and the sensor's local job log sent to the owner's SIEM. |
 | M10 | **Compatible by default, stricter by switch.** Every control is additive; old sensors keep working until the tenant or the bearer-key sunset (§7) raises the floor. |
 
-## 3. Current state and industry practice
+## 3. Current state, standards and incidents
 
 ### 3.1 Current state (summary)
 
@@ -119,7 +119,7 @@ The five highest risks (ranked in the architecture document §3):
    action and is not audited, the audit chain is unkeyed, nothing alerts,
    and sensors log only to stdout.
 
-### 3.2 Industry practice
+### 3.2 Standards and incidents
 
 From research/05-mutual-distrust (2026-10-03, adversarially verified
 claims), with research 03 and the surveys in RFC-023 §2 and RFC-032 §4.

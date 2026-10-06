@@ -211,7 +211,7 @@ Process priorities seen inside the after container:
    hang until the run timeout (B5). Leases (§5.7) must add re-queueing
    without adding spurious re-queues.
 
-## 4. Research: what proven systems do
+## 4. Research: proven techniques
 
 Every source below was fetched and checked. The "[n]" numbers point to §9.
 
@@ -220,17 +220,14 @@ Every source below was fetched and checked. The "[n]" numbers point to §9.
 | **Kubernetes node heartbeats** (KEP-589 [1], node status [2], kubelet config [3], controller-manager [4]) | The kubelet renews a tiny **Lease** every 10 s (lease duration 40 s) and posts the heavy NodeStatus only every 5 min or on change. Status objects "may easily exceed 15 kB"; at 5 k nodes this cut etcd writes from 150 to 30 MB/min. A failed renewal retries with backoff from 200 ms, capped at 7 s. The controller convicts after `node-monitor-grace-period` (50 s), "N times" the update interval. | Liveness must be cheap and separate from status (§5.1, §5.7, D6). The grace is a **multiple of the interval** (≈ 4–5×), not 1.5× (§5.6). Retry a failed liveness signal quickly, not with long timeouts (§5.1). |
 | **kubelet reserved resources and eviction** [5][6][7] | `Allocatable = Capacity − kube-reserved − system-reserved − eviction threshold`; hard eviction at `memory.available<100Mi`. OOM scores: kubelet −999, Guaranteed −997, BestEffort 1000, Burstable `min(max(2, 1000 − 1000·request/capacity), 999)`. | Memory reserve in slot sizing (§5.2). Scanners get a higher `oom_score_adj` than the agent (§5.3). |
 | **Kubernetes probes** [8] | "Incorrect implementation of liveness probes can lead to cascading failures… restarting of container under high load." | The heartbeat is liveness only. Load goes in the report and narrows dispatch, never liveness (§5.6). |
-| **Nomad** [9][10][11] | Clients reserve `cpu`/`memory`/`disk` from scheduling. Server-side heartbeat TTL scales with cluster size (`min_heartbeat_ttl` 10 s, 50 heartbeats/s, 2× jitter) plus `heartbeat_grace` 10 s. A `disconnect` block keeps allocations `unknown` for `lost_after` before replacing them. | Grace on top of the advised interval (§5.6). The `late`/`stale` states play the part of `unknown`; re-queue only after the deadline (§5.7). |
-| **SWIM** [12] and **Lifeguard** [13] | SWIM adds a *suspect* state before *failed*, cutting false positives. Lifeguard shows that slow message processing on a **stressed** member makes healthy members look dead. Its local health awareness scales probe and suspicion timeouts with the detector's **own** health; false positives fell **50–100×**. | The suspicion ladder (§5.6.2). **No conviction while the platform itself is slow** (§5.6.4). Backpressure uses local signals only, never the platform's RTT (§5.4). |
-| **Phi accrual** [14][15][16] | A continuous suspicion level from the observed inter-arrival distribution; Cassandra convicts at φ 8, Akka uses φ 8 with a 3 s acceptable pause "to survive… garbage collect[ion]". | Not adopted. Our interval is advised, so the expected arrival is known; phi suits unknown jitter (§5.6.5). |
-| **cgroup v2** [17], **systemd delegation** [18] | `cpu.weight` 1–10000 (default 100); `memory.high` throttles and reclaims, "never invokes the OOM killer"; `memory.max` OOM-kills inside the cgroup. The no-internal-processes rule; a single writer per subtree, delegated with `Delegate=yes`. | Phase 3 per-job cgroups with `memory.high` before `memory.max` (§5.3, D7). |
-| **Linux scheduling, I/O, OOM** [19][20][21][22][23] | Each nice step ≈ ×1.25 weight. SCHED_IDLE is "lower even than a +19 nice value". **Autogroup** makes nice effective only within a session. I/O priorities work on bfq and mq-deadline (the ioprio_set man page's "CFQ only" is outdated). `oom_score_adj` −1000…1000; going below the last privileged value needs CAP_SYS_RESOURCE. | nice +10 and BE level 7 on the scanner's **process group**, which stays in the sensor's session (§5.3). Raise the scanner's score; leave lowering the sensor's to the operator (D5). |
-| **Go runtime** [24][25][26][27] | Go 1.25 sets GOMAXPROCS from the cgroup CPU limit and updates it. Throttling "completely pauses application execution for the remainder of the throttling period" (100 ms). GOMEMLIMIT is a soft limit; the GC is capped at 50 % CPU. Goroutines are asynchronously preemptible since 1.14. | No watchdog thread needed: scheduling lag is milliseconds (§3). GOMEMLIMIT only with Phase 3 (§5.3). |
-| **GitHub Actions runner** [28] | The Listener process renews the job lock every 60 s, separate from the Runner.Worker process that runs the job. It retries until `LockedUntil + 5 min`. | Lease renewal stays in the sensor process, never in the scanner's (§5.7). A watchdog process stays an option (§5.8). |
-| **Buildkite agent** [29] | A dedicated heartbeat goroutine on a ticker with a **server-provided interval**; only unrecoverable errors stop it. | The same shape as our doorbell interval. The server knows the interval it gave and should judge against it (§5.6.1). |
-| **osquery** [30] | The watcher/worker split: the worker is killed when it exceeds 200 MB or 10 % CPU for 12 s (defaults), and the watcher survives and restarts it. | Precedent for "kill the worker, not the supervisor" (§5.3 OOM order). |
-| **HTTP/2, gRPC keepalive** [31][32][33] | net/http's HTTP/2 health check (`SendPingTimeout`) is off by default. RFC 9113: "TCP head-of-line blocking is not addressed". gRPC client keepalive is off by default. | The control client has its own connection pool. No streams for control (§5.1, §5.8). |
-| **Google SRE book** [34][35] | Process health checks and service health checks "are two conceptually distinct operations". Watchdogs crash servers "due to CPU starvation". Requests carry a criticality. | Heartbeat (liveness) on its own channel with the highest criticality. Never let load fail it (§5.1). |
+| **SWIM** [9] and **Lifeguard** [10] | SWIM adds a *suspect* state before *failed*, cutting false positives. Lifeguard shows that slow message processing on a **stressed** member makes healthy members look dead. Its local health awareness scales probe and suspicion timeouts with the detector's **own** health; false positives fell **50–100×**. | The suspicion ladder (§5.6.2). **No conviction while the platform itself is slow** (§5.6.4). Backpressure uses local signals only, never the platform's RTT (§5.4). |
+| **Phi accrual** [11][12][13] | A continuous suspicion level from the observed inter-arrival distribution; Cassandra convicts at φ 8, Akka uses φ 8 with a 3 s acceptable pause "to survive… garbage collect[ion]". | Not adopted. Our interval is advised, so the expected arrival is known; phi suits unknown jitter (§5.6.5). |
+| **cgroup v2** [14], **systemd delegation** [15] | `cpu.weight` 1–10000 (default 100); `memory.high` throttles and reclaims, "never invokes the OOM killer"; `memory.max` OOM-kills inside the cgroup. The no-internal-processes rule; a single writer per subtree, delegated with `Delegate=yes`. | Phase 3 per-job cgroups with `memory.high` before `memory.max` (§5.3, D7). |
+| **Linux scheduling, I/O, OOM** [16][17][18][19][20] | Each nice step ≈ ×1.25 weight. SCHED_IDLE is "lower even than a +19 nice value". **Autogroup** makes nice effective only within a session. I/O priorities work on bfq and mq-deadline (the ioprio_set man page's "CFQ only" is outdated). `oom_score_adj` −1000…1000; going below the last privileged value needs CAP_SYS_RESOURCE. | nice +10 and BE level 7 on the scanner's **process group**, which stays in the sensor's session (§5.3). Raise the scanner's score; leave lowering the sensor's to the operator (D5). |
+| **Go runtime** [21][22][23][24] | Go 1.25 sets GOMAXPROCS from the cgroup CPU limit and updates it. Throttling "completely pauses application execution for the remainder of the throttling period" (100 ms). GOMEMLIMIT is a soft limit; the GC is capped at 50 % CPU. Goroutines are asynchronously preemptible since 1.14. | No watchdog thread needed: scheduling lag is milliseconds (§3). GOMEMLIMIT only with Phase 3 (§5.3). |
+| **Grace, lease and supervision patterns** | A grace period on top of the advised heartbeat interval; a server-provided interval that the server judges against; lease renewal in a supervisor process separate from the worker that runs the job; killing the worker, not the supervisor, when it overruns. | Grace on top of the advised interval (§5.6). The `late`/`stale` states play the part of `unknown`; re-queue only after the deadline (§5.7). The lease renewal stays in the sensor process, never in the scanner's (§5.3 OOM order). |
+| **HTTP/2, gRPC keepalive** [25][26][27] | net/http's HTTP/2 health check (`SendPingTimeout`) is off by default. RFC 9113: "TCP head-of-line blocking is not addressed". gRPC client keepalive is off by default. | The control client has its own connection pool. No streams for control (§5.1, §5.8). |
+| **Google SRE book** [28][29] | Process health checks and service health checks "are two conceptually distinct operations". Watchdogs crash servers "due to CPU starvation". Requests carry a criticality. | Heartbeat (liveness) on its own channel with the highest criticality. Never let load fail it (§5.1). |
 
 **Design lessons, in short.**
 
@@ -274,7 +271,7 @@ cheap lease from the heavy status. Following both, the heartbeat gets:
     the heartbeat (RFC-033).
 
 A dedicated OS thread (`runtime.LockOSThread`) or a separate watchdog
-process (osquery's watcher/worker, the GitHub runner's Listener/Worker) is
+process is
 not needed today. The measurements show the Go scheduler gets the heartbeat
 goroutine onto a CPU within milliseconds even with 12 busy processes per
 core. §5.4 reopens it if the lag metric says otherwise.
@@ -438,8 +435,7 @@ RTT and failures, plus a 24 h sparkline of gaps.
   (RFC-030 §5.4).
 - **A sensor that restarts** (new `instance_id`) releases what it held
   before. Its running set is empty, so the platform re-queues at once
-  instead of waiting for the lease (Nomad's `disconnect` /
-  `lost_after`).
+  instead of waiting for the lease.
 
 ### 5.8 Not done, and why
 
@@ -522,30 +518,24 @@ RTT and failures, plus a 24 h sparkline of gaps.
 6. Node-pressure eviction (thresholds, OOM score table) — https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/
 7. Reserve compute resources for system daemons — https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/
 8. Liveness, readiness and startup probes — https://kubernetes.io/docs/concepts/configuration/liveness-readiness-startup-probes/
-9. Nomad server configuration (`heartbeat_grace`, `min_heartbeat_ttl`, `max_heartbeats_per_second`) — https://developer.hashicorp.com/nomad/docs/configuration/server
-10. Nomad client configuration (`reserved`) — https://developer.hashicorp.com/nomad/docs/configuration/client
-11. Nomad `disconnect` block (`lost_after`, `replace`, `stop_on_client_after`) — https://developer.hashicorp.com/nomad/docs/job-specification/disconnect
-12. A. Das, I. Gupta, A. Motivala, "SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol", DSN 2002 — https://www.cs.cornell.edu/projects/Quicksilver/public_pdfs/SWIM.pdf
-13. A. Dadgar, J. Phillips, J. Currey, "Lifeguard: Local Health Awareness for More Accurate Failure Detection", 2017 — https://arxiv.org/abs/1707.00788
-14. N. Hayashibara et al., "The φ Accrual Failure Detector", 2004 — https://dspace.jaist.ac.jp/dspace/bitstream/10119/4784/1/IS-RR-2004-010.pdf
-15. Apache Cassandra `cassandra.yaml` (`phi_convict_threshold: 8`) — https://github.com/apache/cassandra/blob/trunk/conf/cassandra.yaml
-16. Akka cluster `reference.conf` (failure detector) — https://github.com/akka/akka/blob/main/akka-cluster/src/main/resources/reference.conf
-17. Linux kernel, Control Group v2 — https://docs.kernel.org/admin-guide/cgroup-v2.html
-18. systemd, Control Group APIs and Delegation — https://systemd.io/CGROUP_DELEGATION/
-19. Linux `kernel/sched/core.c`, `sched_prio_to_weight` — https://github.com/torvalds/linux/blob/master/kernel/sched/core.c
-20. sched(7) (SCHED_IDLE, autogroup) — https://man7.org/linux/man-pages/man7/sched.7.html
-21. ioprio_set(2) — https://man7.org/linux/man-pages/man2/ioprio_set.2.html
-22. Linux kernel, Block io priorities — https://docs.kernel.org/block/ioprio.html
-23. proc_pid_oom_score_adj(5) — https://man7.org/linux/man-pages/man5/proc_pid_oom_score_adj.5.html
-24. Go 1.25 release notes (container-aware GOMAXPROCS) — https://go.dev/doc/go1.25
-25. Go blog, "Container-aware GOMAXPROCS" — https://go.dev/blog/container-aware-gomaxprocs
-26. Go GC guide (GOMEMLIMIT) — https://go.dev/doc/gc-guide
-27. Go 1.14 release notes (asynchronous preemption) — https://go.dev/doc/go1.14
-28. GitHub Actions runner, `JobDispatcher.cs` (job lock renewal) — https://github.com/actions/runner/blob/main/src/Runner.Listener/JobDispatcher.cs
-29. Buildkite agent, `agent_worker_heartbeat.go` — https://github.com/buildkite/agent/blob/main/agent/agent_worker_heartbeat.go
-30. osquery CLI flags (`--watchdog_level`) — https://github.com/osquery/osquery/blob/master/docs/wiki/installation/cli-flags.md
-31. Go `net/http` (`HTTP2Config.SendPingTimeout`, `MaxConnsPerHost`) — https://pkg.go.dev/net/http
-32. RFC 9113, HTTP/2 — https://www.rfc-editor.org/rfc/rfc9113.html
-33. gRPC keepalive guide — https://grpc.io/docs/guides/keepalive/
-34. Google SRE book, "Addressing Cascading Failures" — https://sre.google/sre-book/addressing-cascading-failures/
-35. Google SRE book, "Handling Overload" — https://sre.google/sre-book/handling-overload/
+9. A. Das, I. Gupta, A. Motivala, "SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol", DSN 2002 — https://www.cs.cornell.edu/projects/Quicksilver/public_pdfs/SWIM.pdf
+10. A. Dadgar, J. Phillips, J. Currey, "Lifeguard: Local Health Awareness for More Accurate Failure Detection", 2017 — https://arxiv.org/abs/1707.00788
+11. N. Hayashibara et al., "The φ Accrual Failure Detector", 2004 — https://dspace.jaist.ac.jp/dspace/bitstream/10119/4784/1/IS-RR-2004-010.pdf
+12. Apache Cassandra `cassandra.yaml` (`phi_convict_threshold: 8`) — https://github.com/apache/cassandra/blob/trunk/conf/cassandra.yaml
+13. Akka cluster `reference.conf` (failure detector) — https://github.com/akka/akka/blob/main/akka-cluster/src/main/resources/reference.conf
+14. Linux kernel, Control Group v2 — https://docs.kernel.org/admin-guide/cgroup-v2.html
+15. systemd, Control Group APIs and Delegation — https://systemd.io/CGROUP_DELEGATION/
+16. Linux `kernel/sched/core.c`, `sched_prio_to_weight` — https://github.com/torvalds/linux/blob/master/kernel/sched/core.c
+17. sched(7) (SCHED_IDLE, autogroup) — https://man7.org/linux/man-pages/man7/sched.7.html
+18. ioprio_set(2) — https://man7.org/linux/man-pages/man2/ioprio_set.2.html
+19. Linux kernel, Block io priorities — https://docs.kernel.org/block/ioprio.html
+20. proc_pid_oom_score_adj(5) — https://man7.org/linux/man-pages/man5/proc_pid_oom_score_adj.5.html
+21. Go 1.25 release notes (container-aware GOMAXPROCS) — https://go.dev/doc/go1.25
+22. Go blog, "Container-aware GOMAXPROCS" — https://go.dev/blog/container-aware-gomaxprocs
+23. Go GC guide (GOMEMLIMIT) — https://go.dev/doc/gc-guide
+24. Go 1.14 release notes (asynchronous preemption) — https://go.dev/doc/go1.14
+25. Go `net/http` (`HTTP2Config.SendPingTimeout`, `MaxConnsPerHost`) — https://pkg.go.dev/net/http
+26. RFC 9113, HTTP/2 — https://www.rfc-editor.org/rfc/rfc9113.html
+27. gRPC keepalive guide — https://grpc.io/docs/guides/keepalive/
+28. Google SRE book, "Addressing Cascading Failures" — https://sre.google/sre-book/addressing-cascading-failures/
+29. Google SRE book, "Handling Overload" — https://sre.google/sre-book/handling-overload/

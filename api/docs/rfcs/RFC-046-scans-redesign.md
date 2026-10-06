@@ -626,7 +626,7 @@ API↔SDK conformance suite.
 
 ## 17. Alternatives considered
 
-- **Temporal / DBOS as the single engine**: cannot run work on remote,
+- **An external workflow engine as the single engine**: cannot run work on remote,
   untrusted, pull-based sensors without a second protocol; merges a data plane
   and a control plane with different trust and scale. Rejected (B2); DBOS only
   as a candidate for automation steps (B3).
