@@ -115,7 +115,7 @@ be switched on, and no chaining between stages.
 | # | Decision |
 |---|---|
 | D1 | Auto-resolve for non-repository findings is **coverage-scoped**: a finding resolves only when a task fully covered its asset with its tool and did not report it. Two weeks of **dry-run** first. Never from partial or failed coverage. |
-| D2 | One model: **Scan → Run → Task**. Retire `scan_sessions` (CI runs become runs with `trigger=ci`). Rename the event automation "Workflows" to **"Automations"**. |
+| D2 | One model: **Scan → Run → Task**. Retire `scan_sessions`. CI runs are not scan runs: they live in `ci_runs` (RFC-051 R-7), never as `pipeline_runs` with `trigger=ci`. Rename the event automation "Workflows" to **"Automations"**. |
 | D3 | A **declarative engine spec** over a validated **stage catalogue**; the builder edits the spec. |
 | D4 | **Skip** a scheduled occurrence while the scan's previous run is still active. |
 | D5 | A run that reaches its **deadline ends `partial`**; unfinished targets **roll over** to the next window. |
@@ -188,7 +188,7 @@ Mapping onto today's tables (no big-bang rename; §8):
 | Scan | `scans` | `engine_spec` (P2), `rrule`/`tz` (P1), allow-list scope (P3) |
 | Run | `pipeline_runs` | `scheduled_for` + `UNIQUE(scan_id, scheduled_for)`, `partial`, `trigger=ci/retest/automation/rollover`, `deadline_at`, unfinished targets (P1) |
 | Task | `step_runs` (stage) + `commands` (attempt) | RFC-030 `scan_chunks` when adaptive chunks land (D9 defers); until then a task = one command of a step |
-| — | `scan_sessions` | retired (CI → runs with `trigger=ci`) |
+| — | `scan_sessions` | retired (CI runs are `ci_runs`, RFC-051) |
 | Stage catalogue | `pipeline_steps` + `tools` | catalogue rows (P2) |
 
 ### 4.2 Run states

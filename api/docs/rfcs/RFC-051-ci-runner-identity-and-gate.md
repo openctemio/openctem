@@ -51,6 +51,12 @@ CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs 
   with the default branch) by default, accepted risk honored, secrets always
   fail. The runner's local `-fail-on` stays as the offline fallback.
 - **R-6** Fork pull requests get no token unless a trust configuration says so.
+- **R-7** CI runs are not scan runs: they are never dispatched, carry their
+  own credential and verdict, and live in `ci_runs` (this supersedes the
+  "CI = `trigger=ci`" wording of RFC-046 D2). `ci_*` names facts that exist
+  because a CI workload authenticated with OIDC; facts several producers can
+  report get plain names, reserved and not built: `deployments`, `artifacts`,
+  `artifact_attestations`.
 
 ## 3. Trust configurations
 
