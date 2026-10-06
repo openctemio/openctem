@@ -1,13 +1,20 @@
 // Package retest runs continuous retests (RFC-039,
-// docs/rfcs/RFC-039-continuous-retest.md): it re-runs the nuclei template that
-// produced a finding against the finding's own target, probes the same target's
-// reachability, and settles the finding — fixed, still present (regression
-// reopen) or unknown. It serves "Retest now" and the auto-retest scheduler.
+// docs/rfcs/RFC-039-continuous-retest.md): it re-checks a finding against the
+// finding's own target and settles the finding — fixed, still present
+// (regression reopen) or unknown. It serves "Retest now", proof of fix and the
+// auto-retest scheduler.
 //
-// Transport: the two checks are ordinary `validate` commands (the RFC-011
-// validation transport: queue, poll, lease, capability routing, expiry). Their
-// evidence is recorded advisory-only; this service, not the validation verdict
-// rule, decides what the result means for the finding.
+// Two methods:
+//   - tool: when a sensor of the tenant reports "retest:<tool>" for the
+//     finding's tool, one `retest` command asks that tool's retest handler for
+//     a verdict on the finding (still present, fixed, unverifiable);
+//   - validate: for nuclei findings otherwise, two ordinary `validate`
+//     commands (the RFC-011 transport) re-run the template and probe the
+//     target's reachability; their evidence is recorded advisory-only.
+//
+// Both ride the same queue, poll, lease, capability routing, expiry and
+// active-probe gate; this service, not a validation verdict rule, decides what
+// the result means for the finding.
 package retest
 
 import (
@@ -18,6 +25,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/validation"
@@ -79,10 +87,13 @@ type CommandReader interface {
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*commanddom.Command, error)
 }
 
-// SensorAvailability answers "can a sensor of this tenant re-run a nuclei
-// template right now?" (validate:nuclei, online, with capacity).
+// SensorAvailability answers "can a sensor of this tenant re-check this
+// finding right now?" (online, with capacity): with the retest handler of the
+// finding's tool (retest:<tool>), or by re-running a nuclei template
+// (validate:nuclei).
 type SensorAvailability interface {
 	HasNucleiValidationSensor(ctx context.Context, tenantID shared.ID) (bool, error)
+	HasRetestSensor(ctx context.Context, tenantID shared.ID, tool string) (bool, error)
 }
 
 // Dispatcher queues the two checks (*validation.CommandDispatcher). Dispatch
@@ -93,6 +104,9 @@ type SensorAvailability interface {
 type Dispatcher interface {
 	validation.JobDispatcher
 	Preflight(ctx context.Context, tenantID shared.ID, t validation.Target) error
+	// DispatchToolRetest queues one retest command for the finding's tool,
+	// through the same gate.
+	DispatchToolRetest(ctx context.Context, job validation.ToolRetestJob) (shared.ID, error)
 }
 
 // AuditLogger writes audit-log events.
@@ -166,21 +180,16 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 	if err := s.checkLimits(ctx, in.TenantID, f.ID(), a.ID(), in.Trigger); err != nil {
 		return nil, err
 	}
-	if s.sensors != nil {
-		ok, err := s.sensors.HasNucleiValidationSensor(ctx, in.TenantID)
-		if err != nil {
-			return nil, fmt.Errorf("sensor availability: %w", err)
-		}
-		if !ok {
-			return nil, retestdom.ErrNoSensor
-		}
+	method, err := s.chooseMethod(ctx, in.TenantID, findingTool(f))
+	if err != nil {
+		return nil, err
 	}
 
 	now := s.now().UTC()
 	rt := &retestdom.Retest{
 		ID: shared.NewID(), TenantID: in.TenantID, FindingID: f.ID(), AssetID: a.ID(),
 		Trigger: in.Trigger, RequestedBy: in.RequestedBy, Status: retestdom.StatusPending,
-		PriorStatus: f.Status(), TemplateID: templateID, Target: target,
+		PriorStatus: f.Status(), TemplateID: templateID, Target: target, Method: method,
 		DeadlineAt: now.Add(Deadline), CreatedAt: now,
 	}
 	if in.Trigger.IsSystem() {
@@ -192,7 +201,13 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 		return nil, err
 	}
 
-	checkID, reachID, dispatchErr := s.dispatch(ctx, rt, a)
+	var checkID, reachID *shared.ID
+	var dispatchErr error
+	if method == retestdom.MethodTool {
+		checkID, dispatchErr = s.dispatchTool(ctx, rt, a, findingTool(f), f.Fingerprint())
+	} else {
+		checkID, reachID, dispatchErr = s.dispatch(ctx, rt, a)
+	}
 	if checkID != nil || reachID != nil {
 		if err := s.store.SetCommands(ctx, rt.TenantID, rt.ID, checkID, reachID); err != nil {
 			s.logger.Error("failed to record retest commands", "retest_id", rt.ID.String(), "error", err)
@@ -215,14 +230,69 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 		s.auditRequest(ctx, in.Audit, rt)
 	}
 	s.logger.Info("retest queued", "tenant_id", rt.TenantID.String(), "finding_id", rt.FindingID.String(),
-		"retest_id", rt.ID.String(), "trigger", string(rt.Trigger), "template_id", templateID)
+		"retest_id", rt.ID.String(), "trigger", string(rt.Trigger), "template_id", templateID, "method", method)
 	return rt, nil
 }
 
+// maxRuleIDLen bounds the rule id sent to a sensor (the column is 255).
+const maxRuleIDLen = 255
+
+// findingTool is the finding's tool name as sensors register it.
+func findingTool(f *vulnerability.Finding) string {
+	return strings.ToLower(strings.TrimSpace(f.ToolName()))
+}
+
+// validRuleID: non-empty, bounded, printable, no whitespace inside.
+func validRuleID(id string) bool {
+	if id == "" || len(id) > maxRuleIDLen {
+		return false
+	}
+	for _, r := range id {
+		if r <= ' ' || r == 0x7f || !unicode.IsPrint(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// chooseMethod picks how a finding of tool is re-checked: the tool's own
+// retest handler when a tenant sensor offers it, else (nuclei only) the
+// template re-run plus reachability probe. Without a sensor for either the
+// request is refused (ErrNoSensor) before any state is recorded.
+func (s *Service) chooseMethod(ctx context.Context, tenantID shared.ID, tool string) (string, error) {
+	if s.sensors == nil {
+		if tool == nucleiTool {
+			return retestdom.MethodValidate, nil
+		}
+		return retestdom.MethodTool, nil
+	}
+	ok, err := s.sensors.HasRetestSensor(ctx, tenantID, tool)
+	if err != nil {
+		return "", fmt.Errorf("sensor availability: %w", err)
+	}
+	if ok {
+		return retestdom.MethodTool, nil
+	}
+	if tool == nucleiTool {
+		ok, err := s.sensors.HasNucleiValidationSensor(ctx, tenantID)
+		if err != nil {
+			return "", fmt.Errorf("sensor availability: %w", err)
+		}
+		if ok {
+			return retestdom.MethodValidate, nil
+		}
+	}
+	return "", retestdom.ErrNoSensor
+}
+
+// nucleiTool is the tool name of nuclei findings.
+const nucleiTool = "nuclei"
+
 // eligible loads the finding and its asset and checks that a deterministic
-// re-check can run: an eligible status, a nuclei template, an active,
-// network-addressable asset that passes every target gate. Returns the finding,
-// the asset, the template id and the re-run target.
+// re-check can run: an eligible status, a rule of the finding's tool (for
+// nuclei, a template that passes the template guard), an active,
+// network-addressable asset that passes every target gate. Returns the
+// finding, the asset, the rule (template) id and the re-run target.
 func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (*vulnerability.Finding, *asset.Asset, string, string, error) {
 	f, err := s.findings.GetByID(ctx, tenantID, findingID)
 	if err != nil {
@@ -232,8 +302,12 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID) (
 		return nil, nil, "", "", fmt.Errorf("%w: a %s finding is not retested", retestdom.ErrNotEligible, f.Status())
 	}
 	templateID := strings.TrimSpace(f.RuleID())
-	if !strings.EqualFold(f.ToolName(), "nuclei") || templateID == "" || !validation.TemplateSignatureAllowed(templateID) {
-		return nil, nil, "", "", fmt.Errorf("%w: only findings from a nuclei template can be retested", retestdom.ErrNotEligible)
+	tool := findingTool(f)
+	if !validation.ValidRetestTool(tool) || !validRuleID(templateID) {
+		return nil, nil, "", "", fmt.Errorf("%w: only findings with a tool and a rule id can be retested", retestdom.ErrNotEligible)
+	}
+	if tool == nucleiTool && !validation.TemplateSignatureAllowed(templateID) {
+		return nil, nil, "", "", fmt.Errorf("%w: this nuclei template is not re-run by a retest", retestdom.ErrNotEligible)
 	}
 	if f.AssetID().IsZero() {
 		return nil, nil, "", "", fmt.Errorf("%w: the finding has no asset", retestdom.ErrNotEligible)
@@ -321,6 +395,19 @@ func (s *Service) dispatch(ctx context.Context, rt *retestdom.Retest, a *asset.A
 	return &checkID, &reachID, nil
 }
 
+// dispatchTool queues the one retest command for the finding's own tool.
+func (s *Service) dispatchTool(ctx context.Context, rt *retestdom.Retest, a *asset.Asset, tool, fingerprint string) (*shared.ID, error) {
+	id, err := s.dispatcher.DispatchToolRetest(ctx, validation.ToolRetestJob{
+		TenantID: rt.TenantID, FindingID: rt.FindingID, RetestID: rt.ID, Tool: tool,
+		Target: probeTarget(a, rt.Target), RuleID: rt.TemplateID, Fingerprint: fingerprint,
+		TimeoutSeconds: checkTimeoutSeconds,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
 func (s *Service) auditRequest(ctx context.Context, actx auditapp.AuditContext, rt *retestdom.Retest) {
 	if s.audit == nil {
 		return
@@ -387,6 +474,23 @@ func (s *Service) Sweep(ctx context.Context, limit int) (int, error) {
 // trySettle reads both checks; when both are terminal (or force — the deadline
 // passed), it decides and settles. Returns whether it settled.
 func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force bool) (bool, error) {
+	if cmd, done, ok := s.readToolRetest(ctx, rt); ok {
+		rt.Method = retestdom.MethodTool
+		if !done && !force {
+			return false, nil
+		}
+		outcome, reason := retestdom.OutcomeUnknown, "no sensor result before the deadline"
+		switch {
+		case cmd == nil:
+			reason = "no result from the tool's retest"
+		case cmd.Status == commanddom.CommandStatusCompleted:
+			outcome, reason = retestdom.DecideToolVerdict(cmd.Result, rt.FindingID.String())
+		case done:
+			reason = "the tool's retest did not complete: " + nonEmptyStr(retestdom.CleanDetail(cmd.ErrorMessage), string(cmd.Status))
+		}
+		return s.settle(ctx, rt, outcome, reason)
+	}
+	rt.Method = retestdom.MethodValidate
 	check, checkDone := s.readCheck(ctx, rt.TenantID, rt.CheckCommandID)
 	reach, reachDone := s.readCheck(ctx, rt.TenantID, rt.ReachCommandID)
 	if !(checkDone && reachDone) && !force {
@@ -404,6 +508,41 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 	}
 	outcome, reason = retestdom.ApplyTemplateDrift(outcome, reason, baseline, check)
 	return s.settle(ctx, rt, outcome, reason)
+}
+
+// readToolRetest reads a retest's check command when it is a tool retest (ok;
+// a retest command of the retest's tenant). It returns the command (nil when
+// it is gone) and whether it is terminal. ok is false for a validate retest,
+// and when the command cannot be read (the validate path then treats it as a
+// missing result).
+func (s *Service) readToolRetest(ctx context.Context, rt *retestdom.Retest) (cmd *commanddom.Command, done, ok bool) {
+	if rt.CheckCommandID == nil {
+		return nil, true, rt.Method == retestdom.MethodTool
+	}
+	c, err := s.commands.GetByTenantAndID(ctx, rt.TenantID, *rt.CheckCommandID)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) && rt.ReachCommandID == nil && rt.Method == retestdom.MethodTool {
+			return nil, true, true
+		}
+		return nil, false, false
+	}
+	if c.Type != commanddom.CommandTypeRetest {
+		return nil, false, false
+	}
+	switch c.Status {
+	case commanddom.CommandStatusCompleted, commanddom.CommandStatusFailed,
+		commanddom.CommandStatusExpired, commanddom.CommandStatusCanceled:
+		return c, true, true
+	default:
+		return c, false, true
+	}
+}
+
+func nonEmptyStr(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 // readCheck returns a command's result and whether the command is terminal. A
@@ -495,6 +634,9 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, outcome rete
 		"target":      rt.Target,
 		"actor":       retestdom.ActorName,
 	}
+	if rt.Method != "" {
+		changes["method"] = rt.Method
+	}
 	if rt.RequestedBy != nil {
 		changes["requested_by"] = rt.RequestedBy.String()
 	}
@@ -557,9 +699,13 @@ func (s *Service) followUp(ctx context.Context, rt *retestdom.Retest, res retest
 	default:
 		return // a refuted validation downgrade: no one closed it, nothing to announce
 	}
+	detail := fmt.Sprintf("Retest of template %s against %s: %s.", rt.TemplateID, rt.Target, reason)
+	if rt.Method == retestdom.MethodTool {
+		detail = fmt.Sprintf("Retest of rule %s by its tool against %s: %s.", rt.TemplateID, rt.Target, reason)
+	}
 	s.announcer.Announce(ctx, Change{
 		TenantID: rt.TenantID, FindingID: rt.FindingID, Kind: kind, Source: "retest",
-		Detail: fmt.Sprintf("Retest of template %s against %s: %s.", rt.TemplateID, rt.Target, reason),
+		Detail: detail,
 	})
 }
 

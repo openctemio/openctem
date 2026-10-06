@@ -72,7 +72,9 @@ findings per run.
 - `ci_runs`: per tenant, composite FK to the tenant's repository asset
   (cascade) and to its trust configuration (`(tenant_id, trust_config_id)`,
   `SET NULL (trust_config_id)`: deleting a configuration keeps its runs as
-  history). Token hash (unique) and expiry; verdict and its JSON detail.
+  history). Token hash (unique) and expiry; verdict and its JSON detail; the
+  provider's run id, attempt and job id (`external_job_id`, migration
+  `001137`) from the verified claims.
 - `ci_run_findings`: `(run_id, fingerprint)`; the gate joins it to `findings`
   of the run's asset.
 - `ci_oidc_replay`: `(issuer, jti)`, global.
@@ -168,6 +170,11 @@ sequenceDiagram
   repository that this pipeline alone reported and nothing saw after its last
   run; findings from people (pentest, manual, bug bounty, red team) are never
   touched. A new sighting reopens a not-observed finding.
+- A run token is renewed only for the job it was issued to (same run id,
+  attempt and job id).
+- Audited: exchange (`ci_run.token_issued`/`token_refused`), each upload
+  (`ci_run.results_uploaded`), the verdict (`ci_run.evaluated`) and each
+  break-glass create, revoke and use. The actor is `ci:<provider>:<login>`.
 - With "OIDC required for CI" (`tenants.ci_require_oidc`, default on for new
   organizations), a one-shot sensor's key is refused on every sensor route
   (`cirun.RunnerKeyPolicy`, wired into both sensor authenticators); the

@@ -168,6 +168,9 @@ export type RunTaskSummary = Schemas['internal_infra_http_handler.RunTaskSummary
 export type RunTask = Schemas['internal_infra_http_handler.RunTaskResponse']
 /** GET /api/v1/pipeline-runs/{id}/tasks — one cursor page of a run's tasks. */
 export type RunTaskPage = Schemas['internal_infra_http_handler.RunTaskPageResponse']
+/** GET /api/v1/pipeline-runs/{id}/tasks/{task_id}/logs — the log lines a task's sensor sent. */
+export type RunTaskLogs = Schemas['internal_infra_http_handler.RunTaskLogsResponse']
+export type RunTaskLogLine = Schemas['internal_infra_http_handler.RunTaskLogLine']
 /** GET /api/v1/pipeline-runs/{id}/stages — how each stage of a run was planned. */
 export type RunStage = Schemas['internal_infra_http_handler.RunStageResponse']
 export type RunStageList = Schemas['internal_infra_http_handler.RunStageListResponse']

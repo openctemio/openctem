@@ -173,3 +173,16 @@ reopened.
   `findings:verify`, cross-tenant 404, data scope 404.
 - `internal/infra/postgres/finding_reopen_regression_db_test.go` — a scan
   regression keeps the previous resolver; `validated_fixed` reopens.
+
+## Tool retest
+
+A finding whose tool has a retest handler on a tenant sensor (capability
+`retest:<tool>`, sdk-go tool contract) is retested by **one `retest` command**
+to that tool instead of the two `validate` commands. The tool answers a verdict
+per finding: `still_present`, `fixed` or `unverifiable`. The retest service
+settles from the verdict for its own finding: still present, fixed, or unknown
+for anything else. The nuclei validate pair remains the fallback for nuclei
+findings when no sensor offers `retest:nuclei`. The payload names the tool as
+`scanner` and lists plain addresses, so it passes the same claim-time tool
+predicate, active-probe gate, zone pinning and sensor-side local policy as a
+scan. Design and threat model: [RFC-039 §12](../rfcs/RFC-039-continuous-retest.md).

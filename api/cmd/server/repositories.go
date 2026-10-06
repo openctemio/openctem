@@ -106,7 +106,9 @@ type Repositories struct {
 	// SensorHeartbeatHistory is the per-sensor heartbeat history behind the
 	// Control channel sparkline (sensor_heartbeat_history, RFC-035).
 	SensorHeartbeatHistory *postgres.SensorHeartbeatHistoryRepository
-	Command                *postgres.CommandRepository
+	// CommandLog keeps the per-task logs sensors send (command_logs).
+	CommandLog *postgres.CommandLogRepository
+	Command    *postgres.CommandRepository
 	// SensorContentPolicy is the tenant scanner content policy (RFC-031).
 	SensorContentPolicy *postgres.SensorContentPolicyRepository
 	// SensorResult is the policy and quarantine for sensor results without a
@@ -351,6 +353,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorGrant:            postgres.NewSensorGrantRepository(db),
 		SensorEvent:            postgres.NewSensorEventRepository(db),
 		SensorHeartbeatHistory: postgres.NewSensorHeartbeatHistoryRepository(db),
+		CommandLog:             postgres.NewCommandLogRepository(db),
 		Command:                postgres.NewCommandRepository(db),
 		SensorContentPolicy:    postgres.NewSensorContentPolicyRepository(db),
 		SensorResult:           postgres.NewSensorResultRepository(db),

@@ -149,6 +149,20 @@ func (v validationSensorAvailability) HasNucleiValidationSensor(ctx context.Cont
 	return len(sensors) > 0, nil
 }
 
+// HasRetestSensor reports whether a sensor of the tenant is online, with
+// capacity, whose tool has a retest handler (capability "retest:<tool>"), the
+// capability a retest command for that tool requires.
+func (v validationSensorAvailability) HasRetestSensor(ctx context.Context, tenantID shared.ID, tool string) (bool, error) {
+	if !validation.ValidRetestTool(tool) {
+		return false, nil
+	}
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, []string{validation.RetestCapability(tool)}, "")
+	if err != nil {
+		return false, err
+	}
+	return len(sensors) > 0, nil
+}
+
 // assetOwnerMatcher resolves an asset's owner_ref email to a user id for
 // auto-ownership, but ONLY when that user is a member of the tenant — never
 // assigning ownership to a user outside the tenant (isolation). A no-match is
