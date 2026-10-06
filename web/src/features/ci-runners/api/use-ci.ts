@@ -25,6 +25,7 @@ import type {
   CIPipelineList,
   FleetList,
   CICoverage,
+  CISettings,
 } from '../types'
 import {
   fleetURL,
@@ -39,6 +40,7 @@ export const CI_BASE = '/api/v1/ci'
 const TRUST = `${CI_BASE}/trust-configs`
 const POLICIES = `${CI_BASE}/gate-policies`
 const OVERRIDES = `${CI_BASE}/gate-overrides`
+const SETTINGS = `${CI_BASE}/settings`
 
 export interface CIRunFilters {
   verdict?: CIVerdictFilter
@@ -112,6 +114,21 @@ export function useCIRun(id: string | null) {
   return useSWR<CIRun>(
     currentTenant && id ? `${CI_BASE}/runs/${encodeURIComponent(id)}` : null,
     (url: string) => get<CIRun>(url)
+  )
+}
+
+export function useCISettings({ enabled = true }: { enabled?: boolean } = {}) {
+  const { currentTenant } = useTenant()
+  return useSWR<CISettings>(currentTenant && enabled ? SETTINGS : null, (url: string) =>
+    get<CISettings>(url)
+  )
+}
+
+export function useSaveCISettings() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant ? SETTINGS : null,
+    async (_url: string, { arg }: { arg: CISettings }) => put<CISettings>(SETTINGS, arg)
   )
 }
 

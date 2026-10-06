@@ -36,7 +36,16 @@ CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs 
   to the runner entry point.
 - **R-2** CI authenticates by OIDC federation; a sensor API key used by a
   `runner`-type sensor still works but every response carries
-  `Deprecation` and a `Link` to the exchange endpoint.
+  `Deprecation` and a `Link` to the exchange endpoint. **OIDC required for
+  CI** (`tenants.ci_require_oidc`, migration `001120`, `GET/PUT
+  /api/v1/ci/settings`, `scans:ci:read`/`scans:ci:write`): when on, the key of
+  a one-shot sensor (type `runner` or execution mode `standalone`) is refused
+  on every sensor route (v2: `403` problem `ci-oidc-required`) and audited
+  (`ci_run.runner_key_refused`, at most once per sensor every ten minutes); an
+  unreadable setting refuses. On for every organization created after the
+  migration; existing ones keep accepting keys until an administrator turns it
+  on (the console shows a banner meanwhile). A daemon sensor's key copied into
+  a CI job is not detectable by the platform and is not covered.
 - **R-3** Runs are attached to the repository asset; they are never sensors.
 - **R-4** The verdict comes from a central policy: new findings only (compared
   with the default branch) by default, accepted risk honored, secrets always
@@ -103,7 +112,13 @@ job wins.
    stored. It expires after 15 minutes. `ci_run.token_issued` is audited
    without the token.
 
-Every refusal answers the same `401 The CI token was not accepted`.
+Every refusal answers the same `401 The CI token was not accepted`, with one
+exception decided after the token verified and was admitted: a runner that
+reports (User-Agent) a sensor version below `SENSOR_MIN_VERSION` gets `403
+RUNNER_OUTDATED` and the refusal is audited (`runner_outdated`); the fix is on
+its side. The version is self-reported: this keeps known-bad releases out, it
+does not authenticate the binary. A client that reports no sensor version is
+admitted and its pipeline shows the version as unknown.
 
 `run_id` asks for a fresh token for a run the pipeline already holds (a long
 job). It is honored only for the same tenant, repository, commit, CI run id,
