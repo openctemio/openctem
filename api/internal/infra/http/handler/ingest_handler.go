@@ -39,6 +39,10 @@ type IngestHandler struct {
 	// heartbeats observes heartbeat handling latency for the health
 	// controller's platform-health guard (RFC-035 D3). Nil: not observed.
 	heartbeats HeartbeatLatencyObserver
+
+	// ciKeys refuses a CI sensor's key when the organization requires OIDC
+	// for CI (nil: no such policy).
+	ciKeys CIRunnerKeyPolicy
 }
 
 // HeartbeatLatencyObserver records how long one heartbeat took to handle.
@@ -311,6 +315,10 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 			return
 		}
 		agt := id.Sensor
+		if h.ciKeys != nil && h.ciKeys.Refused(r.Context(), agt, getClientIP(r), r.UserAgent()) {
+			apierror.Forbidden("This organization accepts CI results only with the CI job's OIDC identity, not a sensor key").WriteJSON(w)
+			return
+		}
 
 		// Add sensor to context
 		ctx := context.WithValue(r.Context(), sensorContextKey, agt)
@@ -330,6 +338,9 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// SetCIRunnerKeyPolicy wires the "OIDC required for CI" policy.
+func (h *IngestHandler) SetCIRunnerKeyPolicy(p CIRunnerKeyPolicy) { h.ciKeys = p }
 
 // errSensorPaused refuses a disabled sensor.
 var errSensorPaused = errors.New("sensor is disabled")

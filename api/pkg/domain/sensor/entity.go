@@ -18,7 +18,7 @@ import (
 //
 // CI pipelines are not sensors: they authenticate with their CI provider's
 // OIDC identity (RFC-051). The former "runner" type, a sensor key used from
-// CI, was removed (migration 001121).
+// CI, was removed (migration 001143).
 type SensorType string
 
 const (

@@ -182,6 +182,15 @@ export function ActivityPanel({
     () => new Map()
   )
   const [popped, setPopped] = useState<{ id: string; emoji: string } | null>(null)
+  // The pop animation timer is cleared on unmount so it never sets state on an
+  // unmounted panel.
+  const popTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (popTimer.current) clearTimeout(popTimer.current)
+    },
+    []
+  )
   const [newCount, setNewCount] = useState(0)
   const [announce, setAnnounce] = useState('')
   // The divider is fixed when the panel opens; marking "seen" while it is open
@@ -413,7 +422,11 @@ export function ActivityPanel({
       setReactionOverrides((m) => new Map(m).set(key, optimistic))
       if (add) {
         setPopped({ id: key, emoji })
-        setTimeout(() => setPopped((p) => (p?.id === key && p.emoji === emoji ? null : p)), 200)
+        if (popTimer.current) clearTimeout(popTimer.current)
+        popTimer.current = setTimeout(
+          () => setPopped((p) => (p?.id === key && p.emoji === emoji ? null : p)),
+          200
+        )
       }
       try {
         const next = await onToggleReaction(item, emoji, add)

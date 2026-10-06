@@ -111,7 +111,7 @@ The signed `state` is likewise a routing hint, not a trust boundary: knowing ano
 | Per-tenant config storage | `tenant_identity_providers` table · `pkg/domain/identityprovider` |
 | Resolve config for a login | `internal/app/auth/sso.go` — `resolveProvider`, `GetProvidersForTenant`; tenant via `GetBySlug(orgSlug)` |
 | Build authorize URL + signed state | `sso.go` — `GenerateAuthorizeURL`, `generateState` (HMAC + `?org` + nonce) |
-| id_token verification + **`tid` pin** | `internal/app/auth/oidc_verifier.go` — `entraIssuerValidator` (pins the directory when a GUID is configured) |
+| id_token verification + **`tid` pin** | `pkg/oidc/issuers.go` — `EntraIssuer` (pins the directory when a GUID is configured) |
 | Immutable-id keying + `xms_edov` | `sso.go` — `entraUserInfoFromClaims` (email trusted only with `xms_edov`; keys on `oid`/`sub`+`iss`) |
 | Verified-domain JIT gate | `internal/app/auth/domainverify/` · `sso.go` — `jitProvisioningAllowed` |
 | Env-fallback opt-in | `sso.go` — `envProvider`, `envFallbackAllowedForTenant` (`SSO_ENTRA_ALLOWED_TENANTS`) |

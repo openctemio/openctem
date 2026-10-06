@@ -38,6 +38,10 @@ vi.mock('@/features/scans/components/scan-runs-tab', () => ({ ScanRunsTab: () =>
 vi.mock('@/features/sensors/components/sensor-opt-in-banner', () => ({
   SensorOptInBanner: () => null,
 }))
+vi.mock('@/features/scan-freeze', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/scan-freeze')>()),
+  FreezeBanner: () => null,
+}))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))
