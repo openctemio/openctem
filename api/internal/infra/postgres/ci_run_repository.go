@@ -198,12 +198,32 @@ func (r *CIRunRepository) PurgeExpiredJTIs(ctx context.Context, before time.Time
 	return res.RowsAffected()
 }
 
+// CIRequireOIDC reads the tenant's "OIDC required for CI" setting.
+func (r *CIRunRepository) CIRequireOIDC(ctx context.Context, tenantID shared.ID) (bool, error) {
+	var v bool
+	err := r.db.QueryRowContext(ctx, `SELECT ci_require_oidc FROM tenants WHERE id = $1`, tenantID.String()).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, shared.ErrNotFound
+	}
+	return v, err
+}
+
+// SetCIRequireOIDC writes the tenant's "OIDC required for CI" setting.
+func (r *CIRunRepository) SetCIRequireOIDC(ctx context.Context, tenantID shared.ID, require bool) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE tenants SET ci_require_oidc = $2 WHERE id = $1`, tenantID.String(), require)
+	if err != nil {
+		return err
+	}
+	return requireOneRow(res, shared.ErrNotFound)
+}
+
 // ----------------------------------------------------------------- runs ---
 
 const ciRunColumns = `id, tenant_id, trust_config_id, repository_asset_id, provider, issuer, repository, ref, branch,
 	commit_sha, pull_request, default_branch, is_default_branch, event, environment, actor, external_run_id,
 	run_attempt, workflow, pipeline_url, fork, token_expires_at, status, verdict, verdict_detail, evaluated_at,
-	reports_count, findings_count, pipeline_id, sensor_version, scan_failures, tools, template_ref, created_at, updated_at`
+	reports_count, findings_count, pipeline_id, sensor_version, scan_failures, tools, template_ref, created_at, updated_at,
+	external_job_id`
 
 func scanCIRun(row ciScanner) (cirun.Run, error) {
 	var (
@@ -219,7 +239,8 @@ func scanCIRun(row ciScanner) (cirun.Run, error) {
 		&run.CommitSHA, &run.PullRequest, &run.DefaultBranch, &run.IsDefaultBranch, &run.Event, &run.Environment,
 		&run.Actor, &run.ExternalRunID, &run.RunAttempt, &run.Workflow, &run.PipelineURL, &run.Fork, &tokenExp,
 		&run.Status, &verdict, &detail, &evaluated, &run.ReportsCount, &run.FindingsCount, &pipeline,
-		&run.SensorVersion, &failures, &tools, &run.TemplateRef, &run.CreatedAt, &run.UpdatedAt); err != nil {
+		&run.SensorVersion, &failures, &tools, &run.TemplateRef, &run.CreatedAt, &run.UpdatedAt,
+		&run.ExternalJobID); err != nil {
 		return run, err
 	}
 	run.ID, _ = shared.IDFromString(id)
@@ -247,14 +268,14 @@ func (r *CIRunRepository) CreateRun(ctx context.Context, run *cirun.Run) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_runs (id, tenant_id, trust_config_id, repository_asset_id,
 		provider, issuer, repository, ref, branch, commit_sha, pull_request, default_branch, is_default_branch, event,
 		environment, actor, external_run_id, run_attempt, workflow, pipeline_url, fork, token_hash, token_expires_at,
-		status, created_at, updated_at, pipeline_id, sensor_version, template_ref)
+		status, created_at, updated_at, pipeline_id, sensor_version, template_ref, external_job_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		$23, $24, $25, $25, $26, $27, $28)`,
+		$23, $24, $25, $25, $26, $27, $28, $29)`,
 		run.ID.String(), run.TenantID.String(), nullID(run.TrustConfigID), run.RepositoryAssetID.String(),
 		string(run.Provider), run.Issuer, run.Repository, run.Ref, run.Branch, run.CommitSHA, run.PullRequest,
 		run.DefaultBranch, run.IsDefaultBranch, run.Event, run.Environment, run.Actor, run.ExternalRunID,
 		run.RunAttempt, run.Workflow, run.PipelineURL, run.Fork, run.TokenHash, run.TokenExpiresAt,
-		run.Status, run.CreatedAt, nullID(run.PipelineID), run.SensorVersion, run.TemplateRef)
+		run.Status, run.CreatedAt, nullID(run.PipelineID), run.SensorVersion, run.TemplateRef, run.ExternalJobID)
 	return err
 }
 

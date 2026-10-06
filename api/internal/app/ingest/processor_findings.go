@@ -31,6 +31,9 @@ type FindingProcessor struct {
 	// sourceResolveMode is the source-asserted resolve mode
 	// (source_resolve.go); "" is dry_run.
 	sourceResolveMode SourceResolveMode
+	// vexMode is how a VEX not_affected statement acts (interop.go); "" is
+	// dry_run.
+	vexMode VEXMode
 
 	repo         vulnerability.FindingRepository
 	dataFlowRepo vulnerability.DataFlowRepository
@@ -736,6 +739,24 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 	p.storeScannerEvidence(ctx, tenantID, evidence)
+
+	// Step 7b: source interoperability data (CTIS 1.4: native identity,
+	// scores, vulnerability ids, source lifecycle, solution, VEX, source
+	// extras, location key), matched by fingerprint like step 7, then the
+	// VEX not_affected statements. Best-effort.
+	interop := make([]vulnerability.InteropUpdate, 0, len(validFindings))
+	vexSightings := make([]vexSighting, 0)
+	for i := range validFindings {
+		fm := &validFindings[i]
+		if u := interopUpdate(fm.fingerprint, &fm.finding); !u.Data.IsEmpty() {
+			interop = append(interop, u)
+		}
+		if fm.finding.VEX != nil {
+			vexSightings = append(vexSightings, vexSighting{fingerprint: fm.fingerprint, assetID: fm.assetID, finding: &fm.finding})
+		}
+	}
+	p.storeInterop(ctx, tenantID, interop)
+	p.applyVEX(ctx, tenantID, vexNotAffectedItems(vexSightings), scope, output)
 
 	// Step 8: the template content each finding was matched with
 	// (research/18 O6): its new baseline for retests and later scans. A

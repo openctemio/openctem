@@ -9,7 +9,7 @@ send notifications for code that may never merge. Such a finding is
 the run, the branch pages, a filtered findings list) and is left out of the
 exposure views.
 
-Migration `001132_finding_branch_only`. RFC-051 §5 (CI uploads).
+Migration `001138_finding_branch_only`. RFC-051 §5 (CI uploads).
 
 ## Which branches count
 

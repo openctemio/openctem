@@ -1,0 +1,154 @@
+'use client'
+
+import useSWR from 'swr'
+import { FileText, Loader2 } from 'lucide-react'
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeaderBar,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { EmptyState, TonePill, type PillTone } from '@/features/shared'
+import { get } from '@/lib/api/client'
+import { pipelineRunEndpoints } from '@/lib/api/endpoints'
+import type { RunTaskLogLine, RunTaskLogs } from '@/lib/api/generated'
+import { toDisplayBlock, toDisplayText } from '@/lib/untrusted-text'
+
+/** The pill tone of a log level. */
+export function logLevelTone(level?: string): PillTone {
+  switch (level) {
+    case 'error':
+      return 'destructive'
+    case 'warn':
+      return 'warning'
+    case 'debug':
+      return 'muted'
+    default:
+      return 'info'
+  }
+}
+
+/** A line's time as HH:MM:SS (UTC kept in the tooltip). */
+function lineTime(ts?: string): string {
+  if (!ts) return '-'
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? '-' : d.toLocaleTimeString(undefined, { hour12: false })
+}
+
+function LogLineRow({ line }: { line: RunTaskLogLine }) {
+  const fields = line.fields ? Object.entries(line.fields) : []
+  return (
+    <li className="border-b px-3 py-2 last:border-b-0" data-level={line.level}>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <time dateTime={line.ts} title={line.ts} className="tabular-nums">
+          {lineTime(line.ts)}
+        </time>
+        <TonePill tone={logLevelTone(line.level)} label={line.level ?? 'info'} />
+        {line.source && <span className="font-mono">{toDisplayText(line.source, 64)}</span>}
+      </div>
+      {/* Sensor output: React text in a <pre>, never markup; hidden characters shown as escapes. */}
+      <pre
+        dir="ltr"
+        className="mt-1 whitespace-pre-wrap break-words font-mono text-xs [unicode-bidi:isolate]"
+      >
+        {toDisplayBlock(line.msg ?? '')}
+      </pre>
+      {fields.length > 0 && (
+        <details className="mt-1 text-xs">
+          <summary className="cursor-pointer text-muted-foreground">
+            {fields.length} field{fields.length === 1 ? '' : 's'}
+          </summary>
+          <dl className="mt-1 grid grid-cols-[minmax(0,max-content)_1fr] gap-x-3 gap-y-0.5 font-mono">
+            {fields.map(([k, v]) => (
+              <div key={k} className="contents">
+                <dt className="text-muted-foreground">{toDisplayText(k, 128)}</dt>
+                <dd className="break-all">
+                  {toDisplayText(typeof v === 'string' ? v : JSON.stringify(v))}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
+    </li>
+  )
+}
+
+/**
+ * The log lines a task's sensor sent (RFC-029 §4.4.1), oldest first. The
+ * platform cleaned and redacted them when it stored them; they are still
+ * sensor output, so they are shown as plain text only.
+ */
+export function RunTaskLogsDialog({
+  runId,
+  taskId,
+  tool,
+  open,
+  onOpenChange,
+}: {
+  runId: string
+  taskId: string
+  tool?: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { data, error, isLoading } = useSWR<RunTaskLogs>(
+    open ? pipelineRunEndpoints.taskLogs(runId, taskId) : null,
+    (url: string) => get<RunTaskLogs>(url),
+    { revalidateOnFocus: false }
+  )
+  const lines = data?.lines ?? []
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[92svh] flex-col gap-0 overflow-hidden p-0 sm:p-0 sm:max-w-3xl"
+      >
+        <DialogHeaderBar>
+          <DialogTitle>Task logs{tool ? `: ${toDisplayText(tool, 64)}` : ''}</DialogTitle>
+          <DialogDescription>
+            What the sensor logged while it ran this task. Kept 14 days.
+          </DialogDescription>
+        </DialogHeaderBar>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {isLoading && (
+            <div
+              className="flex items-center gap-2 p-6 text-sm text-muted-foreground"
+              aria-busy="true"
+            >
+              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+              Loading logs…
+            </div>
+          )}
+          {error && !isLoading && (
+            <p className="p-6 text-sm text-destructive">Could not load the logs of this task.</p>
+          )}
+          {!isLoading && !error && lines.length === 0 && (
+            <EmptyState
+              icon={FileText}
+              title="No logs from this task"
+              description="The sensor sent no log lines, or they are older than 14 days."
+              card={false}
+            />
+          )}
+          {lines.length > 0 && (
+            <ol aria-label="Log lines" className="text-sm">
+              {lines.map((l, i) => (
+                <LogLineRow key={i} line={l} />
+              ))}
+            </ol>
+          )}
+          {data?.truncated && (
+            <p className="border-t p-3 text-xs text-muted-foreground" role="note">
+              Some lines are not shown: the task reached its log limit, or there are more than 5,000
+              lines.
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
