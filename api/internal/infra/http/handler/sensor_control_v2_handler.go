@@ -85,8 +85,14 @@ func (h *SensorControlV2Handler) Features() []string {
 	if h.ingest != nil && h.ingest.sensorService.SupportsConfigReports() {
 		out = append(out, protov2.FeatureConfigReport)
 	}
+	if h.HasLogs() {
+		out = append(out, protov2.FeatureLogs)
+	}
 	return out
 }
+
+// HasLogs reports whether the logs resource is served.
+func (h *SensorControlV2Handler) HasLogs() bool { return h.commands != nil && h.commands.logs != nil }
 
 // HasIngest, HasCommands and HasSuppressions tell route registration which
 // routes to mount.
@@ -605,6 +611,9 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			// A refused job re-queued to another sensor has not failed.
 			if res.Command.Status == commanddom.CommandStatusFailed {
 				h.commands.triggerPipelineFailed(r.Context(), res.Command, res.Command.ErrorMessage)
+				// A failed retest check settles its retest now (unknown)
+				// instead of at the next sweep.
+				h.commands.triggerRetestSettle(res.Command)
 			}
 		}
 	}

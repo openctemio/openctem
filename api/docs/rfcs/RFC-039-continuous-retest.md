@@ -1,6 +1,6 @@
 # RFC-039 — Continuous retest with regression reopen
 
-> Status: **Proposed — decisions approved** (owner, 2026-10-03; #866; Phase 1 implementation #867).
+> Status: **Proposed — decisions approved** (owner, 2026-10-03; #866; Phase 1 implementation #867). Tool retest (§12): any tool with a retest handler on a tenant sensor.
 > Scope: api (retest service, scheduler, ingest regression path, routes) + web
 > (Retest now, last-retest status). No sensor or sdk-go change in Phase 1.
 > Builds on [RFC-011](RFC-011-validation-engine-dispatch.md) /
@@ -464,7 +464,80 @@ fix (§7.4, §7.5).
   and a sensor bump for every tenant, while `validate:nuclei` already ships in
   sensor v0.7.0. Rejected for P1.
 
-## 12. Sources
+## 12. Tool retest: any tool with a retest handler
+
+A retest is no longer limited to nuclei templates. The sensor SDK's tool contract
+has a **retest** kind (sdk-go `tool.Retester`). A tool that declares it gets known
+items (a finding and the address it is on) and answers one verdict per item:
+`still_present`, `fixed` or `unverifiable`. A sensor that serves retests for tool
+`<tool>` reports capability `retest:<tool>`.
+
+### 12.1 Method choice
+
+| Finding | Sensor online for the tenant | Method |
+|---|---|---|
+| any tool, eligible rule id | one with `retest:<tool>` | **tool**: one `retest` command |
+| nuclei, template that passes the guard | none with `retest:nuclei`, one with `validate:nuclei` | **validate**: the template re-run plus the reachability probe (§4–§6, unchanged) |
+| otherwise | — | refused, "no sensor that can retest this finding" |
+
+Eligibility (§5) becomes: an eligible status, a tool name and a rule id (non-empty,
+printable, at most 255 bytes, no whitespace), the nuclei template guard when the
+tool is nuclei, and the same asset gates (active, network-addressable, the
+active-probe gate). Limits (§8.1), the per-finding pending slot, settle CAS,
+activities (now with `method: tool | validate`), SLA restart and announcements
+are the same for both methods.
+
+### 12.2 The command
+
+`type = retest`. Migration 001135 adds the type to `chk_command_type`; the
+constraint is added `NOT VALID` and then validated, so no long lock is held on a
+populated table.
+
+```json
+{"scanner": "<tool>", "retest_id": "<uuid>", "timeout_seconds": 120,
+ "targets": ["<the §5 address of the finding>"],
+ "items": [{"ref": "<finding id>", "target": "<the same address>", "kind": "finding",
+            "rule_id": "<rule id>", "fingerprint": "<fingerprint>"}],
+ "required_capabilities": ["retest:<tool>"]}
+```
+
+It names the tool as `scanner` and lists plain addresses, as a scan does. As a
+result, the claim-time tool predicate, the sensor's admission of every target
+against its local policy, and per-host scheduling all apply unchanged. The command
+is produced only by `CommandDispatcher.DispatchToolRetest`, after the same
+active-probe gate as every validate command (exclusions, private ranges,
+attribution, scan-zone pinning). There is one finding per command, matching one
+`finding_retests` row: `check_command_id` is the retest command, and
+`reach_command_id` is NULL.
+
+### 12.3 Settling
+
+The sensor completes the command with the verdicts at `metadata.retest.verdicts`
+(top-level `retest.verdicts` is accepted too). The verdict whose `ref` is the
+retest's finding decides:
+
+| Verdict | Outcome |
+|---|---|
+| `still_present` | still present |
+| `fixed` | fixed |
+| `unverifiable`, an unknown word, no verdict for this finding (a verdict for any other ref is ignored), unreadable result, failed / expired / canceled command, deadline | unknown |
+
+"Fixed" is earned on the sensor. The SDK runtime downgrades `fixed` to
+`unverifiable` unless the item's target was reported done and the task finished.
+For nuclei, the tool connects to the address before it runs the template, so an
+unreachable host is never "fixed". The platform still fails closed on anything
+unclear. The nuclei template-drift rule (§6.2) applies only to the validate method.
+
+### 12.4 Threat model additions
+
+| Threat | Control |
+|---|---|
+| A compromised sensor fakes "fixed" | Only the command the platform issued to that sensor counts (command ownership), and the tenant comes from the command. Only a verdict for the finding id that was sent is read; anything else is unknown. RFC-039 limits are unchanged. |
+| Scope widening through a retest | Targets come only from inventory, through the active-probe gate. The sensor refuses an item whose address is not one of the command's targets, and admits every target against its local policy (a policy that lists check types must list `retest`). |
+| Destructive or noisy checks | The tool's own retest handler. For nuclei: one signed template, destructive tag classes excluded, the re-verification rate ceiling. |
+| Cross-tenant request | Tenant from the token; a finding of another tenant is not found and nothing is queued (DB test). |
+
+## 13. Sources
 
 - nuclei rate limiting and template tags: <https://docs.projectdiscovery.io/tools/nuclei/running>
 - OpenCTEM code at the commits named in §2.

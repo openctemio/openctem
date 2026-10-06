@@ -152,3 +152,24 @@ func (s *AuthService) StepUp(ctx context.Context, actx auditapp.AuditContext, us
 		WithMetadata("valid_until", until.UTC().Format(time.RFC3339)))
 	return until, nil
 }
+
+// stampProviderAuthentication opens the step-up window of a session created
+// by the organization's identity provider when the provider authenticated
+// the user within StepUpWindow (id_token auth_time, SAML AuthnInstant). Such
+// a session's recent authentication is the provider's authentication, not
+// the moment the session was created (RecentAuthAt in the session store): a
+// provider that signed the user in silently, from a session it remembered,
+// leaves the window closed until the user re-authenticates.
+func (s *SSOService) stampProviderAuthentication(ctx context.Context, sess *sessiondom.Session, authAt time.Time) {
+	st, ok := s.sessionRepo.(StepUpSessionStore)
+	if !ok || authAt.IsZero() {
+		return
+	}
+	now := time.Now()
+	if authAt.After(now.Add(time.Minute)) || now.Sub(authAt) > StepUpWindow {
+		return
+	}
+	if _, err := st.MarkStepUp(ctx, sess.ID(), sess.UserID(), authAt); err != nil {
+		s.logger.Warn("could not record the provider authentication time on the session", "error", err)
+	}
+}

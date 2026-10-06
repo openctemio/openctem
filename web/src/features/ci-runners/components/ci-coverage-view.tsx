@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The Sensors page in runner mode, Coverage view (api RFC-051 §10.6): which
+ * The CI/CD integration page, Coverage view (api RFC-051 §10.6): which
  * repositories are not being looked at, per capability (SAST, SCA, secrets,
  * IaC), and since when, from any executor (a CI pipeline or a daemon scan).
  * The API lists only repositories in the caller's data scope. Gaps (an

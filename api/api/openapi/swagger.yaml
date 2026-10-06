@@ -7963,6 +7963,8 @@ definitions:
         type: string
       event:
         type: string
+      external_job_id:
+        type: string
       external_run_id:
         type: string
       findings_count:
@@ -10389,6 +10391,11 @@ definitions:
         type: string
       branch_id:
         type: string
+      branch_only:
+        description: |-
+          BranchOnly: seen only on branches that do not count as exposure (a
+          feature or merge-request branch); left out of exposure views.
+        type: boolean
       comments_count:
         type: integer
       compliance_control_description:
@@ -13294,6 +13301,34 @@ definitions:
         type: string
       tool:
         type: string
+    type: object
+  internal_infra_http_handler.RunTaskLogLine:
+    properties:
+      fields:
+        additionalProperties: {}
+        type: object
+      level:
+        enum:
+        - debug
+        - info
+        - warn
+        - error
+        type: string
+      msg:
+        type: string
+      source:
+        type: string
+      ts:
+        type: string
+    type: object
+  internal_infra_http_handler.RunTaskLogsResponse:
+    properties:
+      lines:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunTaskLogLine'
+        type: array
+      truncated:
+        type: boolean
     type: object
   internal_infra_http_handler.RunTaskPageResponse:
     properties:
@@ -24832,6 +24867,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -26293,6 +26332,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -27007,6 +27050,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -27747,6 +27794,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -28481,6 +28532,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -31494,6 +31549,42 @@ paths:
       security:
       - BearerAuth: []
       summary: List a run's tasks
+      tags:
+      - Pipelines
+  /pipeline-runs/{id}/tasks/{task_id}/logs:
+    get:
+      description: The log lines the sensor sent for one task of the run, oldest first,
+        at most 5000. Kept 14 days. A task that is not in the run (or the run is another
+        organization's) is not found.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Task ID
+        in: path
+        name: task_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.RunTaskLogsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: A run task's logs
       tags:
       - Pipelines
   /repositories/{repository_id}/branches:

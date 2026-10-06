@@ -82,7 +82,8 @@ func (h *SSOHandler) ListTenantProviders(w http.ResponseWriter, r *http.Request)
 }
 
 // Authorize returns the SSO authorization URL for a tenant's provider.
-// GET /api/v1/auth/sso/{provider}/authorize?org={slug}&redirect_uri={uri}
+// GET /api/v1/auth/sso/{provider}/authorize?org={slug}&redirect_uri={uri}[&reauth=true]
+// reauth=true asks the provider to authenticate the user again (step-up).
 func (h *SSOHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 	provider := r.PathValue("provider")
 	if provider == "" {
@@ -106,6 +107,7 @@ func (h *SSOHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 		OrgSlug:     orgSlug,
 		Provider:    provider,
 		RedirectURI: redirectURI,
+		ForceReauth: isTrueParam(r.URL.Query().Get("reauth")),
 	})
 	if err != nil {
 		h.handlePublicError(w, err)

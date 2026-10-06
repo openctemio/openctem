@@ -8,7 +8,8 @@ You need `scans:ci:write` (owners and administrators).
 
 ## 1. Add CI trust
 
-**Settings > Scanning > CI pipelines > Trust > Add trust**:
+**Discovery > CI/CD > Trust and gate > Trust > Add trust** (also under
+**Settings > Scanning > CI/CD integration**):
 
 - **Provider**: GitHub Actions or GitLab CI. For a self-managed GitLab, enter
   its URL as the issuer. The platform fetches its keys over HTTPS through the
@@ -153,8 +154,10 @@ judge locally instead.
 ## 5. Where pipelines show up
 
 Each workflow file of each repository that ran with OIDC appears on the
-**Sensors** page in **Runner** mode, as a CI pipeline (the branch never adds a
-row). Its badge says how it ran, never "offline":
+**CI/CD integration** page (Discovery > CI/CD), as a CI pipeline (the branch
+never adds a row), with its runs and the repositories' coverage. The Sensors
+page lists the sensors in your networks and links to it. A pipeline's badge
+says how it ran, never "offline":
 
 | Badge | Meaning |
 |---|---|

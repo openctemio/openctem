@@ -69,7 +69,8 @@ async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Pro
 export async function getSSOAuthorizeUrl(
   provider: SSOProviderType,
   orgSlug: string,
-  redirectTo?: string
+  redirectTo?: string,
+  reauth = false
 ): Promise<AuthSuccessResponse<{ authorizationUrl: string; state: string }> | AuthErrorResponse> {
   if (!isAllowedValue(SSO_PROVIDER_TYPES, provider)) return UNSUPPORTED_PROVIDER
 
@@ -82,6 +83,11 @@ export async function getSSOAuthorizeUrl(
     })
     if (redirectTo) {
       params.set('final_redirect', redirectTo)
+    }
+    // Step-up: the identity provider must authenticate the user again
+    // (prompt=login / max_age=0); the API checks auth_time on the way back.
+    if (reauth) {
+      params.set('reauth', 'true')
     }
 
     const data = await backendFetch<SSOAuthorizeResponse>(
@@ -236,9 +242,10 @@ export async function handleSSOCallback(
 export async function initiateSSOLogin(
   provider: SSOProviderType,
   orgSlug: string,
-  redirectTo?: string
+  redirectTo?: string,
+  reauth = false
 ): Promise<never> {
-  const result = await getSSOAuthorizeUrl(provider, orgSlug, redirectTo)
+  const result = await getSSOAuthorizeUrl(provider, orgSlug, redirectTo, reauth)
 
   if (!result.success) {
     redirect(loginErrorHref('start_failed', { org: orgSlug }))

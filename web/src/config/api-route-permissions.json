@@ -447,6 +447,7 @@
 "POST /api/v2/sensor/commands/{command_id}/claim": {},
 "POST /api/v2/sensor/commands/{command_id}/complete": {},
 "POST /api/v2/sensor/commands/{command_id}/fail": {},
+"POST /api/v2/sensor/commands/{command_id}/logs": {},
 "POST /api/v2/sensor/commands/{command_id}/release": {},
 "POST /api/v2/sensor/commands/{command_id}/results/{report_id}/commit": {},
 "POST /api/v2/sensor/commands/{command_id}/start": {},
