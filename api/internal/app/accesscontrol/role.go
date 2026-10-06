@@ -34,8 +34,16 @@ type RoleService struct {
 	// team-role gates (RequireTeamAdmin/Owner) see the new role on the next
 	// request instead of after the cache TTL.
 	membershipCache membershipCacheInvalidator
-	logger          *logger.Logger
+	// stepUp requires a recent re-authentication of the acting user before
+	// someone is made an administrator or an owner. nil (a service built
+	// outside the HTTP server, such as the bootstrap CLI) skips the check.
+	stepUp shared.RecentAuthGate
+	logger *logger.Logger
 }
+
+// SetStepUpGate wires step-up re-authentication for granting the
+// administrator and owner roles (docs/architecture/step-up-reauth.md).
+func (s *RoleService) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }
 
 // membershipCacheInvalidator drops a user's cached membership in a tenant.
 // MembershipCacheService satisfies it.

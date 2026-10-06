@@ -136,32 +136,44 @@ func rejectAdminOnlyPermissions(perms []string) error {
 }
 
 // authorizeAdminPromotion checks that the actor may give user uid the role set
-// newRoles as far as the system admin role is concerned: if the set adds the
-// admin role to a user who does not hold it yet, the actor must be an owner.
-// A system path (no actor: SCIM, SSO, invitation acceptance without an
-// inviter) is bounded by its own rules and is not checked here.
+// newRoles as far as the system admin and owner roles are concerned: if the
+// set adds the admin role to a user who does not hold it yet, the actor must
+// be an owner (only an owner may grant the owner role at all, mayGrant), and
+// making someone an administrator or an owner needs the actor's recent
+// re-authentication (step-up). A system path (no actor: SCIM, SSO, invitation
+// acceptance without an inviter) is bounded by its own rules and is not
+// checked here.
 func (s *RoleService) authorizeAdminPromotion(ctx context.Context, a grantActor, tid, uid roledom.ID, newRoles []roledom.ID) error {
-	if a.system || a.owner {
+	if a.system {
 		return nil
 	}
-	adds := false
+	addsAdmin, addsOwner := false, false
 	for _, id := range newRoles {
-		if id == roledom.AdminRoleID {
-			adds = true
-			break
+		switch id {
+		case roledom.AdminRoleID:
+			addsAdmin = true
+		case roledom.OwnerRoleID:
+			addsOwner = true
 		}
 	}
-	if !adds {
+	if !addsAdmin && !addsOwner {
 		return nil
 	}
-	_, alreadyAdmin, err := s.holdsPrivilegedRoles(ctx, tid, uid)
+	isOwner, isAdmin, err := s.holdsPrivilegedRoles(ctx, tid, uid)
 	if err != nil {
 		return err
 	}
-	if alreadyAdmin {
+	promotesAdmin, promotesOwner := addsAdmin && !isAdmin, addsOwner && !isOwner
+	if !promotesAdmin && !promotesOwner {
 		return nil
 	}
-	return ErrAdminPromotionOwnerOnly
+	if promotesAdmin && !a.owner {
+		return ErrAdminPromotionOwnerOnly
+	}
+	if s.stepUp != nil {
+		return s.stepUp.RequireRecentAuth(ctx, a.id)
+	}
+	return nil
 }
 
 // holdsPrivilegedRoles reports whether the user currently holds the owner role

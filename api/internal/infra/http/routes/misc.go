@@ -204,11 +204,12 @@ func registerIntegrationRoutes(
 
 		// Per-tenant Jira inbound-webhook secret (static paths; must be before
 		// /{id} routes). Gated by IntegrationsManage because the response
-		// contains a secret.
-		r.GET("/jira/webhook-secret", h.GetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage))
-		r.POST("/jira/webhook-secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage))
-		r.GET("/github/webhook-secret", h.GetGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage))
-		r.POST("/github/webhook-secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage))
+		// contains a secret, and by step-up: whoever holds the secret can
+		// forge inbound webhook events for the organization.
+		r.GET("/jira/webhook-secret", h.GetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.POST("/jira/webhook-secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.GET("/github/webhook-secret", h.GetGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
+		r.POST("/github/webhook-secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage), requireStepUp())
 
 		// List Jira projects for the destination-project picker (static path;
 		// must be before /{id} routes). nil handler = no DB → skip.
