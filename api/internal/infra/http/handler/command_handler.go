@@ -605,6 +605,12 @@ func (h *CommandHandler) triggerSimulationFinalize(cmd *commanddom.Command) {
 // Best-effort and asynchronous — a mapping failure never blocks the sensor's
 // completion response.
 func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
+	// A tool retest (RFC-039) has no validation evidence: its verdict is read
+	// by the retest service, which settles the retest.
+	if cmd != nil && cmd.Type == commanddom.CommandTypeRetest {
+		h.triggerRetestSettle(cmd)
+		return
+	}
 	if h.validationIngest == nil || cmd == nil || cmd.Type != commanddom.CommandTypeValidate {
 		return
 	}
@@ -725,16 +731,24 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 	}()
 }
 
-// triggerRetestSettle hands a finished validate command that belongs to a
-// retest to the retest service, which settles the retest once both of its
-// checks have ended. Asynchronous and best-effort: the scheduler's sweep settles
-// anything this misses.
+// triggerRetestSettle hands a finished command that belongs to a retest (a
+// tool retest command, or a validate command carrying a retest id) to the
+// retest service, which settles the retest once its checks have ended. The
+// service looks the retest up by the command, in the command's tenant.
+// Asynchronous and best-effort: the scheduler's sweep settles anything this
+// misses.
 func (h *CommandHandler) triggerRetestSettle(cmd *commanddom.Command) {
-	if h.retestSettler == nil || cmd == nil || cmd.Type != commanddom.CommandTypeValidate {
+	if h.retestSettler == nil || cmd == nil {
 		return
 	}
-	var payload validation.ValidateCommandPayload
-	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || payload.RetestID == "" {
+	switch cmd.Type {
+	case commanddom.CommandTypeRetest:
+	case commanddom.CommandTypeValidate:
+		var payload validation.ValidateCommandPayload
+		if err := json.Unmarshal(cmd.Payload, &payload); err != nil || payload.RetestID == "" {
+			return
+		}
+	default:
 		return
 	}
 	tenantID, commandID := cmd.TenantID, cmd.ID
