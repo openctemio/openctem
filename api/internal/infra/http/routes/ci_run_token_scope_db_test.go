@@ -40,6 +40,9 @@ func (s *stubCIRuns) Authenticate(_ context.Context, token string) (*cirun.Run, 
 func (s *stubCIRuns) UploadReport(context.Context, *cirun.Run, *ctis.Report) (*ingest.Output, error) {
 	return &ingest.Output{}, nil
 }
+func (s *stubCIRuns) UploadImported(context.Context, *cirun.Run, *ctis.Report) (*ingest.Output, int, error) {
+	return &ingest.Output{}, 0, nil
+}
 
 func (s *stubCIRuns) BaselineDiff(context.Context, *cirun.Run, []string) (*cirunapp.BaselineDiffOutput, error) {
 	return &cirunapp.BaselineDiffOutput{}, nil

@@ -941,7 +941,11 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
 	admin.SetSettingsService(ciSvc)
-	return admin, handler.NewCIRunnerHandler(ciSvc, log)
+	runner := handler.NewCIRunnerHandler(ciSvc, log)
+	// VEX documents a run uploads: stored on the run repository's findings,
+	// never closing any (the run token is not a person with findings:approve).
+	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
+	return admin, runner
 }
 
 // newSensorPairingHandler builds the pairing handler (RFC-052); nil when
