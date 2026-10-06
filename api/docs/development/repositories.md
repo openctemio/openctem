@@ -49,7 +49,7 @@ Detailed docs (architecture, RFCs, deployment, this guide) live in
                     │            api/   control plane ─────┼────▶ │ PostgreSQL │
                     │                                      ├────▶ │   Redis    │
                     └───────────────▲──────────────────────┘      └────────────┘
-              sensor API            │   external connectors (Wiz, Tenable, …)
+              sensor API            │   external connectors (Tenable, …)
      /api/v{1,2}/sensor, /agent     │
                     ┌───────────────┴───┐
                     │      sensor       │   runs scanners where the targets are
