@@ -479,7 +479,7 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
 				COUNT(*) FILTER (WHERE f.severity = 'info') as finding_info
 			FROM findings f
-			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved'
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only
 		) fc ON true
 	`
 }
@@ -1102,9 +1102,9 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// row (a data-integrity bug) can never flip this filter for someone else.
 	if filter.HasFindings != nil {
 		if *filter.HasFindings {
-			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved')")
+			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only)")
 		} else {
-			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved')")
+			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only)")
 		}
 	}
 
@@ -2042,7 +2042,7 @@ WITH filtered AS (
 finding_counts AS (
   SELECT f.asset_id, COUNT(*)::bigint AS cnt
   FROM findings f
-  WHERE f.asset_id IN (SELECT id FROM filtered)
+  WHERE f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
   GROUP BY f.asset_id
 )
 SELECT category, key, value FROM (
@@ -2452,7 +2452,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 		LEFT JOIN LATERAL (
 			SELECT COUNT(*) AS finding_count
 			FROM findings f
-			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND NOT f.branch_only
 		) fc ON true
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		ORDER BY a.created_at

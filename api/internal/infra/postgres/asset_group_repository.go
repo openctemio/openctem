@@ -44,7 +44,7 @@ const assetGroupSelectQuery = `
 		SELECT agm.asset_group_id, COUNT(f.id) as finding_count
 		FROM asset_group_members agm
 		INNER JOIN asset_groups fg ON fg.id = agm.asset_group_id
-		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id
+		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id AND NOT f.branch_only
 		GROUP BY agm.asset_group_id
 	) fc ON fc.asset_group_id = ag.id
 `
@@ -331,13 +331,13 @@ func (r *AssetGroupRepository) List(
 			conditions = append(conditions, `EXISTS (
 				SELECT 1 FROM findings f
 				INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
-				WHERE agm.asset_group_id = ag.id AND f.tenant_id = ag.tenant_id
+				WHERE agm.asset_group_id = ag.id AND f.tenant_id = ag.tenant_id AND NOT f.branch_only
 			)`)
 		} else {
 			conditions = append(conditions, `NOT EXISTS (
 				SELECT 1 FROM findings f
 				INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
-				WHERE agm.asset_group_id = ag.id AND f.tenant_id = ag.tenant_id
+				WHERE agm.asset_group_id = ag.id AND f.tenant_id = ag.tenant_id AND NOT f.branch_only
 			)`)
 		}
 	}
@@ -469,7 +469,7 @@ func (r *AssetGroupRepository) GetStats(ctx context.Context, tenantID shared.ID)
 		FROM findings f
 		INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
 		INNER JOIN asset_groups ag ON agm.asset_group_id = ag.id
-		WHERE ag.tenant_id = $1 AND f.tenant_id = $1
+		WHERE ag.tenant_id = $1 AND f.tenant_id = $1 AND NOT f.branch_only
 	`
 	if err := r.db.QueryRowContext(ctx, findingsQuery, tenantID.String()).Scan(&stats.TotalFindings); err != nil {
 		stats.TotalFindings = 0
@@ -632,7 +632,7 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 			   COALESCE(fc.finding_count, 0) as finding_count,
 			   a.last_seen
 		FROM ` + groupMembersFrom + `
-		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings GROUP BY asset_id) fc ON fc.asset_id = a.id
+		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings WHERE NOT branch_only GROUP BY asset_id) fc ON fc.asset_id = a.id
 		WHERE agm.asset_group_id = $1 AND ` + scopeCond + `
 		ORDER BY a.name
 		LIMIT $` + strconv.Itoa(n+1) + ` OFFSET $` + strconv.Itoa(n+2)
@@ -862,7 +862,7 @@ func (r *AssetGroupRepository) GetGroupFindings(ctx context.Context, groupID sha
 	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	countQuery := `
 		SELECT COUNT(*) FROM ` + groupMembersFrom + `
-		INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = a.tenant_id
+		INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = a.tenant_id AND NOT f.branch_only
 		WHERE agm.asset_group_id = $1 AND ` + scopeCond
 
 	var total int64
@@ -874,7 +874,7 @@ func (r *AssetGroupRepository) GetGroupFindings(ctx context.Context, groupID sha
 	query := `
 		SELECT f.id, f.message, f.severity, f.status, f.asset_id, a.name, a.asset_type, f.created_at
 		FROM ` + groupMembersFrom + `
-		INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = a.tenant_id
+		INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = a.tenant_id AND NOT f.branch_only
 		WHERE agm.asset_group_id = $1 AND ` + scopeCond + `
 		ORDER BY
 			CASE f.severity

@@ -58,7 +58,7 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 					ELSE COUNT(*) FILTER(WHERE sla_status NOT IN ('exceeded','overdue') AND sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk'))
 						* 100.0 / NULLIF(COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')), 0)
 				END AS sla_pct
-			FROM findings GROUP BY tenant_id
+			FROM findings WHERE NOT branch_only GROUP BY tenant_id
 		),
 		mttr_metrics AS (
 			SELECT tenant_id,
@@ -67,7 +67,7 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 				AVG(EXTRACT(epoch FROM resolved_at - first_detected_at)/3600) FILTER(WHERE severity = 'medium') AS mttr_m,
 				AVG(EXTRACT(epoch FROM resolved_at - first_detected_at)/3600) FILTER(WHERE severity = 'low') AS mttr_l
 			FROM findings
-			WHERE resolved_at >= CURRENT_DATE - 30
+			WHERE resolved_at >= CURRENT_DATE - 30 AND NOT branch_only
 			GROUP BY tenant_id
 		),
 		exposure_metrics AS (
