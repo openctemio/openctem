@@ -880,9 +880,8 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 
 // newAssetImportHandler builds the asset import handler with its audit trail.
 func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
-	h := handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log)
+	h := handler.NewAssetImportHandler(svc.AssetImport, log)
 	h.SetAuditService(svc.Audit)
-	h.SetDataScope(svc.DataScope)
 	return h
 }
 

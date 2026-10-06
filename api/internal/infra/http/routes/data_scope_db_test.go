@@ -180,7 +180,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	assetHandler := handler.NewAssetHandler(assetSvc, v, log)
 	assetHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	registerAssetRoutes(router, assetHandler, auth, nil)
-	importHandler := handler.NewAssetImportHandler(asset.NewAssetImportService(assetRepo, log), nil, log)
+	importHandler := handler.NewAssetImportHandler(asset.NewAssetImportService(assetRepo, log), log)
 	importHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	registerAssetImportRoutes(router, importHandler, auth, nil)
 	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, v, log), nil, nil, nil, auth, nil)

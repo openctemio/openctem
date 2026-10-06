@@ -127,7 +127,7 @@ batches, storing everything durably in OpenCTEM. Supports **both** Nessus Pro
 RFC-007  License-aware scan coverage  (#138 design)
 │
 ├─ Phase 1  .nessus -> CTIS findings adapter + safety   ── DONE (#139, #141 import route)
-│   └─ api #139   internal/infra/scanner/nessus/converter.go
+│   └─ api #139   internal/infra/scanner/nessus/converter.go (since replaced by the ctis importer, POST /findings/import)
 │                 hosts->assets, ReportItems->findings, CVE/CVSS, fingerprint
 │                 report shaped so auto-resolve is scoped to the batch only
 │
@@ -166,7 +166,7 @@ Reused existing infra (do NOT rebuild):
 docs/rfcs/                  RFC design documents (this folder) + this index
   RFC-00N-*.md
 internal/app/<cluster>/     application services (jira, ingest, scan, …)
-internal/infra/             infra: postgres, http, jira, scanner/nessus, controller
+internal/infra/             infra: postgres, http, jira, controller
 pkg/domain/<X>/             domain entities (asset, scan, integration, vulnerability)
 migrations/                 golang-migrate SQL (latest: 000210)
 ```
