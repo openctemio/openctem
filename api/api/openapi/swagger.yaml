@@ -8375,8 +8375,7 @@ definitions:
       dependency_type:
         type: string
       depth:
-        description: 'Dependency hierarchy fields (industry-aligned: CycloneDX, Snyk,
-          GitHub)'
+        description: Dependency hierarchy fields (CycloneDX component model)
         type: integer
       ecosystem:
         type: string

@@ -2,7 +2,6 @@
  * Finding Types
  *
  * Type definitions for security findings/vulnerabilities
- * Based on HackerOne/Bugcrowd style vulnerability management
  */
 
 import type { Severity } from '@/features/shared/types'

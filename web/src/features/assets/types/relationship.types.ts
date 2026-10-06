@@ -1,8 +1,7 @@
 /**
  * Asset Relationship Types
  *
- * Defines relationships between assets following CMDB best practices
- * (ServiceNow, BMC patterns) for attack surface management.
+ * Defines relationships between assets for attack surface management, following CMDB conventions.
  *
  * The relationship type IDs, labels, descriptions and constraints are
  * GENERATED from `api/configs/relationship-types.yaml` by the codegen
