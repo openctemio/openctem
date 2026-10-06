@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import useSWRInfinite from 'swr/infinite'
-import { Info, Loader2 } from 'lucide-react'
+import { FileText, Info, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { RunStatusBadge, TruncatedText } from '@/features/shared'
@@ -11,6 +11,7 @@ import { pipelineRunEndpoints } from '@/lib/api/endpoints'
 import type { RunTask, RunTaskPage } from '@/lib/api/generated'
 import { formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs } from '@/features/scans/lib/run-display'
+import { RunTaskLogsDialog } from '@/features/scans/components/run-task-logs-dialog'
 
 /** Who runs a task: the tenant sensor's name, "Platform sensor", or nobody yet. */
 export function taskSensorLabel(
@@ -71,6 +72,8 @@ export function RunTasksTable({
 }) {
   // Nothing is fetched until the first "Load more".
   const [started, setStarted] = useState(false)
+  // The task whose logs are open (one dialog for the table).
+  const [logsOf, setLogsOf] = useState<RunTask | null>(null)
   const { data, size, setSize, isValidating, error } = useSWRInfinite<RunTaskPage>(
     (index, prev: RunTaskPage | null) => {
       if (!started || !nextCursor) return null
@@ -111,6 +114,9 @@ export function RunTasksTable({
               <th scope="col" className="px-3 py-2 text-end font-medium">
                 Duration
               </th>
+              <th scope="col" className="px-3 py-2 text-end font-medium">
+                <span className="sr-only">Logs</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -142,6 +148,20 @@ export function RunTasksTable({
                     {ms === undefined ? '-' : ms < 1000 ? '<1s' : formatScanDuration(ms)}
                     {ms !== undefined && !t.completed_at && ' so far'}
                   </td>
+                  <td className="px-3 py-2 text-end">
+                    {t.id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-xs"
+                        aria-label={`Logs of the ${t.tool || 'task'} task`}
+                        onClick={() => setLogsOf(t)}
+                      >
+                        <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+                        Logs
+                      </Button>
+                    )}
+                  </td>
                 </tr>
               )
             })}
@@ -172,6 +192,17 @@ export function RunTasksTable({
           )}
           {error && <span className="text-destructive">Could not load more tasks.</span>}
         </div>
+      )}
+      {logsOf?.id && (
+        <RunTaskLogsDialog
+          runId={runId}
+          taskId={logsOf.id}
+          tool={logsOf.tool}
+          open
+          onOpenChange={(o) => {
+            if (!o) setLogsOf(null)
+          }}
+        />
       )}
     </div>
   )
