@@ -73,10 +73,42 @@ var ErrLocalPolicyRequired = fmt.Errorf("%w (%w): private targets need a sensor 
 // and the command stays pending for a sensor that accepts it.
 var ErrSensorPolicyRefuses = fmt.Errorf("%w (%w): the sensor's local policy refuses this command", ErrCommandClaimed, shared.ErrConflict)
 
+// GrantReader reads a sensor's grant (RFC-052 §5). Satisfied by the grant
+// repository.
+type GrantReader interface {
+	Get(ctx context.Context, tenantID, sensorID shared.ID) (*sensordom.Grant, error)
+}
+
+// GrantRefusalObserver is told about a claim by id the grant refused
+// (audit and sensor timeline). Satisfied by the sensor service.
+type GrantRefusalObserver interface {
+	ObserveGrantRefusal(ctx context.Context, tenantID, sensorID shared.ID, commandID string, r *sensordom.GrantRefusal)
+}
+
+// WithGrants makes Poll, Claim and Acknowledge enforce each sensor's grant
+// before anything else: a command outside it is never offered, and a claim
+// by id of one fails like a lost claim and is reported to o (nil: not
+// reported).
+func WithGrants(g GrantReader, o GrantRefusalObserver) Option {
+	return func(s *Service) { s.grants, s.grantRefusals = g, o }
+}
+
+// RefusalLayerGrant names the platform's per-sensor grant in a refusal.
+const RefusalLayerGrant = "grant"
+
+// ErrOutOfGrant: the command lies outside the claiming sensor's grant. It
+// reads as "claimed" (command-claimed), so a deployed sensor
+// drops the command instead of treating the answer as a lost key, and the
+// command stays pending for a sensor whose grant covers it. The refusal is
+// audited (sensor.claim_refused_grant) with the dimension.
+var ErrOutOfGrant = fmt.Errorf("%w (%w): the command is outside the sensor's grant", ErrCommandClaimed, shared.ErrConflict)
+
 // dispatchGate is what the pre-check knows about one polling sensor: its
-// last local-policy report and the tenant's platform-side settings. A nil
-// gate (no sensor identity, no lookup wired) withholds nothing.
+// grant, its last local-policy report and the tenant's platform-side
+// settings. A nil gate (no sensor identity, no lookup wired) withholds
+// nothing.
 type dispatchGate struct {
+	grant  *sensordom.Grant
 	report *sensordom.LocalPolicyReport
 	opts   sensordom.DispatchOptions
 	// closed: the sensor or the tenant setting could not be read; every
@@ -87,8 +119,20 @@ type dispatchGate struct {
 // gateFor loads the dispatch gate of sensorID. The tenant's private-target
 // switch is read only when a candidate names a private target.
 func (s *Service) gateFor(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, cmds []*commanddom.Command) *dispatchGate {
-	if sensorID == nil || len(cmds) == 0 || (s.sensors == nil && s.privatePolicy == nil && s.optIns == nil) {
+	if sensorID == nil || len(cmds) == 0 || (s.sensors == nil && s.privatePolicy == nil && s.optIns == nil && s.grants == nil) {
 		return nil
+	}
+	var grant *sensordom.Grant
+	if s.grants != nil {
+		g, err := s.grants.Get(ctx, tenantID, *sensorID)
+		if err != nil || g == nil {
+			// Every sensor has a grant (migration backfill + insert trigger):
+			// none, or a read error, withholds everything (fail closed).
+			s.logger.Warn("cannot read the polling sensor's grant; withholding commands",
+				"tenant_id", tenantID.String(), "sensor_id", sensorID.String(), "error", err)
+			return &dispatchGate{closed: true}
+		}
+		grant = g
 	}
 	opts, err := s.dispatchOptions(ctx, tenantID, cmds)
 	if err != nil {
@@ -96,7 +140,7 @@ func (s *Service) gateFor(ctx context.Context, tenantID shared.ID, sensorID *sha
 			"tenant_id", tenantID.String(), "error", err)
 		return &dispatchGate{closed: true}
 	}
-	g := &dispatchGate{opts: opts}
+	g := &dispatchGate{opts: opts, grant: grant}
 	if s.sensors == nil {
 		// No report to read: only the private-target switch applies, and
 		// no sensor qualifies for it.
@@ -143,7 +187,19 @@ func (g *dispatchGate) refusal(c *commanddom.Command) *sensordom.DispatchRefusal
 		return &sensordom.DispatchRefusal{Layer: sensordom.RefusalLayerManaged, Rule: "unavailable",
 			Detail: "the sensor's policy could not be read"}
 	}
+	if r := g.grantRefusal(c); r != nil {
+		return &sensordom.DispatchRefusal{Layer: RefusalLayerGrant, Rule: r.Dimension, Detail: r.Detail}
+	}
 	return sensordom.Accepts(g.report, sensordom.JobOf(string(c.Type), c.Payload), g.opts)
+}
+
+// grantRefusal is the grant's refusal of c, or nil (also without a grant
+// read: enforcement not wired).
+func (g *dispatchGate) grantRefusal(c *commanddom.Command) *sensordom.GrantRefusal {
+	if g == nil || g.grant == nil {
+		return nil
+	}
+	return g.grant.Admit(string(c.Type), c.Payload, c.ScanZoneID)
 }
 
 // accepted keeps the commands the gate does not withhold, in order.
@@ -168,6 +224,8 @@ func (g *dispatchGate) claimError(c *commanddom.Command) error {
 	switch {
 	case r == nil:
 		return nil
+	case r.Layer == RefusalLayerGrant:
+		return ErrOutOfGrant
 	case r.Rule == sensordom.RulePrivateNeedsLocalPlcy:
 		return ErrLocalPolicyRequired
 	case r.Layer == sensordom.RefusalLayerManaged && (r.Rule == sensordom.RuleAllowInteractsh || r.Rule == sensordom.RuleAllowCustomTemplates):

@@ -39,6 +39,10 @@ type IngestHandler struct {
 	// heartbeats observes heartbeat handling latency for the health
 	// controller's platform-health guard (RFC-035 D3). Nil: not observed.
 	heartbeats HeartbeatLatencyObserver
+
+	// ciKeys refuses a CI sensor's key when the organization requires OIDC
+	// for CI (nil: no such policy).
+	ciKeys CIRunnerKeyPolicy
 }
 
 // HeartbeatLatencyObserver records how long one heartbeat took to handle.
@@ -311,6 +315,10 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 			return
 		}
 		agt := id.Sensor
+		if h.ciKeys != nil && h.ciKeys.Refused(r.Context(), agt, getClientIP(r), r.UserAgent()) {
+			apierror.Forbidden("This organization accepts CI results only with the CI job's OIDC identity, not a sensor key").WriteJSON(w)
+			return
+		}
 		// A CI runner authenticating with a long-lived sensor key: still
 		// accepted, but deprecated in favor of OIDC workload identity
 		// (RFC-051). The headers let the runner warn its pipeline.
@@ -337,6 +345,9 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// SetCIRunnerKeyPolicy wires the "OIDC required for CI" policy.
+func (h *IngestHandler) SetCIRunnerKeyPolicy(p CIRunnerKeyPolicy) { h.ciKeys = p }
 
 // runnerKeyDeprecatedAt is the RFC 9745 Deprecation value for CI runners
 // that authenticate with a sensor API key (2026-10-05): CI should use OIDC

@@ -458,7 +458,7 @@ generic `400` and revokes nothing.
 - Architecture / rationale: [`architecture/sso-authentication.md`](../architecture/sso-authentication.md)
 - SAML / SCIM (enterprise, separate): [`architecture/saml-sso.md`](../architecture/saml-sso.md),
   [`architecture/scim-provisioning.md`](../architecture/scim-provisioning.md)
-- Code: `internal/app/auth/{sso.go,oauth.go,oidc_verifier.go,backchannel_logout.go}`,
+- Code: `internal/app/auth/{sso.go,oauth.go,backchannel_logout.go}`, `pkg/oidc/{verify.go,issuers.go}`,
   `internal/app/auth/domainverify/service.go`, `internal/config/config.go`,
   `internal/infra/http/routes/auth.go`,
   per-request enforce-SSO: `internal/infra/http/middleware/sso_enforcement.go`

@@ -37,6 +37,11 @@ func (s sensorsOnline) HasNucleiValidationSensor(context.Context, shared.ID) (bo
 	return bool(s), nil
 }
 
+// HasRetestSensor: no tool retest handler online (the validate path).
+func (s sensorsOnline) HasRetestSensor(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
+}
+
 type fixture struct {
 	t      *testing.T
 	db     *sql.DB
@@ -106,9 +111,14 @@ func (fx *fixture) newFinding(asset shared.ID, status, template string) shared.I
 }
 
 func (fx *fixture) service() *retestapp.Service {
+	return fx.serviceWith(sensorsOnline(true))
+}
+
+// serviceWith is the service with the given sensor availability.
+func (fx *fixture) serviceWith(sensors retestapp.SensorAvailability) *retestapp.Service {
 	return retestapp.NewService(fx.repo, postgres.NewFindingRepository(fx.pg), postgres.NewAssetRepository(fx.pg),
 		postgres.NewCommandRepository(fx.pg), validation.NewCommandDispatcher(postgres.NewCommandRepository(fx.pg), fx.gate(), logger.NewNop()),
-		sensorsOnline(true), logger.NewNop())
+		sensors, logger.NewNop())
 }
 
 // gate is the production active-probe gate over the test database.
@@ -356,11 +366,16 @@ func TestRetestDB_IneligibleFindingsAreRefused(t *testing.T) {
 	notNuclei := fx.newFinding(fx.asset, "confirmed", "tpl-x")
 	fx.exec(`UPDATE findings SET tool_name = 'trivy' WHERE id = $1`, notNuclei.String())
 	destructive := fx.newFinding(fx.asset, "confirmed", "apache-dos-check")
-	for name, f := range map[string]shared.ID{"false positive": fp, "not a nuclei finding": notNuclei, "destructive template": destructive} {
+	for name, f := range map[string]shared.ID{"false positive": fp, "destructive template": destructive} {
 		_, err := svc.Request(context.Background(), retestapp.RequestInput{TenantID: fx.tenant, FindingID: f, Trigger: retestdom.TriggerManual, RequestedBy: &user})
 		if !errors.Is(err, retestdom.ErrNotEligible) {
 			t.Errorf("%s: err = %v, want not eligible", name, err)
 		}
+	}
+	// A finding of another tool is retested only by that tool's retest
+	// handler: with none online the request is refused.
+	if _, err := svc.Request(context.Background(), retestapp.RequestInput{TenantID: fx.tenant, FindingID: notNuclei, Trigger: retestdom.TriggerManual, RequestedBy: &user}); !errors.Is(err, retestdom.ErrNoSensor) {
+		t.Errorf("not a nuclei finding, no retest sensor: err = %v, want no sensor", err)
 	}
 	var n int
 	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM commands WHERE tenant_id = $1`, fx.tenant.String()).Scan(&n)

@@ -147,19 +147,21 @@ secret.
 | Config | `internal/config/config.go` (`EntraSSOConfig`) |
 | Domain | `pkg/domain/identityprovider/entity.go` (providers, `AuthEndpoints`) |
 | Handler/routes | `internal/infra/http/handler/sso_handler.go`, `routes/auth.go` |
-| OIDC verifier | `internal/app/auth/oidc_verifier.go` (`oidcVerifier`, JWKS cache) |
+| Token verification | `pkg/oidc` (`verify.go` core, `jwks.go` key cache, `issuers.go` provider issuer rules); see below |
 
 ## ID-token validation (shipped)
 
 Every tenant OIDC provider (Entra ID, Okta, Google Workspace) must return an
 `id_token` in the token-exchange response, and the callback verifies it before
-completing login (`SSOService.verifyIDToken` → `oidcVerifier.verify`):
+completing login (`SSOService.verifyIDToken` → `oidc.Client.VerifyIDToken`):
 
-- **Signature** — RS256 only, verified against the provider's JWKS
-  (`Provider.JWKSURL`), with keys cached per JWKS URL (1h TTL, refresh on
-  unknown `kid`). `alg=none` and non-RS256 are rejected.
-- **Audience** — must contain our `client_id`.
-- **Expiry** — `exp` required; `exp`/`nbf`/`iat` enforced with 2-minute leeway.
+- **Signature** — verified against the provider's JWKS (`Provider.JWKSURL`)
+  by the shared core (see "One verifier, separate trust" below): RS256/384/512,
+  PS256 or ES256 with the key type matching, never HMAC or `none`.
+- **Audience** — must contain our `client_id`; `azp`, when present (required
+  with several audiences), must be our `client_id`.
+- **Expiry** — `exp`, `iat` and `sub` required; `exp`/`nbf`/`iat` enforced with
+  2-minute leeway.
 - **Nonce** — must equal the nonce embedded in the signed `state` at authorize
   time (constant-time compare); binds the token to this flow.
 - **Issuer** — provider-specific. For Entra the issuer must be
@@ -187,6 +189,52 @@ The `openid` scope is therefore required:
 
 For Okta and Google the email still comes from the userinfo endpoint (with its
 `email_verified` claim); for Entra it comes from the verified `id_token`.
+
+## One verifier, separate trust
+
+Every signed token the API accepts from an identity provider is verified by
+one core, `pkg/oidc` (`Client.VerifyJWT`). The flows add only what is specific
+to them:
+
+| Flow | Entry point | Adds on top of the core |
+|---|---|---|
+| Tenant SSO sign-in (Entra ID, Okta, Google Workspace) | `SSOService.verifyIDToken` → `VerifyIDToken` | nonce, `client_id` audience, `azp`, provider issuer rule (`EntraIssuer`: `iss` must match `tid`, a configured directory is pinned; `OktaIssuer`; `GoogleIssuer`) |
+| Global "Sign in with Microsoft" | `OAuthService.getMicrosoftUserInfo` → `VerifyIDToken` | `EntraIssuer("common")`, no nonce (confidential code flow), then `xms_edov` |
+| Platform administrators' identity provider | `adminconsole` → `VerifyIDToken` | discovered issuer, nonce, `client_id` |
+| OIDC back-channel logout | `SSOService.verifyLogoutToken` → `VerifyJWT` | audience one of the provider's client ids, `events`, no nonce, recent `iat` |
+| CI workload tokens | `cirun.Service.verify` → `VerifyWorkloadToken` | discovered JWKS on the issuer's host, lifetime ≤ 24h, `sub` and `jti` (replay is refused by `ClaimJTI`) |
+
+The core does, for every flow:
+
+- **Size cap** — a token over 32 KiB is refused before parsing.
+- **Algorithms** — RS256, RS384, RS512, PS256, ES256 only. HMAC and `none` are
+  never accepted, and the JWKS key's type must match the algorithm, so a
+  provider's RSA public key can never be replayed as an HMAC secret.
+- **Keys** — fetched from the flow's JWKS URI through the URL guard
+  (`httpsec.ValidateURL`, then the SSRF-safe dialer), at most 1 MiB. RSA keys
+  under 2048 bits, curves other than P-256 and non-signing keys are dropped.
+  Keys are cached per URI for an hour. An unknown `kid` or an expired cache
+  fetches again at most once per 30 seconds per URI, with concurrent callers
+  waiting for the fetch in flight, so a flood of made-up `kid`s costs one
+  fetch. When the provider cannot be reached, keys fetched in the last 24
+  hours still verify the `kid`s they hold.
+- **Claims** — `iss` and `aud` checked unless the flow explicitly takes them
+  over (both must then be checked by the flow), `exp` required (optional only
+  for logout tokens), `nbf` and `iat` not in the future, all with the flow's
+  leeway.
+
+Trust stays separate. The core never decides which issuer to believe: tenant
+SSO trusts the organization's identity provider records, the console trusts
+the platform identity provider, CI trusts the organization's `ci_trust_configs`.
+These are different principals (a person, an administrator, a pipeline), and
+no configuration is shared between them: an identity provider trusted for
+sign-in is not trusted for CI tokens, and the other way round.
+
+Tests: `pkg/oidc/security_test.go` runs the same attacks against every flow
+(algorithm confusion with the public key, `alg=none`, unknown `kid`, `kid`
+flood, wrong `iss`/`aud`, expired, `nbf` in the future, oversized, forged or
+tampered signature, loopback/private JWKS, http `jwks_uri`), plus the
+sign-in nonce and Entra directory pinning.
 
 ## Global "Sign in with Microsoft" — nOAuth hardening (shipped)
 

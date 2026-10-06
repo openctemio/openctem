@@ -1,5 +1,102 @@
 basePath: /api/v1
 definitions:
+  SensorGrant:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      capabilities:
+        items:
+          type: string
+        type: array
+      effective:
+        allOf:
+        - $ref: '#/definitions/SensorGrantEffective'
+        description: Effective is what applies now, after the trust level.
+      job_types:
+        items:
+          type: string
+        type: array
+      legacy_broad:
+        type: boolean
+      profile:
+        type: string
+      remote_actions:
+        items:
+          type: string
+        type: array
+      sensor_id:
+        type: string
+      target_cidrs:
+        items:
+          type: string
+        type: array
+      target_domains:
+        items:
+          type: string
+        type: array
+      target_network:
+        type: string
+      tier_ceiling:
+        type: integer
+      tools:
+        items:
+          type: string
+        type: array
+      trust_level:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+      zone_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  SensorGrantEffective:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      tier_ceiling:
+        type: integer
+    type: object
+  SensorGrantProfile:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      default:
+        type: boolean
+      job_types:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      parameterised:
+        description: 'Parameterised: the name takes ":<integration>" (collector).'
+        type: boolean
+      target_network:
+        type: string
+      tier_ceiling:
+        type: integer
+    type: object
+  SensorGrantSummary:
+    properties:
+      legacy_broad:
+        type: boolean
+      profile:
+        type: string
+      sensor_id:
+        type: string
+      trust_level:
+        type: string
+    type: object
   ctis.ASVSInfo:
     properties:
       control_id:
@@ -31,6 +128,18 @@ definitions:
         type: string
       unprotected_function:
         description: Unprotected function
+        type: string
+    type: object
+  ctis.Advisory:
+    properties:
+      id:
+        description: Advisory id (MS24-001, RHSA-2024:1234, DSA-5600-1).
+        type: string
+      source:
+        description: Issuer (microsoft, redhat, debian, ...).
+        type: string
+      url:
+        description: Advisory URL.
         type: string
     type: object
   ctis.ArtifactLocation:
@@ -75,6 +184,13 @@ definitions:
           Stable identifiers of the asset. A platform matches an incoming asset
           to an existing one on these before it falls back to the name or an IP
           address, so a renamed host or repository keeps its history.
+      identity_hints:
+        allOf:
+        - $ref: '#/definitions/ctis.IdentityHints'
+        description: |-
+          What a scanner observed about the host that helps match it across
+          tools (FQDN, NetBIOS name, MACs, OS CPE, cloud id, agent id). Weaker
+          than Identifiers.
       is_internet_accessible:
         description: 'CTEM: Is the asset directly accessible from the internet'
         type: boolean
@@ -830,6 +946,16 @@ definitions:
         description: Start line number
         type: integer
     type: object
+  ctis.DetectionType:
+    enum:
+    - confirmed
+    - potential
+    - info
+    type: string
+    x-enum-varnames:
+    - DetectionTypeConfirmed
+    - DetectionTypePotential
+    - DetectionTypeInfo
   ctis.DomainTechnical:
     properties:
       dns_records:
@@ -963,6 +1089,12 @@ definitions:
         allOf:
         - $ref: '#/definitions/ctis.MisconfigurationDetails'
         description: Misconfiguration-specific details
+      native:
+        allOf:
+        - $ref: '#/definitions/ctis.NativeIdentity'
+        description: |-
+          The finding as the source tool names it: native id, severity, status,
+          detection type, credentialed flag, raw record reference.
       network:
         allOf:
         - $ref: '#/definitions/ctis.NetworkLocation'
@@ -1012,6 +1144,14 @@ definitions:
       rule_name:
         description: Rule name
         type: string
+      scores:
+        description: |-
+          Every score of the finding with its source and date (CVSS v3.1 and
+          v4.0 together, vendor scores, EPSS, SSVC). The vulnerability.cvss_*
+          members stay the primary CVSS score.
+        items:
+          $ref: '#/definitions/ctis.Score'
+        type: array
       secret:
         allOf:
         - $ref: '#/definitions/ctis.SecretDetails'
@@ -1020,6 +1160,18 @@ definitions:
         allOf:
         - $ref: '#/definitions/ctis.Severity'
         description: 'Severity (required): critical, high, medium, low, info'
+      source_extra:
+        additionalProperties:
+          type: string
+        description: |-
+          Source fields no CTIS member holds, as strings, so an importer drops
+          nothing silently. Bounded: at most 64 entries, keys of 128 and values
+          of 4096 bytes, 32 KiB in all. Use SetSourceExtra to stay within it.
+        type: object
+      source_lifecycle:
+        allOf:
+        - $ref: '#/definitions/ctis.SourceLifecycle'
+        description: The finding's history as the source tracks it.
       stacks:
         description: Stacks - call stacks relevant to the finding (SARIF stacks)
         items:
@@ -1052,6 +1204,10 @@ definitions:
         - $ref: '#/definitions/ctis.FindingType'
         description: 'Finding type (required): vulnerability, secret, misconfiguration,
           compliance'
+      vex:
+        allOf:
+        - $ref: '#/definitions/ctis.VEX'
+        description: Exploitability statement (VEX) about this finding's vulnerability.
       vulnerability:
         allOf:
         - $ref: '#/definitions/ctis.VulnerabilityDetails'
@@ -1251,6 +1407,33 @@ definitions:
         description: 'IP version: 4 or 6'
         type: integer
     type: object
+  ctis.IdentityHints:
+    properties:
+      agent_id:
+        description: |-
+          Id of the scanner's own agent installed on the host (a Nessus or
+          Qualys agent UUID). Unique per scanner, not across scanners. The Go
+          name says whose agent it is, so it is not read as a receiver's own
+          endpoint software.
+        type: string
+      cloud_resource_id:
+        description: Cloud resource id the scanner reported (instance id, ARN).
+        type: string
+      fqdn:
+        description: Fully qualified DNS name the scanner resolved.
+        type: string
+      mac_addresses:
+        description: MAC addresses observed.
+        items:
+          type: string
+        type: array
+      netbios_name:
+        description: NetBIOS name.
+        type: string
+      os_cpe:
+        description: CPE of the detected operating system (cpe:/o:... or cpe:2.3:o:...).
+        type: string
+    type: object
   ctis.LogicalLocation:
     properties:
       fully_qualified_name:
@@ -1361,6 +1544,71 @@ definitions:
         description: Total volume USD
         type: number
     type: object
+  ctis.NativeIdentity:
+    properties:
+      credentialed:
+        description: |-
+          Whether the scan that found it was authenticated on the target. Absent
+          means unknown; false means the scan ran without credentials.
+        type: boolean
+      detection_type:
+        allOf:
+        - $ref: '#/definitions/ctis.DetectionType'
+        description: Whether the tool confirmed the issue or only suspects it.
+      family:
+        description: |-
+          The tool's family or category of the check (Nessus plugin family,
+          Qualys vulnerability category).
+        type: string
+      instance_id:
+        description: |-
+          The tool's id of this occurrence (DefectDojo unique_id_from_tool, a
+          Tenable or Qualys detection id), when it has one.
+        type: string
+      raw_ref:
+        description: |-
+          Where the raw record can be found again: a URL into the source, or a
+          locator inside the imported file. Informational; receivers never fetch
+          it.
+        type: string
+      scheme:
+        allOf:
+        - $ref: '#/definitions/ctis.NativeScheme'
+        description: |-
+          Vocabulary of the native values below. Selects the mapping tables of
+          NormalizeNativeSeverity, NormalizeNativeStatus and
+          NormalizeDetectionType.
+      severity:
+        description: |-
+          The tool's severity exactly as reported ("4", "5", "High", "error").
+          finding.severity holds the normalized level.
+        type: string
+      status:
+        description: |-
+          The tool's status exactly as reported ("Re-Opened", "fixed",
+          "risk_accepted"). finding.status and source_lifecycle.state hold the
+          normalized values.
+        type: string
+      vuln_id:
+        description: |-
+          The tool's id of the vulnerability or check: a Nessus plugin ID, a
+          Qualys QID, a DefectDojo vuln_id_from_tool, a SARIF rule id.
+        type: string
+    type: object
+  ctis.NativeScheme:
+    enum:
+    - nessus
+    - qualys
+    - defectdojo
+    - sarif
+    - other
+    type: string
+    x-enum-varnames:
+    - NativeSchemeNessus
+    - NativeSchemeQualys
+    - NativeSchemeDefectDojo
+    - NativeSchemeSARIF
+    - NativeSchemeOther
   ctis.NetworkLocation:
     properties:
       host:
@@ -1443,6 +1691,11 @@ definitions:
     type: object
   ctis.Remediation:
     properties:
+      advisories:
+        description: Vendor advisories that address the finding.
+        items:
+          $ref: '#/definitions/ctis.Advisory'
+        type: array
       auto_fixable:
         description: Auto-fixable
         type: boolean
@@ -1461,6 +1714,9 @@ definitions:
         allOf:
         - $ref: '#/definitions/ctis.FixRegex'
         description: Regex-based fix pattern (for tools that provide regex replacements)
+      patch_published_at:
+        description: When the vendor published the patch.
+        type: string
       recommendation:
         description: Short recommendation
         type: string
@@ -1469,6 +1725,11 @@ definitions:
         items:
           type: string
         type: array
+      solution_type:
+        allOf:
+        - $ref: '#/definitions/ctis.SolutionType'
+        description: 'Kind of fix: patch, upgrade, config, workaround, mitigation,
+          no_fix.'
       steps:
         description: Detailed fix steps
         items:
@@ -1626,6 +1887,52 @@ definitions:
         description: 'Scope type: domain, network, repository, cloud_account'
         type: string
     type: object
+  ctis.Score:
+    properties:
+      as_of:
+        description: When the source assigned or last updated it.
+        type: string
+      label:
+        description: Qualitative rating as the source states it ("high", "Act").
+        type: string
+      source:
+        description: 'Who assigned it: nvd, ghsa, vendor, tenable, qualys, first,
+          cisa, ...'
+        type: string
+      system:
+        allOf:
+        - $ref: '#/definitions/ctis.ScoreSystem'
+        description: Scoring system (required).
+      value:
+        description: |-
+          Numeric value: 0-10 for cvss and vpr, 0-1 for epss and
+          epss_percentile (FIRST's fractions), absent for ssvc.
+        type: number
+      vector:
+        description: Vector string ("CVSS:3.1/AV:N/...", an SSVC vector).
+        type: string
+      version:
+        description: |-
+          System version: "2.0", "3.0", "3.1" or "4.0" for CVSS (required
+          there), the model version for EPSS, "2" for SSVC.
+        type: string
+    type: object
+  ctis.ScoreSystem:
+    enum:
+    - cvss
+    - epss
+    - epss_percentile
+    - ssvc
+    - vpr
+    - vendor
+    type: string
+    x-enum-varnames:
+    - ScoreSystemCVSS
+    - ScoreSystemEPSS
+    - ScoreSystemEPSSPercentile
+    - ScoreSystemSSVC
+    - ScoreSystemVPR
+    - ScoreSystemVendor
   ctis.SecretDetails:
     properties:
       age_in_days:
@@ -1893,6 +2200,54 @@ definitions:
         description: Is verified on explorer (etherscan, etc.)
         type: boolean
     type: object
+  ctis.SolutionType:
+    enum:
+    - patch
+    - upgrade
+    - config
+    - workaround
+    - mitigation
+    - no_fix
+    type: string
+    x-enum-varnames:
+    - SolutionTypePatch
+    - SolutionTypeUpgrade
+    - SolutionTypeConfig
+    - SolutionTypeWorkaround
+    - SolutionTypeMitigation
+    - SolutionTypeNoFix
+  ctis.SourceLifecycle:
+    properties:
+      first_found:
+        description: When the source first found it.
+        type: string
+      last_fixed:
+        description: When the source last saw it fixed.
+        type: string
+      last_found:
+        description: When the source last found it.
+        type: string
+      state:
+        allOf:
+        - $ref: '#/definitions/ctis.SourceState'
+        description: The source state, normalized (native.status keeps the source's
+          word).
+      times_found:
+        description: How many times the source has found it.
+        type: integer
+    type: object
+  ctis.SourceState:
+    enum:
+    - new
+    - active
+    - reopened
+    - fixed
+    type: string
+    x-enum-varnames:
+    - SourceStateNew
+    - SourceStateActive
+    - SourceStateReopened
+    - SourceStateFixed
   ctis.StackFrame:
     properties:
       location:
@@ -2074,6 +2429,59 @@ definitions:
         description: Quote token symbol (WETH, USDT, etc.)
         type: string
     type: object
+  ctis.VEX:
+    properties:
+      as_of:
+        description: When the statement was made.
+        type: string
+      justification:
+        allOf:
+        - $ref: '#/definitions/ctis.VEXJustification'
+        description: |-
+          Why the product is not affected. Only with status not_affected, which
+          needs a justification or a statement.
+      native_justification:
+        description: |-
+          The justification as the source document states it (a CycloneDX
+          analysis.justification such as code_not_reachable).
+        type: string
+      source:
+        description: 'Who made the statement: a document id or URL, a vendor, a team.'
+        type: string
+      statement:
+        description: Impact or action statement, plain text.
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/ctis.VEXStatus'
+        description: Status (required).
+    type: object
+  ctis.VEXJustification:
+    enum:
+    - component_not_present
+    - vulnerable_code_not_present
+    - vulnerable_code_not_in_execute_path
+    - vulnerable_code_cannot_be_controlled_by_adversary
+    - inline_mitigations_already_exist
+    type: string
+    x-enum-varnames:
+    - VEXJustificationComponentNotPresent
+    - VEXJustificationVulnerableCodeNotPresent
+    - VEXJustificationVulnerableCodeNotInExecutePath
+    - VEXJustificationVulnerableCodeCannotBeControlledByAdversary
+    - VEXJustificationInlineMitigationsAlreadyExist
+  ctis.VEXStatus:
+    enum:
+    - not_affected
+    - affected
+    - fixed
+    - under_investigation
+    type: string
+    x-enum-varnames:
+    - VEXStatusNotAffected
+    - VEXStatusAffected
+    - VEXStatusFixed
+    - VEXStatusUnderInvestigation
   ctis.VulnDataSource:
     properties:
       id:
@@ -2172,6 +2580,14 @@ definitions:
         items:
           type: string
         type: array
+      ids:
+        description: |-
+          Every id of the vulnerability with its namespace (CVE, GHSA, OSV,
+          vendor). cve_id and cve_ids stay as they are; producers that send
+          both keep them consistent.
+        items:
+          $ref: '#/definitions/ctis.VulnerabilityID'
+        type: array
       in_cisa_kev:
         description: In CISA KEV (Known Exploited Vulnerabilities)
         type: boolean
@@ -2219,6 +2635,33 @@ definitions:
           will_not_fix'
         type: string
     type: object
+  ctis.VulnerabilityID:
+    properties:
+      id:
+        description: |-
+          The identifier (required): CVE-2024-3094, GHSA-xxxx-xxxx-xxxx,
+          PYSEC-2021-1, RHSA-2024:1234.
+        type: string
+      source:
+        description: Issuer of a vendor id (redhat, microsoft, ubuntu, ...).
+        type: string
+      type:
+        allOf:
+        - $ref: '#/definitions/ctis.VulnerabilityIDType'
+        description: Namespace (required).
+    type: object
+  ctis.VulnerabilityIDType:
+    enum:
+    - cve
+    - ghsa
+    - osv
+    - vendor
+    type: string
+    x-enum-varnames:
+    - VulnerabilityIDCVE
+    - VulnerabilityIDGHSA
+    - VulnerabilityIDOSV
+    - VulnerabilityIDVendor
   ctis.WalletDetails:
     properties:
       balance:
@@ -2567,6 +3010,15 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  github_com_openctemio_openctem_api_internal_app_cirun.Settings:
+    properties:
+      require_oidc:
+        description: |-
+          RequireOIDC refuses CI results sent with a sensor key: a CI job must
+          prove its identity with its provider's OIDC token. On for every
+          organization created after migration 001120; existing ones opt in.
+        type: boolean
     type: object
   github_com_openctemio_openctem_api_internal_app_cirun.Verdict:
     properties:
@@ -4933,6 +5385,101 @@ definitions:
         type: integer
       start_line:
         type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropAdvisory:
+    properties:
+      id:
+        type: string
+      source:
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropLifecycle:
+    properties:
+      first_found:
+        type: string
+      last_fixed:
+        type: string
+      last_found:
+        type: string
+      state:
+        type: string
+      times_found:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropNative:
+    properties:
+      credentialed:
+        type: boolean
+      detection_type:
+        type: string
+      family:
+        type: string
+      instance_id:
+        type: string
+      raw_ref:
+        type: string
+      scheme:
+        type: string
+      severity:
+        type: string
+      status:
+        type: string
+      vuln_id:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropScore:
+    properties:
+      as_of:
+        type: string
+      label:
+        type: string
+      source:
+        type: string
+      system:
+        type: string
+      value:
+        type: number
+      vector:
+        type: string
+      version:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropSolution:
+    properties:
+      advisories:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropAdvisory'
+        type: array
+      patch_published_at:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVEX:
+    properties:
+      as_of:
+        type: string
+      justification:
+        type: string
+      native_justification:
+        type: string
+      source:
+        type: string
+      statement:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVulnID:
+    properties:
+      id:
+        type: string
+      source:
+        type: string
+      type:
+        type: string
     type: object
   github_com_openctemio_openctem_api_pkg_domain_vulnerability.LogicalLocation:
     properties:
@@ -7452,6 +7999,14 @@ definitions:
         type: string
       ransomware_use:
         type: string
+    type: object
+  internal_infra_http_handler.CISettingsRequest:
+    properties:
+      require_oidc:
+        description: |-
+          RequireOIDC refuses CI results sent with a sensor key (a CI job must
+          use its provider's OIDC identity).
+        type: boolean
     type: object
   internal_infra_http_handler.CITemplateDrift:
     properties:
@@ -10061,6 +10616,11 @@ definitions:
         type: string
       source:
         type: string
+      source_data:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.FindingSourceDataResponse'
+        description: 'What the source knew (CTIS 1.4): native identity, every score,
+          VEX, ...; untrusted'
       stacks:
         items:
           $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_vulnerability.StackTrace'
@@ -10234,6 +10794,31 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  internal_infra_http_handler.FindingSourceDataResponse:
+    properties:
+      lifecycle:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropLifecycle'
+      location_key:
+        type: string
+      native:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropNative'
+      scores:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropScore'
+        type: array
+      solution:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropSolution'
+      source_extra:
+        additionalProperties:
+          type: string
+        type: object
+      vex:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVEX'
+      vulnerability_ids:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_vulnerability.InteropVulnID'
+        type: array
     type: object
   internal_infra_http_handler.FindingSourceResponse:
     properties:
@@ -12544,6 +13129,34 @@ definitions:
       tool:
         type: string
     type: object
+  internal_infra_http_handler.RunTaskLogLine:
+    properties:
+      fields:
+        additionalProperties: {}
+        type: object
+      level:
+        enum:
+        - debug
+        - info
+        - warn
+        - error
+        type: string
+      msg:
+        type: string
+      source:
+        type: string
+      ts:
+        type: string
+    type: object
+  internal_infra_http_handler.RunTaskLogsResponse:
+    properties:
+      lines:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunTaskLogLine'
+        type: array
+      truncated:
+        type: boolean
+    type: object
   internal_infra_http_handler.RunTaskPageResponse:
     properties:
       data:
@@ -13853,6 +14466,20 @@ definitions:
       tools:
         items:
           type: string
+        type: array
+    type: object
+  internal_infra_http_handler.SensorGrantProfiles:
+    properties:
+      profiles:
+        items:
+          $ref: '#/definitions/SensorGrantProfile'
+        type: array
+    type: object
+  internal_infra_http_handler.SensorGrantSummaries:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/SensorGrantSummary'
         type: array
     type: object
   internal_infra_http_handler.SensorHealthReasonResponse:
@@ -15824,6 +16451,61 @@ definitions:
         items:
           type: string
         maxItems: 20
+        type: array
+    type: object
+  internal_infra_http_handler.UpdateSensorGrantRequest:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      capabilities:
+        items:
+          type: string
+        type: array
+      job_types:
+        items:
+          type: string
+        type: array
+      profile:
+        type: string
+      remote_actions:
+        items:
+          type: string
+        type: array
+      target_cidrs:
+        items:
+          type: string
+        type: array
+      target_domains:
+        items:
+          type: string
+        type: array
+      target_network:
+        enum:
+        - any
+        - public
+        - none
+        type: string
+      tier_ceiling:
+        maximum: 2
+        minimum: 0
+        type: integer
+      tools:
+        items:
+          type: string
+        type: array
+      trust_level:
+        enum:
+        - new
+        - trusted
+        type: string
+      version:
+        description: Version is the version read; a stale one answers 409.
+        type: integer
+      zone_ids:
+        items:
+          type: string
         type: array
     type: object
   internal_infra_http_handler.UpdateSensorRequest:
@@ -20945,6 +21627,51 @@ paths:
       security:
       - CIRunToken: []
       summary: Upload a CI run's results
+      tags:
+      - CI
+  /ci/settings:
+    get:
+      description: Whether the organization requires the CI job's OIDC identity for
+        CI results (a CI sensor's key is then refused). On for organizations created
+        since this setting exists.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Settings'
+      security:
+      - BearerAuth: []
+      summary: CI settings
+      tags:
+      - CI
+    put:
+      consumes:
+      - application/json
+      description: Turning require_oidc off lets CI sensors authenticate with a sensor
+        key again (audited at high severity).
+      parameters:
+      - description: CI settings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CISettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Settings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change the CI settings
       tags:
       - CI
   /ci/trust-configs:
@@ -30569,6 +31296,42 @@ paths:
       summary: List a run's tasks
       tags:
       - Pipelines
+  /pipeline-runs/{id}/tasks/{task_id}/logs:
+    get:
+      description: The log lines the sensor sent for one task of the run, oldest first,
+        at most 5000. Kept 14 days. A task that is not in the run (or the run is another
+        organization's) is not found.
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Task ID
+        in: path
+        name: task_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.RunTaskLogsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: A run task's logs
+      tags:
+      - Pipelines
   /repositories/{repository_id}/branches:
     get:
       description: Retrieves all branches for a repository
@@ -34883,6 +35646,79 @@ paths:
       summary: Disable sensor
       tags:
       - Sensors
+  /sensors/{id}/grant:
+    get:
+      description: What the sensor may do (RFC-052 §5) and what applies now after
+        its trust level (effective).
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/SensorGrant'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a sensor's grant
+      tags:
+      - Sensors
+    put:
+      consumes:
+      - application/json
+      description: Narrowing (and demoting the trust level) needs sensors:grant:narrow;
+        any widening (and promoting to trusted) needs sensors:grant:widen, is audited
+        at high severity and notifies every administrator. Takes effect on the sensor's
+        next request.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New grant
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateSensorGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/SensorGrant'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change a sensor's grant
+      tags:
+      - Sensors
   /sensors/{id}/heartbeat-history:
     get:
       description: 'How the sensor''s heartbeats arrived over the last hours (at most
@@ -35229,6 +36065,38 @@ paths:
       security:
       - BearerAuth: []
       summary: Refresh scanner content on every sensor
+      tags:
+      - Sensors
+  /sensors/grant-profiles:
+    get:
+      description: The profiles an administrator may choose for a sensor. legacy-broad
+        is never listed.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorGrantProfiles'
+      security:
+      - BearerAuth: []
+      summary: List sensor grant profiles
+      tags:
+      - Sensors
+  /sensors/grant-summaries:
+    get:
+      description: 'For the sensor list: which sensors still have the broad legacy
+        grant and which are New.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorGrantSummaries'
+      security:
+      - BearerAuth: []
+      summary: List the grant profile and trust level of every sensor
       tags:
       - Sensors
   /sensors/identity-policy:

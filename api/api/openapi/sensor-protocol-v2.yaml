@@ -350,6 +350,66 @@ paths:
               properties:
                 reason: { type: string, description: "Why (draining, shutdown, canceled, politeness, ...). Stored up to 200 bytes." }
       responses: *transitionResponses
+  /api/v2/sensor/commands/{command_id}/logs:
+    parameters:
+      - $ref: "#/components/parameters/TransitionCommandID"
+    post:
+      summary: Store a batch of a task's log lines (feature "logs", RFC-029 §4.4.1)
+      description: >-
+        Only the sensor that holds (or last held) the command may send its
+        logs, while it runs and up to 24 hours after it finished (an outbox
+        replaying after an outage); any other sensor, tenant or id answers 404
+        command-not-found, a command finished longer ago 409
+        invalid-transition (state "closed"). seq numbers the batches of one
+        command from 0; a replayed seq answers what was stored and stores
+        nothing. A command keeps at most 200 batches and 2 MiB of lines: a
+        batch past that answers 200 with truncated true and is dropped (do not
+        resend it). The platform caps, cleans and redacts every line again;
+        logs are kept 14 days. Every 4xx is final for the batch.
+      operationId: sensorV2CommandLogs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seq, lines]
+              properties:
+                seq: { type: integer, minimum: 0, maximum: 9999 }
+                lines:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: object
+                    properties:
+                      ts: { type: string, format: date-time, description: "RFC 3339; missing, unreadable or in the future: the receive time." }
+                      level: { type: string, enum: [debug, info, warn, error], description: Anything else is info. }
+                      msg: { type: string, description: Kept up to 8 KiB. }
+                      source: { type: string, description: "The tool that logged it, up to 64 bytes." }
+                      fields:
+                        type: object
+                        description: At most 32; scalar values, others kept as their JSON text; values up to 1 KiB.
+      responses:
+        "200":
+          description: Stored, replayed, or dropped at the command's caps.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stored, dropped, truncated]
+                properties:
+                  stored: { type: integer }
+                  dropped: { type: integer }
+                  truncated: { type: boolean }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/suppressions:
     get:
       summary: Active suppression rules of the sensor's tenant

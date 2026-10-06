@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/api/internal/app/workflow"
 
@@ -146,6 +147,20 @@ func (v validationSensorAvailability) HasValidationSensor(ctx context.Context, t
 // change if it goes offline.
 func (v validationSensorAvailability) HasNucleiValidationSensor(ctx context.Context, tenantID shared.ID) (bool, error) {
 	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, []string{validation.SensorCapabilityValidateNuclei}, "")
+	if err != nil {
+		return false, err
+	}
+	return len(sensors) > 0, nil
+}
+
+// HasRetestSensor reports whether a sensor of the tenant is online, with
+// capacity, whose tool has a retest handler (capability "retest:<tool>"), the
+// capability a retest command for that tool requires.
+func (v validationSensorAvailability) HasRetestSensor(ctx context.Context, tenantID shared.ID, tool string) (bool, error) {
+	if !validation.ValidRetestTool(tool) {
+		return false, nil
+	}
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, []string{validation.RetestCapability(tool)}, "")
 	if err != nil {
 		return false, err
 	}
@@ -558,7 +573,9 @@ type Services struct {
 	// SensorPairing runs interactive pairing (RFC-052); nil when the
 	// installation has no encryption key to derive the pairing key from.
 	SensorPairing *sensorpairing.Service
-	ScanZone      *scanzoneapp.Service
+	// SensorGrant manages per-sensor grants (RFC-052 §5).
+	SensorGrant *sensorgrant.Service
+	ScanZone    *scanzoneapp.Service
 	// ScanFreeze manages scan freeze windows.
 	ScanFreeze *scanfreezeapp.Service
 	Command    *command.Service
@@ -1432,6 +1449,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing.SetAudit(s.Audit)
 		s.SensorPairing.SetEvents(s.Sensor)
 	}
+	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
+	// without a job and heartbeat actions; a pairing approval sets the
+	// chosen profile in its transaction.
+	s.SensorGrant = sensorgrant.NewService(repos.SensorGrant, repos.Sensor, log)
+	s.SensorGrant.SetAudit(s.Audit)
+	s.SensorGrant.SetZoneChecker(repos.SensorGrant)
+	if s.SensorPairing != nil {
+		s.SensorPairing.SetApprovalHook(s.SensorGrant)
+	}
 	// Optional short-lived sensor credentials (RFC-014 Phase 1b). Zero =
 	// disabled (renewed keys never expire), preserving today's behavior.
 	s.Sensor.SetKeyTTL(cfg.SensorConfig.KeyTTL)
@@ -1480,7 +1506,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		command.WithRefusalObserver(s.Sensor), command.WithPrivateTargetPolicy(s.Tenant),
 		// research/25 D3: interactsh and custom templates leave only when the
 		// organization enabled them (default off).
-		command.WithOptInPolicy(s.Tenant)}
+		command.WithOptInPolicy(s.Tenant),
+		// RFC-052 §5: each sensor's grant, before every other gate.
+		command.WithGrants(repos.SensorGrant, s.Sensor)}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}
@@ -1543,6 +1571,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	})
 	// Source-asserted resolve (Tenable.sc mitigated rows, RFC-047; default dry_run).
 	s.Ingest.SetSourceResolveMode(ingest.ParseSourceResolveMode(cfg.Ingest.SourceResolve))
+	s.Ingest.SetVEXMode(ingest.ParseVEXMode(cfg.Ingest.VEX))
 	// Ingest audit events are tenant-scoped, so they must go through the SAME
 	// audit service instance as every other tenant-scoped event: LogEvent also
 	// extends the per-tenant tamper-evident hash chain, and its chainMu is what
@@ -1567,6 +1596,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// tenant's policy.
 	s.Ingest.SetCommandReader(repos.Command)
 	s.Ingest.SetResultQuarantine(repos.SensorResult, sensorresult.DefaultLimits())
+	// RFC-052 §5.3: results without a job need push ingest in the sensor's
+	// effective grant (off by default, always off while New).
+	s.Ingest.SetGrants(repos.SensorGrant, s.Sensor)
 
 	// Initialize scanning services
 	s.ScanProfile = scan.NewScanProfileService(repos.ScanProfile, log)
@@ -2225,6 +2257,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	if s.SensorPairing != nil {
 		s.SensorPairing.SetStepUp(s.Auth)
 		s.SensorPairing.SetNotifications(repos.MemberLifecycle, s.Notification)
+	}
+	// A widened grant notifies every administrator (RFC-052 D-5).
+	if s.SensorGrant != nil {
+		s.SensorGrant.SetNotifications(repos.MemberLifecycle, s.Notification)
 	}
 }
 
