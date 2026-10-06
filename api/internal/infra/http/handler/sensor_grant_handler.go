@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -183,6 +184,9 @@ func (h *SensorHandler) UpdateGrant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SensorHandler) writeGrantError(w http.ResponseWriter, err error) {
+	if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Sensor").WriteJSON(w)
