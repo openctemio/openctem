@@ -159,6 +159,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
 	ingestHandler.SetHeartbeatObserver(svc.SensorPlatformHealth)
+	// A CI sensor's key is refused when its organization requires OIDC for
+	// CI (RFC-051).
+	ciKeyPolicy := newCIRunnerKeyPolicy(repos, svc, log)
+	if ciKeyPolicy != nil {
+		ingestHandler.SetCIRunnerKeyPolicy(ciKeyPolicy)
+	}
 
 	// Tenant handler with role service and asset service wired.
 	// Exposed as a package-level var so main.go can back-wire the
@@ -329,7 +335,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		ScanFreeze:      handler.NewScanFreezeWindowHandler(svc.ScanFreeze, log),
 		Ingest:          ingestHandler,
-		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, log),
+		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
 		SensorPairing:   newSensorPairingHandler(svc, log),
 		IOC:             newIOCHandlerWithFindingCheck(deps, log),
 		Validation:      validationHandler,
@@ -727,14 +733,32 @@ func offlineMark(heartbeatTimeout time.Duration) time.Duration {
 // newSensorResultsV2Handler builds the protocol v2 results handler (RFC-026),
 // or returns nil — /api/v2/sensor is then not mounted — while
 // SENSOR_PROTOCOL_V2_RESULTS is off.
-func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.SensorResultsV2Handler {
+func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Services, ciKeys *cirunapp.RunnerKeyPolicy,
+	log *logger.Logger) *handler.SensorResultsV2Handler {
 	if !cfg.Ingest.V2Results || repos.IngestJob == nil || repos.IngestReport == nil || svc.Sensor == nil {
 		return nil
 	}
 	receiver := ingest.NewV2Receiver(repos.IngestReport, repos.IngestJob, repos.IngestJob, repos.Command,
 		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
 	log.Info("sensor protocol v2 results enabled", "path", protov2.PathPrefix)
-	return handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+	h := handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+	if ciKeys != nil {
+		h.SetCIRunnerKeyPolicy(ciKeys)
+	}
+	return h
+}
+
+// newCIRunnerKeyPolicy builds the "OIDC required for CI" policy over the
+// tenants' setting (nil without the CI repository).
+func newCIRunnerKeyPolicy(repos *Repositories, svc *Services, log *logger.Logger) *cirunapp.RunnerKeyPolicy {
+	if repos.CIRun == nil {
+		return nil
+	}
+	var audit cirunapp.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return cirunapp.NewRunnerKeyPolicy(repos.CIRun, audit, log)
 }
 
 // newEASMHandler builds the EASM overview and review queue handler; every
@@ -884,6 +908,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
+	admin.SetSettingsService(ciSvc)
 	return admin, handler.NewCIRunnerHandler(ciSvc, log)
 }
 
