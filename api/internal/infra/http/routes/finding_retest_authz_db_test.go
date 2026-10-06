@@ -45,6 +45,10 @@ func (rtNucleiOnline) HasNucleiValidationSensor(context.Context, shared.ID) (boo
 	return true, nil
 }
 
+func (rtNucleiOnline) HasRetestSensor(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
+}
+
 type rtHarness struct {
 	t   *testing.T
 	db  *sql.DB
