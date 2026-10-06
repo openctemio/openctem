@@ -186,7 +186,7 @@ type Handlers struct {
 	ThreatModel           *handler.ThreatModelHandler           // nil if not initialized
 	Scoping               *handler.ScopingHandler               // nil if not initialized
 
-	// Asset Import (Nessus, K8s, CSV)
+	// Asset Import (K8s, CSV)
 	AssetImport *handler.AssetImportHandler // nil if not initialized
 
 	// Finding import (exports of other tools, VEX documents)
