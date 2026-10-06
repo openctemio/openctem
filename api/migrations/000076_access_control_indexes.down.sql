@@ -1,3 +1,0 @@
-DROP INDEX IF EXISTS idx_scope_rules_group_tenant_active_priority;
-DROP INDEX IF EXISTS idx_scope_rules_group_tenant;
-DROP INDEX IF EXISTS idx_assignment_rules_tenant_active_priority;

@@ -1,1 +1,0 @@
--- No-op: description changes are cosmetic and don't need to be reverted.

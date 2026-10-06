@@ -70,7 +70,9 @@ migrate_locked() {
   done
   if [ "$got" != t ]; then log "could not take the migration lock"; return 1; fi
   log "migration lock held; applying migrations"
-  migrate -path /opt/openctem/api/migrations -database "$(migrate_url)" up 2>&1 | prefix migrate || rc=$?
+  # openctem-migrate: migrate, plus what to do with a database older than the
+  # migration baseline (api/scripts/migrate-entrypoint.sh).
+  openctem-migrate -path /opt/openctem/api/migrations -database "$(migrate_url)" up 2>&1 | prefix migrate || rc=$?
   fd="${PSQL[1]:-}"
   [ -n "$fd" ] && { echo "SELECT pg_advisory_unlock(${MIGRATE_LOCK_KEY});" >&"$fd"; } 2>/dev/null
   kill "$PSQL_PID" 2>/dev/null || true; wait "$PSQL_PID" 2>/dev/null || true

@@ -3,10 +3,8 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -101,62 +99,4 @@ func TestExpireFeatureBranchFindings_MarksNotObservedAndASightingReopens(t *test
 	if st, _, _ := findingStatus(ctx, t, db, again); st != "new" {
 		t.Fatalf("cross-tenant expiry moved the finding to %s", st)
 	}
-}
-
-// Migration 000640 relabels resolved/branch_expired rows (the only writer of
-// that value) and nothing else, does not mark them regressions, and adds a
-// status CHECK. Replayed inside a rolled-back transaction.
-func TestNotObservedMigration_RelabelsOnlyBranchExpiry(t *testing.T) {
-	ctx := context.Background()
-	db := openGroupsDB(t)
-	up, err := os.ReadFile("../../../migrations/000640_finding_status_not_observed.up.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tenant := seedTestTenant(ctx, t, db)
-	asset := shared.NewID()
-	if _, err := db.ExecContext(ctx, `INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, $3, 'host')`,
-		asset.String(), tenant.String(), "h-"+asset.String()); err != nil {
-		t.Fatal(err)
-	}
-
-	tx, err := testdb.OpenMigrator(t).BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	testdb.LockForDDL(t, ctx, tx, "tenants", "assets", "findings")
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE findings DROP CONSTRAINT IF EXISTS chk_findings_status`); err != nil {
-		t.Fatal(err)
-	}
-	expired := insertBranchFinding(ctx, t, tx, tenant, asset, nil, "resolved", "branch_expired", "NOW()")
-	human := insertBranchFinding(ctx, t, tx, tenant, asset, nil, "resolved", "", "NOW()")
-	auto := insertBranchFinding(ctx, t, tx, tenant, asset, nil, "resolved", "auto_fixed", "NOW()")
-	open := insertBranchFinding(ctx, t, tx, tenant, asset, nil, "new", "branch_expired", "NOW()")
-
-	if _, err := tx.ExecContext(ctx, string(up)); err != nil {
-		t.Fatalf("apply migration: %v", err)
-	}
-	if _, err := tx.ExecContext(ctx, string(up)); err != nil {
-		t.Fatalf("re-apply migration: %v", err)
-	}
-	if st, at, reg := findingStatus(ctx, t, tx, expired); st != "not_observed" || at.Valid || reg {
-		t.Errorf("branch-expired row: %s resolved_at=%v regression=%v, want not_observed, no resolved_at, no regression", st, at, reg)
-	}
-	for name, id := range map[string]shared.ID{"human resolve": human, "auto_fixed": auto, "open row": open} {
-		want := "resolved"
-		if name == "open row" {
-			want = "new"
-		}
-		if st, _, _ := findingStatus(ctx, t, tx, id); st != want {
-			t.Errorf("%s changed to %s", name, st)
-		}
-	}
-	if _, err := tx.ExecContext(ctx, `SAVEPOINT bad`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE findings SET status = 'bogus' WHERE id = $1`, open.String()); err == nil {
-		t.Error("the status CHECK accepted an unknown status")
-	}
-	_, _ = tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT bad`)
 }

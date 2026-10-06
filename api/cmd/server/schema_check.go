@@ -63,6 +63,28 @@ func verifySchemaUpToDate(ctx context.Context, db *sql.DB, migrationsDir string,
 		return nil
 	}
 
+	if err := schemaVersionProblem(version, dirty, latest, baselineMigrationVersion(migrationsDir)); err != nil {
+		return err
+	}
+
+	log.Info("database schema up to date", "applied_version", version, "latest_migration", latest)
+	return nil
+}
+
+// schemaVersionProblem is the decision of verifySchemaUpToDate for an applied
+// (version, dirty) pair, the newest shipped migration and the migration
+// baseline (0 when the directory has none).
+//
+// A database older than the baseline cannot be migrated by this release at all
+// (golang-migrate refuses it: its version has no file any more), so that is
+// said first and plainly, with the way out (docs/rfcs/RFC-053-migration-baseline.md).
+func schemaVersionProblem(version int64, dirty bool, latest, baseline int64) error {
+	if version > 0 && baseline > 0 && version < baseline {
+		return fmt.Errorf("database is at migration %d, older than the migration baseline %d: this release "+
+			"cannot upgrade it. Back it up, deploy the last release before the baseline (git tag "+
+			"pre-baseline-%06d) and run its migrations, then deploy this release "+
+			"(docs/development/migrations.md, \"Migration baseline\")", version, baseline, baseline)
+	}
 	if dirty {
 		return fmt.Errorf("schema_migrations is DIRTY at version %d — a migration failed midway; "+
 			"resolve it (force to a clean version) before starting", version)
@@ -72,9 +94,27 @@ func verifySchemaUpToDate(ctx context.Context, db *sql.DB, migrationsDir string,
 			"up to %d — apply migrations (make migrate-up / scripts/migrate.sh up) before starting, "+
 			"or set SKIP_SCHEMA_CHECK=true to override", version, latest)
 	}
-
-	log.Info("database schema up to date", "applied_version", version, "latest_migration", latest)
 	return nil
+}
+
+// migrationBaselineFileRe matches the migration baseline: NNNN_baseline.up.sql.
+var migrationBaselineFileRe = regexp.MustCompile(`^(\d+)_baseline\.up\.sql$`)
+
+// baselineMigrationVersion returns the version of the dir's baseline file, or
+// 0 when there is none (or the dir cannot be read).
+func baselineMigrationVersion(dir string) int64 {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	for _, e := range entries {
+		if m := migrationBaselineFileRe.FindStringSubmatch(e.Name()); m != nil && !e.IsDir() {
+			if v, convErr := strconv.ParseInt(m[1], 10, 64); convErr == nil {
+				return v
+			}
+		}
+	}
+	return 0
 }
 
 // latestMigrationVersion returns the highest NNNN in the dir's *.up.sql files.

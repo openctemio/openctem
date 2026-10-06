@@ -1,2 +1,0 @@
-DROP TABLE IF EXISTS tenant_modules;
-ALTER TABLE modules DROP COLUMN IF EXISTS is_core;

@@ -3,11 +3,8 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
-	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -73,48 +70,5 @@ func TestLinkUnlinkedFindings_DB(t *testing.T) {
 	// Idempotent: nothing left to link.
 	if n, err := repo.LinkUnlinkedFindings(ctx, []string{cve}); err != nil || n != 0 {
 		t.Errorf("second run linked %d (%v), want 0", n, err)
-	}
-}
-
-// Migration 000301: room for a 21+ character advisory id, upper-cased ids,
-// and links for findings whose CVE is cataloged.
-func TestMigration000301_CVEIDNormalizeLink_DB(t *testing.T) {
-	db := catalogTestDB(t)
-	ctx := context.Background()
-	up, err := os.ReadFile("../../../migrations/000301_findings_cve_id_normalize_link.up.sql")
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
-	}
-	cve := uniqueCVE()
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM vulnerabilities WHERE cve_id = $1`, cve)
-	})
-	v := sensorReportedVuln(t, cve)
-	if err := NewVulnerabilityRepository(&DB{DB: db}).UpsertBatchByCVE(ctx, []*vulnerability.Vulnerability{v}); err != nil {
-		t.Fatal(err)
-	}
-	tenantID := seedTestTenant(ctx, t, db)
-	assetID := seedTestAsset(ctx, t, db, tenantID)
-
-	lower := seedUnlinkedCVEFinding(ctx, t, db, tenantID, assetID, " "+strings.ToLower(cve))
-	long := seedUnlinkedCVEFinding(ctx, t, db, tenantID, assetID, "openSUSE-SU-2023:0123-1")
-	blank := seedUnlinkedCVEFinding(ctx, t, db, tenantID, assetID, "  ")
-
-	if _, err := testdb.OpenMigrator(t).ExecContext(ctx, string(up)); err != nil { // DDL: schema owner
-		t.Fatalf("run 000301 up: %v", err)
-	}
-	if got, link := readCVELink(ctx, t, db, lower); got.String != cve || link.String != v.ID().String() {
-		t.Errorf("lower-case finding: cve %q link %q, want %s linked to %s", got.String, link.String, cve, v.ID())
-	}
-	if got, link := readCVELink(ctx, t, db, long); got.String != "OPENSUSE-SU-2023:0123-1" || link.Valid {
-		t.Errorf("advisory finding: cve %q link %v, want upper-cased and unlinked", got.String, link)
-	}
-	if got, _ := readCVELink(ctx, t, db, blank); got.Valid {
-		t.Errorf("blank cve_id %q, want NULL", got.String)
-	}
-	var width int
-	if err := db.QueryRowContext(ctx, `SELECT character_maximum_length FROM information_schema.columns
-		WHERE table_name = 'findings' AND column_name = 'cve_id'`).Scan(&width); err != nil || width != 30 {
-		t.Errorf("findings.cve_id width %d (%v), want 30", width, err)
 	}
 }

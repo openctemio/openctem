@@ -124,6 +124,8 @@ COPY --from=builder /app/bin/refingerprint .
 
 # Copy migrations if exist
 COPY --from=builder /app/migrations ./migrations
+# The migrate wrapper of the migrations image, for the all-in-one image.
+COPY --from=builder /app/scripts/migrate-entrypoint.sh ./migrate-entrypoint.sh
 
 # Copy sensor config templates (editable without rebuild — operators can
 # mount a configmap/host volume on /app/configs to override)
