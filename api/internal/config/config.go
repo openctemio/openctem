@@ -147,6 +147,12 @@ type IngestConfig struct {
 	// matching open finding (RFC-047 §7.6): "off", "dry_run" (default: count
 	// and log, no state change) or "enforce". INGEST_SOURCE_RESOLVE.
 	SourceResolve string
+
+	// VEX is how a VEX not_affected statement in a report acts on the
+	// matching open finding (CTIS 1.4): "off", "dry_run" (default: count,
+	// log and audit, no state change) or "enforce" (the finding becomes
+	// false_positive with the justification). INGEST_VEX.
+	VEX string
 }
 
 // AsyncEnabled reports whether async ingest mode is on.
@@ -1202,6 +1208,7 @@ func Load() (*Config, error) {
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
 			CoverageAutoResolve:   getEnv("INGEST_COVERAGE_AUTO_RESOLVE", "dry_run"),
 			SourceResolve:         getEnv("INGEST_SOURCE_RESOLVE", "dry_run"),
+			VEX:                   getEnv("INGEST_VEX", "dry_run"),
 		},
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.

@@ -224,6 +224,19 @@ func identifiersFor(ca *ctis.Asset, coreType asset.AssetType, name string) []ass
 			s.addTyped(asset.IdentifierCloudID, ca.Technical.Cloud.ResourceID)
 		}
 	}
+	// Identity hints (CTIS 1.4) are a scanner's remote observations: they
+	// count like the same value under its usual property name, never as a
+	// typed identifier, so a typed block still wins.
+	if h := ca.IdentityHints; h != nil {
+		if hw && !s.typed[asset.IdentifierMAC] {
+			for _, m := range h.MACAddresses {
+				s.addProp(asset.IdentifierMAC, m)
+			}
+		}
+		if !s.typed[asset.IdentifierCloudID] {
+			s.add(asset.IdentifierCloudID, h.CloudResourceID)
+		}
+	}
 	for _, p := range identifierProps {
 		if (p.hw && !hw) || s.typed[p.kind] {
 			continue
@@ -249,6 +262,10 @@ func identifiersFor(ca *ctis.Asset, coreType asset.AssetType, name string) []ass
 	}
 	if ca.Technical != nil && ca.Technical.IPAddress != nil {
 		s.addName(ca.Technical.IPAddress.Hostname)
+	}
+	if h := ca.IdentityHints; h != nil {
+		s.addName(h.FQDN)
+		s.addName(h.NetBIOSName)
 	}
 
 	// Addresses, in every shape scanners send them.

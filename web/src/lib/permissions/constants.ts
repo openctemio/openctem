@@ -198,6 +198,8 @@ export const Permission = {
   CIRead: 'scans:ci:read',
   CIWrite: 'scans:ci:write',
   CIOverride: 'scans:ci:override',
+  // Start a scan by hand while a scan freeze window is active (audited).
+  ScanFreezeOverride: 'scans:freeze:override',
 
   // ===========================================
   // SENSORS MODULE
@@ -487,6 +489,7 @@ export const PermissionGroups = {
     Permission.SecretStoreWrite,
     Permission.CIWrite,
     Permission.CIOverride,
+    Permission.ScanFreezeOverride,
     Permission.SensorsWrite,
     Permission.CommandsWrite,
     Permission.ScanZonesWrite,
@@ -663,6 +666,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.CIRead]: 'View CI Runs',
   [Permission.CIWrite]: 'Manage CI Trust and Gate',
   [Permission.CIOverride]: 'Override the CI Gate',
+  [Permission.ScanFreezeOverride]: 'Override Scan Freeze Windows',
 
   // Sensors
   [Permission.SensorsRead]: 'View Sensors',
@@ -862,6 +866,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.CIRead,
     Permission.CIWrite,
     Permission.CIOverride,
+    Permission.ScanFreezeOverride,
     // Sensors
     Permission.SensorsRead,
     Permission.SensorsWrite,
@@ -1024,6 +1029,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.CIRead,
     Permission.CIWrite,
     Permission.CIOverride,
+    Permission.ScanFreezeOverride,
     // Sensors
     Permission.SensorsRead,
     Permission.SensorsWrite,
