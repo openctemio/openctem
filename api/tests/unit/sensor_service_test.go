@@ -565,7 +565,7 @@ func TestSensorService_CreateSensor_Success(t *testing.T) {
 func TestSensorService_CreateSensor_RunnerTypeRefused(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	svc := newSensorSvcTestService(repo)
-	_, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+	_, err := svc.CreateSensor(context.Background(), sensorapp.CreateSensorInput{
 		TenantID: sensorSvcValidTenantID(), Name: "ci", Type: "runner",
 	})
 	if !errors.Is(err, shared.ErrValidation) {
