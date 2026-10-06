@@ -2,10 +2,8 @@ package postgres
 
 import (
 	"context"
-	"os"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -106,99 +104,3 @@ func TestCrownJewelReads_UseTheColumn(t *testing.T) {
 		t.Error("a generic Update cleared is_crown_jewel")
 	}
 }
-
-// Migration 000778 backfills the column from properties and removes the
-// key. Run inside a rolled-back transaction, starting from the pre-000778
-// shape that its down migration restores.
-func TestCrownJewelMigration_Backfill(t *testing.T) {
-	ctx := context.Background()
-	db := openGroupsDB(t)
-	up, err := os.ReadFile("../../../migrations/000778_assets_crown_jewel_column.up.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	down, err := os.ReadFile("../../../migrations/000778_assets_crown_jewel_column.down.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tenantID := seedTestTenant(ctx, t, db)
-	// DDL (the down/up replay) needs the schema owner; the app role used
-	// by the least-privilege CI job may only read and write rows.
-	tx, err := testdb.OpenMigrator(t).BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	exec := func(q string, args ...any) {
-		t.Helper()
-		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
-			t.Fatalf("%.80s: %v", q, err)
-		}
-	}
-	testdb.LockForDDL(t, ctx, tx, "tenants", "assets")
-	exec(string(down))
-
-	cases := map[string]struct {
-		column *bool
-		props  string
-		want   bool
-	}{
-		"json-true":   {nil, `{"is_crown_jewel": true, "registrar": "x"}`, true},
-		"string-true": {nil, `{"is_crown_jewel": "true"}`, true},
-		"string-TRUE": {nil, `{"is_crown_jewel": "TRUE"}`, true},
-		"json-false":  {nil, `{"is_crown_jewel": false}`, false},
-		"string-x":    {nil, `{"is_crown_jewel": "x"}`, false},
-		"number":      {nil, `{"is_crown_jewel": 1}`, false},
-		"object":      {nil, `{"is_crown_jewel": {"a": 1}}`, false},
-		"missing":     {nil, `{}`, false},
-		"column-true": {boolPtr(true), `{}`, true},
-	}
-	ids := map[string]string{}
-	for name, c := range cases {
-		id := shared.NewID().String()
-		ids[name] = id
-		var props any
-		if c.props != "" {
-			props = c.props
-		}
-		exec(`INSERT INTO assets (id, tenant_id, name, asset_type, criticality, is_crown_jewel, properties)
-			VALUES ($1, $2, $3, 'domain', 'high', $4, $5::jsonb)`, id, tenantID.String(), "mig-"+name+".example.com", c.column, props)
-	}
-
-	exec(string(up))
-
-	for name, c := range cases {
-		var got, hasKey bool
-		var registrar *string
-		if err := tx.QueryRowContext(ctx, `SELECT is_crown_jewel, COALESCE(properties ? 'is_crown_jewel', FALSE), properties->>'registrar'
-			FROM assets WHERE id = $1`, ids[name]).Scan(&got, &hasKey, &registrar); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		if got != c.want {
-			t.Errorf("%s: is_crown_jewel = %v, want %v", name, got, c.want)
-		}
-		if hasKey {
-			t.Errorf("%s: properties still hold is_crown_jewel", name)
-		}
-		if name == "json-true" && (registrar == nil || *registrar != "x") {
-			t.Errorf("json-true: other properties were lost")
-		}
-	}
-	var nullable string
-	if err := tx.QueryRowContext(ctx, `SELECT is_nullable FROM information_schema.columns
-		WHERE table_name = 'assets' AND column_name = 'is_crown_jewel'`).Scan(&nullable); err != nil {
-		t.Fatal(err)
-	}
-	if nullable != "NO" {
-		t.Errorf("is_crown_jewel is_nullable = %s, want NO", nullable)
-	}
-	// Down restores the property for the previous release.
-	exec(string(down))
-	var restored bool
-	_ = tx.QueryRowContext(ctx, `SELECT properties->>'is_crown_jewel' = 'true' FROM assets WHERE id = $1`, ids["string-true"]).Scan(&restored)
-	if !restored {
-		t.Error("down migration did not restore the property")
-	}
-}
-
-func boolPtr(b bool) *bool { return &b }

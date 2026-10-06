@@ -61,6 +61,7 @@ COPY --from=api /app/server /app/bootstrap-admin /opt/openctem/api/
 COPY --from=api /app/migrations /opt/openctem/api/migrations
 COPY --from=api /app/configs /opt/openctem/api/configs
 COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
+COPY --from=api /app/migrate-entrypoint.sh /usr/local/bin/openctem-migrate
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 # Bind :443 (and the optional :80 redirect) as non-root, on Kubernetes too.
 RUN setcap cap_net_bind_service=+ep /usr/bin/caddy
@@ -70,7 +71,7 @@ COPY --from=gateway Caddyfile planes.caddy entrypoint.sh /etc/caddy/
 COPY --from=gateway modes /etc/caddy/modes
 COPY supervise.sh /usr/local/bin/openctem-supervise
 COPY healthcheck.sh /usr/local/bin/openctem-healthcheck
-RUN chmod 0755 /usr/local/bin/openctem-supervise /usr/local/bin/openctem-healthcheck /etc/caddy/entrypoint.sh \
+RUN chmod 0755 /usr/local/bin/openctem-supervise /usr/local/bin/openctem-healthcheck /usr/local/bin/openctem-migrate /etc/caddy/entrypoint.sh \
  && chown -R nextjs:nodejs /opt/openctem /data /config
 
 ENV GATEWAY=on \

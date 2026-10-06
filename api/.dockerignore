@@ -73,6 +73,7 @@ deploy/
 # Scripts (not needed in production image)
 scripts/
 !scripts/dev-entrypoint.sh
+!scripts/migrate-entrypoint.sh
 
 # Temporary files
 tmp/

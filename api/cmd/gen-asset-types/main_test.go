@@ -50,12 +50,46 @@ func TestCheckDrift_DetectsEachKindOfDrift(t *testing.T) {
 	if err := checkDrift(goSrc, ts+"// edited\n", sql, migrationsDir); err == nil || !strings.Contains(err.Error(), tsPath) {
 		t.Errorf("edited TS file not detected: %v", err)
 	}
+	// The migration half, on a directory whose newest registry migration
+	// carries the block the YAML renders.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "000010_registry.up.sql"), []byte(sql+validateCoreType+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkDrift(goSrc, ts, sql, dir); err != nil {
+		t.Fatalf("matching block reported as drift: %v", err)
+	}
 	changed := strings.Replace(sql, "'serverless', 'Serverless Function', 'function'", "'serverless', 'Serverless Function', 'host'", 1)
 	if changed == sql {
 		t.Fatal("fixture no longer matches the SQL block")
 	}
-	if err := checkDrift(goSrc, ts, changed, migrationsDir); err == nil || !strings.Contains(err.Error(), "asset-type-registry block") {
+	if err := checkDrift(goSrc, ts, changed, dir); err == nil || !strings.Contains(err.Error(), "asset-type-registry block") {
 		t.Errorf("migration block drift not detected: %v", err)
+	}
+}
+
+// After the migration baseline (RFC-053) no migration carries the block until
+// the next registry change: the generated files are still checked, the
+// migration half is left to the database tests.
+func TestCheckDrift_NoRegistryMigrationAboveTheBaseline(t *testing.T) {
+	t.Chdir("../..")
+	m, err := load(yamlPath, relationshipPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	goSrc, err := renderGo(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "001120_baseline.up.sql"), []byte("-- pg_dump, no markers\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkDrift(goSrc, renderTS(m), renderSQL(m), dir); err != nil {
+		t.Fatalf("no registry migration must not be drift: %v", err)
+	}
+	if err := checkDrift(append(goSrc, []byte("// edited\n")...), renderTS(m), renderSQL(m), dir); err == nil {
+		t.Error("edited Go file not detected without a registry migration")
 	}
 }
 

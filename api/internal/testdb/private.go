@@ -37,14 +37,6 @@ import (
 // and used through it; otherwise through DATABASE_URL as before.
 func PrivateDatabase(t testing.TB, prefix, migrationsDir string) *sql.DB {
 	t.Helper()
-	return PrivateDatabaseThrough(t, prefix, migrationsDir, math.MaxInt)
-}
-
-// PrivateDatabaseThrough is PrivateDatabase that stops after migration
-// version through, for a test that seeds data in the old schema and then
-// applies (and reverts) newer migrations with Migrate.
-func PrivateDatabaseThrough(t testing.TB, prefix, migrationsDir string, through int) *sql.DB {
-	t.Helper()
 	base := AdminURL()
 	if base == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
@@ -79,7 +71,7 @@ func PrivateDatabaseThrough(t testing.TB, prefix, migrationsDir string, through 
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	Migrate(t, db, migrationsDir, 0, through, false)
+	Migrate(t, db, migrationsDir, 0, math.MaxInt, false)
 	return db
 }
 

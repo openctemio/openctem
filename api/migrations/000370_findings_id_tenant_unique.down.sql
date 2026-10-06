@@ -1,1 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS ux_findings_id_tenant;

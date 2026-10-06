@@ -10,6 +10,10 @@
 #      above the highest version already on the base. golang-migrate only
 #      applies versions above a database's current one, so a lower number
 #      merged later is silently skipped on every already-migrated database.
+#      One exception: a migration baseline (NNNNNN_baseline, RFC-053) replaces
+#      the chain up to its version, so it may be at or below the base's
+#      highest version, provided it is the lowest version left in the tree
+#      (every migration it replaces was removed in the same change).
 #
 # Base commit: the PR's base branch on pull_request, merge_group.base_sha in the
 # merge queue (so a queued PR is re-checked against what is actually ahead of
@@ -34,6 +38,7 @@ versions() {
 }
 
 current="$(find "$dir" -maxdepth 1 -type f -name '*.sql' | versions)"
+lowest="$(awk 'NR == 1 {print $1}' <<<"$current")"
 
 # 1. One name per version (the .up/.down pair share it).
 dups="$(awk '{print $1}' <<<"$current" | uniq -d)"
@@ -46,9 +51,14 @@ done
 if [[ -n "$base" ]]; then
   base_list="$(git ls-tree --name-only "$base" -- "$dir/" | versions)"
   base_max="$(awk 'END {print ($1 == "" ? 0 : $1)}' <<<"$base_list")"
-  added="$(git diff --name-only --diff-filter=A "$base" HEAD -- "$dir/" | versions)"
+  # --no-renames: a file that replaces a base migration (same content under a
+  # new number or name) is an addition here, not a rename to skip.
+  added="$(git diff --no-renames --name-only --diff-filter=A "$base" HEAD -- "$dir/" | versions)"
   while read -r v name raw; do
     [[ -n "$v" ]] || continue
+    if [[ "$name" == baseline ]] && (( v == lowest )); then
+      continue
+    fi
     if (( v <= base_max )); then
       next=$((base_max + 1))
       err "$dir/${raw}_${name} is version $v, but the base already has migrations up to $base_max. golang-migrate would silently skip it on every database already at $base_max. Renumber it to $(printf '%0*d' "${#raw}" "$next")."

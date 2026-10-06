@@ -1,1 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS ux_vulnerabilities_tenant_identity;
