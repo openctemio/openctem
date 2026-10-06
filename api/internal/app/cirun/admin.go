@@ -333,7 +333,7 @@ func (s *Service) CreateOverride(ctx context.Context, tenantID shared.ID, in Ove
 	}
 	now := s.now().UTC()
 	o := &cirun.GateOverride{ID: shared.NewID(), TenantID: tenantID, RepositoryAssetID: repo.ID(), CommitSHA: in.CommitSHA,
-		Reason: in.Reason, CreatedByEmail: a.Email, ExpiresAt: now.Add(d), CreatedAt: now}
+		Reason: in.Reason, ExpiresAt: now.Add(d), CreatedAt: now}
 	if uid, err := shared.IDFromString(a.UserID); err == nil {
 		o.CreatedBy = &uid
 	}

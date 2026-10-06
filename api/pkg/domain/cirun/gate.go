@@ -163,11 +163,13 @@ type GateOverride struct {
 	CommitSHA         string
 	Reason            string
 	CreatedBy         *shared.ID
-	CreatedByEmail    string
-	ExpiresAt         time.Time
-	RevokedAt         *time.Time
-	RevokedBy         *shared.ID
-	CreatedAt         time.Time
+	// CreatedByEmail is the creator's current email, read from users (empty
+	// when the user is gone); never stored with the override.
+	CreatedByEmail string
+	ExpiresAt      time.Time
+	RevokedAt      *time.Time
+	RevokedBy      *shared.ID
+	CreatedAt      time.Time
 }
 
 var commitSHARE = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
@@ -368,9 +370,11 @@ func Evaluate(in GateInput) GateVerdict {
 	switch {
 	case fail && in.Override != nil && in.Override.ActiveAt(in.Now):
 		o := in.Override
-		v.Override = &GateOverrideView{ID: o.ID.String(), Reason: o.Reason, CreatedBy: o.CreatedByEmail, ExpiresAt: o.ExpiresAt}
+		// The verdict goes to CI logs, which may be public: it names no
+		// person (the console and the audit log show who created it).
+		v.Override = &GateOverrideView{ID: o.ID.String(), Reason: o.Reason, ExpiresAt: o.ExpiresAt}
 		v.Reasons = append(v.Reasons, GateReason{Code: ReasonOverride,
-			Message: fmt.Sprintf("break-glass by %s until %s: %s", nonEmpty(o.CreatedByEmail, "an administrator"),
+			Message: fmt.Sprintf("break-glass by an administrator until %s: %s",
 				o.ExpiresAt.UTC().Format(time.RFC3339), o.Reason)})
 		v.WouldFail = true
 		v.Verdict = VerdictPass
