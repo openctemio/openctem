@@ -29,6 +29,7 @@ const syncInterval = 24 * time.Hour
 // - User-specific data (preferences, profile) stored locally
 // - Future migration away from Keycloak
 // Supports both local auth (LocalClaimsKey) and OIDC auth (ClaimsKey).
+//
 //nolint:gocognit // existing middleware; only its import changed here
 func UserSync(userService *tenant.UserService, log *logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
