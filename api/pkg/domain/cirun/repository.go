@@ -31,12 +31,20 @@ type Repository interface {
 	EnabledTrustConfigs(ctx context.Context, tenantID shared.ID, issuer string) ([]TrustConfig, error)
 	TouchTrustConfig(ctx context.Context, tenantID, id shared.ID, at time.Time) error
 
+	// CIRequireOIDC reads whether the tenant refuses CI results sent with a
+	// sensor key; SetCIRequireOIDC writes it.
+	CIRequireOIDC(ctx context.Context, tenantID shared.ID) (bool, error)
+	SetCIRequireOIDC(ctx context.Context, tenantID shared.ID, require bool) error
+
 	// ClaimJTI records an OIDC token id; false means it was exchanged
 	// before (replay). Global, not tenant-scoped: one token, one exchange.
 	ClaimJTI(ctx context.Context, issuer, jti string, expiresAt time.Time) (bool, error)
 	PurgeExpiredJTIs(ctx context.Context, before time.Time) (int64, error)
 
 	CreateRun(ctx context.Context, r *Run) error
+	// CountPipelineRunsSince counts the runs a pipeline started since the
+	// time (the per-pipeline rate).
+	CountPipelineRunsSince(ctx context.Context, tenantID, pipelineID shared.ID, since time.Time) (int, error)
 	GetRun(ctx context.Context, tenantID, id shared.ID) (*Run, error)
 	// GetRunByTokenHash returns the run whose unexpired upload token hashes
 	// to hash. Not tenant-scoped: the token is the credential.
@@ -95,6 +103,9 @@ type CoverageRepository interface {
 	FireAlert(ctx context.Context, tenantID shared.ID, a Alert, at time.Time) (bool, error)
 	ClearAlert(ctx context.Context, tenantID, subjectID shared.ID, kind AlertKind) error
 	PipelineTenantsForPlatform(ctx context.Context) ([]shared.ID, error)
+	// TokenRefusalsSince counts the tenant's refused CI token exchanges
+	// (audited, so verified tokens only) since the time.
+	TokenRefusalsSince(ctx context.Context, tenantID shared.ID, since time.Time) (int, error)
 	MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *Pipeline) ([]shared.ID, error)
 	RetirePipeline(ctx context.Context, tenantID, pipelineID shared.ID, by *shared.ID, reason string, at time.Time) (*Pipeline, []shared.ID, error)
 }

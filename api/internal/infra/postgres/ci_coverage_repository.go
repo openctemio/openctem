@@ -219,6 +219,15 @@ func (r *CIRunRepository) FireAlert(ctx context.Context, tenantID shared.ID, a c
 	return n == 1, nil
 }
 
+// TokenRefusalsSince counts the tenant's ci_run.token_refused audit records
+// since the time (idx_audit_logs_tenant_logged_at).
+func (r *CIRunRepository) TokenRefusalsSince(ctx context.Context, tenantID shared.ID, since time.Time) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM audit_logs
+		WHERE tenant_id = $1 AND logged_at > $2 AND action = 'ci_run.token_refused'`, tenantID.String(), since).Scan(&n)
+	return n, err
+}
+
 // ClearAlert ends a firing alert (its condition no longer holds).
 func (r *CIRunRepository) ClearAlert(ctx context.Context, tenantID, subjectID shared.ID, kind cirun.AlertKind) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM ci_alert_state WHERE tenant_id = $1 AND subject_id = $2 AND kind = $3`,
@@ -226,10 +235,11 @@ func (r *CIRunRepository) ClearAlert(ctx context.Context, tenantID, subjectID sh
 	return err
 }
 
-// PipelineTenantsForPlatform lists the tenants that have CI pipelines (the
-// alert job walks them one by one; every later query is tenant-scoped).
+// PipelineTenantsForPlatform lists the tenants that have CI pipelines or a
+// CI trust configuration (the alert job walks them one by one; every later
+// query is tenant-scoped).
 func (r *CIRunRepository) PipelineTenantsForPlatform(ctx context.Context) ([]shared.ID, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT tenant_id FROM ci_pipelines`)
+	rows, err := r.db.QueryContext(ctx, `SELECT tenant_id FROM ci_pipelines UNION SELECT tenant_id FROM ci_trust_configs`)
 	if err != nil {
 		return nil, err
 	}

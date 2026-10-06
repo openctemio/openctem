@@ -442,6 +442,8 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 	// The command names its step run, so the reports bound to it are
 	// attributed to the step (scan provenance, chained outputs).
 	cmd.SetStepRunID(stepRun.ID)
+	// A run started with an audited freeze override keeps it for every step.
+	cmd.FreezeOverride = run.FreezeOverride
 
 	// A run routed to a scan zone (RFC-023) keeps every step inside it: the
 	// command is stamped with the zone and left to the zone's sensors (the

@@ -161,6 +161,10 @@ const (
 	ActionAuthMFARecoveryCodesRegenerated Action = "auth.mfa_recovery_codes_regenerated"
 	ActionAuthSessionRevoked              Action = "auth.session_revoked"
 	ActionAuthPasswordChanged             Action = "auth.password_changed"
+	// Step-up re-authentication: the signed-in user proved their identity
+	// again (TOTP or password) before a sensitive action, or failed to.
+	ActionAuthStepUp       Action = "auth.step_up"
+	ActionAuthStepUpFailed Action = "auth.step_up_failed"
 
 	// Settings actions
 	ActionSettingsUpdated Action = "settings.updated"
@@ -242,6 +246,17 @@ const (
 	ActionSensorRepaired          Action = "sensor.repaired"
 	ActionSensorKeyRevoked        Action = "sensor.key_revoked"
 	ActionSensorIdentityPolicySet Action = "sensor.identity_policy_changed"
+
+	// Per-sensor grants (RFC-052 §5). GrantChanged: an administrator changed
+	// a sensor's grant or trust level (high when it widened; the diff names
+	// every dimension). ClaimRefusedGrant: a sensor tried to claim a job its
+	// grant does not cover. CredentialRefused: the job carried credentials
+	// the sensor may not receive. PushRefusedGrant: a sensor sent results
+	// without a job and its grant does not allow push ingest.
+	ActionSensorGrantChanged      Action = "sensor.grant_changed"
+	ActionSensorClaimRefusedGrant Action = "sensor.claim_refused_grant"
+	ActionSensorCredentialRefused Action = "sensor.credential_refused"
+	ActionSensorPushRefusedGrant  Action = "sensor.push_refused_grant"
 
 	// Scan zone actions (RFC-023): every change to a zone or to which sensors
 	// serve it.
@@ -474,6 +489,10 @@ const (
 	// enforcing run closed.
 	ActionIngestSourceResolveDryRun Action = "ingest.source_resolve_dry_run"
 	ActionIngestSourceResolved      Action = "ingest.source_resolved"
+	// VEX not_affected statements (CTIS 1.4): what a dry run would have
+	// closed, and what an enforcing run closed.
+	ActionIngestVEXDryRun  Action = "ingest.vex_dry_run"
+	ActionIngestVEXApplied Action = "ingest.vex_applied"
 
 	// AI Triage actions
 	ActionAITriageRequested       Action = "ai_triage.requested"
@@ -537,6 +556,7 @@ func (a Action) IsValid() bool {
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthStepUp, ActionAuthStepUpFailed,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
 		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
@@ -547,6 +567,7 @@ func (a Action) IsValid() bool {
 		ActionSensorResultPolicyUpdated,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet,
+		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant,
 		ActionIntegrationSyncRequested,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
@@ -599,6 +620,7 @@ func (a Action) IsValid() bool {
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
 		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
 		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved,
+		ActionIngestVEXDryRun, ActionIngestVEXApplied,
 		ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
 		ActionAITriageBudgetExhausted,
@@ -649,7 +671,8 @@ func (a Action) Category() string {
 		return "scan"
 	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
-		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged:
+		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthStepUp, ActionAuthStepUpFailed:
 		return "security"
 	case ActionSettingsUpdated:
 		return "settings"
@@ -663,7 +686,8 @@ func (a Action) Category() string {
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
-		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet:
+		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet,
+		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
@@ -696,7 +720,8 @@ func (a Action) Category() string {
 		return "rule"
 	case ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
 		ActionIngestCoverageAutoResolveDryRun, ActionIngestCoverageAutoResolved,
-		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved:
+		ActionIngestSourceResolveDryRun, ActionIngestSourceResolved,
+		ActionIngestVEXDryRun, ActionIngestVEXApplied:
 		return "ingest"
 	case ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
@@ -889,6 +914,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSCIMGroupMappingsUpdated,
 		ActionUserSuspended, ActionUserDeactivated,
 		ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
+		ActionAuthStepUpFailed,
 		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
@@ -908,6 +934,7 @@ func SeverityForAction(a Action) Severity {
 	// Medium - important changes
 	case ActionUserCreated, ActionUserActivated,
 		ActionAuthMFAEnabled, ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthStepUp,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,

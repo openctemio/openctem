@@ -242,11 +242,23 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
 	"scan_zones":        func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
 	"sensors":           func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
+	"scan_freeze_windows": func(*schemaSeeder) map[string]any {
+		return map[string]any{"timezone": "UTC", "recurrence": "weekly", "days": "{1}", "start_minute": "0", "end_minute": "60"}
+	},
 	// public_key is 32 bytes (lib/pq sends a string to a bytea parameter as raw
 	// bytes), thumbprint 43 base64url characters, status a
 	// closed set (CHECKs; RFC-052).
 	"sensor_keys": func(*schemaSeeder) map[string]any {
 		return map[string]any{"public_key": strings.Repeat("k", 32), "thumbprint": strings.Repeat("A", 43), "status": "active"}
+	},
+	// profile has a format CHECK (RFC-052 grants). The insert trigger on
+	// sensors already gave the seeded sensor its grant; replace it with one
+	// that names the seeded user (updated_by).
+	"sensor_grants": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM sensor_grants WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear trigger grants: %v", err)
+		}
+		return map[string]any{"profile": "internal-network-scanner"}
 	},
 	// type has a format CHECK, not a list of literals.
 	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
