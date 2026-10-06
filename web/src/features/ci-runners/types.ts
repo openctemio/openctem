@@ -20,6 +20,9 @@ export type CIGatePolicyRequest = S['internal_infra_http_handler.CIGatePolicyReq
 export type CIGateOverride = S['internal_infra_http_handler.CIGateOverrideResponse']
 export type CIGateOverrideRequest = S['internal_infra_http_handler.CIGateOverrideRequest']
 
+/** The organization's CI settings (OIDC required for CI results). */
+export type CISettings = S['github_com_openctemio_openctem_api_internal_app_cirun.Settings']
+
 export type CIProvider = 'github' | 'gitlab'
 export type CIVerdictFilter = '' | 'pass' | 'fail' | 'none'
 

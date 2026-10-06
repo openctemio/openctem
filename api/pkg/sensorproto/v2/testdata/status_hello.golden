@@ -106,7 +106,8 @@
     "local_policy",
     "capacity",
     "refusal",
-    "config_report"
+    "config_report",
+    "logs"
   ],
   "media_types": [
     "application/vnd.openctem.ctis.v1+json"

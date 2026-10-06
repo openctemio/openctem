@@ -139,9 +139,13 @@ the upload tokens of their running jobs at once.
 
 ## 6. Moving off API keys
 
-A runner sensor's API key still works; its responses carry a `Deprecation`
-header and the sensor prints a warning. Once the pipeline runs with OIDC,
-delete the `API_KEY` secret from CI and revoke the runner sensor's key.
+A runner sensor's API key still works unless the organization requires OIDC
+for CI; its responses carry a `Deprecation` header and the sensor prints a
+warning. Once the pipeline runs with OIDC, delete the `API_KEY` secret from CI,
+revoke the runner sensor's key, and turn on **Require OIDC for CI** at the top
+of **Settings > Scanning > CI pipelines**: a CI sensor's key is then refused
+(`403 ci-oidc-required`) and each refusal is audited. Organizations created
+since this setting exists have it on from the start.
 
 ## Troubleshooting
 

@@ -12,6 +12,7 @@ import (
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
@@ -65,6 +66,14 @@ type CommandHandler struct {
 	coverage         commandCoverageEvaluator
 	validator        *validator.Validator
 	logger           *logger.Logger
+	// logs keeps the per-task logs sensors send (nil: the logs resource is
+	// not served and FeatureLogs is not advertised).
+	logs *commandlog.Service
+}
+
+// SetCommandLogs serves POST /api/v2/sensor/commands/{id}/logs with svc.
+func (h *CommandHandler) SetCommandLogs(svc *commandlog.Service) {
+	h.logs = svc
 }
 
 // NewCommandHandler creates a new command handler.

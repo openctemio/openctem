@@ -85,8 +85,14 @@ func (h *SensorControlV2Handler) Features() []string {
 	if h.ingest != nil && h.ingest.sensorService.SupportsConfigReports() {
 		out = append(out, protov2.FeatureConfigReport)
 	}
+	if h.HasLogs() {
+		out = append(out, protov2.FeatureLogs)
+	}
 	return out
 }
+
+// HasLogs reports whether the logs resource is served.
+func (h *SensorControlV2Handler) HasLogs() bool { return h.commands != nil && h.commands.logs != nil }
 
 // HasIngest, HasCommands and HasSuppressions tell route registration which
 // routes to mount.
