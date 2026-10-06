@@ -11,4 +11,4 @@
 
 - An hourly job (one replica) deletes the per-run finding fingerprints of runs older than 90 days and runs older than 400 days, always keeping each pipeline's latest run and latest default-branch run, and clears run token hashes once the token has expired.
 - Migrations `001139` (constraints, column split, email drop) and `001140` (validates the new trust-configuration keys without blocking writes).
-- **Upgrade note:** on a large installation the first retention pass works in batches over several hours; nothing to do.
+- **Upgrade note:** one-step change: during a rolling deploy, pods of the previous release fail CI gate evaluation and the gate-policy and break-glass console calls until they are replaced (the CI exchange and uploads keep working). On a large installation the first retention pass works in batches over several hours.
