@@ -73,7 +73,7 @@ export function upgradeCommands(
   switch (eco) {
     case 'npm':
       // A transitive package cannot be installed over the parent's range; pin
-      // it with an override (npm 8.3+), as Dependabot and Snyk advise.
+      // it with an override (npm 8.3+), as the npm documentation advises.
       return transitive
         ? [
             {
