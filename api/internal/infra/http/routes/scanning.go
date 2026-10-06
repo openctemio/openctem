@@ -105,10 +105,16 @@ func registerSensorManagementRoutes(
 		// widens (the handler checks which). Before /{id}.
 		r.GET("/identity-policy", h.GetIdentityPolicy, middleware.Require(permission.SensorsRead))
 		r.PUT("/identity-policy", h.SetIdentityPolicy, middleware.RequireAny(permission.SensorsGrantNarrow, permission.SensorsGrantWiden))
+		// Per-sensor grants (RFC-052 §5). A change that widens needs
+		// sensors:grant:widen (the service decides). Before /{id}.
+		r.GET("/grant-profiles", h.ListGrantProfiles, middleware.Require(permission.SensorsRead))
+		r.GET("/grant-summaries", h.ListGrantSummaries, middleware.Require(permission.SensorsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead))
 		// Signing keys of key-bound sensors (RFC-052).
 		r.GET("/{id}/keys", h.ListSigningKeys, middleware.Require(permission.SensorsRead))
 		r.POST("/{id}/keys/{key_id}/revoke", h.RevokeSigningKey, middleware.RequireAny(permission.SensorsWrite, permission.SensorsRevoke))
+		r.GET("/{id}/grant", h.GetGrant, middleware.Require(permission.SensorsRead))
+		r.PUT("/{id}/grant", h.UpdateGrant, middleware.RequireAny(permission.SensorsGrantNarrow, permission.SensorsGrantWiden))
 		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.SensorsRead))
 		// Activity timeline. Audit-log items are added only for callers that
 		// also hold audit:read (the handler checks it).
@@ -249,6 +255,8 @@ func registerPipelineRoutes(
 		r.GET("/{id}", h.GetRun, middleware.Require(permission.PipelinesRead))
 		// A run's tasks, paged by cursor (the run read embeds the first page).
 		r.GET("/{id}/tasks", h.ListRunTasks, middleware.Require(permission.PipelinesRead))
+		// One task's log lines, as its sensor sent them (RFC-029 §4.4.1).
+		r.GET("/{id}/tasks/{task_id}/logs", h.GetRunTaskLogs, middleware.Require(permission.PipelinesRead))
 		// How each stage of the run was planned (counts by reason).
 		r.GET("/{id}/stages", h.ListRunStages, middleware.Require(permission.PipelinesRead))
 

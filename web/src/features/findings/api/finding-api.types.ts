@@ -380,6 +380,55 @@ export interface ApiFinding {
   cvss_v3_vector?: string
   /** The scanner's proof (plugin output). Untrusted plain text: render escaped. */
   scanner_output?: { text: string; updated_at?: string; truncated: boolean }
+  /** Detail only: what the source knew (CTIS 1.4). Untrusted: render as text. */
+  source_data?: ApiFindingSourceData
+}
+
+/** GET /findings/{id} source_data (FindingSourceDataResponse). */
+export interface ApiFindingSourceData {
+  native?: {
+    scheme?: string
+    vuln_id?: string
+    instance_id?: string
+    family?: string
+    severity?: string
+    status?: string
+    detection_type?: string
+    credentialed?: boolean
+    raw_ref?: string
+  }
+  scores?: {
+    system: string
+    version?: string
+    vector?: string
+    value?: number
+    label?: string
+    source?: string
+    as_of?: string
+  }[]
+  vulnerability_ids?: { type: string; id: string; source?: string }[]
+  lifecycle?: {
+    first_found?: string
+    last_found?: string
+    last_fixed?: string
+    times_found?: number
+    state?: string
+  }
+  solution?: {
+    type?: string
+    patch_published_at?: string
+    advisories?: { id?: string; url?: string; source?: string }[]
+  }
+  vex?: {
+    status: string
+    justification?: string
+    native_justification?: string
+    statement?: string
+    source?: string
+    as_of?: string
+  }
+  source_extra?: Record<string, string>
+  location_key?: string
 }
 
 // ============================================

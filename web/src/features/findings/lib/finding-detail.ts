@@ -4,7 +4,7 @@
  * different facts about the same finding.
  */
 
-import type { ApiFinding } from '../api/finding-api.types'
+import type { ApiFinding, ApiFindingSourceData } from '../api/finding-api.types'
 import type {
   Activity,
   AffectedAsset,
@@ -12,6 +12,7 @@ import type {
   ComplianceFramework,
   ComplianceResult,
   FindingDetail,
+  FindingSourceData,
   FindingStatus,
   FindingType,
   PriorityClass,
@@ -352,6 +353,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
       networkTransport: api.network_transport || undefined,
       networkService: api.network_service || undefined,
     },
+    sourceData: mapFindingSourceData(api.source_data),
     scannerOutput: api.scanner_output?.text
       ? {
           text: api.scanner_output.text,
@@ -420,4 +422,77 @@ export function findingDescription(
   const ownIsTitle = !own || same(own, f.title)
   if (ownIsTitle && advisory) return { text: advisory, fromAdvisory: true }
   return { text: ownIsTitle ? '' : own, fromAdvisory: false }
+}
+
+/**
+ * Maps the detail's source_data (CTIS 1.4) to the view model. Undefined when
+ * the source sent nothing beyond the normalized finding. Values stay strings
+ * the view renders as text; source fields are sorted by key for a stable
+ * order.
+ */
+export function mapFindingSourceData(
+  api: ApiFindingSourceData | undefined
+): FindingSourceData | undefined {
+  if (!api) return undefined
+  const n = api.native
+  const l = api.lifecycle
+  const s = api.solution
+  const data: FindingSourceData = {
+    native: n
+      ? {
+          scheme: n.scheme,
+          vulnId: n.vuln_id,
+          instanceId: n.instance_id,
+          family: n.family,
+          severity: n.severity,
+          status: n.status,
+          detectionType: n.detection_type,
+          credentialed: n.credentialed,
+          rawRef: n.raw_ref,
+        }
+      : undefined,
+    scores: (api.scores ?? []).map((x) => ({
+      system: x.system,
+      version: x.version,
+      vector: x.vector,
+      value: x.value,
+      label: x.label,
+      source: x.source,
+      asOf: x.as_of,
+    })),
+    vulnerabilityIds: api.vulnerability_ids ?? [],
+    lifecycle: l
+      ? {
+          firstFound: l.first_found,
+          lastFound: l.last_found,
+          lastFixed: l.last_fixed,
+          timesFound: l.times_found,
+          state: l.state,
+        }
+      : undefined,
+    solution: s
+      ? { type: s.type, patchPublishedAt: s.patch_published_at, advisories: s.advisories ?? [] }
+      : undefined,
+    vex: api.vex
+      ? {
+          status: api.vex.status,
+          justification: api.vex.justification,
+          statement: api.vex.statement,
+          source: api.vex.source,
+          asOf: api.vex.as_of,
+        }
+      : undefined,
+    sourceExtra: Object.entries(api.source_extra ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+    locationKey: api.location_key || undefined,
+  }
+  const empty =
+    !data.native &&
+    data.scores.length === 0 &&
+    data.vulnerabilityIds.length === 0 &&
+    !data.lifecycle &&
+    !data.solution &&
+    !data.vex &&
+    data.sourceExtra.length === 0 &&
+    !data.locationKey
+  return empty ? undefined : data
 }

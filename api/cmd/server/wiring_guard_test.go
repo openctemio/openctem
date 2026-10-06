@@ -308,7 +308,6 @@ var optionalServiceSetters = map[string]string{
 	"ScannerTemplate.SetQuota":            "default quota applies; the override exists for tests and future config",
 	"SensorPairing.SetClock":              "test hook; the service uses time.Now",
 	"SensorPairing.SetMaxOpen":            "the RFC-052 default cap applies; the override exists for tests",
-	"SensorPairing.SetApprovalHook":       "the grant hook arrives with per-sensor grants (RFC-052 SP2)",
 	"Retest.SetClock":                     "test clock; production uses time.Now",
 	"WebSocketHub.SetAuthorizeFunc":       "superseded by SetChannelAccessChecker",
 	"WebSocketHub.SetPublisher":           "set by websocket.NewRedisBridge on the hub it is given",

@@ -65,15 +65,16 @@ const ResolutionMethodRetestVerified = vulnerability.ResolutionMethodRetestVerif
 
 // Sentinel errors. They wrap the shared kinds so the HTTP layer maps them.
 var (
-	// ErrNotEligible: the finding has no deterministic re-check (not a nuclei
-	// finding, a disposition status, a non-addressable or out-of-scope asset).
+	// ErrNotEligible: the finding has no deterministic re-check (no tool rule
+	// to re-run, a disposition status, a non-addressable or out-of-scope asset).
 	ErrNotEligible = fmt.Errorf("%w: finding is not eligible for retest", shared.ErrValidation)
 	// ErrInFlight: a retest of this finding is already pending.
 	ErrInFlight = fmt.Errorf("%w: a retest of this finding is already in progress", shared.ErrConflict)
 	// ErrRateLimited: a per-finding cooldown or an in-flight cap was hit.
 	ErrRateLimited = errors.New("retest rate limit")
-	// ErrNoSensor: no sensor that can re-run a nuclei template is online.
-	ErrNoSensor = fmt.Errorf("%w: no sensor that can re-run nuclei templates is online for this tenant", shared.ErrValidation)
+	// ErrNoSensor: no sensor that can re-check the finding is online (no
+	// retest handler for its tool, nor a nuclei validation sensor).
+	ErrNoSensor = fmt.Errorf("%w: no sensor that can retest this finding is online for this tenant", shared.ErrValidation)
 )
 
 // Retest is one retest attempt of one finding.
@@ -89,8 +90,13 @@ type Retest struct {
 	Reason         string
 	PriorStatus    vulnerability.FindingStatus
 	ResultStatus   vulnerability.FindingStatus
+	// TemplateID is the rule re-run: the nuclei template id, or the
+	// finding's rule id for a tool retest.
 	TemplateID     string
 	Target         string
+	// Method is how the retest re-checks (MethodTool, MethodValidate). Not
+	// stored: it follows from the check command's type.
+	Method         string
 	CheckCommandID *shared.ID
 	ReachCommandID *shared.ID
 	DeadlineAt     time.Time

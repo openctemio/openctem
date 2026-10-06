@@ -13,6 +13,7 @@ import (
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // =============================================================================
@@ -250,9 +251,9 @@ func TestFix3_EntraUserInfoFromClaims_RejectsEmptyEmail(t *testing.T) {
 // of the Entra SSOUserInfo, an unverified email never yields a userInfo to adopt
 // a passwordless invited account with. This asserts that upstream gate directly.
 func TestFix3_EntraUnverifiedEmail_NeverProducesUserInfo(t *testing.T) {
-	claims := &oidcClaims{
+	claims := &oidc.Claims{
 		Email:   "invited@corp.com", // matches a pre-invited account, but...
-		XMSEdov: nil,                // ...NOT domain-owner-verified
+		XMSEdov: false,              // ...NOT domain-owner-verified
 		RegisteredClaims: jwtv5.RegisteredClaims{
 			Issuer:  "https://login.microsoftonline.com/rogue/v2.0",
 			Subject: "rogue-sub",
