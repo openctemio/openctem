@@ -87,6 +87,7 @@ import {
   Copy,
   Link2,
   Plus,
+  FileUp,
   AlertCircle,
   Loader2,
   Route,
@@ -107,6 +108,7 @@ import {
   FINDING_STATUS_CONFIG,
 } from '@/features/findings'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
+import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
 import { SlaStatusBadge } from '@/features/sla/components/sla-status-badge'
 import { SLA_STATUS_LABELS, type SLAStatus } from '@/features/repositories/types/repository.types'
 import { formatDueRelative } from '@/features/sla/lib/sla'
@@ -141,6 +143,7 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { csrfFetch } from '@/lib/api/client'
 import { usePermissions } from '@/context/permission-provider'
+import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
@@ -275,6 +278,7 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
     // Use has_data_flow flag for list view (no full data loaded)
     // When api.data_flow is present (detail view), use full data
     hasDataFlow: api.has_data_flow || false,
+    branchOnly: api.branch_only || false,
     dataFlow: api.data_flow
       ? {
           sources: api.data_flow.sources?.map((loc) => ({
@@ -447,6 +451,7 @@ function FindingsContent() {
   const [findingToDelete, setFindingToDelete] = useState<Finding | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [statusParam, setStatusParam] = useUrlFilterList('status')
   // Multiple sources at once: "everything from code scanning" is one question,
   // and it spans sast and secret. Comma-separated, matching what the API takes.
@@ -462,6 +467,9 @@ function FindingsContent() {
   const [priorityParam, setPriorityParam] = useUrlFilterList('priority_class')
   const [kevFilter, setKevFilter] = useUrlFilter('is_in_kev', 'false')
   const [reachableFilter, setReachableFilter] = useUrlFilter('is_reachable', 'false')
+  // Findings seen only on a feature branch are not exposure: the list leaves
+  // them out unless this is on (then it shows only them).
+  const [branchOnlyFilter, setBranchOnlyFilter] = useUrlFilter('branch_only', 'false')
   const [slaFilter, setSlaFilter] = useUrlFilterList('sla_status')
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
   // The state lens (Open, the default · Fixed · Dispositioned · All). A saved
@@ -494,6 +502,7 @@ function FindingsContent() {
   }, [router])
   const kevActive = kevFilter === 'true'
   const reachableActive = reachableFilter === 'true'
+  const branchOnlyActive = branchOnlyFilter === 'true'
   const severities = useMemo(
     () =>
       severityParam.filter((v): v is FacetSeverity =>
@@ -625,6 +634,11 @@ function FindingsContent() {
     priority?: string
   } | null>(null)
   const { hasPermission } = usePermissions()
+  // The gate of POST /findings/import (the API stays authoritative).
+  const canImport =
+    hasPermission('findings:write') &&
+    hasPermission('assets:write') &&
+    hasPermission('assets:import')
   // Both are Phase-3 gated modules embedded in this (findings) page: the "Create
   // Jira Ticket" action hits the integrations module, and "Add to remediation"
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on
@@ -708,6 +722,7 @@ function FindingsContent() {
     if (sortParam) filters.sort = sortParam
     if (kevActive) filters.is_in_kev = true
     if (reachableActive) filters.is_reachable = true
+    if (branchOnlyActive) filters.branch_only = true
     if (mineActive) filters.assigned_to_me = true
     if (slaFilter.length > 0) filters.sla_statuses = slaFilter
     return filters
@@ -727,6 +742,7 @@ function FindingsContent() {
     priorityClasses,
     kevActive,
     reachableActive,
+    branchOnlyActive,
     mineActive,
     slaFilter,
     debouncedSearch,
@@ -777,6 +793,7 @@ function FindingsContent() {
     priorityClasses.join(),
     kevActive,
     reachableActive,
+    branchOnlyActive,
     mineActive,
     slaFilter.join(),
     debouncedSearch,
@@ -1162,6 +1179,7 @@ function FindingsContent() {
                 <p dir="auto" className="font-medium truncate [unicode-bidi:isolate]">
                   {toDisplayText(row.getValue('title'), 500)}
                 </p>
+                {row.original.branchOnly && <BranchOnlyBadge />}
                 {/* KEV — actively exploited; the single most urgent triage signal */}
                 {row.original.isInKev && (
                   <Tooltip>
@@ -1437,6 +1455,7 @@ function FindingsContent() {
     setPriorityParam([])
     setKevFilter('false')
     setReachableFilter('false')
+    setBranchOnlyFilter('false')
     setSlaFilter([])
     setSourceFilter([])
     setMineFilter('false')
@@ -1454,6 +1473,7 @@ function FindingsContent() {
     priorityClasses.length +
     Number(kevActive) +
     Number(reachableActive) +
+    Number(branchOnlyActive) +
     slaFilter.length +
     sourceFilter.length
 
@@ -1605,6 +1625,17 @@ function FindingsContent() {
             onCheckedChange={() => toggleSla(v)}
           />
         ))}
+      </FacetSection>
+      <FacetSection
+        title="Branch"
+        selectedCount={branchOnlyActive ? 1 : 0}
+        defaultOpen={branchOnlyActive}
+      >
+        <FacetOption
+          label="Only on a feature branch"
+          checked={branchOnlyActive}
+          onCheckedChange={(v) => setBranchOnlyFilter(v ? 'true' : 'false')}
+        />
       </FacetSection>
       <FacetSection title="Source" selectedCount={sourceFilter.length} defaultOpen={false}>
         {sourceGroups.length === 0 ? (
@@ -1807,6 +1838,7 @@ function FindingsContent() {
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {f.priorityClass && <PriorityClassBadge priorityClass={f.priorityClass} />}
           <FindingStatusBadge status={f.status} />
+          {f.branchOnly && <BranchOnlyBadge />}
           {f.isInKev && (
             <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
               KEV
@@ -1921,6 +1953,12 @@ function FindingsContent() {
               <span className="hidden sm:inline">Approvals</span>
             </Link>
           </Button>
+          {canImport && (
+            <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)}>
+              <FileUp className="h-4 w-4 sm:me-2" />
+              <span className="hidden sm:inline">Import results</span>
+            </Button>
+          )}
           {hasPermission('findings:write') && (
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4 sm:me-2" />
@@ -1988,6 +2026,7 @@ function FindingsContent() {
                     statuses: statuses.join(',') || undefined,
                     sources: sourceFilter.join(',') || undefined,
                     assignedToMe: mineActive,
+                    branchOnly: branchOnlyActive,
                     view: savedId,
                     state: !savedId || rawLens ? lens : undefined,
                   }}
@@ -2185,6 +2224,16 @@ function FindingsContent() {
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         onSuccess={() => {
+          mutateFindings()
+          mutateStats()
+        }}
+      />
+
+      {/* Import results from other tools */}
+      <ImportResultsDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onImported={() => {
           mutateFindings()
           mutateStats()
         }}

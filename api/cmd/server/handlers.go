@@ -14,9 +14,11 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -304,6 +306,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            newAssetImportHandler(svc, log),
+		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
 		ReportSchedule:         newReportScheduleHandler(svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
@@ -599,6 +602,12 @@ func InitLocalAuthHandler(
 			log,
 		)
 		log.Info("local auth handler initialized")
+		// Widening a sensor's grant needs a recent sign-in or step-up.
+		if svc.SensorGrant != nil {
+			svc.SensorGrant.SetWideningApprover(handler.StepUpWideningApprover{
+				Checker: handlers.LocalAuth.RecentAuthChecker(), Window: authapp.StepUpWindow,
+			})
+		}
 	}
 }
 
@@ -853,6 +862,14 @@ func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImpo
 	h.SetAuditService(svc.Audit)
 	h.SetDataScope(svc.DataScope)
 	return h
+}
+
+// newFindingImportHandler builds the handler of POST /findings/import: the
+// ctis importers, ingest with the uploader's rights, VEX documents applied
+// under INGEST_VEX.
+func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.FindingImportHandler {
+	imp := findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
+	return handler.NewFindingImportHandler(imp, svc.DataScope, svc.Audit, log)
 }
 
 // newReportScheduleHandler builds the report schedule handler with its audit

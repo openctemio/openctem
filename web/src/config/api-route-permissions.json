@@ -263,6 +263,7 @@
 "POST /api/v1/findings/bulk/assign": {"permissions":["findings:bulk_update"]},
 "POST /api/v1/findings/bulk/status": {"permissions":["findings:bulk_update"]},
 "POST /api/v1/findings/export": {"permissions":["findings:export"]},
+"POST /api/v1/findings/import": {"permissions":["assets:import","assets:write","findings:write"]},
 "POST /api/v1/findings/remediation-groups/{key}/resolve": {"permissions":["findings:write"]},
 "POST /api/v1/findings/search": {"permissions":["findings:read"]},
 "POST /api/v1/findings/{id}/ai-triage": {"permissions":["ai_triage:trigger","findings:write"]},

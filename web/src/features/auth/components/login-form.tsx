@@ -69,6 +69,12 @@ interface LoginFormProps extends React.HTMLAttributes<HTMLFormElement> {
    * When set, fetches and displays tenant-specific SSO providers
    */
   orgSlug?: string
+
+  /**
+   * Step-up for an SSO account (?reauth=1): the identity provider is asked to
+   * authenticate the user again instead of reusing its session.
+   */
+  reauth?: boolean
 }
 
 // ============================================
@@ -102,6 +108,7 @@ export function LoginForm({
   redirectTo = '/',
   showSocialLogin = true,
   orgSlug,
+  reauth = false,
   ...props
 }: LoginFormProps) {
   const [isPending, startTransition] = useTransition()
@@ -249,7 +256,7 @@ export function LoginForm({
     if (!orgSlug) return
     setLoadingSSOProvider(provider)
     try {
-      await initiateSSOLogin(provider, orgSlug, safeRedirectTo)
+      await initiateSSOLogin(provider, orgSlug, safeRedirectTo, reauth)
     } catch (error) {
       setLoadingSSOProvider(null)
       console.error(`SSO login error (${provider}):`, error)

@@ -326,11 +326,11 @@ func TestWithOpenIDScope(t *testing.T) {
 func TestVerifyIDToken_MissingTokenOrKeysFailsClosed(t *testing.T) {
 	s := &SSOService{logger: logger.NewNop(), oidcVerifier: newTestVerifier(t)}
 	okta := &resolvedProvider{provider: identityproviderdom.ProviderOkta, tenantIdentifier: "https://acme.okta.com", clientID: testClientID}
-	if c, err := s.verifyIDToken(context.Background(), okta, "", testNonce); err == nil || c != nil {
+	if c, err := s.verifyIDToken(context.Background(), okta, "", testNonce, 0); err == nil || c != nil {
 		t.Fatalf("missing id_token must fail, got claims=%v err=%v", c, err)
 	}
 	noOrg := &resolvedProvider{provider: identityproviderdom.ProviderOkta, clientID: testClientID}
-	if _, err := s.verifyIDToken(context.Background(), noOrg, "x.y.z", testNonce); err == nil {
+	if _, err := s.verifyIDToken(context.Background(), noOrg, "x.y.z", testNonce, 0); err == nil {
 		t.Fatal("a provider without signing keys must fail")
 	}
 }

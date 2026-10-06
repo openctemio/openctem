@@ -149,6 +149,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  branch_id  query  []string  false  "branch id: any of (comma list)"  collectionFormat(csv)
 // @Param  open_on_branch_id  query  []string  false  "open on branch id: any of (comma list)"  collectionFormat(csv)
 // @Param  fixed_on_branch_id  query  []string  false  "fixed on branch id: any of (comma list)"  collectionFormat(csv)
+// @Param  branch_only  query  boolean  false  "branch only equals"
 // @Param  component_id  query  []string  false  "component id: any of (comma list)"  collectionFormat(csv)
 // @Param  component_id_not  query  []string  false  "component id: none of (comma list)"  collectionFormat(csv)
 // @Param  vulnerability_id  query  []string  false  "vulnerability id: any of (comma list)"  collectionFormat(csv)

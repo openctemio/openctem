@@ -33,6 +33,71 @@ type RecentAuthChecker interface {
 	RecentAuthAt(ctx context.Context, userID, sessionID string) (time.Time, error)
 }
 
+// Errors CheckRecentAuth returns for a caller that has not re-authenticated
+// recently (ErrStepUpRequired) or cannot (ErrStepUpUnavailable).
+var (
+	ErrStepUpRequired    = errors.New("step-up re-authentication required")
+	ErrStepUpUnavailable = errors.New("step-up re-authentication unavailable for this credential")
+)
+
+// CheckRecentAuth is the RequireRecentAuth decision for code that only knows
+// inside a service whether an action is sensitive (a grant change that widens).
+// It fails closed: any other error means the check itself failed.
+//
+// A token from the external OIDC provider has no platform session: its recent
+// authentication is the provider's own, the signature-verified auth_time
+// claim. The client steps up by signing in at the provider again
+// (prompt=login, max_age=0) and sending the new token; a token without
+// auth_time cannot step up.
+func CheckRecentAuth(ctx context.Context, checker RecentAuthChecker, window time.Duration) error {
+	if GetAuthProvider(ctx) == AuthProviderOIDC {
+		claims := GetClaims(ctx)
+		if claims == nil || claims.AuthTime == nil {
+			return ErrStepUpUnavailable
+		}
+		if !recentEnough(claims.AuthTime.Time, window) {
+			return ErrStepUpRequired
+		}
+		return nil
+	}
+	userID, sessionID := GetUserID(ctx), GetSessionID(ctx)
+	if checker == nil || IsAPIKeyAuthenticated(ctx) || userID == "" || sessionID == "" {
+		return ErrStepUpUnavailable
+	}
+	at, err := checker.RecentAuthAt(ctx, userID, sessionID)
+	if err != nil && !errors.Is(err, ErrNoRecentAuth) {
+		return err
+	}
+	if err != nil || !recentEnough(at, window) {
+		return ErrStepUpRequired
+	}
+	return nil
+}
+
+// recentEnough reports whether at lies within window before now (and not
+// more than a minute of clock skew ahead).
+func recentEnough(at time.Time, window time.Duration) bool {
+	now := time.Now()
+	return !at.IsZero() && !at.After(now.Add(time.Minute)) && now.Sub(at) <= window
+}
+
+// WriteStepUpError answers ErrStepUpRequired / ErrStepUpUnavailable the way
+// RequireRecentAuth does, so the web client's re-authentication dialog
+// handles both paths. It reports false for any other error.
+func WriteStepUpError(w http.ResponseWriter, err error, window time.Duration) bool {
+	switch {
+	case errors.Is(err, ErrStepUpRequired):
+		apierror.New(http.StatusForbidden, CodeStepUpRequired, "Confirm your identity to continue").
+			WithDetails(map[string]int{"window_seconds": int(window.Seconds())}).WriteJSON(w)
+	case errors.Is(err, ErrStepUpUnavailable):
+		apierror.New(http.StatusForbidden, CodeStepUpUnavailable,
+			"This action needs a signed-in user session that can re-authenticate").WriteJSON(w)
+	default:
+		return false
+	}
+	return true
+}
+
 // RequireRecentAuth admits a request only when the caller's session
 // authenticated within window. Otherwise it answers 403 STEP_UP_REQUIRED;
 // requests without a user session (API keys) and a nil checker answer 403
@@ -44,25 +109,14 @@ func RequireRecentAuth(checker RecentAuthChecker, window time.Duration) func(htt
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
-			userID, sessionID := GetUserID(ctx), GetSessionID(ctx)
-			if checker == nil || IsAPIKeyAuthenticated(ctx) || userID == "" || sessionID == "" {
-				apierror.New(http.StatusForbidden, CodeStepUpUnavailable,
-					"This action needs a signed-in user session that can re-authenticate").WriteJSON(w)
-				return
-			}
-			at, err := checker.RecentAuthAt(ctx, userID, sessionID)
-			if err != nil && !errors.Is(err, ErrNoRecentAuth) {
+			if err := CheckRecentAuth(ctx, checker, window); err != nil {
+				if WriteStepUpError(w, err, window) {
+					return
+				}
 				if l := logger.FromContext(ctx); l != nil {
 					l.Error("step-up check failed", "error", logger.SanitizeError(err))
 				}
 				apierror.InternalServerError("could not check re-authentication").WriteJSON(w)
-				return
-			}
-			now := time.Now()
-			if err != nil || at.IsZero() || at.After(now.Add(time.Minute)) || now.Sub(at) > window {
-				apierror.New(http.StatusForbidden, CodeStepUpRequired,
-					"Confirm your identity to continue").
-					WithDetails(map[string]int{"window_seconds": int(window.Seconds())}).WriteJSON(w)
 				return
 			}
 			next.ServeHTTP(w, r)

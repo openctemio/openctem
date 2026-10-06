@@ -117,6 +117,8 @@ describe('StepUpDialogHost', () => {
     })
     await user.click(await screen.findByRole('button', { name: 'Sign in again' }))
     await waitFor(() => expect(endSession).toHaveBeenCalledTimes(1))
+    // The identity provider must authenticate the user again, not reuse its session.
+    expect(endSession).toHaveBeenCalledWith(expect.any(String), { reauth: true })
     expect(stepUpCalls()).toHaveLength(0)
   })
 })

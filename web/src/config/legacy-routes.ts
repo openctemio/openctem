@@ -211,20 +211,18 @@ export const LEGACY_ORPHAN_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
 ]
 
 /**
- * The CI runners page became the Sensors page in runner mode (api RFC-051
- * §10): CI pipelines are listed with the daemons, their runs under Runs. A
- * verdict links to /ci-runners/{run id}; that link opens the run there.
+ * CI pipelines have their own page, CI/CD integration (api RFC-051). A verdict
+ * links to /ci-runners/{run id}; that link opens the run there. The old
+ * runner-sensor list (/runners) lands there too.
  */
 export const LEGACY_CI_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   {
     source: '/ci-runners/:id',
-    destination: '/sensors?mode=runner&view=runs&run=:id',
+    destination: '/ci-cd?view=runs&run=:id',
     permanent: true,
   },
-  { source: '/ci-runners', destination: '/sensors?mode=runner', permanent: true },
-  // The runner sensor type (a sensor API key used from CI) was removed: CI
-  // pipelines use OIDC and are listed in runner mode.
-  { source: '/runners', destination: '/sensors?mode=runner', permanent: true },
+  { source: '/ci-runners', destination: '/ci-cd', permanent: true },
+  { source: '/runners', destination: '/ci-cd', permanent: true },
 ]
 
 export const LEGACY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [

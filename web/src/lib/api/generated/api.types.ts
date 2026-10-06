@@ -13256,6 +13256,8 @@ export interface paths {
           open_on_branch_id?: string[]
           /** @description fixed on branch id: any of (comma list) */
           fixed_on_branch_id?: string[]
+          /** @description branch only equals */
+          branch_only?: boolean
           /** @description component id: any of (comma list) */
           component_id?: string[]
           /** @description component id: none of (comma list) */
@@ -14896,6 +14898,8 @@ export interface paths {
           open_on_branch_id?: string[]
           /** @description fixed on branch id: any of (comma list) */
           fixed_on_branch_id?: string[]
+          /** @description branch only equals */
+          branch_only?: boolean
           /** @description component id: any of (comma list) */
           component_id?: string[]
           /** @description component id: none of (comma list) */
@@ -15277,6 +15281,8 @@ export interface paths {
           open_on_branch_id?: string[]
           /** @description fixed on branch id: any of (comma list) */
           fixed_on_branch_id?: string[]
+          /** @description branch only equals */
+          branch_only?: boolean
           /** @description component id: any of (comma list) */
           component_id?: string[]
           /** @description component id: none of (comma list) */
@@ -15560,6 +15566,94 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/import': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Import results from another tool
+     * @description Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is detected from the content. With dry_run=true the files are only parsed and counted. The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is auto-resolved, and a VEX not_affected statement closes findings only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part.
+     */
+    post: {
+      parameters: {
+        query?: {
+          /** @description Parse and count only */
+          dry_run?: boolean
+          /** @description Force the format of a single file */
+          format?: string
+          /** @description Drop findings below: info, low, medium, high, critical */
+          min_severity?: string
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: {
+        content: {
+          'multipart/form-data': {
+            /**
+             * Format: binary
+             * @description Exported file or ZIP archive
+             */
+            file: string
+            /**
+             * Format: binary
+             * @description Qualys KnowledgeBase XML (before file)
+             */
+            knowledge_base?: string
+          }
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingImportResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Request Entity Too Large */
+        413: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/related-cves/{cveId}': {
     parameters: {
       query?: never
@@ -15590,6 +15684,8 @@ export interface paths {
           open_on_branch_id?: string[]
           /** @description fixed on branch id: any of (comma list) */
           fixed_on_branch_id?: string[]
+          /** @description branch only equals */
+          branch_only?: boolean
           /** @description component id: any of (comma list) */
           component_id?: string[]
           /** @description component id: none of (comma list) */
@@ -16049,6 +16145,8 @@ export interface paths {
           open_on_branch_id?: string[]
           /** @description fixed on branch id: any of (comma list) */
           fixed_on_branch_id?: string[]
+          /** @description branch only equals */
+          branch_only?: boolean
           /** @description component id: any of (comma list) */
           component_id?: string[]
           /** @description component id: none of (comma list) */
@@ -38976,6 +39074,7 @@ export interface components {
       environment?: string
       evaluated_at?: string
       event?: string
+      external_job_id?: string
       external_run_id?: string
       findings_count?: number
       fork?: boolean
@@ -40068,6 +40167,22 @@ export interface components {
       medium?: number
       total?: number
     }
+    'internal_infra_http_handler.FindingImportResponse': {
+      dry_run?: boolean
+      files?: components['schemas']['internal_infra_http_handler.ImportFileResponse'][]
+      session_id?: string
+      supported_formats?: string[]
+      /**
+       * @description Whether a not_affected statement of this upload may close findings
+       *     (enforce mode and the uploader holds findings:approve).
+       */
+      vex_can_close?: boolean
+      /**
+       * @description How VEX documents act: off (stored only), dry_run (counted), enforce
+       *     (not_affected closes findings).
+       */
+      vex_mode?: string
+    }
     'internal_infra_http_handler.FindingRemediationResponse': {
       /** @description Other acceptable remediations */
       alternative_fixes?: string[]
@@ -40107,6 +40222,11 @@ export interface components {
       attack_prerequisites?: string
       baseline_state?: string
       branch_id?: string
+      /**
+       * @description BranchOnly: seen only on branches that do not count as exposure (a
+       *     feature or merge-request branch); left out of exposure views.
+       */
+      branch_only?: boolean
       comments_count?: number
       compliance_control_description?: string
       compliance_control_id?: string
@@ -40626,6 +40746,44 @@ export interface components {
       tenant_id?: string
       updated_at?: string
     }
+    'internal_infra_http_handler.ImportFileError': {
+      column?: number
+      kind?: string
+      line?: number
+      message?: string
+    }
+    'internal_infra_http_handler.ImportFileResponse': {
+      error?: components['schemas']['internal_infra_http_handler.ImportFileError']
+      format?: string
+      /**
+       * @description ImportID is the record of a committed file: the producer of the
+       *     findings (scan_id) and assets (import_id) it wrote. Empty in a preview.
+       */
+      import_id?: string
+      ingest?: components['schemas']['internal_infra_http_handler.ImportIngestSummary']
+      issues?: components['schemas']['internal_infra_http_handler.ImportIssue'][]
+      name?: string
+      stats?: components['schemas']['internal_infra_http_handler.ImportStats']
+      unmapped?: string[]
+      vex?: components['schemas']['internal_infra_http_handler.ImportVEXSummary']
+    }
+    'internal_infra_http_handler.ImportIngestSummary': {
+      assets_created?: number
+      assets_skipped_out_of_scope?: number
+      assets_updated?: number
+      components_created?: number
+      components_updated?: number
+      errors?: string[]
+      findings_created?: number
+      findings_skipped?: number
+      findings_updated?: number
+    }
+    'internal_infra_http_handler.ImportIssue': {
+      column?: number
+      line?: number
+      message?: string
+      path?: string
+    }
     'internal_infra_http_handler.ImportMetadataRequest': {
       batch_id?: string
       description?: string
@@ -40638,6 +40796,26 @@ export interface components {
       notify_new_critical?: boolean
       notify_reactivated?: boolean
       reactivate_resolved?: boolean
+    }
+    'internal_infra_http_handler.ImportStats': {
+      assets?: number
+      by_severity?: {
+        [key: string]: number
+      }
+      components?: number
+      findings?: number
+      records?: number
+      skipped?: number
+      statements?: number
+    }
+    'internal_infra_http_handler.ImportVEXSummary': {
+      closed?: number
+      matched?: number
+      mode?: string
+      statements?: number
+      stored?: number
+      unmatchable?: number
+      would_close?: number
     }
     'internal_infra_http_handler.IngestResponse': {
       assets_created?: number

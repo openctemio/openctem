@@ -125,7 +125,7 @@ describe('CIRunsView', () => {
     expect(screen.getByText('No CI runs yet')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /set up ci trust/i })).toHaveAttribute(
       'href',
-      '/settings/scanning/ci'
+      '/ci-cd?tab=setup'
     )
   })
 

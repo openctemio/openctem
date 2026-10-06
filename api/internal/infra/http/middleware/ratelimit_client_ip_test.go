@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -63,4 +64,16 @@ func TestRateLimit_ForgedForwardedForDoesNotOpenNewBuckets(t *testing.T) {
 			t.Fatalf("different real client = %d, want 200", code)
 		}
 	})
+}
+
+func TestTenantKeyFunc(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/x", nil)
+	ctx := context.WithValue(r.Context(), TenantIDKey, "t1")
+	if got := TenantKeyFunc(r.WithContext(ctx)); got != "tenant:t1" {
+		t.Fatalf("key = %q", got)
+	}
+	ctx = context.WithValue(r.Context(), UserIDKey, "u1")
+	if got := TenantKeyFunc(r.WithContext(ctx)); got != "user:u1" {
+		t.Fatalf("key without tenant = %q", got)
+	}
 }

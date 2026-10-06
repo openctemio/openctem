@@ -7963,6 +7963,8 @@ definitions:
         type: string
       event:
         type: string
+      external_job_id:
+        type: string
       external_run_id:
         type: string
       findings_count:
@@ -10289,6 +10291,31 @@ definitions:
       total:
         type: integer
     type: object
+  internal_infra_http_handler.FindingImportResponse:
+    properties:
+      dry_run:
+        type: boolean
+      files:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ImportFileResponse'
+        type: array
+      session_id:
+        type: string
+      supported_formats:
+        items:
+          type: string
+        type: array
+      vex_can_close:
+        description: |-
+          Whether a not_affected statement of this upload may close findings
+          (enforce mode and the uploader holds findings:approve).
+        type: boolean
+      vex_mode:
+        description: |-
+          How VEX documents act: off (stored only), dry_run (counted), enforce
+          (not_affected closes findings).
+        type: string
+    type: object
   internal_infra_http_handler.FindingRemediationResponse:
     properties:
       alternative_fixes:
@@ -10363,6 +10390,11 @@ definitions:
         type: string
       branch_id:
         type: string
+      branch_only:
+        description: |-
+          BranchOnly: seen only on branches that do not count as exposure (a
+          feature or merge-request branch); left out of exposure views.
+        type: boolean
       comments_count:
         type: integer
       compliance_control_description:
@@ -11323,6 +11355,79 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.ImportFileError:
+    properties:
+      column:
+        type: integer
+      kind:
+        type: string
+      line:
+        type: integer
+      message:
+        type: string
+    type: object
+  internal_infra_http_handler.ImportFileResponse:
+    properties:
+      error:
+        $ref: '#/definitions/internal_infra_http_handler.ImportFileError'
+      format:
+        type: string
+      import_id:
+        description: |-
+          ImportID is the record of a committed file: the producer of the
+          findings (scan_id) and assets (import_id) it wrote. Empty in a preview.
+        type: string
+      ingest:
+        $ref: '#/definitions/internal_infra_http_handler.ImportIngestSummary'
+      issues:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ImportIssue'
+        type: array
+      name:
+        type: string
+      stats:
+        $ref: '#/definitions/internal_infra_http_handler.ImportStats'
+      unmapped:
+        items:
+          type: string
+        type: array
+      vex:
+        $ref: '#/definitions/internal_infra_http_handler.ImportVEXSummary'
+    type: object
+  internal_infra_http_handler.ImportIngestSummary:
+    properties:
+      assets_created:
+        type: integer
+      assets_skipped_out_of_scope:
+        type: integer
+      assets_updated:
+        type: integer
+      components_created:
+        type: integer
+      components_updated:
+        type: integer
+      errors:
+        items:
+          type: string
+        type: array
+      findings_created:
+        type: integer
+      findings_skipped:
+        type: integer
+      findings_updated:
+        type: integer
+    type: object
+  internal_infra_http_handler.ImportIssue:
+    properties:
+      column:
+        type: integer
+      line:
+        type: integer
+      message:
+        type: string
+      path:
+        type: string
+    type: object
   internal_infra_http_handler.ImportMetadataRequest:
     properties:
       batch_id:
@@ -11351,6 +11456,42 @@ definitions:
         type: boolean
       reactivate_resolved:
         type: boolean
+    type: object
+  internal_infra_http_handler.ImportStats:
+    properties:
+      assets:
+        type: integer
+      by_severity:
+        additionalProperties:
+          type: integer
+        type: object
+      components:
+        type: integer
+      findings:
+        type: integer
+      records:
+        type: integer
+      skipped:
+        type: integer
+      statements:
+        type: integer
+    type: object
+  internal_infra_http_handler.ImportVEXSummary:
+    properties:
+      closed:
+        type: integer
+      matched:
+        type: integer
+      mode:
+        type: string
+      statements:
+        type: integer
+      stored:
+        type: integer
+      unmatchable:
+        type: integer
+      would_close:
+        type: integer
     type: object
   internal_infra_http_handler.IngestResponse:
     properties:
@@ -24722,6 +24863,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -26183,6 +26328,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -26897,6 +27046,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -27517,6 +27670,65 @@ paths:
       summary: Group findings
       tags:
       - Findings
+  /findings/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 'Multipart upload of an exported file (Nessus .nessus, Qualys detection
+        XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF,
+        OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is
+        detected from the content. With dry_run=true the files are only parsed and
+        counted. The import runs with the uploader''s rights: findings land only on
+        assets in the uploader''s data scope, nothing is auto-resolved, and a VEX
+        not_affected statement closes findings only under INGEST_VEX=enforce for an
+        uploader holding findings:approve. Send the knowledge_base part before the
+        file part.'
+      parameters:
+      - description: Exported file or ZIP archive
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Qualys KnowledgeBase XML (before file)
+        in: formData
+        name: knowledge_base
+        type: file
+      - description: Parse and count only
+        in: query
+        name: dry_run
+        type: boolean
+      - description: Force the format of a single file
+        in: query
+        name: format
+        type: string
+      - description: 'Drop findings below: info, low, medium, high, critical'
+        in: query
+        name: min_severity
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingImportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Import results from another tool
+      tags:
+      - Findings
   /findings/related-cves/{cveId}:
     get:
       description: |-
@@ -27578,6 +27790,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query
@@ -28312,6 +28528,10 @@ paths:
           type: string
         name: fixed_on_branch_id
         type: array
+      - description: branch only equals
+        in: query
+        name: branch_only
+        type: boolean
       - collectionFormat: csv
         description: 'component id: any of (comma list)'
         in: query

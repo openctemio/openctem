@@ -95,3 +95,7 @@ phase and reuses this path.
 - A forged VEX statement from a hostile sensor needs `enforce` (an operator
   opt-in) and a command assigned to that sensor, and leaves an audit record
   listing every finding it closed.
+
+Files exported by other tools reach this storage through the finding import
+(`POST /findings/import`, [finding-import.md](finding-import.md)), which also
+applies VEX documents to matching findings.
