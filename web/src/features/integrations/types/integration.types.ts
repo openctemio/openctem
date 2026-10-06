@@ -10,9 +10,9 @@
  */
 export type IntegrationCategory =
   | 'scm' // Source Code Management: GitHub, GitLab, Bitbucket
-  | 'security' // Security Tools: Wiz, Snyk, Tenable
-  | 'ticketing' // Issue Trackers: Jira, Linear
-  | 'cloud' // Cloud Providers: AWS, GCP, Azure
+  | 'security' // Security Tools: Tenable, DefectDojo
+  | 'ticketing' // Issue Trackers: Jira
+  | 'cloud' // declared by the API, no client yet; not offered
   | 'notification' // Notifications: Slack, Teams, Email
 
 /**
@@ -31,7 +31,6 @@ export type IntegrationProvider =
   | 'snyk'
   | 'tenable'
   | 'crowdstrike'
-  // Ticketing
   | 'jira'
   | 'linear'
   | 'asana'
@@ -343,7 +342,11 @@ export interface ProviderConfig {
 /**
  * Provider configurations
  */
-export const INTEGRATION_PROVIDERS: Record<IntegrationProvider, ProviderConfig> = {
+/**
+ * Only providers the backend has a working client for are listed. Rows for other
+ * declared providers can still arrive from the API; nothing here renders them.
+ */
+export const INTEGRATION_PROVIDERS: Partial<Record<IntegrationProvider, ProviderConfig>> = {
   // SCM Providers
   github: {
     id: 'github',
@@ -389,52 +392,7 @@ export const INTEGRATION_PROVIDERS: Record<IntegrationProvider, ProviderConfig> 
     docUrl: 'https://docs.microsoft.com/azure/devops',
     available: true,
   },
-  codecommit: {
-    id: 'codecommit',
-    name: 'AWS CodeCommit',
-    category: 'scm',
-    description: 'Connect to AWS CodeCommit repositories',
-    icon: 'aws',
-    authTypes: ['api_key'],
-    features: ['repositories', 'code_scanning'],
-    docUrl: 'https://docs.aws.amazon.com/codecommit',
-    available: false,
-  },
-  local: {
-    id: 'local',
-    name: 'Local Repository',
-    category: 'scm',
-    description: 'Connect to local repositories',
-    icon: 'folder',
-    authTypes: ['token'],
-    features: ['repositories'],
-    docUrl: '',
-    available: false,
-  },
 
-  // Security Tools
-  wiz: {
-    id: 'wiz',
-    name: 'Wiz',
-    category: 'security',
-    description: 'Import cloud security findings from Wiz',
-    icon: 'wiz',
-    authTypes: ['api_key'],
-    features: ['findings', 'assets', 'compliance'],
-    docUrl: 'https://docs.wiz.io',
-    available: false,
-  },
-  snyk: {
-    id: 'snyk',
-    name: 'Snyk',
-    category: 'security',
-    description: 'Import vulnerability findings from Snyk',
-    icon: 'snyk',
-    authTypes: ['api_key', 'token'],
-    features: ['findings', 'sbom', 'license'],
-    docUrl: 'https://docs.snyk.io',
-    available: false,
-  },
   tenable: {
     id: 'tenable',
     name: 'Tenable',
@@ -446,19 +404,7 @@ export const INTEGRATION_PROVIDERS: Record<IntegrationProvider, ProviderConfig> 
     docUrl: 'https://docs.tenable.com',
     available: false,
   },
-  crowdstrike: {
-    id: 'crowdstrike',
-    name: 'CrowdStrike',
-    category: 'security',
-    description: 'Import endpoint security data from CrowdStrike',
-    icon: 'crowdstrike',
-    authTypes: ['api_key', 'oauth'],
-    features: ['findings', 'assets', 'threats'],
-    docUrl: 'https://falcon.crowdstrike.com/documentation',
-    available: false,
-  },
 
-  // Ticketing
   jira: {
     id: 'jira',
     name: 'Jira',
@@ -468,63 +414,6 @@ export const INTEGRATION_PROVIDERS: Record<IntegrationProvider, ProviderConfig> 
     authTypes: ['oauth', 'token', 'basic'],
     features: ['issues', 'webhooks', 'sync'],
     docUrl: 'https://developer.atlassian.com/cloud/jira',
-    available: false,
-  },
-  linear: {
-    id: 'linear',
-    name: 'Linear',
-    category: 'ticketing',
-    description: 'Create and sync issues with Linear',
-    icon: 'linear',
-    authTypes: ['oauth', 'api_key'],
-    features: ['issues', 'webhooks', 'sync'],
-    docUrl: 'https://developers.linear.app',
-    available: false,
-  },
-  asana: {
-    id: 'asana',
-    name: 'Asana',
-    category: 'ticketing',
-    description: 'Create and sync tasks with Asana',
-    icon: 'asana',
-    authTypes: ['oauth', 'token'],
-    features: ['tasks', 'projects', 'sync'],
-    docUrl: 'https://developers.asana.com',
-    available: false,
-  },
-
-  // Cloud Providers
-  aws: {
-    id: 'aws',
-    name: 'Amazon Web Services',
-    category: 'cloud',
-    description: 'Connect to AWS for cloud asset inventory',
-    icon: 'aws',
-    authTypes: ['api_key'],
-    features: ['assets', 'findings', 'compliance'],
-    docUrl: 'https://docs.aws.amazon.com',
-    available: false,
-  },
-  gcp: {
-    id: 'gcp',
-    name: 'Google Cloud Platform',
-    category: 'cloud',
-    description: 'Connect to GCP for cloud asset inventory',
-    icon: 'gcp',
-    authTypes: ['oauth', 'api_key'],
-    features: ['assets', 'findings', 'compliance'],
-    docUrl: 'https://cloud.google.com/docs',
-    available: false,
-  },
-  azure: {
-    id: 'azure',
-    name: 'Microsoft Azure',
-    category: 'cloud',
-    description: 'Connect to Azure for cloud asset inventory',
-    icon: 'azure',
-    authTypes: ['oauth', 'api_key'],
-    features: ['assets', 'findings', 'compliance'],
-    docUrl: 'https://docs.microsoft.com/azure',
     available: false,
   },
 
@@ -600,13 +489,15 @@ export const INTEGRATION_PROVIDERS: Record<IntegrationProvider, ProviderConfig> 
 /**
  * Category configuration
  */
-export const INTEGRATION_CATEGORIES: Record<
-  IntegrationCategory,
-  {
-    label: string
-    description: string
-    icon: string
-  }
+export const INTEGRATION_CATEGORIES: Partial<
+  Record<
+    IntegrationCategory,
+    {
+      label: string
+      description: string
+      icon: string
+    }
+  >
 > = {
   scm: {
     label: 'Source Control',
@@ -622,11 +513,6 @@ export const INTEGRATION_CATEGORIES: Record<
     label: 'Issue Tracking',
     description: 'Create and sync issues',
     icon: 'ticket',
-  },
-  cloud: {
-    label: 'Cloud Providers',
-    description: 'Cloud asset inventory',
-    icon: 'cloud',
   },
   notification: {
     label: 'Notifications',
