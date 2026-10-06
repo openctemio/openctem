@@ -24,8 +24,7 @@ export interface AdminNavSection {
 }
 
 /**
- * Console navigation, modeled on Tenable Security Center's administrator menu
- * (Organizations, Users, Scanning, System). Only pages that exist are listed. Add an
+ * Console navigation (Organizations, Users, Scanning, System). Only pages that exist are listed. Add an
  * item together with its page, never ahead of it.
  */
 export const adminNav: AdminNavSection[] = [

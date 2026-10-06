@@ -55,7 +55,7 @@ type ComponentResponse struct {
 	CreatedAt          time.Time      `json:"created_at"`
 	UpdatedAt          time.Time      `json:"updated_at"`
 
-	// Dependency hierarchy fields (industry-aligned: CycloneDX, Snyk, GitHub)
+	// Dependency hierarchy fields (CycloneDX component model)
 	Depth             int     `json:"depth"`                         // 1 = direct, 2+ = transitive depth
 	ParentComponentID *string `json:"parent_component_id,omitempty"` // asset_components.id of parent dependency
 	IsDirect          bool    `json:"is_direct"`                     // Convenience: depth == 1
@@ -647,7 +647,7 @@ func toAssetComponentResponse(d *component.AssetDependency) ComponentResponse {
 		ManifestPath:   d.Path(),
 		ManifestFile:   d.ManifestFile(),
 
-		// Dependency hierarchy (industry-aligned: CycloneDX, Snyk, GitHub)
+		// Dependency hierarchy (CycloneDX component model)
 		Depth:             d.Depth(),
 		ParentComponentID: parentID,
 		IsDirect:          d.Depth() == 1,

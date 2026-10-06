@@ -3,9 +3,8 @@ package adminbootstrap
 // The first organization (bootstrap-admin -org-name/-org-owner-email).
 //
 // A platform administrator belongs to no organization, so a fresh installation
-// has no one who can use the product until an organization exists. Like the
-// Tenable Security Center first-run wizard, the installer can create it in the
-// same step. It goes through the same application services as the admin
+// has no one who can use the product until an organization exists. The
+// installer can create it in the same step. It goes through the same application services as the admin
 // console's Organizations -> Create (tenantapp.OrganizationCreator): the
 // organization and the owner's membership and role are written atomically,
 // tenant.created and user.created are audited in the new organization, and a

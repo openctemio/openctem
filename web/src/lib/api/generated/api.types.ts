@@ -39267,7 +39267,7 @@ export interface components {
       asset_id?: string
       created_at?: string
       dependency_type?: string
-      /** @description Dependency hierarchy fields (industry-aligned: CycloneDX, Snyk, GitHub) */
+      /** @description Dependency hierarchy fields (CycloneDX component model) */
       depth?: number
       ecosystem?: string
       id?: string
