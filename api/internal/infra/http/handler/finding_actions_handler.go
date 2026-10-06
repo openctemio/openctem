@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -30,15 +30,15 @@ type ValidationRunner interface {
 
 // FindingActionsHandler handles closed-loop finding lifecycle operations.
 type FindingActionsHandler struct {
-	service          *app.FindingActionsService
+	service          *finding.FindingActionsService
 	validationRunner ValidationRunner
-	sourceAnalytics  *app.SourceAnalyticsService
+	sourceAnalytics  *finding.SourceAnalyticsService
 	savedViews       *savedviewapp.Service
 	logger           *logger.Logger
 }
 
 // NewFindingActionsHandler creates a new FindingActionsHandler.
-func NewFindingActionsHandler(svc *app.FindingActionsService, log *logger.Logger) *FindingActionsHandler {
+func NewFindingActionsHandler(svc *finding.FindingActionsService, log *logger.Logger) *FindingActionsHandler {
 	return &FindingActionsHandler{service: svc, logger: log}
 }
 
@@ -55,7 +55,7 @@ func (h *FindingActionsHandler) SetSavedViews(svc *savedviewapp.Service) {
 
 // SetSourceAnalytics wires the finding source-analytics service (Tool Insights +
 // DefectDojo-dependency ratio). When unset, the endpoint responds 503.
-func (h *FindingActionsHandler) SetSourceAnalytics(s *app.SourceAnalyticsService) {
+func (h *FindingActionsHandler) SetSourceAnalytics(s *finding.SourceAnalyticsService) {
 	h.sourceAnalytics = s
 }
 
@@ -458,7 +458,7 @@ func (h *FindingActionsHandler) FixApplied(w http.ResponseWriter, r *http.Reques
 		filter = filter.WithAssetID(assetID)
 	}
 
-	input := app.BulkFixAppliedInput{
+	input := finding.BulkFixAppliedInput{
 		Filter:             filter,
 		IncludeRelatedCVEs: req.IncludeRelatedCVEs,
 		Note:               req.Note,
@@ -517,7 +517,7 @@ func (h *FindingActionsHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		if len(req.Filter.AssetTags) > 0 {
 			filter = filter.WithAssetTags(req.Filter.AssetTags)
 		}
-		count, err := h.service.BulkVerifyByFilter(r.Context(), tenantID, userID.String(), app.VerifyByFilterInput{
+		count, err := h.service.BulkVerifyByFilter(r.Context(), tenantID, userID.String(), finding.VerifyByFilterInput{
 			Filter: filter, Note: req.Note,
 		})
 		if err != nil {
@@ -585,7 +585,7 @@ func (h *FindingActionsHandler) RejectFix(w http.ResponseWriter, r *http.Request
 		if len(req.Filter.AssetTags) > 0 {
 			filter = filter.WithAssetTags(req.Filter.AssetTags)
 		}
-		count, err := h.service.BulkRejectByFilter(r.Context(), tenantID, userID.String(), app.RejectByFilterInput{
+		count, err := h.service.BulkRejectByFilter(r.Context(), tenantID, userID.String(), finding.RejectByFilterInput{
 			Filter: filter, Reason: req.Reason,
 		})
 		if err != nil {

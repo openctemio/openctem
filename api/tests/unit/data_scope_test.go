@@ -5,7 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -259,9 +260,9 @@ func (m *mockFindingRepoForScope) GetStats(_ context.Context, _ shared.ID, dataS
 // Helper: create test asset via service
 // =============================================================================
 
-func createTestAsset(t *testing.T, svc *app.AssetService, tenantID string) (string, string) {
+func createTestAsset(t *testing.T, svc *assetapp.AssetService, tenantID string) (string, string) {
 	t.Helper()
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Test Asset " + shared.NewID().String()[:8],
 		Type:        "host",
@@ -470,7 +471,7 @@ func TestListAssets_Admin_NoDataScopeFilter(t *testing.T) {
 
 	// Create some test assets with unique names
 	for _, name := range []string{"Server-Alpha", "Server-Beta", "Server-Gamma"} {
-		input := app.CreateAssetInput{
+		input := assetapp.CreateAssetInput{
 			TenantID:    tenantID,
 			Name:        name,
 			Type:        "host",
@@ -482,7 +483,7 @@ func TestListAssets_Admin_NoDataScopeFilter(t *testing.T) {
 		}
 	}
 
-	input := app.ListAssetsInput{
+	input := assetapp.ListAssetsInput{
 		TenantID:     tenantID,
 		Page:         1,
 		PerPage:      10,
@@ -509,7 +510,7 @@ func TestListAssets_NonAdmin_WithUserID(t *testing.T) {
 	// The DataScopeUserID is set on the filter and passed to the repository.
 	// Since MockAssetRepository doesn't filter by DataScopeUserID, we can only
 	// verify the service doesn't error out. Real filtering is tested at the repo level.
-	input := app.ListAssetsInput{
+	input := assetapp.ListAssetsInput{
 		TenantID:     tenantID,
 		Page:         1,
 		PerPage:      10,
@@ -529,7 +530,7 @@ func TestListAssets_NonAdmin_EmptyUserID_NoScope(t *testing.T) {
 
 	createTestAsset(t, svc, tenantID)
 
-	input := app.ListAssetsInput{
+	input := assetapp.ListAssetsInput{
 		TenantID:     tenantID,
 		Page:         1,
 		PerPage:      10,
@@ -547,9 +548,9 @@ func TestListAssets_NonAdmin_EmptyUserID_NoScope(t *testing.T) {
 // VulnerabilityService.GetFindingWithScope Tests
 // =============================================================================
 
-func newTestVulnService(findingRepo vulnerability.FindingRepository) *app.VulnerabilityService {
+func newTestVulnService(findingRepo vulnerability.FindingRepository) *findingapp.VulnerabilityService {
 	log := logger.NewNop()
-	svc := app.NewVulnerabilityService(nil, findingRepo, log)
+	svc := findingapp.NewVulnerabilityService(nil, findingRepo, log)
 	return svc
 }
 
@@ -689,7 +690,7 @@ func TestGetFindingStatsWithScope_Admin_NoDataScope(t *testing.T) {
 	findingRepo := &mockFindingRepoForScope{statsResult: stats}
 	svc := newTestVulnService(findingRepo)
 
-	result, err := svc.GetFindingStatsWithScope(context.Background(), app.GetFindingStatsInput{
+	result, err := svc.GetFindingStatsWithScope(context.Background(), findingapp.GetFindingStatsInput{
 		TenantID:     shared.NewID().String(),
 		ActingUserID: shared.NewID().String(),
 		IsAdmin:      true,
@@ -715,7 +716,7 @@ func TestGetFindingStatsWithScope_NonAdmin_WithUserID(t *testing.T) {
 	svc := newTestVulnService(findingRepo)
 	userID := shared.NewID()
 
-	result, err := svc.GetFindingStatsWithScope(context.Background(), app.GetFindingStatsInput{
+	result, err := svc.GetFindingStatsWithScope(context.Background(), findingapp.GetFindingStatsInput{
 		TenantID:     shared.NewID().String(),
 		ActingUserID: userID.String(),
 		IsAdmin:      false,
@@ -741,7 +742,7 @@ func TestGetFindingStatsWithScope_NonAdmin_EmptyUserID(t *testing.T) {
 	findingRepo := &mockFindingRepoForScope{statsResult: stats}
 	svc := newTestVulnService(findingRepo)
 
-	_, err := svc.GetFindingStatsWithScope(context.Background(), app.GetFindingStatsInput{
+	_, err := svc.GetFindingStatsWithScope(context.Background(), findingapp.GetFindingStatsInput{
 		TenantID:     shared.NewID().String(),
 		ActingUserID: "", // empty
 		IsAdmin:      false,
@@ -766,7 +767,7 @@ func TestGetFindingStatsWithScope_Member_AlwaysScoped(t *testing.T) {
 	svc := newTestVulnService(findingRepo)
 	user := shared.NewID()
 
-	if _, err := svc.GetFindingStatsWithScope(context.Background(), app.GetFindingStatsInput{
+	if _, err := svc.GetFindingStatsWithScope(context.Background(), findingapp.GetFindingStatsInput{
 		TenantID:     shared.NewID().String(),
 		ActingUserID: user.String(),
 	}); err != nil {
@@ -777,7 +778,7 @@ func TestGetFindingStatsWithScope_Member_AlwaysScoped(t *testing.T) {
 	}
 
 	findingRepo.getStatsDataScopeUser = nil
-	result, err := svc.GetFindingStatsWithScope(context.Background(), app.GetFindingStatsInput{
+	result, err := svc.GetFindingStatsWithScope(context.Background(), findingapp.GetFindingStatsInput{
 		TenantID:     shared.NewID().String(),
 		ActingUserID: "not-a-uuid",
 	})

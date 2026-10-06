@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -51,7 +51,7 @@ func ctxWith(pathTenant shared.ID, jwtTenant string) context.Context {
 }
 
 func newInvScopeHandler(repo *invScopeRepo) *TenantHandler {
-	svc := app.NewTenantService(repo, logger.NewNop())
+	svc := tenant.NewTenantService(repo, logger.NewNop())
 	return NewTenantHandler(svc, validator.New(), logger.NewNop())
 }
 

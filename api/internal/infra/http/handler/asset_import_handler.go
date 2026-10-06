@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -22,7 +22,7 @@ import (
 
 // AssetImportHandler handles bulk asset import endpoints.
 type AssetImportHandler struct {
-	service      *app.AssetImportService
+	service      *asset.AssetImportService
 	ingest       *ingest.Service
 	logger       *logger.Logger
 	auditService *auditapp.AuditService
@@ -66,7 +66,7 @@ func (h *AssetImportHandler) SetAuditService(svc *auditapp.AuditService) {
 }
 
 // auditImport records a finished import (counts only, never row data).
-func (h *AssetImportHandler) auditImport(r *http.Request, source string, result *app.AssetImportResult) {
+func (h *AssetImportHandler) auditImport(r *http.Request, source string, result *asset.AssetImportResult) {
 	if h.auditService == nil || result == nil {
 		return
 	}
@@ -117,7 +117,7 @@ func (h *AssetImportHandler) auditNessusFindings(r *http.Request, restricted boo
 }
 
 // NewAssetImportHandler creates a new AssetImportHandler.
-func NewAssetImportHandler(svc *app.AssetImportService, ingestSvc *ingest.Service, log *logger.Logger) *AssetImportHandler {
+func NewAssetImportHandler(svc *asset.AssetImportService, ingestSvc *ingest.Service, log *logger.Logger) *AssetImportHandler {
 	return &AssetImportHandler{service: svc, ingest: ingestSvc, logger: log}
 }
 
@@ -282,7 +282,7 @@ func (h *AssetImportHandler) ImportKubernetes(w http.ResponseWriter, r *http.Req
 	// would let an attacker OOM the process with a multi-GB JSON.
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 
-	var input app.K8sDiscoveryInput
+	var input asset.K8sDiscoveryInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return

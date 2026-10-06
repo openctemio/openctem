@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -233,9 +233,9 @@ func (m *mockWSBroadcaster) BroadcastEvent(channel string, data interface{}, ten
 // Helper: Create NotificationService
 // =============================================================================
 
-func newTestNotificationService(repo notification.Repository, ws app.WebSocketBroadcaster) *app.NotificationService {
+func newTestNotificationService(repo notification.Repository, ws integration.WebSocketBroadcaster) *integration.NotificationService {
 	log := logger.NewNop()
-	return app.NewNotificationService(repo, ws, log)
+	return integration.NewNotificationService(repo, ws, log)
 }
 
 // =============================================================================
@@ -880,7 +880,7 @@ func TestUpdatePreferences_AllFields(t *testing.T) {
 	inApp := false
 	digest := "daily"
 	minSev := "high"
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		InAppEnabled: &inApp,
 		EmailDigest:  &digest,
 		MutedTypes:   []string{notification.TypeMemberJoined},
@@ -925,7 +925,7 @@ func TestUpdatePreferences_PartialUpdate(t *testing.T) {
 
 	// Only update email digest
 	digest := "daily"
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		EmailDigest: &digest,
 	}
 
@@ -955,7 +955,7 @@ func TestUpdatePreferences_InvalidEmailDigest(t *testing.T) {
 	ctx := context.Background()
 
 	digest := "hourly"
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		EmailDigest: &digest,
 	}
 
@@ -974,7 +974,7 @@ func TestUpdatePreferences_InvalidMinSeverity(t *testing.T) {
 	ctx := context.Background()
 
 	sev := "extreme"
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		MinSeverity: &sev,
 	}
 
@@ -992,7 +992,7 @@ func TestUpdatePreferences_InvalidMutedType(t *testing.T) {
 	svc := newTestNotificationService(repo, newMockWSBroadcaster())
 	ctx := context.Background()
 
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		MutedTypes: []string{notification.TypeFindingNew, "invalid_type"},
 	}
 
@@ -1016,7 +1016,7 @@ func TestUpdatePreferences_MutedTypesExceedMax(t *testing.T) {
 		types[i] = notification.TypeFindingNew
 	}
 
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		MutedTypes: types,
 	}
 
@@ -1046,7 +1046,7 @@ func TestUpdatePreferences_ClearMinSeverity(t *testing.T) {
 
 	// Clear min severity with empty string
 	empty := ""
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		MinSeverity: &empty,
 	}
 
@@ -1066,7 +1066,7 @@ func TestUpdatePreferences_GetExistingError(t *testing.T) {
 	ctx := context.Background()
 
 	digest := "daily"
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		EmailDigest: &digest,
 	}
 
@@ -1086,7 +1086,7 @@ func TestUpdatePreferences_UpsertError(t *testing.T) {
 	ctx := context.Background()
 
 	digest := "daily"
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		EmailDigest: &digest,
 	}
 
@@ -1553,7 +1553,7 @@ func TestValidatePreferencesInput_ValidEmailDigests(t *testing.T) {
 	validDigests := []string{"none", "daily", "weekly"}
 	for _, d := range validDigests {
 		digest := d
-		input := app.UpdatePreferencesInput{
+		input := integration.UpdatePreferencesInput{
 			EmailDigest: &digest,
 		}
 		_, err := svc.UpdatePreferences(ctx, shared.NewID(), shared.NewID(), input)
@@ -1569,7 +1569,7 @@ func TestValidatePreferencesInput_EmptyInput(t *testing.T) {
 	ctx := context.Background()
 
 	// All nil fields should pass validation
-	input := app.UpdatePreferencesInput{}
+	input := integration.UpdatePreferencesInput{}
 	_, err := svc.UpdatePreferences(ctx, shared.NewID(), shared.NewID(), input)
 	if err != nil {
 		t.Fatalf("expected no error for empty input, got: %v", err)
@@ -1584,7 +1584,7 @@ func TestValidatePreferencesInput_AllValid(t *testing.T) {
 	inApp := true
 	digest := "weekly"
 	sev := "medium"
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		InAppEnabled: &inApp,
 		EmailDigest:  &digest,
 		MutedTypes: []string{

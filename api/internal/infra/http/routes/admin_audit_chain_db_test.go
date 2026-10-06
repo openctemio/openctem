@@ -31,10 +31,10 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/audit/chainclassify/chaintest"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -118,7 +118,7 @@ func newChainHarness(t *testing.T) *chainHarness {
 	tenantRepo := postgres.NewTenantRepository(db)
 	userRepo := postgres.NewUserRepository(db)
 	auditSvc := auditapp.NewAuditService(postgres.NewAuditRepository(db), log)
-	tenantSvc := app.NewTenantService(tenantRepo, log, app.WithTenantAuditService(auditSvc))
+	tenantSvc := tenant.NewTenantService(tenantRepo, log, tenant.WithTenantAuditService(auditSvc))
 	v := validator.New()
 	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
@@ -145,7 +145,7 @@ func newChainHarness(t *testing.T) *chainHarness {
 		AdminConsole:        handler.NewAdminConsoleHandler(console, false, "refresh_token", log),
 		AdminAuditChain:     handler.NewAdminAuditChainHandler(auditSvc, console, adminAudit, orgs, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(console, log),
-	}, cfg, log, authCfg, tenantRepo, app.NewUserService(userRepo, log), nil, nil, nil)
+	}, cfg, log, authCfg, tenantRepo, tenant.NewUserService(userRepo, log), nil, nil, nil)
 
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)

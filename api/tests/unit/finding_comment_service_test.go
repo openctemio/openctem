@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -132,9 +132,9 @@ func (m *mockFindingCommentServiceRepo) CountByFinding(_ context.Context, findin
 // Helpers
 // =============================================================================
 
-func newTestCommentService(commentRepo *mockFindingCommentServiceRepo, findingRepo *mockFindingRepo) *app.FindingCommentService {
+func newTestCommentService(commentRepo *mockFindingCommentServiceRepo, findingRepo *mockFindingRepo) *finding.FindingCommentService {
 	log := logger.NewNop()
-	return app.NewFindingCommentService(commentRepo, findingRepo, log)
+	return finding.NewFindingCommentService(commentRepo, findingRepo, log)
 }
 
 func makeTestComment(findingID, authorID shared.ID, content string, isStatusChange bool) *vulnerability.FindingComment {
@@ -177,7 +177,7 @@ func TestAddComment_Success(t *testing.T) {
 	f := createTestFindingForComment(tenantID, findingID)
 	findingRepo.findings[findingID.String()] = f
 
-	result, err := svc.AddComment(context.Background(), app.AddCommentInput{
+	result, err := svc.AddComment(context.Background(), finding.AddCommentInput{
 		TenantID:  tenantID.String(),
 		FindingID: findingID.String(),
 		AuthorID:  authorID.String(),
@@ -198,7 +198,7 @@ func TestAddComment_InvalidTenantID(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.AddComment(context.Background(), app.AddCommentInput{
+	result, err := svc.AddComment(context.Background(), finding.AddCommentInput{
 		TenantID:  "not-a-uuid",
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
@@ -216,7 +216,7 @@ func TestAddComment_InvalidFindingID(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.AddComment(context.Background(), app.AddCommentInput{
+	result, err := svc.AddComment(context.Background(), finding.AddCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: "invalid",
 		AuthorID:  shared.NewID().String(),
@@ -233,7 +233,7 @@ func TestAddComment_InvalidAuthorID(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.AddComment(context.Background(), app.AddCommentInput{
+	result, err := svc.AddComment(context.Background(), finding.AddCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  "bad-uuid",
@@ -250,7 +250,7 @@ func TestAddComment_FindingNotFound(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.AddComment(context.Background(), app.AddCommentInput{
+	result, err := svc.AddComment(context.Background(), finding.AddCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
@@ -275,7 +275,7 @@ func TestAddComment_RepoCreateError(t *testing.T) {
 	findingRepo.findings[findingID.String()] = f
 	commentRepo.createErr = errors.New("database error")
 
-	result, err := svc.AddComment(context.Background(), app.AddCommentInput{
+	result, err := svc.AddComment(context.Background(), finding.AddCommentInput{
 		TenantID:  tenantID.String(),
 		FindingID: findingID.String(),
 		AuthorID:  shared.NewID().String(),
@@ -296,7 +296,7 @@ func TestAddStatusChangeComment_Success(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+	result, err := svc.AddStatusChangeComment(context.Background(), finding.AddStatusChangeCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
@@ -318,7 +318,7 @@ func TestAddStatusChangeComment_WithCustomContent(t *testing.T) {
 	svc := newTestCommentService(commentRepo, findingRepo)
 
 	customContent := "Fixed in PR #123"
-	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+	result, err := svc.AddStatusChangeComment(context.Background(), finding.AddStatusChangeCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
@@ -338,7 +338,7 @@ func TestAddStatusChangeComment_AutoGenerateContent(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+	result, err := svc.AddStatusChangeComment(context.Background(), finding.AddStatusChangeCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
@@ -358,7 +358,7 @@ func TestAddStatusChangeComment_InvalidFindingID(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+	result, err := svc.AddStatusChangeComment(context.Background(), finding.AddStatusChangeCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: "bad-id",
 		AuthorID:  shared.NewID().String(),
@@ -377,7 +377,7 @@ func TestAddStatusChangeComment_InvalidAuthorID(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+	result, err := svc.AddStatusChangeComment(context.Background(), finding.AddStatusChangeCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  "not-valid",
@@ -396,7 +396,7 @@ func TestAddStatusChangeComment_InvalidOldStatus(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+	result, err := svc.AddStatusChangeComment(context.Background(), finding.AddStatusChangeCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
@@ -415,7 +415,7 @@ func TestAddStatusChangeComment_InvalidNewStatus(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+	result, err := svc.AddStatusChangeComment(context.Background(), finding.AddStatusChangeCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
@@ -436,7 +436,7 @@ func TestAddStatusChangeComment_RepoError(t *testing.T) {
 
 	commentRepo.createErr = errors.New("db write failed")
 
-	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+	result, err := svc.AddStatusChangeComment(context.Background(), finding.AddStatusChangeCommentInput{
 		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
@@ -463,7 +463,7 @@ func TestUpdateComment_Success(t *testing.T) {
 	comment := makeTestComment(shared.NewID(), authorID, "original content", false)
 	commentRepo.comments[comment.ID().String()] = comment
 
-	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String(), app.UpdateCommentInput{
+	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String(), finding.UpdateCommentInput{
 		Content: "updated content",
 	})
 
@@ -478,7 +478,7 @@ func TestUpdateComment_NotFound(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), shared.NewID().String(), shared.NewID().String(), app.UpdateCommentInput{
+	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), shared.NewID().String(), shared.NewID().String(), finding.UpdateCommentInput{
 		Content: "test",
 	})
 
@@ -497,7 +497,7 @@ func TestUpdateComment_WrongAuthor(t *testing.T) {
 	comment := makeTestComment(shared.NewID(), authorID, "my comment", false)
 	commentRepo.comments[comment.ID().String()] = comment
 
-	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), otherUserID.String(), app.UpdateCommentInput{
+	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), otherUserID.String(), finding.UpdateCommentInput{
 		Content: "hijacked",
 	})
 
@@ -516,7 +516,7 @@ func TestUpdateComment_StatusChangeComment(t *testing.T) {
 	comment := makeTestComment(shared.NewID(), authorID, "Status changed", true)
 	commentRepo.comments[comment.ID().String()] = comment
 
-	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String(), app.UpdateCommentInput{
+	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String(), finding.UpdateCommentInput{
 		Content: "trying to edit status change",
 	})
 
@@ -537,7 +537,7 @@ func TestUpdateComment_RepoUpdateError(t *testing.T) {
 	commentRepo.comments[comment.ID().String()] = comment
 	commentRepo.updateErr = errors.New("update failed")
 
-	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String(), app.UpdateCommentInput{
+	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String(), finding.UpdateCommentInput{
 		Content: "new content",
 	})
 

@@ -20,7 +20,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -53,10 +53,10 @@ func TestAdminCreateOrgUser_FirstOwnerOnly_DB(t *testing.T) {
 	log := logger.NewNop()
 	tenantRepo := postgres.NewTenantRepository(pg)
 	userRepo := postgres.NewUserRepository(pg)
-	tenants := app.NewTenantService(tenantRepo, log)
+	tenants := tenant.NewTenantService(tenantRepo, log)
 
 	newHandler := func(smtp bool) *AdminOrganizationHandler {
-		prov := app.NewUserProvisioningService(tenantRepo, userRepo, nil, firstOwnerTestMailer{deliverable: smtp}, nil, log)
+		prov := tenant.NewUserProvisioningService(tenantRepo, userRepo, nil, firstOwnerTestMailer{deliverable: smtp}, nil, log)
 		return NewAdminOrganizationHandler(postgres.NewAdminOrganizationRepository(pg), tenants, userRepo, validator.New(), log).
 			WithUserProvisioning(prov)
 	}

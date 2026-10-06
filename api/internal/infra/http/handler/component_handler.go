@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/component"
@@ -18,14 +18,14 @@ import (
 
 // ComponentHandler handles component-related HTTP requests.
 type ComponentHandler struct {
-	service    *app.ComponentService
-	sbomImport *app.SBOMImportService
+	service    *asset.ComponentService
+	sbomImport *asset.SBOMImportService
 	validator  *validator.Validator
 	logger     *logger.Logger
 }
 
 // NewComponentHandler creates a new component handler.
-func NewComponentHandler(svc *app.ComponentService, sbomImport *app.SBOMImportService, v *validator.Validator, log *logger.Logger) *ComponentHandler {
+func NewComponentHandler(svc *asset.ComponentService, sbomImport *asset.SBOMImportService, v *validator.Validator, log *logger.Logger) *ComponentHandler {
 	return &ComponentHandler{
 		service:    svc,
 		sbomImport: sbomImport,
@@ -175,7 +175,7 @@ func (h *ComponentHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	hasVulnerabilities := parseQueryBool(query.Get("has_vulnerabilities"))
 
-	input := app.ListComponentsInput{
+	input := asset.ListComponentsInput{
 		TenantID:           tenantID,
 		AssetID:            query.Get("asset_id"),
 		Name:               query.Get("name"),
@@ -312,7 +312,7 @@ func (h *ComponentHandler) ExportComponents(w http.ResponseWriter, r *http.Reque
 	var allComponents []*component.Component
 	const maxTotal = 10000
 	for page := 1; len(allComponents) < maxTotal; page++ {
-		result, err := h.service.ListComponents(r.Context(), app.ListComponentsInput{
+		result, err := h.service.ListComponents(r.Context(), asset.ListComponentsInput{
 			TenantID: tenantID,
 			Page:     page,
 			PerPage:  100,
@@ -436,7 +436,7 @@ func (h *ComponentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateComponentInput{
+	input := asset.CreateComponentInput{
 		TenantID:       tenantID,
 		AssetID:        req.AssetID,
 		Name:           req.Name,
@@ -538,7 +538,7 @@ func (h *ComponentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateComponentInput{
+	input := asset.UpdateComponentInput{
 		Version:            req.Version,
 		PackageManager:     req.PackageManager,
 		Namespace:          req.Namespace,

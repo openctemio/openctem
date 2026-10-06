@@ -15,8 +15,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -63,14 +63,14 @@ func newSensorHarness(t *testing.T) *sensorHarness {
 	log := logger.NewNop()
 
 	sensorRepo := postgres.NewSensorRepository(db)
-	sensorSvc := app.NewSensorService(sensorRepo, nil, log)
+	sensorSvc := sensor.NewSensorService(sensorRepo, nil, log)
 	sensorSvc.SetAPIKeyRepository(postgres.NewSensorAPIKeyRepository(db))
 	cmdRepo := postgres.NewCommandRepository(db)
 	ih := NewIngestHandler(nil, sensorSvc, log)
-	doorbell := app.DefaultDoorbellConfig()
+	doorbell := sensor.DefaultDoorbellConfig()
 	doorbell.SlowQuery = 30 * time.Second
 	doorbell.QueryTimeout = time.Minute
-	ih.SetDoorbell(app.NewDoorbell(cmdRepo, doorbell.Normalized(5*time.Minute), log))
+	ih.SetDoorbell(sensor.NewDoorbell(cmdRepo, doorbell.Normalized(5*time.Minute), log))
 	ch := NewCommandHandler(command.NewService(cmdRepo, log), validator.New(), log)
 	ctl := NewSensorControlV2Handler(ih, ch, nil, nil, log)
 
@@ -89,7 +89,7 @@ func newSensorHarness(t *testing.T) *sensorHarness {
 		_, _ = sqldb.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantID.String())
 	})
 
-	out, err := sensorSvc.CreateSensor(ctx, app.CreateSensorInput{
+	out, err := sensorSvc.CreateSensor(ctx, sensor.CreateSensorInput{
 		TenantID: tenantID.String(), Name: "harness-sensor", Type: "worker",
 		Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "daemon",
 	})

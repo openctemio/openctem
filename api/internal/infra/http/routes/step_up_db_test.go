@@ -23,9 +23,10 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/apikey"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -89,7 +90,7 @@ func newStepUpHarness(t *testing.T) *stepUpHarness {
 		AccessTokenDuration: time.Hour, RefreshTokenDuration: time.Hour, SessionDuration: time.Hour,
 		MaxLoginAttempts: 3, LockoutDuration: 15 * time.Minute,
 	}
-	authSvc := app.NewAuthService(userRepo, postgres.NewSessionRepository(sqldb), postgres.NewRefreshTokenRepository(sqldb),
+	authSvc := authapp.NewAuthService(userRepo, postgres.NewSessionRepository(sqldb), postgres.NewRefreshTokenRepository(sqldb),
 		tenantRepo, auditSvc, authCfgApp, log)
 	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
@@ -106,7 +107,7 @@ func newStepUpHarness(t *testing.T) *stepUpHarness {
 	Register(router, Handlers{
 		LocalAuth: handler.NewLocalAuthHandler(authSvc, nil, nil, nil, authCfgApp, log),
 		APIKey:    handler.NewAPIKeyHandler(apikey.NewService(postgres.NewAPIKeyRepository(db), "step-up-pepper", log), v, log),
-	}, cfg, log, AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}, tenantRepo, app.NewUserService(userRepo, log), nil, nil, nil)
+	}, cfg, log, AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}, tenantRepo, tenantapp.NewUserService(userRepo, log), nil, nil, nil)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)
 

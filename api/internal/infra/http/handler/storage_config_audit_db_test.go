@@ -10,8 +10,8 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -53,7 +53,7 @@ func TestUpdateStorageConfig_IsAuditedWithoutKeys(t *testing.T) {
 		_, _ = raw.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, actor)
 	})
 
-	resolver := app.NewSettingsStorageResolver(raw, crypto.NewNoOpEncryptor(), logger.NewNop())
+	resolver := auth.NewSettingsStorageResolver(raw, crypto.NewNoOpEncryptor(), logger.NewNop())
 	const secretKey = "SEKRET-s3-key-value"
 	if _, err := raw.Exec(`INSERT INTO settings (id, tenant_id, key, category, value_type, value_json, description)
 		VALUES (gen_random_uuid(), $1, 'storage_config', 'storage', 'json',

@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
@@ -19,13 +19,13 @@ import (
 
 // AssetGroupHandler handles asset group HTTP requests.
 type AssetGroupHandler struct {
-	service   *app.AssetGroupService
+	service   *asset.AssetGroupService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewAssetGroupHandler creates a new asset group handler.
-func NewAssetGroupHandler(svc *app.AssetGroupService, v *validator.Validator, log *logger.Logger) *AssetGroupHandler {
+func NewAssetGroupHandler(svc *asset.AssetGroupService, v *validator.Validator, log *logger.Logger) *AssetGroupHandler {
 	return &AssetGroupHandler{
 		service:   svc,
 		validator: v,
@@ -237,7 +237,7 @@ func (h *AssetGroupHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
 
-	input := app.ListAssetGroupsInput{
+	input := asset.ListAssetGroupsInput{
 		TenantID:       tenantID,
 		Search:         query.Get("search"),
 		Environments:   parseQueryArray(query.Get("environments")),
@@ -340,7 +340,7 @@ func (h *AssetGroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateAssetGroupInput{
+	input := asset.CreateAssetGroupInput{
 		TenantID:     tenantID,
 		Name:         req.Name,
 		Description:  req.Description,
@@ -397,7 +397,7 @@ func (h *AssetGroupHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateAssetGroupInput{
+	input := asset.UpdateAssetGroupInput{
 		Name:         req.Name,
 		Description:  req.Description,
 		Environment:  req.Environment,
@@ -733,7 +733,7 @@ func (h *AssetGroupHandler) BulkUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.BulkUpdateInput{
+	input := asset.BulkUpdateInput{
 		GroupIDs:    req.GroupIDs,
 		Environment: req.Update.Environment,
 		Criticality: req.Update.Criticality,

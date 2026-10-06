@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -26,13 +26,13 @@ const githubWebhookMaxBody = 5 * 1024 * 1024 // 5 MiB
 // refreshes the pushed branch's metadata. Public endpoint (no JWT) — verified by
 // GitHub's X-Hub-Signature-256 HMAC against the tenant's per-tenant secret.
 type GitHubWebhookHandler struct {
-	service   *app.IntegrationService
+	service   *integration.IntegrationService
 	issueSink GitHubIssueSink // nil → issue events are acked but not synced
 	logger    *logger.Logger
 }
 
 // NewGitHubWebhookHandler creates a new GitHubWebhookHandler.
-func NewGitHubWebhookHandler(svc *app.IntegrationService, log *logger.Logger) *GitHubWebhookHandler {
+func NewGitHubWebhookHandler(svc *integration.IntegrationService, log *logger.Logger) *GitHubWebhookHandler {
 	return &GitHubWebhookHandler{service: svc, logger: log}
 }
 
@@ -74,7 +74,7 @@ func (h *GitHubWebhookHandler) IncomingGitHubWebhook(w http.ResponseWriter, r *h
 	sig := r.Header.Get("X-Hub-Signature-256")
 	verified := false
 	for _, secret := range secrets {
-		if app.VerifyGitHubSignature(body, sig, secret) {
+		if integration.VerifyGitHubSignature(body, sig, secret) {
 			verified = true
 			break
 		}
@@ -113,7 +113,7 @@ func (h *GitHubWebhookHandler) IncomingGitHubWebhook(w http.ResponseWriter, r *h
 		return
 	}
 
-	ev, err := app.ParseGitHubPush(body)
+	ev, err := integration.ParseGitHubPush(body)
 	if err != nil {
 		apierror.BadRequest("invalid push payload").WriteJSON(w)
 		return

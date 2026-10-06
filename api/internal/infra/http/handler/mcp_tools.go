@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
@@ -439,7 +440,7 @@ func (h *MCPHandler) toolListFindings(ctx context.Context, tenantID string, raw 
 		return nil, err
 	}
 
-	in := app.ListFindingsInput{
+	in := finding.ListFindingsInput{
 		TenantID:     tenantID,
 		ActingUserID: actingUser(ctx), // confine to the key owner's data-scope
 		IsAdmin:      false,           // API keys never get admin bypass
@@ -489,7 +490,7 @@ func (h *MCPHandler) toolFindingStats(ctx context.Context, tenantID string, _ js
 	// Scoped stats: confine the aggregate to the key owner's group data-scope
 	// (IsAdmin=false), mirroring how list_findings builds its scope — so a
 	// restricted key never sees posture for findings it can't list.
-	stats, err := h.findings.GetFindingStatsWithScope(ctx, app.GetFindingStatsInput{
+	stats, err := h.findings.GetFindingStatsWithScope(ctx, finding.GetFindingStatsInput{
 		TenantID:     tenantID,
 		ActingUserID: actingUser(ctx),
 		IsAdmin:      false,
@@ -530,7 +531,7 @@ func (h *MCPHandler) toolListActiveCVEs(ctx context.Context, tenantID string, ra
 		return nil, err
 	}
 
-	in := app.ListActiveCVEsInput{
+	in := finding.ListActiveCVEsInput{
 		TenantID: tenantID,
 		KEVOnly:  a.KEVOnly,
 		MinEPSS:  a.MinEPSS,
@@ -611,7 +612,7 @@ func (h *MCPHandler) toolListAssets(ctx context.Context, tenantID string, raw js
 		return nil, err
 	}
 
-	in := app.ListAssetsInput{
+	in := asset.ListAssetsInput{
 		TenantID:     tenantID,
 		ActingUserID: actingUser(ctx), // confine to the key owner's data-scope
 		IsAdmin:      false,           // API keys never get admin bypass
