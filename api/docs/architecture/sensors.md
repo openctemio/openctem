@@ -415,6 +415,19 @@ the server also wrote as an event appears once, as the event.
 source is cut at the cursor and limited on its own, then merged, so pages
 never skip or repeat an item. `limit` is 1-100 (default 30).
 
+## Task logs
+
+A sensor that lists feature `logs` on hello sends what each task's tool
+logged, through its outbox, to `POST /api/v2/sensor/commands/{id}/logs`
+(RFC-029 §4.4.1). Only the sensor holding the command writes; a batch is
+stored once per `(command, seq)`; a command keeps at most 200 batches and
+2 MiB, the rest is counted as dropped. The platform caps, cleans and redacts
+every line again (`internal/app/commandlog`), stores it in `command_logs`
+(migration 001130) and the `command-log-retention` controller deletes it after
+14 days. The run page shows a task's lines (Runs, a run, Tasks, Logs) through
+`GET /api/v1/pipeline-runs/{id}/tasks/{task_id}/logs` (`pipelines:read`),
+as plain text.
+
 ## Install snippets
 
 `GET /api/v1/sensors/{id}/config-templates` renders the snippets the Sensors

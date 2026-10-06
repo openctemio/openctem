@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/scan"
@@ -631,6 +632,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Logger:        log.With("controller", "sensor-event-retention"),
 			},
 		))
+	}
+
+	// Per-task sensor logs (RFC-029 §4.4.1): kept 14 days.
+	if repos.CommandLog != nil {
+		w.ControllerManager.Register(controller.NewCommandLogRetentionController(
+			repos.CommandLog, commandlog.Retention, log.With("controller", "command-log-retention")))
 	}
 
 	// Heartbeat history retention: buckets past 48 h (RFC-035, the Control

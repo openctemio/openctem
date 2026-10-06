@@ -410,9 +410,11 @@ func (r *CommandRepository) List(ctx context.Context, filter command.Filter, pag
 // poller already acknowledged it, so two sensors polling the same unassigned
 // command can't both proceed (double dispatch).
 //
-// The zone predicate and the tool gate are the same as the poll's (RFC-023
-// layer 2, RFC-030 B5): a sensor cannot acknowledge, by id, a command it would
-// never have been offered.
+// The zone predicate, the tool gate and the capability gate are the same as
+// the poll's (RFC-023 layer 2, RFC-030 B5, RFC-052 §3): a sensor cannot
+// acknowledge, by id, a command it would never have been offered. The
+// capabilities are the sensor's stored effective capabilities, which the poll
+// also uses.
 func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, commandID shared.ID, sensorID string) (bool, error) {
 	query := `
 		UPDATE commands
@@ -423,6 +425,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND (sensor_id IS NULL OR sensor_id = $3)
 		  AND ` + zoneClaimPredicate("$3") + `
 		  AND ` + toolClaimPredicate("$3") + `
+		  AND ` + capabilityClaimPredicate(claimSensorCapabilities) + `
 		  AND ` + refusedByPredicate("$3") + `
 		  AND ` + freezeHoldPredicate + `
 	`
@@ -436,6 +439,12 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 	}
 	return rowsAffected > 0, nil
 }
+
+// claimSensorCapabilities is the claiming sensor's (bound to $3, same tenant
+// as the command) effective capabilities, for the capability gate of a claim
+// by id. A sensor of another tenant has none.
+const claimSensorCapabilities = `(SELECT cs.effective_capabilities FROM sensors cs
+			WHERE cs.id = $3 AND cs.tenant_id = commands.tenant_id)`
 
 var _ command.BatchClaimer = (*CommandRepository)(nil)
 

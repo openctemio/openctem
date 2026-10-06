@@ -1658,6 +1658,12 @@ export const pipelineRunEndpoints = {
     const qs = params.toString()
     return `/api/v1/pipeline-runs/${encodeURIComponent(runId)}/tasks${qs ? `?${qs}` : ''}`
   },
+
+  /**
+   * The log lines a task's sensor sent (kept 14 days).
+   */
+  taskLogs: (runId: string, taskId: string) =>
+    `/api/v1/pipeline-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/logs`,
 } as const
 
 /**
