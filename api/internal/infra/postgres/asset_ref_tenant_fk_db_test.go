@@ -56,7 +56,7 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	}
 	// 27 from 000921, 3 from the scan chaining tables (001049), 2 from the CI
 	// run tables (001077, RFC-051), 1 from CI pipelines (001084), 1 from CI
-	// coverage expectations (001099), 1 from CI gate policies (001113).
+	// coverage expectations (001099), 1 from CI gate policies (001139).
 	if n != 35 || !allValid.Bool {
 		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 35 validated", n, allValid.Bool)
 	}

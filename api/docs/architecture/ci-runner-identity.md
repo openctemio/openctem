@@ -45,7 +45,7 @@ graph TD
 | Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
 | Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
 | Alerts and stale sources (every 15 minutes, one replica) | `internal/app/cirun/alerts.go`, `internal/infra/controller/ci_alerts.go` |
-| Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001099_ci_coverage_alerts`, `001113_ci_db_model`, `001114_ci_db_model_validate` |
+| Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001099_ci_coverage_alerts`, `001139_ci_db_model`, `001140_ci_db_model_validate` |
 | Retention (hourly, one replica) | `internal/app/cirun/retention.go`, `internal/infra/postgres/ci_retention_repository.go`, `internal/infra/controller/ci_retention.go` |
 | Break-glass notices to administrators (in-app and `ci.break_glass`) | `internal/app/cirun/admin_alerts.go` |
 | Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001099_ci_coverage_alerts` |
@@ -97,7 +97,7 @@ findings per run.
 - `ci_alert_state`: one row per `(tenant, subject, kind)` while the alert's
   condition holds; the notification is sent when the row is created.
 - `ci_pipelines.trust_config_id` carries the tenant like `ci_runs`
-  (migrations `001113`, validated by `001114`).
+  (migrations `001139`, validated by `001140`).
 
 ### Retention
 
