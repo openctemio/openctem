@@ -48,6 +48,11 @@ const (
 // jobs; "validate:<tool>" is validation with that tool.
 const CapabilityValidate = "validate"
 
+// CapabilityRetest prefixes the capability of a tool that re-checks its own
+// findings: "retest:<tool>" (a tool-contract retest handler, RFC-039 tool
+// retest). It is kept only for a known tool.
+const CapabilityRetest = "retest"
+
 // Tool kinds a sensor reports (sdk-go core.ToolKind).
 const (
 	ToolKindScanner   = "scanner"
@@ -265,6 +270,9 @@ func (in CapabilityReportInput) CatalogCandidates() (tools, capabilities []strin
 		if t, ok := strings.CutPrefix(c, CapabilityValidate+":"); ok {
 			addTool(t)
 		}
+		if t, ok := strings.CutPrefix(c, CapabilityRetest+":"); ok {
+			addTool(t)
+		}
 	}
 	for i, c := range in.Capabilities {
 		if i >= MaxReportedCapabilities {
@@ -382,6 +390,9 @@ func knownCapability(c string, knownTools, knownCaps map[string]bool) bool {
 		return true
 	}
 	if t, ok := strings.CutPrefix(c, CapabilityValidate+":"); ok {
+		return knownTools[t]
+	}
+	if t, ok := strings.CutPrefix(c, CapabilityRetest+":"); ok {
 		return knownTools[t]
 	}
 	return false

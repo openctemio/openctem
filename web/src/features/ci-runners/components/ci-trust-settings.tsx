@@ -15,6 +15,7 @@ import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Check, Copy, KeyRound, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { PageHeader, EmptyState, ErrorState, GatedButton } from '@/features/shared'
+import { CIRequireOIDC } from './ci-require-oidc'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -85,6 +86,7 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
           description="Let GitHub Actions and GitLab CI jobs send results with their own identity instead of a stored API key, and decide what fails a pipeline."
         />
       )}
+      <CIRequireOIDC canWrite={canWrite} />
       <Tabs defaultValue="trust">
         <TabsList>
           <TabsTrigger value="trust">Trust</TabsTrigger>

@@ -114,6 +114,10 @@ type Service struct {
 	commands     commandReader
 	results      sensorresult.Repository
 	resultLimits sensorresult.Limits
+	// grants and pushRefusals enforce the sensor's push-ingest grant before
+	// the unsolicited policy (RFC-052 §5.3); nil: not enforced.
+	grants       GrantReader
+	pushRefusals PushRefusalObserver
 	// contracts reads the submitting sensor's manifest, where a ported
 	// tool declares what it produces (output_binding.go). Nil-safe.
 	contracts ToolContractSource
@@ -350,6 +354,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	if err := s.validator.ValidateReport(report); err != nil {
 		return nil, err
 	}
+	// Fill the normalized members a CTIS 1.4 report left empty from its
+	// typed ids and native identity (interop.go), before the CVE catalog
+	// step and the identity recipes read them.
+	for i := range report.Findings {
+		fillFromInterop(&report.Findings[i])
+	}
 	// Cap sensor-supplied text before anything is stored or fingerprinted:
 	// an oversized value is cut with a marker, the finding still lands
 	// (RFC-040 §5.4).
@@ -526,6 +536,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		}
 		if report.Tool != nil {
 			s.auditSourceResolve(ctx, tenantID, binding, report.Tool.Name, output)
+			s.auditVEX(ctx, tenantID, binding, report.Tool.Name, output)
 		}
 	}
 

@@ -522,6 +522,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.CIRead,
     module: Module.Scans,
   },
+  '/settings/scanning/freeze-windows': {
+    permission: Permission.ScansRead,
+    module: Module.Scans,
+  },
   '/ci-cd': {
     permission: Permission.CIRead,
     module: Module.Scans,

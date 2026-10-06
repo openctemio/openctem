@@ -142,9 +142,13 @@ the upload tokens of their running jobs at once.
 
 ## 6. Moving off API keys
 
-A runner sensor's API key still works; its responses carry a `Deprecation`
-header and the sensor prints a warning. Once the pipeline runs with OIDC,
-delete the `API_KEY` secret from CI and revoke the runner sensor's key.
+A runner sensor's API key still works unless the organization requires OIDC
+for CI; its responses carry a `Deprecation` header and the sensor prints a
+warning. Once the pipeline runs with OIDC, delete the `API_KEY` secret from CI,
+revoke the runner sensor's key, and turn on **Require OIDC for CI** at the top
+of **Settings > Scanning > CI pipelines**: a CI sensor's key is then refused
+(`403 ci-oidc-required`) and each refusal is audited. Organizations created
+since this setting exists have it on from the start.
 
 ## Troubleshooting
 
@@ -155,4 +159,5 @@ delete the `API_KEY` secret from CI and revoke the runner sensor's key.
 | Every finding counts as new | The default branch was never scanned: run the pipeline on the default branch once |
 | `The CI token was not accepted` and `pipeline_identity` in the audit log | The token carries no repository/project id or no usable workflow path |
 | `The CI token was not accepted` and `pipeline_cap` in the audit log | The organization has the most CI pipelines it may have; existing pipelines keep running |
+| `403 RUNNER_OUTDATED` on the exchange | The sensor image is older than the minimum supported version; update the pinned image |
 | `401` on upload after a long scan | The 15-minute run token expired; on GitHub the sensor renews it, on GitLab shorten the time between the first upload and the verdict |
