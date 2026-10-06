@@ -25,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // SSO errors.
@@ -78,7 +79,8 @@ type SSOService struct {
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
 	httpClient       *http.Client
-	oidcVerifier     *oidcVerifier
+	// oidcVerifier verifies id_tokens and logout tokens (pkg/oidc).
+	oidcVerifier *oidc.Client
 
 	// For tenant membership creation
 	tenantMemberRepo TenantMemberCreator
@@ -154,7 +156,7 @@ func NewSSOService(
 		authConfig:       authCfg,
 		logger:           log.With("service", "sso"),
 		httpClient:       httpClient,
-		oidcVerifier:     newOIDCVerifier(httpClient, log.With("service", "sso-oidc")),
+		oidcVerifier:     newOIDCClient(httpClient),
 	}
 }
 
@@ -385,17 +387,14 @@ func (s *SSOService) resolveProvider(ctx context.Context, tenantID, orgSlug stri
 	return nil, ErrSSOProviderNotFound
 }
 
-// isNonSpecificEntraTenant reports whether an Entra directory id is a
-// multi-tenant / non-pinned authority ("", common, organizations, consumers).
-// Such authorities let ANY Microsoft account complete the flow, so the env
-// fallback treats them as fail-closed (no auto-provision, domains required).
-func isNonSpecificEntraTenant(tid string) bool {
-	switch strings.ToLower(strings.TrimSpace(tid)) {
-	case "", "common", "organizations", "consumers":
-		return true
-	default:
-		return false
-	}
+// newOIDCClient is the token verifier for sign-in and logout tokens: the
+// shared core (pkg/oidc) over the SSRF-safe client, with every URL checked
+// by httpsec.ValidateURL before it is dialed.
+func newOIDCClient(httpClient *http.Client) *oidc.Client {
+	return oidc.NewClient(httpClient, func(raw string) error {
+		_, err := httpsec.ValidateURL(raw)
+		return err
+	})
 }
 
 // envFallbackAllowedForTenant reports whether the given tenant slug has opted
@@ -441,7 +440,7 @@ func (s *SSOService) envProvider(orgSlug string, provider identityproviderdom.Pr
 		role = string(tenantdom.RoleViewer)
 	}
 	autoProvision := cfg.AutoProvision
-	if isNonSpecificEntraTenant(cfg.TenantID) {
+	if oidc.IsMultiTenantEntraAuthority(cfg.TenantID) {
 		if len(cfg.AllowedDomains) == 0 {
 			s.logger.Warn("env Entra fallback refused: non-specific directory requires SSO_ENTRA_ALLOWED_DOMAINS",
 				"tenant_slug", logger.SanitizeValue(orgSlug), "directory", cfg.TenantID)
@@ -820,7 +819,7 @@ func (s *SSOService) jitProvisioningAllowed(ctx context.Context, t *tenantdom.Te
 // caller can bind the account to the IdP identity (issuer/subject) and, for
 // Entra, read the domain-verified email. The returned claims are never nil
 // when the error is nil.
-func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) (*oidcClaims, error) {
+func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) (*oidc.Claims, error) {
 	jwksURL := rp.provider.JWKSURL(rp.tenantIdentifier)
 	if jwksURL == "" {
 		return nil, fmt.Errorf("%s provider has no id_token signing keys (is the organization URL configured?)", rp.provider)
@@ -829,21 +828,23 @@ func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, id
 		return nil, errors.New(`token response carried no id_token: the provider must grant the "openid" scope`)
 	}
 
-	exp := idTokenExpectations{
-		jwksURL:  jwksURL,
-		audience: rp.clientID,
-		nonce:    nonce,
+	exp := oidc.Expectations{
+		JWKSURI:  jwksURL,
+		ClientID: rp.clientID,
+		Nonce:    nonce,
 	}
 	switch rp.provider {
 	case identityproviderdom.ProviderEntraID:
-		exp.validateIssuer = entraIssuerValidator(rp.tenantIdentifier)
+		exp.IssuerRule = oidc.EntraIssuer(rp.tenantIdentifier)
 	case identityproviderdom.ProviderOkta:
-		exp.validateIssuer = oktaIssuerValidator(rp.tenantIdentifier)
+		exp.IssuerRule = oidc.OktaIssuer(rp.tenantIdentifier)
 	case identityproviderdom.ProviderGoogleWorkspace:
-		exp.validateIssuer = googleIssuerValidator
+		exp.IssuerRule = oidc.GoogleIssuer
+	default:
+		// No issuer rule: VerifyIDToken refuses incomplete expectations.
 	}
 
-	claims, err := s.oidcVerifier.verify(ctx, idToken, exp)
+	claims, err := s.oidcVerifier.VerifyIDToken(ctx, idToken, exp)
 	if err != nil {
 		return nil, err
 	}
@@ -854,9 +855,9 @@ func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, id
 // enforcing the nOAuth email-verification gate (mirrors oauth.go's Path A). The
 // email is trusted ONLY when `xms_edov == true`; identity is keyed on the
 // immutable (issuer, subject). It is a pure function to keep the security-critical
-// gate unit-testable (the signature/issuer/audience checks live in oidcVerifier).
-func entraUserInfoFromClaims(claims *oidcClaims) (*SSOUserInfo, error) {
-	if claims.XMSEdov == nil || !*claims.XMSEdov {
+// gate unit-testable (the signature/issuer/audience checks live in pkg/oidc).
+func entraUserInfoFromClaims(claims *oidc.Claims) (*SSOUserInfo, error) {
+	if !bool(claims.XMSEdov) {
 		return nil, errors.New("entra id_token email not domain-owner-verified (xms_edov absent or false)")
 	}
 	if strings.TrimSpace(claims.Email) == "" {

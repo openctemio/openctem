@@ -7989,6 +7989,82 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ci/settings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * CI settings
+     * @description Whether the organization requires the CI job's OIDC identity for CI results (a CI sensor's key is then refused). On for organizations created since this setting exists.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Settings']
+          }
+        }
+      }
+    }
+    /**
+     * Change the CI settings
+     * @description Turning require_oidc off lets CI sensors authenticate with a sensor key again (audited at high severity).
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description CI settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CISettingsRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_cirun.Settings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ci/trust-configs': {
     parameters: {
       query?: never
@@ -28057,6 +28133,124 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/sensors/{id}/grant': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get a sensor's grant
+     * @description What the sensor may do (RFC-052 §5) and what applies now after its trust level (effective).
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['SensorGrant']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Change a sensor's grant
+     * @description Narrowing (and demoting the trust level) needs sensors:grant:narrow; any widening (and promoting to trusted) needs sensors:grant:widen, is audited at high severity and notifies every administrator. Takes effect on the sensor's next request.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Sensor ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description New grant */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateSensorGrantRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['SensorGrant']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/sensors/{id}/heartbeat-history': {
     parameters: {
       query?: never
@@ -28705,6 +28899,84 @@ export interface paths {
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/grant-profiles': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List sensor grant profiles
+     * @description The profiles an administrator may choose for a sensor. legacy-broad is never listed.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorGrantProfiles']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/sensors/grant-summaries': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List the grant profile and trust level of every sensor
+     * @description For the sensor list: which sensors still have the broad legacy grant and which are New.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.SensorGrantSummaries']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -34376,6 +34648,49 @@ export interface paths {
 export type webhooks = Record<string, never>
 export interface components {
   schemas: {
+    SensorGrant: {
+      allow_credentials?: boolean
+      allow_push_ingest?: boolean
+      capabilities?: string[]
+      /** @description Effective is what applies now, after the trust level. */
+      effective?: components['schemas']['SensorGrantEffective']
+      job_types?: string[]
+      legacy_broad?: boolean
+      profile?: string
+      remote_actions?: string[]
+      sensor_id?: string
+      target_cidrs?: string[]
+      target_domains?: string[]
+      target_network?: string
+      tier_ceiling?: number
+      tools?: string[]
+      trust_level?: string
+      updated_at?: string
+      version?: number
+      zone_ids?: string[]
+    }
+    SensorGrantEffective: {
+      allow_credentials?: boolean
+      allow_push_ingest?: boolean
+      tier_ceiling?: number
+    }
+    SensorGrantProfile: {
+      allow_credentials?: boolean
+      allow_push_ingest?: boolean
+      default?: boolean
+      job_types?: string[]
+      name?: string
+      /** @description Parameterised: the name takes ":<integration>" (collector). */
+      parameterised?: boolean
+      target_network?: string
+      tier_ceiling?: number
+    }
+    SensorGrantSummary: {
+      legacy_broad?: boolean
+      profile?: string
+      sensor_id?: string
+      trust_level?: string
+    }
     'ctis.ASVSInfo': {
       /** @description Control ID (e.g., "2.1.1") */
       control_id?: string
@@ -36098,6 +36413,14 @@ export interface components {
       base_branch_known?: boolean
       new?: string[]
       pre_existing?: string[]
+    }
+    'github_com_openctemio_openctem_api_internal_app_cirun.Settings': {
+      /**
+       * @description RequireOIDC refuses CI results sent with a sensor key: a CI job must
+       *     prove its identity with its provider's OIDC token. On for every
+       *     organization created after migration 001120; existing ones opt in.
+       */
+      require_oidc?: boolean
     }
     'github_com_openctemio_openctem_api_internal_app_cirun.Verdict': {
       baseline?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_cirun.GateBaselineView']
@@ -38717,6 +39040,13 @@ export interface components {
       is_past_due?: boolean
       notes?: string
       ransomware_use?: string
+    }
+    'internal_infra_http_handler.CISettingsRequest': {
+      /**
+       * @description RequireOIDC refuses CI results sent with a sensor key (a CI job must
+       *     use its provider's OIDC identity).
+       */
+      require_oidc?: boolean
     }
     'internal_infra_http_handler.CITemplateDrift': {
       current?: string
@@ -42113,6 +42443,12 @@ export interface components {
       max_concurrent_jobs?: number
       tools?: string[]
     }
+    'internal_infra_http_handler.SensorGrantProfiles': {
+      profiles?: components['schemas']['SensorGrantProfile'][]
+    }
+    'internal_infra_http_handler.SensorGrantSummaries': {
+      data?: components['schemas']['SensorGrantSummary'][]
+    }
     'internal_infra_http_handler.SensorHealthReasonResponse': {
       /** @enum {string} */
       code?:
@@ -43205,6 +43541,25 @@ export interface components {
       description?: string
       priority?: number
       tags?: string[]
+    }
+    'internal_infra_http_handler.UpdateSensorGrantRequest': {
+      allow_credentials?: boolean
+      allow_push_ingest?: boolean
+      capabilities?: string[]
+      job_types?: string[]
+      profile?: string
+      remote_actions?: string[]
+      target_cidrs?: string[]
+      target_domains?: string[]
+      /** @enum {string} */
+      target_network?: 'any' | 'public' | 'none'
+      tier_ceiling?: number
+      tools?: string[]
+      /** @enum {string} */
+      trust_level?: 'new' | 'trusted'
+      /** @description Version is the version read; a stale one answers 409. */
+      version?: number
+      zone_ids?: string[]
     }
     'internal_infra_http_handler.UpdateSensorRequest': {
       capabilities?: string[]
