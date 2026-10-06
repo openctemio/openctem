@@ -56,6 +56,13 @@ const (
 	// gave it and its key became active (RFC-052); details carry the key
 	// fingerprint, the SAS and the source address of the request.
 	EventPairingCompleted EventType = "pairing_completed"
+	// EventJobRefusedByGrant: the platform refused a claim because the job
+	// lies outside the sensor's grant (RFC-052 §5.3); details carry the
+	// command id and the grant dimension.
+	EventJobRefusedByGrant EventType = "job_refused_grant"
+	// EventPushRefusedByGrant: the platform refused results without a job
+	// because the sensor's grant does not allow push ingest.
+	EventPushRefusedByGrant EventType = "push_refused_grant"
 )
 
 // ActivityCategory groups timeline items for the filter chips.
@@ -85,7 +92,7 @@ func (t EventType) Category() ActivityCategory {
 	case EventOnline, EventOffline, EventRestarted, EventKeyIPChanged, EventIdentityCloned, EventHeartbeatRecovered,
 		EventPairingCompleted:
 		return CategoryStatus
-	case EventJobRefusedByLocalPolicy:
+	case EventJobRefusedByLocalPolicy, EventJobRefusedByGrant, EventPushRefusedByGrant:
 		return CategoryJobs
 	default:
 		return CategoryUpdates
@@ -97,7 +104,8 @@ func EventTypesIn(cats []ActivityCategory) []EventType {
 	all := []EventType{EventOnline, EventOffline, EventRestarted, EventVersionChanged, EventSDKVersionChanged,
 		EventProtocolChanged, EventToolsChanged, EventCapacityChanged, EventContentUpdated, EventContentRefreshFailed,
 		EventKeyIPChanged, EventIdentityCloned, EventManifestChanged, EventHeartbeatRecovered,
-		EventLocalPolicyChanged, EventJobRefusedByLocalPolicy, EventPairingCompleted}
+		EventLocalPolicyChanged, EventJobRefusedByLocalPolicy, EventPairingCompleted, EventJobRefusedByGrant,
+		EventPushRefusedByGrant}
 	var out []EventType
 	for _, t := range all {
 		if slices.Contains(cats, t.Category()) {

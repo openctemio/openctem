@@ -114,6 +114,10 @@ type Service struct {
 	commands     commandReader
 	results      sensorresult.Repository
 	resultLimits sensorresult.Limits
+	// grants and pushRefusals enforce the sensor's push-ingest grant before
+	// the unsolicited policy (RFC-052 §5.3); nil: not enforced.
+	grants       GrantReader
+	pushRefusals PushRefusalObserver
 	// contracts reads the submitting sensor's manifest, where a ported
 	// tool declares what it produces (output_binding.go). Nil-safe.
 	contracts ToolContractSource
