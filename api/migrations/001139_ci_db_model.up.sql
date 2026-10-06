@@ -1,3 +1,4 @@
+-- expand-contract-ok: one-step contract (owner rule: minimal back-compat; upgrade note in the changelog). During a rolling deploy an old pod that reads ci_gate_policies.scope_id or ci_gate_overrides.created_by_email fails the CI gate evaluation and the gate-policy and break-glass console calls until it is replaced; the CI exchange and uploads keep working.
 -- CI data model fixes (docs/rfcs/RFC-051-ci-runner-identity-and-gate.md,
 -- "Data model"). No table is renamed.
 --
