@@ -7963,6 +7963,8 @@ definitions:
         type: string
       event:
         type: string
+      external_job_id:
+        type: string
       external_run_id:
         type: string
       findings_count:
