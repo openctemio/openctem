@@ -61,27 +61,3 @@ func (h *AuthHandler) Info(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
 }
-
-// GenerateToken is deprecated - tokens are now issued by Keycloak.
-//
-// Served at POST /auth/token in the OIDC branch only; LocalAuthHandler.Login
-// serves the same path in the local branch and carries the @Router. See Info
-// above. The annotation this replaces claimed /auth/keycloak/token, which no
-// router has ever served.
-func (h *AuthHandler) GenerateToken(w http.ResponseWriter, r *http.Request) {
-	baseURL := h.keycloakCfg.BaseURL
-	realm := h.keycloakCfg.Realm
-	authURL := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/auth", baseURL, realm)
-
-	resp := struct {
-		Message string `json:"message"`
-		AuthURL string `json:"auth_url"`
-	}{
-		Message: "Token generation is now handled by Keycloak. Please use the OAuth2 authorization flow.",
-		AuthURL: authURL,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
-}
