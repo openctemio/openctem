@@ -15,7 +15,11 @@
 // -check fails when the committed Go file, TS file or the SQL block in the
 // newest migration that carries the asset-type-registry markers differs from
 // what the YAML produces. The generator never edits a migration: a registry
-// change that touches class, lens or alias data needs a new migration.
+// change that touches class, lens or alias data needs a new migration. When
+// no migration above the migration baseline carries the block (RFC-053: the
+// baseline is a pg_dump and keeps no markers), the migration half is checked
+// against a migrated database instead (TestAssetTypeRegistry_* in
+// internal/infra/postgres).
 package main
 
 import (
@@ -109,6 +113,9 @@ func checkDrift(goSrc []byte, tsSrc, sqlSrc, migDir string) error {
 	}
 	file, block, err := newestMigrationBlock(migDir)
 	switch {
+	case errors.Is(err, errNoRegistryMigration):
+		fmt.Println("asset type registry: no migration above the baseline carries the block; " +
+			"the database tests (TestAssetTypeRegistry_*) compare the schema with the YAML")
 	case err != nil:
 		problems = append(problems, err.Error())
 	case block != sqlSrc:
@@ -123,9 +130,14 @@ func checkDrift(goSrc []byte, tsSrc, sqlSrc, migDir string) error {
 	if len(problems) > 0 {
 		return errors.New("asset type registry drift:\n  - " + strings.Join(problems, "\n  - "))
 	}
-	fmt.Println("asset type registry: YAML, generated code and migration block agree")
+	if file != "" {
+		fmt.Println("asset type registry: YAML, generated code and migration block agree")
+	}
 	return nil
 }
+
+// errNoRegistryMigration: no migration carries the asset-type-registry block.
+var errNoRegistryMigration = errors.New("no migration carries the asset-type-registry block")
 
 // validateCoreType is the statement a registry migration runs after its block.
 const validateCoreType = "ALTER TABLE assets VALIDATE CONSTRAINT chk_assets_core_type;"
@@ -173,7 +185,7 @@ func newestMigrationBlock(dir string) (string, string, error) {
 		}
 		return files[i], s[b:end], nil
 	}
-	return "", "", fmt.Errorf("no migration in %s carries the %q block", dir, sqlBeginMarker)
+	return "", "", fmt.Errorf("%s: %w", dir, errNoRegistryMigration)
 }
 
 // =============================================================================

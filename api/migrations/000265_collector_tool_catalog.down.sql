@@ -1,8 +1,0 @@
--- Removes the asset-collector catalog rows the up migration added (by their
--- fixed ids, so a same-named row created otherwise is left alone).
-DELETE FROM tools WHERE id IN (
-    '00000000-0000-0000-0000-000000000112', '00000000-0000-0000-0000-000000000113',
-    '00000000-0000-0000-0000-000000000114', '00000000-0000-0000-0000-000000000115',
-    '00000000-0000-0000-0000-000000000116');
-DELETE FROM tool_categories WHERE id = '00000000-0000-0000-0000-000000000209'
-    AND NOT EXISTS (SELECT 1 FROM tools WHERE category_id = '00000000-0000-0000-0000-000000000209');

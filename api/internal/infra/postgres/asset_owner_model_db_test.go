@@ -3,10 +3,8 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -65,77 +63,6 @@ func countAccessRows(ctx context.Context, t *testing.T, db *sql.DB, userID share
 		t.Fatal(err)
 	}
 	return n
-}
-
-// Migration 000340 copies assets.owner_id into asset_owners as a primary
-// 'owner_ref' row, keeps an explicit RACI row as it is, skips an owner who
-// left the tenant, and grants no data access. It is replayed inside a
-// rolled-back transaction with the dropped column recreated.
-func TestOwnerModelMigration_CopiesOwnerID(t *testing.T) {
-	ctx := context.Background()
-	db := openGroupsDB(t)
-	up, err := os.ReadFile("../../../migrations/000340_asset_owner_single_model.up.sql")
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
-	}
-
-	tenant := seedTestTenant(ctx, t, db)
-	alice := seedGroupsUser(ctx, t, db, "owner-model.test")
-	bob := seedGroupsUser(ctx, t, db, "owner-model.test")
-	gone := seedGroupsUser(ctx, t, db, "owner-model.test")
-	addTenantMember(ctx, t, db, tenant, alice)
-	addTenantMember(ctx, t, db, tenant, bob)
-
-	tx, err := testdb.OpenMigrator(t).BeginTx(ctx, nil) // the migration is DDL: schema owner
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	testdb.LockForDDL(t, ctx, tx, "tenants", "assets", "asset_owners")
-	exec := func(q string, args ...any) {
-		t.Helper()
-		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
-			t.Fatalf("%s: %v", q, err)
-		}
-	}
-	exec(`ALTER TABLE assets ADD COLUMN IF NOT EXISTS owner_id UUID`)
-
-	aliceAsset, bobAsset, goneAsset := shared.NewID(), shared.NewID(), shared.NewID()
-	for id, owner := range map[shared.ID]shared.ID{aliceAsset: alice, bobAsset: bob, goneAsset: gone} {
-		exec(`INSERT INTO assets (id, tenant_id, name, asset_type, owner_id) VALUES ($1, $2, $3, 'host', $4)`,
-			id.String(), tenant.String(), "asset-"+id.String(), owner.String())
-	}
-	// Bob is already an explicit secondary owner of his asset.
-	exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'secondary', 'manual')`,
-		bobAsset.String(), bob.String())
-
-	if _, err := tx.ExecContext(ctx, string(up)); err != nil {
-		t.Fatalf("apply migration: %v", err)
-	}
-	// Re-runnable.
-	if _, err := tx.ExecContext(ctx, string(up)); err != nil {
-		t.Fatalf("re-apply migration: %v", err)
-	}
-
-	if got := assetOwnerRows(ctx, t, tx, aliceAsset); len(got) != 1 || got[alice.String()] != (ownerRow{"primary", accesscontrol.AssignmentSourceOwnerRef}) {
-		t.Errorf("alice's asset owners = %+v, want one primary owner_ref row for alice", got)
-	}
-	if got := assetOwnerRows(ctx, t, tx, bobAsset); len(got) != 1 || got[bob.String()] != (ownerRow{"secondary", "manual"}) {
-		t.Errorf("bob's asset owners = %+v, want his explicit secondary row kept as it is", got)
-	}
-	if got := assetOwnerRows(ctx, t, tx, goneAsset); len(got) != 0 {
-		t.Errorf("owner who left the tenant was copied: %+v", got)
-	}
-
-	// The copied row grants no data access, even on a full refresh.
-	exec(`SELECT refresh_user_accessible_assets()`)
-	var n int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_accessible_assets WHERE user_id = $1`, alice.String()).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Errorf("owner_ref owner got %d data-scope rows, want 0", n)
-	}
 }
 
 // SyncOwnerRefOwner keeps one owner_ref-derived primary owner per asset,

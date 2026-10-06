@@ -45,11 +45,14 @@ COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
 
 # Copy migration files
 COPY migrations /migrations
+# Runs migrate with the given arguments; explains the refusal of a database
+# older than the migration baseline (RFC-053).
+COPY scripts/migrate-entrypoint.sh /usr/local/bin/openctem-migrate
 
 # The files are only read; the job needs no privileges (uid of the distroless
 # "nonroot" user, so Kubernetes runAsNonRoot accepts it).
 USER 65532:65532
 
-# Default: show help
-ENTRYPOINT ["migrate"]
+# Default: show help. The arguments are migrate's, as before.
+ENTRYPOINT ["/usr/local/bin/openctem-migrate"]
 CMD ["-help"]

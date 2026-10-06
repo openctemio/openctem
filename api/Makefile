@@ -253,10 +253,6 @@ migrate-up:
 		exit 1; \
 	fi
 
-## migrate-preflight: Run data pre-flight checks, then migrate only if clean (recommended for prod)
-migrate-preflight:
-	@DATABASE_URL="$(DATABASE_URL)" ./scripts/preflight-migrate.sh
-
 ## migrate-down: Rollback database migrations (local)
 migrate-down:
 	@echo "Rolling back migrations..."

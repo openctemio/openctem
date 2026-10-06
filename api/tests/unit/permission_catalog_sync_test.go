@@ -21,40 +21,25 @@ import (
 //
 // See docs/authz-audit.md AUTHZ-17.
 
-// permSeedMigrations are the migrations that INSERT INTO permissions. A new
-// permission-seeding migration MUST be added here (the list is asserted
-// non-empty and every file must exist, so a typo fails loudly).
-var permSeedMigrations = []string{
-	"000005_permissions.up.sql",
-	"000068_findings_approve_permission.up.sql",
-	"000091_pentest_seeds.up.sql",
-	"000093_compliance_seeds.up.sql",
-	"000096_fix_applied_status.up.sql",
-	"000153_ctem_permissions.up.sql",
-	"000231_scan_zones.up.sql",                     // sensors:zones:* (RFC-023 D16)
-	"000232_credentials_reveal_permission.up.sql",  // findings:credentials:reveal
-	"000267_scope_exclusion_approval.up.sql",       // attack_surface:scope:exclusions:approve
-	"000774_dashboard_aggregate_permission.up.sql", // dashboard:aggregate (D6)
-	"001101_sensor_pairing.up.sql",                 // sensors:pair, :approve, :grant:narrow/widen, :revoke (RFC-052)
-	"001077_ci_runner_identity.up.sql",             // scans:ci:* (RFC-051)
-	"001115_scan_freeze_windows.up.sql",            // scans:freeze:override
-}
+// The migration baseline (NNNNNN_baseline.up.sql, RFC-053) seeds every
+// permission that existed when the migrations were squashed, one pg_dump row
+// per permission: INSERT INTO public.permissions (id, ...) VALUES ('id', ...).
+var baselinePermissionRow = regexp.MustCompile(`^INSERT INTO public\.permissions \(id, [^)]*\) VALUES \('([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)
+
+// permSeedMigrations are the migrations above the baseline that INSERT INTO
+// permissions. A new permission-seeding migration MUST be added here (every
+// listed file must exist, so a typo fails loudly).
+var permSeedMigrations = []string{}
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
 // a mapping table whose rows are ('old', 'new', ...). The renames are applied,
 // in order, on top of the seeded ids.
-var permRenameMigrations = []string{
-	"000230_rename_agent_to_sensor.up.sql", // agents:* → sensors:* (RFC-023 §9.5)
-}
+var permRenameMigrations = []string{}
 
 // permRemoveMigrations delete permission ids. Each lists the removed ids as
 // one-column VALUES rows ('id'), which tupleID parses; they are applied, in
 // order, after the renames.
-var permRemoveMigrations = []string{
-	"000670_remove_group_permission_sets.up.sql",   // team:permission_sets:* (permissions come only from roles)
-	"000772_remove_meaningless_permissions.up.sql", // billing/policies/compliance permissions that gate nothing
-	"001032_remove_outbound_webhooks.up.sql",       // integrations:webhooks:* (outbound webhooks never delivered; owner decision B9)
-}
+var permRemoveMigrations = []string{}
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)
 
@@ -68,6 +53,23 @@ func seededPermissionIDs(t *testing.T) map[string]string {
 	t.Helper()
 	root := repoRoot(t)
 	out := make(map[string]string) // id -> "file:line"
+	baselines, err := filepath.Glob(filepath.Join(root, "migrations", "*_baseline.up.sql"))
+	if err != nil || len(baselines) != 1 {
+		t.Fatalf("want exactly one migration baseline in migrations/, found %v (%v)", baselines, err)
+	}
+	data, err := os.ReadFile(baselines[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Base(baselines[0])
+	for i, line := range strings.Split(string(data), "\n") {
+		if mm := baselinePermissionRow.FindStringSubmatch(line); mm != nil {
+			if prev, dup := out[mm[1]]; dup {
+				t.Errorf("permission %q seeded twice: %s and %s:%d", mm[1], prev, base, i+1)
+			}
+			out[mm[1]] = base + ":" + itoa(i+1)
+		}
+	}
 	for _, m := range permSeedMigrations {
 		path := filepath.Join(root, "migrations", m)
 		data, err := os.ReadFile(path)

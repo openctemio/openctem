@@ -1,37 +1,18 @@
 package postgres
 
-// Composite tenant foreign keys on asset references (migrations 000920-000922,
-// research doc 21b P1-1): the database refuses a row of one tenant that points
+// Composite tenant foreign keys on asset references (research doc 21b P1-1,
+// in the migration baseline): the database refuses a row of one tenant that points
 // at another tenant's asset, whatever code writes it, and keeps each table's
 // ON DELETE action.
 
 import (
 	"context"
 	"database/sql"
-	"os"
 	"strings"
 	"testing"
 
-	"github.com/lib/pq"
-
-	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
-
-// assetRefTables are every table the migrations constrain, plus assets.
-var assetRefTables = []string{
-	"assets", "asset_access_grants", "asset_attributions", "asset_components", "asset_identifiers",
-	"asset_relationships", "asset_services", "asset_state_history", "asset_type_reclassifications",
-	"business_service_assets", "business_unit_assets", "easm_dns_check_state", "easm_evidence",
-	"exposure_events", "exposures", "finding_retests", "findings", "pipeline_runs",
-	"relationship_suggestions", "runtime_telemetry_events", "scan_coverage_state", "scan_sessions",
-	"sla_policies", "suppression_rules", "user_accessible_assets",
-}
-
-// compositeFromCreation are tables that later migrations created with their
-// composite (tenant_id, asset) keys; 000921's down does not drop them.
-var compositeFromCreation = []string{"scan_step_outputs", "scan_run_targets", "ci_runs", "ci_gate_overrides", "ci_pipelines",
-	"ci_coverage_expectations", "ci_gate_policies"}
 
 func seedRefAsset(ctx context.Context, t *testing.T, db interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
@@ -154,91 +135,5 @@ func TestAssetRefTenantFKs_RefuseCrossTenantAndKeepOnDelete(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM findings WHERE tenant_id = $1`, tenantA.String())
-	})
-}
-
-// Replays 000921 down → up → 000922 in a rolled-back transaction over
-// populated tables, and proves the pre-flight refuses existing cross-tenant
-// rows without changing anything.
-func TestAssetRefTenantFKs_MigrationReplay(t *testing.T) {
-	ctx := context.Background()
-	read := func(name string) string {
-		b, err := os.ReadFile("../../../migrations/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
-	}
-	up921, down921, up922 := read("000921_asset_ref_tenant_fks.up.sql"), read("000921_asset_ref_tenant_fks.down.sql"),
-		read("000922_asset_ref_tenant_fks_validate.up.sql")
-
-	db := openGroupsDB(t)
-	tenantA, tenantB := seedTestTenant(ctx, t, db), seedTestTenant(ctx, t, db)
-	own, foreign := seedRefAsset(ctx, t, db, tenantA), seedRefAsset(ctx, t, db, tenantB)
-	if _, err := db.ExecContext(ctx, `INSERT INTO findings (tenant_id, asset_id, source, tool_name, severity, message, fingerprint)
-		VALUES ($1, $2, 'manual', 'fk', 'high', 'm', $3)`, tenantA.String(), own.String(), "fk-"+shared.NewID().String()); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM findings WHERE tenant_id = $1`, tenantA.String())
-	})
-
-	run := func(name string, f func(tx *sql.Tx)) {
-		t.Run(name, func(t *testing.T) {
-			tx, err := testdb.OpenMigrator(t).BeginTx(ctx, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = tx.Rollback() }()
-			testdb.LockForDDL(t, ctx, tx, assetRefTables...)
-			f(tx)
-		})
-	}
-	exec := func(tx *sql.Tx, what, q string, args ...any) {
-		t.Helper()
-		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
-			t.Fatalf("%s: %v", what, err)
-		}
-	}
-
-	run("down then up on populated data", func(tx *sql.Tx) {
-		exec(tx, "down", down921)
-		exec(tx, "up", up921)
-		exec(tx, "validate", up922)
-		exec(tx, "down again", down921)
-		exec(tx, "up again", up921)
-		exec(tx, "validate again", up922)
-	})
-
-	run("pre-flight refuses existing cross-tenant rows", func(tx *sql.Tx) {
-		exec(tx, "down", down921)
-		exec(tx, "seed cross-tenant finding", `INSERT INTO findings (tenant_id, asset_id, source, tool_name, severity, message, fingerprint)
-			VALUES ($1, $2, 'manual', 'fk', 'high', 'm', $3)`, tenantA.String(), foreign.String(), "fk-"+shared.NewID().String())
-		exec(tx, "seed cross-tenant scope row", `INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type)
-			SELECT id, $1, $2, 'secondary' FROM users LIMIT 1`, tenantA.String(), foreign.String())
-		exec(tx, "savepoint", `SAVEPOINT before_up`)
-		_, err := tx.ExecContext(ctx, up921)
-		if err == nil {
-			t.Fatal("000921 applied over cross-tenant rows")
-		}
-		if !strings.Contains(err.Error(), "cross-tenant asset references found") || !strings.Contains(err.Error(), "findings.asset_id: 1") {
-			t.Errorf("pre-flight error = %v, want the per-column count", err)
-		}
-		exec(tx, "rollback to savepoint", `ROLLBACK TO SAVEPOINT before_up`)
-		var n int
-		// Tables created later with their keys are not part of 000921.
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pg_constraint WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2
-			AND NOT (conrelid::regclass::text = ANY($1))`, pq.Array(compositeFromCreation)).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		if n != 0 {
-			t.Errorf("%d composite key(s) left after a refused pre-flight, want 0", n)
-		}
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM findings WHERE tenant_id = $1 AND asset_id = $2`, tenantA.String(), foreign.String()).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		if n != 1 {
-			t.Errorf("the pre-flight changed data: %d cross-tenant finding(s), want the seeded 1", n)
-		}
 	})
 }

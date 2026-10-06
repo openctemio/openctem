@@ -2,7 +2,6 @@ package integration
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -71,104 +70,4 @@ func TestIngest_AssetNameNormalizedWithSubType(t *testing.T) {
 	if got := names("name LIKE 'arn:%'"); len(got) != 2 {
 		t.Errorf("two EC2 instances stored as %q, want two assets", got)
 	}
-}
-
-// Migration 000294 queues review items (never merges) for names stored by the
-// old normalizer. Running the migration body again on seeded rows must queue:
-// one garbled group, one single rename, one truncated ARN.
-func TestMigration000294_QueuesReviewsForGarbledNames(t *testing.T) {
-	r := newV2Rig(t, ingest.DefaultBlindingGuard())
-	tn := r.newTenant("httpx")
-	ctx := context.Background()
-	seed := func(name, typ, sub string) string {
-		t.Helper()
-		var id string
-		if err := r.db.QueryRowContext(ctx, `INSERT INTO assets (tenant_id, name, asset_type, sub_type, criticality, status)
-			VALUES ($1, $2, $3, NULLIF($4, ''), 'medium', 'active') RETURNING id`,
-			tn.tenant.String(), name, typ, sub).Scan(&id); err != nil {
-			t.Fatalf("seed %s: %v", name, err)
-		}
-		return id
-	}
-	canonical := seed("https://api.example.com", "service", "http")
-	g1 := seed("https:::api.example.com", "service", "http")
-	g2 := seed("https:::api.example.com:443", "service", "http")
-	single := seed("http:::shop.example.com:8080", "service", "http")
-	arn := seed("arn:aws:ec2:us-east-1:123456789012:instance", "host", "compute")
-	seed("arn:aws:ec2:us-east-1:123456789012:instance/i-0ccc", "host", "compute") // intact: not flagged
-	seed("https://ok.example.com", "service", "http")                             // canonical: not flagged
-
-	body, err := os.ReadFile("../../migrations/000294_asset_normalization_review.up.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.db.ExecContext(ctx, string(body)); err != nil {
-		t.Fatalf("run migration body: %v", err)
-	}
-
-	type review struct {
-		keep, reason, proposed string
-		merge                  []string
-	}
-	rows, err := r.db.QueryContext(ctx, `SELECT keep_asset_id, reason, COALESCE(evidence->>'proposed_name', ''), array_to_string(merge_asset_ids, ',')
-		FROM asset_dedup_review WHERE tenant_id = $1 AND status = 'pending' ORDER BY reason`, tn.tenant.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	got := map[string]review{}
-	for rows.Next() {
-		var rv review
-		var merge string
-		if err := rows.Scan(&rv.keep, &rv.reason, &rv.proposed, &merge); err != nil {
-			t.Fatal(err)
-		}
-		if merge != "" {
-			rv.merge = splitComma(merge)
-		}
-		got[rv.reason] = rv
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 3 {
-		t.Fatalf("reviews = %+v, want 3 (garbled, rename, truncated arn)", got)
-	}
-	if g := got["normalization_garbled"]; g.keep != canonical || g.proposed != "https://api.example.com" || len(g.merge) != 2 ||
-		!contains(g.merge, g1) || !contains(g.merge, g2) {
-		t.Errorf("garbled review = %+v, want keep %s (the canonical asset) merging %s and %s", g, canonical, g1, g2)
-	}
-	if s := got["normalization_rename"]; s.keep != single || s.proposed != "http://shop.example.com:8080" || len(s.merge) != 0 {
-		t.Errorf("rename review = %+v, want keep %s proposed http://shop.example.com:8080", s, single)
-	}
-	if a := got["normalization_cut_arn"]; a.keep != arn {
-		t.Errorf("truncated ARN review = %+v, want keep %s", a, arn)
-	}
-
-	// Re-running queues nothing new (idempotent).
-	if _, err := r.db.ExecContext(ctx, string(body)); err != nil {
-		t.Fatalf("rerun: %v", err)
-	}
-	var n int
-	_ = r.db.QueryRowContext(ctx, `SELECT count(*) FROM asset_dedup_review WHERE tenant_id = $1`, tn.tenant.String()).Scan(&n)
-	if n != 3 {
-		t.Errorf("after rerun %d reviews, want 3", n)
-	}
-	// No asset was renamed or deleted.
-	_ = r.db.QueryRowContext(ctx, `SELECT count(*) FROM assets WHERE tenant_id = $1`, tn.tenant.String()).Scan(&n)
-	if n != 7 {
-		t.Errorf("assets = %d, want 7 untouched", n)
-	}
-}
-
-func splitComma(s string) []string {
-	var out []string
-	start := 0
-	for i := 0; i <= len(s); i++ {
-		if i == len(s) || s[i] == ',' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	return out
 }
