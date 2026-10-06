@@ -63,6 +63,7 @@ import type { EntityActivityHandle } from '@/features/activity/components/entity
 import { requestSensorContentRefresh, SensorContentSection } from './sensor-content-section'
 import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-section'
 import { SensorLocalPolicySection } from './sensor-local-policy-section'
+import { SensorGrantSection } from './sensor-grant-section'
 import { SensorManifestTab } from './sensor-manifest-tab'
 import { SensorSetupTab } from './config-check-list'
 import { SensorStateBadge } from './sensor-state-badge'
@@ -944,6 +945,7 @@ export function SensorDetailSheet({
               <SensorControlSection sensor={sensor} now={now} history={heartbeatHistory} />
             )}
             {sensor.local_policy && <SensorLocalPolicySection sensor={sensor} />}
+            {!sensor.is_platform_sensor && <SensorGrantSection sensorId={sensor.id} />}
             <SensorRecentActivity ref={activityRef} sensorId={sensor.id} sensorName={sensor.name} />
             <ConnectionAndIdentity
               sensor={sensor}
