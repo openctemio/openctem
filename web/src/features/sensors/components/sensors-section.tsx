@@ -64,6 +64,7 @@ import {
   invalidateSensorsCache,
 } from '@/lib/api/sensor-hooks'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
+import { useSensorGrantSummaries } from '@/lib/api/sensor-grant-hooks'
 import { useSensorIdentityPolicy } from '@/lib/api/sensor-pairing-hooks'
 import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
 import { Tabs, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -239,6 +240,13 @@ export function SensorsSection({
 
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const canWriteSensors = useHasPermission(Permission.SensorsWrite)
+  const canReadSensors = useHasPermission(Permission.SensorsRead)
+  // Grant flags on the list (RFC-052): legacy broad grants and New sensors.
+  const { data: grantSummaries } = useSensorGrantSummaries(canReadSensors)
+  const grants = useMemo(
+    () => new Map((grantSummaries?.data ?? []).map((g) => [g.sensor_id, g])),
+    [grantSummaries?.data]
+  )
   const canPairSensors = useHasPermission(Permission.SensorsPair)
   // RFC-052 D-4: an organization that requires key-bound identity cannot
   // create a sensor with an API key (the API answers 403), so the key-based
@@ -781,6 +789,7 @@ export function SensorsSection({
     body = (
       <SensorTable
         sensors={filteredSensors}
+        grants={grants}
         onViewSensor={handleViewSensor}
         onEditSensor={handleEditSensor}
         onActivateSensor={handleActivateSensor}
