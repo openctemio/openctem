@@ -80,6 +80,7 @@ import {
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { useFleet } from '@/features/ci-runners/api/use-ci'
 import { CIPipelinesPanel } from '@/features/ci-runners/components/ci-pipelines-panel'
+import { CICDLinkCard } from '@/features/ci-runners/components/ci-cd-link-card'
 import { CIPipelineSheet } from '@/features/ci-runners/components/ci-pipeline-sheet'
 import { FleetAllView } from './fleet-all-view'
 
@@ -112,10 +113,7 @@ import {
   type SensorPolicyFilter,
 } from '../lib/fleet'
 
-type SensorTypeFilter = 'runner' | 'worker' | 'collector' | 'sensor'
-
 interface SensorsSectionProps {
-  typeFilter?: SensorTypeFilter
   /** Page title and description; the section renders the page header. */
   title?: string
   description?: string
@@ -132,8 +130,9 @@ const MODES: SensorModeFilter[] = ['daemon', 'ci']
 
 /**
  * The page's Mode (api RFC-051 §10): a sensor row runs as a daemon; a CI
- * pipeline is a sensor in runner mode. The role (scanner, collector) is
- * independent of the mode.
+ * pipeline is listed in runner mode. The page opens on the daemons; CI
+ * pipelines have their own page (CI/CD integration), linked from here, and
+ * stay reachable as the Runner and All modes.
  */
 export type FleetPageMode = 'all' | 'daemon' | 'runner'
 
@@ -152,7 +151,6 @@ export function fleetPageMode(raw: string, canDaemon: boolean, canRunner: boolea
   if (values.some((v) => v === 'ci' || v === 'standalone' || v === 'collector') && canDaemon) {
     return 'daemon'
   }
-  if (canDaemon && canRunner) return 'all'
   return canDaemon ? 'daemon' : 'runner'
 }
 const PROTOCOLS: SensorProtocolFilter[] = ['v2', 'v1', 'unknown']
@@ -195,9 +193,8 @@ function LiveIndicator({ updatedAt, now }: { updatedAt: number | null; now: numb
 }
 
 export function SensorsSection({
-  typeFilter,
   title = 'Sensors',
-  description = 'The scanners and collectors that run inside your networks (daemon mode) and the CI pipelines that scan your repositories (runner mode).',
+  description = 'The scanners and collectors that run inside your networks. CI/CD pipelines have their own page.',
 }: SensorsSectionProps) {
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
@@ -254,13 +251,11 @@ export function SensorsSection({
   const { data: identityPolicy } = useSensorIdentityPolicy()
   const bearerKeysAllowed = identityPolicy?.bearer_keys_allowed !== false
   const canInstallWithKey = canWriteSensors && bearerKeysAllowed
-  const zonesTab = tabParam === 'zones' && canReadZones && !typeFilter
+  const zonesTab = tabParam === 'zones' && canReadZones
   const canDaemon = useHasPermission(Permission.SensorsRead)
   const scansEnabled = useModuleEnabled('scans')
-  const canRunner = useHasPermission(Permission.CIRead) && scansEnabled && !typeFilter
-  const fleetMode: FleetPageMode = typeFilter
-    ? 'daemon'
-    : fleetPageMode(modeParam.join(','), canDaemon, canRunner)
+  const canRunner = useHasPermission(Permission.CIRead) && scansEnabled
+  const fleetMode: FleetPageMode = fleetPageMode(modeParam.join(','), canDaemon, canRunner)
   const setFleetMode = useCallback(
     (m: FleetPageMode) => setModeParam(m === fleetPageMode('', canDaemon, canRunner) ? [] : [m]),
     [setModeParam, canDaemon, canRunner]
@@ -402,7 +397,7 @@ export function SensorsSection({
   )
 
   // Zones, for grouping and the coverage metric.
-  const { data: zonesData } = useScanZones(canReadZones && !typeFilter)
+  const { data: zonesData } = useScanZones(canReadZones)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
 
   // Mutations. Each takes the target sensor's id when triggered: the row
@@ -414,12 +409,8 @@ export function SensorsSection({
   const { trigger: deactivateSensorTrigger } = useDeactivateSensor()
   const { trigger: revokeSensorTrigger } = useRevokeSensor()
 
-  // The tenant's own sensors (platform sensors have their own page); the
-  // /runners page shows one type.
-  const scopedSensors = useMemo(() => {
-    const own = tenantSensors(sensors)
-    return typeFilter ? own.filter((a) => a.type === typeFilter) : own
-  }, [sensors, typeFilter])
+  // The tenant's own sensors (platform sensors have their own page).
+  const scopedSensors = useMemo(() => tenantSensors(sensors), [sensors])
 
   const summary = useMemo(
     () => summarizeFleet(scopedSensors, now, thresholds, channel, zones),
@@ -690,7 +681,7 @@ export function SensorsSection({
             value: 'runner' as const,
             label: 'Runner',
             count: runnerCount,
-            description: 'CI pipelines: the sensor runs inside a CI job',
+            description: 'CI/CD pipelines: the sensor binary runs inside a CI job',
           },
         ]
       : []),
@@ -832,7 +823,7 @@ export function SensorsSection({
           <>
             {/* Shared platform sensors have their own page, linked only where
                 the tenant has them (the same condition the old card used). */}
-            {!typeFilter && <PlatformSensorsLink />}
+            <PlatformSensorsLink />
             {fleetMode === 'daemon' && (
               <Button
                 variant="outline"
@@ -846,7 +837,7 @@ export function SensorsSection({
             )}
             {fleetMode === 'runner' && (
               <Button asChild variant="outline" size="sm">
-                <Link href="/settings/scanning/ci">
+                <Link href="/ci-cd?tab=setup">
                   <Workflow className="h-4 w-4" />
                   Connect a CI pipeline
                 </Link>
@@ -863,7 +854,7 @@ export function SensorsSection({
         )}
       </PageHeader>
 
-      {!typeFilter && canReadZones && (
+      {canReadZones && (
         <Tabs
           value={zonesTab ? 'zones' : 'sensors'}
           onValueChange={(v) => setTabParam(v === 'zones' ? 'zones' : '')}
@@ -871,10 +862,7 @@ export function SensorsSection({
         >
           <TabsList>
             <TabsTrigger value="sensors">
-              Sensors{' '}
-              <TabsCount
-                value={isLoading ? null : roleCount + (canRunner ? (runnerCount ?? 0) : 0)}
-              />
+              Sensors <TabsCount value={isLoading ? null : roleCount} />
             </TabsTrigger>
             <TabsTrigger value="zones">
               Scan zones <TabsCount value={zonesData ? zones.length : null} />
@@ -901,6 +889,7 @@ export function SensorsSection({
         </>
       ) : (
         <>
+          {canRunner && <CICDLinkCard className="mt-4" count={runnerCount} />}
           {!fleetEmpty && (
             <FleetHealthStrip
               className="mt-5"

@@ -5,7 +5,7 @@
  * sensor row: it has no heartbeat; it belongs to a pipeline (listed on the
  * Sensors page in runner mode) and a repository asset, and carries its
  * commit, branch, pull request, pipeline and actor from the CI provider's
- * verified token. Shown on the Sensors page, runner mode, under Runs.
+ * verified token. Shown on the CI/CD integration page, under Runs.
  */
 
 import { useState } from 'react'
@@ -97,7 +97,7 @@ export function CIRunsView({
           description="Runs of CI pipelines that sent results with their CI provider's identity. Each run belongs to a pipeline and a repository and is judged by the CI gate."
         >
           <Button asChild variant="outline" size="sm">
-            <Link href="/settings/scanning/ci">CI trust and gate</Link>
+            <Link href="/ci-cd?tab=setup">CI trust and gate</Link>
           </Button>
         </PageHeader>
       )}
@@ -140,7 +140,7 @@ export function CIRunsView({
           description="Add a CI trust configuration, then run the sensor in a GitHub Actions or GitLab CI job: it exchanges the job's OIDC token for a short-lived upload token, so no secret is stored in CI."
           action={
             <Button asChild size="sm">
-              <Link href="/settings/scanning/ci">Set up CI trust</Link>
+              <Link href="/ci-cd?tab=setup">Set up CI trust</Link>
             </Button>
           }
         />
