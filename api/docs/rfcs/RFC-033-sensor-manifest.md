@@ -34,7 +34,7 @@ sensor's live load. Nothing that changes slowly is sent every 30 seconds.**
 | When the sensor says what it has | on **every** heartbeat (≈1.9 KB, every 5–60 s) | once on connect (`PUT /api/v2/sensor/manifest`), then on change |
 | What a heartbeat carries | identity, load, **and** the whole tool inventory | identity, load and `manifest_digest` (Phase 2 drops the inventory) |
 | Which tool serves which capability | lost; only a flat list arrived (§3.2) | each tool lists its `capabilities` (and, Phase 3, `target_types`) |
-| Capacity | one number, `max_concurrent_jobs`, which carried the SDK's upper bound 64 (§3.2) | the operator's **ceiling** in the manifest; what the sensor can run **now** (`slots_total`) on every heartbeat, as Kubernetes separates `capacity` from `allocatable` |
+| Capacity | one number, `max_concurrent_jobs`, which carried the SDK's upper bound 64 (§3.2) | the operator's **ceiling** in the manifest; what the sensor can run **now** (`slots_total`) on every heartbeat, separating what the host has from what it may use |
 | What the platform kept | the latest report, overwritten every heartbeat | every **version** of the manifest, with its digest, what was accepted and what was ignored, and the diff as activity events |
 | What the sensor learns back | nothing | the digest the platform stored, what it accepted, what it ignored and why (Phase 2: the tools the policy allows, so the sensor refuses the others itself) |
 | Sensors that do not send one | — | keep working: the platform derives the manifest from their heartbeat |
@@ -54,7 +54,7 @@ sensor (RFC-032 E3). Routing reads it to pick the tool that can run a job
 | M5 | **Versions are kept.** `sensor_manifests` stores each distinct manifest per sensor (sanitized document, digest, source, accepted, ignored, first and last seen). `sensors.manifest_digest` points at the current one. The `reported_*` columns that dispatch reads (RFC-029 §4.3.1, migration 000253) become a projection of the current manifest, so no dispatch query changes. |
 | M6 | **Change is history.** The diff between two versions is written to the activity timeline with the existing types (`tools_changed`, `version_changed`, `sdk_version_changed`, `capacity_changed`, `content_updated`). Each event carries both digests. No new event category. |
 | M7 | **Backward compatible both ways.** For a sensor that sends no manifest (protocol v1, older v2 SDKs), the platform derives one from its heartbeat (`source = heartbeat`), with the same digest, storage and events. A sensor on a platform without the `manifest` feature keeps sending the full heartbeat. Phase 1 keeps the inventory on every heartbeat. Phase 2 drops it only once the platform has acknowledged the digest. |
-| M8 | **Capacity is two numbers** (Kubernetes `capacity` vs `allocatable`). The manifest carries the operator's **ceiling** (`SENSOR_MAX_JOBS`; none when unset) and the model (`dynamic`: the SDK sizes slots from CPU, memory and learned tool cost). The heartbeat carries `capacity.slots_total`, what it can run now. Dispatch capacity is the smallest of ceiling, slots and the administrator's limit (§6.1, implemented in Phase 0). |
+| M8 | **Capacity is two numbers** (`capacity` vs `allocatable`). The manifest carries the operator's **ceiling** (`SENSOR_MAX_JOBS`; none when unset) and the model (`dynamic`: the SDK sizes slots from CPU, memory and learned tool cost). The heartbeat carries `capacity.slots_total`, what it can run now. Dispatch capacity is the smallest of ceiling, slots and the administrator's limit (§6.1, implemented in Phase 0). |
 | M9 | **The sensorkit owns the manifest.** A sensor only registers tools (`ToolRegistry.Register`, `Kit.AddScanner`). The SDK builds the manifest from the registry, the build information and the host, computes the digest, sends it and reacts to `send_manifest`. Platform connection code lives in the SDK (owner principle). |
 | M10 | **Defense in depth (Phase 2).** The manifest answer, and a `GET` that re-reads it when `config_version` changes, carry the policy: the tools and capabilities the platform allows this sensor. The SDK refuses (fails with a typed reason) any command for a tool outside it, even if a platform bug dispatched it. |
 | M11 | **Routing by tool (Phase 3, RFC-030).** A job needs a capability and a target type. The platform picks a sensor whose effective manifest has a tool that provides both, and names that tool in the command. The flat capability list stays only as the compatibility path. |
@@ -118,28 +118,21 @@ side notices. A manifest that the platform validates and **answers**
   request is signed from Phase 1. The manifest is that report, made durable
   and versioned.
 
-## 4. What mature systems do
+## 4. Design principles
 
-| System | Register (once / on change) | Heartbeat | What we take |
-|---|---|---|---|
-| **Kubernetes Node** | Node object with `status.capacity`, `status.allocatable`, `status.nodeInfo` (`kubeletVersion`, `containerRuntimeVersion`, `osImage`, `architecture`), labels (`kubernetes.io/arch`, `kubernetes.io/os`, `node.kubernetes.io/instance-type`), `status.images`. Allocatable = capacity − kube-reserved − system-reserved − eviction threshold. | A **Lease** in `kube-node-lease`, renewed about every 10 s (40 s duration × 0.25). Full `NodeStatus` is posted when it changes, or every `nodeStatusReportFrequency` (5 min) when it does not. | Capacity vs allocatable (M8). Liveness kept apart from the slow full status. Re-send on change, with a slow periodic resync. |
-| **Node Feature Discovery** | Detects hardware and kernel features and advertises them as labels `feature.node.kubernetes.io/*` (and extended resources). | — | Capabilities are discovered on the host, not typed by an admin. |
-| **Kubernetes device plugins** | A plugin registers and the node then advertises an extended resource (`nvidia.com/gpu`) that the scheduler counts. | — | A tool is a schedulable resource that the host registers. |
-| **HashiCorp Nomad** | At start the client runs fingerprinters (attributes such as `cpu.numcores`, `driver.docker.version`, `os.name`; drivers with *Detected* / *Healthy*) and calls `Node.Register`. A fingerprint diff (`updateNodeFromFingerprint`, `batchNodeUpdates`) calls `Node.Register` again. `ComputeClass` hashes the node's attributes, meta, class, pool and resources into `v1:<hash>` and **excludes `unique.*`** keys. | `Node.UpdateStatus`, which does not recompute the class. The **server** sets the heartbeat TTL (`HeartbeatTTL` in the response). | Re-register on change (M2). A digest over the stable part only, with unique fields excluded (M1, M3). The server steers the cadence (the doorbell already does). |
-| **GitHub Actions runners** | `config.sh --labels` at registration. Default labels are `self-hosted`, OS and architecture. Labels change later only through the UI or API. | — | Jobs route by labels (`runs-on`). The labels are flat and self-declared, with no versions. A manifest has to carry more than labels. |
-| **Buildkite agent** | `AgentRegisterRequest` {Name, Hostname, OS, Arch, Version, Build, Tags, PID, MachineID, Features}. The response returns an access token and **server-chosen** `PingInterval`, `JobStatusInterval`, `HeartbeatInterval`. | `Heartbeat` {SentAt, ReceivedAt} only. | A registration payload separate from a minimal heartbeat. The server answers registration with what the agent should do. |
-| **Envoy xDS** | — (server → client) | ACK echoes `version_info` and `response_nonce`. A NACK carries `error_detail` and the **previously accepted** version. | The receiver says what it accepted and what it rejected (M4). Each side echoes the other's version, not its own canonical form (M3). |
-| **Consul anti-entropy** | The agent's local state is authoritative, and it notifies the servers on change. | Periodic full sync, 1 min for clusters up to 128 nodes and longer for larger ones, staggered. | A periodic resync guards against a lost change: the digest in every heartbeat does this for free. |
+| Principle | Taken here |
+|---|---|
+| Separate what a host *has* (capacity) from what it may *use* now (allocatable); report the second on every heartbeat | M8 |
+| Register a full self-description once, then re-register only on change; hash the stable part only, with per-host unique fields excluded | M1, M2, M3 |
+| Keep liveness cheap: a minimal heartbeat, and the full state posted only when it changes or after a slow resync interval; the server steers the cadence (the doorbell already does) | M2, heartbeat digest |
+| Capabilities are discovered on the host and registered by it, not typed by an admin; a tool is a schedulable resource the host registers | M1 |
+| Flat self-declared labels are not enough: versions, per-tool capabilities and content versions need a structured document | M1 |
+| The receiver says what it accepted and what it rejected; each side echoes the other's version, not its own canonical form | M3, M4 |
+| A periodic resync guards against a lost change: the digest in every heartbeat does this for free | M2 |
 
-No system we found does exactly "digest in the heartbeat, full re-send on a
-mismatch". The design combines Nomad's hash over stable attributes,
-Kubernetes' change-or-slow-resync status, Consul's resync safety net and
-xDS's accepted/rejected answer. CrowdStrike Falcon's sensor reporting is not
-publicly documented (only sensor update policies are), so it is not used.
-Sources are in §13.
-xDS's accepted/rejected answer. The self-description includes the versions of
-installed content (RFC-031), and it is sent on start and on change,
-rate-limited. Sources are in §11.
+The design is therefore a digest in the heartbeat, with a full re-send on a
+mismatch. The self-description includes the versions of installed content
+(RFC-031), and it is sent on start and on change, rate-limited.
 
 ## 5. Trust
 
@@ -163,8 +156,8 @@ and an event behind, and the claim is never silently overwritten. Approval
 
 ### 6.1 Capacity: ceiling and slots (Phase 0, implemented)
 
-Kubernetes separates what a node *has* (`capacity`) from what the scheduler
-may *use* (`allocatable`). A sensor has two numbers of the same kind:
+A sensor has two numbers: what it *has* (`capacity`) and what the scheduler
+may *use* (`allocatable`):
 
 - **ceiling**: the most jobs the operator lets it run (`SENSOR_MAX_JOBS`,
   `ToolRegistry.SetMaxConcurrentJobs`, `resource.ManagerConfig.Cap`). It is
@@ -181,8 +174,8 @@ Dispatch capacity (`effective_max_jobs`, migration 000257, and
 limit, the ceiling and the slots, among those that are set. Free slots stay
 `effective − held`, and no more than a fresh report's `slots_free`
 (RFC-030 §5.8.1). The last reported slots keep counting after the report goes
-stale (a generated column cannot read the clock), as a Kubernetes node keeps
-its last allocatable until its status is next posted. A stale report's
+stale (a generated column cannot read the clock), as the last-posted
+allocatable value stays in force until the status is next posted. A stale report's
 `slots_free` is ignored. A sensor that is gone is excluded by health anyway.
 
 ### 6.2 The manifest document
@@ -563,9 +556,9 @@ heartbeat-derived manifest exists for sensor-docker-01.
   revisit it if manifests are ever relayed through a third party.
 - **Digest computed only by the sensor.** Two code bases would then have to
   agree on canonical bytes forever, and any drift would cause re-send loops.
-  The platform computes the digest and the sensor echoes it (xDS-style).
+  The platform computes the digest and the sensor echoes it.
   Chosen instead.
-- **Labels (GitHub runners, Buildkite tags) instead of a structured
+- **Free-form labels instead of a structured
   manifest.** Labels cannot carry versions, per-tool capabilities or content.
   They can come later as an optional `labels` member if operators need
   free-form routing hints.
@@ -731,43 +724,5 @@ are unchanged. Details: [architecture/sensors.md](../architecture/sensors.md#too
 
 ## 13. Sources
 
-- Kubernetes, Node status (capacity, allocatable, node info, heartbeats and
-  Lease): https://kubernetes.io/docs/reference/node/node-status/
-- Kubernetes, Reserve compute resources (allocatable formula):
-  https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/
-- Kubernetes, Nodes (`status.images`, node info):
-  https://kubernetes.io/docs/concepts/architecture/nodes/
-- Kubelet configuration (`nodeStatusUpdateFrequency`,
-  `nodeStatusReportFrequency`, `nodeLeaseDurationSeconds`):
-  https://raw.githubusercontent.com/kubernetes/kubernetes/master/staging/src/k8s.io/kubelet/config/v1beta1/types.go
-- Kubernetes, well-known labels:
-  https://kubernetes.io/docs/reference/labels-annotations-taints/
-- Kubernetes, scheduling GPUs (device plugins, extended resources):
-  https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/
-- Node Feature Discovery:
-  https://kubernetes-sigs.github.io/node-feature-discovery/stable/get-started/introduction.html
-- Nomad architecture (register, heartbeat):
-  https://developer.hashicorp.com/nomad/docs/concepts/architecture
-- Nomad `Node.Register` / `Node.UpdateStatus`:
-  https://raw.githubusercontent.com/hashicorp/nomad/main/nomad/node_endpoint.go
-- Nomad client fingerprint updates (`updateNodeFromFingerprint`,
-  `batchNodeUpdates`): https://raw.githubusercontent.com/hashicorp/nomad/main/client/client.go
-- Nomad computed node class (`ComputeClass`, `unique.` exclusion):
-  https://raw.githubusercontent.com/hashicorp/nomad/main/nomad/structs/node_class.go
-- Nomad `node status` (attributes, driver Detected/Healthy):
-  https://developer.hashicorp.com/nomad/docs/commands/node/status
-- Nomad server heartbeat settings:
-  https://developer.hashicorp.com/nomad/docs/configuration/server
-- GitHub Actions self-hosted runner labels:
-  https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/using-labels-with-self-hosted-runners
-- GitHub Actions adding self-hosted runners (registration token):
-  https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/adding-self-hosted-runners
-- Buildkite agent API (`AgentRegisterRequest`, `AgentRegisterResponse`,
-  `Heartbeat`): https://pkg.go.dev/github.com/buildkite/agent/v4/api
-- Buildkite `agent start` (tags, ping mode):
-  https://buildkite.com/docs/agent/v3/cli-start
-- Envoy xDS protocol (ACK/NACK, `version_info`, `error_detail`):
-  https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol
-- Consul anti-entropy: https://developer.hashicorp.com/consul/docs/concept/consistency
 - RFC 8785, JSON Canonicalization Scheme: https://www.rfc-editor.org/rfc/rfc8785
 - RFC 9457, Problem Details for HTTP APIs: https://www.rfc-editor.org/rfc/rfc9457

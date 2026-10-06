@@ -43,8 +43,8 @@ removed. Four guardrails enforce removability:
 | **2 — Shrink** | native parsers for the tools *actually in use* (freq-ranked, not all 200); optionally push prioritization/validation results *back* to DD | native covers ≥ ~80% of finding volume |
 | **3 — Cut** | flip a flag to disable the connector; DD becomes optional / removed | DD-dependency ratio < ~10–15% |
 
-The goal is **not** parser parity with DefectDojo. It is covering the 10–20 tools
-that make up ~90% of a given customer's volume, after which DefectDojo has no
+The goal is **not** to reimplement every DefectDojo parser. It is covering the 10–20 tools
+that make up ~90% of a given customer's volume, after which the DefectDojo connector has no
 reason to remain.
 
 ## Design

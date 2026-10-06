@@ -22,7 +22,7 @@
 **OpenCTEM already has most of what EASM stores and very little of what EASM
 does.** The asset model, relationships, identity resolution, exposure
 register, KEV/EPSS, P0–P3 priority, attack paths and "What changed" are built.
-What is missing is the loop that commercial EASM products are built around:
+What is missing is the discovery-and-monitoring loop that EASM is built around:
 
 1. **Seeds.** There is no place to say "these are our organisations, brands,
    root domains, ASNs and cloud accounts".
@@ -96,8 +96,8 @@ non-intrusively under the customer's authorization.
 
 Verified on: api `origin/develop` 70a0d08f3, ui `origin/develop` cc9ebfe9,
 sdk-go `origin/main` 8324670, sensor `origin/main` 679e974. Three read-only
-passes covered the api, the ui with sdk-go and sensor, and the industry
-research. Items marked *needs runtime check* were read in code, not run.
+passes covered the api, the ui with sdk-go and sensor, and the
+source research. Items marked *needs runtime check* were read in code, not run.
 
 ### 3.1 Map by stage
 

@@ -217,14 +217,14 @@ path discards the result anyway.
 | **Rate limits per target** | None from the platform. nuclei's fixed per-process limits multiply by the slot count; two batches with targets on the same host can run at once. |
 | **Tool-specific cost** | Ignored: one `targets_per_job` per scan; repositories always 1 per job (zoned) or only the first (unzoned). |
 
-## 4. Research: what proven systems do, and what we take
+## 4. Research: proven techniques, and what we take
 
 | System | Mechanism | Taken |
 |---|---|---|
 | **Zone-routed scanner pools** (common in network vulnerability scanning) | Zones map ranges to scanners or scanner groups; a large scan is split into **chunks** handed to scanners as they have capacity, engines pull, a lost engine's chunk is re-run by another; per-scanner caps on concurrent scans, hosts and bandwidth. | Zones as filters (have), chunks handed out on capacity (D1–D3), pull + re-queue on failure (D1, D6), per-sensor limits (D5), politeness caps in the command (D9). |
 | **nuclei** | `-bulk-size` (hosts in parallel per template), `-c` (templates in parallel), `-rate-limit` (global requests/s), `-rate-limit-duration`, per-host `-max-host-error`. | Chunk carries `rate_limit`/`concurrency` (D9); per-host cap stays a platform property, since nuclei cannot coordinate across sensors. |
-| **Celery / Sidekiq / SQS** | Pull with prefetch; **prefetch 1 + late ack** for long tasks (Celery `worker_prefetch_multiplier=1`, `acks_late`), visibility timeout (SQS) = lease; poison messages to a dead-letter queue after N receives. | Free-slot-bounded poll (D5), leases (D6), max attempts + poison handling (D7). |
-| **Temporal** | Activity task queues polled by workers; **heartbeat timeout** on long activities (lease), start-to-close and schedule-to-close timeouts, retries with backoff, idempotent completion. | Per-chunk timeout and run deadline (D10), lease via heartbeat (D6). |
+| **Pull-based work queues** | Pull with prefetch; **prefetch 1 + late ack** for long tasks (prefetch limit 1 with acknowledgement after completion), a visibility timeout acting as the lease; poison messages to a dead-letter queue after N receives. | Free-slot-bounded poll (D5), leases (D6), max attempts + poison handling (D7). |
+| **Durable task queues** | Activity task queues polled by workers; **heartbeat timeout** on long activities (lease), start-to-close and schedule-to-close timeouts, retries with backoff, idempotent completion. | Per-chunk timeout and run deadline (D10), lease via heartbeat (D6). |
 | **Work stealing / guided self-scheduling** (Cilk; Polychronopoulos & Kuck 1987; factoring, Hummel 1992) | Hand out large chunks first, shrinking as work runs out, so the tail is balanced without per-item overhead. | `⌈R / 2S⌉` cap (D4). |
 | **AIMD** (TCP; adaptive batch sizing in Kafka/Flink back-pressure) | Grow additively on success, cut multiplicatively on a congestion signal. | Chunk size shrinks ×0.5 on timeout/OOM, recovers additively (D4). |
 | **Fair queuing** (DRR, Shreedhar & Varghese 1995; SFQ, Goyal 1996; YARN/Slurm fair-share with decay) | Per-flow virtual time; serve the smallest; weights per class; decayed usage. | Hierarchical fair share tenant → scan (D8). |
