@@ -1,5 +1,102 @@
 basePath: /api/v1
 definitions:
+  SensorGrant:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      capabilities:
+        items:
+          type: string
+        type: array
+      effective:
+        allOf:
+        - $ref: '#/definitions/SensorGrantEffective'
+        description: Effective is what applies now, after the trust level.
+      job_types:
+        items:
+          type: string
+        type: array
+      legacy_broad:
+        type: boolean
+      profile:
+        type: string
+      remote_actions:
+        items:
+          type: string
+        type: array
+      sensor_id:
+        type: string
+      target_cidrs:
+        items:
+          type: string
+        type: array
+      target_domains:
+        items:
+          type: string
+        type: array
+      target_network:
+        type: string
+      tier_ceiling:
+        type: integer
+      tools:
+        items:
+          type: string
+        type: array
+      trust_level:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+      zone_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  SensorGrantEffective:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      tier_ceiling:
+        type: integer
+    type: object
+  SensorGrantProfile:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      default:
+        type: boolean
+      job_types:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      parameterised:
+        description: 'Parameterised: the name takes ":<integration>" (collector).'
+        type: boolean
+      target_network:
+        type: string
+      tier_ceiling:
+        type: integer
+    type: object
+  SensorGrantSummary:
+    properties:
+      legacy_broad:
+        type: boolean
+      profile:
+        type: string
+      sensor_id:
+        type: string
+      trust_level:
+        type: string
+    type: object
   ctis.ASVSInfo:
     properties:
       control_id:
@@ -2934,6 +3031,37 @@ definitions:
       position:
         type: integer
     type: object
+  github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod:
+    enum:
+    - totp
+    - password
+    - fresh_sign_in
+    - ""
+    type: string
+    x-enum-varnames:
+    - StepUpTOTP
+    - StepUpPassword
+    - StepUpFreshSignIn
+    - stepUpNothingNeeded
+  github_com_openctemio_openctem_api_internal_app_auth.StepUpProof:
+    properties:
+      password:
+        type: string
+      totp:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_auth.StepUpState:
+    properties:
+      method:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_auth.StepUpMethod'
+      valid_until:
+        description: ValidUntil is when the current window closes; nil when it is
+          closed.
+        type: string
+      window_seconds:
+        description: WindowSeconds is the length of a window opened by a step-up.
+        type: integer
+    type: object
   github_com_openctemio_openctem_api_internal_app_auth_domainverify.TXTRecord:
     properties:
       host:
@@ -2957,6 +3085,15 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  github_com_openctemio_openctem_api_internal_app_cirun.Settings:
+    properties:
+      require_oidc:
+        description: |-
+          RequireOIDC refuses CI results sent with a sensor key: a CI job must
+          prove its identity with its provider's OIDC token. On for every
+          organization created after migration 001120; existing ones opt in.
+        type: boolean
     type: object
   github_com_openctemio_openctem_api_internal_app_cirun.Verdict:
     properties:
@@ -3551,6 +3688,40 @@ definitions:
       window_days:
         description: WindowDays is the freshness window the stats were computed against.
         type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_sensorpairing.View:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      host_facts:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.PairingHostFacts'
+      id:
+        type: string
+      key_fingerprint:
+        type: string
+      mode:
+        type: string
+      repair_sensor_id:
+        type: string
+      repair_sensor_name:
+        type: string
+      sas:
+        type: string
+      sensor_id:
+        type: string
+      source_ip:
+        type: string
+      status:
+        type: string
+      step_up:
+        description: |-
+          StepUp is what the viewer must present to approve ("totp",
+          "password" or "fresh_sign_in").
+        type: string
     type: object
   github_com_openctemio_openctem_api_pkg_apierror.Code:
     enum:
@@ -4156,9 +4327,10 @@ definitions:
         type: array
       require_protected_ref:
         description: |-
-          RequireProtectedRef admits only pipelines on a protected branch or tag
-          (GitLab ref_protected; GitHub tokens carry no such claim, so a GitHub
-          configuration with this set admits nothing).
+          RequireProtectedRef admits only pipelines on a protected branch or tag.
+          GitLab: the token's ref_protected claim. GitHub tokens carry no such
+          claim: the job must run in one of Environments (required with this
+          switch), whose deployment branch rules admit only protected refs.
         type: boolean
     type: object
   github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats:
@@ -4802,6 +4974,25 @@ definitions:
         type: boolean
       allow_interactsh:
         type: boolean
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_sensor.PairingHostFacts:
+    properties:
+      arch:
+        type: string
+      hostname:
+        type: string
+      instance_id:
+        type: string
+      name:
+        type: string
+      os:
+        type: string
+      product:
+        type: string
+      sdk_version:
+        type: string
+      sensor_version:
+        type: string
     type: object
   github_com_openctemio_openctem_api_pkg_domain_sensor.ReportedCapacity:
     properties:
@@ -7841,6 +8032,14 @@ definitions:
       ransomware_use:
         type: string
     type: object
+  internal_infra_http_handler.CISettingsRequest:
+    properties:
+      require_oidc:
+        description: |-
+          RequireOIDC refuses CI results sent with a sensor key (a CI job must
+          use its provider's OIDC identity).
+        type: boolean
+    type: object
   internal_infra_http_handler.CITemplateDrift:
     properties:
       current:
@@ -8912,6 +9111,36 @@ definitions:
     - low_days
     - medium_days
     - name
+    type: object
+  internal_infra_http_handler.CreateScanFreezeWindowRequest:
+    properties:
+      days:
+        items:
+          type: integer
+        type: array
+      description:
+        type: string
+      enabled:
+        type: boolean
+      end_time:
+        type: string
+      ends_at:
+        type: string
+      name:
+        type: string
+      recurrence:
+        enum:
+        - once
+        - weekly
+        type: string
+      scan_zone_id:
+        type: string
+      start_time:
+        type: string
+      starts_at:
+        type: string
+      timezone:
+        type: string
     type: object
   internal_infra_http_handler.CreateScanProfileRequest:
     properties:
@@ -12294,6 +12523,46 @@ definitions:
       self:
         type: string
     type: object
+  internal_infra_http_handler.PairingApproveRequest:
+    properties:
+      code:
+        description: |-
+          Code is the code the approver entered (default mode; not needed for
+          an expectation of this organization).
+        type: string
+      fingerprint_confirmed:
+        type: boolean
+      grant_profile:
+        type: string
+      name:
+        type: string
+      step_up:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_auth.StepUpProof'
+      type:
+        type: string
+      zone_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.PairingExpectRequest:
+    properties:
+      grant_profile:
+        type: string
+      name:
+        type: string
+      repair_sensor_id:
+        type: string
+      zone_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.PairingLookupRequest:
+    properties:
+      code:
+        type: string
+    type: object
   internal_infra_http_handler.PermissionsResponse:
     properties:
       permissions:
@@ -13504,6 +13773,57 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.ScanFreezeWindowListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanFreezeWindowResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_infra_http_handler.ScanFreezeWindowResponse:
+    properties:
+      active:
+        type: boolean
+      active_until:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      days:
+        items:
+          type: integer
+        type: array
+      description:
+        type: string
+      enabled:
+        type: boolean
+      end_time:
+        type: string
+      ends_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      recurrence:
+        enum:
+        - once
+        - weekly
+        type: string
+      scan_zone_id:
+        type: string
+      start_time:
+        type: string
+      starts_at:
+        type: string
+      timezone:
+        type: string
+      updated_at:
+        type: string
+    type: object
   internal_infra_http_handler.ScanProfileResponse:
     properties:
       created_at:
@@ -14286,6 +14606,20 @@ definitions:
           type: string
         type: array
     type: object
+  internal_infra_http_handler.SensorGrantProfiles:
+    properties:
+      profiles:
+        items:
+          $ref: '#/definitions/SensorGrantProfile'
+        type: array
+    type: object
+  internal_infra_http_handler.SensorGrantSummaries:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/SensorGrantSummary'
+        type: array
+    type: object
   internal_infra_http_handler.SensorHealthReasonResponse:
     properties:
       code:
@@ -14345,6 +14679,14 @@ definitions:
         type: array
       hours:
         type: integer
+    type: object
+  internal_infra_http_handler.SensorIdentityPolicy:
+    properties:
+      bearer_keys_allowed:
+        description: |-
+          BearerKeysAllowed: new sensors may be created with an API key
+          (octs_). False: pairing (key-bound identity) only.
+        type: boolean
     type: object
   internal_infra_http_handler.SensorLoadResponse:
     properties:
@@ -14813,6 +15155,27 @@ definitions:
         maxLength: 500
         type: string
     type: object
+  internal_infra_http_handler.SensorSigningKeyResponse:
+    properties:
+      activated_at:
+        type: string
+      created_at:
+        type: string
+      fingerprint:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      last_used_ip:
+        type: string
+      revoked_at:
+        type: string
+      revoked_reason:
+        type: string
+      status:
+        type: string
+    type: object
   internal_infra_http_handler.SensorStatsResponse:
     properties:
       active_jobs:
@@ -15018,6 +15381,22 @@ definitions:
         type: string
       step_key:
         type: string
+    type: object
+  internal_infra_http_handler.StepUpRequest:
+    properties:
+      password:
+        maxLength: 128
+        type: string
+      totp:
+        maxLength: 16
+        type: string
+    type: object
+  internal_infra_http_handler.StepUpResponse:
+    properties:
+      valid_until:
+        type: string
+      window_seconds:
+        type: integer
     type: object
   internal_infra_http_handler.SyncResponse:
     properties:
@@ -15512,6 +15891,11 @@ definitions:
       context:
         additionalProperties: {}
         type: object
+      override_freeze:
+        description: |-
+          OverrideFreeze starts the scan although a scan freeze window is
+          active. Needs scans:freeze:override (403 otherwise); audited.
+        type: boolean
     type: object
   internal_infra_http_handler.TriggerSyncRequest:
     properties:
@@ -16014,6 +16398,34 @@ definitions:
         minimum: 0
         type: integer
     type: object
+  internal_infra_http_handler.UpdateScanFreezeWindowRequest:
+    properties:
+      days:
+        items:
+          type: integer
+        type: array
+      description:
+        type: string
+      enabled:
+        type: boolean
+      end_time:
+        type: string
+      ends_at:
+        type: string
+      name:
+        type: string
+      recurrence:
+        enum:
+        - once
+        - weekly
+        type: string
+      start_time:
+        type: string
+      starts_at:
+        type: string
+      timezone:
+        type: string
+    type: object
   internal_infra_http_handler.UpdateScanProfileRequest:
     properties:
       description:
@@ -16177,6 +16589,61 @@ definitions:
         items:
           type: string
         maxItems: 20
+        type: array
+    type: object
+  internal_infra_http_handler.UpdateSensorGrantRequest:
+    properties:
+      allow_credentials:
+        type: boolean
+      allow_push_ingest:
+        type: boolean
+      capabilities:
+        items:
+          type: string
+        type: array
+      job_types:
+        items:
+          type: string
+        type: array
+      profile:
+        type: string
+      remote_actions:
+        items:
+          type: string
+        type: array
+      target_cidrs:
+        items:
+          type: string
+        type: array
+      target_domains:
+        items:
+          type: string
+        type: array
+      target_network:
+        enum:
+        - any
+        - public
+        - none
+        type: string
+      tier_ceiling:
+        maximum: 2
+        minimum: 0
+        type: integer
+      tools:
+        items:
+          type: string
+        type: array
+      trust_level:
+        enum:
+        - new
+        - trusted
+        type: string
+      version:
+        description: Version is the version read; a stale one answers 409.
+        type: integer
+      zone_ids:
+        items:
+          type: string
         type: array
     type: object
   internal_infra_http_handler.UpdateSensorRequest:
@@ -20504,6 +20971,71 @@ paths:
       summary: Reset password
       tags:
       - Authentication
+  /auth/step-up:
+    get:
+      description: 'method is totp (an authenticator code), password, or fresh_sign_in
+        (an SSO account without an authenticator: sign in again). valid_until is set
+        while the session is inside its window.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_auth.StepUpState'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Step-up re-authentication state
+      tags:
+      - Authentication
+    post:
+      consumes:
+      - application/json
+      description: Verifies a current authenticator code (accounts with two-factor
+        authentication; recovery codes are not accepted) or the password (other local
+        accounts) and lets this session perform sensitive actions for 10 minutes.
+        The window belongs to this session only and is extended only by another successful
+        step-up. Failures count towards the account lockout. SSO accounts without
+        an authenticator get STEP_UP_UNAVAILABLE and sign in again instead.
+      parameters:
+      - description: Authenticator code or password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.StepUpRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.StepUpResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Step-up re-authentication
+      tags:
+      - Authentication
   /auth/token:
     post:
       consumes:
@@ -20905,6 +21437,11 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: 'RUNNER_OUTDATED: the runner reports a version below the minimum
+            supported one'
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "429":
           description: Too Many Requests
           schema:
@@ -21231,6 +21768,51 @@ paths:
       security:
       - CIRunToken: []
       summary: Upload a CI run's results
+      tags:
+      - CI
+  /ci/settings:
+    get:
+      description: Whether the organization requires the CI job's OIDC identity for
+        CI results (a CI sensor's key is then refused). On for organizations created
+        since this setting exists.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Settings'
+      security:
+      - BearerAuth: []
+      summary: CI settings
+      tags:
+      - CI
+    put:
+      consumes:
+      - application/json
+      description: Turning require_oidc off lets CI sensors authenticate with a sensor
+        key again (audited at high severity).
+      parameters:
+      - description: CI settings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CISettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_cirun.Settings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change the CI settings
       tags:
       - CI
   /ci/trust-configs:
@@ -31217,6 +31799,193 @@ paths:
       summary: Get default branch
       tags:
       - Branches
+  /scan-freeze-windows:
+    get:
+      description: The organization's freeze windows, each with whether it is active
+        now. scan_zone_id lists one zone's windows; scope=tenant lists only the windows
+        that freeze the whole organization.
+      parameters:
+      - description: Scan zone ID
+        in: query
+        name: scan_zone_id
+        type: string
+      - description: 'tenant: only organization-wide windows'
+        enum:
+        - tenant
+        in: query
+        name: scope
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanFreezeWindowListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List scan freeze windows
+      tags:
+      - Scan Freeze Windows
+    post:
+      consumes:
+      - application/json
+      description: 'While the window is active, active (T1/T2) scan work of the organization,
+        or of the zone, is not dispatched: scheduled runs are deferred to the window''s
+        end, other triggers are refused (409 SCAN_FREEZE_ACTIVE) unless the caller
+        overrides with scans:freeze:override. Passive work and ingest continue. At
+        most 50 windows per organization.'
+      parameters:
+      - description: Freeze window
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CreateScanFreezeWindowRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanFreezeWindowResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: scan zone not in this organization
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create scan freeze window
+      tags:
+      - Scan Freeze Windows
+  /scan-freeze-windows/{id}:
+    delete:
+      parameters:
+      - description: Freeze window ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete scan freeze window
+      tags:
+      - Scan Freeze Windows
+    get:
+      parameters:
+      - description: Freeze window ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanFreezeWindowResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get scan freeze window
+      tags:
+      - Scan Freeze Windows
+    patch:
+      consumes:
+      - application/json
+      description: Omitted fields are unchanged; the zone cannot change. Disabling
+        a window releases the work it held.
+      parameters:
+      - description: Freeze window ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Changes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateScanFreezeWindowRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScanFreezeWindowResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update scan freeze window
+      tags:
+      - Scan Freeze Windows
   /scan-profiles:
     get:
       consumes:
@@ -33074,8 +33843,16 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: override_freeze without scans:freeze:override
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: 'SCAN_FREEZE_ACTIVE: a scan freeze window is active'
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "500":
@@ -34410,6 +35187,160 @@ paths:
       summary: Rotate credential
       tags:
       - Credentials
+  /sensor-pairings/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      description: 'Binds the sensor''s key to this organization: a new sensor, or
+        the registration being re-paired (its earlier keys revoked). Needs fingerprint_confirmed=true
+        and step-up re-authentication (TOTP, else password, else a sign-in younger
+        than 10 minutes). Audited at high severity; every administrator is notified.'
+      parameters:
+      - description: Pairing id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Approval
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.PairingApproveRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_sensorpairing.View'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Approve a sensor pairing
+      tags:
+      - sensor-pairing
+  /sensor-pairings/{id}/reject:
+    post:
+      parameters:
+      - description: Pairing id
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reject a sensor pairing request
+      tags:
+      - sensor-pairing
+  /sensor-pairings/expectations:
+    post:
+      consumes:
+      - application/json
+      description: Returns a single-use code (10 minutes) to run as `openctemio-sensor
+        pair <CODE>` on the host.
+      parameters:
+      - description: Expected sensor
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.PairingExpectRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_sensorpairing.View'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Expect a sensor (reverse pairing)
+      tags:
+      - sensor-pairing
+  /sensor-pairings/expectations/{id}:
+    get:
+      description: 'A reverse-mode expectation (once the sensor connected: its SAS
+        fingerprint, host facts and source address), or a request this organization
+        approved or denied.'
+      parameters:
+      - description: Pairing id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_sensorpairing.View'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a pairing request of the organization
+      tags:
+      - sensor-pairing
+  /sensor-pairings/lookup:
+    post:
+      consumes:
+      - application/json
+      description: 'Returns the open pairing request with this code: the SAS fingerprint,
+        key fingerprint, host facts and source address to compare. One 404 for unknown,
+        expired, used and foreign codes.'
+      parameters:
+      - description: Code shown by the sensor
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.PairingLookupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_sensorpairing.View'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Look up a pairing code
+      tags:
+      - sensor-pairing
   /sensors:
     get:
       consumes:
@@ -34879,6 +35810,79 @@ paths:
       summary: Disable sensor
       tags:
       - Sensors
+  /sensors/{id}/grant:
+    get:
+      description: What the sensor may do (RFC-052 §5) and what applies now after
+        its trust level (effective).
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/SensorGrant'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get a sensor's grant
+      tags:
+      - Sensors
+    put:
+      consumes:
+      - application/json
+      description: Narrowing (and demoting the trust level) needs sensors:grant:narrow;
+        any widening (and promoting to trusted) needs sensors:grant:widen, is audited
+        at high severity and notifies every administrator. Takes effect on the sensor's
+        next request.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New grant
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateSensorGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/SensorGrant'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change a sensor's grant
+      tags:
+      - Sensors
   /sensors/{id}/heartbeat-history:
     get:
       description: 'How the sensor''s heartbeats arrived over the last hours (at most
@@ -34918,6 +35922,59 @@ paths:
       security:
       - BearerAuth: []
       summary: Sensor heartbeat history
+      tags:
+      - Sensors
+  /sensors/{id}/keys:
+    get:
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_infra_http_handler.SensorSigningKeyResponse'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List a sensor's signing keys
+      tags:
+      - Sensors
+  /sensors/{id}/keys/{key_id}/revoke:
+    post:
+      description: Effective on the sensor's next request. The sensor must be re-paired
+        to work again.
+      parameters:
+      - description: Sensor ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Key ID
+        in: path
+        name: key_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Revoke one signing key of a sensor
       tags:
       - Sensors
   /sensors/{id}/manifest:
@@ -35172,6 +36229,80 @@ paths:
       security:
       - BearerAuth: []
       summary: Refresh scanner content on every sensor
+      tags:
+      - Sensors
+  /sensors/grant-profiles:
+    get:
+      description: The profiles an administrator may choose for a sensor. legacy-broad
+        is never listed.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorGrantProfiles'
+      security:
+      - BearerAuth: []
+      summary: List sensor grant profiles
+      tags:
+      - Sensors
+  /sensors/grant-summaries:
+    get:
+      description: 'For the sensor list: which sensors still have the broad legacy
+        grant and which are New.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorGrantSummaries'
+      security:
+      - BearerAuth: []
+      summary: List the grant profile and trust level of every sensor
+      tags:
+      - Sensors
+  /sensors/identity-policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorIdentityPolicy'
+      security:
+      - BearerAuth: []
+      summary: Get the sensor identity policy
+      tags:
+      - Sensors
+    put:
+      consumes:
+      - application/json
+      description: Requiring key-bound identity narrows (sensors:grant:narrow); allowing
+        bearer keys again widens (sensors:grant:widen). Audited at high severity.
+      parameters:
+      - description: Policy
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.SensorIdentityPolicy'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorIdentityPolicy'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Set the sensor identity policy
       tags:
       - Sensors
   /sensors/quarantined-results:

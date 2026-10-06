@@ -9,6 +9,8 @@ import { defaultAudience, githubSnippet, gitlabSnippet, parseList } from '../lib
 // ── mocks ──────────────────────────────────────────────────
 
 const mockSaveTrust = vi.fn()
+const mockSaveSettings = vi.fn()
+let ciSettings: { require_oidc: boolean } | undefined = { require_oidc: true }
 let runs: unknown[] = []
 let runDetail: unknown
 let trust: unknown[] = []
@@ -23,6 +25,8 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   },
   useCIRun: (id: string | null) => ({ data: id ? runDetail : undefined }),
   useTrustConfigs: () => ({ data: { data: trust }, isLoading: false, mutate: vi.fn() }),
+  useCISettings: () => ({ data: ciSettings, mutate: vi.fn() }),
+  useSaveCISettings: () => ({ trigger: mockSaveSettings, isMutating: false }),
   useSaveTrustConfig: () => ({ trigger: mockSaveTrust, isMutating: false }),
   useDeleteTrustConfig: () => ({ trigger: vi.fn(), isMutating: false }),
   useGatePolicies: () => ({
@@ -214,11 +218,39 @@ describe('CITrustSettings', () => {
     expect(await screen.findByTestId('ci-snippet')).toHaveTextContent('OPENCTEM_TENANT_ID: t-123')
   })
 
+  it('warns while CI sensor keys are accepted and lets an administrator require OIDC', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    ciSettings = { require_oidc: false }
+    mockSaveSettings.mockResolvedValue({ require_oidc: true })
+    render(<CITrustSettings />)
+    expect(screen.getByTestId('ci-require-oidc-banner')).toHaveTextContent(/still accepted/i)
+    await userEvent.click(screen.getByLabelText('Require OIDC for CI'))
+    expect(mockSaveSettings).toHaveBeenCalledWith({ require_oidc: true })
+    ciSettings = { require_oidc: true }
+  })
+
+  it('shows no banner when OIDC is required, and a member cannot change it', () => {
+    perms = ['scans:ci:read']
+    ciSettings = { require_oidc: true }
+    render(<CITrustSettings />)
+    expect(screen.queryByTestId('ci-require-oidc-banner')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Require OIDC for CI')).toBeDisabled()
+  })
+
   it('warns before admitting fork pull requests', async () => {
     perms = ['scans:ci:read', 'scans:ci:write']
     render(<CITrustSettings />)
     await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
     await userEvent.click(screen.getByLabelText('Admit fork pull requests'))
     expect(screen.getByText(/fork code would act/i)).toBeInTheDocument()
+  })
+
+  it('explains that GitHub proves protected refs with deployment environments', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    expect(screen.queryByText(/deployment branch rules/i)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('Protected branches and tags only'))
+    expect(screen.getByText(/deployment branch rules/i)).toBeInTheDocument()
   })
 })

@@ -160,19 +160,19 @@ func registerTenantRoutes(
 		r.POST("/settings/modules/bundles", h.SubscribeModuleBundles, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 
 		// Security settings (owner only - sensitive)
-		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite))
+		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite), requireStepUp())
 
 		// SSO changes a platform administrator proposed for this organization
 		// (RFC-022). Owner only: approving one installs who can sign in.
 		// The service re-checks ownership in the database.
 		if ssoChanges != nil {
 			r.GET("/settings/sso/changes", ssoChanges.OwnerList, middleware.RequireTeamOwner())
-			r.POST("/settings/sso/changes/{changeId}/approve", ssoChanges.Approve, middleware.RequireTeamOwner())
+			r.POST("/settings/sso/changes/{changeId}/approve", ssoChanges.Approve, middleware.RequireTeamOwner(), requireStepUp())
 			r.POST("/settings/sso/changes/{changeId}/reject", ssoChanges.Reject, middleware.RequireTeamOwner())
 		}
 
 		// Owner-only operations
-		r.DELETE("/", h.Delete, middleware.RequireTeamOwner(), tenantPerm(permission.TeamDelete))
+		r.DELETE("/", h.Delete, middleware.RequireTeamOwner(), tenantPerm(permission.TeamDelete), requireStepUp())
 	}, tenantMiddlewares...)
 
 	// Invitation routes - mixed public and authenticated. The token is the
@@ -266,12 +266,12 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 	}
 	router.Group("/api/v1/organization/members/{member_id}", func(r Router) {
 		if localAuth != nil {
-			r.DELETE("/mfa", localAuth.ResetMemberMFA, middleware.RequireAdmin())
+			r.DELETE("/mfa", localAuth.ResetMemberMFA, middleware.RequireAdmin(), requireStepUp())
 		}
 		if tenantH != nil {
 			r.GET("/access-report", tenantH.GetMemberAccessReport, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
-			r.POST("/offboard", tenantH.OffboardMember, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
-			r.POST("/erase", tenantH.EraseMemberPersonalData, middleware.RequireOwner())
+			r.POST("/offboard", tenantH.OffboardMember, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite), requireStepUp())
+			r.POST("/erase", tenantH.EraseMemberPersonalData, middleware.RequireOwner(), requireStepUp())
 		}
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }

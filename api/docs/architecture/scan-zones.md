@@ -148,6 +148,79 @@ unpins a stuck command, so a re-queued zone job can only move to another sensor
 of the same zone. Unassigning a sensor unpins its pending commands of that zone.
 Commands without a zone keep the pre-zone rule (pinned to me, or unpinned).
 
+## Freeze windows
+
+A freeze window is a time in which no **active** scan work (T1/T2: port
+scans, HTTP probes, templates, DAST, validation jobs, connector scans) is
+dispatched, for the whole organization or for one zone. Operators use them
+for maintenance windows and change freezes. Passive (T0) work (subdomain
+discovery, DNS, code, dependency and image analysis), collection, connector
+syncs and ingest are never held.
+
+Data (migration `001115`): `scan_freeze_windows` with `scan_zone_id` (NULL =
+the whole organization; composite foreign key `(tenant_id, scan_zone_id)`,
+deleted with its zone), `name`, `timezone` (IANA), `recurrence`, `enabled`, and
+either `starts_at`/`ends_at` (`once`: two instants, at most 31 days, ending in
+the future when created) or `days` (ISO weekdays, 1 Monday to 7 Sunday) with
+`start_minute`/`end_minute` (`weekly`: local wall-clock minutes in
+`timezone`). A weekly end that is not after its start ends the next day
+(22:00-06:00); equal times freeze 24 hours from that time. At most 50 windows
+per organization.
+
+**One definition of "active".** `freezeActiveSQL`
+(`internal/infra/postgres/scan_freeze_window_repository.go`) decides it in
+SQL, and both the claim predicate and the API/trigger read it, so what the
+console shows and what dispatch enforces cannot differ. Weekly windows compare
+wall-clock time in the window's zone: on the day clocks go forward a window
+over the skipped hour is that much shorter, on the day they go back a window
+over the repeated hour is active on both passes. `active_until` of a window
+whose end falls in the skipped hour is read as standard time (up to an hour
+late; deferral is then conservative). The repository refuses a time zone the
+database does not know, since the claim query evaluates it.
+
+**Enforcement at claim time (layer 2).** `freezeHoldPredicate` is part of the
+poll, the claim by id, the batch claim and the heartbeat doorbell: a command
+that is active work (`scan` whose tool is not a passive tool of the stage
+catalog, a scan naming no tool, `validate`, `connector_scan`) is neither
+offered nor claimable while an enabled window of its tenant, organization-wide
+or of the command's `scan_zone_id`, is active. This holds whatever created the
+command: the scan trigger, a pipeline step, `POST /api/v1/commands`, the
+validation dispatcher, coverage and EASM dispatch. Held commands wait (their
+expiry and the run's unclaimed-run and timeout limits still apply). Work a
+sensor already holds keeps running. Commands without a zone are held only by
+organization-wide windows. (The SQL function `get_next_platform_job` has no
+caller and is not a dispatch path.)
+
+**At trigger time (layer 1).** After target routing, the trigger asks for the
+active windows of the organization and of the zones the run would use
+(`scan/freeze.go`); a scan whose every tool is passive is not checked. A failed
+lookup refuses the trigger.
+
+- A **scheduled** run is deferred: `next_run_at` moves to the end of the
+  window (`DeferScheduledRun`, a compare-and-set), audited as
+  `scan_freeze_window.deferred` and counted as `deferred_freeze`. Several
+  occurrences inside one window become one run at its end; the schedule
+  continues from there.
+- **Any other trigger** (run now, quick scan, API, workflow action, retry) is
+  refused with `409 SCAN_FREEZE_ACTIVE` naming the window and its end, audited
+  as `scan_freeze_window.refused`. A retry refused this way spends an attempt.
+- **Override:** `POST /api/v1/scans/{id}/trigger` with `"override_freeze": true`
+  by a member holding `scans:freeze:override` (owner and admin by default;
+  grantable to custom roles) starts the run anyway. The run
+  (`pipeline_runs.freeze_override`) and every command created for it, later
+  workflow steps included, carry `freeze_override`, which only the server sets;
+  the claim predicate lets those through. Audited as
+  `scan_freeze_window.overridden` (high). Without the permission the request is
+  403. Scheduled runs are never overridden.
+
+**API** (`/api/v1/scan-freeze-windows`, tenant from the JWT, another
+tenant's window or zone is 404): `GET /` (`?scan_zone_id=`, `?scope=tenant`)
+and `GET /{id}` with `scans:read` (each window carries `active` and
+`active_until`, which the console uses for its banner); `POST /` and
+`PATCH /{id}` with `sensors:zones:write`; `DELETE /{id}` with
+`sensors:zones:delete`. Audit: `scan_freeze_window.created`, `.updated` (before
+and after), `.deleted`; resource type `scan_freeze_window`.
+
 ## Scan creation (D6)
 
 Private targets are refused at creation unless a zone of the tenant covers

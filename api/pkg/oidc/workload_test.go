@@ -76,7 +76,7 @@ func TestVerifyWorkloadTokenRefusals(t *testing.T) {
 		"alg none":          signWith(jwtv5.SigningMethodNone, jwtv5.UnsafeAllowNoneSignatureType, p.workloadClaims()),
 		"garbage":           "not.a.jwt",
 		"empty":             "",
-		"oversized":         strings.Repeat("a", maxWorkloadTokenSize+1),
+		"oversized":         strings.Repeat("a", MaxTokenSize+1),
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -172,9 +172,35 @@ func TestUnverifiedIssuer(t *testing.T) {
 	if err != nil || iss != p.issuer {
 		t.Fatalf("iss = %q %v", iss, err)
 	}
-	for _, bad := range []string{"", "a.b", "a.!!!.c", strings.Repeat("x", maxWorkloadTokenSize+1)} {
+	for _, bad := range []string{"", "a.b", "a.!!!.c", strings.Repeat("x", MaxTokenSize+1)} {
 		if _, err := UnverifiedIssuer(bad); err == nil {
 			t.Fatalf("%q: issuer read from a malformed token", bad)
+		}
+	}
+}
+
+// Clock skew is tolerated for one minute, no more: a token expired 30
+// seconds ago verifies, one expired (or issued) two minutes off does not.
+func TestWorkloadClockSkewBounds(t *testing.T) {
+	p := newTestIdP(t)
+	now := time.Now()
+	at := func(f func(c jwtv5.MapClaims)) string {
+		c := p.workloadClaims()
+		c["jti"] = "skew-" + strings.ReplaceAll(time.Now().Format(time.RFC3339Nano), ":", "")
+		f(c)
+		return p.sign(t, c)
+	}
+	if _, err := p.client().VerifyWorkloadToken(context.Background(),
+		at(func(c jwtv5.MapClaims) { c["exp"] = now.Add(-30 * time.Second).Unix() }), p.workloadExpect()); err != nil {
+		t.Fatalf("a token within the leeway was refused: %v", err)
+	}
+	for name, f := range map[string]func(c jwtv5.MapClaims){
+		"expired two minutes ago":      func(c jwtv5.MapClaims) { c["exp"] = now.Add(-2 * time.Minute).Unix() },
+		"issued two minutes ahead":     func(c jwtv5.MapClaims) { c["iat"] = now.Add(2 * time.Minute).Unix() },
+		"valid from two minutes ahead": func(c jwtv5.MapClaims) { c["nbf"] = now.Add(2 * time.Minute).Unix() },
+	} {
+		if _, err := p.client().VerifyWorkloadToken(context.Background(), at(f), p.workloadExpect()); err == nil {
+			t.Fatalf("%s: accepted beyond the leeway", name)
 		}
 	}
 }

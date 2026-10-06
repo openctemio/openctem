@@ -40,10 +40,12 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIOverride,
+		ScanFreezeOverride,
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
+		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 		// Team
 		TeamRead, TeamUpdate, TeamDelete,
 		MembersRead, MembersInvite, MembersWrite,
@@ -115,10 +117,12 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIOverride,
+		ScanFreezeOverride,
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
+		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 		// Team (no team:delete)
 		TeamRead, TeamUpdate,
 		MembersRead, MembersInvite, MembersWrite,
