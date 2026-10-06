@@ -205,7 +205,7 @@ Systematic per-page UI/UX audit + redesign of the OpenCTEM dashboard. **183 rout
 | `/settings/general`                            |  🔎   |    ☐     |      |  ☐  | Clean form BUT Localization section duplicates Tenant Settings — dedupe.                                                  |
 | `/settings/integrations`                       |  ✅   |    ➖    |      |  ☐  | Good hub: 6 provider cards + summary tiles. 2/6 (CICD/SIEM) lead to Coming-Soon.                                          |
 | `/settings/integrations/api-keys`              |  🔎   |    ☐     |      |  ☐  | Likely mock/seed: 3 keys all "Last used Never" — confirm real vs fixtures.                                                |
-| `/settings/integrations/apps`                  |  🗑️   |    ☐     |      |  ☐  | Coming-Soon stub (Snyk/Qualys/AWS). Hide until built.                                                                     |
+| `/settings/integrations/apps`                  |  🗑️   |    ☐     |      |  ☐  | Coming-Soon stub. Hide until built.                                                                     |
 | `/settings/integrations/cicd`                  |  🗑️   |    ☐     |      |  ☐  | Coming-Soon stub (honest, planned features + Notify Me). Hide from IA until built.                                        |
 | `/settings/integrations/mcp`                   |  ✅   |    ➖    |      |  ☐  | Excellent: read-only scopes, generate-key, copyable client JSON.                                                          |
 | `/settings/integrations/notifications`         |  🔎   |    ☐     |      |  ☐  | 🐛 "Add Channel" header button CLIPPED off right edge at 1440px — action row overflows. Channel table functional (Slack). |

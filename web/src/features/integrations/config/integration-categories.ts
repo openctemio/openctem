@@ -46,7 +46,7 @@ export const INTEGRATION_CATEGORIES: IntegrationCategoryCard[] = [
   {
     id: 'ticketing',
     title: 'Ticketing',
-    description: 'Connect Jira, ServiceNow, or Linear',
+    description: 'Connect Jira',
     icon: TicketCheck,
     href: '/settings/integrations/ticketing',
   },
