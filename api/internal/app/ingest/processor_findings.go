@@ -531,9 +531,12 @@ func (p *FindingProcessor) processBatch(
 					p.logger.Warn("failed to record auto-reopen activities", "error", err)
 				}
 			}
-			// Fresh SLA + ticket comment + notification (RFC-039 D2, §7.4-7.5).
+			// Fresh SLA + ticket comment + notification (RFC-039 D2, §7.4-7.5),
+			// for findings that count as exposure.
 			if p.regressions != nil {
-				p.regressions.HandleRegressions(ctx, tenantID, reopened, scanner)
+				if counting := p.reopenedWithoutBranchOnly(ctx, tenantID, reopened); len(counting) > 0 {
+					p.regressions.HandleRegressions(ctx, tenantID, counting, scanner)
+				}
 			}
 		}
 	}
@@ -721,6 +724,8 @@ func (p *FindingProcessor) processBatch(
 		}
 		if err := p.repo.UpsertBranchOccurrences(ctx, tenantID, occurrences); err != nil {
 			p.logger.Warn("failed to record branch occurrences", "error", err, "count", len(occurrences))
+		} else {
+			p.promoteBranchOnly(ctx, tenantID, occurrences)
 		}
 	}
 
@@ -2385,9 +2390,13 @@ func (p *FindingProcessor) afterCreate(
 	// Enrichment (EPSS/KEV/priority/SLA) is applied before the insert, so the
 	// created rows already carry those fields.
 
-	// Trigger workflow events for newly created findings.
+	// Trigger workflow events (notifications, ticket rules) for newly
+	// created findings. A branch-only finding is not exposure yet: its
+	// workflows run when a counting branch sees it (promoteBranchOnly).
 	if p.findingCreatedCallback != nil {
-		p.findingCreatedCallback(ctx, tenantID, created)
+		if counting := p.withoutBranchOnly(ctx, tenantID, created); len(counting) > 0 {
+			p.findingCreatedCallback(ctx, tenantID, counting)
+		}
 	}
 
 	// Route newly-created findings to groups via assignment rules
