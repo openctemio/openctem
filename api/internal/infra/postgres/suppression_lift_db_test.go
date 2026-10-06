@@ -3,11 +3,9 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -186,78 +184,5 @@ func TestSuppressionApprovers_CountAndOwner_DB(t *testing.T) {
 	}
 	if n, _ := repo.CountEligibleApprovers(ctx, tenant); n != 2 {
 		t.Fatalf("eligible approvers with an admin = %d, want 2", n)
-	}
-}
-
-// Migration 000942 switches off stored priority rules that cannot be valid and
-// records them; valid rules stay on. Replayed as the schema owner in a
-// rolled-back transaction.
-func TestPriorityRuleSafetyMigration_DisablesInvalidRules_DB(t *testing.T) {
-	ctx := context.Background()
-	db := openGroupsDB(t)
-	tenant := seedTestTenant(ctx, t, db)
-	up, err := os.ReadFile("../../../migrations/000942_priority_rules_disable_invalid.up.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	down, err := os.ReadFile("../../../migrations/000942_priority_rules_disable_invalid.down.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tx, err := testdb.OpenMigrator(t).BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	exec := func(q string, args ...any) {
-		t.Helper()
-		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
-			t.Fatalf("%.80s: %v", q, err)
-		}
-	}
-	// 000942 creates and drops priority_rule_safety_report, whose FK takes a lock
-	// on tenants: lock tenants first, as LockForDDL asks, or a parallel test that
-	// writes tenants closes a deadlock with this one.
-	testdb.LockForDDL(t, ctx, tx, "tenants", "priority_override_rules", "priority_rule_safety_report")
-	exec(string(down))
-
-	ids := map[string]string{}
-	add := func(key, conditions string) {
-		id := shared.NewID().String()
-		ids[key] = id
-		exec(`INSERT INTO priority_override_rules (id, tenant_id, name, priority_class, conditions, is_active)
-			VALUES ($1, $2, $3, 'P3', $4::jsonb, TRUE)`, id, tenant.String(), key, conditions)
-	}
-	add("empty", `[]`)
-	add("unknown-field", `[{"field":"nope","operator":"eq","value":true}]`)
-	add("null-value", `[{"field":"is_in_kev","operator":"eq","value":null}]`)
-	add("valid", `[{"field":"is_in_kev","operator":"eq","value":true}]`)
-
-	exec(string(up))
-
-	active := func(key string) bool {
-		var a bool
-		if err := tx.QueryRowContext(ctx, `SELECT is_active FROM priority_override_rules WHERE id = $1`, ids[key]).Scan(&a); err != nil {
-			t.Fatal(err)
-		}
-		return a
-	}
-	for _, k := range []string{"empty", "unknown-field", "null-value"} {
-		if active(k) {
-			t.Errorf("rule %q still active; want switched off", k)
-		}
-		var reason string
-		if err := tx.QueryRowContext(ctx, `SELECT reason FROM priority_rule_safety_report WHERE rule_id = $1`, ids[k]).Scan(&reason); err != nil {
-			t.Errorf("rule %q not in the report: %v", k, err)
-		}
-	}
-	if !active("valid") {
-		t.Error("a valid rule was switched off")
-	}
-
-	// Down puts the switched-off rules back.
-	exec(string(down))
-	if !active("empty") {
-		t.Error("down did not re-enable the rule the migration switched off")
 	}
 }

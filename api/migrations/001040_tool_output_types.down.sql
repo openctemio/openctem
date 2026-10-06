@@ -1,1 +1,0 @@
-ALTER TABLE tools DROP COLUMN IF EXISTS output_types;

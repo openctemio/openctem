@@ -67,5 +67,17 @@ git -C "$d" branch base
 echo "-- note" >> "$d/api/migrations/000001_a.up.sql"; commit "$d" edit
 expect "modifying an old migration passes" 0 "$d" base
 
+# 8. A migration baseline replaces the chain up to its version (RFC-053).
+d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; mig "$d" 000009 c; commit "$d" base
+git -C "$d" branch base
+git -C "$d" rm -q api/migrations/00000[159]_*; mig "$d" 000009 baseline; mig "$d" 000010 after; commit "$d" squash
+expect "baseline replacing the chain passes" 0 "$d" base
+
+# 9. A baseline that leaves older migrations in the tree is just a low number.
+d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; commit "$d" base
+git -C "$d" branch base
+git -C "$d" rm -q api/migrations/000005_*; mig "$d" 000005 baseline; commit "$d" partial
+expect "baseline above an older migration fails" 1 "$d" base "Renumber it to 000006"
+
 echo "$pass passed, $failed failed"
 [[ "$failed" -eq 0 ]]

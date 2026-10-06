@@ -1,2 +1,0 @@
-DROP TABLE IF EXISTS ioc_matches;
-DROP TABLE IF EXISTS iocs;

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -390,79 +389,5 @@ func TestTeamRoleOracle_RemovalCeiling(t *testing.T) {
 	}
 	if got := f.teamRole(admin); adminRole(got) {
 		t.Fatalf("admin with zero roles still resolves to %q", got)
-	}
-}
-
-// The migration that closes F1 renames custom roles that took a reserved slug
-// and clamps custom hierarchy levels below admin, leaving system roles and
-// legitimate custom roles alone. It runs inside a rolled-back transaction with
-// the new constraints dropped, so the pre-migration rows can be recreated.
-func TestTeamRoleOracle_MigrationRepairsExistingRows(t *testing.T) {
-	f := newRoleFixture(t)
-	up, err := os.ReadFile("../../migrations/000245_team_role_from_system_roles.up.sql")
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
-	}
-	tx, err := testdb.OpenMigrator(t).BeginTx(f.ctx, nil) // the migration is DDL: schema owner
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	txExec := func(q string, args ...any) {
-		t.Helper()
-		if _, err := tx.ExecContext(f.ctx, q, args...); err != nil {
-			t.Fatalf("%s: %v", q, err)
-		}
-	}
-	// The migration alters roles and replaces v_user_effective_role, which
-	// other packages read concurrently; lock both before any DDL so it
-	// cannot deadlock with them.
-	testdb.LockForDDL(t, f.ctx, tx, "roles", "v_user_effective_role")
-	txExec(`ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_custom_slug_not_reserved`)
-	txExec(`ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_custom_level_below_admin`)
-
-	ids := map[string]string{}
-	add := func(key, slug string, level int) {
-		ids[key] = uuid.NewString()
-		txExec(`INSERT INTO roles (id, tenant_id, slug, name, is_system, hierarchy_level) VALUES ($1, $2, $3, $3, FALSE, $4)`,
-			ids[key], f.tenantID, slug, level)
-	}
-	add("owner", "owner", 100)
-	add("admin", "admin", 80)
-	add("taken", "custom-owner", 10) // the rename target already exists
-	add("fine", "analyst", 40)
-	add("edge", "edgy", 79)
-	if _, err := tx.ExecContext(f.ctx, string(up)); err != nil {
-		t.Fatalf("apply migration: %v", err)
-	}
-
-	row := func(key string) (slug string, level int) {
-		t.Helper()
-		if err := tx.QueryRowContext(f.ctx, `SELECT slug, hierarchy_level FROM roles WHERE id = $1`, ids[key]).Scan(&slug, &level); err != nil {
-			t.Fatal(err)
-		}
-		return slug, level
-	}
-	if s, l := row("owner"); s == "owner" || !strings.HasPrefix(s, "custom-owner") || l != 79 {
-		t.Fatalf("custom 'owner' role after migration: slug=%q level=%d", s, l)
-	}
-	if s, l := row("admin"); s != "custom-admin" || l != 79 {
-		t.Fatalf("custom 'admin' role after migration: slug=%q level=%d", s, l)
-	}
-	if s, l := row("taken"); s != "custom-owner" || l != 10 {
-		t.Fatalf("existing custom-owner role changed: slug=%q level=%d", s, l)
-	}
-	if s, l := row("fine"); s != "analyst" || l != 40 {
-		t.Fatalf("legitimate custom role changed: slug=%q level=%d", s, l)
-	}
-	if s, l := row("edge"); s != "edgy" || l != 79 {
-		t.Fatalf("level-79 custom role changed: slug=%q level=%d", s, l)
-	}
-	var sysOwnerLevel int
-	if err := tx.QueryRowContext(f.ctx, `SELECT hierarchy_level FROM roles WHERE id = $1`, sysOwnerRole).Scan(&sysOwnerLevel); err != nil {
-		t.Fatal(err)
-	}
-	if sysOwnerLevel != 100 {
-		t.Fatalf("system owner role level changed: %d", sysOwnerLevel)
 	}
 }

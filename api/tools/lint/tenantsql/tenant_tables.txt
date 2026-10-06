@@ -97,13 +97,11 @@ pipeline_runs
 pipeline_templates
 priority_class_audit_log
 priority_override_rules
-priority_rule_safety_report
 relationship_suggestions
 remediation_campaign_tickets
 remediation_campaigns
 report_schedules
 risk_snapshots
-role_permissions_admin_only_stripped
 roles
 runtime_telemetry_events
 saml_providers
