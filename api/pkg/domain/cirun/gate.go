@@ -388,10 +388,3 @@ func Evaluate(in GateInput) GateVerdict {
 	}
 	return v
 }
-
-func nonEmpty(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return s
-}
