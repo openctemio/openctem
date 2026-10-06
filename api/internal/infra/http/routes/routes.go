@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -79,27 +80,30 @@ type Handlers struct {
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
-	IOC             *handler.IOCHandler        // nil if not initialized - IOC catalog (feeds B6 correlator)
-	Validation      *handler.ValidationHandler // nil if not initialized - CTEM Stage-4 validation evidence
-	SCIM            *handler.SCIMHandler       // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
-	SCIMToken       *handler.SCIMTokenHandler  // nil if not initialized - SCIM token admin
-	SCIMAuth        Middleware                 // SCIM bearer-token auth middleware (nil if SCIM disabled)
-	ModuleGate      *middleware.ModuleGate     // per-tenant module route gating (nil-safe: fail-open)
+	// SensorPairing serves interactive pairing (RFC-052); nil when disabled.
+	SensorPairing *handler.SensorPairingHandler
+	IOC           *handler.IOCHandler        // nil if not initialized - IOC catalog (feeds B6 correlator)
+	Validation    *handler.ValidationHandler // nil if not initialized - CTEM Stage-4 validation evidence
+	SCIM          *handler.SCIMHandler       // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
+	SCIMToken     *handler.SCIMTokenHandler  // nil if not initialized - SCIM token admin
+	SCIMAuth      Middleware                 // SCIM bearer-token auth middleware (nil if SCIM disabled)
+	ModuleGate    *middleware.ModuleGate     // per-tenant module route gating (nil-safe: fail-open)
 	// DataScope enforces the Layer 2 (group) data scope on every by-id asset
 	// and finding route of the token-tenant chain (DataScopeGuard). nil
 	// disables the guard (tests with a minimal handler set).
 	DataScope     middleware.DataScopeAsserter
-	Sensor        *handler.SensorHandler        // nil if not initialized (no database)
-	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
-	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
-	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
-	Pipeline      *handler.PipelineHandler      // nil if not initialized (no database)
-	ScanProfile   *handler.ScanProfileHandler   // nil if not initialized (no database)
-	Tool          *handler.ToolHandler          // nil if not initialized (no database)
-	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
-	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
-	Scan          *handler.ScanHandler          // nil if not initialized (no database)
-	CI            *handler.CIHandler            // nil if not initialized (no database) - CI/CD snippet generator
+	Sensor        *handler.SensorHandler           // nil if not initialized (no database)
+	SensorContent *handler.SensorContentHandler    // scanner content policy + refresh (RFC-031); nil without a database
+	SensorResults *handler.SensorResultHandler     // unsolicited results policy + quarantine review (RFC-040); nil without a database
+	ScanZone      *handler.ScanZoneHandler         // nil if not initialized (no database)
+	ScanFreeze    *handler.ScanFreezeWindowHandler // nil if not initialized (no database)
+	Pipeline      *handler.PipelineHandler         // nil if not initialized (no database)
+	ScanProfile   *handler.ScanProfileHandler      // nil if not initialized (no database)
+	Tool          *handler.ToolHandler             // nil if not initialized (no database)
+	ToolCategory  *handler.ToolCategoryHandler     // nil if not initialized (no database)
+	Capability    *handler.CapabilityHandler       // nil if not initialized (no database)
+	Scan          *handler.ScanHandler             // nil if not initialized (no database)
+	CI            *handler.CIHandler               // nil if not initialized (no database) - CI/CD snippet generator
 	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
 	// without a database.
 	CIAdmin         *handler.CIAdminHandler
@@ -244,6 +248,11 @@ type Handlers struct {
 	// limits count in, so every API replica spends one budget. nil keeps them
 	// in-memory per process (tests, single-instance dev).
 	AuthRateLimitBackend middleware.AuthRateLimitBackend
+
+	// StepUp answers the step-up check on sensitive routes. nil uses the
+	// local auth handler's (sessions.step_up_at); route tests that are not
+	// about step-up pass a stub. No checker at all refuses those routes.
+	StepUp middleware.RecentAuthChecker
 }
 
 // AuthConfig holds authentication configuration for route registration.
@@ -311,6 +320,12 @@ func Register(
 	// /tenants/{tenant}) stay JWT-only. Reset on every Register so a previous
 	// router's setting can't leak into this one.
 	authRateLimitBackend = h.AuthRateLimitBackend
+	// Step-up re-authentication for sensitive routes. Reset on every Register
+	// so a previous router's checker cannot leak into this one.
+	stepUpChecker = h.StepUp
+	if stepUpChecker == nil && h.LocalAuth != nil {
+		stepUpChecker = h.LocalAuth.RecentAuthChecker()
+	}
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
 		apiKeyOrJWT = h.APIKeyAuth.OrJWT
@@ -717,6 +732,12 @@ func Register(
 		registerSensorV2Routes(router, h.SensorResultsV2, sensorControlV2Handler(h, log), ingestRateLimiter, log)
 	}
 
+	// Sensor pairing (RFC-052): sensor plane (signed by the key being
+	// paired) and user plane.
+	if h.SensorPairing != nil {
+		registerSensorPairingRoutes(router, h.SensorPairing, authMiddleware, userSync, log)
+	}
+
 	// Sensor management routes (tenant from JWT token)
 	if h.Sensor != nil {
 		registerSensorManagementRoutes(router, h.Sensor, h.SensorContent, h.SensorResults, authMiddleware, userSync)
@@ -729,6 +750,9 @@ func Register(
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {
 		registerScanZoneRoutes(router, h.ScanZone, authMiddleware, userSync)
+	}
+	if h.ScanFreeze != nil {
+		registerScanFreezeWindowRoutes(router, h.ScanFreeze, authMiddleware, userSync)
 	}
 
 	// Initialize trigger rate limiter for pipeline/scan trigger endpoints
@@ -985,6 +1009,18 @@ var ssoEnforcementMiddleware Middleware //nolint:gochecknoglobals // set once du
 // ipAllowlistMiddleware enforces each organization's Security.IPWhitelist on
 // user sessions. Set once during Register; nil disables it (tests).
 var ipAllowlistMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// stepUpChecker answers RequireRecentAuth (step-up re-authentication,
+// docs/architecture/step-up-reauth.md). Set once during Register from the
+// local auth handler; nil makes every step-up route refuse (fail closed).
+var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set once during init
+
+// requireStepUp is the middleware for a sensitive route: the caller's session
+// must have signed in or stepped up within authapp.StepUpWindow, otherwise
+// 403 STEP_UP_REQUIRED. Mount it after the route's permission check.
+func requireStepUp() Middleware {
+	return middleware.RequireRecentAuth(stepUpChecker, authapp.StepUpWindow)
+}
 
 // tenantSecurityPolicyAdapter adapts tenant.Repository to
 // middleware.TenantSecurityPolicyProvider (the organization's security

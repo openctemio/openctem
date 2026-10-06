@@ -130,7 +130,8 @@ describe('sensor vocabulary guard', () => {
       readFileSync(abs, 'utf8')
         .split('\n')
         .forEach((line, i) => {
-          if (/\/api\/v1\/(agent|sensor)(\/|\b(?!s))/.test(line)) offenders.push(`${file}:${i + 1}`)
+          if (/\/api\/v1\/(agent|sensor)(\/|\b(?![s-]))/.test(line))
+            offenders.push(`${file}:${i + 1}`)
         })
     }
     expect(offenders).toEqual([])

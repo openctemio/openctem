@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// Source interoperability data (migration 001105): written by fingerprint
+// Source interoperability data (migration 001117): written by fingerprint
 // within the caller's tenant only, read back by (tenant, id) only, the latest
 // sighting replaces what it carries, and the column CHECKs refuse oversized
 // rows written by any other path.

@@ -37,7 +37,6 @@ import {
 } from '@/lib/api/sensor-hooks'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { cn } from '@/lib/utils'
 
 import { useSensorFormOptions } from '../hooks'
 import { sensorCapacity, toolsNotInstalled } from '../lib/capabilities'
@@ -52,6 +51,8 @@ import {
   type SensorEditDraft,
 } from '../lib/sensor-edit'
 import { normalizeSensorVersion } from '../lib/sensor-version'
+
+import { ToggleChip } from './toggle-chip'
 
 interface EditSensorDialogProps {
   open: boolean
@@ -101,36 +102,6 @@ function FieldError({ id, message }: { id: string; message?: string }) {
     <p id={id} className="text-xs text-destructive">
       {message}
     </p>
-  )
-}
-
-/** Toggle chip (aria-pressed), the same look as the install flow's tool chips. */
-function Chip({
-  pressed,
-  onToggle,
-  disabled,
-  children,
-}: {
-  pressed: boolean
-  onToggle: () => void
-  disabled?: boolean
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      disabled={disabled}
-      onClick={onToggle}
-      className={cn(
-        'rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60',
-        pressed
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'bg-background text-muted-foreground hover:bg-accent'
-      )}
-    >
-      {children}
-    </button>
   )
 }
 
@@ -460,7 +431,7 @@ export function EditSensorDialog({
                             }
                             const on = draft.tools.includes(t)
                             return (
-                              <Chip
+                              <ToggleChip
                                 key={t}
                                 pressed={on}
                                 onToggle={() =>
@@ -473,7 +444,7 @@ export function EditSensorDialog({
                                 }
                               >
                                 {label}
-                              </Chip>
+                              </ToggleChip>
                             )
                           })}
                         </div>
@@ -525,7 +496,7 @@ export function EditSensorDialog({
                         {zones.map((z) => {
                           const on = current.zoneIds.includes(z.id)
                           return (
-                            <Chip
+                            <ToggleChip
                               key={z.id}
                               pressed={on}
                               disabled={!canWriteZones}
@@ -539,7 +510,7 @@ export function EditSensorDialog({
                               }
                             >
                               {z.name}
-                            </Chip>
+                            </ToggleChip>
                           )
                         })}
                       </div>

@@ -11,6 +11,7 @@ import (
 
 	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // backchannelLogoutEvent is the OIDC Back-Channel Logout 1.0 event identifier
@@ -64,7 +65,7 @@ type logoutIssuerResolution struct {
 //  1. Read `iss` WITHOUT trusting the token.
 //  2. Resolve `iss` to a configured provider → its JWKS + acceptable client_ids.
 //     No configured provider for this issuer ⇒ reject (nothing to revoke).
-//  3. Verify the RS256 signature against that provider's JWKS, and that `aud`
+//  3. Verify the signature against that provider's JWKS, and that `aud`
 //     equals one of the provider's client_ids.
 //  4. Enforce logout-token claim rules: `iss` matches, NO `nonce`, `events`
 //     contains the back-channel-logout member, `sid` and/or `sub` present,
@@ -81,7 +82,7 @@ func (s *SSOService) BackChannelLogout(ctx context.Context, logoutToken string) 
 	}
 
 	// 1. Untrusted issuer read (used only to select the provider/JWKS).
-	iss, err := unverifiedIssuer(logoutToken)
+	iss, err := oidc.UnverifiedIssuer(logoutToken)
 	if err != nil || iss == "" {
 		return 0, ErrLogoutTokenInvalid
 	}
@@ -94,7 +95,7 @@ func (s *SSOService) BackChannelLogout(ctx context.Context, logoutToken string) 
 	}
 
 	// 3. Verify signature (provider JWKS) + audience.
-	claims, err := s.verifyLogoutToken(ctx, logoutToken, res)
+	claims, err := s.verifyLogoutToken(ctx, logoutToken, iss, res)
 	if err != nil {
 		s.logger.Warn("back-channel logout: token verification failed", "issuer", iss, "error", err)
 		return 0, ErrLogoutTokenInvalid
@@ -149,34 +150,20 @@ func (s *SSOService) BackChannelLogout(ctx context.Context, logoutToken string) 
 	return revoked, nil
 }
 
-// unverifiedIssuer extracts the `iss` claim WITHOUT verifying the signature. It
-// is safe because the value is used only to SELECT which provider's JWKS to then
-// verify against — the token is never trusted until the signature check passes.
-func unverifiedIssuer(token string) (string, error) {
-	parser := jwtv5.NewParser()
-	var claims jwtv5.RegisteredClaims
-	if _, _, err := parser.ParseUnverified(token, &claims); err != nil {
-		return "", err
-	}
-	return claims.Issuer, nil
-}
-
-// verifyLogoutToken checks the RS256 signature against the resolved provider's
-// JWKS and that the audience is one of the provider's client_ids. It deliberately
-// does NOT require `exp` (optional for logout tokens) but the parser still
-// validates `exp`/`nbf` when present. `alg` is pinned to RS256 (blocks alg=none
-// and HS256 key-confusion).
-func (s *SSOService) verifyLogoutToken(ctx context.Context, token string, res logoutIssuerResolution) (*logoutTokenClaims, error) {
+// verifyLogoutToken verifies the token with the shared core (pkg/oidc:
+// signature against the resolved provider's JWKS, alg allowlist without HMAC
+// or none, iss, exp and nbf when present, iat not in the future) and that the
+// audience is one of the provider's client_ids. exp is optional for a logout
+// token.
+func (s *SSOService) verifyLogoutToken(ctx context.Context, token, iss string, res logoutIssuerResolution) (*logoutTokenClaims, error) {
 	claims := &logoutTokenClaims{}
-	parser := jwtv5.NewParser(
-		jwtv5.WithValidMethods([]string{"RS256"}),
-		jwtv5.WithLeeway(logoutTokenFutureLeeway),
-	)
-	keyFunc := func(t *jwtv5.Token) (interface{}, error) {
-		kid, _ := t.Header["kid"].(string)
-		return s.oidcVerifier.keyForKID(ctx, res.jwksURL, kid)
-	}
-	if _, err := parser.ParseWithClaims(token, claims, keyFunc); err != nil {
+	if err := s.oidcVerifier.VerifyJWT(ctx, token, claims, oidc.TokenPolicy{
+		JWKSURI:                 res.jwksURL,
+		Issuer:                  iss,
+		AudienceCheckedByCaller: true,
+		Leeway:                  logoutTokenFutureLeeway,
+		ExpOptional:             true,
+	}); err != nil {
 		return nil, err
 	}
 	if !audienceMatches(claims.Audience, res.allowedClientIDs) {
@@ -253,7 +240,7 @@ func (s *SSOService) resolveLogoutIssuer(ctx context.Context, iss string) (logou
 		// Platform env fallback.
 		if s.authConfig.EntraSSO.IsConfigured() {
 			ecfg := s.authConfig.EntraSSO
-			if isNonSpecificEntraTenant(ecfg.TenantID) || strings.EqualFold(ecfg.TenantID, tid) {
+			if oidc.IsMultiTenantEntraAuthority(ecfg.TenantID) || strings.EqualFold(ecfg.TenantID, tid) {
 				clientIDs = append(clientIDs, ecfg.ClientID)
 			}
 		}
@@ -261,7 +248,7 @@ func (s *SSOService) resolveLogoutIssuer(ctx context.Context, iss string) (logou
 		if ips, err := s.ipRepo.ListActiveByProvider(ctx, identityproviderdom.ProviderEntraID); err == nil {
 			for _, ip := range ips {
 				ti := ip.TenantIdentifier()
-				if isNonSpecificEntraTenant(ti) || strings.EqualFold(ti, tid) {
+				if oidc.IsMultiTenantEntraAuthority(ti) || strings.EqualFold(ti, tid) {
 					clientIDs = append(clientIDs, ip.ClientID())
 				}
 			}

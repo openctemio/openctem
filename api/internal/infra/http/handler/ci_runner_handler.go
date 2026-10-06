@@ -109,6 +109,7 @@ type CIExchangeResponse struct {
 // @Success      201  {object}  CIExchangeResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error "RUNNER_OUTDATED: the runner reports a version below the minimum supported one"
 // @Failure      429  {object}  apierror.Error
 // @Router       /ci/oidc/exchange [post]
 func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +127,11 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, cirunapp.ErrExchangeRefused) {
 			apierror.Unauthorized("The CI token was not accepted").WriteJSON(w)
+			return
+		}
+		if errors.Is(err, cirunapp.ErrRunnerOutdated) {
+			apierror.New(http.StatusForbidden, "RUNNER_OUTDATED",
+				"This CI runner is older than the minimum supported version; update the sensor image").WriteJSON(w)
 			return
 		}
 		h.logger.Error("ci token exchange failed", "error", logger.SanitizeError(err))

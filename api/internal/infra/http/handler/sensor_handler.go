@@ -14,6 +14,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
@@ -46,7 +47,9 @@ type SensorHandler struct {
 	contentPolicies ContentPolicySource
 	// zones lists the tenant's scan zones, to prefill the sensor-local
 	// policy template with the sensor's ranges; nil leaves them out.
-	zones     ZoneLister
+	zones ZoneLister
+	// grants serves the per-sensor grant routes (RFC-052 §5); nil: 404.
+	grants    *sensorgrant.Service
 	now       func() time.Time
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -1196,6 +1199,8 @@ func (h *SensorHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
+	case errors.Is(err, sensor.ErrBearerKeysDisabled):
+		apierror.New(http.StatusForbidden, "BEARER_KEYS_DISABLED", "This organization requires key-bound identity: pair the sensor instead of creating a key").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
 		apierror.Forbidden("").WriteJSON(w)
 	default:

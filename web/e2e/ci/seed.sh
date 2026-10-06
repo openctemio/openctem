@@ -73,15 +73,30 @@ log "sensors and a CTIS report"
 # switch to "warn" so the report is applied, as for tenants that existed
 # before that policy.
 call PUT /api/v1/sensors/result-policy '{"mode":"warn"}'
+# A new tenant requires key-bound identity (RFC-052 D-4): sensors pair, no
+# API key can be created. The seed needs bearer keys (it pushes with curl),
+# so it allows them, as for tenants that existed before that policy.
+call PUT /api/v1/sensors/identity-policy '{"bearer_keys_allowed":true}'
 call POST /api/v1/sensors '{"name":"e2e-sensor","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}'
 KEY=$(jq -r .api_key <<<"$BODY")
+SENSOR_ID=$(jq -r .sensor.id <<<"$BODY")
+# A new sensor starts at trust level New (RFC-052 §5: passive work only, no
+# results without a job). The seed pushes its report without a job, so it
+# promotes the sensor and allows push ingest, as an administrator would.
+call GET "/api/v1/sensors/$SENSOR_ID/grant"
+GRANT=$(jq -c '.trust_level = "trusted" | .allow_push_ingest = true
+  | del(.sensor_id, .legacy_broad, .updated_at, .effective, .profile)' <<<"$BODY")
+call PUT "/api/v1/sensors/$SENSOR_ID/grant" "$GRANT"
 call POST /api/v1/sensors '{"name":"e2e-sensor-b","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}'
 
 findings=$(for i in $(seq 1 15); do
   printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"}\n' \
     "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))"
 done | jq -s .)
-jq -n --arg id "e2e-$RUN" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson findings "$findings" '{
+# Protocol v1 is gone: the report goes to the v2 results resource (one PUT
+# is a whole report), its id a lower-case UUID that metadata.id repeats.
+REPORT_ID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr 'A-Z' 'a-z')
+jq -n --arg id "$REPORT_ID" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson findings "$findings" '{
   version: "1.0",
   metadata: { id: $id, timestamp: $ts, source_type: "scanner" },
   tool: { name: "nuclei", version: "3.3.0" },
@@ -91,8 +106,10 @@ jq -n --arg id "e2e-$RUN" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson fi
   ],
   findings: $findings
 }' >"$WORK/report.json"
-code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v1/agent/ingest" \
-  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' --data-binary @"$WORK/report.json")
+DIGEST=$(openssl dgst -sha256 -binary "$WORK/report.json" | base64)
+code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X PUT "$API/api/v2/sensor/results/$REPORT_ID" \
+  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/vnd.openctem.ctis.v1+json' \
+  -H "Content-Digest: sha-256=:$DIGEST:" --data-binary @"$WORK/report.json")
 [[ "$code" =~ ^2 ]] || { log "ingest -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 
 log "a scan with a run in progress"
@@ -100,7 +117,7 @@ log "a scan with a run in progress"
 # nuclei as installed: dispatch only counts tools a sensor has reported, not
 # the ones declared on it (#824). Nothing claims the job, so the run stays in
 # progress for 10-scan-detail-runs.
-code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v1/agent/heartbeat" \
+code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v2/sensor/heartbeat" \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
   -d '{"status":"online","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}]}')
 [[ "$code" =~ ^2 ]] || { log "heartbeat -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
