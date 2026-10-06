@@ -526,6 +526,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScansRead,
     module: Module.Scans,
   },
+  '/ci-cd': {
+    permission: Permission.CIRead,
+    module: Module.Scans,
+  },
   '/settings/scanning/profiles': {
     permission: Permission.ScanProfilesRead,
     module: Module.Scans,

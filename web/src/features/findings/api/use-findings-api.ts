@@ -95,6 +95,7 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
     params.set('priority_class', filters.priority_classes.join(','))
   if (filters.is_in_kev) params.set('is_in_kev', 'true')
   if (filters.is_reachable) params.set('is_reachable', 'true')
+  if (filters.branch_only) params.set('branch_only', 'true')
   if (filters.assigned_to_me) params.set('related_to', 'me')
   if (filters.sla_statuses?.length) params.set('sla_status', filters.sla_statuses.join(','))
   if (filters.epss_min != null) params.set('epss_score_gte', String(filters.epss_min))

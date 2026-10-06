@@ -26,6 +26,9 @@ interface LoginPageProps {
     redirect?: string
     returnTo?: string
     org?: string
+    // Set by the step-up dialog for an SSO account: sign in again at the
+    // identity provider (it is asked to authenticate the user again).
+    reauth?: string
     error?: string
     // Preserved from the invitation flow — when a user clicks an
     // invite link and doesn't have an account, the invitation page
@@ -93,7 +96,7 @@ export default async function SignIn({ searchParams }: LoginPageProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <LoginForm redirectTo={redirectTo} orgSlug={params.org} />
+        <LoginForm redirectTo={redirectTo} orgSlug={params.org} reauth={params.reauth === '1'} />
       </CardContent>
       <CardFooter className="justify-center empty:hidden">
         <LegalNotice action="clicking sign in" />

@@ -127,6 +127,22 @@ func (rl *RateLimiter) UserMiddleware() func(http.Handler) http.Handler {
 	return rl.keyedMiddleware(UserKeyFunc)
 }
 
+// TenantMiddleware returns the rate limiting middleware keyed by the tenant
+// of the request, so every member of one organization shares the bucket
+// (the user, then the client IP, when there is no tenant). Mount it after
+// the auth middleware.
+func (rl *RateLimiter) TenantMiddleware() func(http.Handler) http.Handler {
+	return rl.keyedMiddleware(TenantKeyFunc)
+}
+
+// TenantKeyFunc keys a bucket by the request's tenant.
+func TenantKeyFunc(r *http.Request) string {
+	if tid := GetTenantID(r.Context()); tid != "" {
+		return "tenant:" + tid
+	}
+	return UserKeyFunc(r)
+}
+
 // keyedMiddleware rate limits by the bucket key returns. The client IP is
 // still what gets logged.
 func (rl *RateLimiter) keyedMiddleware(key func(*http.Request) string) func(http.Handler) http.Handler {

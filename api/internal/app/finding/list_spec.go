@@ -86,7 +86,7 @@ func (s *VulnerabilityService) ListFindingsBySpec(ctx context.Context, c FilterC
 	if err != nil {
 		return empty, err
 	}
-	where, err := filterspec.Compile(spec, vulnerability.FindingFields, actor)
+	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
 	if err != nil {
 		return empty, err
 	}
@@ -105,7 +105,7 @@ func (s *VulnerabilityService) GetFindingStatsBySpec(ctx context.Context, c Filt
 	if err != nil {
 		return nil, err
 	}
-	where, err := filterspec.Compile(spec, vulnerability.FindingFields, actor)
+	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (s *FindingActionsService) ListFindingGroupsBySpec(
 	if err != nil {
 		return empty, err
 	}
-	where, err := filterspec.CompileFrom(spec, vulnerability.FindingFieldsF, actor, groupsArgOffset)
+	where, err := filterspec.CompileFrom(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFieldsF, actor, groupsArgOffset)
 	if err != nil {
 		return empty, err
 	}
@@ -175,7 +175,7 @@ func (s *VulnerabilityService) ExportFindingsBySpec(
 	if err != nil {
 		return res, err
 	}
-	where, err := filterspec.Compile(spec, vulnerability.FindingFields, actor)
+	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
 	if err != nil {
 		return res, err
 	}
@@ -254,7 +254,7 @@ func (s *FindingActionsService) GetRelatedCVEsBySpec(
 	if err != nil {
 		return nil, err
 	}
-	filterW, err := filterspec.CompileFrom(spec, vulnerability.FindingFieldsF, actor, relatedCVEsArgOffset)
+	filterW, err := filterspec.CompileFrom(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFieldsF, actor, relatedCVEsArgOffset)
 	if err != nil {
 		return nil, err
 	}
