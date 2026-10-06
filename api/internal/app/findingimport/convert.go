@@ -35,6 +35,12 @@ type Upload struct {
 	ReportIDPrefix string
 	// TempDir is where a ZIP is spooled ("" = os.TempDir()).
 	TempDir string
+	// Repository, Branch and CommitSHA, when set, are the repository every
+	// code report is filed on, whatever the file names (a CI run sets them
+	// from its verified token). Records that name no asset go there too.
+	Repository string
+	Branch     string
+	CommitSHA  string
 }
 
 // Converted is one file of an upload, converted or refused.
@@ -96,13 +102,20 @@ func convertOne(ctx context.Context, up Upload, name string, r io.Reader, kb []b
 	if kb != nil {
 		kbr = bytes.NewReader(kb)
 	}
-	res, err := importer.Parse(ctx, r, importer.Options{
+	opts := importer.Options{
 		Format:              format,
 		Limits:              FileLimits,
 		ReportID:            fmt.Sprintf("%s-%d", up.ReportIDPrefix, n),
 		MinSeverity:         up.MinSeverity,
 		QualysKnowledgeBase: kbr,
-	})
+		Repository:          up.Repository,
+		Branch:              up.Branch,
+		CommitSHA:           up.CommitSHA,
+	}
+	if up.Repository != "" {
+		opts.DefaultAsset = &ctis.Asset{Type: ctis.AssetTypeRepository, Value: up.Repository}
+	}
+	res, err := importer.Parse(ctx, r, opts)
 	if err != nil {
 		return Converted{Name: name, Error: fileError(err)}
 	}
