@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -34,7 +35,19 @@ type SensorResultsV2Handler struct {
 	// features are the RFC-029 control-plane features mounted next to the
 	// results routes, listed on hello.
 	features []string
+	// ciKeys refuses a CI sensor's key when the organization requires OIDC
+	// for CI (nil: no such policy).
+	ciKeys CIRunnerKeyPolicy
 }
+
+// CIRunnerKeyPolicy refuses the key of a CI (one-shot) sensor when its
+// organization requires OIDC for CI (cirun.RunnerKeyPolicy).
+type CIRunnerKeyPolicy interface {
+	Refused(ctx context.Context, s *sensor.Sensor, clientIP, userAgent string) bool
+}
+
+// SetCIRunnerKeyPolicy wires the "OIDC required for CI" policy.
+func (h *SensorResultsV2Handler) SetCIRunnerKeyPolicy(p CIRunnerKeyPolicy) { h.ciKeys = p }
 
 // SetControlFeatures lists the RFC-029 features served beside the results
 // routes on hello (RFC-029 §4.2).
@@ -80,6 +93,10 @@ func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 		if err != nil || id.Sensor == nil {
 			h.logger.Debug("v2 authentication failed", "error", err)
 			protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
+			return
+		}
+		if h.ciKeys != nil && h.ciKeys.Refused(r.Context(), id.Sensor, getClientIP(r), r.UserAgent()) {
+			protov2.NewProblem(protov2.ProblemCIOIDCRequired).Write(w)
 			return
 		}
 		ctx := context.WithValue(r.Context(), sensorContextKey, id.Sensor)

@@ -1,5 +1,6 @@
 'use client'
 
+import type { SensorGrantSummary } from '@/lib/api/sensor-grant-hooks'
 import type * as React from 'react'
 import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -63,6 +64,8 @@ interface SensorTableProps {
   channel: ReleaseChannel
   /** Group header rows (zone, role, version). */
   rowGroups?: DataTableRowGroups<Sensor>
+  /** Grant summaries by sensor id (GET /sensors/grant-summaries), for the grant flags. */
+  grants?: Map<string, SensorGrantSummary>
 }
 
 /** CPU / memory as reported; a sensor that reports nothing shows a dash, not 0%. */
@@ -104,6 +107,7 @@ export function SensorTable({
   now,
   channel,
   rowGroups,
+  grants,
 }: SensorTableProps) {
   const columns = useMemo<ColumnDef<Sensor>[]>(
     () => [
@@ -136,7 +140,9 @@ export function SensorTable({
         accessorFn: (a) => a.name,
         sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
         header: ({ column }) => <DataTableColumnHeader column={column} title="Sensor" />,
-        cell: ({ row }) => <SensorNameCell sensor={row.original} />,
+        cell: ({ row }) => (
+          <SensorNameCell sensor={row.original} grant={grants?.get(row.original.id)} />
+        ),
       },
       {
         id: 'status',
@@ -332,6 +338,7 @@ export function SensorTable({
       channel.min,
       channel.sdkLatest,
       channel.sdkMin,
+      grants,
     ]
   )
 
@@ -362,6 +369,7 @@ export function SensorTable({
           thresholds={thresholds}
           channel={channel}
           onOpen={onViewSensor}
+          grant={grants?.get(sensor.id)}
         />
       )}
     />

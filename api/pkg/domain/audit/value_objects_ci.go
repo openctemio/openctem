@@ -7,12 +7,23 @@ const (
 	ActionCITrustConfigUpdated Action = "ci_trust_config.updated"
 	ActionCITrustConfigDeleted Action = "ci_trust_config.deleted"
 
+	// ActionCISettingsUpdated records a change of the tenant's CI settings
+	// (OIDC required for CI results).
+	ActionCISettingsUpdated Action = "ci_settings.updated"
+	// ActionCIRunnerKeyRefused records a CI sensor's key refused because the
+	// organization requires OIDC for CI (at most once per sensor every ten
+	// minutes).
+	ActionCIRunnerKeyRefused Action = "ci_run.runner_key_refused"
+
 	// ActionCIRunTokenIssued records a CI job's OIDC token exchanged for a
 	// run upload token (repository, actor, pipeline run id; never a token).
 	ActionCIRunTokenIssued Action = "ci_run.token_issued"
 	// ActionCIRunTokenRefused records a verified CI token that no trust
 	// configuration admitted, or a replayed one.
 	ActionCIRunTokenRefused Action = "ci_run.token_refused"
+	// ActionCIRunResultsUploaded records a report a run uploaded (counts and
+	// tool label; never finding content).
+	ActionCIRunResultsUploaded Action = "ci_run.results_uploaded"
 	// ActionCIRunEvaluated records a gate verdict.
 	ActionCIRunEvaluated Action = "ci_run.evaluated"
 
@@ -49,14 +60,18 @@ const (
 	ResourceTypeCIGatePolicy   ResourceType = "ci_gate_policy"
 	ResourceTypeCIGateOverride ResourceType = "ci_gate_override"
 	ResourceTypeCIPipeline     ResourceType = "ci_pipeline"
+	ResourceTypeCISettings     ResourceType = "ci_settings"
 )
 
 var _ = registerActions("ci", map[Action]Severity{
 	ActionCITrustConfigCreated:  SeverityHigh,
 	ActionCITrustConfigUpdated:  SeverityHigh,
 	ActionCITrustConfigDeleted:  SeverityMedium,
+	ActionCISettingsUpdated:     SeverityMedium,
+	ActionCIRunnerKeyRefused:    SeverityMedium,
 	ActionCIRunTokenIssued:      SeverityLow,
 	ActionCIRunTokenRefused:     SeverityMedium,
+	ActionCIRunResultsUploaded:  SeverityLow,
 	ActionCIRunEvaluated:        SeverityLow,
 	ActionCIGatePolicyCreated:   SeverityMedium,
 	ActionCIGatePolicyUpdated:   SeverityMedium,
@@ -73,7 +88,7 @@ var _ = registerActions("ci", map[Action]Severity{
 })
 
 func init() {
-	for _, r := range []ResourceType{ResourceTypeCITrustConfig, ResourceTypeCIRun, ResourceTypeCIGatePolicy, ResourceTypeCIGateOverride, ResourceTypeCIPipeline} {
+	for _, r := range []ResourceType{ResourceTypeCITrustConfig, ResourceTypeCIRun, ResourceTypeCIGatePolicy, ResourceTypeCIGateOverride, ResourceTypeCIPipeline, ResourceTypeCISettings} {
 		configResourceTypes[r] = struct{}{}
 	}
 }
