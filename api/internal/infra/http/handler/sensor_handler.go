@@ -14,6 +14,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
@@ -46,7 +47,9 @@ type SensorHandler struct {
 	contentPolicies ContentPolicySource
 	// zones lists the tenant's scan zones, to prefill the sensor-local
 	// policy template with the sensor's ranges; nil leaves them out.
-	zones     ZoneLister
+	zones ZoneLister
+	// grants serves the per-sensor grant routes (RFC-052 §5); nil: 404.
+	grants    *sensorgrant.Service
 	now       func() time.Time
 	validator *validator.Validator
 	logger    *logger.Logger

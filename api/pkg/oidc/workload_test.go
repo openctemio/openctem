@@ -76,7 +76,7 @@ func TestVerifyWorkloadTokenRefusals(t *testing.T) {
 		"alg none":          signWith(jwtv5.SigningMethodNone, jwtv5.UnsafeAllowNoneSignatureType, p.workloadClaims()),
 		"garbage":           "not.a.jwt",
 		"empty":             "",
-		"oversized":         strings.Repeat("a", maxWorkloadTokenSize+1),
+		"oversized":         strings.Repeat("a", MaxTokenSize+1),
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -172,7 +172,7 @@ func TestUnverifiedIssuer(t *testing.T) {
 	if err != nil || iss != p.issuer {
 		t.Fatalf("iss = %q %v", iss, err)
 	}
-	for _, bad := range []string{"", "a.b", "a.!!!.c", strings.Repeat("x", maxWorkloadTokenSize+1)} {
+	for _, bad := range []string{"", "a.b", "a.!!!.c", strings.Repeat("x", MaxTokenSize+1)} {
 		if _, err := UnverifiedIssuer(bad); err == nil {
 			t.Fatalf("%q: issuer read from a malformed token", bad)
 		}

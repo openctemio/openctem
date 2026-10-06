@@ -23,6 +23,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // OAuth errors.
@@ -79,7 +80,7 @@ type OAuthService struct {
 	// oidcVerifier validates the signed id_token for providers that return one
 	// (Microsoft/Entra), so identity is taken from verified claims rather than
 	// a mutable directory attribute. See getMicrosoftUserInfo.
-	oidcVerifier *oidcVerifier
+	oidcVerifier *oidc.Client
 	// pkceStore holds each login's PKCE code_verifier server-side, keyed by
 	// its state, until the callback consumes it.
 	pkceStore PKCEVerifierStore
@@ -130,7 +131,7 @@ func NewOAuthService(
 		// redirect ever lands on a tenant-controlled host, the dialer
 		// refuses the connection instead of silently following.
 		httpClient:   httpsec.SafeHTTPClient(30 * time.Second),
-		oidcVerifier: newOIDCVerifier(httpsec.SafeHTTPClient(30*time.Second), log),
+		oidcVerifier: newOIDCClient(httpsec.SafeHTTPClient(30 * time.Second)),
 		pkceStore:    NewMemoryPKCEStore(),
 	}
 }
@@ -677,11 +678,11 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 		return nil, ErrInvalidProvider
 	}
 
-	claims, err := s.oidcVerifier.verify(ctx, idToken, idTokenExpectations{
-		jwksURL:        "https://login.microsoftonline.com/common/discovery/v2.0/keys",
-		audience:       cfg.ClientID,
-		validateIssuer: entraIssuerValidator("common"),
-		skipNonce:      true, // code flow: id_token delivered server-to-server
+	claims, err := s.oidcVerifier.VerifyIDToken(ctx, idToken, oidc.Expectations{
+		JWKSURI:    "https://login.microsoftonline.com/common/discovery/v2.0/keys",
+		ClientID:   cfg.ClientID,
+		IssuerRule: oidc.EntraIssuer("common"),
+		SkipNonce:  true, // code flow: id_token delivered server-to-server
 	})
 	if err != nil {
 		return nil, fmt.Errorf("microsoft id_token verification failed: %w", err)
@@ -699,9 +700,9 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 // microsoftUserInfoFromClaims applies the nOAuth email-verification gate to
 // already-verified Entra id_token claims and maps them to OAuthUserInfo. It is
 // the security-critical mapping (the signature/issuer/audience checks are done
-// by oidcVerifier.verify), so it is a pure function to keep it unit-testable.
-func microsoftUserInfoFromClaims(claims *oidcClaims) (*OAuthUserInfo, error) {
-	if claims.XMSEdov == nil || !*claims.XMSEdov {
+// by pkg/oidc), so it is a pure function to keep it unit-testable.
+func microsoftUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
+	if !bool(claims.XMSEdov) {
 		return nil, errors.New("email not verified by Microsoft (email domain not owner-verified)")
 	}
 	if strings.TrimSpace(claims.Email) == "" {
