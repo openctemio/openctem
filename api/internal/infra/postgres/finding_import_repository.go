@@ -12,7 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// Finding import records (migration 001133). Every statement is scoped by
+// Finding import records (migration 001142). Every statement is scoped by
 // tenant_id.
 
 // CreateFindingImport inserts the record of an import (its counts may be
