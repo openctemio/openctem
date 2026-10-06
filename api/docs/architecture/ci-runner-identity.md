@@ -40,7 +40,7 @@ graph TD
 | Ingest entry point and the `ci_run` binding | `internal/app/ingest/ci_run.go`, `binding.go` |
 | Repository | `internal/infra/postgres/ci_run_repository.go` |
 | Routes and their chains | `internal/infra/http/routes/ci.go` |
-| Console | `web/src/features/ci-runners` (`/ci-runners`, `/settings/scanning/ci`) |
+| Console | `web/src/features/ci-runners`: CI/CD integration page `/ci-cd` (pipelines, runs, coverage; Trust and gate tab), also `/settings/scanning/ci`; `/ci-runners` and `/runners` redirect to `/ci-cd` |
 | Pipelines: identity, status, fleet rows | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
 | Fleet read model (`GET /api/v1/fleet`) | `handler/fleet_handler.go`, `handler/sensor_fleet.go`, `routes/fleet.go` |
 | Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
@@ -119,6 +119,9 @@ sequenceDiagram
   verified token; the report's own branch information is replaced.
 - A run's report changes only its repository asset; the baseline branch is
   decided server-side.
+- A finding the run sees only on a non-counting branch is branch-only: left
+  out of exposure views until a counting branch sees it
+  (`branch-only-findings.md`).
 - Neither the CI provider's token nor the run token is logged, stored (only the
   run token's SHA-256) or audited.
 - Coverage lists only repositories in the caller's data scope; marking a

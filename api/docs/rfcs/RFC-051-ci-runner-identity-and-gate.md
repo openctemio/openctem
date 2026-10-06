@@ -151,6 +151,12 @@ snippet and fingerprints the value with a keyed per-tenant HMAC.
 `POST /api/v1/ci/runs/{id}/baseline-diff` splits fingerprints into new and
 already open on the default branch, for inline comments on new findings only.
 
+A finding a run sees only on a branch that does not count as exposure (not
+the default, a protected, a `main` or a `release` branch) is stored
+branch-only: the gate and the run show it, while dashboards, SLA,
+notifications and the default findings list leave it out until a counting
+branch sees it. See `docs/architecture/branch-only-findings.md`.
+
 ## 6. The gate
 
 `POST /api/v1/ci/runs/{id}/evaluate` `{scan_failures}` returns:
