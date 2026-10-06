@@ -17,7 +17,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
