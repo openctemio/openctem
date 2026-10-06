@@ -2,19 +2,17 @@ package keycloak
 
 import (
 	"context"
-	"crypto/rsa"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 var (
@@ -32,20 +30,8 @@ var (
 	ErrKeyNotFound = errors.New("key not found in JWKS")
 )
 
-// JWK represents a JSON Web Key.
-type JWK struct {
-	Kid string `json:"kid"` // Key ID
-	Kty string `json:"kty"` // Key Type (RSA)
-	Alg string `json:"alg"` // Algorithm (RS256)
-	Use string `json:"use"` // Key Use (sig)
-	N   string `json:"n"`   // RSA modulus
-	E   string `json:"e"`   // RSA exponent
-}
-
-// JWKS represents a JSON Web Key Set.
-type JWKS struct {
-	Keys []JWK `json:"keys"`
-}
+// accessTokenLeeway is the clock skew tolerated on exp, nbf and iat.
+const accessTokenLeeway = 30 * time.Second
 
 // RefreshErrorHandler is called when JWKS refresh fails.
 // Use this to integrate with your alerting/monitoring system.
@@ -53,9 +39,11 @@ type RefreshErrorHandler func(err error, consecutiveFailures int)
 
 // ValidatorConfig holds configuration for the token validator.
 type ValidatorConfig struct {
-	JWKSURL         string
-	IssuerURL       string
-	Audience        string // Optional
+	JWKSURL string
+	// IssuerURL is the realm issuer every token must carry. Required.
+	IssuerURL string
+	// Audience, when set, must be one of aud or equal azp.
+	Audience        string
 	RefreshInterval time.Duration
 	HTTPTimeout     time.Duration
 	// OnRefreshError is called when background JWKS refresh fails.
@@ -66,15 +54,18 @@ type ValidatorConfig struct {
 	RequireInitialFetch bool
 }
 
-// Validator validates Keycloak JWT tokens using JWKS.
+// Validator validates the external OIDC provider's (Keycloak) access tokens
+// with the shared verification core (pkg/oidc): signature, algorithm
+// allowlist, kid lookup with a throttled refresh, realm issuer, exp, nbf and
+// iat. It adds the audience rule (aud or azp) and keeps the JWKS warm on a
+// schedule.
 type Validator struct {
-	jwksURL    string
-	issuerURL  string
-	audience   string
-	httpClient *http.Client
+	client    *oidc.Client
+	jwksURL   string
+	issuerURL string
+	audience  string
 
 	mu                  sync.RWMutex
-	keys                map[string]*rsa.PublicKey
 	lastFetch           time.Time
 	lastError           error
 	consecutiveFailures int
@@ -85,132 +76,79 @@ type Validator struct {
 	cancel context.CancelFunc
 }
 
-// NewValidator creates a new Keycloak token validator.
+// NewValidator creates a new Keycloak token validator. The realm URL is
+// operator configuration; the safe dialer still refuses loopback, link-local
+// and metadata addresses (and private ranges unless
+// OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1) at dial time.
 func NewValidator(ctx context.Context, cfg ValidatorConfig) (*Validator, error) {
+	timeout := cfg.HTTPTimeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+	return newValidator(ctx, cfg, httpsec.SafeHTTPClient(timeout))
+}
+
+func newValidator(ctx context.Context, cfg ValidatorConfig, httpClient *http.Client) (*Validator, error) {
 	if cfg.JWKSURL == "" {
 		return nil, fmt.Errorf("JWKS URL is required")
 	}
-
-	// Set defaults
+	if cfg.IssuerURL == "" {
+		return nil, fmt.Errorf("issuer URL is required")
+	}
 	if cfg.RefreshInterval == 0 {
 		cfg.RefreshInterval = time.Hour
 	}
-	if cfg.HTTPTimeout == 0 {
-		cfg.HTTPTimeout = 10 * time.Second
-	}
 
 	ctx, cancel := context.WithCancel(ctx)
-
 	v := &Validator{
-		jwksURL:   cfg.JWKSURL,
-		issuerURL: cfg.IssuerURL,
-		audience:  cfg.Audience,
-		// SSRF: Keycloak issuer + JWKS URLs come from tenant
-		// configuration (oidc_provider). If an attacker controls the
-		// issuer URL (compromised admin, typosquat domain, DNS
-		// rebinding), the safe dialer refuses to resolve it onto
-		// loopback / RFC1918 / link-local / IMDS ranges at dial time.
-		httpClient:     httpsec.SafeHTTPClient(cfg.HTTPTimeout),
-		keys:           make(map[string]*rsa.PublicKey),
+		client:         oidc.NewClient(httpClient, nil),
+		jwksURL:        cfg.JWKSURL,
+		issuerURL:      cfg.IssuerURL,
+		audience:       cfg.Audience,
 		refreshInt:     cfg.RefreshInterval,
 		onRefreshError: cfg.OnRefreshError,
 		ctx:            ctx,
 		cancel:         cancel,
 	}
 
-	// Initial fetch - don't fail if RequireInitialFetch is false
-	if err := v.refreshKeys(); err != nil {
-		if cfg.RequireInitialFetch {
-			cancel()
-			return nil, fmt.Errorf("failed to fetch initial JWKS: %w", err)
-		}
-		// Store the error and notify via callback
-		v.mu.Lock()
-		v.consecutiveFailures = 1
-		v.lastError = err
-		v.mu.Unlock()
-
-		if v.onRefreshError != nil {
-			v.onRefreshError(err, 1)
-		}
+	if err := v.refresh(); err != nil && cfg.RequireInitialFetch {
+		cancel()
+		return nil, fmt.Errorf("failed to fetch initial JWKS: %w", err)
 	}
-
-	// Start background refresh
 	go v.backgroundRefresh()
-
 	return v, nil
 }
 
-// refreshKeys fetches the JWKS and updates the cached keys.
-func (v *Validator) refreshKeys() error {
-	req, err := http.NewRequestWithContext(v.ctx, http.MethodGet, v.jwksURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := v.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to fetch JWKS: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("JWKS endpoint returned status %d", resp.StatusCode)
-	}
-
-	var jwks JWKS
-	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
-		return fmt.Errorf("failed to decode JWKS: %w", err)
-	}
-
-	newKeys := make(map[string]*rsa.PublicKey)
-	for _, key := range jwks.Keys {
-		if key.Kty != "RSA" {
-			continue
-		}
-		pubKey, err := jwkToRSAPublicKey(key)
-		if err != nil {
-			continue // Skip invalid keys
-		}
-		newKeys[key.Kid] = pubKey
-	}
-
+// refresh fetches the JWKS now and records the outcome.
+func (v *Validator) refresh() error {
+	err := v.client.RefreshJWKS(v.ctx, v.jwksURL)
 	v.mu.Lock()
-	v.keys = newKeys
-	v.lastFetch = time.Now()
+	if err != nil {
+		v.consecutiveFailures++
+		v.lastError = err
+	} else {
+		v.consecutiveFailures = 0
+		v.lastError = nil
+		v.lastFetch = time.Now()
+	}
+	failures := v.consecutiveFailures
 	v.mu.Unlock()
-
-	return nil
+	if err != nil && v.onRefreshError != nil {
+		v.onRefreshError(err, failures)
+	}
+	return err
 }
 
-// backgroundRefresh periodically refreshes the JWKS.
+// backgroundRefresh keeps the JWKS warm so verification rarely fetches.
 func (v *Validator) backgroundRefresh() {
 	ticker := time.NewTicker(v.refreshInt)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-v.ctx.Done():
 			return
 		case <-ticker.C:
-			if err := v.refreshKeys(); err != nil {
-				v.mu.Lock()
-				v.consecutiveFailures++
-				v.lastError = err
-				failures := v.consecutiveFailures
-				v.mu.Unlock()
-
-				// Call error handler if configured
-				if v.onRefreshError != nil {
-					v.onRefreshError(err, failures)
-				}
-			} else {
-				// Reset failure count on success
-				v.mu.Lock()
-				v.consecutiveFailures = 0
-				v.lastError = nil
-				v.mu.Unlock()
-			}
+			_ = v.refresh()
 		}
 	}
 }
@@ -230,122 +168,38 @@ func (v *Validator) LastRefreshTime() time.Time {
 	return v.lastFetch
 }
 
-// getKey returns the RSA public key for the given key ID.
-func (v *Validator) getKey(kid string) (*rsa.PublicKey, error) {
-	v.mu.RLock()
-	key, ok := v.keys[kid]
-	keysEmpty := len(v.keys) == 0
-	v.mu.RUnlock()
-
-	if ok {
-		return key, nil
-	}
-
-	// Key not found or no keys at all, try refreshing
-	if err := v.refreshKeys(); err != nil {
-		// If we have no keys at all, JWKS is unavailable
-		if keysEmpty {
-			return nil, ErrJWKSUnavailable
-		}
-		// We have some keys but not this one - key rotation or invalid kid
-		return nil, ErrKeyNotFound
-	}
-
-	v.mu.RLock()
-	key, ok = v.keys[kid]
-	v.mu.RUnlock()
-
-	if !ok {
-		return nil, ErrKeyNotFound
-	}
-
-	return key, nil
-}
-
 // HasKeys returns true if the validator has at least one key loaded.
 func (v *Validator) HasKeys() bool {
-	v.mu.RLock()
-	defer v.mu.RUnlock()
-	return len(v.keys) > 0
+	return v.client.HasKeys(v.jwksURL)
 }
 
-// ValidateToken validates a Keycloak JWT token and returns the claims.
-func (v *Validator) ValidateToken(tokenString string) (*Claims, error) {
+// ValidateToken validates a Keycloak access token and returns its claims.
+func (v *Validator) ValidateToken(ctx context.Context, tokenString string) (*Claims, error) {
 	claims := &Claims{}
-
-	// Parse without verification first to get the key ID
-	parser := jwt.NewParser()
-	token, _, err := parser.ParseUnverified(tokenString, claims)
-	if err != nil {
-		return nil, ErrInvalidToken
-	}
-
-	// Get key ID from header
-	kid, ok := token.Header["kid"].(string)
-	if !ok || kid == "" {
-		return nil, fmt.Errorf("%w: missing key ID", ErrInvalidToken)
-	}
-
-	// Get the public key
-	pubKey, err := v.getKey(kid)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build parser options
-	parserOpts := []jwt.ParserOption{
-		jwt.WithExpirationRequired(),
-	}
-	if v.issuerURL != "" {
-		parserOpts = append(parserOpts, jwt.WithIssuer(v.issuerURL))
-	}
-
-	// Parse and validate with the correct key
-	keyFunc := func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return pubKey, nil
-	}
-
-	claims = &Claims{}
-	token, err = jwt.ParseWithClaims(tokenString, claims, keyFunc, parserOpts...)
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, ErrExpiredToken
-		}
-		if errors.Is(err, jwt.ErrTokenMalformed) || errors.Is(err, jwt.ErrSignatureInvalid) {
-			return nil, ErrInvalidToken
-		}
-		if errors.Is(err, jwt.ErrTokenInvalidIssuer) {
-			return nil, ErrInvalidIssuer
-		}
+	err := v.client.VerifyJWT(ctx, tokenString, claims, oidc.TokenPolicy{
+		JWKSURI:                 v.jwksURL,
+		Issuer:                  v.issuerURL,
+		AudienceCheckedByCaller: true,
+		Leeway:                  accessTokenLeeway,
+	})
+	switch {
+	case err == nil:
+	case errors.Is(err, jwt.ErrTokenExpired):
+		return nil, ErrExpiredToken
+	case errors.Is(err, jwt.ErrTokenInvalidIssuer):
+		return nil, ErrInvalidIssuer
+	case errors.Is(err, oidc.ErrKeyNotFound):
+		return nil, ErrKeyNotFound
+	case errors.Is(err, oidc.ErrJWKSUnavailable):
+		return nil, ErrJWKSUnavailable
+	default:
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
-
-	if !token.Valid {
-		return nil, ErrInvalidToken
+	// The audience, when configured, must name this API or be the
+	// authorized party the token was issued to.
+	if v.audience != "" && !slices.Contains(claims.Audience, v.audience) && claims.Azp != v.audience {
+		return nil, ErrInvalidAudience
 	}
-
-	// Validate audience if configured
-	if v.audience != "" {
-		aud, err := claims.GetAudience()
-		if err != nil {
-			return nil, ErrInvalidAudience
-		}
-		validAudience := false
-		for _, a := range aud {
-			if a == v.audience {
-				validAudience = true
-				break
-			}
-		}
-		// Also check azp (authorized party) as fallback
-		if !validAudience && claims.Azp != v.audience {
-			return nil, ErrInvalidAudience
-		}
-	}
-
 	return claims, nil
 }
 
@@ -353,30 +207,4 @@ func (v *Validator) ValidateToken(tokenString string) (*Claims, error) {
 func (v *Validator) Close() error {
 	v.cancel()
 	return nil
-}
-
-// jwkToRSAPublicKey converts a JWK to an RSA public key.
-func jwkToRSAPublicKey(jwk JWK) (*rsa.PublicKey, error) {
-	// Decode modulus (n)
-	nBytes, err := base64.RawURLEncoding.DecodeString(jwk.N)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode modulus: %w", err)
-	}
-	n := new(big.Int).SetBytes(nBytes)
-
-	// Decode exponent (e)
-	eBytes, err := base64.RawURLEncoding.DecodeString(jwk.E)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode exponent: %w", err)
-	}
-	// Convert bytes to int
-	var e int
-	for _, b := range eBytes {
-		e = e<<8 + int(b)
-	}
-
-	return &rsa.PublicKey{
-		N: n,
-		E: e,
-	}, nil
 }
