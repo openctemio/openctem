@@ -70,16 +70,22 @@ import type { CIGatePolicy, CIProvider, CITrustConfig } from '../types'
 
 const NO_WRITE = 'Only owners and administrators can change CI trust and the gate'
 
-export function CITrustSettings() {
+/**
+ * Trust, gate policy and break-glass. `embedded` drops the page header (the
+ * CI/CD integration page shows these as its Trust and gate tab).
+ */
+export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {}) {
   const { can } = usePermissions()
   const canWrite = can(Permission.CIWrite)
   const canOverride = can(Permission.CIOverride)
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="CI pipelines"
-        description="Let GitHub Actions and GitLab CI jobs send results with their own identity instead of a stored API key, and decide what fails a pipeline."
-      />
+      {!embedded && (
+        <PageHeader
+          title="CI/CD integration"
+          description="Let GitHub Actions and GitLab CI jobs send results with their own identity instead of a stored API key, and decide what fails a pipeline."
+        />
+      )}
       <CIRequireOIDC canWrite={canWrite} />
       <Tabs defaultValue="trust">
         <TabsList>
