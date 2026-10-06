@@ -116,6 +116,29 @@ refuses outside the window and passes inside it.
 | `POST /api/v1/organization/members/{id}/offboard`, `.../erase` | Removes a person's access; erases their personal data. |
 | `POST /api/v1/ci/gate-overrides` | Break-glass past the CI security gate. |
 | `POST /api/v1/audit-logs/rebaseline` | Overwrites the tamper-evident audit chain. |
+| `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST …/webhook-secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, repository events) for the organization. |
+| `PATCH /api/v1/attachments/storage-config` | Decides where evidence files are written and with which credentials. |
+
+### Actions that need step-up only in some cases
+
+Some routes need step-up only for one kind of change, which only the service
+can tell. The service asks a `shared.RecentAuthGate` (wired at startup to
+`middleware.RecentAuthGate`, which calls `middleware.CheckRecentAuth`, the
+check behind `requireStepUp()`), and the handler answers its refusal with
+`middleware.WriteStepUpError`, exactly like the middleware
+(`403 STEP_UP_REQUIRED` with `window_seconds`, or `STEP_UP_UNAVAILABLE`), so
+the web dialog appears and the request is retried.
+
+| Action | Where it is checked |
+|---|---|
+| Making someone an administrator or an owner: `POST /api/v1/users/{id}/roles`, `PUT /api/v1/users/{id}/roles`, `POST /api/v1/roles/{id}/members/bulk` with the admin or owner role, `POST/PATCH /api/v1/tenants/{tenant}/members…` with `admin`, an invitation or a created user with the admin role | `RoleService.authorizeAdminPromotion`, `TenantService.authorizeAdminPromotion` (only when the user does not hold the role yet) |
+| Renaming the organization's slug: `PATCH /api/v1/tenants/{tenant}` with a new `slug` | `TenantService.UpdateTenant` |
+
+The gate judges only the user making the request: a grant authorized
+earlier and applied for someone else (an invitation accepted by the invitee,
+SCIM, SSO just-in-time provisioning) is not asked again. There is no separate
+ownership-transfer action: making someone an owner is the owner-role grant
+above.
 
 Sensor pairing approval (`POST /api/v1/sensor-pairings/{id}/approve`, RFC-052)
 checks a step-up proof inside the request body with the same

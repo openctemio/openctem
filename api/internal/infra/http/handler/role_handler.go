@@ -257,6 +257,9 @@ func (h *RoleHandler) handleValidationError(w http.ResponseWriter, err error) {
 }
 
 func (h *RoleHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if writeStepUpError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, role.ErrRoleNotFound):
 		apierror.NotFound("Role").WriteJSON(w)

@@ -52,7 +52,9 @@ type TeamInvitationJobPayload struct {
 // TenantService handles tenant-related business operations.
 // Note: Tenants are displayed as "Teams" in the UI.
 type TenantService struct {
-	repo             tenantdom.Repository
+	repo tenantdom.Repository
+	// stepUp requires the acting owner's recent re-authentication (SetStepUpGate).
+	stepUp           shared.RecentAuthGate
 	auditService     *auditapp.AuditService
 	emailEnqueuer    EmailJobEnqueuer
 	userInfoProvider UserInfoProvider // For fetching user names
@@ -460,6 +462,11 @@ func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input
 		}
 		if exists {
 			return nil, fmt.Errorf("%w: slug '%s' is already taken", shared.ErrValidation, *input.Slug)
+		}
+		// The slug is in every sign-in and share link: renaming it needs the
+		// owner's recent re-authentication (asked once the rename is valid).
+		if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			return nil, err
 		}
 		if err := t.UpdateSlug(*input.Slug); err != nil {
 			return nil, err
