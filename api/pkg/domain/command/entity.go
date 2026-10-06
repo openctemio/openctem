@@ -75,6 +75,12 @@ const (
 	// CommandTypeConnectorScan asks a connector sensor to launch one scan in
 	// the product it connects to on probe-gated targets (RFC-047).
 	CommandTypeConnectorScan CommandType = "connector_scan"
+	// CommandTypeRetest asks a sensor to re-check known findings with the
+	// retest handler of the tool that produced them (RFC-039, tool retest).
+	// The payload names the tool, the targets (each finding's own asset
+	// address, active-probe gated) and the items; the result carries one
+	// verdict per item: still_present, fixed or unverifiable.
+	CommandTypeRetest CommandType = "retest"
 )
 
 // CommandStatus represents the status of a command.

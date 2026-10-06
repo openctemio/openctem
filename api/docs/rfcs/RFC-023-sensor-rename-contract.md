@@ -20,7 +20,7 @@ test recorded before the rename
 | Job payload | key `agent_preference` in command payloads |
 | Error texts | `Agent not authenticated`, `Agent cannot renew`, `Platform agents require tenant context for this operation`, `Platform agents require job context for this operation`; error code `INVALID_AGENT` |
 | Async ingest | `Location: /api/v1/agent/ingest/jobs/{id}` |
-| Sensor `type` values | `worker`, `scanner`, `sensor`, `collector` (and stored `agent`, `platform`) are unchanged in input, storage and output; `runner` was removed (RFC-051 R-2, migration `001121`) |
+| Sensor `type` values | `worker`, `scanner`, `sensor`, `collector` (and stored `agent`, `platform`) are unchanged in input, storage and output; `runner` was removed (RFC-051 R-2, migration `001143`) |
 | Inbound labels | a CTIS asset with `discovery_source: "agent"` is accepted and stored as `sensor` |
 | Released binary interface | config templates (`GET /api/v1/sensors/{id}/config-templates`) still render the current binary's settings: `AGENT_ID`, `./agent`, `agent.yaml`, image `openctemio/agent` |
 

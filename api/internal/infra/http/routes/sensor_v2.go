@@ -114,6 +114,11 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ct
 			r.POST("/commands/{command_id}/fail", ctl.FailCommand, controlWrite...)
 			r.POST("/commands/{command_id}/release", ctl.ReleaseCommand, controlWrite...)
 		}
+		if ctl.HasLogs() {
+			// Per-task logs (RFC-029 §4.4.1): the control write budget, a
+			// 256 KiB body (decoded with that bound by the handler).
+			r.POST("/commands/{command_id}/logs", ctl.CommandLogs, controlWrite...)
+		}
 		if ctl.HasSuppressions() {
 			r.GET(protov2.SuppressionsPath, ctl.Suppressions, controlRead...)
 		}
@@ -136,6 +141,7 @@ var v2RouteNames = map[string]string{
 	protov2.PathPrefix + "/commands/{command_id}/start":    "start",
 	protov2.PathPrefix + "/commands/{command_id}/complete": "complete",
 	protov2.PathPrefix + "/commands/{command_id}/fail":     "fail",
+	protov2.PathPrefix + "/commands/{command_id}/logs":     "logs",
 	protov2.PathPrefix + protov2.SuppressionsPath:          "suppressions",
 	protov2.PathPrefix + protov2.FingerprintsCheckPath:     "fingerprints_check",
 	protov2.PathPrefix + protov2.BaselineDiffPath:          "baseline_diff",

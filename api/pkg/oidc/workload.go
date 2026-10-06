@@ -8,8 +8,6 @@ package oidc
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,13 +25,6 @@ const workloadLeeway = time.Minute
 // MaxWorkloadTokenLifetime refuses tokens whose exp is further than this
 // from their iat: a stolen long-lived token is worth more.
 const MaxWorkloadTokenLifetime = 24 * time.Hour
-
-// maxWorkloadTokenSize bounds the raw token before any parsing.
-const maxWorkloadTokenSize = 16 << 10
-
-// workloadMethods are the accepted signature algorithms. HMAC and "none"
-// are never accepted.
-var workloadMethods = []string{"RS256", "RS384", "RS512", "ES256"}
 
 // WorkloadExpectations pin a workload token to one issuer and audience.
 type WorkloadExpectations struct {
@@ -55,7 +46,7 @@ type WorkloadToken struct {
 // choose which issuer to verify it against. Never trust anything else from
 // an unverified token.
 func UnverifiedIssuer(raw string) (string, error) {
-	if raw == "" || len(raw) > maxWorkloadTokenSize {
+	if raw == "" || len(raw) > MaxTokenSize {
 		return "", errors.New("token is empty or too large")
 	}
 	parts := strings.Split(raw, ".")
@@ -124,13 +115,13 @@ func (c *Client) workloadJWKSURI(ctx context.Context, issuer string) (string, er
 	return doc.JWKSURI, nil
 }
 
-// VerifyWorkloadToken verifies a CI workload token: signature against the
-// issuer's JWKS (alg allowlist, key type matching the alg), iss, aud, exp
-// (required), nbf, iat (required, not in the future), a bounded lifetime, and
+// VerifyWorkloadToken verifies a CI workload token with the shared core
+// (VerifyJWT: signature, alg allowlist, iss, aud, exp, nbf, iat) and the
+// workload rules: iat required, a bounded lifetime, and
 // the presence of sub and jti. Every failure is an error; the caller must
 // refuse the exchange. Replay (jti) is the caller's to check.
 func (c *Client) VerifyWorkloadToken(ctx context.Context, raw string, exp WorkloadExpectations) (*WorkloadToken, error) {
-	if raw == "" || len(raw) > maxWorkloadTokenSize {
+	if raw == "" || len(raw) > MaxTokenSize {
 		return nil, errors.New("token is empty or too large")
 	}
 	if exp.Issuer == "" || exp.Audience == "" {
@@ -141,36 +132,12 @@ func (c *Client) VerifyWorkloadToken(ctx context.Context, raw string, exp Worklo
 		return nil, err
 	}
 	claims := jwtv5.MapClaims{}
-	parser := jwtv5.NewParser(
-		jwtv5.WithValidMethods(workloadMethods),
-		jwtv5.WithExpirationRequired(),
-		jwtv5.WithIssuedAt(),
-		jwtv5.WithLeeway(workloadLeeway),
-		jwtv5.WithAudience(exp.Audience),
-		jwtv5.WithIssuer(exp.Issuer),
-		jwtv5.WithTimeFunc(c.now),
-	)
-	keyFunc := func(t *jwtv5.Token) (any, error) {
-		kid, _ := t.Header["kid"].(string)
-		key, err := c.key(ctx, jwksURI, kid)
-		if err != nil {
-			return nil, err
-		}
-		switch t.Method.(type) {
-		case *jwtv5.SigningMethodRSA:
-			if _, ok := key.(*rsa.PublicKey); !ok {
-				return nil, errors.New("key type does not match alg")
-			}
-		case *jwtv5.SigningMethodECDSA:
-			if _, ok := key.(*ecdsa.PublicKey); !ok {
-				return nil, errors.New("key type does not match alg")
-			}
-		default:
-			return nil, errors.New("unsupported alg")
-		}
-		return key, nil
-	}
-	if _, err := parser.ParseWithClaims(raw, claims, keyFunc); err != nil {
+	if err := c.VerifyJWT(ctx, raw, claims, TokenPolicy{
+		JWKSURI:  jwksURI,
+		Issuer:   exp.Issuer,
+		Audience: exp.Audience,
+		Leeway:   workloadLeeway,
+	}); err != nil {
 		return nil, fmt.Errorf("token: %w", err)
 	}
 	iat, err := claims.GetIssuedAt()

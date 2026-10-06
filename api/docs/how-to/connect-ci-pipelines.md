@@ -141,8 +141,11 @@ the upload tokens of their running jobs at once.
 
 CI jobs authenticate only with their OIDC identity. The former `runner` sensor
 type (a sensor API key stored in CI) was removed: such sensors and their keys
-were deleted on upgrade (migration `001121`) and new ones cannot be created.
-Delete any `API_KEY` secret left in your CI settings.
+were deleted on upgrade (migration `001143`) and new ones cannot be created.
+Delete any `API_KEY` secret left in your CI settings. **Require OIDC for CI**
+(top of **Settings > Scanning > CI pipelines**, on for organizations created
+since it exists) also refuses the key of any one-shot (standalone) sensor
+(`403 ci-oidc-required`, audited).
 
 ## Troubleshooting
 
@@ -153,4 +156,5 @@ Delete any `API_KEY` secret left in your CI settings.
 | Every finding counts as new | The default branch was never scanned: run the pipeline on the default branch once |
 | `The CI token was not accepted` and `pipeline_identity` in the audit log | The token carries no repository/project id or no usable workflow path |
 | `The CI token was not accepted` and `pipeline_cap` in the audit log | The organization has the most CI pipelines it may have; existing pipelines keep running |
+| `403 RUNNER_OUTDATED` on the exchange | The sensor image is older than the minimum supported version; update the pinned image |
 | `401` on upload after a long scan | The 15-minute run token expired; on GitHub the sensor renews it, on GitLab shorten the time between the first upload and the verdict |
