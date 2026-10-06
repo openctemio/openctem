@@ -294,7 +294,7 @@ P2.6 binary self-update; P2.7 UI.
   per tool.
 - **Let each tool update itself** (today's behaviour): uncontrolled timing,
   no versions on results, no air-gapped story, concurrent-scan races.
-- **Watchtower-style tag polling**: follows tags, not digests, and verifies
+- **Plain tag polling**: follows tags, not digests, and verifies
   no signatures.
 - **The platform as the content mirror** (sensors pull content from the api):
   attractive for air-gapped tenants, but it makes the platform a content

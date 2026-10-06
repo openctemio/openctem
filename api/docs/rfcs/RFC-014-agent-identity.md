@@ -1,4 +1,4 @@
-# RFC-014 — k8s-style agent identity (short-lived, auto-rotating credentials)
+# RFC-014 — Agent identity (short-lived, auto-rotating credentials)
 
 > Status: **Proposed** (design of record; phased implementation)
 > Update 2026-10-02: Phases 4 (scopes) and 5 (OIDC for CI) and the
@@ -23,22 +23,22 @@ non-expiring secret**:
   checks `Status.CanAuthenticate()` (active/disabled/revoked) → updates last_seen
   (`agent/service.go:354`).
 - Enrollment tokens (`RegistrationToken`) are **already short-lived + use-limited
-  + scoped** (`ExpiresAt`, `MaxUses`, `DefaultScopes`) — the k8s bootstrap-token
-  analog, done right.
+  + scoped** (`ExpiresAt`, `MaxUses`, `DefaultScopes`) — the right shape for an
+  enrollment credential.
 - **Rotation already exists**: `RegenerateAPIKey` + `POST /agents/{id}/regenerate-key`
   (admin, hard rotate).
 
 ### The real gaps (corrected)
 
 An earlier read claimed "no rotation" — that was wrong (`RegenerateAPIKey`
-exists). The genuine gaps, benchmarked against how k8s/SPIFFE do machine identity:
+exists). The genuine gaps, measured against short-lived machine-identity practice:
 
 1. **No credential expiry.** The agent key never expires. A leaked key is valid
-   forever until an admin manually regenerates. k8s issues **short-lived** certs
-   (hours/days) and relies on TTL instead of a revocation list.
+   forever until an admin manually regenerates. Short-lived credentials (hours or
+   days) rely on TTL instead of a revocation list.
 2. **No auto-renewal.** The agent can't renew its own credential; only an admin
-   can regenerate (needs the agent id + `AgentsWrite`). k8s kubelet
-   auto-rotates (`--rotate-certificates`) before expiry.
+   can regenerate (needs the agent id + `AgentsWrite`). Credentials should
+   rotate themselves before expiry.
 3. **No rotation overlap.** `RegenerateAPIKey` is a *hard* rotate — the old key
    dies instantly → brief agent downtime. A multi-key model gives overlap.
 4. **Scoped per-key model is designed but unwired.** `pkg/domain/agent/api_key.go`
@@ -46,25 +46,21 @@ exists). The genuine gaps, benchmarked against how k8s/SPIFFE do machine identit
    multi-key-per-agent) exists but nothing uses it; auth uses the single inline
    hash. `RunnerScopes/SensorScopes/…` are defined but not enforced.
 
-## How the reference systems do it
+## Target credential model
 
-| System | Enrollment | Credential | Rotation | Revocation |
+| | Enrollment | Credential | Rotation | Revocation |
 |--------|-----------|-----------|----------|-----------|
-| **k8s node/kubelet** | bootstrap token → CSR | client cert `system:node:<n>` | auto (`--rotate-certificates`) | short TTL + remove node |
-| **k8s pod/ServiceAccount** | pod admission | **projected JWT**, ~1h, audience+pod-bound | kubelet auto-refresh at ~80% TTL | TTL + delete pod |
-| **SPIFFE/SPIRE** | node+workload attestation | short-lived SVID (X.509/JWT) | auto | TTL |
-| **GitHub Actions** | — | **OIDC token** (no stored secret) | per-run | ephemeral |
-| **DefectDojo** | — | **per-user account token** (shared) | manual | manual |
-| **OpenCTEM today** | ✅ registration token | ❌ static per-agent key | manual (hard) | status flag |
+| **Target** | registration token | per-agent, short-lived, auto-rotating credential (expiring key, or a platform-issued OIDC token with no stored secret) | automatic, before expiry | short TTL + per-agent revoke |
+| **OpenCTEM today** | registration token | static per-agent key | manual (hard) | status flag |
 
-Verdict: the industry standard is **per-machine identity + short-lived
-auto-rotating credential + enrollment**. A shared account token (DefectDojo) is
-rejected — one leak compromises every agent, no per-agent revoke/audit. OpenCTEM
-is already on the right axis; it just stops at a static key.
+Verdict: the right model is **per-machine identity + short-lived
+auto-rotating credential + enrollment**. A shared account token is rejected:
+one leak compromises every agent, with no per-agent revoke or audit.
+OpenCTEM is already on the right axis; it just stops at a static key.
 
 ## Design
 
-Adapt the k8s model **pragmatically to OpenCTEM's bearer-token reality** — no
+Fit the short-lived-credential model **pragmatically to OpenCTEM's bearer-token reality** — no
 mTLS/PKI needed; short-lived **signed/expiring keys** + the existing **lease**
 heartbeat for auto-renew.
 
@@ -73,7 +69,7 @@ heartbeat for auto-renew.
 2. ISSUE    a credential with an ExpiresAt (e.g. 24h; configurable)
 3. RUN      auth = hash lookup + Status.CanAuthenticate() + NOT expired
 4. RENEW    agent calls POST /agents/renew with its current key → fresh key + exp
-            (kubelet-style; driven off the lease heartbeat it already sends)
+            (driven off the lease heartbeat it already sends)
 5. OVERLAP  wire agent.APIKey multi-key so renew issues key N+1 while N is still
             valid for a grace window → zero-downtime rotation + per-key audit
 6. SCOPE    enforce RunnerScopes/SensorScopes (least privilege, like NodeRestriction)
@@ -82,7 +78,7 @@ heartbeat for auto-renew.
 
 Key inversion vs today: **after enrollment, issue a short-lived auto-renewing
 credential instead of a permanent key.** A leaked key is then valid only until
-the next renewal — self-revoking, no CRL (exactly how k8s avoids revocation lists).
+the next renewal — self-revoking, no CRL.
 
 ### CI runners — OIDC federation (zero stored secret)
 
@@ -101,7 +97,7 @@ sites are security-critical, so **no phase is rushed**.
 |-------|------|-------------|
 | **1a** ✅ | **Agent self-renew endpoint** `POST /api/v1/agent/renew` (auth by current key → new key), reusing `generateAgentAPIKey`+`repo.Update`. The auto-rotate building block. **Shipped #282.** | Additive, **no schema change**; works for tenant + platform agents. |
 | **1b** ✅ | **Key expiry**: `agents.key_expires_at` column (migration 000185) + `Agent.IsKeyExpired()` + enforce in `AuthenticateByAPIKey`. Backward-compat: NULL = never expires. Renew sets a fresh expiry **only when `AGENT_KEY_TTL` is configured** (default off → no behavior change); the renew response returns `expires_at`. **Shipped this PR.** | Touched both agent scanners + INSERT/UPDATE/SELECT + auth path → DB round-trip test against the real schema. |
-| **2** ✅* | **Auto-renew via lease**: agent renews before expiry off its existing lease heartbeat (kubelet-style). | SDK `KeyRenewManager` + agent wiring done (sdk-go #45 + agent branch); *pending sdk-go v0.5.0 release. |
+| **2** ✅* | **Auto-renew via lease**: agent renews before expiry off its existing lease heartbeat (renewal at half-life). | SDK `KeyRenewManager` + agent wiring done (sdk-go #45 + agent branch); *pending sdk-go v0.5.0 release. |
 | **3** ✅ | **Rotation overlap + per-key audit**: wired the (pre-existing) `agent_api_keys` table via `AgentAPIKeyRepository`; auth accepts inline key **or** an active/valid key row; self-renew under a TTL issues the new key as a row so the superseded key stays valid during overlap; inline bootstrap key retired after a grace; per-key `use_count`/`last_used`. **Shipped this PR.** | Additive to the auth path; DB round-trip test against the real `agent_api_keys` schema. |
 | **4** | **Scope enforcement** (`RunnerScopes/SensorScopes`) at the authz layer. | Least-privilege. |
 | **5** | **OIDC federation for CI runners.** | Zero stored secret. |
