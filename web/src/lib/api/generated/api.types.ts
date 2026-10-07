@@ -6913,6 +6913,372 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/capabilities': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List capabilities
+     * @description The platform capabilities and the organization's own custom capabilities. include=usage adds which of the organization's tools and sensors (and the platform tools) have each capability; it needs scans:tenant_tools:read (otherwise it is left out and listed in meta.omitted_includes), and sensor names need sensors:read. A response that took include= is Cache-Control: private, no-store.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description platform or custom */
+          source?: 'platform' | 'custom'
+          /** @description Category */
+          category?: string
+          /** @description Search the name and display name */
+          q?: string
+          /** @description usage; one the caller may not read is left out and listed in meta.omitted_includes */
+          include?: string
+          /** @description Page number */
+          page?: number
+          /** @description Items per page (max 100) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CapabilityListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Create custom capability
+     * @description Create a custom capability owned by the organization. Platform capabilities are managed by the platform.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Capability */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CreateCapabilityRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CapabilityResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/capabilities/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get capability
+     * @description A platform capability or one of the organization's own (any other id is not found). include= as on the list.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description usage; one the caller may not read is left out and listed in meta.omitted_includes */
+          include?: string
+        }
+        header?: never
+        path: {
+          /** @description Capability ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CapabilityResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Update custom capability
+     * @description Change one of the organization's custom capabilities. A platform capability or another organization's is not found.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Capability ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Capability */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateCapabilityRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CapabilityResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    /**
+     * Delete custom capability
+     * @description Delete one of the organization's custom capabilities. In use by a tool or sensor: 409 unless force=true. A platform capability or another organization's is not found.
+     */
+    delete: {
+      parameters: {
+        query?: {
+          /** @description Delete even when tools or sensors use it */
+          force?: boolean
+        }
+        header?: never
+        path: {
+          /** @description Capability ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/capabilities/categories': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List capability categories
+     * @description The categories of the capabilities the organization sees.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.CapabilityCategoriesResponse']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ci/coverage': {
     parameters: {
       query?: never
@@ -37993,6 +38359,49 @@ export interface components {
       token_type?: string
       user?: components['schemas']['internal_infra_http_handler.UserInfo']
     }
+    'internal_infra_http_handler.CapabilityCategoriesResponse': {
+      items?: string[]
+    }
+    'internal_infra_http_handler.CapabilityListResponse': {
+      items?: components['schemas']['internal_infra_http_handler.CapabilityResponse'][]
+      /** @description Meta lists the includes asked for but left out. */
+      meta?: components['schemas']['github_com_openctemio_openctem_api_internal_infra_http_include.Meta']
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
+    }
+    'internal_infra_http_handler.CapabilityResponse': {
+      category?: string
+      color?: string
+      created_at?: string
+      created_by?: string
+      description?: string
+      display_name?: string
+      icon?: string
+      id?: string
+      is_builtin?: boolean
+      /** @description Meta lists the includes left out (GET /capabilities/{id} only). */
+      meta?: components['schemas']['github_com_openctemio_openctem_api_internal_infra_http_include.Meta']
+      name?: string
+      sort_order?: number
+      /**
+       * @description Source: platform (shared, managed by the platform) or custom (this
+       *     organization's own capability).
+       * @enum {string}
+       */
+      source?: 'platform' | 'custom'
+      tenant_id?: string
+      updated_at?: string
+      /** @description Usage: include=usage. */
+      usage?: components['schemas']['internal_infra_http_handler.CapabilityUsageResponse']
+    }
+    'internal_infra_http_handler.CapabilityUsageResponse': {
+      sensor_count?: number
+      sensor_names?: string[]
+      tool_count?: number
+      tool_names?: string[]
+    }
     'internal_infra_http_handler.CategoryResponse': {
       code?: string
       created_at?: string
@@ -38166,6 +38575,14 @@ export interface components {
       last_commit_sha?: string
       name: string
       type: string
+    }
+    'internal_infra_http_handler.CreateCapabilityRequest': {
+      category?: string
+      color?: string
+      description?: string
+      display_name: string
+      icon?: string
+      name: string
     }
     'internal_infra_http_handler.CreateCommandRequest': {
       /** @description Seconds until expiration */
@@ -42410,6 +42827,13 @@ export interface components {
       retention_days?: number
       scan_on_pr?: boolean
       scan_on_push?: boolean
+    }
+    'internal_infra_http_handler.UpdateCapabilityRequest': {
+      category?: string
+      color?: string
+      description?: string
+      display_name: string
+      icon?: string
     }
     'internal_infra_http_handler.UpdateCommentRequest': {
       content: string

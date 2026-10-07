@@ -25,6 +25,14 @@ import (
 // removedRoutes: "METHOD /path" (parameter names do not matter) and why.
 var removedRoutes = map[string]string{
 	"DELETE /api/v1/tenants/{tenant}/members/{userId}": "offboarding without step-up; POST /api/v1/organization/members/{member_id}/offboard is the one route",
+	// One capability resource: /capabilities with filters and include=usage.
+	"GET /api/v1/capabilities/all":                    "the list with per_page (capped at 100)",
+	"GET /api/v1/capabilities/by-category/{category}": "the list with category=",
+	"POST /api/v1/capabilities/usage-stats":           "the list with include=usage",
+	"GET /api/v1/capabilities/{id}/usage-stats":       "GET /api/v1/capabilities/{id}?include=usage",
+	"POST /api/v1/custom-capabilities":                "POST /api/v1/capabilities",
+	"PUT /api/v1/custom-capabilities/{id}":            "PUT /api/v1/capabilities/{id}",
+	"DELETE /api/v1/custom-capabilities/{id}":         "DELETE /api/v1/capabilities/{id}",
 }
 
 func TestRemovedRoutes_NotRegistered(t *testing.T) {

@@ -8192,6 +8192,92 @@ definitions:
       user:
         $ref: '#/definitions/internal_infra_http_handler.UserInfo'
     type: object
+  internal_infra_http_handler.CapabilityCategoriesResponse:
+    properties:
+      items:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.CapabilityListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CapabilityResponse'
+        type: array
+      meta:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_infra_http_include.Meta'
+        description: Meta lists the includes asked for but left out.
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_infra_http_handler.CapabilityResponse:
+    properties:
+      category:
+        type: string
+      color:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      display_name:
+        type: string
+      icon:
+        type: string
+      id:
+        type: string
+      is_builtin:
+        type: boolean
+      meta:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_infra_http_include.Meta'
+        description: Meta lists the includes left out (GET /capabilities/{id} only).
+      name:
+        type: string
+      sort_order:
+        type: integer
+      source:
+        description: |-
+          Source: platform (shared, managed by the platform) or custom (this
+          organization's own capability).
+        enum:
+        - platform
+        - custom
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      usage:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.CapabilityUsageResponse'
+        description: 'Usage: include=usage.'
+    type: object
+  internal_infra_http_handler.CapabilityUsageResponse:
+    properties:
+      sensor_count:
+        type: integer
+      sensor_names:
+        items:
+          type: string
+        type: array
+      tool_count:
+        type: integer
+      tool_names:
+        items:
+          type: string
+        type: array
+    type: object
   internal_infra_http_handler.CategoryResponse:
     properties:
       code:
@@ -8591,6 +8677,31 @@ definitions:
     required:
     - name
     - type
+    type: object
+  internal_infra_http_handler.CreateCapabilityRequest:
+    properties:
+      category:
+        maxLength: 50
+        type: string
+      color:
+        maxLength: 20
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      display_name:
+        maxLength: 100
+        type: string
+      icon:
+        maxLength: 50
+        type: string
+      name:
+        maxLength: 50
+        minLength: 2
+        type: string
+    required:
+    - display_name
+    - name
     type: object
   internal_infra_http_handler.CreateCommandRequest:
     properties:
@@ -16468,6 +16579,26 @@ definitions:
       scan_on_push:
         type: boolean
     type: object
+  internal_infra_http_handler.UpdateCapabilityRequest:
+    properties:
+      category:
+        maxLength: 50
+        type: string
+      color:
+        maxLength: 20
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      display_name:
+        maxLength: 100
+        type: string
+      icon:
+        maxLength: 50
+        type: string
+    required:
+    - display_name
+    type: object
   internal_infra_http_handler.UpdateCommentRequest:
     properties:
       content:
@@ -21523,6 +21654,237 @@ paths:
       summary: Verify email
       tags:
       - Authentication
+  /capabilities:
+    get:
+      description: 'The platform capabilities and the organization''s own custom capabilities.
+        include=usage adds which of the organization''s tools and sensors (and the
+        platform tools) have each capability; it needs scans:tenant_tools:read (otherwise
+        it is left out and listed in meta.omitted_includes), and sensor names need
+        sensors:read. A response that took include= is Cache-Control: private, no-store.'
+      parameters:
+      - description: platform or custom
+        enum:
+        - platform
+        - custom
+        in: query
+        name: source
+        type: string
+      - description: Category
+        in: query
+        name: category
+        type: string
+      - description: Search the name and display name
+        in: query
+        name: q
+        type: string
+      - description: usage; one the caller may not read is left out and listed in
+          meta.omitted_includes
+        in: query
+        name: include
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Items per page (max 100)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CapabilityListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List capabilities
+      tags:
+      - Capabilities
+    post:
+      consumes:
+      - application/json
+      description: Create a custom capability owned by the organization. Platform
+        capabilities are managed by the platform.
+      parameters:
+      - description: Capability
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CreateCapabilityRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CapabilityResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create custom capability
+      tags:
+      - Capabilities
+  /capabilities/{id}:
+    delete:
+      description: 'Delete one of the organization''s custom capabilities. In use
+        by a tool or sensor: 409 unless force=true. A platform capability or another
+        organization''s is not found.'
+      parameters:
+      - description: Capability ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Delete even when tools or sensors use it
+        in: query
+        name: force
+        type: boolean
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete custom capability
+      tags:
+      - Capabilities
+    get:
+      description: A platform capability or one of the organization's own (any other
+        id is not found). include= as on the list.
+      parameters:
+      - description: Capability ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: usage; one the caller may not read is left out and listed in
+          meta.omitted_includes
+        in: query
+        name: include
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CapabilityResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get capability
+      tags:
+      - Capabilities
+    put:
+      consumes:
+      - application/json
+      description: Change one of the organization's custom capabilities. A platform
+        capability or another organization's is not found.
+      parameters:
+      - description: Capability ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Capability
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateCapabilityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CapabilityResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update custom capability
+      tags:
+      - Capabilities
+  /capabilities/categories:
+    get:
+      description: The categories of the capabilities the organization sees.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CapabilityCategoriesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List capability categories
+      tags:
+      - Capabilities
   /ci/coverage:
     get:
       description: 'Repository x capability (sast, sca, secrets, iac) coverage from
