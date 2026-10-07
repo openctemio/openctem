@@ -124,6 +124,32 @@ type SectionDefinition struct {
 	Label string `json:"label"`
 }
 
+// PropertyFormat says how a property value is shown beyond its attribute
+// type ("" = by the value's own shape).
+type PropertyFormat string
+
+// Property formats.
+const (
+	// PropertyFormatIP: each value is an IP address (links to the IP asset).
+	PropertyFormatIP PropertyFormat = "ip"
+	// PropertyFormatURL: an http(s) link.
+	PropertyFormatURL PropertyFormat = "url"
+	// PropertyFormatCode: an identifier, shown monospace.
+	PropertyFormatCode PropertyFormat = "code"
+)
+
+// PropertyDefinition is one key of the property schema (RFC-042 §6.3.9):
+// its labels, display format, the synonym keys that fold into it and, when
+// set, the only classes whose assets may hold it.
+type PropertyDefinition struct {
+	Key      string         `json:"key"`
+	Label    string         `json:"label"`
+	LabelVI  string         `json:"label_vi"`
+	Format   PropertyFormat `json:"format,omitempty"`
+	Synonyms []string       `json:"synonyms,omitempty"`
+	Classes  []Class        `json:"classes,omitempty"`
+}
+
 // Registry is the whole registry, as served by GET /api/v1/asset-types.
 type Registry struct {
 	Version    string              `json:"version"`
@@ -133,6 +159,10 @@ type Registry struct {
 	Sections   []SectionDefinition `json:"sections"`
 	Cards      []string            `json:"cards"`
 	CoreFields []string            `json:"core_fields"`
+	// Properties is the property dictionary, CommonProperties the keys
+	// every type may hold besides its attributes.
+	Properties       []PropertyDefinition `json:"properties"`
+	CommonProperties []string             `json:"common_properties"`
 }
 
 type legacyCategoryDefinition struct {
@@ -184,6 +214,9 @@ func RegistryDocument() Registry {
 		Sections:   registrySections,
 		Cards:      registryCards,
 		CoreFields: registryCoreFields,
+
+		Properties:       registryProperties,
+		CommonProperties: registryCommonProperties,
 	}
 }
 

@@ -33,7 +33,12 @@ import {
 import { useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { generateTempStepId, generateStepKey, isTempStepId } from '@/lib/utils'
-import { insertAdapterStep, type GraphValidation } from '@/features/pipelines/lib/capability-graph'
+import {
+  capabilityForStep,
+  insertAdapterStep,
+  type GraphValidation,
+} from '@/features/pipelines/lib/capability-graph'
+import { NodeInspector } from '@/features/pipelines/components/node-inspector'
 import {
   useCapabilityTable,
   validatePipelineSteps,
@@ -72,6 +77,8 @@ export default function PipelineBuilderPage({ params }: PageProps) {
   // of the current draft
   const { table: capabilityTable } = useCapabilityTable()
   const [graphReport, setGraphReport] = useState<GraphValidation | null>(null)
+  // The step whose settings the inspector shows
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
 
   // Fetch tools for selection
   const { data: toolsData } = useToolsWithConfig()
@@ -155,6 +162,13 @@ export default function PipelineBuilderPage({ params }: PageProps) {
     },
     [capabilityTable]
   )
+
+  // A step edited in the inspector replaces the step in place
+  const handleInspectorChange = useCallback((updated: PipelineStep) => {
+    setLocalSteps((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+    setHasChanges(true)
+  }, [])
+  const selectedStep = localSteps.find((s) => s.id === selectedStepId) ?? null
 
   // Handle navigation with unsaved changes
   const handleBack = useCallback(() => {
@@ -323,6 +337,11 @@ export default function PipelineBuilderPage({ params }: PageProps) {
           description: s.description || undefined,
           order: idx + 1,
           tool: s.tool,
+          // A capability step (no pinned tool) names its capability and how
+          // it picks a tool; a pinned step's capabilities come from its tool.
+          ...(s.tool ? {} : { capabilities: s.capabilities }),
+          prefer_tools: s.tool ? [] : (s.prefer_tools ?? []),
+          max_retries: s.max_retries,
           timeout_seconds: s.timeout_seconds,
           depends_on: s.depends_on || [],
           ui_position: s.ui_position,
@@ -497,12 +516,24 @@ export default function PipelineBuilderPage({ params }: PageProps) {
                 capabilityTable={capabilityTable}
                 issuesByStep={issuesByStep}
                 onInsertAdapter={isReadOnly ? undefined : handleInsertAdapter}
+                onSelectionChange={setSelectedStepId}
                 readOnly={isReadOnly}
               />
             </div>
 
-            {/* Node Palette - Right Side */}
-            {!isReadOnly && <NodePalette position="right" />}
+            {/* The selected step's settings, else the palette */}
+            {selectedStep ? (
+              <NodeInspector
+                key={selectedStep.id}
+                step={selectedStep}
+                capability={capabilityForStep(capabilityTable, selectedStep)}
+                readOnly={isReadOnly}
+                onChange={handleInspectorChange}
+                onClose={() => setSelectedStepId(null)}
+              />
+            ) : (
+              !isReadOnly && <NodePalette position="right" />
+            )}
           </div>
         </div>
       </Main>

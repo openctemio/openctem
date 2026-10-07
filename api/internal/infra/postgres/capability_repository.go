@@ -277,130 +277,6 @@ func (r *CapabilityRepository) List(ctx context.Context, filter capability.Filte
 	return pagination.NewResult(capabilities, total, page), nil
 }
 
-// ListAll returns all capabilities for a tenant context.
-func (r *CapabilityRepository) ListAll(ctx context.Context, tenantID *shared.ID) ([]*capability.Capability, error) {
-	var query string
-	var args []any
-
-	if tenantID != nil {
-		query = r.selectQuery() + " WHERE tenant_id IS NULL OR tenant_id = $1 ORDER BY sort_order ASC, display_name ASC"
-		args = []any{tenantID.String()}
-	} else {
-		query = r.selectQuery() + " WHERE tenant_id IS NULL ORDER BY sort_order ASC, display_name ASC"
-	}
-
-	rows, err := r.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list all capabilities: %w", err)
-	}
-	defer rows.Close()
-
-	var capabilities []*capability.Capability
-	for rows.Next() {
-		c, err := r.scanCapability(rows)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan capability: %w", err)
-		}
-		capabilities = append(capabilities, c)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate capabilities: %w", err)
-	}
-
-	return capabilities, nil
-}
-
-// ListByNames returns capabilities by their names.
-func (r *CapabilityRepository) ListByNames(ctx context.Context, tenantID *shared.ID, names []string) ([]*capability.Capability, error) {
-	if len(names) == 0 {
-		return nil, nil
-	}
-
-	// Build IN clause
-	placeholders := make([]string, len(names))
-	args := make([]any, 0, len(names)+1)
-	argIdx := 1
-
-	// Tenant condition
-	var tenantCondition string
-	if tenantID != nil {
-		tenantCondition = fmt.Sprintf("(tenant_id IS NULL OR tenant_id = $%d)", argIdx)
-		args = append(args, tenantID.String())
-		argIdx++
-	} else {
-		tenantCondition = "tenant_id IS NULL"
-	}
-
-	for i, name := range names {
-		placeholders[i] = fmt.Sprintf("$%d", argIdx)
-		args = append(args, name)
-		// argIdx not incremented — no further conditions
-	}
-
-	query := r.selectQuery() + fmt.Sprintf(
-		" WHERE %s AND name IN (%s) ORDER BY sort_order ASC",
-		tenantCondition,
-		strings.Join(placeholders, ", "),
-	)
-
-	rows, err := r.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list capabilities by names: %w", err)
-	}
-	defer rows.Close()
-
-	var capabilities []*capability.Capability
-	for rows.Next() {
-		c, err := r.scanCapability(rows)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan capability: %w", err)
-		}
-		capabilities = append(capabilities, c)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate capabilities: %w", err)
-	}
-
-	return capabilities, nil
-}
-
-// ListByCategory returns all capabilities in a category.
-func (r *CapabilityRepository) ListByCategory(ctx context.Context, tenantID *shared.ID, category string) ([]*capability.Capability, error) {
-	var query string
-	var args []any
-
-	if tenantID != nil {
-		query = r.selectQuery() + " WHERE (tenant_id IS NULL OR tenant_id = $1) AND category = $2 ORDER BY sort_order ASC"
-		args = []any{tenantID.String(), category}
-	} else {
-		query = r.selectQuery() + " WHERE tenant_id IS NULL AND category = $1 ORDER BY sort_order ASC"
-		args = []any{category}
-	}
-
-	rows, err := r.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list capabilities by category: %w", err)
-	}
-	defer rows.Close()
-
-	var capabilities []*capability.Capability
-	for rows.Next() {
-		c, err := r.scanCapability(rows)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan capability: %w", err)
-		}
-		capabilities = append(capabilities, c)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate capabilities: %w", err)
-	}
-
-	return capabilities, nil
-}
-
 // Update updates an existing capability.
 func (r *CapabilityRepository) Update(ctx context.Context, c *capability.Capability) error {
 	query := `
@@ -412,8 +288,11 @@ func (r *CapabilityRepository) Update(ctx context.Context, c *capability.Capabil
 			category = $6,
 			sort_order = $7,
 			updated_at = $8
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $9 AND is_builtin = false
 	`
+	if c.TenantID == nil {
+		return fmt.Errorf("%w: capability not found", shared.ErrNotFound)
+	}
 
 	result, err := r.db.ExecContext(ctx, query,
 		c.ID.String(),
@@ -424,6 +303,7 @@ func (r *CapabilityRepository) Update(ctx context.Context, c *capability.Capabil
 		c.Category,
 		c.SortOrder,
 		c.UpdatedAt,
+		c.TenantID.String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update capability: %w", err)
@@ -441,11 +321,11 @@ func (r *CapabilityRepository) Update(ctx context.Context, c *capability.Capabil
 	return nil
 }
 
-// Delete deletes a capability by ID.
-func (r *CapabilityRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM capabilities WHERE id = $1 AND is_builtin = false"
+// Delete deletes one of tenantID's custom capabilities.
+func (r *CapabilityRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM capabilities WHERE id = $1 AND tenant_id = $2 AND is_builtin = false"
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete capability: %w", err)
 	}

@@ -72,7 +72,9 @@ func TestRetestDB_ToolRetestQueuesOneRetestCommand(t *testing.T) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatal(err)
 	}
-	const addr = "https://shop.example.com/admin"
+	// The origin of the matched-at URL https://shop.example.com/admin: the
+	// template appends its own path to the input.
+	const addr = "https://shop.example.com"
 	if typ != "retest" || p.Scanner != "nuclei" || p.RetestID != rt.ID.String() ||
 		len(p.Targets) != 1 || p.Targets[0] != addr ||
 		len(p.Items) != 1 || p.Items[0].Ref != f.String() || p.Items[0].Target != addr || p.Items[0].Kind != "finding" ||

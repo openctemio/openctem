@@ -129,6 +129,7 @@ export default function VulnerableComponentsPage() {
         'High',
         'Medium',
         'Low',
+        'Info',
         'Risk Score',
         'CISA KEV',
       ],
@@ -141,6 +142,7 @@ export default function VulnerableComponentsPage() {
         c.vulnerabilityCount.high,
         c.vulnerabilityCount.medium,
         c.vulnerabilityCount.low,
+        c.vulnerabilityCount.info,
         c.riskScore,
         c.vulnerabilities.some((v) => v.inCisaKev) ? 'Yes' : 'No',
       ])

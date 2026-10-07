@@ -23,6 +23,16 @@ export type ScanStageList = S['internal_infra_http_handler.ScanStageListResponse
 export type GraphValidation = S['internal_infra_http_handler.PipelineGraphValidationResponse']
 export type GraphIssue = S['internal_infra_http_handler.PipelineGraphIssueResponse']
 
+/** One standard param of a capability contract. */
+export interface CapabilityParam {
+  name: string
+  type: 'string' | 'string_list' | 'integer' | 'boolean' | 'port_list'
+  description: string
+  enum: string[]
+  min?: number
+  max?: number
+}
+
 /** One capability as the builder uses it. */
 export interface Capability {
   key: string
@@ -35,6 +45,9 @@ export interface Capability {
   outPorts: string[]
   tools: string[]
   defaultTool: string
+  params: CapabilityParam[]
+  /** Standard param name -> tool config key, per tool. */
+  toolParams: Record<string, Record<string, string>>
 }
 
 export interface Adapter {
@@ -68,6 +81,15 @@ export function toCapabilityTable(list: ScanStageList | undefined): CapabilityTa
       outPorts: s.out_ports ?? [],
       tools,
       defaultTool: impls.find((i) => i.default)?.tool ?? tools[0] ?? '',
+      params: (s.params ?? []).map((p) => ({
+        name: p.name ?? '',
+        type: p.type ?? 'string',
+        description: p.description ?? '',
+        enum: p.enum ?? [],
+        min: p.min,
+        max: p.max,
+      })),
+      toolParams: Object.fromEntries(impls.map((i) => [i.tool ?? '', i.params ?? {}])),
     }
   })
   const adapters: Adapter[] = (list.adapters ?? []).map((a) => ({
