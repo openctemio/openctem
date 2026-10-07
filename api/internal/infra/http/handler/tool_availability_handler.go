@@ -1,18 +1,12 @@
 package handler
 
-// GET /api/v1/tenant-tools/availability (docs/architecture/tool-availability.md).
+// Tool availability in the tool view (GET /api/v1/tools?include=availability,
+// docs/architecture/tool-availability.md).
 
 import (
-	"encoding/json"
-	"errors"
-	"net/http"
 	"sort"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/tool"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -54,13 +48,10 @@ type ToolContentVersionsResponse struct {
 	Versions []string `json:"versions"`
 }
 
-// ToolAvailabilityItem is one tool's availability for the tenant.
-type ToolAvailabilityItem struct {
-	Name string `json:"name"`
-	// Tool is the catalog entry; null for a tool a sensor reports that the
-	// tenant's catalog does not list.
-	Tool      *ToolResponse `json:"tool"`
-	InCatalog bool          `json:"in_catalog"`
+// ToolAvailabilityInfo is one tool's availability for the organization,
+// computed from what its sensors report (advice: dispatch checks every job
+// again at claim time).
+type ToolAvailabilityInfo struct {
 	// Enabled: active in the catalog and switched on for the tenant.
 	Enabled bool   `json:"enabled"`
 	Status  string `json:"status" enums:"ready,no_sensor,offline_only,outdated,disabled"`
@@ -82,69 +73,18 @@ type ToolAvailabilityItem struct {
 	LastReportedAt     *string                       `json:"last_reported_at,omitempty"`
 }
 
-// ToolAvailabilityResponse is the tenant's tool availability.
-type ToolAvailabilityResponse struct {
-	Items []ToolAvailabilityItem `json:"items"`
-	// Summary counts the tools per status (every status present).
-	Summary map[string]int `json:"summary"`
-	// ZoneID is the scan zone the view is limited to.
-	ZoneID     string `json:"zone_id,omitempty"`
-	ComputedAt string `json:"computed_at"`
+// UnlistedToolResponse is a tool the sensors report that the catalog does
+// not list.
+type UnlistedToolResponse struct {
+	Name string `json:"name"`
+	ToolAvailabilityInfo
 }
 
-// ToolAvailability handles GET /api/v1/tenant-tools/availability
-// @Summary      Tool availability
-// @Description  Every catalog tool, plus every tool the tenant's sensors report, with the sensors that have it (online and total), the versions they report and a derived status. Sensor-reported data is advice: dispatch checks every job again at claim time.
-// @Tags         Tenant Tools
-// @Produce      json
-// @Param        zone_id  query     string  false  "Only the sensors of this scan zone"
-// @Success      200      {object}  ToolAvailabilityResponse
-// @Failure      400      {object}  apierror.Error
-// @Failure      404      {object}  apierror.Error
-// @Failure      500      {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools/availability [get]
-func (h *ToolHandler) ToolAvailability(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-	res, err := h.service.ToolAvailability(r.Context(), tenantID, r.URL.Query().Get("zone_id"))
-	switch {
-	case errors.Is(err, shared.ErrNotFound):
-		// The only lookup that can miss is the zone (another tenant's
-		// zone reads as missing).
-		apierror.NotFound("Scan zone").WriteJSON(w)
-		return
-	case err != nil:
-		h.handleServiceError(w, err, "Tool availability")
-		return
-	}
-	// Sensor names and zones are the Sensors page's data: listed only for
-	// callers who may read sensors. The counts and status are for everyone
-	// who may read the tenant's tools (the scan builder needs them).
-	withSensors := middleware.HasPermission(r.Context(), permission.SensorsRead.String())
-
-	resp := ToolAvailabilityResponse{
-		Items:      make([]ToolAvailabilityItem, 0, len(res.Tools)),
-		Summary:    make(map[string]int, len(res.Summary)),
-		ComputedAt: res.ComputedAt.UTC().Format(time.RFC3339),
-	}
-	for st, n := range res.Summary {
-		resp.Summary[string(st)] = n
-	}
-	if res.ZoneID != nil {
-		resp.ZoneID = res.ZoneID.String()
-	}
-	for _, t := range res.Tools {
-		resp.Items = append(resp.Items, toolAvailabilityItem(t, res, withSensors))
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func toolAvailabilityItem(t tool.AvailableTool, res *tool.ToolAvailabilityResult, withSensors bool) ToolAvailabilityItem {
-	item := ToolAvailabilityItem{
-		Name:               t.Name,
-		InCatalog:          t.InCatalog,
+// toToolAvailabilityInfo converts one tool's availability. Sensor names and
+// zones are the Sensors page's data: listed only withSensors (sensors:read);
+// the counts and status are for everyone who may read the tenant's tools.
+func toToolAvailabilityInfo(t sensor.ToolAvailability, zones map[shared.ID]string, withSensors bool) ToolAvailabilityInfo {
+	item := ToolAvailabilityInfo{
 		Enabled:            t.Enabled,
 		Status:             string(t.Status),
 		SensorsOnline:      t.SensorsOnline,
@@ -163,9 +103,6 @@ func toolAvailabilityItem(t tool.AvailableTool, res *tool.ToolAvailabilityResult
 	if item.Versions == nil {
 		item.Versions = []string{}
 	}
-	if t.Tool != nil {
-		item.Tool = toToolResponseWithCategory(t.Tool, t.Category)
-	}
 	for _, c := range t.Content {
 		item.Content = append(item.Content, ToolContentVersionsResponse{Name: c.Name, Versions: c.Versions})
 	}
@@ -173,19 +110,19 @@ func toolAvailabilityItem(t tool.AvailableTool, res *tool.ToolAvailabilityResult
 		return item
 	}
 	for _, s := range t.Sensors {
-		item.Sensors = append(item.Sensors, toolAvailabilitySensor(s, res))
+		item.Sensors = append(item.Sensors, toolAvailabilitySensor(s, zones))
 	}
 	return item
 }
 
-func toolAvailabilitySensor(s sensor.ToolSensor, res *tool.ToolAvailabilityResult) ToolAvailabilitySensor {
+func toolAvailabilitySensor(s sensor.ToolSensor, zones map[shared.ID]string) ToolAvailabilitySensor {
 	out := ToolAvailabilitySensor{
 		ID: s.SensorID.String(), Name: s.Name, State: string(s.State), Online: s.Online,
 		Zones: make([]ToolAvailabilityZone, 0, len(s.ZoneIDs)), Version: s.Version,
 		Excluded: s.Excluded, ExcludedDetail: s.ExcludedDetail,
 	}
 	for _, z := range s.ZoneIDs {
-		out.Zones = append(out.Zones, ToolAvailabilityZone{ID: z.String(), Name: res.Zones[z]})
+		out.Zones = append(out.Zones, ToolAvailabilityZone{ID: z.String(), Name: zones[z]})
 	}
 	sort.Slice(out.Zones, func(i, j int) bool { return out.Zones[i].Name < out.Zones[j].Name })
 	for _, c := range s.Content {
