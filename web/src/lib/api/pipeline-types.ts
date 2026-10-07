@@ -229,8 +229,11 @@ export interface PipelineTemplate {
 
 export interface StepRun {
   id: string
-  step_id: string
+  /** Absent once the step was removed from the pipeline; the run keeps its key, name and tool. */
+  step_id?: string
   step_key: string
+  step_name?: string
+  tool?: string
   status: StepRunStatus
   started_at?: string
   completed_at?: string
@@ -305,6 +308,11 @@ export interface CreatePipelineRequest {
 }
 
 export interface CreateStepRequest {
+  /**
+   * Id of the existing step this entry is, when saving a whole pipeline: the
+   * step is updated in place and keeps its run history. Omit for a new step.
+   */
+  id?: string
   step_key: string
   name: string
   description?: string

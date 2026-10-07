@@ -201,6 +201,32 @@ func (s *PipelineService) OnStepCompleted(ctx, pipelineRunID, stepKey string, fi
 }
 ```
 
+### 6. Editing a pipeline keeps its run history
+
+A pipeline's steps are edited in place. Every write (the builder's full save,
+`PUT /api/v1/pipelines/{id}` with `steps`, and the single-step add, update and
+delete endpoints) goes through one repository call, `StepRepository.MutateSteps`
+(`internal/infra/postgres/pipeline_step_mutate.go`), in one transaction:
+
+1. **Lock the pipeline** (`FOR UPDATE`, tenant-scoped; another tenant's
+   pipeline is not found). A run insert takes a `KEY SHARE` lock on the same
+   row through its foreign key, so a save and a run start never interleave.
+2. **Refuse while a run of the pipeline is pending or running**
+   (`409 PIPELINE_RUN_ACTIVE`). A running run reads the step definitions as it
+   advances, so a mid-run edit would change what the rest of that run does.
+3. **Match the saved steps to the current ones**: by the step `id` the client
+   sends, then by `step_key`. Only ids of the pipeline's own steps are
+   honored; a client-side temporary id or another pipeline's step id makes
+   the entry a new step with a server-generated id.
+4. **Update matched steps in place** (they keep their id, so their step runs
+   and chaining inputs in `scan_step_outputs` stay attached), insert new ones,
+   delete the rest.
+
+Deleting a step never deletes history: `step_runs.step_id` is
+`ON DELETE SET NULL` (migration 001155), and each step run carries the step's
+`step_key`, `step_name` and `tool` as they were when it was created. The run
+detail shows a removed step's runs by that snapshot.
+
 ## Key Components
 
 ### Scan Scheduler (`api/internal/app/scan_scheduler.go`)
@@ -264,7 +290,10 @@ CREATE TABLE pipeline_runs (
 CREATE TABLE step_runs (
     id UUID PRIMARY KEY,
     pipeline_run_id UUID REFERENCES pipeline_runs(id),
+    step_id UUID REFERENCES pipeline_steps(id) ON DELETE SET NULL,  -- NULL once the step is removed
     step_key VARCHAR(100) NOT NULL,
+    step_name VARCHAR(255),  -- copied from the step when the step run is created
+    tool VARCHAR(100),       -- copied from the step when the step run is created
     status VARCHAR(20) DEFAULT 'pending',  -- pending, queued, running, completed, failed
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
