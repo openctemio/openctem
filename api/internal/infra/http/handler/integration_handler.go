@@ -1578,7 +1578,7 @@ func (h *IntegrationHandler) TestNotification(w http.ResponseWriter, r *http.Req
 type SendNotificationRequest struct {
 	Title    string            `json:"title" validate:"required,min=1,max=255"`
 	Body     string            `json:"body" validate:"required,max=4000"`
-	Severity string            `json:"severity" validate:"required,oneof=critical high medium low"`
+	Severity string            `json:"severity" validate:"required,oneof=critical high medium low info"`
 	URL      string            `json:"url" validate:"omitempty,url"`
 	Fields   map[string]string `json:"fields"`
 }
