@@ -380,7 +380,10 @@ func registerEASMRoutes(
 
 // registerEASMSeedRoutes registers the EASM seeds (RFC-036 §6.3, §6.10):
 // scope permissions, like the other boundary settings, behind the
-// attack_surface module.
+// attack_surface module. A seed authorizes active checks of every name under
+// it, so adding one or turning its discovery on widens scope: approvers only,
+// with step-up (RFC-054 §6.1); the service creates a new seed through the
+// scope entry path (approvals, guardrails, notification).
 func registerEASMSeedRoutes(
 	router Router,
 	h *handler.EASMSeedHandler,
@@ -391,8 +394,8 @@ func registerEASMSeedRoutes(
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 	router.Group("/api/v1/easm/seeds", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
-		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
-		r.PATCH("/{id}", h.Update, middleware.Require(permission.ScopeWrite))
+		r.POST("/", h.Create, middleware.Require(permission.ScopeApprove), requireStepUp())
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.ScopeApprove), requireStepUp())
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
 	}, tenantMiddlewares...)
 }
