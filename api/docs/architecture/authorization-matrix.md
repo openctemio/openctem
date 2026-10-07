@@ -444,7 +444,7 @@ the billing page in the UI.
 > (`finding_evidence_secrets`, bound to tenant, item and placeholder) and kept
 > for the tenant's secret retention (default 30 days).
 > `findings:evidence:reveal` is held by owner and admin by default (migration
-> `001210`) and can be given to custom roles. Every reveal writes
+> `001223`) and can be given to custom roles. Every reveal writes
 > `finding.evidence_revealed` (item, placeholder names, purpose; never values)
 > before answering, and a finding timeline entry; it answers 503 if the audit
 > event cannot be written. See [finding-evidence.md](finding-evidence.md).

@@ -123,7 +123,13 @@ For each target, in order:
    Typed text that names no asset gets the same authority decision as an
    inventory asset; the act-scope check below asks the same `scopeauth`
    package, so a typed name and the same name in the inventory never
-   disagree. The caller sees one generic reason; the state that refused the target is
+   disagree. Every refusal carries a structured code (RFC-054 §6.5:
+   `rejected`, `needs_review`, `candidate`, `dependency`, `monitor_only`,
+   `no_entry`, `deny_list`, `proof_required`, …); requests refused as a whole
+   answer `TARGET_OUT_OF_SCOPE` with `details.refused[]` (`target`, `code`,
+   `message`, `fixes`). The act scope runs first on those paths, so a
+   restricted member never learns the state of an asset outside their data
+   scope. The state is also
    logged (`active scan target refused`) with the path. A request refused as
    a whole (scan create, clone, import, quick scan, `POST /commands`) is also
    **audited** as `scan.target_refused` (medium, result `failure`) in the

@@ -1,0 +1,116 @@
+package handler
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
+)
+
+type fakeDryRun struct{ results []scansvc.DryRunResult }
+
+func (f fakeDryRun) DryRunTargets(context.Context, scansvc.DryRunInput) ([]scansvc.DryRunResult, error) {
+	return f.results, nil
+}
+
+type fakeCoverage struct{}
+
+func (fakeCoverage) CoverOf(_ context.Context, _ shared.ID, targets []string) (map[string]scopeauth.Via, error) {
+	out := map[string]scopeauth.Via{}
+	for _, t := range targets {
+		if strings.HasSuffix(t, "ok.example") {
+			out[t] = scopeauth.Via{Kind: scopeauth.KindScopeTarget, ID: "t1", Pattern: "*.ok.example", Proof: scopeauth.ProofAsserted}
+		}
+	}
+	return out, nil
+}
+
+// POST /scope/check names the caller's own entry behind a refusal and keeps
+// only the fixes the caller may take (RFC-054 §6.4).
+func TestScopeCheck_DryRunResponse_DB(t *testing.T) {
+	db, ctx := openScopingTestDB(t)
+	tenantID := seedHandlerTenant(ctx, t, db)
+	other := seedHandlerTenant(ctx, t, db)
+	mustExec(ctx, t, db, `INSERT INTO scope_targets (tenant_id, target_type, pattern, status, approvals_required) VALUES ($1,'domain','pend.example','pending',1)`, tenantID)
+	// Another tenant's pending entry for the same name explains nothing here.
+	mustExec(ctx, t, db, `INSERT INTO scope_targets (tenant_id, target_type, pattern, status, approvals_required) VALUES ($1,'domain','*.b.example','pending',1)`, other)
+
+	pg := &postgres.DB{DB: db}
+	svc := scopeapp.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg), postgres.NewAssetRepository(pg), logger.NewNop())
+	h := NewScopeHandler(svc, validator.New(), logger.NewNop())
+	h.SetDryRun(fakeDryRun{results: []scansvc.DryRunResult{
+		{Target: "app.ok.example", Allowed: true},
+		{Target: "pend.example", Code: scopedom.RefusalNoEntry},
+		{Target: "x.b.example", Code: scopedom.RefusalNoEntry},
+		{Target: "portal.gov.vn", Code: scopedom.RefusalDenyList},
+	}}, fakeCoverage{})
+
+	call := func(admin bool, perms []string) CheckScopeResponse {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scope/check", strings.NewReader(`{"targets":["app.ok.example","pend.example","x.b.example","portal.gov.vn"]}`))
+		c := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
+		c = context.WithValue(c, middleware.IsAdminKey, admin)
+		c = context.WithValue(c, middleware.FetchedPermissionsKey, perms)
+		rec := httptest.NewRecorder()
+		h.CheckScope(rec, req.WithContext(c))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+		}
+		var out CheckScopeResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	by := func(out CheckScopeResponse) map[string]ScopeCheckResult {
+		m := map[string]ScopeCheckResult{}
+		for _, r := range out.Results {
+			m[r.Target] = r
+		}
+		return m
+	}
+
+	adm := by(call(true, nil))
+	if r := adm["app.ok.example"]; !r.Allowed || r.Via == nil || r.Via.Pattern != "*.ok.example" {
+		t.Errorf("allowed: %+v", r)
+	}
+	if r := adm["pend.example"]; r.Code != scopedom.RefusalEntryPending || r.Rule == nil || r.Rule.Pattern != "pend.example" {
+		t.Errorf("pending entry: %+v", r)
+	}
+	if r := adm["x.b.example"]; r.Code != scopedom.RefusalNoEntry || r.Rule != nil {
+		t.Errorf("another tenant's entry leaked into the explanation: %+v", r)
+	}
+	if r := adm["portal.gov.vn"]; r.Code != scopedom.RefusalDenyList || r.Rule == nil || r.Rule.Kind != scopedom.RulePlatformPolicy || r.Rule.Pattern != "" {
+		t.Errorf("deny list: %+v", r)
+	}
+	hasAction := func(r ScopeCheckResult, a string) bool {
+		for _, f := range r.Fixes {
+			if f.Action == a {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasAction(adm["x.b.example"], scopedom.FixAllowTemporarily) || hasAction(adm["x.b.example"], scopedom.FixRequestAccess) {
+		t.Errorf("admin fixes: %+v", adm["x.b.example"].Fixes)
+	}
+	mem := by(call(false, []string{"attack_surface:scope:read", "attack_surface:scope:write"}))
+	if hasAction(mem["x.b.example"], scopedom.FixAllowTemporarily) || !hasAction(mem["x.b.example"], scopedom.FixRequestAccess) {
+		t.Errorf("member fixes: %+v", mem["x.b.example"].Fixes)
+	}
+	if hasAction(mem["pend.example"], scopedom.FixApproveEntry) {
+		t.Errorf("a member was offered to approve: %+v", mem["pend.example"].Fixes)
+	}
+}
