@@ -95,6 +95,7 @@ func newL10Harness(t *testing.T) *l10Harness {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			ctx = context.WithValue(ctx, middleware.UserIDKey, r.Header.Get("X-Test-User"))
+			ctx = context.WithValue(ctx, middleware.SessionIDKey, "l10-session")
 			ctx = context.WithValue(ctx, middleware.TenantIDKey, h.tenantA)
 			ctx = context.WithValue(ctx, middleware.IsAdminKey, r.Header.Get("X-Test-Admin") == "1")
 			ctx = context.WithValue(ctx, middleware.PermissionsKey, []string{
@@ -108,6 +109,8 @@ func newL10Harness(t *testing.T) *l10Harness {
 	pass := Middleware(func(next http.Handler) http.Handler { return next })
 	credH := handler.NewCredentialImportHandler(credSvc, validator.New(), log)
 	credH.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
+	// Not about step-up (reveal needs it): every session is fresh.
+	withStepUpChecker(t, alwaysSteppedUp{})
 	registerCredentialRoutes(router, credH, auth, nil, pass)
 	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, validator.New(), log), nil, nil, nil, auth, nil)
 	registerGroupRoutes(router, handler.NewGroupHandler(groupSvc, validator.New(), log), auth, nil)

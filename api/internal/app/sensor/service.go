@@ -77,9 +77,15 @@ type SensorService struct {
 	// identityPolicy is the organization's sensor identity policy
 	// (RFC-052 D-4); nil allows bearer-key sensors.
 	identityPolicy sensordom.IdentityPolicyRepository
-	nonces         sensordom.NonceStore
-	nonceOnce      sync.Once
-	memNonces      *memoryNonceStore
+
+	// stepUp asks for the acting user's recent re-authentication before the
+	// identity policy is widened (allowing bearer keys). nil skips the check
+	// (a service built outside the HTTP server).
+	stepUp shared.RecentAuthGate
+
+	nonces    sensordom.NonceStore
+	nonceOnce sync.Once
+	memNonces *memoryNonceStore
 	// lbWeights are the load-balancing weights used to recompute a sensor's
 	// load_score on every heartbeat. Defaults to the compiled-in set;
 	// SetLoadBalancingWeights installs the operator's SENSOR_LB_* values.
