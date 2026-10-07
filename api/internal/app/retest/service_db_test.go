@@ -20,12 +20,14 @@ import (
 
 	_ "github.com/lib/pq"
 
+	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/api/pkg/crypto"
 	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -116,9 +118,17 @@ func (fx *fixture) service() *retestapp.Service {
 
 // serviceWith is the service with the given sensor availability.
 func (fx *fixture) serviceWith(sensors retestapp.SensorAvailability) *retestapp.Service {
-	return retestapp.NewService(fx.repo, postgres.NewFindingRepository(fx.pg), postgres.NewAssetRepository(fx.pg),
+	svc := retestapp.NewService(fx.repo, postgres.NewFindingRepository(fx.pg), postgres.NewAssetRepository(fx.pg),
 		postgres.NewCommandRepository(fx.pg), validation.NewCommandDispatcher(postgres.NewCommandRepository(fx.pg), fx.gate(), logger.NewNop()),
 		sensors, logger.NewNop())
+	// The production policy (settings.retest.auto_resolve) and evidence store.
+	svc.SetPolicy(retestapp.TenantPolicy{Tenants: postgres.NewTenantRepository(fx.pg)})
+	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		fx.t.Fatal(err)
+	}
+	svc.SetEvidenceStore(evidenceapp.NewService(postgres.NewFindingEvidenceRepository(fx.pg), cipher, nil, nil, nil, logger.NewNop()))
+	return svc
 }
 
 // gate is the production active-probe gate over the test database.
@@ -142,6 +152,31 @@ func (fx *fixture) finish(cmd *shared.ID, outcome, summary string) {
 	}
 	res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": outcome, "summary": summary}})
 	fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, cmd.String(), res)
+}
+
+// attemptItems is the proof a re-run reports: one HTTP exchange to url that
+// answered status (0: no response).
+func attemptItems(url string, status int) []map[string]any {
+	ex := map[string]any{"request": map[string]any{"method": "GET", "url": url,
+		"headers": []map[string]string{{"name": "Cookie", "value": "sid=retest-session-value"}}}}
+	if status > 0 {
+		ex["response"] = map[string]any{"status": status, "body": "not found"}
+	}
+	return []map[string]any{{"kind": "http_exchange", "http": ex}}
+}
+
+// finishAttempt completes a template re-run that reports its attempt.
+func (fx *fixture) finishAttempt(cmd *shared.ID, outcome, url string, status int) {
+	fx.t.Helper()
+	res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": outcome, "summary": "re-run",
+		"evidence": map[string]any{"evidence_items": attemptItems(url, status)}}})
+	fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, cmd.String(), res)
+}
+
+func (fx *fixture) autoResolve(on bool) {
+	fx.exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{retest}',
+		COALESCE(settings->'retest', '{}'::jsonb) || jsonb_build_object('auto_resolve', $2::boolean)) WHERE id = $1`,
+		fx.tenant.String(), on)
 }
 
 func (fx *fixture) findingState(id shared.ID) (status, method, resolvedBy string) {
@@ -215,7 +250,11 @@ func TestRetestDB_QueuesTwoScopedValidateCommands(t *testing.T) {
 	}
 }
 
-func TestRetestDB_NoMatchOnReachableTargetResolves(t *testing.T) {
+// RFC-057 R2: a bare "not detected" on a host that answers a TCP probe is
+// not reproduced (the finding stays); only an attempt at the finding's own
+// endpoint that got an answer is a confirmed fix, which awaits a person
+// (validated_fixed) unless the tenant auto-resolves.
+func TestRetestDB_NoMatchWithoutEndpointProofIsNotReproduced(t *testing.T) {
 	fx := newFixture(t)
 	svc := fx.service()
 	f := fx.newFinding(fx.asset, "confirmed", "exposed-admin-panel")
@@ -230,12 +269,11 @@ func TestRetestDB_NoMatchOnReachableTargetResolves(t *testing.T) {
 	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
 
 	got := fx.retest(rt.ID)
-	if got.Outcome != retestdom.OutcomeFixed || got.ResultStatus != "resolved" {
-		t.Fatalf("retest = %+v, want fixed → resolved", got)
+	if got.Outcome != retestdom.OutcomeNotReproduced || got.ReasonCode != retestdom.ReasonNoEndpointProof || got.ResultStatus != "confirmed" {
+		t.Fatalf("retest = %+v, want not_reproduced, finding unchanged", got)
 	}
-	status, method, by := fx.findingState(f)
-	if status != "resolved" || method != "retest_verified" || by != fx.user.String() {
-		t.Errorf("finding = %s/%s/%s, want resolved/retest_verified/<requester>", status, method, by)
+	if status, _, _ := fx.findingState(f); status != "confirmed" {
+		t.Errorf("finding moved to %s", status)
 	}
 	var actorType, actorName string
 	if err := fx.db.QueryRow(`SELECT actor_type, actor_name FROM finding_activities
@@ -244,6 +282,81 @@ func TestRetestDB_NoMatchOnReachableTargetResolves(t *testing.T) {
 	}
 	if actorType != "system" || actorName != "system: retest" {
 		t.Errorf("activity actor = %s/%s, want system/system: retest", actorType, actorName)
+	}
+}
+
+func TestRetestDB_ConfirmedFixAwaitsAPersonUnlessAutoResolve(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	settle := func(f shared.ID, url string, status int) *retestdom.Retest {
+		t.Helper()
+		rt := fx.request(svc, f)
+		fx.finishAttempt(rt.CheckCommandID, "not_detected", url, status)
+		fx.finish(rt.ReachCommandID, "detected", "target answered")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+
+	f := fx.newFinding(fx.asset, "confirmed", "exposed-admin-panel")
+	// The sensor that claims the check is recorded on the retest (a run:
+	// finding + command + sensor).
+	sensor := shared.NewID()
+	fx.exec(`INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status) VALUES ($1, $2, 'retest-runner', $3, 'octs_rt', 'active')`,
+		sensor.String(), fx.tenant.String(), "hash-"+sensor.String())
+	settleClaimed := func(f shared.ID, url string, status int) *retestdom.Retest {
+		t.Helper()
+		rt := fx.request(svc, f)
+		fx.exec(`UPDATE commands SET sensor_id = $2 WHERE id = $1`, rt.CheckCommandID.String(), sensor.String())
+		fx.finishAttempt(rt.CheckCommandID, "not_detected", url, status)
+		fx.finish(rt.ReachCommandID, "detected", "target answered")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+	got := settleClaimed(f, "https://shop.example.com/admin", 404)
+	if got.SensorID == nil || *got.SensorID != sensor || got.CheckCommandID == nil {
+		t.Fatalf("retest run linkage = sensor %v command %v, want the claiming sensor and the check command", got.SensorID, got.CheckCommandID)
+	}
+	if got.Outcome != retestdom.OutcomeConfirmedFixed || got.ResultStatus != "validated_fixed" ||
+		!strings.Contains(got.Reason, "https://shop.example.com/admin answered 404") {
+		t.Fatalf("retest = %+v, want confirmed_fixed → validated_fixed", got)
+	}
+	if status, _, _ := fx.findingState(f); status != "validated_fixed" {
+		t.Errorf("finding = %s, want validated_fixed", status)
+	}
+	// The attempt's proof is kept, masked, on the finding.
+	var n int
+	if err := fx.db.QueryRow(`SELECT count(*) FROM finding_evidence WHERE tenant_id = $1 AND finding_id = $2 AND retest_id = $3
+		AND origin = 'retest' AND content::text NOT LIKE '%retest-session-value%'`, fx.tenant.String(), f.String(), got.ID.String()).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("retest evidence rows = %d, want 1 (masked)", n)
+	}
+
+	// The re-run requested another path (the 2026-10-07 false fix): no conclusion.
+	g := fx.newFinding(fx.newAsset("api.example.com"), "confirmed", "exposed-admin-panel-2")
+	fx.exec(`UPDATE findings SET file_path = 'https://api.example.com/wp-admin/js/theme.js' WHERE id = $1`, g.String())
+	got = settle(g, "https://api.example.com/wp-admin/js/theme.js/wp-admin/js/theme.js", 404)
+	if got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEndpointMismatch {
+		t.Fatalf("path-doubled attempt = %+v, want inconclusive endpoint_mismatch", got)
+	}
+
+	// A blocked attempt is not a fix.
+	b := fx.newFinding(fx.newAsset("waf.example.com"), "confirmed", "exposed-admin-panel-3")
+	fx.exec(`UPDATE findings SET file_path = 'https://waf.example.com/admin' WHERE id = $1`, b.String())
+	if got = settle(b, "https://waf.example.com/admin", 403); got.ReasonCode != retestdom.ReasonBlocked {
+		t.Fatalf("403 attempt = %+v, want blocked", got)
+	}
+
+	// With auto_resolve the confirmed fix resolves, by the requester.
+	fx.autoResolve(true)
+	h := fx.newFinding(fx.newAsset("auto.example.com"), "confirmed", "exposed-admin-panel-4")
+	fx.exec(`UPDATE findings SET file_path = 'https://auto.example.com/admin' WHERE id = $1`, h.String())
+	if got = settle(h, "https://auto.example.com/admin", 200); got.ResultStatus != "resolved" {
+		t.Fatalf("auto-resolve retest = %+v", got)
+	}
+	if status, method, by := fx.findingState(h); status != "resolved" || method != "retest_verified" || by != fx.user.String() {
+		t.Errorf("finding = %s/%s/%s, want resolved/retest_verified/<requester>", status, method, by)
 	}
 }
 
@@ -259,7 +372,7 @@ func TestRetestDB_UnreachableTargetIsUnknownNotFixed(t *testing.T) {
 	fx.finish(rt.ReachCommandID, "not_detected", "target is no longer reachable (connection refused)")
 	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
 	got := fx.retest(rt.ID)
-	if got.Outcome != retestdom.OutcomeUnknown || !strings.HasPrefix(got.Reason, "target unreachable") {
+	if got.Outcome != retestdom.OutcomeInconclusive || !strings.HasPrefix(got.Reason, "target unreachable") {
 		t.Fatalf("retest = %+v, want unknown / target unreachable", got)
 	}
 	if status, _, _ := fx.findingState(refused); status != "confirmed" {
@@ -272,7 +385,7 @@ func TestRetestDB_UnreachableTargetIsUnknownNotFixed(t *testing.T) {
 	fx.finish(rt2.CheckCommandID, "not_detected", "")
 	fx.finish(rt2.ReachCommandID, "", "")
 	svc.OnCommandFinished(context.Background(), fx.tenant, *rt2.ReachCommandID)
-	if got := fx.retest(rt2.ID); got.Outcome != retestdom.OutcomeUnknown {
+	if got := fx.retest(rt2.ID); got.Outcome != retestdom.OutcomeInconclusive {
 		t.Fatalf("retest with a failed probe = %+v, want unknown", got)
 	}
 	if status, _, _ := fx.findingState(failed); status != "fix_applied" {
@@ -291,7 +404,7 @@ func TestRetestDB_StillPresentReopensResolvedFinding(t *testing.T) {
 	fx.finish(rt.ReachCommandID, "detected", "")
 	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.CheckCommandID)
 
-	if got := fx.retest(rt.ID); got.Outcome != retestdom.OutcomeStillPresent || got.ResultStatus != "confirmed" {
+	if got := fx.retest(rt.ID); got.Outcome != retestdom.OutcomeStillVulnerable || got.ResultStatus != "confirmed" {
 		t.Fatalf("retest = %+v, want still_present → confirmed", got)
 	}
 	status, _, by := fx.findingState(f)
@@ -349,7 +462,7 @@ func TestRetestDB_SweepSettlesPastDeadlineAsUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := fx.retest(rt.ID)
-	if got.Outcome != retestdom.OutcomeUnknown || got.Reason != "no sensor result before the deadline" {
+	if got.Outcome != retestdom.OutcomeInconclusive || got.Reason != "no sensor result before the deadline" {
 		t.Fatalf("retest = %+v, want unknown / no result before the deadline", got)
 	}
 	if status, _, _ := fx.findingState(f); status != "in_progress" {

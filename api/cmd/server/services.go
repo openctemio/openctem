@@ -1321,10 +1321,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 	)
 	s.Retest.SetAuditLogger(s.Audit)
+	// RFC-057 R2: a confirmed fix resolves only when the tenant opted in.
+	s.Retest.SetPolicy(retestapp.TenantPolicy{Tenants: repos.Tenant})
 
 	// Finding evidence (docs/architecture/finding-evidence.md): secret values
 	// are sealed with the platform key (re-keyed by cmd/rekey).
 	s.Evidence = evidenceapp.NewService(repos.FindingEvidence, s.Encryptor, s.Tenant, repos.FindingActivity, s.Audit, log)
+	s.Retest.SetEvidenceStore(s.Evidence)
 
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = exposure.NewRemediationCampaignService(repos.RemediationCampaign, log)
